@@ -1,0 +1,51 @@
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/db";
+import { sightings, photos } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import { writeFile, mkdir } from "fs/promises";
+import path from "path";
+import { v4 as uuid } from "uuid";
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const sightingId = parseInt(id);
+
+  const sighting = await db
+    .select()
+    .from(sightings)
+    .where(eq(sightings.id, sightingId))
+    .get();
+
+  if (!sighting) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const formData = await req.formData();
+  const photoFiles = formData.getAll("photos") as File[];
+
+  if (photoFiles.length === 0) {
+    return NextResponse.json({ error: "No photos provided" }, { status: 400 });
+  }
+
+  const uploadDir = path.join(process.cwd(), "uploads");
+  await mkdir(uploadDir, { recursive: true });
+
+  const newPhotos = [];
+  for (const file of photoFiles) {
+    if (!(file instanceof File) || file.size === 0) continue;
+    const ext = file.name.split(".").pop() || "jpg";
+    const filename = `${uuid()}.${ext}`;
+    const buffer = Buffer.from(await file.arrayBuffer());
+    await writeFile(path.join(uploadDir, filename), buffer);
+    const [photo] = await db
+      .insert(photos)
+      .values({ sightingId, filename })
+      .returning();
+    newPhotos.push(photo);
+  }
+
+  return NextResponse.json(newPhotos, { status: 201 });
+}
