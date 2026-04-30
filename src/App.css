@@ -43,7 +43,8 @@ header .sub {
 .field-input:focus-within {
   border-color: #4ade80;
 }
-.field-input input {
+.field-input input,
+.field-input select {
   flex: 1;
   background: transparent;
   border: none;
@@ -228,6 +229,10 @@ td.total {
   color: #4ade80;
   font-weight: 600;
 }
+td.savings {
+  color: #60a5fa;
+  font-weight: 600;
+}
 
 @media (prefers-color-scheme: light) {
   .field-input, .summary-item, .chart, .table-wrap,
@@ -241,6 +246,7 @@ td.total {
   .affix { color: #999; }
   header .sub { color: #666; }
   td.total { color: #16a34a; }
+  td.savings { color: #2563eb; }
   .mode-toggle button { color: #666; }
   .chart-tooltip { color: #222; }
   .chart-tooltip-sub { color: #666; border-color: #eee; }

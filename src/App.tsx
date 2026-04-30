@@ -10,36 +10,16 @@ import {
   YAxis,
 } from 'recharts'
 import './App.css'
-
-type Mode = 'percent' | 'amount'
-
-type Inputs = {
-  homePrice: number
-  downMode: Mode
-  downPaymentPct: number
-  downPaymentAmount: number
-  interestRate: number
-  loanTermYears: number
-  propertyTaxRate: number
-  insuranceMode: Mode
-  homeInsurancePct: number
-  homeInsuranceYearly: number
-  hoaMonthly: number
-}
-
-const defaultInputs: Inputs = {
-  homePrice: 500_000,
-  downMode: 'percent',
-  downPaymentPct: 20,
-  downPaymentAmount: 100_000,
-  interestRate: 6.5,
-  loanTermYears: 30,
-  propertyTaxRate: 1.1,
-  insuranceMode: 'percent',
-  homeInsurancePct: 0.3,
-  homeInsuranceYearly: 1500,
-  hoaMonthly: 0,
-}
+import {
+  type FilingStatus,
+  type Inputs,
+  type Mode,
+  type StateCode,
+  FILING_STATUS_LABELS,
+  STATE_LABELS,
+  computeBreakdown,
+  defaultInputs,
+} from './finance'
 
 // Short URL keys so the querystring stays compact.
 const URL_KEYS: Record<keyof Inputs, string> = {
@@ -54,6 +34,9 @@ const URL_KEYS: Record<keyof Inputs, string> = {
   homeInsurancePct: 'ip',
   homeInsuranceYearly: 'ia',
   hoaMonthly: 'hoa',
+  state: 'st',
+  incomeYearly: 'in',
+  filingStatus: 'fs',
 }
 
 function readInputsFromUrl(): Inputs {
@@ -66,6 +49,10 @@ function readInputsFromUrl(): Inputs {
     if (key === 'downMode' || key === 'insuranceMode') {
       if (raw === 'p') out[key] = 'percent'
       else if (raw === 'a') out[key] = 'amount'
+    } else if (key === 'state') {
+      if (raw in STATE_LABELS) out.state = raw as StateCode
+    } else if (key === 'filingStatus') {
+      if (raw === 'single' || raw === 'mfj') out.filingStatus = raw
     } else {
       const n = Number(raw)
       if (Number.isFinite(n)) out[key] = n as never
@@ -90,54 +77,6 @@ function writeInputsToUrl(inputs: Inputs) {
   const qs = params.toString()
   const url = qs ? `?${qs}` : window.location.pathname
   window.history.replaceState(null, '', url)
-}
-
-function monthlyPrincipalInterest(
-  principal: number,
-  annualRate: number,
-  years: number,
-) {
-  if (principal <= 0) return 0
-  const n = years * 12
-  const r = annualRate / 100 / 12
-  if (r === 0) return principal / n
-  return (principal * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1)
-}
-
-function downPaymentFor(inputs: Inputs, homePrice: number) {
-  if (inputs.downMode === 'percent') {
-    return homePrice * (inputs.downPaymentPct / 100)
-  }
-  // Fixed amount — never more than the home price.
-  return Math.min(inputs.downPaymentAmount, homePrice)
-}
-
-function yearlyInsuranceFor(inputs: Inputs, homePrice: number) {
-  return inputs.insuranceMode === 'percent'
-    ? homePrice * (inputs.homeInsurancePct / 100)
-    : inputs.homeInsuranceYearly
-}
-
-function monthlyBreakdown(inputs: Inputs, homePrice: number) {
-  const down = downPaymentFor(inputs, homePrice)
-  const loan = Math.max(homePrice - down, 0)
-  const pi = monthlyPrincipalInterest(
-    loan,
-    inputs.interestRate,
-    inputs.loanTermYears,
-  )
-  const tax = (homePrice * (inputs.propertyTaxRate / 100)) / 12
-  const ins = yearlyInsuranceFor(inputs, homePrice) / 12
-  const hoa = inputs.hoaMonthly
-  return {
-    principalInterest: pi,
-    tax,
-    insurance: ins,
-    hoa,
-    total: pi + tax + ins + hoa,
-    loan,
-    downPayment: down,
-  }
 }
 
 const fmt = (n: number) =>
@@ -331,7 +270,7 @@ function App() {
     setInputs((s) => ({ ...s, [key]: v }))
 
   const current = useMemo(
-    () => monthlyBreakdown(inputs, inputs.homePrice),
+    () => computeBreakdown(inputs, inputs.homePrice),
     [inputs],
   )
 
@@ -342,23 +281,29 @@ function App() {
       price: number
       downPayment: number
       loan: number
-      pi: number
-      tax: number
-      insurance: number
-      hoa: number
-      total: number
+      piMonthly: number
+      taxMonthly: number
+      insuranceMonthly: number
+      hoaMonthly: number
+      totalMonthly: number
+      deductibleFederalYearly: number
+      deductibleStateYearly: number
+      netSavingsMonthly: number
     }[] = []
     for (let price = min; price <= max; price += 100_000) {
-      const b = monthlyBreakdown(inputs, price)
+      const b = computeBreakdown(inputs, price)
       rows.push({
         price,
         downPayment: b.downPayment,
         loan: b.loan,
-        pi: b.principalInterest,
-        tax: b.tax,
-        insurance: b.insurance,
-        hoa: b.hoa,
-        total: b.total,
+        piMonthly: b.principalInterestMonthly,
+        taxMonthly: b.propertyTaxYearly / 12,
+        insuranceMonthly: b.insuranceYearly / 12,
+        hoaMonthly: b.hoaYearly / 12,
+        totalMonthly: b.totalMonthly,
+        deductibleFederalYearly: b.deductibleFederalYearly,
+        deductibleStateYearly: b.deductibleStateYearly,
+        netSavingsMonthly: b.netSavingsYearly / 12,
       })
     }
     return rows
@@ -367,15 +312,15 @@ function App() {
   const chartData: ChartDatum[] = tableRows.map((r) => ({
     price: r.price,
     downPayment: Math.round(r.downPayment),
-    'Total Monthly': Math.round(r.total),
-    'P&I': Math.round(r.pi),
-    'Tax + Ins': Math.round(r.tax + r.insurance),
+    'Total Monthly': Math.round(r.totalMonthly),
+    'P&I': Math.round(r.piMonthly),
+    'Tax + Ins': Math.round(r.taxMonthly + r.insuranceMonthly),
   }))
 
   return (
     <div className="app">
       <header>
-        <h1>Mortgage Visualizer</h1>
+        <h1>Mortgage Calculator</h1>
         <p className="sub">Tweak the variables. See what it costs.</p>
       </header>
 
@@ -447,24 +392,71 @@ function App() {
           prefix="$"
           suffix="/ mo"
         />
+        <NumberField
+          label="Pre-Tax Income"
+          value={inputs.incomeYearly}
+          onChange={update('incomeYearly')}
+          step={5_000}
+          prefix="$"
+          suffix="/ yr"
+        />
+        <label className="field">
+          <span className="field-label">Filing Status</span>
+          <div className="field-input">
+            <select
+              value={inputs.filingStatus}
+              onChange={(e) =>
+                setInputs((s) => ({
+                  ...s,
+                  filingStatus: e.target.value as FilingStatus,
+                }))
+              }
+            >
+              {(Object.keys(FILING_STATUS_LABELS) as FilingStatus[]).map(
+                (code) => (
+                  <option key={code} value={code}>
+                    {FILING_STATUS_LABELS[code]}
+                  </option>
+                ),
+              )}
+            </select>
+          </div>
+        </label>
+        <label className="field">
+          <span className="field-label">State</span>
+          <div className="field-input">
+            <select
+              value={inputs.state}
+              onChange={(e) =>
+                setInputs((s) => ({ ...s, state: e.target.value as StateCode }))
+              }
+            >
+              {(Object.keys(STATE_LABELS) as StateCode[]).map((code) => (
+                <option key={code} value={code}>
+                  {STATE_LABELS[code]}
+                </option>
+              ))}
+            </select>
+          </div>
+        </label>
       </section>
 
       <section className="summary">
         <div className="summary-item big">
           <span className="label">Monthly Payment</span>
-          <span className="value">{fmt(current.total)}</span>
+          <span className="value">{fmt(current.totalMonthly)}</span>
         </div>
         <div className="summary-item">
           <span className="label">P&I</span>
-          <span className="value">{fmt(current.principalInterest)}</span>
+          <span className="value">{fmt(current.principalInterestMonthly)}</span>
         </div>
         <div className="summary-item">
           <span className="label">Taxes</span>
-          <span className="value">{fmt(current.tax)}</span>
+          <span className="value">{fmt(current.propertyTaxYearly / 12)}</span>
         </div>
         <div className="summary-item">
           <span className="label">Insurance</span>
-          <span className="value">{fmt(current.insurance)}</span>
+          <span className="value">{fmt(current.insuranceYearly / 12)}</span>
         </div>
         <div className="summary-item">
           <span className="label">Down Payment</span>
@@ -473,6 +465,46 @@ function App() {
         <div className="summary-item">
           <span className="label">Loan Amount</span>
           <span className="value">{fmt(current.loan)}</span>
+        </div>
+      </section>
+
+      <section className="table-section">
+        <h2>Payment by home price (≤ $2M, $100k increments)</h2>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Home Price</th>
+                <th>Down Payment</th>
+                <th>Loan</th>
+                <th>P&I</th>
+                <th>Taxes</th>
+                <th>Insurance</th>
+                <th>HOA</th>
+                <th>Total / mo</th>
+                <th>Net Tax Savings / mo</th>
+                <th>Fed Deductible / yr</th>
+                <th>{inputs.state} Deductible / yr</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tableRows.map((r) => (
+                <tr key={r.price}>
+                  <td>{fmt(r.price)}</td>
+                  <td>{fmt(r.downPayment)}</td>
+                  <td>{fmt(r.loan)}</td>
+                  <td>{fmt(r.piMonthly)}</td>
+                  <td>{fmt(r.taxMonthly)}</td>
+                  <td>{fmt(r.insuranceMonthly)}</td>
+                  <td>{fmt(r.hoaMonthly)}</td>
+                  <td className="total">{fmt(r.totalMonthly)}</td>
+                  <td className="savings">{fmt(r.netSavingsMonthly)}</td>
+                  <td>{fmt(r.deductibleFederalYearly)}</td>
+                  <td>{fmt(r.deductibleStateYearly)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -497,40 +529,6 @@ function App() {
             <Line type="monotone" dataKey="Tax + Ins" stroke="#f59e0b" strokeWidth={2} dot={false} />
           </LineChart>
         </ResponsiveContainer>
-      </section>
-
-      <section className="table-section">
-        <h2>Payment by home price (≤ $2M, $100k increments)</h2>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Home Price</th>
-                <th>Down Payment</th>
-                <th>Loan</th>
-                <th>P&I</th>
-                <th>Taxes</th>
-                <th>Insurance</th>
-                <th>HOA</th>
-                <th>Total / mo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tableRows.map((r) => (
-                <tr key={r.price}>
-                  <td>{fmt(r.price)}</td>
-                  <td>{fmt(r.downPayment)}</td>
-                  <td>{fmt(r.loan)}</td>
-                  <td>{fmt(r.pi)}</td>
-                  <td>{fmt(r.tax)}</td>
-                  <td>{fmt(r.insurance)}</td>
-                  <td>{fmt(r.hoa)}</td>
-                  <td className="total">{fmt(r.total)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </section>
     </div>
   )
