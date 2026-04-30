@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import TripCard from "@/components/TripCard";
+import TripsMap from "@/components/TripsMap";
 
 interface Trip {
   id: string;
@@ -9,6 +10,8 @@ interface Trip {
   endDate: string;
   locationName: string;
   speciesCount: number;
+  lat: number;
+  lng: number;
   sightings: { id: number; species: string }[];
 }
 
@@ -35,11 +38,14 @@ export default function TripsPage() {
       {trips.length === 0 ? (
         <p className="text-gray-500">No trips yet.</p>
       ) : (
-        <div className="space-y-3">
-          {trips.map((trip) => (
-            <TripCard key={trip.id} trip={trip} />
-          ))}
-        </div>
+        <>
+          <div className="space-y-3 mb-6">
+            {trips.map((trip) => (
+              <TripCard key={trip.id} trip={trip} />
+            ))}
+          </div>
+          <TripsMap trips={trips} />
+        </>
       )}
     </div>
   );
