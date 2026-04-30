@@ -2,12 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-
-interface Species {
-  commonName: string;
-  scientificName: string;
-  speciesCode: string;
-}
+import { type Species } from "@/lib/fuzzy";
 
 export default function ChecklistPage() {
   const [allSpecies, setAllSpecies] = useState<Species[]>([]);
@@ -19,22 +14,15 @@ export default function ChecklistPage() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/species?q=").then((r) => r.json()),
+      import("../../../data/species.json").then(m => m.default as Species[]),
       fetch("/api/sightings").then((r) => r.json()),
-    ]).then(([, sightings]) => {
-      // Load full species list directly from the search endpoint with a broad query
-      // Actually, we need the full list. Let's fetch it differently.
+    ]).then(([species, sightings]) => {
       const seen = new Set<string>(
         sightings.map((s: { speciesCode: string }) => s.speciesCode)
       );
+      setAllSpecies(species);
       setSeenCodes(seen);
-      // Fetch all species by loading the JSON directly via a new API
-      fetch("/api/species/all")
-        .then((r) => r.json())
-        .then((species: Species[]) => {
-          setAllSpecies(species);
-          setLoading(false);
-        });
+      setLoading(false);
     });
   }, []);
 
