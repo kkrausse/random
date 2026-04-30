@@ -81,16 +81,15 @@ function MapPickerInner({ onLocationSelect, initialLat, initialLng }: Props) {
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
 
+    let cancelled = false;
     let map: L.Map;
 
     import("leaflet").then((leaflet) => {
+      if (cancelled || !mapContainerRef.current || mapRef.current) return;
+
       const Leaf = leaflet.default;
       leafletRef.current = Leaf;
 
-      // Import CSS
-      // CSS loaded via layout.tsx
-
-      // Fix default icon
       delete (Leaf.Icon.Default.prototype as unknown as Record<string, unknown>)
         ._getIconUrl;
       Leaf.Icon.Default.mergeOptions({
@@ -101,8 +100,6 @@ function MapPickerInner({ onLocationSelect, initialLat, initialLng }: Props) {
         shadowUrl:
           "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
       });
-
-      if (!mapContainerRef.current) return;
 
       map = Leaf.map(mapContainerRef.current).setView(
         position || [39.8283, -98.5795],
@@ -133,6 +130,7 @@ function MapPickerInner({ onLocationSelect, initialLat, initialLng }: Props) {
     });
 
     return () => {
+      cancelled = true;
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;

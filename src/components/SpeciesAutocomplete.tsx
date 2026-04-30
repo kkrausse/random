@@ -72,7 +72,7 @@ export default function SpeciesAutocomplete({ onSelect, initialValue = "" }: Pro
   }, []);
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative z-10">
       <label className="block text-sm font-medium text-gray-700 mb-1">Species</label>
       <input
         type="text"
