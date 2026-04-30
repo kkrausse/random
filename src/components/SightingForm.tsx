@@ -32,11 +32,19 @@ interface SightingData {
   photos: ExistingPhoto[];
 }
 
-interface Props {
-  sighting?: SightingData;
+interface Prefill {
+  date?: string;
+  lat?: number;
+  lng?: number;
+  locationName?: string;
 }
 
-export default function SightingForm({ sighting }: Props) {
+interface Props {
+  sighting?: SightingData;
+  prefill?: Prefill;
+}
+
+export default function SightingForm({ sighting, prefill }: Props) {
   const router = useRouter();
   const isEditing = !!sighting;
 
@@ -45,10 +53,10 @@ export default function SightingForm({ sighting }: Props) {
       ? { commonName: sighting.species, scientificName: "", speciesCode: sighting.speciesCode }
       : null
   );
-  const [date, setDate] = useState(sighting?.date ?? new Date().toISOString().split("T")[0]);
-  const [lat, setLat] = useState<number | null>(sighting?.lat ?? null);
-  const [lng, setLng] = useState<number | null>(sighting?.lng ?? null);
-  const [locationName, setLocationName] = useState(sighting?.locationName ?? "");
+  const [date, setDate] = useState(sighting?.date ?? prefill?.date ?? new Date().toISOString().split("T")[0]);
+  const [lat, setLat] = useState<number | null>(sighting?.lat ?? prefill?.lat ?? null);
+  const [lng, setLng] = useState<number | null>(sighting?.lng ?? prefill?.lng ?? null);
+  const [locationName, setLocationName] = useState(sighting?.locationName ?? prefill?.locationName ?? "");
   const [notes, setNotes] = useState(sighting?.notes ?? "");
   const [photos, setPhotos] = useState<File[]>([]);
   const [existingPhotos, setExistingPhotos] = useState<ExistingPhoto[]>(sighting?.photos ?? []);
@@ -166,8 +174,8 @@ export default function SightingForm({ sighting }: Props) {
 
       <MapPicker
         onLocationSelect={handleLocationSelect}
-        initialLat={sighting?.lat}
-        initialLng={sighting?.lng}
+        initialLat={sighting?.lat ?? prefill?.lat}
+        initialLng={sighting?.lng ?? prefill?.lng}
       />
 
       <div>

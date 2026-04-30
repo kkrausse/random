@@ -1,10 +1,22 @@
 import SightingForm from "@/components/SightingForm";
 
-export default function AddPage() {
+export default async function AddPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ date?: string; lat?: string; lng?: string; locationName?: string }>;
+}) {
+  const params = await searchParams;
+  const prefill = {
+    date: params.date,
+    lat: params.lat ? parseFloat(params.lat) : undefined,
+    lng: params.lng ? parseFloat(params.lng) : undefined,
+    locationName: params.locationName,
+  };
+
   return (
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-4 text-center">Log a Sighting</h1>
-      <SightingForm />
+      <SightingForm prefill={prefill} />
     </div>
   );
 }

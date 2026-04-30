@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import SightingCard from "@/components/SightingCard";
+import { Button } from "@/components/ui/button";
 
 interface Photo {
   id: number;
@@ -68,9 +70,21 @@ export default function TripDetailPage() {
       ? trip.startDate
       : `${trip.startDate} to ${trip.endDate}`;
 
+  const firstSighting = trip.sightings[0];
+  const addParams = new URLSearchParams({ date: trip.startDate, locationName: trip.locationName });
+  if (firstSighting) {
+    addParams.set("lat", String(firstSighting.lat));
+    addParams.set("lng", String(firstSighting.lng));
+  }
+
   return (
     <div className="p-4 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold">{trip.locationName}</h1>
+      <div className="flex items-start justify-between mb-1">
+        <h1 className="text-2xl font-bold">{trip.locationName}</h1>
+        <Link href={`/add?${addParams.toString()}`}>
+          <Button size="sm">+ Add Sighting</Button>
+        </Link>
+      </div>
       <p className="text-gray-500 mb-1">{dateLabel}</p>
       <p className="text-gray-600 mb-4">
         {trip.speciesCount} species &middot; {trip.sightings.length} sightings
