@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import SpeciesAutocomplete from "./SpeciesAutocomplete";
 import MapPicker from "./MapPicker";
 import PhotoUpload from "./PhotoUpload";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
 
 interface SpeciesSelection {
   commonName: string;
@@ -67,7 +70,7 @@ export default function SightingForm({ sighting }: Props) {
     setRemovedPhotoIds((prev) => [...prev, photoId]);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!species) {
       setError("Please select a species");
@@ -83,7 +86,6 @@ export default function SightingForm({ sighting }: Props) {
 
     try {
       if (isEditing) {
-        // Update sighting fields
         const res = await fetch(`/api/sightings/${sighting.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -103,7 +105,6 @@ export default function SightingForm({ sighting }: Props) {
           throw new Error(data.error || "Failed to update sighting");
         }
 
-        // Upload new photos if any
         if (photos.length > 0) {
           const formData = new FormData();
           photos.forEach((file) => formData.append("photos", file));
@@ -156,11 +157,10 @@ export default function SightingForm({ sighting }: Props) {
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Date
         </label>
-        <input
+        <Input
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
 
@@ -174,12 +174,11 @@ export default function SightingForm({ sighting }: Props) {
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Notes
         </label>
-        <textarea
+        <Textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={3}
           placeholder="Any additional notes..."
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
 
@@ -189,13 +188,9 @@ export default function SightingForm({ sighting }: Props) {
         onRemoveExisting={handleRemoveExisting}
       />
 
-      <button
-        type="submit"
-        disabled={submitting}
-        className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium"
-      >
+      <Button type="submit" disabled={submitting} className="w-full">
         {submitting ? "Saving..." : isEditing ? "Save Changes" : "Log Sighting"}
-      </button>
+      </Button>
     </form>
   );
 }

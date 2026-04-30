@@ -13,6 +13,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { Input } from "@/components/ui/input";
 
 interface Species {
   commonName: string;
@@ -60,13 +61,11 @@ export default function SpeciesAutocomplete({ onSelect, initialValue = "" }: Pro
       <label className="block text-sm font-medium text-gray-700 mb-1">Species</label>
       <Popover open={isOpen} onOpenChange={setIsOpen}>
         <PopoverAnchor asChild>
-          <input
-            type="text"
+          <Input
             value={query}
             onChange={(e) => handleChange(e.target.value)}
             onFocus={() => results.length > 0 && setIsOpen(true)}
             placeholder="Search for a species..."
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </PopoverAnchor>
         <PopoverContent
