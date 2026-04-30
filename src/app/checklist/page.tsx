@@ -2,13 +2,14 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import Link from "next/link";
 import { type Species } from "@/lib/fuzzy";
 
 export default function ChecklistPage() {
   const [allSpecies, setAllSpecies] = useState<Species[]>([]);
   const [seenCodes, setSeenCodes] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
-  const [showSeen, setShowSeen] = useState<"all" | "seen" | "unseen">("all");
+  const [showSeen, setShowSeen] = useState<"all" | "seen" | "unseen">("seen");
   const [loading, setLoading] = useState(true);
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -96,8 +97,9 @@ export default function ChecklistPage() {
             const species = filtered[virtualItem.index];
             const isSeen = seenCodes.has(species.speciesCode);
             return (
-              <div
+              <Link
                 key={species.speciesCode}
+                href={`/species/${species.speciesCode}`}
                 style={{
                   position: "absolute",
                   top: 0,
@@ -106,12 +108,12 @@ export default function ChecklistPage() {
                   height: `${virtualItem.size}px`,
                   transform: `translateY(${virtualItem.start}px)`,
                 }}
-                className={`flex items-center px-3 border-b border-gray-100 ${
-                  isSeen ? "bg-green-50" : ""
+                className={`flex items-center px-3 border-b border-gray-100 hover:bg-opacity-80 ${
+                  isSeen ? "bg-green-50 hover:bg-green-100" : "hover:bg-gray-50"
                 }`}
               >
                 <span
-                  className={`w-6 h-6 rounded-full flex items-center justify-center text-xs mr-3 ${
+                  className={`w-6 h-6 rounded-full flex items-center justify-center text-xs mr-3 flex-shrink-0 ${
                     isSeen
                       ? "bg-green-500 text-white"
                       : "bg-gray-200 text-gray-400"
@@ -131,7 +133,7 @@ export default function ChecklistPage() {
                     {species.scientificName}
                   </div>
                 </div>
-              </div>
+              </Link>
             );
           })}
         </div>

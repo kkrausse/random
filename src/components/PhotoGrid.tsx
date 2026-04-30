@@ -53,7 +53,7 @@ function buildRows(
   return rows;
 }
 
-export default function PhotoGrid({ items }: { items: PhotoItem[] }) {
+export default function PhotoGrid({ items, singleColumn }: { items: PhotoItem[]; singleColumn?: boolean }) {
   const [dims, setDims] = useState<(Dim | null)[]>(() => items.map(() => null));
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -93,6 +93,36 @@ export default function PhotoGrid({ items }: { items: PhotoItem[] }) {
     allLoaded && containerWidth > 0
       ? buildRows(items, dims, containerWidth)
       : null;
+
+  if (singleColumn) {
+    return (
+      <div ref={containerRef} className="w-full flex flex-col" style={{ gap: GAP }}>
+        {items.map((item, i) => {
+          const d = dims[i];
+          const height = d && containerWidth > 0 ? containerWidth / (d.w / d.h) : containerWidth * 0.75;
+          return (
+            <Link
+              key={`${item.sightingId}-${item.photoFilename}-${i}`}
+              href={`/sighting/${item.sightingId}`}
+              className="relative block group overflow-hidden rounded-sm flex-none"
+              style={{ width: containerWidth > 0 ? containerWidth : "100%", height: containerWidth > 0 ? height : "auto" }}
+            >
+              <img
+                src={`/api/uploads/${item.photoFilename}`}
+                alt={item.species}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
+                <p className="text-white font-semibold text-sm">{item.species}</p>
+                <p className="text-white/80 text-xs">{item.date}</p>
+                <p className="text-white/80 text-xs">{item.locationName}</p>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <div ref={containerRef} className="w-full">
