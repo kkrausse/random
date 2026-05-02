@@ -79,6 +79,11 @@ async function UserHomeContent({
             sightings
           </span>
         </div>
+        {user.bio && (
+          <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-gray-700">
+            {user.bio}
+          </p>
+        )}
       </div>
 
       <Suspense fallback={<PhotoGridSkeleton />}>
