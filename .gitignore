@@ -40,6 +40,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# bird-log -- KEEP FOR NOW
-# data/bird-log.db
+# bird-log local data
+data/*
 # uploads/
