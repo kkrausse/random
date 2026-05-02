@@ -5,6 +5,7 @@
     "bash": {
       "*": "ask",
       "head *": "allow",
+      "ls *": "allow",
       "tail *": "allow",
       "find *": "allow",
       "git diff *": "allow",

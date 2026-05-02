@@ -31,11 +31,7 @@ export const metadata: Metadata = {
 
 async function AuthNav() {
   await connection();
-  return (
-    <ClerkProvider>
-      <Nav />
-    </ClerkProvider>
-  );
+  return <Nav />;
 }
 
 export default function RootLayout({
@@ -46,14 +42,16 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} antialiased bg-gray-50 font-[family-name:var(--font-geist-sans)]`}>
-        <Suspense fallback={
-          <nav className="bg-white border-b border-gray-200 sticky top-0 z-40">
-            <div className="max-w-5xl mx-auto px-4 h-14" />
-          </nav>
-        }>
-          <AuthNav />
-        </Suspense>
-        <main className="max-w-5xl mx-auto">{children}</main>
+        <ClerkProvider>
+          <Suspense fallback={
+            <nav className="bg-white border-b border-gray-200 sticky top-0 z-40">
+              <div className="max-w-5xl mx-auto px-4 h-14" />
+            </nav>
+          }>
+            <AuthNav />
+          </Suspense>
+          <main className="max-w-5xl mx-auto">{children}</main>
+        </ClerkProvider>
       </body>
     </html>
   );
