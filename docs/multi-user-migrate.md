@@ -63,7 +63,7 @@ Each item is a discrete, AI-agent-sized task. Do them roughly top-to-bottom — 
 ## 7. Profile management
 
 - [x] Keep Clerk authoritative for `username` and profile display fields. The local `users` table is a DB mirror used for joins and public `/user/[username]` URLs, not the source of truth.
-- [ ] Add app-owned profile fields to `users` as needed for the edit page, starting with `bio` (nullable text). Keep these separate from Clerk-owned account fields.
+- [x] Add app-owned profile fields to `users` as needed for the edit page, starting with `bio` (nullable text). Keep these separate from Clerk-owned account fields.
 - [ ] Add an "Edit Profile" page at `src/app/user/[username]/edit/page.tsx` (only accessible to the user themselves). The form edits app-owned fields only (initially `bio`) and includes a separate "Account settings" link/affordance for Clerk-managed fields like username, display name, email, avatar, and password/social login.
 - [ ] Add `PUT /api/users/me` for app-owned profile fields only. Do **not** update `username`, `displayName`, email, or avatar locally from this route; those stay Clerk-managed and are mirrored by webhook.
 - [ ] On signup completion (`user.created` webhook), mirror Clerk's `username` and display fields into `users`. If Clerk has no username, derive a temporary local fallback for URL safety, but prefer configuring Clerk sign-up to collect/require username so the app does not own username selection.
