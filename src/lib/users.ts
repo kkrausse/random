@@ -1,5 +1,7 @@
 // URL strategy: /user/[username] (not /user/[clerkId]) — usernames are human-readable
 // and stable enough for sharing. Clerk IDs are the internal PK; usernames are the public identifier.
+// Source of truth: Clerk owns usernames and display fields. The local users row mirrors those
+// values for joins and public URLs, while app-owned profile fields (for example bio) live here.
 
 import { db } from "@/db";
 import { users } from "@/db/schema";

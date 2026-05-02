@@ -57,6 +57,8 @@ export async function POST(req: NextRequest) {
   }
 
   const { data } = event;
+  // Clerk is authoritative for username/displayName. This route only mirrors those
+  // account fields into the app DB so joins and public profile URLs can resolve locally.
   const username = deriveUsername(data);
   const displayName = deriveDisplayName(data);
 

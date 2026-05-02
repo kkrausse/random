@@ -2,8 +2,10 @@ import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(), // Clerk user id
+  // Mirrored from Clerk for joins and public URLs. Clerk remains authoritative for these fields.
   username: text("username").notNull().unique(),
   displayName: text("display_name").notNull(),
+  // App-owned profile fields live here and can be edited by this app.
   bio: text("bio"),
   createdAt: text("created_at")
     .notNull()
