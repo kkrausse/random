@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SignInButton, UserButton, useAuth } from "@clerk/nextjs";
 
 const links = [
   { href: "/", label: "Home" },
@@ -13,6 +14,7 @@ const links = [
 
 export default function Nav() {
   const pathname = usePathname();
+  const { isSignedIn } = useAuth();
 
   return (
     <nav className="bg-white border-b border-gray-200 sticky top-0 z-40">
@@ -21,7 +23,7 @@ export default function Nav() {
           <Link href="/" className="font-bold text-lg text-green-700">
             Bird Log
           </Link>
-          <div className="flex gap-1 overflow-x-auto">
+          <div className="flex items-center gap-1 overflow-x-auto">
             {links.map((link) => (
               <Link
                 key={link.href}
@@ -35,6 +37,17 @@ export default function Nav() {
                 {link.label}
               </Link>
             ))}
+            <div className="ml-2 flex items-center">
+              {isSignedIn ? (
+                <UserButton />
+              ) : (
+                <SignInButton mode="redirect">
+                  <button className="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors">
+                    Sign in
+                  </button>
+                </SignInButton>
+              )}
+            </div>
           </div>
         </div>
       </div>
