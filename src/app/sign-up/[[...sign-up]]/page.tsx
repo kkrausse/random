@@ -1,10 +1,10 @@
-import { Suspense } from 'react'
-import { connection } from 'next/server'
-import { SignUp } from '@clerk/nextjs'
+import { Suspense } from "react";
+import { connection } from "next/server";
+import { SignUp } from "@clerk/nextjs";
 
 async function SignUpWrapper() {
-  await connection()
-  return <SignUp />
+  await connection();
+  return <SignUp forceRedirectUrl="/sign-up/complete" />;
 }
 
 export default function SignUpPage() {
@@ -14,5 +14,5 @@ export default function SignUpPage() {
         <SignUpWrapper />
       </Suspense>
     </div>
-  )
+  );
 }

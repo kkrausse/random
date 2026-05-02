@@ -3,6 +3,10 @@ import { Database } from "bun:sqlite";
 import { createClerkClient } from "@clerk/nextjs/server";
 import { sql } from "drizzle-orm";
 import * as schema from "../src/db/schema";
+import {
+  deriveMirroredDisplayName,
+  deriveMirroredUsername,
+} from "../src/lib/clerk-user-mirror";
 import path from "path";
 
 const dbPath = process.env.DATABASE_PATH
@@ -50,23 +54,25 @@ for (const { userId } of rows) {
 
   try {
     const clerkUser = await clerk.users.getUser(userId);
-    username =
-      clerkUser.username ||
-      clerkUser.firstName?.toLowerCase().replace(/\s+/g, "") ||
-      null;
-    displayName =
-      [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") ||
-      clerkUser.username ||
-      userId.slice(0, 8);
+    username = deriveMirroredUsername({
+      id: clerkUser.id,
+      username: clerkUser.username,
+      firstName: clerkUser.firstName,
+      lastName: clerkUser.lastName,
+    });
+    displayName = deriveMirroredDisplayName({
+      id: clerkUser.id,
+      username: clerkUser.username,
+      firstName: clerkUser.firstName,
+      lastName: clerkUser.lastName,
+    });
   } catch {
     console.warn(`  ${userId}: Clerk lookup failed, using placeholder`);
+    username = deriveMirroredUsername({ id: userId, username: null });
     displayName = `birder-${userId.slice(-6)}`;
   }
 
   // ensure uniqueness for derived username
-  if (!username) {
-    username = `birder-${userId.slice(-6)}`;
-  }
   const base = username;
   let suffix = 0;
   while (true) {

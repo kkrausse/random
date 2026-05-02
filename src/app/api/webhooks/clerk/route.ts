@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { Webhook } from "svix";
 import { db } from "@/db";
 import { users } from "@/db/schema";
+import {
+  deriveMirroredDisplayName,
+  deriveMirroredUsername,
+} from "@/lib/clerk-user-mirror";
 
 type ClerkUserEventData = {
   id: string;
@@ -14,17 +18,6 @@ type ClerkWebhookEvent = {
   type: "user.created" | "user.updated";
   data: ClerkUserEventData;
 };
-
-function deriveUsername(data: ClerkUserEventData): string {
-  if (data.username) return data.username;
-  if (data.first_name) return data.first_name.toLowerCase().replace(/\s+/g, "");
-  return `birder_${data.id.slice(-8)}`;
-}
-
-function deriveDisplayName(data: ClerkUserEventData): string {
-  const parts = [data.first_name, data.last_name].filter(Boolean);
-  return parts.length > 0 ? parts.join(" ") : deriveUsername(data);
-}
 
 export async function POST(req: NextRequest) {
   const secret = process.env.CLERK_WEBHOOK_SECRET;
@@ -59,8 +52,10 @@ export async function POST(req: NextRequest) {
   const { data } = event;
   // Clerk is authoritative for username/displayName. This route only mirrors those
   // account fields into the app DB so joins and public profile URLs can resolve locally.
-  const username = deriveUsername(data);
-  const displayName = deriveDisplayName(data);
+  // If Clerk has no username, use a temporary id-derived URL-safe fallback; configure
+  // Clerk sign-up to require usernames so the app does not own username selection.
+  const username = deriveMirroredUsername(data);
+  const displayName = deriveMirroredDisplayName(data);
 
   await db
     .insert(users)
