@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import SightingForm from "@/components/SightingForm";
+import { signInRoute } from "@/lib/routes";
 
 export default function AddPage({
   searchParams,
@@ -23,7 +24,7 @@ async function AddPageContent({
 }) {
   await connection();
   const { userId } = await auth();
-  if (!userId) redirect("/sign-in");
+  if (!userId) redirect(signInRoute);
 
   const params = await searchParams;
   const prefill = {

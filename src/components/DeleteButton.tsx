@@ -1,5 +1,6 @@
 "use client";
 
+import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -8,7 +9,7 @@ export default function DeleteButton({
   redirectHref,
 }: {
   sightingId: number;
-  redirectHref: string;
+  redirectHref: Route<`/user/${string}`>;
 }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);

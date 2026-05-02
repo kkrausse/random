@@ -1,5 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { notFound, redirect } from "next/navigation";
+import { signInRoute, userRoute } from "@/lib/routes";
 import { getUserByUsername, type UserRow } from "@/lib/users";
 
 export async function assertOwnUser(usernameParam: string): Promise<UserRow> {
@@ -8,11 +9,11 @@ export async function assertOwnUser(usernameParam: string): Promise<UserRow> {
 
   const { userId } = await auth();
   if (!userId) {
-    redirect("/sign-in");
+    redirect(signInRoute);
   }
 
   if (userId !== user.id) {
-    redirect(`/user/${user.username}`);
+    redirect(userRoute(user.username));
   }
 
   return user;

@@ -1,3 +1,4 @@
+import type { Route } from "next";
 import Link from "next/link";
 
 interface Trip {
@@ -13,11 +14,11 @@ interface Trip {
 
 export default function TripCard({
   trip,
-  basePath,
+  href,
   showOwner = false,
 }: {
   trip: Trip;
-  basePath: string;
+  href: Route<`/user/${string}/trips/${string}`>;
   showOwner?: boolean;
 }) {
   const dateLabel =
@@ -26,7 +27,7 @@ export default function TripCard({
       : `${trip.startDate} to ${trip.endDate}`;
 
   return (
-    <Link href={`${basePath}/${encodeURIComponent(trip.id)}`}>
+    <Link href={href}>
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow">
         <h3 className="font-semibold text-lg">{trip.locationName}</h3>
         {showOwner && trip.username && (

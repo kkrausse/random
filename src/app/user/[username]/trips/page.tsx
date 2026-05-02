@@ -6,6 +6,7 @@ import { sightings } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getUserByUsername } from "@/lib/users";
 import { computeTrips } from "@/lib/trips";
+import { userTripRoute } from "@/lib/routes";
 import TripCard from "@/components/TripCard";
 import TripsMap from "@/components/TripsMap";
 
@@ -49,7 +50,11 @@ async function UserTripsContent({
           <TripsMap trips={trips} basePath={`/user/${username}/trips`} />
           <div className="space-y-3 mt-6">
             {trips.map((trip) => (
-              <TripCard key={trip.id} trip={trip} basePath={`/user/${username}/trips`} />
+              <TripCard
+                key={trip.id}
+                trip={trip}
+                href={userTripRoute(username, trip.id)}
+              />
             ))}
           </div>
         </>

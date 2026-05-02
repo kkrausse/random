@@ -7,6 +7,7 @@ import { sightings, photos } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import EditForm from "./EditForm";
 import Loading from "./loading";
+import { signInRoute } from "@/lib/routes";
 
 export default function EditSightingPage({
   params,
@@ -27,7 +28,7 @@ async function EditSightingContent({
 }) {
   await connection();
   const { userId } = await auth();
-  if (!userId) redirect("/sign-in");
+  if (!userId) redirect(signInRoute);
 
   const { id } = await params;
   const sighting = await db

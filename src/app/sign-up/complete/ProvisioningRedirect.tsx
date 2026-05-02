@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
+import { signInRoute, userRoute } from "@/lib/routes";
 
 type MeResponse = {
   username: string;
@@ -22,7 +23,7 @@ export default function ProvisioningRedirect() {
     if (!isLoaded) return;
 
     if (!isSignedIn) {
-      router.replace("/sign-in");
+      router.replace(signInRoute);
       return;
     }
 
@@ -37,12 +38,12 @@ export default function ProvisioningRedirect() {
 
         if (response.ok) {
           const user = (await response.json()) as MeResponse;
-          router.replace(`/user/${user.username}`);
+          router.replace(userRoute(user.username));
           return;
         }
 
         if (response.status === 401) {
-          router.replace("/sign-in");
+          router.replace(signInRoute);
           return;
         }
       } catch {

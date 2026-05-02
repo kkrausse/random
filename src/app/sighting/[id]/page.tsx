@@ -7,6 +7,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import DeleteButton from "@/components/DeleteButton";
+import { userRoute } from "@/lib/routes";
 import Loading from "./loading";
 
 export default function SightingDetailPage({
@@ -98,7 +99,7 @@ async function SightingDetailContent({
           </Link>
           <DeleteButton
             sightingId={sighting.id}
-            redirectHref={`/user/${username}`}
+            redirectHref={userRoute(username)}
           />
         </div>
       )}
