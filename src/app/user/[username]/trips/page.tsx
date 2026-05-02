@@ -46,7 +46,7 @@ async function UserTripsContent({
         <p className="text-gray-500">No trips yet.</p>
       ) : (
         <>
-          <TripsMap trips={trips} />
+          <TripsMap trips={trips} basePath={`/user/${username}/trips`} />
           <div className="space-y-3 mt-6">
             {trips.map((trip) => (
               <TripCard key={trip.id} trip={trip} basePath={`/user/${username}/trips`} />

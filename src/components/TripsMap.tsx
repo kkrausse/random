@@ -15,9 +15,10 @@ interface Trip {
 
 interface Props {
   trips: Trip[];
+  basePath: string;
 }
 
-function TripsMapInner({ trips }: Props) {
+function TripsMapInner({ trips, basePath }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const leafletRef = useRef<typeof L | null>(null);
@@ -50,7 +51,7 @@ function TripsMapInner({ trips }: Props) {
       }).addTo(map);
 
       mapRef.current = map;
-      addMarkers(Leaf, map, trips);
+      addMarkers(Leaf, map, trips, basePath);
     });
 
     return () => {
@@ -73,9 +74,9 @@ function TripsMapInner({ trips }: Props) {
       }
     });
 
-    addMarkers(Leaf, map, trips);
+    addMarkers(Leaf, map, trips, basePath);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trips]);
+  }, [trips, basePath]);
 
   return (
     <div
@@ -86,7 +87,7 @@ function TripsMapInner({ trips }: Props) {
   );
 }
 
-function addMarkers(Leaf: typeof L, map: L.Map, trips: Trip[]) {
+function addMarkers(Leaf: typeof L, map: L.Map, trips: Trip[], basePath: string) {
   if (trips.length === 0) return;
 
   const bounds = Leaf.latLngBounds([]);
@@ -97,7 +98,7 @@ function addMarkers(Leaf: typeof L, map: L.Map, trips: Trip[]) {
         : `${trip.startDate} – ${trip.endDate}`;
     const marker = Leaf.marker([trip.lat, trip.lng]).addTo(map);
     marker.bindPopup(
-      `<strong>${trip.locationName}</strong><br/>${label}<br/>${trip.speciesCount} species<br/><a href="/trips/${encodeURIComponent(trip.id)}" style="color:#166534;font-weight:600;">View trip →</a>`
+      `<strong>${trip.locationName}</strong><br/>${label}<br/>${trip.speciesCount} species<br/><a href="${basePath}/${encodeURIComponent(trip.id)}" style="color:#166534;font-weight:600;">View trip →</a>`
     );
     marker.on("click", () => {
       marker.openPopup();

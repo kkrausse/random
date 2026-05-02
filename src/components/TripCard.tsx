@@ -13,11 +13,11 @@ interface Trip {
 
 export default function TripCard({
   trip,
-  basePath = "/trips",
+  basePath,
   showOwner = false,
 }: {
   trip: Trip;
-  basePath?: string;
+  basePath: string;
   showOwner?: boolean;
 }) {
   const dateLabel =

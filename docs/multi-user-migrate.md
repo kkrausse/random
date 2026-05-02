@@ -86,9 +86,9 @@ Each item is a discrete, AI-agent-sized task. Do them roughly top-to-bottom — 
 
 ## 10. Cleanup
 
-- [ ] Remove the old `/trips` and `/trips/[id]` page files once the user-scoped versions and redirects are stable.
-- [ ] Update `docs/site-layout.md` to delete the old "current" diagram/table and promote "Proposed layout (multi-user)" to be the only documented layout.
-- [ ] Update `README.md` (and `AGENTS.md` if it references routes) to reflect the new URL structure.
+- [x] Remove the old `/trips` and `/trips/[id]` page files once the user-scoped versions and redirects are stable.
+- [x] Update `docs/site-layout.md` to delete the old "current" diagram/table and promote "Proposed layout (multi-user)" to be the only documented layout.
+- [x] Update `README.md` (and `AGENTS.md` if it references routes) to reflect the new URL structure.
 - [ ] Audit hardcoded `href="/"` usages — most should become `/user/[me]` or `/sighting/[id]` per the updated diagram in `docs/site-layout.md`.
 
 ---

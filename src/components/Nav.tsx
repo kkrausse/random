@@ -19,7 +19,7 @@ export default function Nav() {
 
   const username = user?.username;
   const profileHref = username ? `/user/${username}` : "/";
-  const tripsHref = username ? `/user/${username}/trips` : "/trips";
+  const tripsHref = username ? `/user/${username}/trips` : "/";
   const checklistHref = username ? `/user/${username}/checklist` : "/checklist";
 
   const signedInLinks = [
