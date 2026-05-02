@@ -26,7 +26,7 @@ Each item is a discrete, AI-agent-sized task. Do them roughly top-to-bottom — 
 
 ## 3. Routing — new pages
 
-- [ ] Create `src/app/user/[username]/page.tsx` — User Home. Fetch the user, render header (display name, lifer count, trip count, edit-profile link if viewer is the user), then a `PhotoGrid` filtered to that user's sightings.
+- [x] Create `src/app/user/[username]/page.tsx` — User Home. Fetch the user, render header (display name, lifer count, trip count, edit-profile link if viewer is the user), then a `PhotoGrid` filtered to that user's sightings.
 - [ ] Create `src/app/user/[username]/trips/page.tsx` — User Trips. Mirrors current `src/app/trips/page.tsx` but filters trips by `userId`.
 - [ ] Create `src/app/user/[username]/trips/[tripId]/page.tsx` — User Trip Detail. Mirrors current `src/app/trips/[id]/page.tsx` but scoped to user.
 - [ ] Create `src/app/user/[username]/checklist/page.tsx` — Personal Checklist. Mirrors current `src/app/checklist/page.tsx` but `seenCodes` is built from that user's sightings only. Add a "Switch to site-wide list" link → `/checklist`.
