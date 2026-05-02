@@ -1,0 +1,50 @@
+import { db } from "@/db";
+import { sightings, photos } from "@/db/schema";
+import { desc } from "drizzle-orm";
+import { connection } from "next/server";
+import PhotoGrid from "./PhotoGrid";
+
+export default async function PhotoGridLoader() {
+  // Opt this component out of static prerendering so it always
+  // fetches fresh data at request time while the page shell stays static.
+  await connection();
+
+  const allSightings = await db
+    .select()
+    .from(sightings)
+    .orderBy(desc(sightings.date), desc(sightings.createdAt));
+
+  const allPhotos = await db.select().from(photos);
+  const photoMap = new Map<number, typeof allPhotos>();
+  for (const p of allPhotos) {
+    const list = photoMap.get(p.sightingId) ?? [];
+    list.push(p);
+    photoMap.set(p.sightingId, list);
+  }
+
+  const photoItems = allSightings.flatMap((s) => {
+    const sPhotos = photoMap.get(s.id) ?? [];
+    return sPhotos.map((p) => ({
+      sightingId: s.id,
+      species: s.species,
+      date: s.date,
+      locationName: s.locationName,
+      photoFilename: p.filename,
+      width: p.width ?? undefined,
+      height: p.height ?? undefined,
+    }));
+  });
+
+  if (photoItems.length === 0) {
+    return (
+      <div className="text-center py-20 text-gray-500">
+        <p className="text-lg mb-2">No photos yet.</p>
+        <a href="/add" className="text-green-600 hover:underline">
+          Log a sighting with a photo to fill up your gallery!
+        </a>
+      </div>
+    );
+  }
+
+  return <PhotoGrid items={photoItems} />;
+}
