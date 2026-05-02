@@ -39,12 +39,12 @@ export default function TripsPage() {
         <p className="text-gray-500">No trips yet.</p>
       ) : (
         <>
-          <div className="space-y-3 mb-6">
+          <TripsMap trips={trips} />
+          <div className="space-y-3 mt-6">
             {trips.map((trip) => (
               <TripCard key={trip.id} trip={trip} />
             ))}
           </div>
-          <TripsMap trips={trips} />
         </>
       )}
     </div>
