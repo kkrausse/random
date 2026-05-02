@@ -28,6 +28,8 @@ export default async function HomePage() {
       date: s.date,
       locationName: s.locationName,
       photoFilename: p.filename,
+      width: p.width ?? undefined,
+      height: p.height ?? undefined,
     }));
   });
 

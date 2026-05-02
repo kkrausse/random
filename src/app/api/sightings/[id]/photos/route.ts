@@ -6,6 +6,7 @@ import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { v4 as uuid } from "uuid";
 import { auth } from "@clerk/nextjs/server";
+import { imageSize } from "image-size";
 
 export async function POST(
   req: NextRequest,
@@ -49,9 +50,20 @@ export async function POST(
     const filename = `${uuid()}.${ext}`;
     const buffer = Buffer.from(await file.arrayBuffer());
     await writeFile(path.join(uploadDir, filename), buffer);
+
+    let width: number | undefined;
+    let height: number | undefined;
+    try {
+      const dims = imageSize(buffer);
+      width = dims.width;
+      height = dims.height;
+    } catch {
+      // ignore dimension extraction errors
+    }
+
     const [photo] = await db
       .insert(photos)
-      .values({ sightingId, filename })
+      .values({ sightingId, filename, width, height })
       .returning();
     newPhotos.push(photo);
   }

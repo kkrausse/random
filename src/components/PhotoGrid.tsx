@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 
 interface PhotoItem {
   sightingId: number;
@@ -9,12 +9,22 @@ interface PhotoItem {
   date: string;
   locationName: string;
   photoFilename: string;
+  width?: number;
+  height?: number;
 }
 
 interface Dim { w: number; h: number }
 
 const TARGET_HEIGHT = 220;
 const GAP = 4;
+const DEFAULT_ASPECT_RATIO = 1.5;
+
+function getDim(item: PhotoItem): Dim | null {
+  if (item.width && item.height) {
+    return { w: item.width, h: item.height };
+  }
+  return null;
+}
 
 function buildRows(
   items: PhotoItem[],
@@ -38,7 +48,7 @@ function buildRows(
 
   for (let i = 0; i < items.length; i++) {
     const d = dims[i];
-    const ar = d ? d.w / d.h : 1;
+    const ar = d ? d.w / d.h : DEFAULT_ASPECT_RATIO;
     const scaledW = ar * TARGET_HEIGHT;
     const usedW = currentRow.reduce((s, r) => s + r.ar * TARGET_HEIGHT, 0);
     const gaps = currentRow.length * GAP;
@@ -53,8 +63,47 @@ function buildRows(
   return rows;
 }
 
+function PhotoBox({
+  item,
+  width,
+  height,
+  priority,
+}: {
+  item: PhotoItem;
+  width: number;
+  height: number;
+  priority?: boolean;
+}) {
+  const [loaded, setLoaded] = useState(false);
+
+  return (
+    <Link
+      href={`/sighting/${item.sightingId}`}
+      className="relative block group overflow-hidden rounded-sm flex-none bg-gray-100"
+      style={{ width, height }}
+    >
+      {!loaded && (
+        <div className="absolute inset-0 bg-gray-200 animate-pulse" />
+      )}
+      <img
+        src={`/api/uploads/${item.photoFilename}`}
+        alt={item.species}
+        className={`w-full h-full object-cover transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"}`}
+        onLoad={() => setLoaded(true)}
+        loading={priority ? "eager" : "lazy"}
+        fetchPriority={priority ? "high" : "low"}
+        decoding={priority ? "sync" : "async"}
+      />
+      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
+        <p className="text-white font-semibold text-sm">{item.species}</p>
+        <p className="text-white/80 text-xs">{item.date}</p>
+        <p className="text-white/80 text-xs">{item.locationName}</p>
+      </div>
+    </Link>
+  );
+}
+
 export default function PhotoGrid({ items, singleColumn }: { items: PhotoItem[]; singleColumn?: boolean }) {
-  const [dims, setDims] = useState<(Dim | null)[]>(() => items.map(() => null));
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
 
@@ -68,56 +117,53 @@ export default function PhotoGrid({ items, singleColumn }: { items: PhotoItem[];
     return () => ro.disconnect();
   }, []);
 
-  useEffect(() => {
-    setDims(items.map(() => null));
-    const images: HTMLImageElement[] = [];
-    items.forEach((item, i) => {
-      const img = new window.Image();
-      images.push(img);
-      img.onload = () => {
-        setDims((prev) => {
-          const next = [...prev];
-          next[i] = { w: img.naturalWidth, h: img.naturalHeight };
-          return next;
-        });
-      };
-      img.src = `/api/uploads/${item.photoFilename}`;
-    });
-    return () => {
-      images.forEach((img) => { img.onload = null; });
-    };
-  }, [items]);
+  // Derive dimensions immediately from props — no need to load images
+  const dims = items.map(getDim);
 
-  const allLoaded = dims.every(Boolean);
   const rows =
-    allLoaded && containerWidth > 0
+    containerWidth > 0
       ? buildRows(items, dims, containerWidth)
       : null;
 
+  // Determine which images get priority loading (first ~6 items)
+  const getPriorityIndex = useCallback((itemIndex: number) => {
+    if (!rows) return false;
+    let count = 0;
+    for (let r = 0; r < rows.length; r++) {
+      for (let c = 0; c < rows[r].length; c++) {
+        if (count >= 6) return false;
+        const idx = items.indexOf(rows[r][c].item);
+        if (idx === itemIndex) return true;
+        count++;
+      }
+    }
+    return false;
+  }, [rows, items]);
+
   if (singleColumn) {
+    if (containerWidth === 0) {
+      return (
+        <div ref={containerRef} className="w-full flex flex-col" style={{ gap: GAP }}>
+          {items.map((_, i) => (
+            <div key={i} className="w-full aspect-[4/3] bg-gray-200 animate-pulse rounded-sm" />
+          ))}
+        </div>
+      );
+    }
+
     return (
       <div ref={containerRef} className="w-full flex flex-col" style={{ gap: GAP }}>
         {items.map((item, i) => {
           const d = dims[i];
-          const height = d && containerWidth > 0 ? containerWidth / (d.w / d.h) : containerWidth * 0.75;
+          const height = d ? containerWidth / (d.w / d.h) : containerWidth * 0.75;
           return (
-            <Link
+            <PhotoBox
               key={`${item.sightingId}-${item.photoFilename}-${i}`}
-              href={`/sighting/${item.sightingId}`}
-              className="relative block group overflow-hidden rounded-sm flex-none"
-              style={{ width: containerWidth > 0 ? containerWidth : "100%", height: containerWidth > 0 ? height : "auto" }}
-            >
-              <img
-                src={`/api/uploads/${item.photoFilename}`}
-                alt={item.species}
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
-                <p className="text-white font-semibold text-sm">{item.species}</p>
-                <p className="text-white/80 text-xs">{item.date}</p>
-                <p className="text-white/80 text-xs">{item.locationName}</p>
-              </div>
-            </Link>
+              item={item}
+              width={containerWidth}
+              height={height}
+              priority={i < 3}
+            />
           );
         })}
       </div>
@@ -133,25 +179,18 @@ export default function PhotoGrid({ items, singleColumn }: { items: PhotoItem[];
             className="flex"
             style={{ gap: GAP, marginBottom: ri < rows.length - 1 ? GAP : 0 }}
           >
-            {row.map(({ item, width, height }, ci) => (
-              <Link
-                key={`${item.sightingId}-${item.photoFilename}-${ci}`}
-                href={`/sighting/${item.sightingId}`}
-                className="relative block group overflow-hidden rounded-sm flex-none"
-                style={{ width, height }}
-              >
-                <img
-                  src={`/api/uploads/${item.photoFilename}`}
-                  alt={item.species}
-                  className="w-full h-full object-cover"
+            {row.map(({ item, width, height }, ci) => {
+              const itemIndex = items.indexOf(item);
+              return (
+                <PhotoBox
+                  key={`${item.sightingId}-${item.photoFilename}-${ci}`}
+                  item={item}
+                  width={width}
+                  height={height}
+                  priority={getPriorityIndex(itemIndex)}
                 />
-                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
-                  <p className="text-white font-semibold text-sm">{item.species}</p>
-                  <p className="text-white/80 text-xs">{item.date}</p>
-                  <p className="text-white/80 text-xs">{item.locationName}</p>
-                </div>
-              </Link>
-            ))}
+              );
+            })}
           </div>
         ))
       ) : (

@@ -21,6 +21,8 @@ export const photos = sqliteTable("photos", {
     .notNull()
     .references(() => sightings.id, { onDelete: "cascade" }),
   filename: text("filename").notNull(),
+  width: integer("width"),
+  height: integer("height"),
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
