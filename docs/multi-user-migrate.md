@@ -22,7 +22,7 @@ Each item is a discrete, AI-agent-sized task. Do them roughly top-to-bottom — 
 - [x] `GET /api/trips` (`src/app/api/trips/route.ts`): accept an optional `userId` query param and filter sightings before passing to `computeTrips`.
 - [x] `GET /api/search` (`src/app/api/search/route.ts`): accept an optional `userId` query param and add the filter. Default remains site-wide.
 - [x] Add a new `GET /api/users/[username]` route returning `{ id, username, displayName, lifeListCount, tripCount, sightingCount }`. Computes counts via SQL.
-- [ ] Add a new `GET /api/users` route returning a list of users with basic stats (powers the optional `/users` directory page). Sort by recent activity by default.
+- [x] Add a new `GET /api/users` route returning a list of users with basic stats (powers the optional `/users` directory page). Sort by recent activity by default.
 
 ## 3. Routing — new pages
 
