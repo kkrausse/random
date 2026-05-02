@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { db } from "@/db";
-import { sightings, photos } from "@/db/schema";
+import { sightings, photos, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -32,12 +32,19 @@ async function SightingDetailContent({
   const sightingId = Number(id);
   if (isNaN(sightingId)) notFound();
 
-  const [sighting] = await db
-    .select()
+  const [sightingRow] = await db
+    .select({
+      sighting: sightings,
+      username: users.username,
+      displayName: users.displayName,
+    })
     .from(sightings)
+    .innerJoin(users, eq(sightings.userId, users.id))
     .where(eq(sightings.id, sightingId));
 
-  if (!sighting) notFound();
+  if (!sightingRow) notFound();
+
+  const { sighting, username, displayName } = sightingRow;
 
   const sightingPhotos = await db
     .select()
@@ -47,10 +54,17 @@ async function SightingDetailContent({
   return (
     <main className="p-6 max-w-2xl mx-auto">
       <Link href="/" className="text-blue-600 hover:underline text-sm">
-        &larr; Back
+        &larr; Back to Explore
       </Link>
 
       <h1 className="text-2xl font-bold mt-3 mb-1">{sighting.species}</h1>
+      <Link
+        href={`/user/${username}`}
+        className="text-sm text-blue-600 hover:underline"
+      >
+        by @{username}
+        <span className="sr-only"> ({displayName})</span>
+      </Link>
       <p className="text-sm text-gray-500 mb-1">{sighting.date}</p>
       <p className="text-sm text-gray-600 mb-1">{sighting.locationName}</p>
       <p className="text-xs text-gray-400 mb-4">
