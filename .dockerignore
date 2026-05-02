@@ -1,0 +1,8 @@
+node_modules
+.next
+data
+uploads
+.env*
+*.md
+drizzle
+scripts
