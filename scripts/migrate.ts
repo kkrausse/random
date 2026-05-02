@@ -14,7 +14,9 @@ mkdirSync(path.dirname(dbPath), { recursive: true });
 
 const sqlite = new Database(dbPath);
 sqlite.run("PRAGMA journal_mode = WAL;");
-sqlite.run("PRAGMA foreign_keys = ON;");
+// Don't set foreign_keys=ON here — migrations run inside a transaction where
+// PRAGMA foreign_keys cannot be changed. The app (src/db/index.ts) sets it ON
+// for normal operation. Each migration manages its own FK state via PRAGMA statements.
 
 const db = drizzle(sqlite);
 

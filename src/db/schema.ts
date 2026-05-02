@@ -18,7 +18,10 @@ export const sightings = sqliteTable("sightings", {
   lng: real("lng").notNull(),
   locationName: text("location_name").notNull(),
   notes: text("notes").default(""),
-  userId: text("user_id").notNull(),
+  // onDelete cascade: deleting a user removes all their sightings
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
