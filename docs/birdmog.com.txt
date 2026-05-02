@@ -32,4 +32,8 @@ birdmog.com.	86400	IN	NS	drake.ns.cloudflare.com.
 
 ;; CNAME Records
 birdmog.com.	1	IN	CNAME	1dbd3a1f-b625-49cb-bbd0-d8480f68d5df.cfargotunnel.com. ; cf_tags=cf-proxied:true
+accounts.birdmog.com.	1	IN	CNAME	accounts.clerk.services. ; cf_tags=cf-proxied:false
 clerk.birdmog.com.	1	IN	CNAME	frontend-api.clerk.services. ; cf_tags=cf-proxied:false
+clk._domainkey.birdmog.com.	1	IN	CNAME	dkim1.2f70ly86iyu4.clerk.services. ; cf_tags=cf-proxied:false
+clk2._domainkey.birdmog.com.	1	IN	CNAME	dkim2.2f70ly86iyu4.clerk.services. ; cf_tags=cf-proxied:false
+clkmail.birdmog.com.	1	IN	CNAME	mail.2f70ly86iyu4.clerk.services. ; cf_tags=cf-proxied:false
