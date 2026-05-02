@@ -51,7 +51,7 @@ Each item is a discrete, AI-agent-sized task. Do them roughly top-to-bottom — 
   - Signed out: **Explore · Checklist · Search · Sign In**
   - Signed in: **Explore · My Profile · My Trips · My Checklist · Search · Add**
 - [x] In the signed-in nav, resolve "My Profile / My Trips / My Checklist" hrefs against the current user's username. Fetch username via a small client hook that calls `/api/users/me` (new endpoint) or via Clerk's `useUser()` + a `username` value mirrored from Clerk.
-- [ ] Add `GET /api/users/me` returning the signed-in user's row from the `users` table (404/401 if not signed in or not yet provisioned).
+- [x] Add `GET /api/users/me` returning the signed-in user's row from the `users` table (404/401 if not signed in or not yet provisioned).
 
 ## 6. Components — surface usernames
 
