@@ -4,6 +4,8 @@ import { SignUp } from "@clerk/nextjs";
 
 async function SignUpWrapper() {
   await connection();
+  // Clerk must be configured to collect/require username during sign-up.
+  // The app mirrors Clerk's authoritative username into users for public URLs.
   return <SignUp forceRedirectUrl="/sign-up/complete" />;
 }
 

@@ -24,6 +24,6 @@ function getDb(): DB {
 
 export const db = new Proxy({} as DB, {
   get(_, prop: string | symbol) {
-    return (getDb() as any)[prop];
+    return Reflect.get(getDb() as object, prop);
   },
 });

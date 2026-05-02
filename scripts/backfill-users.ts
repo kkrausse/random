@@ -4,8 +4,9 @@ import { createClerkClient } from "@clerk/nextjs/server";
 import { sql } from "drizzle-orm";
 import * as schema from "../src/db/schema";
 import {
+  type ClerkUserMirrorSource,
+  deriveAvailableMirroredUsername,
   deriveMirroredDisplayName,
-  deriveMirroredUsername,
 } from "../src/lib/clerk-user-mirror";
 import path from "path";
 
@@ -51,40 +52,29 @@ for (const { userId } of rows) {
 
   let username: string | null = null;
   let displayName: string;
+  let source: ClerkUserMirrorSource = { id: userId, username: null };
 
   try {
     const clerkUser = await clerk.users.getUser(userId);
-    username = deriveMirroredUsername({
+    source = {
       id: clerkUser.id,
       username: clerkUser.username,
       firstName: clerkUser.firstName,
       lastName: clerkUser.lastName,
-    });
-    displayName = deriveMirroredDisplayName({
-      id: clerkUser.id,
-      username: clerkUser.username,
-      firstName: clerkUser.firstName,
-      lastName: clerkUser.lastName,
-    });
+    };
+    displayName = deriveMirroredDisplayName(source);
   } catch {
     console.warn(`  ${userId}: Clerk lookup failed, using placeholder`);
-    username = deriveMirroredUsername({ id: userId, username: null });
     displayName = `birder-${userId.slice(-6)}`;
   }
 
-  // ensure uniqueness for derived username
-  const base = username;
-  let suffix = 0;
-  while (true) {
-    const conflict = db
+  username = await deriveAvailableMirroredUsername(source, (candidate) => {
+    return Boolean(db
       .select({ id: schema.users.id })
       .from(schema.users)
-      .where(sql`lower(${schema.users.username}) = lower(${username})`)
-      .get();
-    if (!conflict) break;
-    suffix++;
-    username = `${base}${suffix}`;
-  }
+      .where(sql`lower(${schema.users.username}) = lower(${candidate})`)
+      .get());
+  });
 
   db.insert(schema.users)
     .values({ id: userId, username, displayName })

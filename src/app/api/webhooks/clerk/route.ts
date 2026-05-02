@@ -3,9 +3,10 @@ import { Webhook } from "svix";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import {
+  deriveAvailableMirroredUsername,
   deriveMirroredDisplayName,
-  deriveMirroredUsername,
 } from "@/lib/clerk-user-mirror";
+import { and, ne, sql } from "drizzle-orm";
 
 type ClerkUserEventData = {
   id: string;
@@ -50,11 +51,19 @@ export async function POST(req: NextRequest) {
   }
 
   const { data } = event;
-  // Clerk is authoritative for username/displayName. This route only mirrors those
+  // Clerk is authoritative for username/displayName. This route mirrors those
   // account fields into the app DB so joins and public profile URLs can resolve locally.
-  // If Clerk has no username, use a temporary id-derived URL-safe fallback; configure
-  // Clerk sign-up to require usernames so the app does not own username selection.
-  const username = deriveMirroredUsername(data);
+  // If Clerk has no username, use the same temporary id-derived, collision-checked
+  // fallback as the backfill script. Configure Clerk sign-up to require usernames
+  // so normal profiles never depend on the fallback.
+  const username = await deriveAvailableMirroredUsername(data, async (candidate) => {
+    const rows = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(sql`lower(${users.username}) = lower(${candidate})`, ne(users.id, data.id)))
+      .limit(1);
+    return rows.length > 0;
+  });
   const displayName = deriveMirroredDisplayName(data);
 
   await db

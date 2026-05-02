@@ -3,11 +3,11 @@
 import { useEffect, useState, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import Link from "next/link";
-import { useUser } from "@clerk/nextjs";
 import { type Species } from "@/lib/fuzzy";
+import { useMirroredUser } from "@/lib/use-mirrored-user";
 
 export default function ChecklistPage() {
-  const { user } = useUser();
+  const { user } = useMirroredUser();
   const [allSpecies, setAllSpecies] = useState<Species[]>([]);
   const [seenCodes, setSeenCodes] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");

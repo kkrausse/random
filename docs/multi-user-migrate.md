@@ -68,9 +68,9 @@ Each item is a discrete, AI-agent-sized task. Do them roughly top-to-bottom — 
 - [x] Add `PUT /api/users/me` for app-owned profile fields only. Do **not** update `username`, `displayName`, email, or avatar locally from this route; those stay Clerk-managed and are mirrored by webhook.
 - [x] On signup completion (`user.created` webhook), mirror Clerk's `username` and display fields into `users`. If Clerk has no username, derive a temporary local fallback for URL safety, but prefer configuring Clerk sign-up to collect/require username so the app does not own username selection.
 - [x] After sign-up redirect: send users to their profile once `/api/users/me` can resolve their mirrored row. If the webhook has not arrived yet, handle the brief provisioning gap gracefully instead of guessing from Clerk client state alone.
-- [ ] Add a correction task for `src/components/Nav.tsx`: stop using `useUser().username` as the source for profile/trips/checklist hrefs. Fetch `/api/users/me` (or a small shared hook) so nav URLs use the mirrored row that the rest of the app uses.
-- [ ] Add a correction task for the Clerk webhook: make username derivation/normalization match the backfill script and protect against collisions when Clerk provides no username. Document that Clerk usernames remain authoritative when present.
-- [ ] Add a correction task for signup configuration: verify Clerk's sign-up flow asks for username, since that preserves the seamless signup experience while keeping usernames owned by Clerk.
+- [x] Add a correction task for `src/components/Nav.tsx`: stop using `useUser().username` as the source for profile/trips/checklist hrefs. Fetch `/api/users/me` (or a small shared hook) so nav URLs use the mirrored row that the rest of the app uses.
+- [x] Add a correction task for the Clerk webhook: make username derivation/normalization match the backfill script and protect against collisions when Clerk provides no username. Document that Clerk usernames remain authoritative when present.
+- [x] Add a correction task for signup configuration: verify Clerk's sign-up flow asks for username, since that preserves the seamless signup experience while keeping usernames owned by Clerk.
 
 ## 8. Authorization & ownership checks
 

@@ -3,7 +3,8 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { SignInButton, UserButton, useAuth, useUser } from "@clerk/nextjs";
+import { SignInButton, UserButton, useAuth } from "@clerk/nextjs";
+import { useMirroredUser } from "@/lib/use-mirrored-user";
 
 const publicLinks = [
   { href: "/", label: "Explore" },
@@ -14,7 +15,7 @@ const publicLinks = [
 export default function Nav() {
   const pathname = usePathname();
   const { isSignedIn } = useAuth();
-  const { user } = useUser();
+  const { user } = useMirroredUser();
 
   const username = user?.username;
   const profileHref = username ? `/user/${username}` : "/";

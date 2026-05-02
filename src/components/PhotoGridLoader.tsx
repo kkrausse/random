@@ -10,6 +10,16 @@ interface Props {
   emptyElement?: ReactNode;
 }
 
+function photoSortKey(item: { sightingId: number; photoFilename: string }) {
+  const value = `${item.sightingId}:${item.photoFilename}`;
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
 export default async function PhotoGridLoader({ userId, emptyElement }: Props = {}) {
   // Opt this component out of static prerendering so it always
   // fetches fresh data at request time while the page shell stays static.
@@ -56,11 +66,7 @@ export default async function PhotoGridLoader({ userId, emptyElement }: Props = 
     }));
   });
 
-  // Shuffle photos randomly
-  for (let i = photoItems.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [photoItems[i], photoItems[j]] = [photoItems[j], photoItems[i]];
-  }
+  photoItems.sort((a, b) => photoSortKey(a) - photoSortKey(b));
 
   if (photoItems.length === 0) {
     return emptyElement ?? (
