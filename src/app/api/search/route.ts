@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, connection } from "next/server";
 import { db } from "@/db";
 import { sightings, photos } from "@/db/schema";
-import { or, like, desc } from "drizzle-orm";
+import { and, or, eq, like, desc } from "drizzle-orm";
 
 export async function GET(req: NextRequest) {
   await connection();
@@ -9,15 +9,19 @@ export async function GET(req: NextRequest) {
   if (q.length < 1) {
     return NextResponse.json([]);
   }
+  const userId = req.nextUrl.searchParams.get("userId");
 
   const rows = await db
     .select()
     .from(sightings)
     .where(
-      or(
-        like(sightings.species, `%${q}%`),
-        like(sightings.notes, `%${q}%`),
-        like(sightings.locationName, `%${q}%`)
+      and(
+        userId ? eq(sightings.userId, userId) : undefined,
+        or(
+          like(sightings.species, `%${q}%`),
+          like(sightings.notes, `%${q}%`),
+          like(sightings.locationName, `%${q}%`)
+        )
       )
     )
     .orderBy(desc(sightings.date));
