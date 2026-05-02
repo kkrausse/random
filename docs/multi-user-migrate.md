@@ -63,8 +63,9 @@ Each item is a discrete, AI-agent-sized task. Do them roughly top-to-bottom — 
 ## 7. Profile management
 
 - [ ] Keep Clerk authoritative for `username` and profile display fields. The local `users` table is a DB mirror used for joins and public `/user/[username]` URLs, not the source of truth.
-- [ ] Replace the planned local "Edit Profile" form with a Clerk account/profile management affordance from `src/app/user/[username]/edit/page.tsx` (only accessible to the user themselves). It should route users to Clerk-managed profile settings or embed Clerk's user profile component if that fits the app shell.
-- [ ] Do **not** add a local `PUT /api/users/me` username/display-name update route unless it also updates Clerk first via Clerk's backend SDK and treats the webhook mirror as the final synced state.
+- [ ] Add app-owned profile fields to `users` as needed for the edit page, starting with `bio` (nullable text). Keep these separate from Clerk-owned account fields.
+- [ ] Add an "Edit Profile" page at `src/app/user/[username]/edit/page.tsx` (only accessible to the user themselves). The form edits app-owned fields only (initially `bio`) and includes a separate "Account settings" link/affordance for Clerk-managed fields like username, display name, email, avatar, and password/social login.
+- [ ] Add `PUT /api/users/me` for app-owned profile fields only. Do **not** update `username`, `displayName`, email, or avatar locally from this route; those stay Clerk-managed and are mirrored by webhook.
 - [ ] On signup completion (`user.created` webhook), mirror Clerk's `username` and display fields into `users`. If Clerk has no username, derive a temporary local fallback for URL safety, but prefer configuring Clerk sign-up to collect/require username so the app does not own username selection.
 - [ ] After sign-up redirect: send users to their profile once `/api/users/me` can resolve their mirrored row. If the webhook has not arrived yet, handle the brief provisioning gap gracefully instead of guessing from Clerk client state alone.
 - [ ] Add a correction task for `src/components/Nav.tsx`: stop using `useUser().username` as the source for profile/trips/checklist hrefs. Fetch `/api/users/me` (or a small shared hook) so nav URLs use the mirrored row that the rest of the app uses.
@@ -74,7 +75,7 @@ Each item is a discrete, AI-agent-sized task. Do them roughly top-to-bottom — 
 ## 8. Authorization & ownership checks
 
 - [ ] Confirm `PUT /api/sightings/[id]` and `DELETE /api/sightings/[id]` still enforce ownership (already do — verify nothing was broken by the user-table join changes).
-- [ ] Lock the profile edit/settings page behind auth; reject attempts to edit a different user.
+- [ ] Lock `PUT /api/users/me` and the profile edit/settings page behind auth; reject attempts to edit a different user.
 - [ ] Add a guard helper `assertOwnUser(usernameParam)` used by `/user/[username]/edit` to redirect to the public profile if a non-owner hits the edit URL.
 
 ## 9. Backfill & data integrity

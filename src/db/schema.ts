@@ -4,6 +4,7 @@ export const users = sqliteTable("users", {
   id: text("id").primaryKey(), // Clerk user id
   username: text("username").notNull().unique(),
   displayName: text("display_name").notNull(),
+  bio: text("bio"),
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
