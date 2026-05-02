@@ -9,6 +9,7 @@ export const sightings = sqliteTable("sightings", {
   lng: real("lng").notNull(),
   locationName: text("location_name").notNull(),
   notes: text("notes").default(""),
+  userId: text("user_id").notNull(),
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),

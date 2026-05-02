@@ -118,6 +118,7 @@ The `.env.example` file (committed) is the canonical list of required variables.
 
 1. **Find your Clerk user ID**
    - Sign in locally, open the Clerk dashboard or use `auth()` in a debug route to print your user ID. It looks like `user_2abc...`.
+   update: user id is: user_3D9D3ptRBElQEoJ2sW9Sg6Qjjgt
 
 2. **Add `userId` to the schema** (`src/db/schema.ts`)
    - Add `userId: text('user_id').notNull()` to the `sightings` table.
