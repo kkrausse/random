@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+import { connection } from "next/server";
 import { db } from "@/db";
 import { sightings, photos } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -5,14 +7,26 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import DeleteButton from "@/components/DeleteButton";
+import Loading from "./loading";
 
-export const dynamic = "force-dynamic";
-
-export default async function SightingDetailPage({
+export default function SightingDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
+  return (
+    <Suspense fallback={<Loading />}>
+      <SightingDetailContent params={params} />
+    </Suspense>
+  );
+}
+
+async function SightingDetailContent({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  await connection();
   const { userId } = await auth();
   const { id } = await params;
   const sightingId = Number(id);

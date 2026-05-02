@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, connection } from "next/server";
 import { db } from "@/db";
 import { sightings, photos } from "@/db/schema";
 import { desc, eq, and, gte, lte, like } from "drizzle-orm";
@@ -9,6 +9,7 @@ import { auth } from "@clerk/nextjs/server";
 import { imageSize } from "image-size";
 
 export async function GET(req: NextRequest) {
+  await connection();
   const url = req.nextUrl;
   const species = url.searchParams.get("species");
   const from = url.searchParams.get("from");

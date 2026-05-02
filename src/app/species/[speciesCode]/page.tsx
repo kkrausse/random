@@ -1,16 +1,30 @@
+import { Suspense } from "react";
+import { connection } from "next/server";
 import { db } from "@/db";
 import { sightings, photos } from "@/db/schema";
 import { eq, desc, inArray } from "drizzle-orm";
 import PhotoGrid from "@/components/PhotoGrid";
 import Link from "next/link";
+import Loading from "./loading";
 
-export const dynamic = "force-dynamic";
-
-export default async function SpeciesPage({
+export default function SpeciesPage({
   params,
 }: {
   params: Promise<{ speciesCode: string }>;
 }) {
+  return (
+    <Suspense fallback={<Loading />}>
+      <SpeciesContent params={params} />
+    </Suspense>
+  );
+}
+
+async function SpeciesContent({
+  params,
+}: {
+  params: Promise<{ speciesCode: string }>;
+}) {
+  await connection();
   const { speciesCode } = await params;
   const speciesSightings = await db
     .select()

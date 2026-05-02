@@ -1,11 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, connection } from "next/server";
 import { db } from "@/db";
-
-export const dynamic = "force-dynamic";
 import { sightings, photos } from "@/db/schema";
 import { or, like, desc } from "drizzle-orm";
 
 export async function GET(req: NextRequest) {
+  await connection();
   const q = req.nextUrl.searchParams.get("q") || "";
   if (q.length < 1) {
     return NextResponse.json([]);

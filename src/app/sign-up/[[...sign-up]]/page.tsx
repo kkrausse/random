@@ -1,9 +1,18 @@
+import { Suspense } from 'react'
+import { connection } from 'next/server'
 import { SignUp } from '@clerk/nextjs'
+
+async function SignUpWrapper() {
+  await connection()
+  return <SignUp />
+}
 
 export default function SignUpPage() {
   return (
     <div className="flex justify-center pt-16">
-      <SignUp />
+      <Suspense>
+        <SignUpWrapper />
+      </Suspense>
     </div>
   )
 }
