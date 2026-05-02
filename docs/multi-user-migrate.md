@@ -31,7 +31,7 @@ Each item is a discrete, AI-agent-sized task. Do them roughly top-to-bottom — 
 - [x] Create `src/app/user/[username]/trips/[tripId]/page.tsx` — User Trip Detail. Mirrors current `src/app/trips/[id]/page.tsx` but scoped to user.
 - [x] Create `src/app/user/[username]/checklist/page.tsx` — Personal Checklist. Mirrors current `src/app/checklist/page.tsx` but `seenCodes` is built from that user's sightings only. Add a "Switch to site-wide list" link → `/checklist`.
 - [x] Create `src/app/user/[username]/species/[speciesCode]/page.tsx` — Per-User Species Detail. Shows the user's sightings of one species, lifer date, photos. Link "View all sightings on the site" → `/species/[code]`. Link "Back to my checklist" → `/user/[username]/checklist`.
-- [ ] (Optional, low priority) Create `src/app/users/page.tsx` — Birder Directory. Lists users from `GET /api/users`, sortable by lifer count / recent activity.
+- [x] (Optional, low priority) Create `src/app/users/page.tsx` — Birder Directory. Lists users from `GET /api/users`, sortable by lifer count / recent activity.
 
 ## 4. Routing — modify existing pages
 
