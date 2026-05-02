@@ -74,9 +74,9 @@ Each item is a discrete, AI-agent-sized task. Do them roughly top-to-bottom — 
 
 ## 8. Authorization & ownership checks
 
-- [ ] Confirm `PUT /api/sightings/[id]` and `DELETE /api/sightings/[id]` still enforce ownership (already do — verify nothing was broken by the user-table join changes).
-- [ ] Lock `PUT /api/users/me` and the profile edit/settings page behind auth; reject attempts to edit a different user.
-- [ ] Add a guard helper `assertOwnUser(usernameParam)` used by `/user/[username]/edit` to redirect to the public profile if a non-owner hits the edit URL.
+- [x] Confirm `PUT /api/sightings/[id]` and `DELETE /api/sightings/[id]` still enforce ownership (already do — verify nothing was broken by the user-table join changes).
+- [x] Lock `PUT /api/users/me` and the profile edit/settings page behind auth; reject attempts to edit a different user.
+- [x] Add a guard helper `assertOwnUser(usernameParam)` used by `/user/[username]/edit` to redirect to the public profile if a non-owner hits the edit URL.
 
 ## 9. Backfill & data integrity
 

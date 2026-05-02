@@ -1,7 +1,5 @@
 import { connection } from "next/server";
-import { notFound, redirect } from "next/navigation";
-import { auth } from "@clerk/nextjs/server";
-import { getUserByUsername } from "@/lib/users";
+import { assertOwnUser } from "@/lib/user-guards";
 import ProfileEditForm from "./ProfileEditForm";
 
 export default async function EditProfilePage({
@@ -10,19 +8,8 @@ export default async function EditProfilePage({
   params: Promise<{ username: string }>;
 }) {
   await connection();
-  const { userId } = await auth();
   const { username } = await params;
-
-  const user = await getUserByUsername(username);
-  if (!user) notFound();
-
-  if (!userId) {
-    redirect("/sign-in");
-  }
-
-  if (userId !== user.id) {
-    redirect(`/user/${user.username}`);
-  }
+  const user = await assertOwnUser(username);
 
   return (
     <main className="mx-auto max-w-2xl p-4">

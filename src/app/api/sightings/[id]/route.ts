@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, connection } from "next/server";
 import { db } from "@/db";
 import { sightings, photos } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { unlink } from "fs/promises";
 import path from "path";
 import { auth } from "@clerk/nextjs/server";
@@ -55,7 +55,12 @@ export async function PUT(
     const toDelete = await db
       .select()
       .from(photos)
-      .where(inArray(photos.id, removedPhotoIds));
+      .where(
+        and(
+          eq(photos.sightingId, existing.id),
+          inArray(photos.id, removedPhotoIds)
+        )
+      );
     for (const photo of toDelete) {
       try {
         await unlink(path.join(process.cwd(), "uploads", photo.filename));
@@ -63,7 +68,14 @@ export async function PUT(
         // File may already be deleted
       }
     }
-    await db.delete(photos).where(inArray(photos.id, removedPhotoIds));
+    await db
+      .delete(photos)
+      .where(
+        and(
+          eq(photos.sightingId, existing.id),
+          inArray(photos.id, removedPhotoIds)
+        )
+      );
   }
 
   const [updated] = await db
@@ -77,7 +89,7 @@ export async function PUT(
       locationName: body.locationName,
       notes: body.notes,
     })
-    .where(eq(sightings.id, parseInt(id)))
+    .where(and(eq(sightings.id, parseInt(id)), eq(sightings.userId, userId)))
     .returning();
 
   if (!updated) {
@@ -120,7 +132,7 @@ export async function DELETE(
 
   const [deleted] = await db
     .delete(sightings)
-    .where(eq(sightings.id, parseInt(id)))
+    .where(and(eq(sightings.id, parseInt(id)), eq(sightings.userId, userId)))
     .returning();
 
   if (!deleted) {
