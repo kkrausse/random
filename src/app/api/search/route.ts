@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
+
+export const dynamic = "force-dynamic";
 import { sightings, photos } from "@/db/schema";
 import { or, like, desc } from "drizzle-orm";
 
