@@ -80,9 +80,9 @@ Each item is a discrete, AI-agent-sized task. Do them roughly top-to-bottom — 
 
 ## 9. Backfill & data integrity
 
-- [ ] Run `db:backfill-users` against the existing local DB and verify every row in `sightings` has a matching row in `users`.
-- [ ] Add a unique index on `users.username` (case-insensitive if possible, otherwise normalize on write).
-- [ ] Sanity-check production / Pi deployment plan: webhook endpoint must be reachable through the Cloudflare tunnel, and `CLERK_WEBHOOK_SECRET` must be set in the production `.env`.
+- [x] Run `db:backfill-users` against the existing local DB and verify every row in `sightings` has a matching row in `users`.
+- [x] Add a unique index on `users.username` (case-insensitive if possible, otherwise normalize on write).
+- [x] Sanity-check production / Pi deployment plan: webhook endpoint must be reachable through the Cloudflare tunnel, and `CLERK_WEBHOOK_SECRET` must be set in the production `.env`.
 
 ## 10. Cleanup
 

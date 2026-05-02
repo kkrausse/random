@@ -17,11 +17,11 @@ nano .env
 
 ### 2. Migrate the database
 
-The SQLite DB lives in `./data/`. Run the schema push once before starting the container:
+The SQLite DB lives in `./data/`. Run migrations before starting the container:
 
 ```bash
 # Ensure bun is installed on the Pi, then:
-DATABASE_PATH=./data/bird-log.db bun run db:push
+DATABASE_PATH=./data/bird-log.db bun run db:migrate
 ```
 
 If the `./data/` directory doesn't exist yet, create it first:
@@ -70,7 +70,24 @@ docker compose up -d --build
 
 Data persists in `./data/` and `./uploads/` across rebuilds because they are bind-mounted volumes, not part of the image.
 
-If the schema changed, run `bun run db:push` again before restarting the container.
+If the schema changed, run `bun run db:migrate` again before restarting the container.
+
+---
+
+## Clerk webhooks
+
+Create a Clerk webhook endpoint in the Production environment that targets:
+
+```text
+https://yourdomain.com/api/webhooks/clerk
+```
+
+Subscribe it to `user.created` and `user.updated` events. Because the app runs
+behind the Cloudflare tunnel, confirm the public tunnel hostname routes to
+`localhost:3000` before testing the webhook.
+
+Copy the webhook signing secret from Clerk into production `.env` as
+`CLERK_WEBHOOK_SECRET`.
 
 ---
 
@@ -78,4 +95,5 @@ If the schema changed, run `bun run db:push` again before restarting the contain
 
 - Never commit `.env` (it's gitignored).
 - `.env.production.example` is the canonical list of required variables.
-- Clerk production keys live in the Clerk dashboard under the Production environment.
+- Clerk production keys and webhook signing secrets live in the Clerk dashboard
+  under the Production environment.

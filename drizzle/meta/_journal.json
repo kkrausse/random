@@ -43,6 +43,13 @@
       "when": 1777759767588,
       "tag": "0005_careless_doorman",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1777760958257,
+      "tag": "0006_real_frightful_four",
+      "breakpoints": true
     }
   ]
 }
