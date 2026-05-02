@@ -62,15 +62,19 @@ Each item is a discrete, AI-agent-sized task. Do them roughly top-to-bottom — 
 
 ## 7. Profile management
 
-- [ ] Add an "Edit Profile" page at `src/app/user/[username]/edit/page.tsx` (only accessible to the user themselves) — form for `displayName` and `username`. POSTs to `PUT /api/users/me`.
-- [ ] Add `PUT /api/users/me` API route that updates `displayName` and `username` (validate uniqueness on `username`).
-- [ ] On signup completion (Clerk webhook `user.created`), auto-pick a username from `clerkUser.username || clerkUser.firstName || 'birder' + shortId` and ensure uniqueness.
-- [ ] After sign-up redirect: send users to `/user/[me]` instead of `/` (configurable via Clerk's `afterSignUpUrl` or a router push in the sign-up page).
+- [ ] Keep Clerk authoritative for `username` and profile display fields. The local `users` table is a DB mirror used for joins and public `/user/[username]` URLs, not the source of truth.
+- [ ] Replace the planned local "Edit Profile" form with a Clerk account/profile management affordance from `src/app/user/[username]/edit/page.tsx` (only accessible to the user themselves). It should route users to Clerk-managed profile settings or embed Clerk's user profile component if that fits the app shell.
+- [ ] Do **not** add a local `PUT /api/users/me` username/display-name update route unless it also updates Clerk first via Clerk's backend SDK and treats the webhook mirror as the final synced state.
+- [ ] On signup completion (`user.created` webhook), mirror Clerk's `username` and display fields into `users`. If Clerk has no username, derive a temporary local fallback for URL safety, but prefer configuring Clerk sign-up to collect/require username so the app does not own username selection.
+- [ ] After sign-up redirect: send users to their profile once `/api/users/me` can resolve their mirrored row. If the webhook has not arrived yet, handle the brief provisioning gap gracefully instead of guessing from Clerk client state alone.
+- [ ] Add a correction task for `src/components/Nav.tsx`: stop using `useUser().username` as the source for profile/trips/checklist hrefs. Fetch `/api/users/me` (or a small shared hook) so nav URLs use the mirrored row that the rest of the app uses.
+- [ ] Add a correction task for the Clerk webhook: make username derivation/normalization match the backfill script and protect against collisions when Clerk provides no username. Document that Clerk usernames remain authoritative when present.
+- [ ] Add a correction task for signup configuration: verify Clerk's sign-up flow asks for username, since that preserves the seamless signup experience while keeping usernames owned by Clerk.
 
 ## 8. Authorization & ownership checks
 
 - [ ] Confirm `PUT /api/sightings/[id]` and `DELETE /api/sightings/[id]` still enforce ownership (already do — verify nothing was broken by the user-table join changes).
-- [ ] Lock `PUT /api/users/me` and the profile edit page behind auth; reject attempts to edit a different user.
+- [ ] Lock the profile edit/settings page behind auth; reject attempts to edit a different user.
 - [ ] Add a guard helper `assertOwnUser(usernameParam)` used by `/user/[username]/edit` to redirect to the public profile if a non-owner hits the edit URL.
 
 ## 9. Backfill & data integrity
