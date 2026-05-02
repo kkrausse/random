@@ -35,6 +35,12 @@ export default async function PhotoGridLoader() {
     }));
   });
 
+  // Shuffle photos randomly
+  for (let i = photoItems.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [photoItems[i], photoItems[j]] = [photoItems[j], photoItems[i]];
+  }
+
   if (photoItems.length === 0) {
     return (
       <div className="text-center py-20 text-gray-500">
