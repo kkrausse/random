@@ -38,7 +38,7 @@ Each item is a discrete, AI-agent-sized task. Do them roughly top-to-bottom — 
 - [x] Update `src/app/page.tsx` (Home → Explore): keep behavior (global photo grid) but rename in comments / heading copy if any to reflect "Explore". `PhotoGridLoader` already pulls every user's sightings, so likely no fetching change needed.
 - [x] Update `src/components/PhotoGridLoader.tsx` to accept an optional `userId` prop and pass it through to the DB query (`where(eq(sightings.userId, userId))` when set). Used by the user-scoped photo grid.
 - [x] Update `src/app/checklist/page.tsx` (Site-Wide Checklist): keep current behavior (counts species seen by *anyone*). Add a "Switch to my list" link → `/user/[me]/checklist` when signed in.
-- [ ] Update `src/app/species/[speciesCode]/page.tsx` (Site-Wide Species Detail): when viewer is signed in and has logged this species, render a "View my sightings" link → `/user/[me]/species/[speciesCode]`.
+- [x] Update `src/app/species/[speciesCode]/page.tsx` (Site-Wide Species Detail): when viewer is signed in and has logged this species, render a "View my sightings" link → `/user/[me]/species/[speciesCode]`.
 - [ ] Update `src/app/trips/page.tsx` to redirect: signed-in → `/user/[me]/trips`; signed-out → `/` (Explore). Or remove this route entirely once the redirect is in place.
 - [ ] Update `src/app/trips/[id]/page.tsx` similarly — redirect to the new user-scoped trip URL, OR remove and let users land on user-scoped trips only.
 - [ ] Update `src/app/sighting/[id]/page.tsx` (Sighting Detail): add a "by @username" link near the title that points to `/user/[username]`. Update the back-link target to `/` (Explore) instead of staying as Home.

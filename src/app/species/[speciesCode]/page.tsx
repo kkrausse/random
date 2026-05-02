@@ -1,11 +1,13 @@
 import { Suspense } from "react";
+import { auth } from "@clerk/nextjs/server";
 import { connection } from "next/server";
 import { db } from "@/db";
 import { sightings, photos } from "@/db/schema";
-import { eq, desc, inArray } from "drizzle-orm";
+import { eq, desc, inArray, and } from "drizzle-orm";
 import PhotoGrid from "@/components/PhotoGrid";
 import Link from "next/link";
 import Loading from "./loading";
+import { getUserById } from "@/lib/users";
 
 export default function SpeciesPage({
   params,
@@ -26,6 +28,8 @@ async function SpeciesContent({
 }) {
   await connection();
   const { speciesCode } = await params;
+  const { userId } = await auth();
+
   const speciesSightings = await db
     .select()
     .from(sightings)
@@ -59,6 +63,14 @@ async function SpeciesContent({
   });
 
   const speciesName = speciesSightings[0]?.species ?? speciesCode;
+  const viewer = userId ? await getUserById(userId) : null;
+  const viewerHasSeenSpecies = viewer
+    ? (await db
+        .select({ id: sightings.id })
+        .from(sightings)
+        .where(and(eq(sightings.userId, viewer.id), eq(sightings.speciesCode, speciesCode)))
+        .limit(1)).length > 0
+    : false;
 
   return (
     <div className="p-4 max-w-2xl mx-auto">
@@ -72,6 +84,14 @@ async function SpeciesContent({
         {speciesSightings.length} sighting{speciesSightings.length !== 1 ? "s" : ""}
         {photoItems.length > 0 ? `, ${photoItems.length} photo${photoItems.length !== 1 ? "s" : ""}` : ""}
       </p>
+      {viewer && viewerHasSeenSpecies && (
+        <Link
+          href={`/user/${viewer.username}/species/${speciesCode}`}
+          className="inline-block text-sm text-blue-600 hover:underline mb-4"
+        >
+          View my sightings
+        </Link>
+      )}
 
       {photoItems.length === 0 ? (
         <p className="text-gray-500 py-8 text-center">No photos for this species yet.</p>
