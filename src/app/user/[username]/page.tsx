@@ -4,11 +4,11 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { sightings, photos } from "@/db/schema";
-import { eq, desc, inArray } from "drizzle-orm";
+import { sightings } from "@/db/schema";
+import { eq, desc } from "drizzle-orm";
 import { getUserByUsername } from "@/lib/users";
 import { computeTrips } from "@/lib/trips";
-import PhotoGrid from "@/components/PhotoGrid";
+import PhotoGridLoader from "@/components/PhotoGridLoader";
 import PhotoGridSkeleton from "@/components/PhotoGridSkeleton";
 
 export default function UserHomePage({
@@ -43,40 +43,6 @@ async function UserHomeContent({
 
   const lifeListCount = new Set(userSightings.map((s) => s.speciesCode)).size;
   const tripCount = computeTrips(userSightings).length;
-
-  const sightingIds = userSightings.map((s) => s.id);
-  const userPhotos =
-    sightingIds.length > 0
-      ? await db
-          .select()
-          .from(photos)
-          .where(inArray(photos.sightingId, sightingIds))
-      : [];
-
-  const photoMap = new Map<number, typeof userPhotos>();
-  for (const p of userPhotos) {
-    const list = photoMap.get(p.sightingId) ?? [];
-    list.push(p);
-    photoMap.set(p.sightingId, list);
-  }
-
-  const photoItems = userSightings.flatMap((s) => {
-    const sPhotos = photoMap.get(s.id) ?? [];
-    return sPhotos.map((p) => ({
-      sightingId: s.id,
-      species: s.species,
-      date: s.date,
-      locationName: s.locationName,
-      photoFilename: p.filename,
-      width: p.width ?? undefined,
-      height: p.height ?? undefined,
-    }));
-  });
-
-  for (let i = photoItems.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [photoItems[i], photoItems[j]] = [photoItems[j], photoItems[i]];
-  }
 
   const isOwner = viewerId === user.id;
 
@@ -115,18 +81,16 @@ async function UserHomeContent({
         </div>
       </div>
 
-      {photoItems.length === 0 ? (
-        <div className="text-center py-20 text-gray-500">
-          <p className="text-lg mb-2">No photos yet.</p>
-          {isOwner && (
+      <Suspense fallback={<PhotoGridSkeleton />}>
+        <PhotoGridLoader userId={user.id} emptyElement={isOwner ? (
+          <div className="text-center py-20 text-gray-500">
+            <p className="text-lg mb-2">No photos yet.</p>
             <Link href="/add" className="text-green-600 hover:underline">
               Log a sighting with a photo!
             </Link>
-          )}
-        </div>
-      ) : (
-        <PhotoGrid items={photoItems} />
-      )}
+          </div>
+        ) : undefined} />
+      </Suspense>
     </div>
   );
 }

@@ -1,10 +1,16 @@
+import { ReactNode } from "react";
 import { db } from "@/db";
 import { sightings, photos } from "@/db/schema";
-import { desc } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { connection } from "next/server";
 import PhotoGrid from "./PhotoGrid";
 
-export default async function PhotoGridLoader() {
+interface Props {
+  userId?: string;
+  emptyElement?: ReactNode;
+}
+
+export default async function PhotoGridLoader({ userId, emptyElement }: Props = {}) {
   // Opt this component out of static prerendering so it always
   // fetches fresh data at request time while the page shell stays static.
   await connection();
@@ -12,9 +18,15 @@ export default async function PhotoGridLoader() {
   const allSightings = await db
     .select()
     .from(sightings)
+    .where(userId ? eq(sightings.userId, userId) : undefined)
     .orderBy(desc(sightings.date), desc(sightings.createdAt));
 
-  const allPhotos = await db.select().from(photos);
+  const sightingIds = allSightings.map((s) => s.id);
+  const allPhotos =
+    sightingIds.length > 0
+      ? await db.select().from(photos).where(inArray(photos.sightingId, sightingIds))
+      : [];
+
   const photoMap = new Map<number, typeof allPhotos>();
   for (const p of allPhotos) {
     const list = photoMap.get(p.sightingId) ?? [];
@@ -42,7 +54,7 @@ export default async function PhotoGridLoader() {
   }
 
   if (photoItems.length === 0) {
-    return (
+    return emptyElement ?? (
       <div className="text-center py-20 text-gray-500">
         <p className="text-lg mb-2">No photos yet.</p>
         <a href="/add" className="text-green-600 hover:underline">
