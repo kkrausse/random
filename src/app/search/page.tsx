@@ -17,6 +17,9 @@ interface Sighting {
   lng: number;
   locationName: string;
   notes: string | null;
+  userId: string;
+  username: string;
+  displayName: string;
   photos: Photo[];
 }
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, connection } from "next/server";
 import { db } from "@/db";
-import { sightings, photos } from "@/db/schema";
-import { and, or, eq, like, desc } from "drizzle-orm";
+import { sightings, photos, users } from "@/db/schema";
+import { and, or, eq, like, desc, inArray } from "drizzle-orm";
 
 export async function GET(req: NextRequest) {
   await connection();
@@ -12,8 +12,22 @@ export async function GET(req: NextRequest) {
   const userId = req.nextUrl.searchParams.get("userId");
 
   const rows = await db
-    .select()
+    .select({
+      id: sightings.id,
+      species: sightings.species,
+      speciesCode: sightings.speciesCode,
+      date: sightings.date,
+      lat: sightings.lat,
+      lng: sightings.lng,
+      locationName: sightings.locationName,
+      notes: sightings.notes,
+      userId: sightings.userId,
+      createdAt: sightings.createdAt,
+      username: users.username,
+      displayName: users.displayName,
+    })
     .from(sightings)
+    .innerJoin(users, eq(sightings.userId, users.id))
     .where(
       and(
         userId ? eq(sightings.userId, userId) : undefined,
@@ -26,7 +40,11 @@ export async function GET(req: NextRequest) {
     )
     .orderBy(desc(sightings.date));
 
-  const allPhotos = await db.select().from(photos);
+  const sightingIds = rows.map((r) => r.id);
+  const allPhotos =
+    sightingIds.length > 0
+      ? await db.select().from(photos).where(inArray(photos.sightingId, sightingIds))
+      : [];
   const photoMap = new Map<number, typeof allPhotos>();
   for (const p of allPhotos) {
     const list = photoMap.get(p.sightingId) ?? [];

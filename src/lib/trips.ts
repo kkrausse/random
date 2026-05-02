@@ -9,6 +9,9 @@ export interface Sighting {
   lng: number;
   locationName: string;
   notes: string | null;
+  userId?: string;
+  username?: string;
+  displayName?: string;
   createdAt: string;
 }
 
@@ -17,6 +20,8 @@ export interface Trip {
   startDate: string;
   endDate: string;
   locationName: string;
+  username?: string;
+  displayName?: string;
   sightings: Sighting[];
   speciesCount: number;
   lat: number;
@@ -76,6 +81,8 @@ export function computeTrips(sightings: Sighting[]): Trip[] {
       startDate,
       endDate,
       locationName: group[0].locationName,
+      username: group[0].username,
+      displayName: group[0].displayName,
       sightings: group,
       speciesCount: uniqueSpecies.size,
       lat: group[0].lat,
