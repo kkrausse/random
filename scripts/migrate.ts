@@ -1,7 +1,5 @@
-// NOTE: drizzle-kit's CLI (e.g. `drizzle-kit push`) is built around `better-sqlite3`,
-// which is a Node.js native C++ addon and does not work in Bun.
-// We use `drizzle-orm/bun-sqlite/migrator` instead, which is the official programmatic
-// migrator for the Bun SQLite runtime. See: https://github.com/drizzle-team/drizzle-orm/issues/1740
+// Schema workflow: edit schema.ts → bun run db:generate → bun run db:migrate
+// (drizzle-kit push is not used — better-sqlite3 doesn't work in Bun)
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";

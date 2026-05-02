@@ -8,8 +8,8 @@ Each item is a discrete, AI-agent-sized task. Do them roughly top-to-bottom — 
 
 ## 1. Database & user identity
 
-- [ ] Add a `users` table to `src/db/schema.ts` with: `id` (text, PK — Clerk user id), `username` (text, unique, not null), `displayName` (text, not null), `createdAt` (text, ISO).
-- [ ] Run `bun run db:generate` to create the migration for the new `users` table, then `bun run db:push`.
+- [x] Add a `users` table to `src/db/schema.ts` with: `id` (text, PK — Clerk user id), `username` (text, unique, not null), `displayName` (text, not null), `createdAt` (text, ISO).
+- [x] Run `bun run db:generate` to create the migration for the new `users` table, then `bun run db:push`.
 - [ ] Add a foreign key from `sightings.userId` referencing `users.id` (update schema + generate migration). Decide on `onDelete` behavior (cascade vs set null) and document.
 - [ ] Write a one-time backfill script `scripts/backfill-users.ts` that inserts a row into `users` for every distinct `userId` currently in `sightings`. Use Clerk's backend SDK (`clerkClient.users.getUser(id)`) to fetch each user's username/displayName; fall back to a derived placeholder if Clerk has no record. Add a `db:backfill-users` script entry to `package.json`.
 - [ ] Add a Clerk webhook handler at `src/app/api/webhooks/clerk/route.ts` that listens for `user.created` and `user.updated` events and upserts into the `users` table. Document the webhook URL + signing secret env var (`CLERK_WEBHOOK_SECRET`) in `.env.example`.
