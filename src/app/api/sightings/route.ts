@@ -14,11 +14,13 @@ export async function GET(req: NextRequest) {
   const species = url.searchParams.get("species");
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
+  const userId = url.searchParams.get("userId");
 
   const conditions = [];
   if (species) conditions.push(like(sightings.species, `%${species}%`));
   if (from) conditions.push(gte(sightings.date, from));
   if (to) conditions.push(lte(sightings.date, to));
+  if (userId) conditions.push(eq(sightings.userId, userId));
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 

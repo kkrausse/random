@@ -13,12 +13,12 @@ Each item is a discrete, AI-agent-sized task. Do them roughly top-to-bottom — 
 - [x] Add a foreign key from `sightings.userId` referencing `users.id` (update schema + generate migration). Decide on `onDelete` behavior (cascade vs set null) and document.
 - [x] Write a one-time backfill script `scripts/backfill-users.ts` that inserts a row into `users` for every distinct `userId` currently in `sightings`. Use Clerk's backend SDK (`clerkClient.users.getUser(id)`) to fetch each user's username/displayName; fall back to a derived placeholder if Clerk has no record. Add a `db:backfill-users` script entry to `package.json`.
 - [x] Add a Clerk webhook handler at `src/app/api/webhooks/clerk/route.ts` that listens for `user.created` and `user.updated` events and upserts into the `users` table. Document the webhook URL + signing secret env var (`CLERK_WEBHOOK_SECRET`) in `.env.example`.
-- [ ] Add a `src/lib/users.ts` helper exporting `getUserByUsername(username)`, `getUserById(id)`, and `resolveUserParam(param)` (accepts either a username or Clerk id and returns the row). Used by all `/user/[id]` routes.
-- [ ] Decide URL identifier strategy: recommend `/user/[username]` (friendlier). Document the choice in a short comment at the top of `src/lib/users.ts`.
+- [x] Add a `src/lib/users.ts` helper exporting `getUserByUsername(username)`, `getUserById(id)`, and `resolveUserParam(param)` (accepts either a username or Clerk id and returns the row). Used by all `/user/[id]` routes.
+- [x] Decide URL identifier strategy: recommend `/user/[username]` (friendlier). Document the choice in a short comment at the top of `src/lib/users.ts`.
 
 ## 2. API: add user-scoping query params
 
-- [ ] `GET /api/sightings` (`src/app/api/sightings/route.ts`): accept an optional `userId` query param and add a `WHERE user_id = ?` filter when present.
+- [x] `GET /api/sightings` (`src/app/api/sightings/route.ts`): accept an optional `userId` query param and add a `WHERE user_id = ?` filter when present.
 - [ ] `GET /api/trips` (`src/app/api/trips/route.ts`): accept an optional `userId` query param and filter sightings before passing to `computeTrips`.
 - [ ] `GET /api/search` (`src/app/api/search/route.ts`): accept an optional `userId` query param and add the filter. Default remains site-wide.
 - [ ] Add a new `GET /api/users/[username]` route returning `{ id, username, displayName, lifeListCount, tripCount, sightingCount }`. Computes counts via SQL.
