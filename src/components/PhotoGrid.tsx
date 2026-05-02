@@ -1,5 +1,6 @@
 "use client";
 
+import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { useState, useRef, useEffect, useCallback } from "react";
 
@@ -83,7 +84,7 @@ function PhotoBox({
       style={{ width, height }}
     >
       {!loaded && (
-        <div className="absolute inset-0 bg-gray-200 animate-pulse" />
+        <Skeleton className="absolute inset-0 rounded-none" />
       )}
       <img
         src={`/api/uploads/${item.photoFilename}`}
