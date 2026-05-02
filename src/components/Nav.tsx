@@ -6,19 +6,25 @@ import { usePathname } from "next/navigation";
 import { SignInButton, UserButton, useAuth } from "@clerk/nextjs";
 
 const publicLinks = [
-  { href: "/", label: "Home" },
-  { href: "/trips", label: "Trips" },
+  { href: "/", label: "Explore" },
   { href: "/checklist", label: "Checklist" },
   { href: "/search", label: "Search" },
+];
+
+const signedInLinks = [
+  { href: "/", label: "Explore" },
+  { href: "/", label: "My Profile" },
+  { href: "/trips", label: "My Trips" },
+  { href: "/checklist", label: "My Checklist" },
+  { href: "/search", label: "Search" },
+  { href: "/add", label: "Add" },
 ];
 
 export default function Nav() {
   const pathname = usePathname();
   const { isSignedIn } = useAuth();
 
-  const links = isSignedIn
-    ? [publicLinks[0], { href: "/add", label: "Add" }, ...publicLinks.slice(1)]
-    : publicLinks;
+  const links = isSignedIn ? signedInLinks : publicLinks;
 
   return (
     <nav className="bg-white border-b border-gray-200 sticky top-0 z-40">
@@ -48,7 +54,7 @@ export default function Nav() {
               ) : (
                 <SignInButton mode="redirect">
                   <button className="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors">
-                    Sign in
+                    Sign In
                   </button>
                 </SignInButton>
               )}

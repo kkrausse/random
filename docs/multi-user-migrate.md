@@ -47,7 +47,7 @@ Each item is a discrete, AI-agent-sized task. Do them roughly top-to-bottom — 
 
 ## 5. Nav
 
-- [ ] Update `src/components/Nav.tsx` to render the new link sets:
+- [x] Update `src/components/Nav.tsx` to render the new link sets:
   - Signed out: **Explore · Checklist · Search · Sign In**
   - Signed in: **Explore · My Profile · My Trips · My Checklist · Search · Add**
 - [ ] In the signed-in nav, resolve "My Profile / My Trips / My Checklist" hrefs against the current user's username. Fetch username via a small client hook that calls `/api/users/me` (new endpoint) or via Clerk's `useUser()` + a `username` value mirrored from Clerk.
