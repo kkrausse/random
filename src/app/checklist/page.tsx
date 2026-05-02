@@ -3,9 +3,11 @@
 import { useEffect, useState, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
 import { type Species } from "@/lib/fuzzy";
 
 export default function ChecklistPage() {
+  const { user } = useUser();
   const [allSpecies, setAllSpecies] = useState<Species[]>([]);
   const [seenCodes, setSeenCodes] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
@@ -52,7 +54,17 @@ export default function ChecklistPage() {
 
   return (
     <div className="p-4 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">Species Checklist</h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-2xl font-bold">Species Checklist</h1>
+        {user?.username && (
+          <Link
+            href={`/user/${user.username}/checklist`}
+            className="text-sm text-green-700 hover:underline"
+          >
+            Switch to my list
+          </Link>
+        )}
+      </div>
       <p className="text-sm text-gray-500 mb-3">
         {seenCodes.size} of {allSpecies.length} species seen
       </p>
