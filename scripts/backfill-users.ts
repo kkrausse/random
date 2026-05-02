@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { Database } from "bun:sqlite";
 import { createClerkClient } from "@clerk/nextjs/server";
-import { sql } from "drizzle-orm";
+import { and, ne, sql } from "drizzle-orm";
 import * as schema from "../src/db/schema";
 import {
   type ClerkUserMirrorSource,
@@ -27,32 +27,52 @@ if (!secretKey) {
 
 const clerk = createClerkClient({ secretKey });
 
-const rows = db
-  .selectDistinct({ userId: schema.sightings.userId })
-  .from(schema.sightings)
-  .all();
-
-console.log(`Found ${rows.length} distinct user(s) in sightings`);
-
-let inserted = 0;
-let skipped = 0;
-
-for (const { userId } of rows) {
-  const existing = db
+function usernameExistsForAnotherUser(candidate: string, userId: string): boolean {
+  return Boolean(db
     .select({ id: schema.users.id })
+    .from(schema.users)
+    .where(and(sql`lower(${schema.users.username}) = lower(${candidate})`, ne(schema.users.id, userId)))
+    .get());
+}
+
+function getExistingUser(userId: string) {
+  return db
+    .select({
+      id: schema.users.id,
+      username: schema.users.username,
+      displayName: schema.users.displayName,
+    })
     .from(schema.users)
     .where(sql`${schema.users.id} = ${userId}`)
     .get();
+}
 
-  if (existing) {
-    console.log(`  ${userId}: already exists, skipping`);
-    skipped++;
-    continue;
-  }
+const sightingUserIds = db
+  .selectDistinct({ userId: schema.sightings.userId })
+  .from(schema.sightings)
+  .all()
+  .map(({ userId }) => userId);
 
-  let username: string | null = null;
-  let displayName: string;
-  let source: ClerkUserMirrorSource = { id: userId, username: null };
+const existingUserIds = db
+  .select({ userId: schema.users.id })
+  .from(schema.users)
+  .all()
+  .map(({ userId }) => userId);
+
+const userIds = [...new Set([...sightingUserIds, ...existingUserIds])].sort();
+
+console.log(
+  `Found ${userIds.length} user id(s) from sightings/users (${sightingUserIds.length} in sightings, ${existingUserIds.length} existing user rows)`
+);
+
+let inserted = 0;
+let updated = 0;
+let unchanged = 0;
+let lookupFailed = 0;
+
+for (const userId of userIds) {
+  const existing = getExistingUser(userId);
+  let source: ClerkUserMirrorSource;
 
   try {
     const clerkUser = await clerk.users.getUser(userId);
@@ -62,19 +82,41 @@ for (const { userId } of rows) {
       firstName: clerkUser.firstName,
       lastName: clerkUser.lastName,
     };
-    displayName = deriveMirroredDisplayName(source);
   } catch {
-    console.warn(`  ${userId}: Clerk lookup failed, using placeholder`);
-    displayName = `birder-${userId.slice(-6)}`;
+    lookupFailed++;
+    if (existing) {
+      console.warn(`  ${userId}: Clerk lookup failed, leaving existing row unchanged`);
+      unchanged++;
+      continue;
+    }
+
+    console.warn(`  ${userId}: Clerk lookup failed, inserting placeholder`);
+    source = { id: userId, username: null };
   }
 
-  username = await deriveAvailableMirroredUsername(source, (candidate) => {
-    return Boolean(db
-      .select({ id: schema.users.id })
-      .from(schema.users)
-      .where(sql`lower(${schema.users.username}) = lower(${candidate})`)
-      .get());
-  });
+  const username = await deriveAvailableMirroredUsername(source, (candidate) =>
+    usernameExistsForAnotherUser(candidate, userId)
+  );
+  const displayName = deriveMirroredDisplayName(source);
+
+  if (existing) {
+    if (existing.username === username && existing.displayName === displayName) {
+      console.log(`  ${userId}: already current as @${username} (${displayName})`);
+      unchanged++;
+      continue;
+    }
+
+    db.update(schema.users)
+      .set({ username, displayName })
+      .where(sql`${schema.users.id} = ${userId}`)
+      .run();
+
+    console.log(
+      `  ${userId}: updated @${existing.username} (${existing.displayName}) -> @${username} (${displayName})`
+    );
+    updated++;
+    continue;
+  }
 
   db.insert(schema.users)
     .values({ id: userId, username, displayName })
@@ -84,5 +126,7 @@ for (const { userId } of rows) {
   inserted++;
 }
 
-console.log(`\nDone. inserted=${inserted} skipped=${skipped}`);
+console.log(
+  `\nDone. inserted=${inserted} updated=${updated} unchanged=${unchanged} lookupFailed=${lookupFailed}`
+);
 sqlite.close();
