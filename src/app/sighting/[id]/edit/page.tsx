@@ -1,59 +1,46 @@
-"use client";
+import { auth } from "@clerk/nextjs/server";
+import { redirect, notFound } from "next/navigation";
+import { db } from "@/db";
+import { sightings, photos } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import EditForm from "./EditForm";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
-import SightingForm from "@/components/SightingForm";
-import Link from "next/link";
+export default async function EditSightingPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { userId } = await auth();
+  if (!userId) redirect("/sign-in");
 
-interface SightingData {
-  id: number;
-  species: string;
-  speciesCode: string;
-  date: string;
-  lat: number;
-  lng: number;
-  locationName: string;
-  notes: string | null;
-  photos: { id: number; filename: string }[];
-}
+  const { id } = await params;
+  const sighting = await db
+    .select()
+    .from(sightings)
+    .where(eq(sightings.id, parseInt(id)))
+    .get();
 
-export default function EditSightingPage() {
-  const params = useParams();
-  const [sighting, setSighting] = useState<SightingData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  if (!sighting) notFound();
+  if (sighting.userId !== userId) notFound();
 
-  useEffect(() => {
-    fetch(`/api/sightings/${params.id}`)
-      .then((res) => {
-        if (!res.ok) throw new Error("Sighting not found");
-        return res.json();
-      })
-      .then(setSighting)
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [params.id]);
-
-  if (loading) {
-    return <div className="p-6 text-center text-gray-500">Loading...</div>;
-  }
-
-  if (error || !sighting) {
-    return (
-      <div className="p-6 text-center">
-        <p className="text-red-600 mb-4">{error || "Sighting not found"}</p>
-        <Link href="/" className="text-blue-600 hover:underline">Back to sightings</Link>
-      </div>
-    );
-  }
+  const sightingPhotos = await db
+    .select()
+    .from(photos)
+    .where(eq(photos.sightingId, sighting.id));
 
   return (
-    <main className="p-6">
-      <div className="max-w-2xl mx-auto mb-4">
-        <Link href="/" className="text-blue-600 hover:underline text-sm">&larr; Back</Link>
-        <h1 className="text-2xl font-bold mt-2">Edit Sighting</h1>
-      </div>
-      <SightingForm sighting={sighting} />
-    </main>
+    <EditForm
+      sighting={{
+        id: sighting.id,
+        species: sighting.species,
+        speciesCode: sighting.speciesCode,
+        date: sighting.date,
+        lat: sighting.lat,
+        lng: sighting.lng,
+        locationName: sighting.locationName,
+        notes: sighting.notes ?? null,
+        photos: sightingPhotos,
+      }}
+    />
   );
 }

@@ -4,9 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SignInButton, UserButton, useAuth } from "@clerk/nextjs";
 
-const links = [
+const publicLinks = [
   { href: "/", label: "Home" },
-  { href: "/add", label: "Add" },
   { href: "/trips", label: "Trips" },
   { href: "/checklist", label: "Checklist" },
   { href: "/search", label: "Search" },
@@ -15,6 +14,10 @@ const links = [
 export default function Nav() {
   const pathname = usePathname();
   const { isSignedIn } = useAuth();
+
+  const links = isSignedIn
+    ? [publicLinks[0], { href: "/add", label: "Add" }, ...publicLinks.slice(1)]
+    : publicLinks;
 
   return (
     <nav className="bg-white border-b border-gray-200 sticky top-0 z-40">

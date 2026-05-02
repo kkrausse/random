@@ -5,6 +5,7 @@ import { desc, eq, and, gte, lte, like } from "drizzle-orm";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { v4 as uuid } from "uuid";
+import { auth } from "@clerk/nextjs/server";
 
 export async function GET(req: NextRequest) {
   const url = req.nextUrl;
@@ -48,6 +49,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const { userId } = await auth();
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const formData = await req.formData();
 
   const species = formData.get("species") as string;
@@ -64,7 +68,7 @@ export async function POST(req: NextRequest) {
 
   const [sighting] = await db
     .insert(sightings)
-    .values({ species, speciesCode, date, lat, lng, locationName, notes })
+    .values({ species, speciesCode, date, lat, lng, locationName, notes, userId })
     .returning();
 
   // Handle photo uploads

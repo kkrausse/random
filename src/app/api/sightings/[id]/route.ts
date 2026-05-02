@@ -4,6 +4,7 @@ import { sightings, photos } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { unlink } from "fs/promises";
 import path from "path";
+import { auth } from "@clerk/nextjs/server";
 
 export async function GET(
   _req: NextRequest,
@@ -32,7 +33,19 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { userId } = await auth();
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const { id } = await params;
+
+  const existing = await db
+    .select()
+    .from(sightings)
+    .where(eq(sightings.id, parseInt(id)))
+    .get();
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (existing.userId !== userId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
   const body = await req.json();
 
   // Delete removed photos
@@ -77,7 +90,18 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { userId } = await auth();
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const { id } = await params;
+
+  const existing = await db
+    .select()
+    .from(sightings)
+    .where(eq(sightings.id, parseInt(id)))
+    .get();
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (existing.userId !== userId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   // Delete photo files from disk
   const sightingPhotos = await db

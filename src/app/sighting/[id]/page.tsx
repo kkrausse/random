@@ -3,6 +3,8 @@ import { sightings, photos } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { auth } from "@clerk/nextjs/server";
+import DeleteButton from "@/components/DeleteButton";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +13,7 @@ export default async function SightingDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const { userId } = await auth();
   const { id } = await params;
   const sightingId = Number(id);
   if (isNaN(sightingId)) notFound();
@@ -57,14 +60,17 @@ export default async function SightingDetailPage({
         </div>
       )}
 
-      <div className="flex gap-3">
-        <Link
-          href={`/sighting/${sighting.id}/edit`}
-          className="text-blue-600 hover:underline text-sm"
-        >
-          Edit
-        </Link>
-      </div>
+      {userId === sighting.userId && (
+        <div className="flex gap-3">
+          <Link
+            href={`/sighting/${sighting.id}/edit`}
+            className="text-blue-600 hover:underline text-sm"
+          >
+            Edit
+          </Link>
+          <DeleteButton sightingId={sighting.id} />
+        </div>
+      )}
     </main>
   );
 }

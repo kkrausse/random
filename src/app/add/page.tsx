@@ -1,3 +1,5 @@
+import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
 import SightingForm from "@/components/SightingForm";
 
 export default async function AddPage({
@@ -5,6 +7,9 @@ export default async function AddPage({
 }: {
   searchParams: Promise<{ date?: string; lat?: string; lng?: string; locationName?: string }>;
 }) {
+  const { userId } = await auth();
+  if (!userId) redirect("/sign-in");
+
   const params = await searchParams;
   const prefill = {
     date: params.date,
