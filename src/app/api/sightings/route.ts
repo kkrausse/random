@@ -69,7 +69,9 @@ export async function POST(req: NextRequest) {
 
   // Handle photo uploads
   const photoFiles = formData.getAll("photos") as File[];
-  const uploadDir = path.join(process.cwd(), "uploads");
+  const uploadDir = process.env.UPLOADS_DIR
+    ? path.resolve(process.env.UPLOADS_DIR)
+    : path.join(process.cwd(), "uploads");
   await mkdir(uploadDir, { recursive: true });
 
   for (const file of photoFiles) {

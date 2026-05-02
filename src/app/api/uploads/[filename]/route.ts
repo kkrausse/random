@@ -22,7 +22,10 @@ export async function GET(
     return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
   }
 
-  const filePath = path.join(process.cwd(), "uploads", filename);
+  const uploadsDir = process.env.UPLOADS_DIR
+    ? path.resolve(process.env.UPLOADS_DIR)
+    : path.join(process.cwd(), "uploads");
+  const filePath = path.join(uploadsDir, filename);
 
   try {
     const buffer = await readFile(filePath);

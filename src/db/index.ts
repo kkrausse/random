@@ -3,7 +3,9 @@ import Database from "better-sqlite3";
 import * as schema from "./schema";
 import path from "path";
 
-const dbPath = path.join(process.cwd(), "data", "bird-log.db");
+const dbPath = process.env.DATABASE_PATH
+  ? path.resolve(process.env.DATABASE_PATH)
+  : path.join(process.cwd(), "data", "bird-log.db");
 
 const sqlite = new Database(dbPath);
 sqlite.pragma("journal_mode = WAL");

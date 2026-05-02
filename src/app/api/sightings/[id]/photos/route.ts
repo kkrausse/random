@@ -30,7 +30,9 @@ export async function POST(
     return NextResponse.json({ error: "No photos provided" }, { status: 400 });
   }
 
-  const uploadDir = path.join(process.cwd(), "uploads");
+  const uploadDir = process.env.UPLOADS_DIR
+    ? path.resolve(process.env.UPLOADS_DIR)
+    : path.join(process.cwd(), "uploads");
   await mkdir(uploadDir, { recursive: true });
 
   const newPhotos = [];

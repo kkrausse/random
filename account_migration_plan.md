@@ -46,6 +46,15 @@ Each phase is designed to be handed off to an LLM as a self-contained implementa
 
 5. **Add a Docker secrets / runtime injection section to this doc** (update this file) explaining that in production the `.env` file will be bind-mounted or vars passed via `docker run --env-file`.
 
+### Docker / production runtime injection
+
+In production, secrets are never baked into the image. There are two equivalent approaches:
+
+- **`--env-file`**: `docker run --env-file .env --rm myapp` — pass a `.env` file (not committed) that contains the real keys.
+- **`docker compose`**: set `env_file: .env` in `docker-compose.yml` (see Phase 5). The `.env` file is bind-mounted at runtime from the Pi's filesystem.
+
+The `.env.example` file (committed) is the canonical list of required variables. On first deploy, copy it to `.env` on the Pi and fill in real values before starting the container.
+
 ### Acceptance criteria
 - `bun run dev` still works with `.env.local` present.
 - No secrets or env vars are hardcoded in source.
