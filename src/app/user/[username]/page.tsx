@@ -8,8 +8,10 @@ import { sightings } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { getUserByUsername } from "@/lib/users";
 import { computeTrips } from "@/lib/trips";
+import { userChecklistRoute, userTripsRoute } from "@/lib/routes";
 import PhotoGridLoader from "@/components/PhotoGridLoader";
 import PhotoGridSkeleton from "@/components/PhotoGridSkeleton";
+import ProfileAccountButton from "./ProfileAccountButton";
 
 export default function UserHomePage({
   params,
@@ -55,23 +57,32 @@ async function UserHomeContent({
             <p className="text-gray-500 text-sm">@{user.username}</p>
           </div>
           {isOwner && (
-            <Link
-              href={`/user/${username}/edit`}
-              className="text-sm text-blue-600 hover:underline"
-            >
-              Edit Profile
-            </Link>
+            <div className="flex flex-col items-end gap-2">
+              <ProfileAccountButton />
+              <Link
+                href={`/user/${username}/edit`}
+                className="text-sm text-blue-600 hover:underline"
+              >
+                Edit Profile
+              </Link>
+            </div>
           )}
         </div>
-        <div className="flex gap-6 mt-3 text-sm text-gray-600">
-          <span>
+        <div className="flex flex-wrap gap-6 mt-3 text-sm text-gray-600">
+          <Link
+            href={userChecklistRoute(username)}
+            className="text-blue-600 hover:underline"
+          >
             <span className="font-semibold text-gray-900">{lifeListCount}</span>{" "}
             lifers
-          </span>
-          <span>
+          </Link>
+          <Link
+            href={userTripsRoute(username)}
+            className="text-blue-600 hover:underline"
+          >
             <span className="font-semibold text-gray-900">{tripCount}</span>{" "}
             trips
-          </span>
+          </Link>
           <span>
             <span className="font-semibold text-gray-900">
               {userSightings.length}

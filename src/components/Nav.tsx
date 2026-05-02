@@ -4,17 +4,15 @@ import type { Route } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { SignInButton, UserButton, useAuth } from "@clerk/nextjs";
+import { SignInButton, useAuth } from "@clerk/nextjs";
 import { useMirroredUser } from "@/lib/use-mirrored-user";
-import { userChecklistRoute, userRoute, userTripsRoute } from "@/lib/routes";
+import { userRoute } from "@/lib/routes";
 
 type NavHref =
   | Route<"/">
   | Route<"/add">
   | Route<"/checklist">
-  | Route<`/user/${string}`>
-  | Route<`/user/${string}/checklist`>
-  | Route<`/user/${string}/trips`>;
+  | Route<`/user/${string}`>;
 
 type NavLink = {
   href: NavHref;
@@ -34,18 +32,10 @@ export default function Nav() {
 
   const username = user?.username;
   const profileHref = username ? userRoute(username) : "/";
-  const tripsHref = username ? userTripsRoute(username) : "/";
-  const checklistHref = username ? userChecklistRoute(username) : "/checklist";
 
   const signedInLinks: NavLink[] = [
     { href: "/", label: "Explore" },
-    ...(username
-      ? [
-          { href: profileHref, label: "My Profile", exact: true },
-          { href: tripsHref, label: "My Trips" },
-          { href: checklistHref, label: "My Checklist" },
-        ]
-      : []),
+    ...(username ? [{ href: profileHref, label: "My Profile", exact: true }] : []),
     { href: "/add", label: "Add" },
   ];
 
@@ -76,17 +66,15 @@ export default function Nav() {
                 {link.label}
               </Link>
             ))}
-            <div className="ml-2 flex items-center">
-              {isSignedIn ? (
-                <UserButton />
-              ) : (
+            {!isSignedIn && (
+              <div className="ml-2 flex items-center">
                 <SignInButton mode="redirect">
                   <button className="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors">
                     Sign In
                   </button>
                 </SignInButton>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
