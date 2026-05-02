@@ -12,7 +12,6 @@ BirdMog is a multi-user bird sighting log built with Next.js, Clerk, Drizzle, an
 - `/checklist` and `/species/[speciesCode]` - site-wide checklist and species pages.
 - `/users` - birder directory.
 - `/sighting/[id]` and `/sighting/[id]/edit` - sighting detail and owner-only edit flow.
-- `/search` - global sighting search.
 - `/add` - signed-in sighting creation.
 
 See `docs/site-layout.md` for the full route diagram and source-file map.

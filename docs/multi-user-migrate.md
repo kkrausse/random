@@ -20,7 +20,6 @@ Each item is a discrete, AI-agent-sized task. Do them roughly top-to-bottom — 
 
 - [x] `GET /api/sightings` (`src/app/api/sightings/route.ts`): accept an optional `userId` query param and add a `WHERE user_id = ?` filter when present.
 - [x] `GET /api/trips` (`src/app/api/trips/route.ts`): accept an optional `userId` query param and filter sightings before passing to `computeTrips`.
-- [x] `GET /api/search` (`src/app/api/search/route.ts`): accept an optional `userId` query param and add the filter. Default remains site-wide.
 - [x] Add a new `GET /api/users/[username]` route returning `{ id, username, displayName, lifeListCount, tripCount, sightingCount }`. Computes counts via SQL.
 - [x] Add a new `GET /api/users` route returning a list of users with basic stats (powers the optional `/users` directory page). Sort by recent activity by default.
 
@@ -48,8 +47,8 @@ Each item is a discrete, AI-agent-sized task. Do them roughly top-to-bottom — 
 ## 5. Nav
 
 - [x] Update `src/components/Nav.tsx` to render the new link sets:
-  - Signed out: **Explore · Checklist · Search · Sign In**
-  - Signed in: **Explore · My Profile · My Trips · My Checklist · Search · Add**
+  - Signed out: **Explore · Checklist · Sign In**
+  - Signed in: **Explore · My Profile · My Trips · My Checklist · Add**
 - [x] In the signed-in nav, resolve "My Profile / My Trips / My Checklist" hrefs against the current user's username. Fetch username via a small client hook that calls `/api/users/me` (new endpoint) or via Clerk's `useUser()` + a `username` value mirrored from Clerk.
 - [x] Add `GET /api/users/me` returning the signed-in user's row from the `users` table (404/401 if not signed in or not yet provisioned).
 
@@ -58,7 +57,7 @@ Each item is a discrete, AI-agent-sized task. Do them roughly top-to-bottom — 
 - [x] Update `PhotoGrid` (`src/components/PhotoGrid.tsx`): include `username` in the `PhotoItem` shape and render an `@username` overlay on each tile that links to `/user/[username]`. Update `PhotoGridLoader` to join sightings → users so the username is available.
 - [x] Update `SightingCard` (`src/components/SightingCard.tsx`): show `@username` under the species line, linked to `/user/[username]`. Hide the Edit/Delete actions unless the viewer owns the sighting (currently always shown).
 - [x] Update `TripCard` (`src/components/TripCard.tsx`): if rendered on the global Explore context, show `@username` for the trip owner. Skip on user-scoped trips pages.
-- [x] Update the shape returned by `/api/sightings`, `/api/trips`, `/api/search` to include `username` and `displayName` (join against `users` on `userId`). Update TS interfaces in callers.
+- [x] Update the shape returned by `/api/sightings` and `/api/trips` to include `username` and `displayName` (join against `users` on `userId`). Update TS interfaces in callers.
 
 ## 7. Profile management
 

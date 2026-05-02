@@ -12,7 +12,6 @@ type NavHref =
   | Route<"/">
   | Route<"/add">
   | Route<"/checklist">
-  | Route<"/search">
   | Route<`/user/${string}`>
   | Route<`/user/${string}/checklist`>
   | Route<`/user/${string}/trips`>;
@@ -26,7 +25,6 @@ type NavLink = {
 const publicLinks: NavLink[] = [
   { href: "/", label: "Explore" },
   { href: "/checklist", label: "Checklist" },
-  { href: "/search", label: "Search" },
 ];
 
 export default function Nav() {
@@ -48,7 +46,6 @@ export default function Nav() {
           { href: checklistHref, label: "My Checklist" },
         ]
       : []),
-    { href: "/search", label: "Search" },
     { href: "/add", label: "Add" },
   ];
 
