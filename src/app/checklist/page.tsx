@@ -15,7 +15,7 @@ export default function ChecklistPage() {
 
   useEffect(() => {
     Promise.all([
-      import("../../../data/species.json").then(m => m.default as Species[]),
+      import("@/data/species.json").then(m => m.default as Species[]),
       fetch("/api/sightings").then((r) => r.json()),
     ]).then(([species, sightings]) => {
       const seen = new Set<string>(

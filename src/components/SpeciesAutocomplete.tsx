@@ -27,7 +27,7 @@ export default function SpeciesAutocomplete({ onSelect, initialValue = "" }: Pro
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
-    import("../../data/species.json").then(m => setAllSpecies(m.default));
+    import("@/data/species.json").then(m => setAllSpecies(m.default));
   }, []);
 
   const results = useMemo(
