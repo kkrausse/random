@@ -10,6 +10,7 @@
       "git diff *": "allow",
       "bunx tsc *": "allow",
       "npx tsc *": "allow",
+      "bun run build *": "allow",
       "bun run next *": "allow",
       "bun run typecheck *": "allow",
       "bun run format:check *": "allow",

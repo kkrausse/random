@@ -13,18 +13,18 @@ const geistSans = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "Bird Log",
+  title: "BirdMog",
   description: "Personal bird sighting tracker",
   metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"),
   openGraph: {
-    title: "Bird Log",
+    title: "BirdMog",
     description: "Personal bird sighting tracker",
-    siteName: "Bird Log",
+    siteName: "BirdMog",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Bird Log",
+    title: "BirdMog",
     description: "Personal bird sighting tracker",
   },
 };

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { SignInButton, UserButton, useAuth } from "@clerk/nextjs";
 
@@ -23,8 +24,9 @@ export default function Nav() {
     <nav className="bg-white border-b border-gray-200 sticky top-0 z-40">
       <div className="max-w-5xl mx-auto px-4">
         <div className="flex items-center justify-between h-14">
-          <Link href="/" className="font-bold text-lg text-green-700">
-            Bird Log
+          <Link href="/" className="flex items-center gap-2 font-bold text-lg text-green-700">
+            <Image src="/quail-logo.png" alt="" width={32} height={32} className="rounded-sm" unoptimized />
+            BirdMog
           </Link>
           <div className="flex items-center gap-1 overflow-x-auto">
             {links.map((link) => (
