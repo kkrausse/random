@@ -55,9 +55,9 @@ Each item is a discrete, AI-agent-sized task. Do them roughly top-to-bottom — 
 
 ## 6. Components — surface usernames
 
-- [ ] Update `PhotoGrid` (`src/components/PhotoGrid.tsx`): include `username` in the `PhotoItem` shape and render an `@username` overlay on each tile that links to `/user/[username]`. Update `PhotoGridLoader` to join sightings → users so the username is available.
-- [ ] Update `SightingCard` (`src/components/SightingCard.tsx`): show `@username` under the species line, linked to `/user/[username]`. Hide the Edit/Delete actions unless the viewer owns the sighting (currently always shown).
-- [ ] Update `TripCard` (`src/components/TripCard.tsx`): if rendered on the global Explore context, show `@username` for the trip owner. Skip on user-scoped trips pages.
+- [x] Update `PhotoGrid` (`src/components/PhotoGrid.tsx`): include `username` in the `PhotoItem` shape and render an `@username` overlay on each tile that links to `/user/[username]`. Update `PhotoGridLoader` to join sightings → users so the username is available.
+- [x] Update `SightingCard` (`src/components/SightingCard.tsx`): show `@username` under the species line, linked to `/user/[username]`. Hide the Edit/Delete actions unless the viewer owns the sighting (currently always shown).
+- [x] Update `TripCard` (`src/components/TripCard.tsx`): if rendered on the global Explore context, show `@username` for the trip owner. Skip on user-scoped trips pages.
 - [ ] Update the shape returned by `/api/sightings`, `/api/trips`, `/api/search` to include `username` and `displayName` (join against `users` on `userId`). Update TS interfaces in callers.
 
 ## 7. Profile management

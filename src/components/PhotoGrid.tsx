@@ -10,6 +10,7 @@ interface PhotoItem {
   date: string;
   locationName: string;
   photoFilename: string;
+  username?: string;
   width?: number;
   height?: number;
 }
@@ -78,11 +79,13 @@ function PhotoBox({
   const [loaded, setLoaded] = useState(false);
 
   return (
-    <Link
-      href={`/sighting/${item.sightingId}`}
+    <div
       className="relative block group overflow-hidden rounded-sm flex-none bg-gray-100"
       style={{ width, height }}
     >
+      <Link href={`/sighting/${item.sightingId}`} className="absolute inset-0 z-10">
+        <span className="sr-only">View {item.species} sighting</span>
+      </Link>
       {!loaded && (
         <Skeleton className="absolute inset-0 rounded-none" />
       )}
@@ -95,12 +98,20 @@ function PhotoBox({
         fetchPriority={priority ? "high" : "low"}
         decoding={priority ? "sync" : "async"}
       />
-      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
+      <div className="pointer-events-none absolute inset-0 z-20 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
         <p className="text-white font-semibold text-sm">{item.species}</p>
         <p className="text-white/80 text-xs">{item.date}</p>
         <p className="text-white/80 text-xs">{item.locationName}</p>
+        {item.username && (
+          <Link
+            href={`/user/${item.username}`}
+            className="pointer-events-auto relative z-10 mt-1 text-white/90 text-xs font-medium hover:text-white hover:underline"
+          >
+            @{item.username}
+          </Link>
+        )}
       </div>
-    </Link>
+    </div>
   );
 }
 

@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { db } from "@/db";
-import { sightings, photos } from "@/db/schema";
+import { sightings, photos, users } from "@/db/schema";
 import { desc, eq, inArray } from "drizzle-orm";
 import { connection } from "next/server";
 import PhotoGrid from "./PhotoGrid";
@@ -16,8 +16,16 @@ export default async function PhotoGridLoader({ userId, emptyElement }: Props = 
   await connection();
 
   const allSightings = await db
-    .select()
+    .select({
+      id: sightings.id,
+      species: sightings.species,
+      date: sightings.date,
+      locationName: sightings.locationName,
+      userId: sightings.userId,
+      username: users.username,
+    })
     .from(sightings)
+    .innerJoin(users, eq(sightings.userId, users.id))
     .where(userId ? eq(sightings.userId, userId) : undefined)
     .orderBy(desc(sightings.date), desc(sightings.createdAt));
 
@@ -42,6 +50,7 @@ export default async function PhotoGridLoader({ userId, emptyElement }: Props = 
       date: s.date,
       locationName: s.locationName,
       photoFilename: p.filename,
+      username: s.username,
       width: p.width ?? undefined,
       height: p.height ?? undefined,
     }));

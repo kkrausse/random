@@ -59,6 +59,9 @@ async function UserTripDetailContent({
 
   const sightingsWithPhotos = trip.sightings.map((s) => ({
     ...s,
+    userId: user.id,
+    username: user.username,
+    displayName: user.displayName,
     photos: photoMap.get(s.id) ?? [],
   }));
 

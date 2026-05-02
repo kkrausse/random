@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { auth } from "@clerk/nextjs/server";
 import { connection } from "next/server";
 import { db } from "@/db";
-import { sightings, photos } from "@/db/schema";
+import { sightings, photos, users } from "@/db/schema";
 import { eq, desc, inArray, and } from "drizzle-orm";
 import PhotoGrid from "@/components/PhotoGrid";
 import Link from "next/link";
@@ -31,8 +31,16 @@ async function SpeciesContent({
   const { userId } = await auth();
 
   const speciesSightings = await db
-    .select()
+    .select({
+      id: sightings.id,
+      species: sightings.species,
+      date: sightings.date,
+      locationName: sightings.locationName,
+      userId: sightings.userId,
+      username: users.username,
+    })
     .from(sightings)
+    .innerJoin(users, eq(sightings.userId, users.id))
     .where(eq(sightings.speciesCode, speciesCode))
     .orderBy(desc(sightings.date), desc(sightings.createdAt));
 
@@ -57,6 +65,7 @@ async function SpeciesContent({
       date: s.date,
       locationName: s.locationName,
       photoFilename: p.filename,
+      username: s.username,
       width: p.width ?? undefined,
       height: p.height ?? undefined,
     }));

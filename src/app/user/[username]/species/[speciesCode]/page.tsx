@@ -81,6 +81,7 @@ async function UserSpeciesContent({
       date: s.date,
       locationName: s.locationName,
       photoFilename: p.filename,
+      username: user.username,
       width: p.width ?? undefined,
       height: p.height ?? undefined,
     }));
