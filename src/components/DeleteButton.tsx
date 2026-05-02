@@ -3,14 +3,20 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export default function DeleteButton({ sightingId }: { sightingId: number }) {
+export default function DeleteButton({
+  sightingId,
+  redirectHref,
+}: {
+  sightingId: number;
+  redirectHref: string;
+}) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
 
   async function handleDelete() {
     const res = await fetch(`/api/sightings/${sightingId}`, { method: "DELETE" });
     if (res.ok) {
-      router.push("/");
+      router.push(redirectHref);
     }
   }
 

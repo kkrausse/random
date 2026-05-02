@@ -44,6 +44,10 @@ interface Props {
   prefill?: Prefill;
 }
 
+interface SavedSighting {
+  id: number;
+}
+
 export default function SightingForm({ sighting, prefill }: Props) {
   const router = useRouter();
   const isEditing = !!sighting;
@@ -140,9 +144,14 @@ export default function SightingForm({ sighting, prefill }: Props) {
           const data = await res.json();
           throw new Error(data.error || "Failed to save sighting");
         }
+
+        const savedSighting = (await res.json()) as SavedSighting;
+        router.push(`/sighting/${savedSighting.id}`);
+        router.refresh();
+        return;
       }
 
-      router.push("/");
+      router.push(`/sighting/${sighting.id}`);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");

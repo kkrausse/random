@@ -96,7 +96,10 @@ async function SightingDetailContent({
           >
             Edit
           </Link>
-          <DeleteButton sightingId={sighting.id} />
+          <DeleteButton
+            sightingId={sighting.id}
+            redirectHref={`/user/${username}`}
+          />
         </div>
       )}
     </main>
