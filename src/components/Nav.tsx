@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { SignInButton, UserButton, useAuth } from "@clerk/nextjs";
+import { SignInButton, UserButton, useAuth, useUser } from "@clerk/nextjs";
 
 const publicLinks = [
   { href: "/", label: "Explore" },
@@ -11,18 +11,24 @@ const publicLinks = [
   { href: "/search", label: "Search" },
 ];
 
-const signedInLinks = [
-  { href: "/", label: "Explore" },
-  { href: "/", label: "My Profile" },
-  { href: "/trips", label: "My Trips" },
-  { href: "/checklist", label: "My Checklist" },
-  { href: "/search", label: "Search" },
-  { href: "/add", label: "Add" },
-];
-
 export default function Nav() {
   const pathname = usePathname();
   const { isSignedIn } = useAuth();
+  const { user } = useUser();
+
+  const username = user?.username;
+  const profileHref = username ? `/user/${username}` : "/";
+  const tripsHref = username ? `/user/${username}/trips` : "/trips";
+  const checklistHref = username ? `/user/${username}/checklist` : "/checklist";
+
+  const signedInLinks = [
+    { href: "/", label: "Explore" },
+    { href: profileHref, label: "My Profile" },
+    { href: tripsHref, label: "My Trips" },
+    { href: checklistHref, label: "My Checklist" },
+    { href: "/search", label: "Search" },
+    { href: "/add", label: "Add" },
+  ];
 
   const links = isSignedIn ? signedInLinks : publicLinks;
 
@@ -40,7 +46,7 @@ export default function Nav() {
                 key={link.href}
                 href={link.href}
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                  pathname === link.href
+                  (pathname === link.href || (link.href !== "/" && pathname.startsWith(`${link.href}/`)))
                     ? "bg-green-100 text-green-800"
                     : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
                 }`}
