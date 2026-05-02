@@ -5,5 +5,3 @@ docs
 uploads
 .env*
 *.md
-drizzle
-scripts
