@@ -47,18 +47,18 @@ Photos already have stable database identity in `photos.id`, so likes and commen
 
 ## API
 
-- [ ] Add `POST /api/photos/[photoId]/likes` to toggle or create the current user's photo like.
-- [ ] Add `DELETE /api/photos/[photoId]/likes` if explicit unlike is cleaner than toggle semantics.
-- [ ] Return `401` for signed-out users; client should navigate to `/sign-in`.
-- [ ] Return `404` if the photo does not exist.
-- [ ] Add `GET /api/photos/[photoId]/likes` for the liker list if not loaded in the page query.
-- [ ] Add `POST /api/photos/[photoId]/comments` to create a top-level comment or reply with optional `parentId`.
-- [ ] Validate that `parentId`, when provided, belongs to the same `photoId`.
-- [ ] Add `POST /api/photo-comments/[commentId]/likes` to like a comment.
-- [ ] Add `DELETE /api/photo-comments/[commentId]/likes` or toggle behavior for unliking.
-- [ ] Block liking your own comment with a `403`.
-- [ ] Validate comment body length and reject empty or whitespace-only comments.
-- [ ] Revalidate or refresh sighting detail data after mutations.
+- [x] Add `POST /api/photos/[photoId]/likes` to toggle or create the current user's photo like.
+- [x] Add `DELETE /api/photos/[photoId]/likes` if explicit unlike is cleaner than toggle semantics.
+- [x] Return `401` for signed-out users; client should navigate to `/sign-in`.
+- [x] Return `404` if the photo does not exist.
+- [x] Add `GET /api/photos/[photoId]/likes` for the liker list if not loaded in the page query.
+- [x] Add `POST /api/photos/[photoId]/comments` to create a top-level comment or reply with optional `parentId`.
+- [x] Validate that `parentId`, when provided, belongs to the same `photoId`.
+- [x] Add `POST /api/photo-comments/[commentId]/likes` to like a comment.
+- [x] Add `DELETE /api/photo-comments/[commentId]/likes` or toggle behavior for unliking.
+- [x] Block liking your own comment with a `403`.
+- [x] Validate comment body length and reject empty or whitespace-only comments.
+- [x] Revalidate or refresh sighting detail data after mutations.
 
 ## UI Components
 
