@@ -1,6 +1,8 @@
 export type ClerkUserMirrorSource = {
   id: string;
   username: string | null;
+  imageUrl?: string | null;
+  image_url?: string | null;
   firstName?: string | null;
   lastName?: string | null;
   first_name?: string | null;
@@ -13,6 +15,10 @@ function firstName(data: ClerkUserMirrorSource): string | null {
 
 function lastName(data: ClerkUserMirrorSource): string | null {
   return data.lastName ?? data.last_name ?? null;
+}
+
+export function mirroredProfileImageUrl(data: ClerkUserMirrorSource): string | null {
+  return data.imageUrl ?? data.image_url ?? null;
 }
 
 export function normalizeMirroredUsername(username: string | null): string | null {

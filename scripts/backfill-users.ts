@@ -7,6 +7,7 @@ import {
   type ClerkUserMirrorSource,
   deriveAvailableMirroredUsername,
   deriveMirroredDisplayName,
+  mirroredProfileImageUrl,
 } from "../src/lib/clerk-user-mirror";
 import path from "path";
 
@@ -41,6 +42,7 @@ function getExistingUser(userId: string) {
       id: schema.users.id,
       username: schema.users.username,
       displayName: schema.users.displayName,
+      profileImageUrl: schema.users.profileImageUrl,
     })
     .from(schema.users)
     .where(sql`${schema.users.id} = ${userId}`)
@@ -79,6 +81,7 @@ for (const userId of userIds) {
     source = {
       id: clerkUser.id,
       username: clerkUser.username,
+      imageUrl: clerkUser.imageUrl,
       firstName: clerkUser.firstName,
       lastName: clerkUser.lastName,
     };
@@ -98,16 +101,21 @@ for (const userId of userIds) {
     usernameExistsForAnotherUser(candidate, userId)
   );
   const displayName = deriveMirroredDisplayName(source);
+  const profileImageUrl = mirroredProfileImageUrl(source);
 
   if (existing) {
-    if (existing.username === username && existing.displayName === displayName) {
+    if (
+      existing.username === username &&
+      existing.displayName === displayName &&
+      existing.profileImageUrl === profileImageUrl
+    ) {
       console.log(`  ${userId}: already current as @${username} (${displayName})`);
       unchanged++;
       continue;
     }
 
     db.update(schema.users)
-      .set({ username, displayName })
+      .set({ username, displayName, profileImageUrl })
       .where(sql`${schema.users.id} = ${userId}`)
       .run();
 
@@ -119,7 +127,7 @@ for (const userId of userIds) {
   }
 
   db.insert(schema.users)
-    .values({ id: userId, username, displayName })
+    .values({ id: userId, username, displayName, profileImageUrl })
     .run();
 
   console.log(`  ${userId}: inserted as @${username} (${displayName})`);

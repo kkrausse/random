@@ -22,6 +22,7 @@ type PhotoLiker = {
   userId: string;
   username: string;
   displayName: string;
+  profileImageUrl: string | null;
 };
 
 type SightingSearchParams = {
@@ -41,6 +42,7 @@ type PhotoCommentTree = {
   author: {
     username: string;
     displayName: string;
+    profileImageUrl: string | null;
   };
   likeCount: number;
   likedByCurrentUser: boolean;
@@ -171,6 +173,7 @@ async function SightingDetailContent({
           userId: users.id,
           username: users.username,
           displayName: users.displayName,
+          profileImageUrl: users.profileImageUrl,
         })
         .from(photoLikes)
         .innerJoin(users, eq(photoLikes.userId, users.id))
@@ -190,6 +193,7 @@ async function SightingDetailContent({
           deletedAt: photoComments.deletedAt,
           authorUsername: users.username,
           authorDisplayName: users.displayName,
+          authorProfileImageUrl: users.profileImageUrl,
         })
         .from(photoComments)
         .innerJoin(users, eq(photoComments.userId, users.id))
@@ -238,6 +242,7 @@ async function SightingDetailContent({
       userId: row.userId,
       username: row.username,
       displayName: row.displayName,
+      profileImageUrl: row.profileImageUrl,
     });
     photoLikers.set(row.photoId, likers);
   }
@@ -264,6 +269,7 @@ async function SightingDetailContent({
         author: {
           username: comment.authorUsername,
           displayName: comment.authorDisplayName,
+          profileImageUrl: comment.authorProfileImageUrl,
         },
         likeCount: commentLikeCounts.get(comment.id) ?? 0,
         likedByCurrentUser: currentUserCommentLikes.has(comment.id),

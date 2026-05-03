@@ -7,6 +7,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Heart, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import UserAvatar from "@/components/UserAvatar";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +30,7 @@ export type PhotoBlockComment = {
   author: {
     username: string;
     displayName: string;
+    profileImageUrl: string | null;
   };
   likeCount: number;
   likedByCurrentUser: boolean;
@@ -39,6 +41,7 @@ type PhotoBlockLiker = {
   userId: string;
   username: string;
   displayName: string;
+  profileImageUrl: string | null;
 };
 
 type PhotoBlockPhoto = {
@@ -241,8 +244,13 @@ export default function PhotoBlock({
                   <li key={liker.userId}>
                     <Link
                       href={`/user/${liker.username}`}
-                      className="text-sm text-blue-600 hover:underline"
+                      className="inline-flex items-center gap-2 text-sm text-blue-600 hover:underline"
                     >
+                      <UserAvatar
+                        imageUrl={liker.profileImageUrl}
+                        displayName={liker.displayName}
+                        username={liker.username}
+                      />
                       @{liker.username}
                       <span className="sr-only"> ({liker.displayName})</span>
                     </Link>
@@ -418,60 +426,75 @@ function ThreadedComment({
         </div>
       ) : (
         <>
-          <div className="text-xs text-gray-500">
+          <div className="flex gap-2">
             <Link
               href={`/user/${comment.author.username}`}
-              className="text-gray-700 hover:underline"
+              className="mt-0.5 shrink-0"
             >
-              @{comment.author.username}
-            </Link>{" "}
-            <Link
-              href={`/sighting/${sightingId}?photo=${comment.photoId}&comment=${comment.id}`}
-              className="hover:underline"
-            >
-              {formatCommentTime(comment.createdAt)}
+              <UserAvatar
+                imageUrl={comment.author.profileImageUrl}
+                displayName={comment.author.displayName}
+                username={comment.author.username}
+              />
+              <span className="sr-only">{comment.author.displayName}</span>
             </Link>
-          </div>
-          <p className="mt-1 whitespace-pre-wrap leading-snug text-gray-900">
-            {comment.body}
-          </p>
-          <div className="mt-1 flex items-center gap-3 text-xs">
-            <button
-              type="button"
-              onClick={toggleCommentLike}
-              disabled={likePending}
-              className={cn(
-                "text-gray-500 hover:text-gray-950 hover:underline disabled:opacity-60",
-                liked && "text-red-600"
-              )}
-            >
-              {liked ? "unlike" : "like"} ({likeCount})
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                currentUserId
-                  ? setReplying((value) => !value)
-                  : onAuthRequired({
-                      photoId: comment.photoId,
-                      commentId: comment.id,
-                    })
-              }
-              className="text-gray-500 hover:text-gray-950 hover:underline"
-            >
-              reply
-            </button>
-            {canDelete && (
-              <button
-                type="button"
-                onClick={deleteComment}
-                disabled={deletePending}
-                aria-label="Delete comment"
-                className="inline-flex items-center text-gray-500 hover:text-red-600 disabled:opacity-60"
-              >
-                <Trash2 className="size-3.5" />
-              </button>
-            )}
+            <div className="min-w-0 flex-1">
+              <div className="text-xs text-gray-500">
+                <Link
+                  href={`/user/${comment.author.username}`}
+                  className="text-gray-700 hover:underline"
+                >
+                  @{comment.author.username}
+                </Link>{" "}
+                <Link
+                  href={`/sighting/${sightingId}?photo=${comment.photoId}&comment=${comment.id}`}
+                  className="hover:underline"
+                >
+                  {formatCommentTime(comment.createdAt)}
+                </Link>
+              </div>
+              <p className="mt-1 whitespace-pre-wrap leading-snug text-gray-900">
+                {comment.body}
+              </p>
+              <div className="mt-1 flex items-center gap-3 text-xs">
+                <button
+                  type="button"
+                  onClick={toggleCommentLike}
+                  disabled={likePending}
+                  className={cn(
+                    "text-gray-500 hover:text-gray-950 hover:underline disabled:opacity-60",
+                    liked && "text-red-600"
+                  )}
+                >
+                  {liked ? "unlike" : "like"} ({likeCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    currentUserId
+                      ? setReplying((value) => !value)
+                      : onAuthRequired({
+                          photoId: comment.photoId,
+                          commentId: comment.id,
+                        })
+                  }
+                  className="text-gray-500 hover:text-gray-950 hover:underline"
+                >
+                  reply
+                </button>
+                {canDelete && (
+                  <button
+                    type="button"
+                    onClick={deleteComment}
+                    disabled={deletePending}
+                    aria-label="Delete comment"
+                    className="inline-flex items-center text-gray-500 hover:text-red-600 disabled:opacity-60"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </>
       )}

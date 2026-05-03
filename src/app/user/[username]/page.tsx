@@ -12,6 +12,7 @@ import { userChecklistRoute, userTripsRoute } from "@/lib/routes";
 import { parsePhotoSort } from "@/lib/photo-sort";
 import PhotoGridLoader from "@/components/PhotoGridLoader";
 import PhotoGridSkeleton from "@/components/PhotoGridSkeleton";
+import UserAvatar from "@/components/UserAvatar";
 import ProfileAccountButton from "./ProfileAccountButton";
 
 export default function UserHomePage({
@@ -57,10 +58,18 @@ async function UserHomeContent({
   return (
     <div className="p-4">
       <div className="max-w-2xl mx-auto mb-6">
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">{user.displayName}</h1>
-            <p className="text-gray-500 text-sm">@{user.username}</p>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <UserAvatar
+              imageUrl={user.profileImageUrl}
+              displayName={user.displayName}
+              username={user.username}
+              size="lg"
+            />
+            <div className="min-w-0">
+              <h1 className="truncate text-2xl font-bold">{user.displayName}</h1>
+              <p className="text-sm text-gray-500">@{user.username}</p>
+            </div>
           </div>
           {isOwner && (
             <div className="flex flex-col items-end gap-2">

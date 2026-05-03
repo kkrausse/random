@@ -16,6 +16,7 @@ export const users = sqliteTable(
     // Mirrored from Clerk for joins and public URLs. Clerk remains authoritative for these fields.
     username: text("username").notNull().unique(),
     displayName: text("display_name").notNull(),
+    profileImageUrl: text("profile_image_url"),
     // App-owned profile fields live here and can be edited by this app.
     bio: text("bio"),
     createdAt: text("created_at")

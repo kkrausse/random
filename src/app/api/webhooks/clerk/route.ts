@@ -5,12 +5,14 @@ import { users } from "@/db/schema";
 import {
   deriveAvailableMirroredUsername,
   deriveMirroredDisplayName,
+  mirroredProfileImageUrl,
 } from "@/lib/clerk-user-mirror";
 import { and, ne, sql } from "drizzle-orm";
 
 type ClerkUserEventData = {
   id: string;
   username: string | null;
+  image_url: string | null;
   first_name: string | null;
   last_name: string | null;
 };
@@ -65,13 +67,14 @@ export async function POST(req: NextRequest) {
     return rows.length > 0;
   });
   const displayName = deriveMirroredDisplayName(data);
+  const profileImageUrl = mirroredProfileImageUrl(data);
 
   await db
     .insert(users)
-    .values({ id: data.id, username, displayName })
+    .values({ id: data.id, username, displayName, profileImageUrl })
     .onConflictDoUpdate({
       target: users.id,
-      set: { username, displayName },
+      set: { username, displayName, profileImageUrl },
     });
 
   return NextResponse.json({ ok: true });

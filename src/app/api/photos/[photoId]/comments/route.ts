@@ -100,6 +100,7 @@ export async function POST(
     .select({
       username: users.username,
       displayName: users.displayName,
+      profileImageUrl: users.profileImageUrl,
     })
     .from(users)
     .where(eq(users.id, userId))

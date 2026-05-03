@@ -64,6 +64,13 @@
       "when": 1777825745286,
       "tag": "0008_unusual_captain_america",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1777839964123,
+      "tag": "0009_bright_jamie_braddock",
+      "breakpoints": true
     }
   ]
 }
