@@ -96,18 +96,18 @@ Photos already have stable database identity in `photos.id`, so likes and commen
 
 ## Edge Cases
 
-- [ ] Handle photos with zero likes and zero comments cleanly.
-- [ ] Handle deleted users only if the current user deletion behavior can leave orphaned comments; otherwise rely on cascade.
-- [ ] Handle soft-deleted comments by preserving their child replies, hiding like/reply/edit/delete actions on the deleted node, and excluding deleted comment bodies from normal display.
-- [ ] Handle a `comment` query param that does not belong to the requested `photo`.
-- [ ] Prevent duplicate likes under rapid clicks through database uniqueness and client pending state.
-- [ ] Make comment trees deterministic by sorting siblings by `created_at` then `id`.
-- [ ] Decide whether deleting a photo deletes all likes/comments through cascade and verify it does.
+- [x] Handle photos with zero likes and zero comments cleanly.
+- [x] Handle deleted users only if the current user deletion behavior can leave orphaned comments; otherwise rely on cascade.
+- [x] Handle soft-deleted comments by preserving their child replies, hiding like/reply/edit/delete actions on the deleted node, and excluding deleted comment bodies from normal display.
+- [x] Handle a `comment` query param that does not belong to the requested `photo`.
+- [x] Prevent duplicate likes under rapid clicks through database uniqueness and client pending state.
+- [x] Make comment trees deterministic by sorting siblings by `created_at` then `id`.
+- [x] Decide whether deleting a photo deletes all likes/comments through cascade and verify it does.
 
 ## Verification
 
-- [ ] Run `bun run tsc` for type validation.
-- [ ] Run `bun run lint` if changes touch enough client UI to warrant lint coverage.
+- [x] Run `bun run tsc` for type validation.
+- [x] Run `bun run lint` if changes touch enough client UI to warrant lint coverage.
 - [ ] Manually verify signed-out photo like redirects to `/sign-in`.
 - [ ] Manually verify signed-in photo like/unlike changes count and heart state.
 - [ ] Manually verify the likes text opens a dialog listing liker usernames.

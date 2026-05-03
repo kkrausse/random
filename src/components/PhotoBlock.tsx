@@ -119,9 +119,13 @@ export default function PhotoBlock({
   const commentCount = countComments(comments);
   const targetCommentIsInPhoto =
     targetCommentId !== null && hasComment(comments, targetCommentId);
+  const shouldTargetComment =
+    targetCommentIsInPhoto &&
+    (targetPhotoId === null || targetPhotoId === photo.id);
+  const highlightedCommentId = shouldTargetComment ? targetCommentId : null;
 
   useEffect(() => {
-    if (targetCommentId !== null && targetCommentIsInPhoto) {
+    if (shouldTargetComment && targetCommentId !== null) {
       document
         .getElementById(`comment-${targetCommentId}`)
         ?.scrollIntoView({ block: "center" });
@@ -133,7 +137,7 @@ export default function PhotoBlock({
         .getElementById(`photo-${photo.id}`)
         ?.scrollIntoView({ block: "start" });
     }
-  }, [photo.id, targetCommentId, targetCommentIsInPhoto, targetPhotoId]);
+  }, [photo.id, shouldTargetComment, targetCommentId, targetPhotoId]);
 
   function redirectToSignIn(target?: AuthRedirectTarget) {
     const nextSearchParams = new URLSearchParams(searchParams);
@@ -253,7 +257,7 @@ export default function PhotoBlock({
           comments={comments}
           currentUserId={currentUserId}
           sightingId={sightingId}
-          targetCommentId={targetCommentId}
+          targetCommentId={highlightedCommentId}
           onAuthRequired={redirectToSignIn}
         />
         <CommentForm
