@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import type { Metadata } from "next";
 import { connection } from "next/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -13,6 +14,46 @@ import { parsePhotoSort } from "@/lib/photo-sort";
 import PhotoGridLoader from "@/components/PhotoGridLoader";
 import PhotoGridSkeleton from "@/components/PhotoGridSkeleton";
 import UserAvatar from "@/components/UserAvatar";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ username: string }>;
+}): Promise<Metadata> {
+  await connection();
+  const { username } = await params;
+  const user = await getUserByUsername(username);
+
+  if (!user) {
+    return {};
+  }
+
+  const title = `${user.displayName} (@${user.username}) | BirdMog`;
+  const description = user.bio || `${user.displayName}'s bird sightings on BirdMog`;
+  const image = user.profileImageUrl
+    ? {
+        url: user.profileImageUrl,
+        alt: `${user.displayName}'s profile image`,
+      }
+    : undefined;
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: "profile",
+      images: image ? [image] : undefined,
+    },
+    twitter: {
+      card: "summary",
+      title,
+      description,
+      images: image ? [image] : undefined,
+    },
+  };
+}
 
 export default function UserHomePage({
   params,
