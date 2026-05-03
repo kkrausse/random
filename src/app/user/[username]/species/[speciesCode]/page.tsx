@@ -1,10 +1,11 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { notFound } from "next/navigation";
+import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
 import { db } from "@/db";
-import { sightings, photos } from "@/db/schema";
-import { eq, and, asc, inArray } from "drizzle-orm";
+import { photoComments, photoLikes, photos, sightings } from "@/db/schema";
+import { eq, and, asc, inArray, isNull, sql } from "drizzle-orm";
 import { getUserByUsername } from "@/lib/users";
 import PhotoGrid from "@/components/PhotoGrid";
 import { shuffle } from "@/lib/shuffle";
@@ -40,6 +41,7 @@ async function UserSpeciesContent({
   params: Promise<{ username: string; speciesCode: string }>;
 }) {
   await connection();
+  const { userId: currentUserId } = await auth();
   const { username, speciesCode } = await params;
 
   const user = await getUserByUsername(username);
@@ -61,6 +63,59 @@ async function UserSpeciesContent({
     .select()
     .from(photos)
     .where(inArray(photos.sightingId, sightingIds));
+  const photoIds = allPhotos.map((photo) => photo.id);
+
+  const photoLikeCountRows = photoIds.length
+    ? await db
+        .select({
+          photoId: photoLikes.photoId,
+          likeCount: sql<number>`count(*)`,
+        })
+        .from(photoLikes)
+        .where(inArray(photoLikes.photoId, photoIds))
+        .groupBy(photoLikes.photoId)
+    : [];
+
+  const photoCommentCountRows = photoIds.length
+    ? await db
+        .select({
+          photoId: photoComments.photoId,
+          commentCount: sql<number>`count(*)`,
+        })
+        .from(photoComments)
+        .where(
+          and(
+            inArray(photoComments.photoId, photoIds),
+            isNull(photoComments.deletedAt)
+          )
+        )
+        .groupBy(photoComments.photoId)
+    : [];
+
+  const currentUserPhotoLikeRows =
+    currentUserId && photoIds.length
+      ? await db
+          .select({
+            photoId: photoLikes.photoId,
+          })
+          .from(photoLikes)
+          .where(
+            and(
+              eq(photoLikes.userId, currentUserId),
+              inArray(photoLikes.photoId, photoIds)
+            )
+          )
+      : [];
+
+  const photoLikeCounts = new Map(
+    photoLikeCountRows.map((row) => [row.photoId, row.likeCount])
+  );
+  const photoCommentCounts = new Map(
+    photoCommentCountRows.map((row) => [row.photoId, row.commentCount])
+  );
+  const currentUserPhotoLikes = new Set(
+    currentUserPhotoLikeRows.map((row) => row.photoId)
+  );
 
   const photoMap = new Map<number, typeof allPhotos>();
   for (const p of allPhotos) {
@@ -72,6 +127,7 @@ async function UserSpeciesContent({
   const photoItems = shuffle(userSightings.flatMap((s) => {
     const sPhotos = photoMap.get(s.id) ?? [];
     return sPhotos.map((p) => ({
+      photoId: p.id,
       sightingId: s.id,
       species: s.species,
       date: s.date,
@@ -80,6 +136,9 @@ async function UserSpeciesContent({
       username: user.username,
       width: p.width ?? undefined,
       height: p.height ?? undefined,
+      likeCount: photoLikeCounts.get(p.id) ?? 0,
+      commentCount: photoCommentCounts.get(p.id) ?? 0,
+      likedByCurrentUser: currentUserPhotoLikes.has(p.id),
     }));
   }));
 

@@ -125,6 +125,13 @@ export default function PhotoBlock({
   const highlightedCommentId = shouldTargetComment ? targetCommentId : null;
 
   useEffect(() => {
+    if (window.location.hash === `#photo-${photo.id}-comments`) {
+      document
+        .getElementById(`photo-${photo.id}-comments`)
+        ?.scrollIntoView({ block: "start" });
+      return;
+    }
+
     if (shouldTargetComment && targetCommentId !== null) {
       document
         .getElementById(`comment-${targetCommentId}`)
@@ -249,7 +256,7 @@ export default function PhotoBlock({
         </Dialog>
       </div>
 
-      <div className="border-t pt-3">
+      <div id={`photo-${photo.id}-comments`} className="scroll-mt-4 border-t pt-3">
         <div className="mb-3 text-sm font-medium">
           {formatCount(commentCount, "comment")}
         </div>

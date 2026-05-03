@@ -1,7 +1,8 @@
 import { ReactNode } from "react";
+import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { sightings, photos, users } from "@/db/schema";
-import { desc, eq, inArray } from "drizzle-orm";
+import { photoComments, photoLikes, photos, sightings, users } from "@/db/schema";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { connection } from "next/server";
 import { shuffle } from "@/lib/shuffle";
 import {
@@ -18,6 +19,7 @@ interface Props {
 }
 
 interface PhotoItem {
+  photoId: number;
   sightingId: number;
   species: string;
   date: string;
@@ -27,6 +29,9 @@ interface PhotoItem {
   width?: number;
   height?: number;
   createdAt: string;
+  likeCount: number;
+  commentCount: number;
+  likedByCurrentUser: boolean;
 }
 
 function sortPhotoItems(items: PhotoItem[], sort: PhotoSort) {
@@ -78,6 +83,7 @@ export default async function PhotoGridLoader({
   // Opt this component out of static prerendering so it always
   // fetches fresh data at request time while the page shell stays static.
   await connection();
+  const { userId: currentUserId } = await auth();
 
   const allSightings = await db
     .select({
@@ -98,6 +104,59 @@ export default async function PhotoGridLoader({
     sightingIds.length > 0
       ? await db.select().from(photos).where(inArray(photos.sightingId, sightingIds))
       : [];
+  const photoIds = allPhotos.map((photo) => photo.id);
+
+  const photoLikeCountRows = photoIds.length
+    ? await db
+        .select({
+          photoId: photoLikes.photoId,
+          likeCount: sql<number>`count(*)`,
+        })
+        .from(photoLikes)
+        .where(inArray(photoLikes.photoId, photoIds))
+        .groupBy(photoLikes.photoId)
+    : [];
+
+  const photoCommentCountRows = photoIds.length
+    ? await db
+        .select({
+          photoId: photoComments.photoId,
+          commentCount: sql<number>`count(*)`,
+        })
+        .from(photoComments)
+        .where(
+          and(
+            inArray(photoComments.photoId, photoIds),
+            isNull(photoComments.deletedAt)
+          )
+        )
+        .groupBy(photoComments.photoId)
+    : [];
+
+  const currentUserPhotoLikeRows =
+    currentUserId && photoIds.length
+      ? await db
+          .select({
+            photoId: photoLikes.photoId,
+          })
+          .from(photoLikes)
+          .where(
+            and(
+              eq(photoLikes.userId, currentUserId),
+              inArray(photoLikes.photoId, photoIds)
+            )
+          )
+      : [];
+
+  const photoLikeCounts = new Map(
+    photoLikeCountRows.map((row) => [row.photoId, row.likeCount])
+  );
+  const photoCommentCounts = new Map(
+    photoCommentCountRows.map((row) => [row.photoId, row.commentCount])
+  );
+  const currentUserPhotoLikes = new Set(
+    currentUserPhotoLikeRows.map((row) => row.photoId)
+  );
 
   const photoMap = new Map<number, typeof allPhotos>();
   for (const p of allPhotos) {
@@ -109,6 +168,7 @@ export default async function PhotoGridLoader({
   const photoItems = sortPhotoItems(allSightings.flatMap((s) => {
     const sPhotos = photoMap.get(s.id) ?? [];
     return sPhotos.map((p) => ({
+      photoId: p.id,
       sightingId: s.id,
       species: s.species,
       date: s.date,
@@ -118,6 +178,9 @@ export default async function PhotoGridLoader({
       width: p.width ?? undefined,
       height: p.height ?? undefined,
       createdAt: p.createdAt,
+      likeCount: photoLikeCounts.get(p.id) ?? 0,
+      commentCount: photoCommentCounts.get(p.id) ?? 0,
+      likedByCurrentUser: currentUserPhotoLikes.has(p.id),
     }));
   }), sort);
 
