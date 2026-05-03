@@ -146,6 +146,7 @@ export default function SightingForm({ sighting, prefill }: Props) {
         }
 
         const savedSighting = (await res.json()) as SavedSighting;
+        window.history.replaceState(window.history.state, "", "/add");
         router.push(`/sighting/${savedSighting.id}`);
         router.refresh();
         return;
