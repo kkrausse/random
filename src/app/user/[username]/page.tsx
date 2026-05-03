@@ -13,7 +13,6 @@ import { parsePhotoSort } from "@/lib/photo-sort";
 import PhotoGridLoader from "@/components/PhotoGridLoader";
 import PhotoGridSkeleton from "@/components/PhotoGridSkeleton";
 import UserAvatar from "@/components/UserAvatar";
-import ProfileAccountButton from "./ProfileAccountButton";
 
 export default function UserHomePage({
   params,
@@ -58,7 +57,7 @@ async function UserHomeContent({
   return (
     <div className="p-4">
       <div className="max-w-2xl mx-auto mb-6">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <UserAvatar
               imageUrl={user.profileImageUrl}
@@ -69,19 +68,16 @@ async function UserHomeContent({
             <div className="min-w-0">
               <h1 className="truncate text-2xl font-bold">{user.displayName}</h1>
               <p className="text-sm text-gray-500">@{user.username}</p>
+              {isOwner && (
+                <Link
+                  href={`/user/${username}/edit`}
+                  className="mt-1 inline-block text-sm text-blue-600 hover:underline"
+                >
+                  Edit Profile
+                </Link>
+              )}
             </div>
           </div>
-          {isOwner && (
-            <div className="flex flex-col items-end gap-2">
-              <ProfileAccountButton />
-              <Link
-                href={`/user/${username}/edit`}
-                className="text-sm text-blue-600 hover:underline"
-              >
-                Edit Profile
-              </Link>
-            </div>
-          )}
         </div>
         <div className="flex flex-wrap gap-6 mt-3 text-sm text-gray-600">
           <Link
