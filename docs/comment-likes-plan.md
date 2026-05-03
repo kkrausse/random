@@ -62,17 +62,17 @@ Photos already have stable database identity in `photos.id`, so likes and commen
 
 ## UI Components
 
-- [ ] Create a client component for a photo block with image, heart button, like count text, and comments below.
-- [ ] Use `Heart` from `lucide-react` for the photo like button.
-- [ ] Render an outlined heart when not liked and a filled/active heart when liked.
-- [ ] Keep the heart button separate from the likes text so the text can open the liker dialog.
-- [ ] Use existing shadcn `Dialog` for the liker list.
-- [ ] Add a lightweight threaded comment component styled like Hacker News: compact text, author/time metadata, small action links, indentation for replies.
-- [ ] Add a comment form below each photo for top-level comments.
-- [ ] Add inline reply forms under comments.
-- [ ] Add comment like controls and counts to each comment.
-- [ ] Disable or redirect comment and like actions for signed-out users.
-- [ ] Keep optimistic UI minimal; prefer correctness and `router.refresh()` unless latency becomes painful.
+- [x] Create a client component for a photo block with image, heart button, like count text, and comments below.
+- [x] Use `Heart` from `lucide-react` for the photo like button.
+- [x] Render an outlined heart when not liked and a filled/active heart when liked.
+- [x] Keep the heart button separate from the likes text so the text can open the liker dialog.
+- [x] Use existing shadcn `Dialog` for the liker list.
+- [x] Add a lightweight threaded comment component styled like Hacker News: compact text, author/time metadata, small action links, indentation for replies.
+- [x] Add a comment form below each photo for top-level comments.
+- [x] Add inline reply forms under comments.
+- [x] Add comment like controls and counts to each comment.
+- [x] Disable or redirect comment and like actions for signed-out users.
+- [x] Keep optimistic UI minimal; prefer correctness and `router.refresh()` unless latency becomes painful.
 
 ## Auth Behavior
 

@@ -14,6 +14,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import DeleteButton from "@/components/DeleteButton";
+import PhotoBlock from "@/components/PhotoBlock";
 import { userRoute } from "@/lib/routes";
 import Loading from "./loading";
 
@@ -281,14 +282,30 @@ async function SightingDetailContent({
 
       {sightingPhotos.length > 0 && (
         <div className="space-y-4 mb-6">
-          {photoBlocks.map(({ photo }) => (
-            <img
-              key={photo.id}
-              src={`/api/uploads/${photo.filename}`}
-              alt={sighting.species}
-              className="w-full rounded-lg"
+          {photoBlocks.map((photoBlock) => (
+            <PhotoBlock
+              key={photoBlock.photo.id}
+              photo={{
+                id: photoBlock.photo.id,
+                filename: photoBlock.photo.filename,
+                width: photoBlock.photo.width,
+                height: photoBlock.photo.height,
+              }}
+              species={sighting.species}
+              sightingId={sighting.id}
+              currentUserId={userId}
+              initialLikeCount={photoBlock.likeCount}
+              initialLikedByCurrentUser={photoBlock.likedByCurrentUser}
+              likers={photoBlock.likers}
+              comments={photoBlock.comments}
             />
           ))}
+        </div>
+      )}
+
+      {sightingPhotos.length === 0 && (
+        <div className="mb-6 rounded-lg border border-dashed p-4 text-sm text-gray-500">
+          No photos for this sighting yet.
         </div>
       )}
 
