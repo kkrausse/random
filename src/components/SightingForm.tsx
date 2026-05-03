@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import SpeciesAutocomplete from "./SpeciesAutocomplete";
 import MapPicker from "./MapPicker";
@@ -48,6 +48,25 @@ interface SavedSighting {
   id: number;
 }
 
+const ADD_FORM_UPLOADED_PHOTOS_KEY = "bird-log:add-form-uploaded-photos";
+
+function parseSavedUploadedPhotos(value: string | null): UploadedPhoto[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is UploadedPhoto =>
+        typeof item === "object" &&
+        item !== null &&
+        typeof item.id === "string" &&
+        typeof item.filename === "string"
+    );
+  } catch {
+    return [];
+  }
+}
+
 export default function SightingForm({ sighting, prefill }: Props) {
   const router = useRouter();
   const isEditing = !!sighting;
@@ -63,6 +82,7 @@ export default function SightingForm({ sighting, prefill }: Props) {
   const [locationName, setLocationName] = useState(sighting?.locationName ?? prefill?.locationName ?? "");
   const [notes, setNotes] = useState(sighting?.notes ?? "");
   const [uploadedPhotos, setUploadedPhotos] = useState<UploadedPhoto[]>([]);
+  const [initialUploadedPhotos, setInitialUploadedPhotos] = useState<UploadedPhoto[]>([]);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [existingPhotos, setExistingPhotos] = useState<ExistingPhoto[]>(sighting?.photos ?? []);
   const [removedPhotoIds, setRemovedPhotoIds] = useState<number[]>([]);
@@ -77,6 +97,27 @@ export default function SightingForm({ sighting, prefill }: Props) {
     },
     []
   );
+
+  useEffect(() => {
+    if (isEditing) return;
+    const savedUploads = parseSavedUploadedPhotos(
+      window.localStorage.getItem(ADD_FORM_UPLOADED_PHOTOS_KEY)
+    );
+    setInitialUploadedPhotos(savedUploads);
+    setUploadedPhotos(savedUploads);
+  }, [isEditing]);
+
+  useEffect(() => {
+    if (isEditing) return;
+    if (uploadedPhotos.length > 0) {
+      window.localStorage.setItem(
+        ADD_FORM_UPLOADED_PHOTOS_KEY,
+        JSON.stringify(uploadedPhotos)
+      );
+    } else {
+      window.localStorage.removeItem(ADD_FORM_UPLOADED_PHOTOS_KEY);
+    }
+  }, [isEditing, uploadedPhotos]);
 
   const handleRemoveExisting = (photoId: number) => {
     setExistingPhotos((prev) => prev.filter((p) => p.id !== photoId));
@@ -156,6 +197,7 @@ export default function SightingForm({ sighting, prefill }: Props) {
         }
 
         const savedSighting = (await res.json()) as SavedSighting;
+        window.localStorage.removeItem(ADD_FORM_UPLOADED_PHOTOS_KEY);
         window.history.replaceState(window.history.state, "", "/add");
         router.push(`/sighting/${savedSighting.id}`);
         router.refresh();
@@ -214,6 +256,7 @@ export default function SightingForm({ sighting, prefill }: Props) {
         onUploadsChange={setUploadedPhotos}
         onUploadingChange={setUploadingPhotos}
         onError={setError}
+        initialUploads={initialUploadedPhotos}
         existingPhotos={existingPhotos}
         onRemoveExisting={handleRemoveExisting}
       />

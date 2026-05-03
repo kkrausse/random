@@ -23,7 +23,7 @@ function getStagedUploadsDir(userId: string) {
   return path.join(getUploadsDir(), ".staged", encodeURIComponent(userId));
 }
 
-function isSafeFilename(filename: string) {
+export function isSafeUploadFilename(filename: string) {
   return filename.length > 0 && !filename.includes("..") && !filename.includes("/") && !filename.includes("\\");
 }
 
@@ -64,7 +64,7 @@ export async function stageUploadedFile(userId: string, file: File): Promise<Sto
 }
 
 export async function promoteStagedUpload(userId: string, id: string): Promise<StoredPhotoFile> {
-  if (!isSafeFilename(id)) {
+  if (!isSafeUploadFilename(id)) {
     throw new Error("Invalid upload id");
   }
 
@@ -77,4 +77,12 @@ export async function promoteStagedUpload(userId: string, id: string): Promise<S
 
   const buffer = await readFile(finalPath);
   return { filename: id, ...getDimensions(buffer) };
+}
+
+export async function readStagedUpload(userId: string, id: string) {
+  if (!isSafeUploadFilename(id)) {
+    throw new Error("Invalid upload id");
+  }
+
+  return readFile(path.join(getStagedUploadsDir(userId), id));
 }

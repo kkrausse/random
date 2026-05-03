@@ -2,15 +2,7 @@ import { NextRequest, NextResponse, connection } from "next/server";
 import { readFile } from "fs/promises";
 import path from "path";
 import { getUploadsDir } from "@/lib/uploads";
-
-const MIME_TYPES: Record<string, string> = {
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  gif: "image/gif",
-  webp: "image/webp",
-  heic: "image/heic",
-};
+import { getImageContentType } from "@/lib/image-mime";
 
 export async function GET(
   _req: NextRequest,
@@ -28,12 +20,10 @@ export async function GET(
 
   try {
     const buffer = await readFile(filePath);
-    const ext = filename.split(".").pop()?.toLowerCase() || "jpg";
-    const contentType = MIME_TYPES[ext] || "application/octet-stream";
 
     return new NextResponse(buffer, {
       headers: {
-        "Content-Type": contentType,
+        "Content-Type": getImageContentType(filename),
         "Cache-Control": "public, max-age=31536000, immutable",
       },
     });

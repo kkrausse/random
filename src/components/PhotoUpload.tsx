@@ -18,15 +18,16 @@ interface Props {
   onUploadsChange: (uploads: UploadedPhoto[]) => void;
   onUploadingChange?: (uploading: boolean) => void;
   onError?: (error: string) => void;
+  initialUploads?: UploadedPhoto[];
   existingPhotos?: ExistingPhoto[];
   onRemoveExisting?: (photoId: number) => void;
 }
 
 interface Preview {
   key: string;
-  file: File;
   url: string;
   status: "uploading" | "uploaded" | "error";
+  file?: File;
   upload?: UploadedPhoto;
 }
 
@@ -34,6 +35,7 @@ export default function PhotoUpload({
   onUploadsChange,
   onUploadingChange,
   onError,
+  initialUploads = [],
   existingPhotos = [],
   onRemoveExisting,
 }: Props) {
@@ -45,6 +47,23 @@ export default function PhotoUpload({
     onUploadsChange(previews.flatMap((preview) => (preview.upload ? [preview.upload] : [])));
     onUploadingChange?.(previews.some((preview) => preview.status === "uploading"));
   }, [onUploadingChange, onUploadsChange, previews]);
+
+  useEffect(() => {
+    if (initialUploads.length === 0) return;
+    setPreviews((prev) => {
+      const existingIds = new Set(prev.flatMap((preview) => (preview.upload ? [preview.upload.id] : [])));
+      const restored = initialUploads
+        .filter((upload) => !existingIds.has(upload.id))
+        .map((upload) => ({
+          key: upload.id,
+          url: `/api/uploads/staged/${upload.id}`,
+          status: "uploaded" as const,
+          upload,
+        }));
+
+      return restored.length > 0 ? [...prev, ...restored] : prev;
+    });
+  }, [initialUploads]);
 
   const uploadFile = useCallback(
     async (key: string, file: File) => {
@@ -107,7 +126,9 @@ export default function PhotoUpload({
 
   const removeFile = (idx: number) => {
     setPreviews((prev) => {
-      URL.revokeObjectURL(prev[idx].url);
+      if (prev[idx].url.startsWith("blob:")) {
+        URL.revokeObjectURL(prev[idx].url);
+      }
       return prev.filter((_, i) => i !== idx);
     });
   };
