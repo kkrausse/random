@@ -42,4 +42,4 @@ next-env.d.ts
 
 # bird-log local data
 data/*
-# uploads/
+uploads/
