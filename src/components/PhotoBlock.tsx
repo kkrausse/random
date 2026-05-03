@@ -58,6 +58,11 @@ type PhotoBlockProps = {
   comments: PhotoBlockComment[];
 };
 
+type AuthRedirectTarget = {
+  photoId?: number;
+  commentId?: number;
+};
+
 function formatCount(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
@@ -100,8 +105,16 @@ export default function PhotoBlock({
   const [photoLikePending, setPhotoLikePending] = useState(false);
   const commentCount = countComments(comments);
 
-  function redirectToSignIn() {
-    const query = searchParams.toString();
+  function redirectToSignIn(target?: AuthRedirectTarget) {
+    const nextSearchParams = new URLSearchParams(searchParams);
+    if (target?.photoId) {
+      nextSearchParams.set("photo", String(target.photoId));
+    }
+    if (target?.commentId) {
+      nextSearchParams.set("comment", String(target.commentId));
+    }
+
+    const query = nextSearchParams.toString();
     const returnTo = `${pathname}${query ? `?${query}` : ""}${window.location.hash}`;
     router.push(
       `/sign-in?redirect_url=${encodeURIComponent(returnTo)}` as Route
@@ -110,7 +123,7 @@ export default function PhotoBlock({
 
   async function togglePhotoLike() {
     if (!currentUserId) {
-      redirectToSignIn();
+      redirectToSignIn({ photoId: photo.id });
       return;
     }
 
@@ -231,7 +244,7 @@ function CommentList({
   comments: PhotoBlockComment[];
   currentUserId: string | null;
   sightingId: number;
-  onAuthRequired: () => void;
+  onAuthRequired: (target?: AuthRedirectTarget) => void;
 }) {
   if (comments.length === 0) {
     return <p className="mb-3 text-sm text-gray-500">No comments yet.</p>;
@@ -261,7 +274,7 @@ function ThreadedComment({
   comment: PhotoBlockComment;
   currentUserId: string | null;
   sightingId: number;
-  onAuthRequired: () => void;
+  onAuthRequired: (target?: AuthRedirectTarget) => void;
 }) {
   const router = useRouter();
   const [replying, setReplying] = useState(false);
@@ -272,7 +285,7 @@ function ThreadedComment({
 
   async function toggleCommentLike() {
     if (!currentUserId) {
-      onAuthRequired();
+      onAuthRequired({ photoId: comment.photoId, commentId: comment.id });
       return;
     }
 
@@ -285,7 +298,7 @@ function ThreadedComment({
       });
 
       if (response.status === 401) {
-        onAuthRequired();
+        onAuthRequired({ photoId: comment.photoId, commentId: comment.id });
         return;
       }
 
@@ -335,7 +348,14 @@ function ThreadedComment({
         </button>
         <button
           type="button"
-          onClick={() => (currentUserId ? setReplying((value) => !value) : onAuthRequired())}
+          onClick={() =>
+            currentUserId
+              ? setReplying((value) => !value)
+              : onAuthRequired({
+                  photoId: comment.photoId,
+                  commentId: comment.id,
+                })
+          }
           className="text-gray-500 hover:text-gray-950 hover:underline"
         >
           reply
@@ -380,7 +400,7 @@ function CommentForm({
   photoId: number;
   parentId?: number | null;
   currentUserId: string | null;
-  onAuthRequired: () => void;
+  onAuthRequired: (target?: AuthRedirectTarget) => void;
   onSubmitted?: () => void;
 }) {
   const router = useRouter();
@@ -392,7 +412,7 @@ function CommentForm({
     event.preventDefault();
 
     if (!currentUserId) {
-      onAuthRequired();
+      onAuthRequired({ photoId, commentId: parentId ?? undefined });
       return;
     }
 
@@ -412,7 +432,7 @@ function CommentForm({
       });
 
       if (response.status === 401) {
-        onAuthRequired();
+        onAuthRequired({ photoId, commentId: parentId ?? undefined });
         return;
       }
 
@@ -435,7 +455,9 @@ function CommentForm({
         value={body}
         onChange={(event) => setBody(event.target.value)}
         onFocus={() => {
-          if (!currentUserId) onAuthRequired();
+          if (!currentUserId) {
+            onAuthRequired({ photoId, commentId: parentId ?? undefined });
+          }
         }}
         placeholder={parentId ? "Reply" : "Add a comment"}
         maxLength={2000}

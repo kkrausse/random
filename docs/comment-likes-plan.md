@@ -76,10 +76,10 @@ Photos already have stable database identity in `photos.id`, so likes and commen
 
 ## Auth Behavior
 
-- [ ] Use Clerk `auth()` on the server and API routes to identify the current user.
-- [ ] When a signed-out user clicks photo like, comment like, comment submit, or reply, navigate to `/sign-in`.
-- [ ] Preserve return location with the current sighting/photo/comment target if Clerk supports the current app's sign-in return flow.
-- [ ] Ensure server routes enforce auth even if the client hides or redirects controls.
+- [x] Use Clerk `auth()` on the server and API routes to identify the current user.
+- [x] When a signed-out user clicks photo like, comment like, comment submit, or reply, navigate to `/sign-in`.
+- [x] Preserve return location with the current sighting/photo/comment target if Clerk supports the current app's sign-in return flow.
+- [x] Ensure server routes enforce auth even if the client hides or redirects controls.
 
 ## Deep Links and Scrolling
 
