@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, connection } from "next/server";
 import { readFile } from "fs/promises";
 import path from "path";
+import { getUploadsDir } from "@/lib/uploads";
 
 const MIME_TYPES: Record<string, string> = {
   jpg: "image/jpeg",
@@ -23,10 +24,7 @@ export async function GET(
     return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
   }
 
-  const uploadsDir = process.env.UPLOADS_DIR
-    ? path.resolve(process.env.UPLOADS_DIR)
-    : path.join(process.cwd(), "uploads");
-  const filePath = path.join(uploadsDir, filename);
+  const filePath = path.join(getUploadsDir(), filename);
 
   try {
     const buffer = await readFile(filePath);

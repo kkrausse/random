@@ -7,38 +7,108 @@ interface ExistingPhoto {
   filename: string;
 }
 
+export interface UploadedPhoto {
+  id: string;
+  filename: string;
+  width?: number;
+  height?: number;
+}
+
 interface Props {
-  onFilesChange: (files: File[]) => void;
+  onUploadsChange: (uploads: UploadedPhoto[]) => void;
+  onUploadingChange?: (uploading: boolean) => void;
+  onError?: (error: string) => void;
   existingPhotos?: ExistingPhoto[];
   onRemoveExisting?: (photoId: number) => void;
 }
 
-export default function PhotoUpload({ onFilesChange, existingPhotos = [], onRemoveExisting }: Props) {
-  const [previews, setPreviews] = useState<{ file: File; url: string }[]>([]);
+interface Preview {
+  key: string;
+  file: File;
+  url: string;
+  status: "uploading" | "uploaded" | "error";
+  upload?: UploadedPhoto;
+}
+
+export default function PhotoUpload({
+  onUploadsChange,
+  onUploadingChange,
+  onError,
+  existingPhotos = [],
+  onRemoveExisting,
+}: Props) {
+  const [previews, setPreviews] = useState<Preview[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    onUploadsChange(previews.flatMap((preview) => (preview.upload ? [preview.upload] : [])));
+    onUploadingChange?.(previews.some((preview) => preview.status === "uploading"));
+  }, [onUploadingChange, onUploadsChange, previews]);
+
+  const uploadFile = useCallback(
+    async (key: string, file: File) => {
+      try {
+        const formData = new FormData();
+        formData.set("photo", file);
+        const res = await fetch("/api/uploads", {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to upload photo");
+        }
+
+        setPreviews((prev) => {
+          return prev.map((preview) =>
+            preview.key === key
+              ? { ...preview, status: "uploaded" as const, upload: data as UploadedPhoto }
+              : preview
+          );
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to upload photo";
+        setPreviews((prev) => {
+          return prev.map((preview) =>
+            preview.key === key ? { ...preview, status: "error" as const } : preview
+          );
+        });
+        onError?.(message);
+      }
+    },
+    [onError]
+  );
 
   const addFiles = useCallback(
     (newFiles: File[]) => {
       const imageFiles = newFiles.filter((f) => f.type.startsWith("image/"));
+      if (imageFiles.length !== newFiles.length) {
+        onError?.("Only image files can be uploaded");
+      }
+      const newPreviews = imageFiles.map((file) => ({
+        key: crypto.randomUUID(),
+        file,
+        url: URL.createObjectURL(file),
+        status: "uploading" as const,
+      }));
+
       setPreviews((prev) => {
-        const updated = [
-          ...prev,
-          ...imageFiles.map((file) => ({ file, url: URL.createObjectURL(file) })),
-        ];
-        onFilesChange(updated.map((p) => p.file));
-        return updated;
+        return [...prev, ...newPreviews];
+      });
+
+      newPreviews.forEach((preview) => {
+        void uploadFile(preview.key, preview.file);
       });
     },
-    [onFilesChange]
+    [onError, uploadFile]
   );
 
   const removeFile = (idx: number) => {
     setPreviews((prev) => {
       URL.revokeObjectURL(prev[idx].url);
-      const updated = prev.filter((_, i) => i !== idx);
-      onFilesChange(updated.map((p) => p.file));
-      return updated;
+      return prev.filter((_, i) => i !== idx);
     });
   };
 
@@ -87,7 +157,10 @@ export default function PhotoUpload({ onFilesChange, existingPhotos = [], onRemo
           type="file"
           accept="image/*"
           multiple
-          onChange={(e) => addFiles(Array.from(e.target.files || []))}
+          onChange={(e) => {
+            addFiles(Array.from(e.target.files || []));
+            e.target.value = "";
+          }}
           className="hidden"
         />
       </div>
@@ -119,8 +192,20 @@ export default function PhotoUpload({ onFilesChange, existingPhotos = [], onRemo
               <img
                 src={preview.url}
                 alt="Preview"
-                className="w-20 h-20 object-cover rounded-lg"
+                className={`w-20 h-20 object-cover rounded-lg ${
+                  preview.status === "uploading" ? "opacity-60" : ""
+                }`}
               />
+              {preview.status === "uploading" && (
+                <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/30 text-xs text-white">
+                  Uploading
+                </div>
+              )}
+              {preview.status === "error" && (
+                <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-red-600/80 text-xs text-white">
+                  Failed
+                </div>
+              )}
               <button
                 type="button"
                 onClick={(e) => {

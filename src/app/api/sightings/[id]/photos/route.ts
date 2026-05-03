@@ -2,11 +2,8 @@ import { NextRequest, NextResponse, connection } from "next/server";
 import { db } from "@/db";
 import { sightings, photos } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
-import { v4 as uuid } from "uuid";
 import { auth } from "@clerk/nextjs/server";
-import { imageSize } from "image-size";
+import { promoteStagedUpload, storeUploadedFile } from "@/lib/uploads";
 
 export async function POST(
   req: NextRequest,
@@ -32,39 +29,43 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const formData = await req.formData();
-  const photoFiles = formData.getAll("photos") as File[];
+  const contentType = req.headers.get("content-type") ?? "";
+  let uploadedPhotoIds: string[] = [];
+  let photoFiles: File[] = [];
 
-  if (photoFiles.length === 0) {
+  if (contentType.includes("application/json")) {
+    const body = await req.json();
+    uploadedPhotoIds = Array.isArray(body.uploadedPhotoIds) ? body.uploadedPhotoIds : [];
+  } else {
+    const formData = await req.formData();
+    photoFiles = formData.getAll("photos") as File[];
+  }
+
+  if (uploadedPhotoIds.length === 0 && photoFiles.length === 0) {
     return NextResponse.json({ error: "No photos provided" }, { status: 400 });
   }
 
-  const uploadDir = process.env.UPLOADS_DIR
-    ? path.resolve(process.env.UPLOADS_DIR)
-    : path.join(process.cwd(), "uploads");
-  await mkdir(uploadDir, { recursive: true });
-
   const newPhotos = [];
-  for (const file of photoFiles) {
-    if (!(file instanceof File) || file.size === 0) continue;
-    const ext = file.name.split(".").pop() || "jpg";
-    const filename = `${uuid()}.${ext}`;
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(path.join(uploadDir, filename), buffer);
-
-    let width: number | undefined;
-    let height: number | undefined;
+  for (const uploadedPhotoId of uploadedPhotoIds) {
+    let photoFile;
     try {
-      const dims = imageSize(buffer);
-      width = dims.width;
-      height = dims.height;
+      photoFile = await promoteStagedUpload(userId, uploadedPhotoId);
     } catch {
-      // ignore dimension extraction errors
+      return NextResponse.json({ error: "One or more uploaded photos could not be found" }, { status: 400 });
     }
-
     const [photo] = await db
       .insert(photos)
-      .values({ sightingId, filename, width, height })
+      .values({ sightingId, ...photoFile })
+      .returning();
+    newPhotos.push(photo);
+  }
+
+  for (const file of photoFiles) {
+    if (!(file instanceof File) || file.size === 0) continue;
+    const photoFile = await storeUploadedFile(file);
+    const [photo] = await db
+      .insert(photos)
+      .values({ sightingId, ...photoFile })
       .returning();
     newPhotos.push(photo);
   }

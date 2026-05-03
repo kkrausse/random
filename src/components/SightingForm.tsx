@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import SpeciesAutocomplete from "./SpeciesAutocomplete";
 import MapPicker from "./MapPicker";
-import PhotoUpload from "./PhotoUpload";
+import PhotoUpload, { type UploadedPhoto } from "./PhotoUpload";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -62,7 +62,8 @@ export default function SightingForm({ sighting, prefill }: Props) {
   const [lng, setLng] = useState<number | null>(sighting?.lng ?? prefill?.lng ?? null);
   const [locationName, setLocationName] = useState(sighting?.locationName ?? prefill?.locationName ?? "");
   const [notes, setNotes] = useState(sighting?.notes ?? "");
-  const [photos, setPhotos] = useState<File[]>([]);
+  const [uploadedPhotos, setUploadedPhotos] = useState<UploadedPhoto[]>([]);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [existingPhotos, setExistingPhotos] = useState<ExistingPhoto[]>(sighting?.photos ?? []);
   const [removedPhotoIds, setRemovedPhotoIds] = useState<number[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -92,6 +93,10 @@ export default function SightingForm({ sighting, prefill }: Props) {
       setError("Please select a location on the map");
       return;
     }
+    if (uploadingPhotos) {
+      setError("Please wait for photos to finish uploading");
+      return;
+    }
 
     setSubmitting(true);
     setError("");
@@ -117,28 +122,33 @@ export default function SightingForm({ sighting, prefill }: Props) {
           throw new Error(data.error || "Failed to update sighting");
         }
 
-        if (photos.length > 0) {
-          const formData = new FormData();
-          photos.forEach((file) => formData.append("photos", file));
-          await fetch(`/api/sightings/${sighting.id}/photos`, {
+        if (uploadedPhotos.length > 0) {
+          const photoRes = await fetch(`/api/sightings/${sighting.id}/photos`, {
             method: "POST",
-            body: formData,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              uploadedPhotoIds: uploadedPhotos.map((photo) => photo.id),
+            }),
           });
+          if (!photoRes.ok) {
+            const data = await photoRes.json();
+            throw new Error(data.error || "Failed to attach photos");
+          }
         }
       } else {
-        const formData = new FormData();
-        formData.set("species", species.commonName);
-        formData.set("speciesCode", species.speciesCode);
-        formData.set("date", date);
-        formData.set("lat", String(lat));
-        formData.set("lng", String(lng));
-        formData.set("locationName", locationName);
-        formData.set("notes", notes);
-        photos.forEach((file) => formData.append("photos", file));
-
         const res = await fetch("/api/sightings", {
           method: "POST",
-          body: formData,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            species: species.commonName,
+            speciesCode: species.speciesCode,
+            date,
+            lat,
+            lng,
+            locationName,
+            notes,
+            uploadedPhotoIds: uploadedPhotos.map((photo) => photo.id),
+          }),
         });
         if (!res.ok) {
           const data = await res.json();
@@ -201,13 +211,21 @@ export default function SightingForm({ sighting, prefill }: Props) {
       </div>
 
       <PhotoUpload
-        onFilesChange={setPhotos}
+        onUploadsChange={setUploadedPhotos}
+        onUploadingChange={setUploadingPhotos}
+        onError={setError}
         existingPhotos={existingPhotos}
         onRemoveExisting={handleRemoveExisting}
       />
 
-      <Button type="submit" disabled={submitting} className="w-full">
-        {submitting ? "Saving..." : isEditing ? "Save Changes" : "Log Sighting"}
+      <Button type="submit" disabled={submitting || uploadingPhotos} className="w-full">
+        {submitting
+          ? "Saving..."
+          : uploadingPhotos
+            ? "Uploading photos..."
+            : isEditing
+              ? "Save Changes"
+              : "Log Sighting"}
       </Button>
     </form>
   );

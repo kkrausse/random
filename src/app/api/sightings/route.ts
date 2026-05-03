@@ -2,11 +2,8 @@ import { NextRequest, NextResponse, connection } from "next/server";
 import { db } from "@/db";
 import { sightings, photos, users } from "@/db/schema";
 import { desc, eq, and, gte, lte, like, inArray } from "drizzle-orm";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
-import { v4 as uuid } from "uuid";
 import { auth } from "@clerk/nextjs/server";
-import { imageSize } from "image-size";
+import { promoteStagedUpload, storeUploadedFile, type StoredPhotoFile } from "@/lib/uploads";
 
 export async function GET(req: NextRequest) {
   await connection();
@@ -70,18 +67,55 @@ export async function POST(req: NextRequest) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const formData = await req.formData();
+  const contentType = req.headers.get("content-type") ?? "";
+  let species: string;
+  let speciesCode: string;
+  let date: string;
+  let lat: number;
+  let lng: number;
+  let locationName: string;
+  let notes: string;
+  let uploadedPhotoIds: string[] = [];
+  let photoFiles: File[] = [];
 
-  const species = formData.get("species") as string;
-  const speciesCode = formData.get("speciesCode") as string;
-  const date = formData.get("date") as string;
-  const lat = parseFloat(formData.get("lat") as string);
-  const lng = parseFloat(formData.get("lng") as string);
-  const locationName = formData.get("locationName") as string;
-  const notes = (formData.get("notes") as string) || "";
+  if (contentType.includes("application/json")) {
+    const body = await req.json();
+    species = body.species;
+    speciesCode = body.speciesCode;
+    date = body.date;
+    lat = Number(body.lat);
+    lng = Number(body.lng);
+    locationName = body.locationName;
+    notes = body.notes || "";
+    uploadedPhotoIds = Array.isArray(body.uploadedPhotoIds) ? body.uploadedPhotoIds : [];
+  } else {
+    const formData = await req.formData();
+    species = formData.get("species") as string;
+    speciesCode = formData.get("speciesCode") as string;
+    date = formData.get("date") as string;
+    lat = parseFloat(formData.get("lat") as string);
+    lng = parseFloat(formData.get("lng") as string);
+    locationName = formData.get("locationName") as string;
+    notes = (formData.get("notes") as string) || "";
+    photoFiles = formData.getAll("photos") as File[];
+  }
 
   if (!species || !speciesCode || !date || isNaN(lat) || isNaN(lng) || !locationName) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+  }
+
+  const photoFilesToAttach: StoredPhotoFile[] = [];
+  try {
+    for (const uploadedPhotoId of uploadedPhotoIds) {
+      photoFilesToAttach.push(await promoteStagedUpload(userId, uploadedPhotoId));
+    }
+  } catch {
+    return NextResponse.json({ error: "One or more uploaded photos could not be found" }, { status: 400 });
+  }
+
+  for (const file of photoFiles) {
+    if (!(file instanceof File) || file.size === 0) continue;
+    photoFilesToAttach.push(await storeUploadedFile(file));
   }
 
   const [sighting] = await db
@@ -89,31 +123,8 @@ export async function POST(req: NextRequest) {
     .values({ species, speciesCode, date, lat, lng, locationName, notes, userId })
     .returning();
 
-  // Handle photo uploads
-  const photoFiles = formData.getAll("photos") as File[];
-  const uploadDir = process.env.UPLOADS_DIR
-    ? path.resolve(process.env.UPLOADS_DIR)
-    : path.join(process.cwd(), "uploads");
-  await mkdir(uploadDir, { recursive: true });
-
-  for (const file of photoFiles) {
-    if (!(file instanceof File) || file.size === 0) continue;
-    const ext = file.name.split(".").pop() || "jpg";
-    const filename = `${uuid()}.${ext}`;
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(path.join(uploadDir, filename), buffer);
-
-    let width: number | undefined;
-    let height: number | undefined;
-    try {
-      const dims = imageSize(buffer);
-      width = dims.width;
-      height = dims.height;
-    } catch {
-      // ignore dimension extraction errors
-    }
-
-    await db.insert(photos).values({ sightingId: sighting.id, filename, width, height });
+  for (const photo of photoFilesToAttach) {
+    await db.insert(photos).values({ sightingId: sighting.id, ...photo });
   }
 
   const sightingPhotos = await db
