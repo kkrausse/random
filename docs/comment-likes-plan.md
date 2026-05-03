@@ -35,15 +35,15 @@ Photos already have stable database identity in `photos.id`, so likes and commen
 
 ## Server Data
 
-- [ ] Update `src/db/schema.ts` with the three new tables and relations/indexes.
-- [ ] On `src/app/sighting/[id]/page.tsx`, query photo like counts for all photos in the sighting.
-- [ ] Include whether the current signed-in user liked each photo.
-- [ ] Query photo liker users for dialog display, either upfront for the current sighting or lazily through an API route.
-- [ ] Query all comments for the sighting's photos in one batch.
-- [ ] Query comment like counts for those comments.
-- [ ] Include whether the current signed-in user liked each comment.
-- [ ] Include comment authors with `username` and `displayName`.
-- [ ] Convert flat comment rows into nested trees in application code.
+- [x] Update `src/db/schema.ts` with the three new tables and relations/indexes.
+- [x] On `src/app/sighting/[id]/page.tsx`, query photo like counts for all photos in the sighting.
+- [x] Include whether the current signed-in user liked each photo.
+- [x] Query photo liker users for dialog display, either upfront for the current sighting or lazily through an API route.
+- [x] Query all comments for the sighting's photos in one batch.
+- [x] Query comment like counts for those comments.
+- [x] Include whether the current signed-in user liked each comment.
+- [x] Include comment authors with `username` and `displayName`.
+- [x] Convert flat comment rows into nested trees in application code.
 
 ## API
 

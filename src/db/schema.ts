@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   sqliteTable,
   text,
@@ -131,4 +131,76 @@ export const photoCommentLikes = sqliteTable(
       table.userId
     ),
   ]
+);
+
+export const usersRelations = relations(users, ({ many }) => ({
+  sightings: many(sightings),
+  photoLikes: many(photoLikes),
+  photoComments: many(photoComments),
+  photoCommentLikes: many(photoCommentLikes),
+}));
+
+export const sightingsRelations = relations(sightings, ({ one, many }) => ({
+  user: one(users, {
+    fields: [sightings.userId],
+    references: [users.id],
+  }),
+  photos: many(photos),
+}));
+
+export const photosRelations = relations(photos, ({ one, many }) => ({
+  sighting: one(sightings, {
+    fields: [photos.sightingId],
+    references: [sightings.id],
+  }),
+  likes: many(photoLikes),
+  comments: many(photoComments),
+}));
+
+export const photoLikesRelations = relations(photoLikes, ({ one }) => ({
+  photo: one(photos, {
+    fields: [photoLikes.photoId],
+    references: [photos.id],
+  }),
+  user: one(users, {
+    fields: [photoLikes.userId],
+    references: [users.id],
+  }),
+}));
+
+export const photoCommentsRelations = relations(
+  photoComments,
+  ({ one, many }) => ({
+    photo: one(photos, {
+      fields: [photoComments.photoId],
+      references: [photos.id],
+    }),
+    user: one(users, {
+      fields: [photoComments.userId],
+      references: [users.id],
+    }),
+    parent: one(photoComments, {
+      fields: [photoComments.parentId],
+      references: [photoComments.id],
+      relationName: "commentReplies",
+    }),
+    replies: many(photoComments, {
+      relationName: "commentReplies",
+    }),
+    likes: many(photoCommentLikes),
+  })
+);
+
+export const photoCommentLikesRelations = relations(
+  photoCommentLikes,
+  ({ one }) => ({
+    comment: one(photoComments, {
+      fields: [photoCommentLikes.commentId],
+      references: [photoComments.id],
+    }),
+    user: one(users, {
+      fields: [photoCommentLikes.userId],
+      references: [users.id],
+    }),
+  })
 );
