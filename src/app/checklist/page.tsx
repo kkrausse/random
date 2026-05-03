@@ -55,7 +55,7 @@ export default function ChecklistPage() {
   return (
     <div className="p-4 max-w-2xl mx-auto">
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">Species Checklist</h1>
+        <h1 className="text-2xl font-bold">BirdMog Checklist</h1>
         {user?.username && (
           <Link
             href={`/user/${user.username}/checklist`}
@@ -66,7 +66,7 @@ export default function ChecklistPage() {
         )}
       </div>
       <p className="text-sm text-gray-500 mb-3">
-        {seenCodes.size} of {allSpecies.length} species seen
+        {seenCodes.size} of {allSpecies.length} species seen by BirdMog users
       </p>
 
       <div className="flex gap-2 mb-3">
@@ -85,8 +85,8 @@ export default function ChecklistPage() {
           className="border border-gray-300 rounded-lg px-3 py-2"
         >
           <option value="all">All</option>
-          <option value="seen">Seen</option>
-          <option value="unseen">Unseen</option>
+          <option value="seen">Seen by BirdMog</option>
+          <option value="unseen">Not seen on BirdMog</option>
         </select>
       </div>
 
