@@ -8,6 +8,7 @@ import PhotoGrid from "@/components/PhotoGrid";
 import Link from "next/link";
 import Loading from "./loading";
 import { getUserById } from "@/lib/users";
+import { shuffle } from "@/lib/shuffle";
 
 export default function SpeciesPage({
   params,
@@ -57,7 +58,7 @@ async function SpeciesContent({
     photoMap.set(p.sightingId, list);
   }
 
-  const photoItems = speciesSightings.flatMap((s) => {
+  const photoItems = shuffle(speciesSightings.flatMap((s) => {
     const sPhotos = photoMap.get(s.id) ?? [];
     return sPhotos.map((p) => ({
       sightingId: s.id,
@@ -69,7 +70,7 @@ async function SpeciesContent({
       width: p.width ?? undefined,
       height: p.height ?? undefined,
     }));
-  });
+  }));
 
   const speciesName = speciesSightings[0]?.species ?? speciesCode;
   const viewer = userId ? await getUserById(userId) : null;

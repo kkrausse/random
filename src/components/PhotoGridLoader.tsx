@@ -3,21 +3,12 @@ import { db } from "@/db";
 import { sightings, photos, users } from "@/db/schema";
 import { desc, eq, inArray } from "drizzle-orm";
 import { connection } from "next/server";
+import { shuffle } from "@/lib/shuffle";
 import PhotoGrid from "./PhotoGrid";
 
 interface Props {
   userId?: string;
   emptyElement?: ReactNode;
-}
-
-function photoSortKey(item: { sightingId: number; photoFilename: string }) {
-  const value = `${item.sightingId}:${item.photoFilename}`;
-  let hash = 2166136261;
-  for (let i = 0; i < value.length; i++) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
 }
 
 export default async function PhotoGridLoader({ userId, emptyElement }: Props = {}) {
@@ -52,7 +43,7 @@ export default async function PhotoGridLoader({ userId, emptyElement }: Props = 
     photoMap.set(p.sightingId, list);
   }
 
-  const photoItems = allSightings.flatMap((s) => {
+  const photoItems = shuffle(allSightings.flatMap((s) => {
     const sPhotos = photoMap.get(s.id) ?? [];
     return sPhotos.map((p) => ({
       sightingId: s.id,
@@ -64,9 +55,7 @@ export default async function PhotoGridLoader({ userId, emptyElement }: Props = 
       width: p.width ?? undefined,
       height: p.height ?? undefined,
     }));
-  });
-
-  photoItems.sort((a, b) => photoSortKey(a) - photoSortKey(b));
+  }));
 
   if (photoItems.length === 0) {
     return emptyElement ?? (

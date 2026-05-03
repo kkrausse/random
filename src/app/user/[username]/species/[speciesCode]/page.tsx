@@ -7,6 +7,7 @@ import { sightings, photos } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { getUserByUsername } from "@/lib/users";
 import PhotoGrid from "@/components/PhotoGrid";
+import { shuffle } from "@/lib/shuffle";
 
 export default function UserSpeciesPage({
   params,
@@ -68,12 +69,7 @@ async function UserSpeciesContent({
     photoMap.set(p.sightingId, list);
   }
 
-  // Sort by date descending for display (lifer first in the stats, but photos newest-first)
-  const sortedForDisplay = [...userSightings].sort((a, b) =>
-    b.date < a.date ? -1 : b.date > a.date ? 1 : 0
-  );
-
-  const photoItems = sortedForDisplay.flatMap((s) => {
+  const photoItems = shuffle(userSightings.flatMap((s) => {
     const sPhotos = photoMap.get(s.id) ?? [];
     return sPhotos.map((p) => ({
       sightingId: s.id,
@@ -85,7 +81,7 @@ async function UserSpeciesContent({
       width: p.width ?? undefined,
       height: p.height ?? undefined,
     }));
-  });
+  }));
 
   return (
     <div className="p-4 max-w-2xl mx-auto">
