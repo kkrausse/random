@@ -9,30 +9,36 @@ import { eq, desc } from "drizzle-orm";
 import { getUserByUsername } from "@/lib/users";
 import { computeTrips } from "@/lib/trips";
 import { userChecklistRoute, userTripsRoute } from "@/lib/routes";
+import { parsePhotoSort } from "@/lib/photo-sort";
 import PhotoGridLoader from "@/components/PhotoGridLoader";
 import PhotoGridSkeleton from "@/components/PhotoGridSkeleton";
 import ProfileAccountButton from "./ProfileAccountButton";
 
 export default function UserHomePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ username: string }>;
+  searchParams?: Promise<{ sort?: string | string[] }>;
 }) {
   return (
     <Suspense fallback={<PhotoGridSkeleton />}>
-      <UserHomeContent params={params} />
+      <UserHomeContent params={params} searchParams={searchParams} />
     </Suspense>
   );
 }
 
 async function UserHomeContent({
   params,
+  searchParams,
 }: {
   params: Promise<{ username: string }>;
+  searchParams?: Promise<{ sort?: string | string[] }>;
 }) {
   await connection();
   const { userId: viewerId } = await auth();
   const { username } = await params;
+  const sort = parsePhotoSort((await searchParams)?.sort);
 
   const user = await getUserByUsername(username);
   if (!user) notFound();
@@ -105,7 +111,7 @@ async function UserHomeContent({
               Log a sighting with a photo!
             </Link>
           </div>
-        ) : undefined} />
+        ) : undefined} sort={sort} />
       </Suspense>
     </div>
   );

@@ -2,9 +2,16 @@ import { Suspense } from "react";
 import Image from "next/image";
 import PhotoGridLoader from "@/components/PhotoGridLoader";
 import PhotoGridSkeleton from "@/components/PhotoGridSkeleton";
+import { parsePhotoSort } from "@/lib/photo-sort";
 import birdMogIcon from "./icon.png";
 
-export default function ExplorePage() {
+export default async function ExplorePage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ sort?: string | string[] }>;
+}) {
+  const sort = parsePhotoSort((await searchParams)?.sort);
+
   return (
     <div className="px-4 py-8 sm:py-10">
       <section className="mx-auto mb-10 flex max-w-3xl flex-col items-center text-center">
@@ -24,7 +31,7 @@ export default function ExplorePage() {
       </section>
 
       <Suspense fallback={<PhotoGridSkeleton />}>
-        <PhotoGridLoader />
+        <PhotoGridLoader sort={sort} />
       </Suspense>
     </div>
   );

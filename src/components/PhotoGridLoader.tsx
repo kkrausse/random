@@ -4,14 +4,77 @@ import { sightings, photos, users } from "@/db/schema";
 import { desc, eq, inArray } from "drizzle-orm";
 import { connection } from "next/server";
 import { shuffle } from "@/lib/shuffle";
+import {
+  DEFAULT_PHOTO_SORT,
+  type PhotoSort,
+} from "@/lib/photo-sort";
 import PhotoGrid from "./PhotoGrid";
+import PhotoSortSelect from "./PhotoSortSelect";
 
 interface Props {
   userId?: string;
   emptyElement?: ReactNode;
+  sort?: PhotoSort;
 }
 
-export default async function PhotoGridLoader({ userId, emptyElement }: Props = {}) {
+interface PhotoItem {
+  sightingId: number;
+  species: string;
+  date: string;
+  locationName: string;
+  photoFilename: string;
+  username: string;
+  width?: number;
+  height?: number;
+  createdAt: string;
+}
+
+function sortPhotoItems(items: PhotoItem[], sort: PhotoSort) {
+  if (sort === "shuffle") {
+    return shuffle(items);
+  }
+
+  return [...items].sort((a, b) => {
+    if (sort === "created-desc") {
+      return (
+        b.createdAt.localeCompare(a.createdAt) ||
+        b.sightingId - a.sightingId ||
+        b.photoFilename.localeCompare(a.photoFilename)
+      );
+    }
+
+    if (sort === "species-az") {
+      return (
+        a.species.localeCompare(b.species) ||
+        a.createdAt.localeCompare(b.createdAt) ||
+        a.photoFilename.localeCompare(b.photoFilename)
+      );
+    }
+
+    if (sort === "quality") {
+      const aPixels = (a.width ?? 0) * (a.height ?? 0);
+      const bPixels = (b.width ?? 0) * (b.height ?? 0);
+
+      return (
+        bPixels - aPixels ||
+        a.createdAt.localeCompare(b.createdAt) ||
+        a.photoFilename.localeCompare(b.photoFilename)
+      );
+    }
+
+    return (
+      a.createdAt.localeCompare(b.createdAt) ||
+      a.sightingId - b.sightingId ||
+      a.photoFilename.localeCompare(b.photoFilename)
+    );
+  });
+}
+
+export default async function PhotoGridLoader({
+  userId,
+  emptyElement,
+  sort = DEFAULT_PHOTO_SORT,
+}: Props = {}) {
   // Opt this component out of static prerendering so it always
   // fetches fresh data at request time while the page shell stays static.
   await connection();
@@ -43,7 +106,7 @@ export default async function PhotoGridLoader({ userId, emptyElement }: Props = 
     photoMap.set(p.sightingId, list);
   }
 
-  const photoItems = shuffle(allSightings.flatMap((s) => {
+  const photoItems = sortPhotoItems(allSightings.flatMap((s) => {
     const sPhotos = photoMap.get(s.id) ?? [];
     return sPhotos.map((p) => ({
       sightingId: s.id,
@@ -54,8 +117,9 @@ export default async function PhotoGridLoader({ userId, emptyElement }: Props = 
       username: s.username,
       width: p.width ?? undefined,
       height: p.height ?? undefined,
+      createdAt: p.createdAt,
     }));
-  }));
+  }), sort);
 
   if (photoItems.length === 0) {
     return emptyElement ?? (
@@ -68,5 +132,10 @@ export default async function PhotoGridLoader({ userId, emptyElement }: Props = 
     );
   }
 
-  return <PhotoGrid items={photoItems} />;
+  return (
+    <>
+      <PhotoSortSelect value={sort} className="mb-2" />
+      <PhotoGrid items={photoItems} />
+    </>
+  );
 }
