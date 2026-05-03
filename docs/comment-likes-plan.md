@@ -21,17 +21,17 @@ Photos already have stable database identity in `photos.id`, so likes and commen
 
 ## Schema
 
-- [ ] Add `photo_likes` table with `photo_id`, `user_id`, and `created_at`.
-- [ ] Add a unique index on `photo_likes(photo_id, user_id)` so a user can like a photo once.
-- [ ] Add foreign keys from `photo_likes.photo_id` to `photos.id` and `photo_likes.user_id` to `users.id`, both cascading on delete.
-- [ ] Add `photo_comments` table with `id`, `photo_id`, `user_id`, `parent_id`, `body`, `created_at`, and optional `updated_at`.
-- [ ] Make `photo_comments.parent_id` a self-reference with cascading delete, or document and implement the chosen delete behavior if full cascade is awkward in SQLite/Drizzle.
-- [ ] Add indexes for `photo_comments(photo_id, created_at)`, `photo_comments(parent_id, created_at)`, and `photo_comments(user_id)`.
-- [ ] Add `photo_comment_likes` table with `comment_id`, `user_id`, and `created_at`.
-- [ ] Add a unique index on `photo_comment_likes(comment_id, user_id)`.
-- [ ] Add foreign keys from `photo_comment_likes.comment_id` to `photo_comments.id` and `photo_comment_likes.user_id` to `users.id`, both cascading on delete.
-- [ ] Generate a Drizzle migration with `bun run db:generate`.
-- [ ] Review the generated SQL for SQLite-compatible constraints and index names.
+- [x] Add `photo_likes` table with `photo_id`, `user_id`, and `created_at`.
+- [x] Add a unique index on `photo_likes(photo_id, user_id)` so a user can like a photo once.
+- [x] Add foreign keys from `photo_likes.photo_id` to `photos.id` and `photo_likes.user_id` to `users.id`, both cascading on delete.
+- [x] Add `photo_comments` table with `id`, `photo_id`, `user_id`, `parent_id`, `body`, `created_at`, and optional `updated_at`.
+- [x] Make `photo_comments.parent_id` a self-reference with cascading delete, or document and implement the chosen delete behavior if full cascade is awkward in SQLite/Drizzle.
+- [x] Add indexes for `photo_comments(photo_id, created_at)`, `photo_comments(parent_id, created_at)`, and `photo_comments(user_id)`.
+- [x] Add `photo_comment_likes` table with `comment_id`, `user_id`, and `created_at`.
+- [x] Add a unique index on `photo_comment_likes(comment_id, user_id)`.
+- [x] Add foreign keys from `photo_comment_likes.comment_id` to `photo_comments.id` and `photo_comment_likes.user_id` to `users.id`, both cascading on delete.
+- [x] Generate a Drizzle migration with `bun run db:generate`.
+- [x] Review the generated SQL for SQLite-compatible constraints and index names.
 
 ## Server Data
 

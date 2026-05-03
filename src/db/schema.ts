@@ -4,7 +4,9 @@ import {
   text,
   integer,
   real,
+  index,
   uniqueIndex,
+  type AnySQLiteColumn,
 } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable(
@@ -55,3 +57,78 @@ export const photos = sqliteTable("photos", {
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
 });
+
+export const photoLikes = sqliteTable(
+  "photo_likes",
+  {
+    photoId: integer("photo_id")
+      .notNull()
+      .references(() => photos.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: text("created_at")
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (table) => [
+    uniqueIndex("photo_likes_photo_id_user_id_unique").on(
+      table.photoId,
+      table.userId
+    ),
+  ]
+);
+
+export const photoComments = sqliteTable(
+  "photo_comments",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    photoId: integer("photo_id")
+      .notNull()
+      .references(() => photos.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    parentId: integer("parent_id").references(
+      (): AnySQLiteColumn => photoComments.id,
+      { onDelete: "cascade" }
+    ),
+    body: text("body").notNull(),
+    createdAt: text("created_at")
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+    updatedAt: text("updated_at"),
+  },
+  (table) => [
+    index("photo_comments_photo_id_created_at_idx").on(
+      table.photoId,
+      table.createdAt
+    ),
+    index("photo_comments_parent_id_created_at_idx").on(
+      table.parentId,
+      table.createdAt
+    ),
+    index("photo_comments_user_id_idx").on(table.userId),
+  ]
+);
+
+export const photoCommentLikes = sqliteTable(
+  "photo_comment_likes",
+  {
+    commentId: integer("comment_id")
+      .notNull()
+      .references(() => photoComments.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: text("created_at")
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (table) => [
+    uniqueIndex("photo_comment_likes_comment_id_user_id_unique").on(
+      table.commentId,
+      table.userId
+    ),
+  ]
+);
