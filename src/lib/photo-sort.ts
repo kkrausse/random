@@ -8,7 +8,7 @@ export const PHOTO_SORT_OPTIONS = [
 
 export type PhotoSort = (typeof PHOTO_SORT_OPTIONS)[number]["value"];
 
-export const DEFAULT_PHOTO_SORT: PhotoSort = "created-asc";
+export const DEFAULT_PHOTO_SORT: PhotoSort = "created-desc";
 
 export function parsePhotoSort(value: string | string[] | undefined): PhotoSort {
   const sortValue = Array.isArray(value) ? value[0] : value;
