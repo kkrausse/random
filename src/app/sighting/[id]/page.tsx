@@ -32,6 +32,7 @@ type PhotoCommentTree = {
   body: string;
   createdAt: string;
   updatedAt: string | null;
+  deletedAt: string | null;
   author: {
     username: string;
     displayName: string;
@@ -165,6 +166,7 @@ async function SightingDetailContent({
           body: photoComments.body,
           createdAt: photoComments.createdAt,
           updatedAt: photoComments.updatedAt,
+          deletedAt: photoComments.deletedAt,
           authorUsername: users.username,
           authorDisplayName: users.displayName,
         })
@@ -237,6 +239,7 @@ async function SightingDetailContent({
         body: comment.body,
         createdAt: comment.createdAt,
         updatedAt: comment.updatedAt,
+        deletedAt: comment.deletedAt,
         author: {
           username: comment.authorUsername,
           displayName: comment.authorDisplayName,

@@ -63,7 +63,10 @@ export async function POST(
     }
 
     const parent = await db
-      .select({ photoId: photoComments.photoId })
+      .select({
+        photoId: photoComments.photoId,
+        deletedAt: photoComments.deletedAt,
+      })
       .from(photoComments)
       .where(eq(photoComments.id, parentId))
       .get();
@@ -71,6 +74,13 @@ export async function POST(
     if (!parent || parent.photoId !== photoId) {
       return NextResponse.json(
         { error: "Parent comment must belong to the same photo" },
+        { status: 400 }
+      );
+    }
+
+    if (parent.deletedAt) {
+      return NextResponse.json(
+        { error: "Cannot reply to a deleted comment" },
         { status: 400 }
       );
     }

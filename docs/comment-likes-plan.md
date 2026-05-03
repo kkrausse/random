@@ -33,8 +33,8 @@ Photos already have stable database identity in `photos.id`, so likes and commen
 - [x] Add foreign keys from `photo_comment_likes.comment_id` to `photo_comments.id` and `photo_comment_likes.user_id` to `users.id`, both cascading on delete.
 - [x] Generate a Drizzle migration with `bun run db:generate`.
 - [x] Review the generated SQL for SQLite-compatible constraints and index names.
-- [ ] Add soft-delete metadata to `photo_comments`, such as `deleted_at`, and generate a follow-up migration.
-- [ ] Change `photo_comments.parent_id` delete behavior so user-deleting a parent comment does not delete its replies.
+- [x] Add soft-delete metadata to `photo_comments`, such as `deleted_at`, and generate a follow-up migration.
+- [x] Change `photo_comments.parent_id` delete behavior so user-deleting a parent comment does not delete its replies.
 
 ## Server Data
 
@@ -62,7 +62,7 @@ Photos already have stable database identity in `photos.id`, so likes and commen
 - [x] Block liking your own comment with a `403`.
 - [x] Validate comment body length and reject empty or whitespace-only comments.
 - [x] Revalidate or refresh sighting detail data after mutations.
-- [ ] Add `DELETE /api/photo-comments/[commentId]` to soft delete the current user's comment by setting deletion metadata rather than removing the row.
+- [x] Add `DELETE /api/photo-comments/[commentId]` to soft delete the current user's comment by setting deletion metadata rather than removing the row.
 
 ## UI Components
 
@@ -75,7 +75,7 @@ Photos already have stable database identity in `photos.id`, so likes and commen
 - [x] Add a comment form below each photo for top-level comments.
 - [x] Add inline reply forms under comments.
 - [x] Add comment like controls and counts to each comment.
-- [ ] Render soft-deleted comments as a compact deleted placeholder while preserving visible replies above/below them in the thread.
+- [x] Render soft-deleted comments as a compact deleted placeholder while preserving visible replies above/below them in the thread.
 - [x] Disable or redirect comment and like actions for signed-out users.
 - [x] Keep optimistic UI minimal; prefer correctness and `router.refresh()` unless latency becomes painful.
 

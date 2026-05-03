@@ -10,6 +10,7 @@ async function getCommentWithPhoto(commentId: number) {
     .select({
       id: photoComments.id,
       userId: photoComments.userId,
+      deletedAt: photoComments.deletedAt,
       sightingId: photos.sightingId,
     })
     .from(photoComments)
@@ -37,6 +38,13 @@ export async function POST(
   const comment = await getCommentWithPhoto(commentId);
   if (!comment) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (comment.deletedAt) {
+    return NextResponse.json(
+      { error: "Cannot like a deleted comment" },
+      { status: 400 }
+    );
   }
 
   if (comment.userId === userId) {

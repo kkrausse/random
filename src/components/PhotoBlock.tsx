@@ -5,7 +5,7 @@ import type { Route } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Heart } from "lucide-react";
+import { Heart, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,6 +25,7 @@ export type PhotoBlockComment = {
   body: string;
   createdAt: string;
   updatedAt: string | null;
+  deletedAt: string | null;
   author: {
     username: string;
     displayName: string;
@@ -69,7 +70,8 @@ function formatCount(count: number, singular: string, plural = `${singular}s`) {
 
 function countComments(comments: PhotoBlockComment[]): number {
   return comments.reduce(
-    (total, comment) => total + 1 + countComments(comment.replies),
+    (total, comment) =>
+      total + (comment.deletedAt ? 0 : 1) + countComments(comment.replies),
     0
   );
 }
@@ -281,9 +283,14 @@ function ThreadedComment({
   const [liked, setLiked] = useState(comment.likedByCurrentUser);
   const [likeCount, setLikeCount] = useState(comment.likeCount);
   const [likePending, setLikePending] = useState(false);
+  const [deletePending, setDeletePending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isDeleted = Boolean(comment.deletedAt);
+  const canDelete = currentUserId === comment.userId && !isDeleted;
 
   async function toggleCommentLike() {
+    if (isDeleted) return;
+
     if (!currentUserId) {
       onAuthRequired({ photoId: comment.photoId, commentId: comment.id });
       return;
@@ -315,54 +322,109 @@ function ThreadedComment({
     }
   }
 
+  async function deleteComment() {
+    if (!currentUserId) {
+      onAuthRequired({ photoId: comment.photoId, commentId: comment.id });
+      return;
+    }
+
+    setDeletePending(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/photo-comments/${comment.id}`, {
+        method: "DELETE",
+      });
+
+      if (response.status === 401) {
+        onAuthRequired({ photoId: comment.photoId, commentId: comment.id });
+        return;
+      }
+
+      if (response.ok) {
+        setReplying(false);
+        router.refresh();
+      } else {
+        const body = await response.json().catch(() => null);
+        setError(body?.error ?? "Unable to delete comment");
+      }
+    } finally {
+      setDeletePending(false);
+    }
+  }
+
   return (
     <article id={`comment-${comment.id}`} className="text-sm">
-      <div className="text-xs text-gray-500">
-        <Link
-          href={`/user/${comment.author.username}`}
-          className="text-gray-700 hover:underline"
-        >
-          @{comment.author.username}
-        </Link>{" "}
-        <Link
-          href={`/sighting/${sightingId}?photo=${comment.photoId}&comment=${comment.id}`}
-          className="hover:underline"
-        >
-          {formatCommentTime(comment.createdAt)}
-        </Link>
-      </div>
-      <p className="mt-1 whitespace-pre-wrap leading-snug text-gray-900">
-        {comment.body}
-      </p>
-      <div className="mt-1 flex items-center gap-3 text-xs">
-        <button
-          type="button"
-          onClick={toggleCommentLike}
-          disabled={likePending}
-          className={cn(
-            "text-gray-500 hover:text-gray-950 hover:underline disabled:opacity-60",
-            liked && "text-red-600"
-          )}
-        >
-          {liked ? "unlike" : "like"} ({likeCount})
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            currentUserId
-              ? setReplying((value) => !value)
-              : onAuthRequired({
-                  photoId: comment.photoId,
-                  commentId: comment.id,
-                })
-          }
-          className="text-gray-500 hover:text-gray-950 hover:underline"
-        >
-          reply
-        </button>
-      </div>
+      {isDeleted ? (
+        <div className="text-xs text-gray-500">
+          <span className="italic">deleted comment</span>{" "}
+          <Link
+            href={`/sighting/${sightingId}?photo=${comment.photoId}&comment=${comment.id}`}
+            className="hover:underline"
+          >
+            {formatCommentTime(comment.createdAt)}
+          </Link>
+        </div>
+      ) : (
+        <>
+          <div className="text-xs text-gray-500">
+            <Link
+              href={`/user/${comment.author.username}`}
+              className="text-gray-700 hover:underline"
+            >
+              @{comment.author.username}
+            </Link>{" "}
+            <Link
+              href={`/sighting/${sightingId}?photo=${comment.photoId}&comment=${comment.id}`}
+              className="hover:underline"
+            >
+              {formatCommentTime(comment.createdAt)}
+            </Link>
+          </div>
+          <p className="mt-1 whitespace-pre-wrap leading-snug text-gray-900">
+            {comment.body}
+          </p>
+          <div className="mt-1 flex items-center gap-3 text-xs">
+            <button
+              type="button"
+              onClick={toggleCommentLike}
+              disabled={likePending}
+              className={cn(
+                "text-gray-500 hover:text-gray-950 hover:underline disabled:opacity-60",
+                liked && "text-red-600"
+              )}
+            >
+              {liked ? "unlike" : "like"} ({likeCount})
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                currentUserId
+                  ? setReplying((value) => !value)
+                  : onAuthRequired({
+                      photoId: comment.photoId,
+                      commentId: comment.id,
+                    })
+              }
+              className="text-gray-500 hover:text-gray-950 hover:underline"
+            >
+              reply
+            </button>
+            {canDelete && (
+              <button
+                type="button"
+                onClick={deleteComment}
+                disabled={deletePending}
+                aria-label="Delete comment"
+                className="inline-flex items-center text-gray-500 hover:text-red-600 disabled:opacity-60"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            )}
+          </div>
+        </>
+      )}
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
-      {replying && (
+      {replying && !isDeleted && (
         <div className="mt-2">
           <CommentForm
             photoId={comment.photoId}

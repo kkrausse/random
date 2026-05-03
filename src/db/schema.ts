@@ -91,13 +91,14 @@ export const photoComments = sqliteTable(
       .references(() => users.id, { onDelete: "cascade" }),
     parentId: integer("parent_id").references(
       (): AnySQLiteColumn => photoComments.id,
-      { onDelete: "cascade" }
+      { onDelete: "set null" }
     ),
     body: text("body").notNull(),
     createdAt: text("created_at")
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
     updatedAt: text("updated_at"),
+    deletedAt: text("deleted_at"),
   },
   (table) => [
     index("photo_comments_photo_id_created_at_idx").on(
