@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import type { Route } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -57,6 +57,8 @@ type PhotoBlockProps = {
   initialLikedByCurrentUser: boolean;
   likers: PhotoBlockLiker[];
   comments: PhotoBlockComment[];
+  targetPhotoId: number | null;
+  targetCommentId: number | null;
 };
 
 type AuthRedirectTarget = {
@@ -73,6 +75,13 @@ function countComments(comments: PhotoBlockComment[]): number {
     (total, comment) =>
       total + (comment.deletedAt ? 0 : 1) + countComments(comment.replies),
     0
+  );
+}
+
+function hasComment(comments: PhotoBlockComment[], commentId: number): boolean {
+  return comments.some(
+    (comment) =>
+      comment.id === commentId || hasComment(comment.replies, commentId)
   );
 }
 
@@ -98,6 +107,8 @@ export default function PhotoBlock({
   initialLikedByCurrentUser,
   likers,
   comments,
+  targetPhotoId,
+  targetCommentId,
 }: PhotoBlockProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -106,6 +117,23 @@ export default function PhotoBlock({
   const [likeCount, setLikeCount] = useState(initialLikeCount);
   const [photoLikePending, setPhotoLikePending] = useState(false);
   const commentCount = countComments(comments);
+  const targetCommentIsInPhoto =
+    targetCommentId !== null && hasComment(comments, targetCommentId);
+
+  useEffect(() => {
+    if (targetCommentId !== null && targetCommentIsInPhoto) {
+      document
+        .getElementById(`comment-${targetCommentId}`)
+        ?.scrollIntoView({ block: "center" });
+      return;
+    }
+
+    if (targetCommentId === null && targetPhotoId === photo.id) {
+      document
+        .getElementById(`photo-${photo.id}`)
+        ?.scrollIntoView({ block: "start" });
+    }
+  }, [photo.id, targetCommentId, targetCommentIsInPhoto, targetPhotoId]);
 
   function redirectToSignIn(target?: AuthRedirectTarget) {
     const nextSearchParams = new URLSearchParams(searchParams);
@@ -225,6 +253,7 @@ export default function PhotoBlock({
           comments={comments}
           currentUserId={currentUserId}
           sightingId={sightingId}
+          targetCommentId={targetCommentId}
           onAuthRequired={redirectToSignIn}
         />
         <CommentForm
@@ -241,11 +270,13 @@ function CommentList({
   comments,
   currentUserId,
   sightingId,
+  targetCommentId,
   onAuthRequired,
 }: {
   comments: PhotoBlockComment[];
   currentUserId: string | null;
   sightingId: number;
+  targetCommentId: number | null;
   onAuthRequired: (target?: AuthRedirectTarget) => void;
 }) {
   if (comments.length === 0) {
@@ -260,6 +291,7 @@ function CommentList({
           comment={comment}
           currentUserId={currentUserId}
           sightingId={sightingId}
+          targetCommentId={targetCommentId}
           onAuthRequired={onAuthRequired}
         />
       ))}
@@ -271,11 +303,13 @@ function ThreadedComment({
   comment,
   currentUserId,
   sightingId,
+  targetCommentId,
   onAuthRequired,
 }: {
   comment: PhotoBlockComment;
   currentUserId: string | null;
   sightingId: number;
+  targetCommentId: number | null;
   onAuthRequired: (target?: AuthRedirectTarget) => void;
 }) {
   const router = useRouter();
@@ -353,7 +387,14 @@ function ThreadedComment({
   }
 
   return (
-    <article id={`comment-${comment.id}`} className="text-sm">
+    <article
+      id={`comment-${comment.id}`}
+      className={cn(
+        "scroll-mt-6 text-sm",
+        targetCommentId === comment.id &&
+          "-mx-2 rounded-md bg-amber-50 px-2 py-1 ring-1 ring-amber-200"
+      )}
+    >
       {isDeleted ? (
         <div className="text-xs text-gray-500">
           <span className="italic">deleted comment</span>{" "}
@@ -443,6 +484,7 @@ function ThreadedComment({
               comment={reply}
               currentUserId={currentUserId}
               sightingId={sightingId}
+              targetCommentId={targetCommentId}
               onAuthRequired={onAuthRequired}
             />
           ))}

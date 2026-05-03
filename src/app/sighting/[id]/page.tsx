@@ -24,6 +24,11 @@ type PhotoLiker = {
   displayName: string;
 };
 
+type SightingSearchParams = {
+  photo?: string | string[];
+  comment?: string | string[];
+};
+
 type PhotoCommentTree = {
   id: number;
   photoId: number;
@@ -73,28 +78,44 @@ function buildCommentTrees(
   return roots;
 }
 
+function firstSearchParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function parsePositiveInteger(value: string | string[] | undefined) {
+  const parsed = Number(firstSearchParam(value));
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
 export default function SightingDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<SightingSearchParams>;
 }) {
   return (
     <Suspense fallback={<Loading />}>
-      <SightingDetailContent params={params} />
+      <SightingDetailContent params={params} searchParams={searchParams} />
     </Suspense>
   );
 }
 
 async function SightingDetailContent({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<SightingSearchParams>;
 }) {
   await connection();
   const { userId } = await auth();
   const { id } = await params;
+  const resolvedSearchParams = await searchParams;
   const sightingId = Number(id);
   if (isNaN(sightingId)) notFound();
+  const targetPhotoId = parsePositiveInteger(resolvedSearchParams.photo);
+  const targetCommentId = parsePositiveInteger(resolvedSearchParams.comment);
 
   const [sightingRow] = await db
     .select({
@@ -301,6 +322,8 @@ async function SightingDetailContent({
               initialLikedByCurrentUser={photoBlock.likedByCurrentUser}
               likers={photoBlock.likers}
               comments={photoBlock.comments}
+              targetPhotoId={targetPhotoId}
+              targetCommentId={targetCommentId}
             />
           ))}
         </div>

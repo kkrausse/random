@@ -88,11 +88,11 @@ Photos already have stable database identity in `photos.id`, so likes and commen
 
 ## Deep Links and Scrolling
 
-- [ ] Read `photo` and `comment` from sighting page `searchParams`.
-- [ ] Add stable DOM IDs such as `photo-:photoId` and `comment-:commentId`.
-- [ ] Add a small client-side scroll helper that scrolls to the comment if present, otherwise the photo.
-- [ ] Highlight the target comment briefly or with a subtle static style.
-- [ ] Ensure generated comment links use `/sighting/:sightingId?photo=:photoId&comment=:commentId`.
+- [x] Read `photo` and `comment` from sighting page `searchParams`.
+- [x] Add stable DOM IDs such as `photo-:photoId` and `comment-:commentId`.
+- [x] Add a small client-side scroll helper that scrolls to the comment if present, otherwise the photo.
+- [x] Highlight the target comment briefly or with a subtle static style.
+- [x] Ensure generated comment links use `/sighting/:sightingId?photo=:photoId&comment=:commentId`.
 
 ## Edge Cases
 
