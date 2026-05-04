@@ -29,6 +29,39 @@ interface Dim { w: number; h: number }
 const TARGET_HEIGHT = 220;
 const GAP = 4;
 const DEFAULT_ASPECT_RATIO = 1.5;
+const SCROLL_RESTORE_TTL_MS = 30 * 60 * 1000;
+
+type GridScrollRestoreState = {
+  photoId: number;
+  scrollY: number;
+  viewportTop: number;
+  savedAt: number;
+};
+
+function getScrollRestoreKey(pathname: string, query: string) {
+  return `photo-grid-scroll:${pathname}${query ? `?${query}` : ""}`;
+}
+
+function parseScrollRestoreState(value: string | null) {
+  if (!value) return null;
+
+  try {
+    const state = JSON.parse(value) as Partial<GridScrollRestoreState>;
+
+    if (
+      typeof state.photoId === "number" &&
+      typeof state.scrollY === "number" &&
+      typeof state.viewportTop === "number" &&
+      typeof state.savedAt === "number"
+    ) {
+      return state as GridScrollRestoreState;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
 
 function getDim(item: PhotoItem): Dim | null {
   if (item.width && item.height) {
@@ -80,21 +113,30 @@ function PhotoBox({
   height,
   priority,
   alwaysShowActions,
+  onSightingNavigate,
 }: {
   item: PhotoItem;
   width: number;
   height: number;
   priority?: boolean;
   alwaysShowActions?: boolean;
+  onSightingNavigate?: (photoId: number, element: HTMLDivElement) => void;
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const boxRef = useRef<HTMLDivElement>(null);
   const [loaded, setLoaded] = useState(false);
   const [liked, setLiked] = useState(Boolean(item.likedByCurrentUser));
   const [likeCount, setLikeCount] = useState(item.likeCount ?? 0);
   const [likePending, setLikePending] = useState(false);
   const commentCount = item.commentCount ?? 0;
+
+  function rememberScrollPosition() {
+    if (boxRef.current) {
+      onSightingNavigate?.(item.photoId, boxRef.current);
+    }
+  }
 
   function redirectToSignIn() {
     const query = searchParams.toString();
@@ -133,12 +175,15 @@ function PhotoBox({
 
   return (
     <div
+      ref={boxRef}
+      id={`explore-photo-${item.photoId}`}
       className="relative block group overflow-hidden rounded-sm flex-none bg-gray-100"
       style={{ width, height }}
     >
       <Link
         href={`/sighting/${item.sightingId}?photo=${item.photoId}`}
         className="absolute inset-0 z-10"
+        onClick={rememberScrollPosition}
       >
         <span className="sr-only">View {item.species} sighting</span>
       </Link>
@@ -177,6 +222,7 @@ function PhotoBox({
           href={`/sighting/${item.sightingId}?photo=${item.photoId}#photo-${item.photoId}-comments`}
           className="pointer-events-auto flex min-w-0 items-center gap-1 rounded px-1 hover:bg-white/20"
           aria-label={`${commentCount} comments`}
+          onClick={rememberScrollPosition}
         >
           <MessageCircle className="size-3.5" />
           <span className="min-w-[1.25rem] text-right tabular-nums">
@@ -209,6 +255,10 @@ function PhotoBox({
 export default function PhotoGrid({ items, singleColumn }: { items: PhotoItem[]; singleColumn?: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const search = searchParams.toString();
+  const scrollRestoreKey = getScrollRestoreKey(pathname, search);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -244,6 +294,64 @@ export default function PhotoGrid({ items, singleColumn }: { items: PhotoItem[];
     return false;
   }, [rows, items]);
 
+  const rememberSightingNavigation = useCallback(
+    (photoId: number, element: HTMLDivElement) => {
+      const rect = element.getBoundingClientRect();
+      const state: GridScrollRestoreState = {
+        photoId,
+        scrollY: window.scrollY,
+        viewportTop: rect.top,
+        savedAt: Date.now(),
+      };
+
+      sessionStorage.setItem(scrollRestoreKey, JSON.stringify(state));
+    },
+    [scrollRestoreKey]
+  );
+
+  useEffect(() => {
+    if (!rows || typeof window === "undefined") return;
+
+    const state = parseScrollRestoreState(
+      sessionStorage.getItem(scrollRestoreKey)
+    );
+
+    if (!state) return;
+
+    if (Date.now() - state.savedAt > SCROLL_RESTORE_TTL_MS) {
+      sessionStorage.removeItem(scrollRestoreKey);
+      return;
+    }
+
+    let cancelled = false;
+    const frame = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        if (cancelled) return;
+
+        const target = document.getElementById(
+          `explore-photo-${state.photoId}`
+        );
+
+        if (target) {
+          const rect = target.getBoundingClientRect();
+          window.scrollTo({
+            top: window.scrollY + rect.top - state.viewportTop,
+            behavior: "instant",
+          });
+        } else {
+          window.scrollTo({ top: state.scrollY, behavior: "instant" });
+        }
+
+        sessionStorage.removeItem(scrollRestoreKey);
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+    };
+  }, [rows, scrollRestoreKey]);
+
   if (singleColumn) {
     if (containerWidth === 0) {
       return (
@@ -268,6 +376,7 @@ export default function PhotoGrid({ items, singleColumn }: { items: PhotoItem[];
               height={height}
               priority={i < 3}
               alwaysShowActions
+              onSightingNavigate={rememberSightingNavigation}
             />
           );
         })}
@@ -294,6 +403,7 @@ export default function PhotoGrid({ items, singleColumn }: { items: PhotoItem[];
                   height={height}
                   priority={getPriorityIndex(itemIndex)}
                   alwaysShowActions={isOneAcross}
+                  onSightingNavigate={rememberSightingNavigation}
                 />
               );
             })}
