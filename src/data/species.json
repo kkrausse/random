@@ -2350,6 +2350,11 @@
     "speciesCode": "redjun"
   },
   {
+    "commonName": "Domestic Chicken",
+    "scientificName": "Gallus gallus (Domestic type)",
+    "speciesCode": "redjun1"
+  },
+  {
     "commonName": "Gray Junglefowl",
     "scientificName": "Gallus sonneratii",
     "speciesCode": "grejun2"

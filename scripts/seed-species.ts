@@ -10,6 +10,14 @@ interface Species {
   speciesCode: string;
 }
 
+const MANUAL_TAXA: Species[] = [
+  {
+    commonName: "Domestic Chicken",
+    scientificName: "Gallus gallus (Domestic type)",
+    speciesCode: "redjun1",
+  },
+];
+
 async function main() {
   console.log("Downloading eBird taxonomy...");
   const res = await fetch(EBIRD_TAXONOMY_URL);
@@ -68,7 +76,18 @@ async function main() {
     }
   }
 
-  const outPath = path.join(process.cwd(), "data", "species.json");
+  for (const taxon of MANUAL_TAXA) {
+    if (!species.some((s) => s.speciesCode === taxon.speciesCode)) {
+      const parentIdx = species.findIndex((s) => s.speciesCode === "redjun");
+      if (parentIdx === -1) {
+        species.push(taxon);
+      } else {
+        species.splice(parentIdx + 1, 0, taxon);
+      }
+    }
+  }
+
+  const outPath = path.join(process.cwd(), "src", "data", "species.json");
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, JSON.stringify(species, null, 2));
 
