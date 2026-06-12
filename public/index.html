@@ -85,9 +85,35 @@
         font-weight: 650;
       }
 
-      #chart {
+      .charts {
+        display: grid;
+        gap: 16px;
+        padding: 0 0 18px;
+      }
+
+      .chart-block {
+        background: #ffffff;
+        border-bottom: 1px solid #d8dee8;
+      }
+
+      .chart-title {
+        margin: 0;
+        padding: 12px 18px 0;
+        font-size: 14px;
+        font-weight: 650;
+      }
+
+      #fold-chart,
+      #feature-chart {
         width: 100%;
+      }
+
+      #fold-chart {
         min-height: 680px;
+      }
+
+      #feature-chart {
+        min-height: 320px;
       }
 
       .message {
@@ -106,8 +132,12 @@
           width: 100%;
         }
 
-        #chart {
+        #fold-chart {
           min-height: 560px;
+        }
+
+        #feature-chart {
+          min-height: 280px;
         }
       }
     </style>
@@ -128,28 +158,55 @@
             <option value="30">30s</option>
           </select>
         </label>
+        <label>
+          Cap
+          <select id="feature-cap">
+            <option value="0.5">0.5</option>
+            <option value="1">1</option>
+            <option value="2" selected>2</option>
+            <option value="4">4</option>
+            <option value="8">8</option>
+          </select>
+        </label>
         <span class="stat">Feature rate: <strong id="feature-rate">-</strong></span>
         <span class="stat">Bands: <strong id="bands">-</strong></span>
         <span id="best">Best: -</span>
         <span id="status">Idle</span>
       </header>
-      <section id="chart" aria-label="Live folded feature heatmap">
-        <div class="message">Start the microphone to build the live fold heatmap.</div>
+      <section class="charts">
+        <section class="chart-block" aria-label="Live folded feature heatmap">
+          <h2 class="chart-title">Fold heatmap</h2>
+          <div id="fold-chart">
+            <div class="message">Start the microphone to build the live fold heatmap.</div>
+          </div>
+        </section>
+        <section class="chart-block" aria-label="Live feature stream">
+          <h2 class="chart-title">Feature stream</h2>
+          <div id="feature-chart">
+            <div class="message">Start the microphone to see per-band feature amplitude.</div>
+          </div>
+        </section>
       </section>
     </main>
 
     <script type="module">
-      import { DEFAULT_BIN_COUNT, DEFAULT_PERIOD_SECONDS } from "./data.js";
-      import { createHeatmap } from "./graph.js";
+      import {
+        DEFAULT_BIN_COUNT,
+        DEFAULT_FEATURE_CAP,
+        DEFAULT_PERIOD_SECONDS,
+      } from "./data.js";
+      import { createFeatureChart, createHeatmap } from "./graph.js";
 
       const elements = {
         toggle: document.querySelector("#toggle"),
         period: document.querySelector("#period"),
+        featureCap: document.querySelector("#feature-cap"),
         featureRate: document.querySelector("#feature-rate"),
         bands: document.querySelector("#bands"),
         best: document.querySelector("#best"),
         status: document.querySelector("#status"),
-        chart: document.querySelector("#chart"),
+        foldChart: document.querySelector("#fold-chart"),
+        featureChart: document.querySelector("#feature-chart"),
       };
 
       const app = {
@@ -159,7 +216,8 @@
         worklet: null,
         sink: null,
         worker: null,
-        graph: createHeatmap(elements.chart),
+        graph: createHeatmap(elements.foldChart),
+        featureGraph: createFeatureChart(elements.featureChart),
         running: false,
       };
 
@@ -179,6 +237,16 @@
           type: "configure",
           periodSeconds: Number(elements.period.value) || DEFAULT_PERIOD_SECONDS,
           binCount: DEFAULT_BIN_COUNT,
+        });
+      };
+
+      const getFeatureCap = () => Number(elements.featureCap.value) || DEFAULT_FEATURE_CAP;
+
+      const configureWorklet = () => {
+        if (!app.worklet) return;
+        app.worklet.port.postMessage({
+          type: "configure",
+          featureCap: getFeatureCap(),
         });
       };
 
@@ -214,6 +282,7 @@
 
         setStatus("Requesting microphone...");
         app.worker = createWorker();
+        app.featureGraph.reset();
         configureWorker();
 
         try {
@@ -232,6 +301,7 @@
           app.worklet = new AudioWorkletNode(app.audioContext, "feature-processor");
           app.sink = app.audioContext.createGain();
           app.sink.gain.value = 0;
+          configureWorklet();
 
           app.worklet.port.onmessage = (event) => {
             const message = event.data;
@@ -243,6 +313,11 @@
             }
 
             if (message.type === "features" && app.worker) {
+              app.featureGraph.update(
+                message,
+                Number(elements.period.value) || DEFAULT_PERIOD_SECONDS,
+                getFeatureCap(),
+              );
               const transfers = message.features.map((feature) => feature.data.buffer);
               app.worker.postMessage(message, transfers);
             }
@@ -301,6 +376,7 @@
       });
 
       elements.period.addEventListener("change", configureWorker);
+      elements.featureCap.addEventListener("change", configureWorklet);
     </script>
   </body>
 </html>

@@ -1,6 +1,7 @@
 const FEATURE_RATE = 1000;
 const POST_FRAME_COUNT = 64;
 const FEATURE_LOG_GAIN = 2000;
+const DEFAULT_FEATURE_CAP = 2;
 const BANDS = [
   { name: "700-1400", low: 700, high: 1400 },
   { name: "1400-2800", low: 1400, high: 2800 },
@@ -67,6 +68,17 @@ class FeatureProcessor extends AudioWorkletProcessor {
     this.featureFrame = 0;
     this.featurePhase = 0;
     this.startFeatureFrame = 0;
+    this.featureCap = DEFAULT_FEATURE_CAP;
+
+    this.port.onmessage = (event) => {
+      const message = event.data;
+      if (message.type !== "configure") return;
+
+      const featureCap = Number(message.featureCap);
+      if (Number.isFinite(featureCap) && featureCap > 0) {
+        this.featureCap = featureCap;
+      }
+    };
 
     this.port.postMessage({
       type: "ready",
@@ -119,9 +131,8 @@ class FeatureProcessor extends AudioWorkletProcessor {
     }
 
     for (let bandIndex = 0; bandIndex < this.bands.length; bandIndex += 1) {
-      this.batch[bandIndex][this.batchOffset] = Math.log1p(
-        this.current[bandIndex] * FEATURE_LOG_GAIN,
-      );
+      const compressed = Math.log1p(this.current[bandIndex] * FEATURE_LOG_GAIN);
+      this.batch[bandIndex][this.batchOffset] = Math.min(compressed, this.featureCap);
       this.current[bandIndex] = 0;
     }
 

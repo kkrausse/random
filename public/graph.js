@@ -12,15 +12,21 @@ const makeHeatmapData = (rows, binCount) => {
 const makeRowLabels = (rows) =>
   rows.map((row) => `${row.bph} / ${row.band} (${row.score.toFixed(1)})`);
 
+const emptyChart = (element) => {
+  element.textContent = "ECharts failed to load. Check the network and refresh.";
+  return {
+    reset() {},
+    update() {},
+    resize() {},
+  };
+};
+
 export const createHeatmap = (element) => {
   if (!window.echarts) {
-    element.textContent = "ECharts failed to load. Check the network and refresh.";
-    return {
-      update() {},
-      resize() {},
-    };
+    return emptyChart(element);
   }
 
+  element.textContent = "";
   const chart = window.echarts.init(element, null, { renderer: "canvas" });
 
   const update = (folds) => {
@@ -91,4 +97,133 @@ export const createHeatmap = (element) => {
   window.addEventListener("resize", resize);
 
   return { update, resize };
+};
+
+export const createFeatureChart = (element) => {
+  if (!window.echarts) {
+    return emptyChart(element);
+  }
+
+  element.textContent = "";
+  const chart = window.echarts.init(element, null, { renderer: "canvas" });
+  const state = {
+    bands: [],
+    series: new Map(),
+    lastDraw: 0,
+  };
+
+  const reset = () => {
+    state.bands = [];
+    state.series = new Map();
+    chart.clear();
+  };
+
+  const ensureBands = (features) => {
+    const bands = features.map((feature) => feature.name);
+    const changed =
+      bands.length !== state.bands.length ||
+      bands.some((band, index) => band !== state.bands[index]);
+
+    if (!changed) return;
+
+    state.bands = bands;
+    state.series = new Map(bands.map((band) => [band, []]));
+  };
+
+  const appendBatch = (message) => {
+    const frameCount = message.features[0]?.data?.length || 0;
+    const step = Math.max(1, Math.round(message.featureRate / 100));
+
+    for (let offset = 0; offset < frameCount; offset += step) {
+      const seconds = (message.startFrame + offset) / message.featureRate;
+      const end = Math.min(frameCount, offset + step);
+
+      for (let bandIndex = 0; bandIndex < message.features.length; bandIndex += 1) {
+        const feature = message.features[bandIndex];
+        let peak = 0;
+        for (let index = offset; index < end; index += 1) {
+          peak = Math.max(peak, feature.data[index]);
+        }
+        state.series.get(feature.name).push([seconds, Number(peak.toFixed(4))]);
+      }
+    }
+  };
+
+  const trim = (windowSeconds) => {
+    let latest = 0;
+    for (const values of state.series.values()) {
+      if (values.length) {
+        latest = Math.max(latest, values[values.length - 1][0]);
+      }
+    }
+
+    const cutoff = latest - windowSeconds;
+    for (const values of state.series.values()) {
+      while (values.length && values[0][0] < cutoff) {
+        values.shift();
+      }
+    }
+  };
+
+  const draw = (windowSeconds, featureCap) => {
+    const series = state.bands.map((band) => ({
+      name: band,
+      type: "line",
+      data: state.series.get(band),
+      showSymbol: false,
+      sampling: "max",
+      lineStyle: { width: 1 },
+    }));
+
+    chart.setOption({
+      animation: false,
+      grid: {
+        left: 48,
+        right: 20,
+        top: 32,
+        bottom: 48,
+      },
+      legend: {
+        type: "scroll",
+        top: 0,
+      },
+      tooltip: {
+        trigger: "axis",
+        valueFormatter(value) {
+          return Number(value).toFixed(4);
+        },
+      },
+      xAxis: {
+        type: "value",
+        name: "seconds",
+        min: (value) => Math.max(0, value.max - windowSeconds),
+        max: "dataMax",
+      },
+      yAxis: {
+        type: "value",
+        name: "amplitude",
+        min: 0,
+        max: featureCap,
+        scale: true,
+      },
+      series,
+    });
+  };
+
+  const update = (message, windowSeconds, featureCap) => {
+    ensureBands(message.features);
+    appendBatch(message);
+    trim(windowSeconds);
+
+    const now = Date.now();
+    if (now - state.lastDraw < 100) return;
+
+    state.lastDraw = now;
+    draw(windowSeconds, featureCap);
+  };
+
+  const resize = () => chart.resize();
+  window.addEventListener("resize", resize);
+
+  return { reset, update, resize };
 };

@@ -11,6 +11,7 @@ export const BASE_BANDS = [
 export const DEFAULT_PERIOD_SECONDS = 10;
 export const DEFAULT_FEATURE_RATE = 1000;
 export const DEFAULT_BIN_COUNT = 128;
+export const DEFAULT_FEATURE_CAP = 2;
 export const MIN_PERIOD_SECONDS = 2;
 export const MAX_PERIOD_SECONDS = 30;
 
