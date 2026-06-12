@@ -5,7 +5,6 @@ import {
   DEFAULT_PERIOD_SECONDS,
   clamp,
   normalizeRow,
-  scoreRow,
 } from "./data.js";
 
 const state = {
@@ -62,10 +61,10 @@ const receiveFeatures = (message) => {
   }
 
   trimFrames();
-  maybePostFolds();
+  maybePostAnalysis();
 };
 
-const foldCandidate = (bph, bandIndex) => {
+const foldStandardCandidate = (bph, bandIndex) => {
   const folded = new Float32Array(state.binCount);
   const intervalSeconds = (3600 / bph) * state.cycleBeats;
 
@@ -80,55 +79,47 @@ const foldCandidate = (bph, bandIndex) => {
   return normalizeRow(folded);
 };
 
-const buildRows = () => {
+const buildStandardFoldRows = () => {
   const rows = [];
-  let best = null;
 
   for (let bphIndex = 0; bphIndex < CANDIDATE_BPH.length; bphIndex += 1) {
     const bph = CANDIDATE_BPH[bphIndex];
     for (let bandIndex = 0; bandIndex < state.bands.length; bandIndex += 1) {
-      const bins = foldCandidate(bph, bandIndex);
-      const score = scoreRow(bins);
+      const bins = foldStandardCandidate(bph, bandIndex);
       const row = {
         bph,
         band: state.bands[bandIndex],
-        score,
         bins,
       };
 
       rows.push(row);
-      if (!best || score > best.score) {
-        best = {
-          bph,
-          band: row.band,
-          score,
-        };
-      }
     }
   }
 
-  return { rows, best };
+  return rows;
 };
 
-const maybePostFolds = () => {
+const maybePostAnalysis = () => {
   const now = Date.now();
   if (now - state.lastPostTime < 100 || state.frames.length < state.featureRate * 0.25) {
     return;
   }
 
   state.lastPostTime = now;
-  const { rows, best } = buildRows();
+  const rows = buildStandardFoldRows();
   const transfers = rows.map((row) => row.bins.buffer);
 
   self.postMessage(
     {
-      type: "folds",
+      type: "analysis",
       periodSeconds: state.periodSeconds,
       featureRate: state.featureRate,
-      binCount: state.binCount,
-      cycleBeats: state.cycleBeats,
-      rows,
-      best,
+      standardFolds: {
+        binCount: state.binCount,
+        cycleBeats: state.cycleBeats,
+        rows,
+      },
+      tracking: null,
     },
     transfers,
   );

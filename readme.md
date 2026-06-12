@@ -5,9 +5,10 @@
 pipeline
 - use sound frequency filter for specific range to reduce noise 
 - extract envelope
-- auto detect standard (eg [14400, 18000, 19800, 21600, 25200, 28800, 36000])
-- feature extraction (extract the lock / unlock points?)
-  - "true rate" estimation
+- build folded feature rows for known standards
+- use those folds as acquisition evidence for tracking
+- track actual BPH / phase
+- later: separate lock / unlock / drop features inside the folded tick packet
 
 ## code / detail architecture
 
@@ -20,18 +21,18 @@ Core idea:
 - Use the audio stream sample count as the clock. Do not use `performance.now()`
   for measurement.
 - Extract low-rate tick-energy features from the microphone stream.
-- Fold those features against known watch standards.
-- Use the folded energy pattern to detect the likely standard and later track
-  phase drift / true rate.
+- Fold those features against known watch standards as acquisition evidence.
+- Track actual BPH / phase from the observed tick packets.
+- Treat nominal standard as the known BPH nearest to tracked actual BPH.
 
 Terms:
 - `BPH`: beats per hour. Common standards: `14400`, `18000`, `19800`, `21600`,
   `25200`, `28800`, `36000`.
 - `nominalInterval`: expected seconds between beats, `3600 / BPH`.
 - `featureRate`: sample rate of the extracted feature stream, not the raw audio
-  sample rate. First target: `1000 Hz`; use `2000 Hz` if timing looks too coarse.
+  sample rate. Current target: `1000 Hz`.
 - `period`: user-selected lookback duration, in seconds, used for folding and
-  later rate estimation.
+  later tracking.
 
 Initial file layout:
 
@@ -50,17 +51,15 @@ public/
   stream.
 - Creates `analysis-worker.js`.
 - Owns UI controls: period, sensitivity/debug controls, start/stop.
-- Displays the current standard score table / heatmap.
+- Displays the standard fold heatmap and raw feature stream.
 
 `data.js`:
-- Defines shared constants and message schemas.
-- Holds pure analysis helpers that can also be imported by
-  `analysis-worker.js` if useful.
+- Defines shared constants and pure analysis helpers.
 - Does not touch the DOM.
 
 `graph.js`:
 - Owns display only.
-- First milestone should use Apache ECharts for the heatmap.
+- Uses Apache ECharts for the heatmap and feature graph.
 - Input is processed worker output, not raw audio.
 
 `feature-worklet.js`:
@@ -74,7 +73,8 @@ public/
 - Receives feature batches from the main thread.
 - Maintains rolling feature buffers.
 - Runs folding for all candidate standards.
-- Posts fold tables, scores, and later rate estimates back to the main thread.
+- Posts an `analysis` message with `standardFolds` and a future `tracking`
+  field.
 
 ### runtime data flow
 
@@ -101,12 +101,14 @@ Feature batch message:
 {
   type: "features",
   startFrame: 123000,       // feature-frame index, not performance.now()
+  rawFrame: 5904000,        // raw audio frame index
   featureRate: 1000,
   features: [
     { name: "700-1400", data: Float32Array },
     { name: "1400-2800", data: Float32Array },
     { name: "2800-5600", data: Float32Array },
-    { name: "5600-10000", data: Float32Array }
+    { name: "5600-10000", data: Float32Array },
+    { name: "10000-16000", data: Float32Array }
   ]
 }
 ```
@@ -151,20 +153,22 @@ rawTimeSeconds = absoluteRawFrame / sampleRate;
 featureTimeSeconds = absoluteFeatureFrame / featureRate;
 ```
 
-### simple folding algorithm
+### standard fold algorithm
 
-First version should only test known standards at coarse phase resolution.
+Current folding tests known standards at coarse phase resolution.
 
 Inputs:
 - Rolling feature buffers for the last `period` seconds.
 - Candidate standards:
   `[14400, 18000, 19800, 21600, 25200, 28800, 36000]`.
-- Phase bin count: start with `64` or `128`.
+- Phase bin count: default `128`.
+- Fold cycle: default `2` beats, so one row shows the tick/tock cycle.
 
 For each candidate standard:
 
 ```js
-T = 3600 / bph;
+cycleBeats = 2;
+T = (3600 / bph) * cycleBeats;
 binCount = 128;
 
 for each feature:
@@ -187,51 +191,52 @@ rowStd = std(row);
 normalizedBin = (rowBin - rowMean) / max(rowStd, epsilon);
 ```
 
-Coarse score for one standard/band row:
+Rows do not currently expose a public score. The heatmap is raw evidence:
+if the watch signal is present, useful standards should show structured folded
+energy and bad standards should look flatter or aliased.
 
-```js
-peak = max(normalizedRow);
-background = median(normalizedRow);
-contrast = peak - background;
-score = contrast;
+### tracking direction
+
+Do not build a separate hard standard-selection state first. Tracking should use
+the standard folds for acquisition, then estimate actual BPH by fold fit.
+
+Definitions:
+- `nominalBph`: nearest known watch standard, for example `18000`.
+- `actualBph`: the BPH estimate that makes the recent audio fold most cleanly.
+  This is not a single detected tick timestamp. It is the best-fit period for
+  the folded signal over the current lookback window.
+
+The tracker should keep a high-resolution fold running at the current
+`actualBph` estimate. Standard folds stay coarse and broad; the tracking fold is
+fine and narrow.
+
+Rough process:
+
+```txt
+standard folds
+-> find a coarse candidate BPH
+-> initialize actualBph from that candidate
+-> build high-resolution 2-beat fold at actualBph
+-> evaluate bphFitScore(actualBph)
+-> evaluate nearby scores, for example actualBph +/- delta
+-> move actualBph toward the better fit
+-> rebuild the high-resolution fold at the updated actualBph
+-> nominalBph = nearest known standard to actualBph
 ```
 
-Coarse score for one standard:
+`bphFitScore` should reward a fold where tick/tock packet structure is sharp,
+repeatable, and stable across bands / time chunks. It should penalize smeared
+packets, unstable phase positions, and aliases that collapse tick/tock structure.
 
-```js
-standardScore = max(score for all bands);
-```
+Use the 2-beat cycle for rate tracking because beat error affects adjacent
+tick/tock spacing. The tracking fold should preserve both tick and tock packets
+instead of forcing them into one beat interval.
 
-This intentionally keeps the first algorithm dumb. If the watch signal is
-present, the correct standard should show a brighter, more structured folded
-row than incorrect standards.
-
-Later scoring improvements:
-- Reward multiple adjacent bins forming a stable tick packet.
-- Compare fold results across multiple time chunks inside `period`.
-- Weight bands that consistently fold well.
-- Add a fine search around the winning standard to estimate true rate.
-
-### true rate direction
-
-After standard detection works, estimate true rate by phase drift:
-
-1. Pick the winning nominal standard.
-2. Fold shorter rolling windows at that nominal interval.
-3. Find the dominant phase/template position in each window.
-4. Track phase movement over time.
-5. Convert phase drift into rate error.
-
-If phase moves earlier over time, the watch is running fast. If phase moves
-later, the watch is running slow.
-
-Alternative later implementation:
-- Extract beat timestamps from the folded/template signal.
-- Fit `beatTime = offset + actualInterval * beatIndex`.
+Later:
 - Convert to seconds/day:
   `(nominalInterval / actualInterval - 1) * 86400`.
-
-Do not start here. First make the folding features visible and trustworthy.
+- Estimate beat error from tick/tock asymmetry.
+- Identify sub-events inside the tick packet for amplitude work.
 
 ### milestone 1: live fold heatmap
 
@@ -255,7 +260,7 @@ Heatmap layout:
 
 ```txt
 rows:    standard + frequency band
-columns: phase bins across one beat interval
+columns: phase bins across the 2-beat tick/tock cycle
 cells:   normalized folded intensity
 ```
 
@@ -274,29 +279,27 @@ Expected result:
 - With no watch, rows should look mostly flat/random.
 - With a watch near the mic, the correct standard should show one or more
   stable bright regions in at least one frequency band.
-- Incorrect standards may show weak aliases, but should score worse.
+- Incorrect standards may show weak aliases.
 
 Worker output for milestone 1:
 
 ```js
 {
-  type: "folds",
+  type: "analysis",
   periodSeconds: 10,
   featureRate: 1000,
-  binCount: 128,
-  rows: [
-    {
-      bph: 28800,
-      band: "5600-10000",
-      score: 4.2,
-      bins: Float32Array
-    }
-  ],
-  best: {
-    bph: 28800,
-    band: "5600-10000",
-    score: 4.2
-  }
+  standardFolds: {
+    binCount: 128,
+    cycleBeats: 2,
+    rows: [
+      {
+        bph: 28800,
+        band: "5600-10000",
+        bins: Float32Array
+      }
+    ]
+  },
+  tracking: null
 }
 ```
 
@@ -309,32 +312,19 @@ Acceptance criteria:
 - A nearby ticking watch produces visibly non-flat folded rows.
 - No rate graph yet. No beat timestamp extraction yet.
 
-### standard detection details
-
-Milestone 1 only reports scores. It does not need to make a hard final
-standard decision.
-
-Later, accept a detected standard only when:
-- The best score is above an empirical threshold.
-- The best score beats the second-best score by a clear margin.
-- The winning standard stays stable across several updates.
-
-The UI should still allow manual standard override.
-
 ### lock-on details
 
 Lock-on is later work. The likely path:
-- Use the folded heatmap to find the dominant phase/template for the selected
-  standard.
-- Track that phase over time.
-- Treat high score + stable phase as locked.
-- Treat low score, unstable phase, or sudden phase jumps as unlocked.
+- Use the folded heatmap to find a coarse candidate standard and phase.
+- Track expected tick/tock packet positions over time.
+- Treat stable timing error + repeatable packet shape as locked.
+- Treat weak packets, unstable phase, or sudden phase jumps as unlocked.
 
 ### true rate estimation
 
 Later work after milestone 1:
 - Convert phase drift into seconds/day.
-- Add confidence based on fold score, phase stability, and band agreement.
+- Add confidence based on phase stability, packet shape, and band agreement.
 - Add a rate graph.
 
 ### period behavior
@@ -355,7 +345,7 @@ const framesToKeep = Math.ceil(periodSeconds * featureRate);
 ```
 
 Worker update cadence can be independent of feature cadence. Recompute and send
-folds around `5-10` times per second.
+analysis messages around `5-10` times per second.
 
 ### later measurements
 

@@ -10,7 +10,7 @@ const makeHeatmapData = (rows, binCount) => {
 };
 
 const makeRowLabels = (rows) =>
-  rows.map((row) => `${row.bph} / ${row.band} (${row.score.toFixed(1)})`);
+  rows.map((row) => `${row.bph} / ${row.band}`);
 
 const emptyChart = (element) => {
   element.textContent = "ECharts failed to load. Check the network and refresh.";
@@ -29,7 +29,8 @@ export const createHeatmap = (element) => {
   element.textContent = "";
   const chart = window.echarts.init(element, null, { renderer: "canvas" });
 
-  const update = (folds) => {
+  const update = (analysis) => {
+    const folds = analysis.standardFolds;
     const labels = makeRowLabels(folds.rows);
     const data = makeHeatmapData(folds.rows, folds.binCount);
 
@@ -51,7 +52,6 @@ export const createHeatmap = (element) => {
             `Phase bin: ${params.value[0]} / ${folds.binCount - 1}`,
             `Fold cycle: ${cycleBeats} beat${cycleBeats === 1 ? "" : "s"}`,
             `Z score: ${params.value[2]}`,
-            `Row score: ${row.score.toFixed(2)}`,
           ].join("<br>");
         },
       },

@@ -31,14 +31,6 @@ export const mean = (values) => {
   return total / values.length;
 };
 
-export const median = (values) => {
-  if (!values.length) return 0;
-  const copy = Array.from(values).sort((a, b) => a - b);
-  const mid = Math.floor(copy.length / 2);
-  if (copy.length % 2) return copy[mid];
-  return (copy[mid - 1] + copy[mid]) / 2;
-};
-
 export const normalizeRow = (row) => {
   const rowMean = mean(row);
   let variance = 0;
@@ -57,13 +49,4 @@ export const normalizeRow = (row) => {
   }
 
   return normalized;
-};
-
-export const scoreRow = (row) => {
-  if (!row.length) return 0;
-  let peak = -Infinity;
-  for (let index = 0; index < row.length; index += 1) {
-    peak = Math.max(peak, row[index]);
-  }
-  return peak - median(row);
 };

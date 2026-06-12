@@ -81,10 +81,6 @@
         color: #4a5564;
       }
 
-      #best {
-        font-weight: 650;
-      }
-
       .charts {
         display: grid;
         gap: 16px;
@@ -127,8 +123,7 @@
         }
 
         h1,
-        #status,
-        #best {
+        #status {
           width: 100%;
         }
 
@@ -170,7 +165,6 @@
         </label>
         <span class="stat">Feature rate: <strong id="feature-rate">-</strong></span>
         <span class="stat">Bands: <strong id="bands">-</strong></span>
-        <span id="best">Best: -</span>
         <span id="status">Idle</span>
       </header>
       <section class="charts">
@@ -203,7 +197,6 @@
         featureCap: document.querySelector("#feature-cap"),
         featureRate: document.querySelector("#feature-rate"),
         bands: document.querySelector("#bands"),
-        best: document.querySelector("#best"),
         status: document.querySelector("#status"),
         foldChart: document.querySelector("#fold-chart"),
         featureChart: document.querySelector("#feature-chart"),
@@ -255,13 +248,10 @@
 
         worker.onmessage = (event) => {
           const message = event.data;
-          if (message.type !== "folds") return;
+          if (message.type !== "analysis") return;
 
           app.graph.update(message);
           elements.featureRate.textContent = `${message.featureRate} Hz`;
-          if (message.best) {
-            elements.best.textContent = `Best: ${message.best.bph} / ${message.best.band} (${message.best.score.toFixed(2)})`;
-          }
         };
 
         worker.onerror = (event) => {
