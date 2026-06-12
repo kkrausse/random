@@ -45,9 +45,11 @@ export const createHeatmap = (element) => {
         position: "top",
         formatter(params) {
           const row = folds.rows[params.value[1]];
+          const cycleBeats = folds.cycleBeats || 1;
           return [
             `${row.bph} BPH / ${row.band}`,
-            `Phase bin: ${params.value[0]}`,
+            `Phase bin: ${params.value[0]} / ${folds.binCount - 1}`,
+            `Fold cycle: ${cycleBeats} beat${cycleBeats === 1 ? "" : "s"}`,
             `Z score: ${params.value[2]}`,
             `Row score: ${row.score.toFixed(2)}`,
           ].join("<br>");
@@ -55,7 +57,7 @@ export const createHeatmap = (element) => {
       },
       xAxis: {
         type: "category",
-        name: "phase",
+        name: `phase (${folds.cycleBeats || 1} beat cycle)`,
         data: Array.from({ length: folds.binCount }, (_, index) => index),
         splitArea: { show: false },
         axisLabel: { interval: 15 },

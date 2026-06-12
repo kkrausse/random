@@ -12,6 +12,7 @@ const state = {
   periodSeconds: DEFAULT_PERIOD_SECONDS,
   featureRate: DEFAULT_FEATURE_RATE,
   binCount: DEFAULT_BIN_COUNT,
+  cycleBeats: 2,
   bands: [],
   frames: [],
   nextStartFrame: 0,
@@ -66,7 +67,7 @@ const receiveFeatures = (message) => {
 
 const foldCandidate = (bph, bandIndex) => {
   const folded = new Float32Array(state.binCount);
-  const intervalSeconds = 3600 / bph;
+  const intervalSeconds = (3600 / bph) * state.cycleBeats;
 
   for (let index = 0; index < state.frames.length; index += 1) {
     const frame = state.frames[index];
@@ -125,6 +126,7 @@ const maybePostFolds = () => {
       periodSeconds: state.periodSeconds,
       featureRate: state.featureRate,
       binCount: state.binCount,
+      cycleBeats: state.cycleBeats,
       rows,
       best,
     },
