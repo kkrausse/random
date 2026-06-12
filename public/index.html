@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>timegrapher</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        color: #17202a;
+        background: #f7f9fc;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      main {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        min-height: 100vh;
+      }
+
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 18px;
+        align-items: center;
+        padding: 14px 18px;
+        border-bottom: 1px solid #d8dee8;
+        background: #ffffff;
+      }
+
+      h1 {
+        margin: 0 12px 0 0;
+        font-size: 18px;
+        font-weight: 650;
+      }
+
+      button,
+      select {
+        min-height: 34px;
+        border: 1px solid #aeb8c6;
+        border-radius: 6px;
+        background: #ffffff;
+        color: #17202a;
+        font: inherit;
+      }
+
+      button {
+        padding: 0 14px;
+        cursor: pointer;
+      }
+
+      button[data-running="true"] {
+        border-color: #a61e4d;
+        background: #fff0f6;
+      }
+
+      label,
+      .stat {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        font-size: 14px;
+      }
+
+      select {
+        padding: 0 8px;
+      }
+
+      #status {
+        min-width: 190px;
+        color: #4a5564;
+      }
+
+      #best {
+        font-weight: 650;
+      }
+
+      #chart {
+        width: 100%;
+        min-height: 680px;
+      }
+
+      .message {
+        padding: 18px;
+        color: #6b7280;
+      }
+
+      @media (max-width: 740px) {
+        header {
+          align-items: stretch;
+        }
+
+        h1,
+        #status,
+        #best {
+          width: 100%;
+        }
+
+        #chart {
+          min-height: 560px;
+        }
+      }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>timegrapher</h1>
+        <button id="toggle" type="button" data-running="false">Start microphone</button>
+        <label>
+          Period
+          <select id="period">
+            <option value="2">2s</option>
+            <option value="5">5s</option>
+            <option value="10" selected>10s</option>
+            <option value="20">20s</option>
+            <option value="30">30s</option>
+          </select>
+        </label>
+        <span class="stat">Feature rate: <strong id="feature-rate">-</strong></span>
+        <span class="stat">Bands: <strong id="bands">-</strong></span>
+        <span id="best">Best: -</span>
+        <span id="status">Idle</span>
+      </header>
+      <section id="chart" aria-label="Live folded feature heatmap">
+        <div class="message">Start the microphone to build the live fold heatmap.</div>
+      </section>
+    </main>
+
+    <script type="module">
+      import { DEFAULT_BIN_COUNT, DEFAULT_PERIOD_SECONDS } from "./data.js";
+      import { createHeatmap } from "./graph.js";
+
+      const elements = {
+        toggle: document.querySelector("#toggle"),
+        period: document.querySelector("#period"),
+        featureRate: document.querySelector("#feature-rate"),
+        bands: document.querySelector("#bands"),
+        best: document.querySelector("#best"),
+        status: document.querySelector("#status"),
+        chart: document.querySelector("#chart"),
+      };
+
+      const app = {
+        audioContext: null,
+        stream: null,
+        source: null,
+        worklet: null,
+        sink: null,
+        worker: null,
+        graph: createHeatmap(elements.chart),
+        running: false,
+      };
+
+      const setStatus = (text) => {
+        elements.status.textContent = text;
+      };
+
+      const setRunning = (running) => {
+        app.running = running;
+        elements.toggle.dataset.running = String(running);
+        elements.toggle.textContent = running ? "Stop microphone" : "Start microphone";
+      };
+
+      const configureWorker = () => {
+        if (!app.worker) return;
+        app.worker.postMessage({
+          type: "configure",
+          periodSeconds: Number(elements.period.value) || DEFAULT_PERIOD_SECONDS,
+          binCount: DEFAULT_BIN_COUNT,
+        });
+      };
+
+      const createWorker = () => {
+        const worker = new Worker("./analysis-worker.js", { type: "module" });
+
+        worker.onmessage = (event) => {
+          const message = event.data;
+          if (message.type !== "folds") return;
+
+          app.graph.update(message);
+          elements.featureRate.textContent = `${message.featureRate} Hz`;
+          if (message.best) {
+            elements.best.textContent = `Best: ${message.best.bph} / ${message.best.band} (${message.best.score.toFixed(2)})`;
+          }
+        };
+
+        worker.onerror = (event) => {
+          setStatus(`Worker error: ${event.message}`);
+          stop();
+        };
+
+        return worker;
+      };
+
+      const start = async () => {
+        if (app.running) return;
+
+        if (!window.isSecureContext) {
+          setStatus("Microphone access requires localhost or HTTPS.");
+          return;
+        }
+
+        setStatus("Requesting microphone...");
+        app.worker = createWorker();
+        configureWorker();
+
+        try {
+          app.stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false,
+            },
+          });
+
+          app.audioContext = new AudioContext();
+          await app.audioContext.audioWorklet.addModule("./feature-worklet.js");
+
+          app.source = app.audioContext.createMediaStreamSource(app.stream);
+          app.worklet = new AudioWorkletNode(app.audioContext, "feature-processor");
+          app.sink = app.audioContext.createGain();
+          app.sink.gain.value = 0;
+
+          app.worklet.port.onmessage = (event) => {
+            const message = event.data;
+
+            if (message.type === "ready") {
+              elements.featureRate.textContent = `${message.featureRate} Hz`;
+              elements.bands.textContent = String(message.bands.length);
+              setStatus(`Recording at ${Math.round(message.sampleRate)} Hz`);
+            }
+
+            if (message.type === "features" && app.worker) {
+              const transfers = message.features.map((feature) => feature.data.buffer);
+              app.worker.postMessage(message, transfers);
+            }
+          };
+
+          app.source.connect(app.worklet);
+          app.worklet.connect(app.sink);
+          app.sink.connect(app.audioContext.destination);
+          setRunning(true);
+        } catch (error) {
+          setStatus(error?.message || "Could not start microphone.");
+          await stop();
+        }
+      };
+
+      const stop = async () => {
+        if (app.source) {
+          app.source.disconnect();
+          app.source = null;
+        }
+        if (app.worklet) {
+          app.worklet.disconnect();
+          app.worklet.port.onmessage = null;
+          app.worklet = null;
+        }
+        if (app.sink) {
+          app.sink.disconnect();
+          app.sink = null;
+        }
+        if (app.audioContext) {
+          await app.audioContext.close();
+          app.audioContext = null;
+        }
+        if (app.stream) {
+          app.stream.getTracks().forEach((track) => track.stop());
+          app.stream = null;
+        }
+        if (app.worker) {
+          app.worker.terminate();
+          app.worker = null;
+        }
+
+        setRunning(false);
+        elements.bands.textContent = "-";
+        if (elements.status.textContent.startsWith("Recording")) {
+          setStatus("Stopped");
+        }
+      };
+
+      elements.toggle.addEventListener("click", () => {
+        if (app.running) {
+          stop();
+        } else {
+          start();
+        }
+      });
+
+      elements.period.addEventListener("change", configureWorker);
+    </script>
+  </body>
+</html>
