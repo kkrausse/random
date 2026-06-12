@@ -1,5 +1,30 @@
-const makeHeatmapData = (rows, binCount) => {
-  const data = [];
+import type { AnalysisMessage, FeatureMessage, FoldRow } from "./data";
+
+type ChartPoint = [number, number];
+type HeatmapPoint = [number, number, number];
+
+type EChart = {
+  clear(): void;
+  resize(): void;
+  setOption(option: unknown): void;
+};
+
+type EChartsGlobal = {
+  init(element: HTMLElement, theme: unknown, options: { renderer: "canvas" }): EChart;
+};
+
+type TooltipParams = {
+  value: [number, number, number];
+};
+
+declare global {
+  interface Window {
+    echarts?: EChartsGlobal;
+  }
+}
+
+const makeHeatmapData = (rows: FoldRow[], binCount: number) => {
+  const data: HeatmapPoint[] = [];
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
     const bins = rows[rowIndex].bins;
     for (let bin = 0; bin < binCount; bin += 1) {
@@ -9,10 +34,9 @@ const makeHeatmapData = (rows, binCount) => {
   return data;
 };
 
-const makeRowLabels = (rows) =>
-  rows.map((row) => `${row.bph} / ${row.band}`);
+const makeRowLabels = (rows: FoldRow[]) => rows.map((row) => `${row.bph} / ${row.band}`);
 
-const emptyChart = (element) => {
+const emptyChart = (element: HTMLElement) => {
   element.textContent = "ECharts failed to load. Check the network and refresh.";
   return {
     reset() {},
@@ -21,7 +45,7 @@ const emptyChart = (element) => {
   };
 };
 
-export const createHeatmap = (element) => {
+export const createHeatmap = (element: HTMLElement) => {
   if (!window.echarts) {
     return emptyChart(element);
   }
@@ -29,7 +53,7 @@ export const createHeatmap = (element) => {
   element.textContent = "";
   const chart = window.echarts.init(element, null, { renderer: "canvas" });
 
-  const update = (analysis) => {
+  const update = (analysis: AnalysisMessage) => {
     const folds = analysis.standardFolds;
     const labels = makeRowLabels(folds.rows);
     const data = makeHeatmapData(folds.rows, folds.binCount);
@@ -44,7 +68,7 @@ export const createHeatmap = (element) => {
       },
       tooltip: {
         position: "top",
-        formatter(params) {
+        formatter(params: TooltipParams) {
           const row = folds.rows[params.value[1]];
           const cycleBeats = folds.cycleBeats || 1;
           return [
@@ -101,7 +125,7 @@ export const createHeatmap = (element) => {
   return { update, resize };
 };
 
-export const createFeatureChart = (element) => {
+export const createFeatureChart = (element: HTMLElement) => {
   if (!window.echarts) {
     return emptyChart(element);
   }
@@ -109,8 +133,8 @@ export const createFeatureChart = (element) => {
   element.textContent = "";
   const chart = window.echarts.init(element, null, { renderer: "canvas" });
   const state = {
-    bands: [],
-    series: new Map(),
+    bands: [] as string[],
+    series: new Map<string, ChartPoint[]>(),
     lastDraw: 0,
   };
 
@@ -120,7 +144,7 @@ export const createFeatureChart = (element) => {
     chart.clear();
   };
 
-  const ensureBands = (features) => {
+  const ensureBands = (features: FeatureMessage["features"]) => {
     const bands = features.map((feature) => feature.name);
     const changed =
       bands.length !== state.bands.length ||
@@ -132,7 +156,7 @@ export const createFeatureChart = (element) => {
     state.series = new Map(bands.map((band) => [band, []]));
   };
 
-  const appendBatch = (message) => {
+  const appendBatch = (message: FeatureMessage) => {
     const frameCount = message.features[0]?.data?.length || 0;
     const step = Math.max(1, Math.round(message.featureRate / 100));
 
@@ -146,12 +170,12 @@ export const createFeatureChart = (element) => {
         for (let index = offset; index < end; index += 1) {
           peak = Math.max(peak, feature.data[index]);
         }
-        state.series.get(feature.name).push([seconds, Number(peak.toFixed(4))]);
+        state.series.get(feature.name)?.push([seconds, Number(peak.toFixed(4))]);
       }
     }
   };
 
-  const trim = (windowSeconds) => {
+  const trim = (windowSeconds: number) => {
     let latest = 0;
     for (const values of state.series.values()) {
       if (values.length) {
@@ -167,7 +191,7 @@ export const createFeatureChart = (element) => {
     }
   };
 
-  const draw = (windowSeconds, featureCap) => {
+  const draw = (windowSeconds: number, featureCap: number) => {
     const series = state.bands.map((band) => ({
       name: band,
       type: "line",
@@ -191,14 +215,14 @@ export const createFeatureChart = (element) => {
       },
       tooltip: {
         trigger: "axis",
-        valueFormatter(value) {
+        valueFormatter(value: number) {
           return Number(value).toFixed(4);
         },
       },
       xAxis: {
         type: "value",
         name: "seconds",
-        min: (value) => Math.max(0, value.max - windowSeconds),
+        min: (value: { max: number }) => Math.max(0, value.max - windowSeconds),
         max: "dataMax",
       },
       yAxis: {
@@ -212,7 +236,7 @@ export const createFeatureChart = (element) => {
     });
   };
 
-  const update = (message, windowSeconds, featureCap) => {
+  const update = (message: FeatureMessage, windowSeconds: number, featureCap: number) => {
     ensureBands(message.features);
     appendBatch(message);
     trim(windowSeconds);

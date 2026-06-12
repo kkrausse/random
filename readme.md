@@ -39,10 +39,24 @@ Initial file layout:
 ```txt
 public/
   index.html
-  data.js
-  graph.js
+  main.ts
+  data.ts
+  graph.ts
   feature-worklet.js
-  analysis-worker.js
+  analysis-worker.ts
+```
+
+Run locally:
+
+```sh
+bun run dev
+```
+
+Check and build:
+
+```sh
+bun run check
+bun run build
 ```
 
 `index.html`:
@@ -53,11 +67,11 @@ public/
 - Owns UI controls: period, sensitivity/debug controls, start/stop.
 - Displays the standard fold heatmap and raw feature stream.
 
-`data.js`:
+`data.ts`:
 - Defines shared constants and pure analysis helpers.
 - Does not touch the DOM.
 
-`graph.js`:
+`graph.ts`:
 - Owns display only.
 - Uses Apache ECharts for the heatmap and feature graph.
 - Input is processed worker output, not raw audio.
@@ -69,7 +83,7 @@ public/
 - Produces coarse frequency-band novelty features at `featureRate`.
 - Posts feature batches to the main thread.
 
-`analysis-worker.js`:
+`analysis-worker.ts`:
 - Receives feature batches from the main thread.
 - Maintains rolling feature buffers.
 - Runs folding for all candidate standards.

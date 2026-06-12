@@ -5,26 +5,46 @@ import {
   DEFAULT_PERIOD_SECONDS,
   clamp,
   normalizeRow,
-} from "./data.js";
+} from "./data";
+import type {
+  AnalysisMessage,
+  ConfigureAnalysisMessage,
+  FeatureMessage,
+  FoldRow,
+} from "./data";
+
+type Frame = {
+  featureFrame: number;
+  bands: Float32Array;
+};
+
+type WorkerMessage = ConfigureAnalysisMessage | FeatureMessage;
+
+type WorkerScope = {
+  postMessage(message: AnalysisMessage, transfer: Transferable[]): void;
+  onmessage: ((event: MessageEvent<WorkerMessage>) => void) | null;
+};
+
+const workerSelf = self as unknown as WorkerScope;
 
 const state = {
   periodSeconds: DEFAULT_PERIOD_SECONDS,
   featureRate: DEFAULT_FEATURE_RATE,
   binCount: DEFAULT_BIN_COUNT,
   cycleBeats: 2,
-  bands: [],
-  frames: [],
+  bands: [] as string[],
+  frames: [] as Frame[],
   nextStartFrame: 0,
   lastPostTime: 0,
 };
 
-const configure = (message) => {
+const configure = (message: ConfigureAnalysisMessage) => {
   state.periodSeconds = clamp(Number(message.periodSeconds) || DEFAULT_PERIOD_SECONDS, 2, 30);
   state.binCount = Number(message.binCount) || DEFAULT_BIN_COUNT;
   trimFrames();
 };
 
-const ensureBandBuffers = (features) => {
+const ensureBandBuffers = (features: FeatureMessage["features"]) => {
   const names = features.map((feature) => feature.name);
   const changed =
     names.length !== state.bands.length ||
@@ -44,7 +64,7 @@ const trimFrames = () => {
   }
 };
 
-const receiveFeatures = (message) => {
+const receiveFeatures = (message: FeatureMessage) => {
   state.featureRate = Number(message.featureRate) || state.featureRate;
   ensureBandBuffers(message.features);
 
@@ -64,7 +84,7 @@ const receiveFeatures = (message) => {
   maybePostAnalysis();
 };
 
-const foldStandardCandidate = (bph, bandIndex) => {
+const foldStandardCandidate = (bph: number, bandIndex: number) => {
   const folded = new Float32Array(state.binCount);
   const intervalSeconds = (3600 / bph) * state.cycleBeats;
 
@@ -80,7 +100,7 @@ const foldStandardCandidate = (bph, bandIndex) => {
 };
 
 const buildStandardFoldRows = () => {
-  const rows = [];
+  const rows: FoldRow[] = [];
 
   for (let bphIndex = 0; bphIndex < CANDIDATE_BPH.length; bphIndex += 1) {
     const bph = CANDIDATE_BPH[bphIndex];
@@ -109,7 +129,7 @@ const maybePostAnalysis = () => {
   const rows = buildStandardFoldRows();
   const transfers = rows.map((row) => row.bins.buffer);
 
-  self.postMessage(
+  workerSelf.postMessage(
     {
       type: "analysis",
       periodSeconds: state.periodSeconds,
@@ -125,7 +145,7 @@ const maybePostAnalysis = () => {
   );
 };
 
-self.onmessage = (event) => {
+workerSelf.onmessage = (event) => {
   const message = event.data;
   if (message.type === "configure") {
     configure(message);
