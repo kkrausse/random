@@ -55,6 +55,11 @@ export type AnalysisMessage = {
   tracking: null;
 };
 
+export type WorkletToMainMessage = ReadyMessage | FeatureMessage;
+export type MainToWorkletMessage = ConfigureWorkletMessage;
+export type MainToAnalysisWorkerMessage = ConfigureAnalysisMessage | FeatureMessage;
+export type AnalysisWorkerToMainMessage = AnalysisMessage;
+
 export const CANDIDATE_BPH = [14400, 18000, 19800, 21600, 25200, 28800, 36000];
 
 export const BASE_BANDS: Band[] = [

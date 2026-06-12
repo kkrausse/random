@@ -1,27 +1,12 @@
+import * as echarts from "echarts";
 import type { AnalysisMessage, FeatureMessage, FoldRow } from "./data";
 
 type ChartPoint = [number, number];
 type HeatmapPoint = [number, number, number];
 
-type EChart = {
-  clear(): void;
-  resize(): void;
-  setOption(option: unknown): void;
-};
-
-type EChartsGlobal = {
-  init(element: HTMLElement, theme: unknown, options: { renderer: "canvas" }): EChart;
-};
-
 type TooltipParams = {
   value: [number, number, number];
 };
-
-declare global {
-  interface Window {
-    echarts?: EChartsGlobal;
-  }
-}
 
 const makeHeatmapData = (rows: FoldRow[], binCount: number) => {
   const data: HeatmapPoint[] = [];
@@ -36,22 +21,9 @@ const makeHeatmapData = (rows: FoldRow[], binCount: number) => {
 
 const makeRowLabels = (rows: FoldRow[]) => rows.map((row) => `${row.bph} / ${row.band}`);
 
-const emptyChart = (element: HTMLElement) => {
-  element.textContent = "ECharts failed to load. Check the network and refresh.";
-  return {
-    reset() {},
-    update() {},
-    resize() {},
-  };
-};
-
 export const createHeatmap = (element: HTMLElement) => {
-  if (!window.echarts) {
-    return emptyChart(element);
-  }
-
   element.textContent = "";
-  const chart = window.echarts.init(element, null, { renderer: "canvas" });
+  const chart = echarts.init(element, null, { renderer: "canvas" });
 
   const update = (analysis: AnalysisMessage) => {
     const folds = analysis.standardFolds;
@@ -126,12 +98,8 @@ export const createHeatmap = (element: HTMLElement) => {
 };
 
 export const createFeatureChart = (element: HTMLElement) => {
-  if (!window.echarts) {
-    return emptyChart(element);
-  }
-
   element.textContent = "";
-  const chart = window.echarts.init(element, null, { renderer: "canvas" });
+  const chart = echarts.init(element, null, { renderer: "canvas" });
   const state = {
     bands: [] as string[],
     series: new Map<string, ChartPoint[]>(),

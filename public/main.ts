@@ -4,15 +4,12 @@ import {
   DEFAULT_PERIOD_SECONDS,
 } from "./data";
 import type {
-  AnalysisMessage,
+  AnalysisWorkerToMainMessage,
   ConfigureAnalysisMessage,
-  ConfigureWorkletMessage,
-  FeatureMessage,
-  ReadyMessage,
+  MainToWorkletMessage,
+  WorkletToMainMessage,
 } from "./data";
 import { createFeatureChart, createHeatmap } from "./graph";
-
-type WorkletMessage = ReadyMessage | FeatureMessage;
 
 type AppState = {
   audioContext: AudioContext | null;
@@ -84,7 +81,7 @@ const getFeatureCap = () => Number(elements.featureCap.value) || DEFAULT_FEATURE
 const configureWorklet = () => {
   if (!app.worklet) return;
 
-  const message: ConfigureWorkletMessage = {
+  const message: MainToWorkletMessage = {
     type: "configure",
     featureCap: getFeatureCap(),
   };
@@ -97,7 +94,7 @@ const createWorker = () => {
     type: "module",
   });
 
-  worker.onmessage = (event: MessageEvent<AnalysisMessage>) => {
+  worker.onmessage = (event: MessageEvent<AnalysisWorkerToMainMessage>) => {
     const message = event.data;
     if (message.type !== "analysis") return;
 
@@ -144,7 +141,7 @@ const start = async () => {
     app.sink.gain.value = 0;
     configureWorklet();
 
-    app.worklet.port.onmessage = (event: MessageEvent<WorkletMessage>) => {
+    app.worklet.port.onmessage = (event: MessageEvent<WorkletToMainMessage>) => {
       const message = event.data;
 
       if (message.type === "ready") {

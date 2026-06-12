@@ -7,10 +7,11 @@ import {
   normalizeRow,
 } from "./data";
 import type {
-  AnalysisMessage,
+  AnalysisWorkerToMainMessage,
   ConfigureAnalysisMessage,
   FeatureMessage,
   FoldRow,
+  MainToAnalysisWorkerMessage,
 } from "./data";
 
 type Frame = {
@@ -18,11 +19,9 @@ type Frame = {
   bands: Float32Array;
 };
 
-type WorkerMessage = ConfigureAnalysisMessage | FeatureMessage;
-
 type WorkerScope = {
-  postMessage(message: AnalysisMessage, transfer: Transferable[]): void;
-  onmessage: ((event: MessageEvent<WorkerMessage>) => void) | null;
+  postMessage(message: AnalysisWorkerToMainMessage, transfer: Transferable[]): void;
+  onmessage: ((event: MessageEvent<MainToAnalysisWorkerMessage>) => void) | null;
 };
 
 const workerSelf = self as unknown as WorkerScope;
