@@ -99,9 +99,14 @@
         font-weight: 650;
       }
 
+      #tracking-fold-chart,
       #fold-chart,
       #feature-chart {
         width: 100%;
+      }
+
+      #tracking-fold-chart {
+        min-height: 320px;
       }
 
       #fold-chart {
@@ -131,6 +136,7 @@
           min-height: 560px;
         }
 
+        #tracking-fold-chart,
         #feature-chart {
           min-height: 280px;
         }
@@ -171,6 +177,12 @@
         <span id="status">Idle</span>
       </header>
       <section class="charts">
+        <section class="chart-block" aria-label="Tracked BPH folded amplitude">
+          <h2 class="chart-title">Tracked fold</h2>
+          <div id="tracking-fold-chart">
+            <div class="message">Start the microphone to build the tracked fold.</div>
+          </div>
+        </section>
         <section class="chart-block" aria-label="Live folded feature heatmap">
           <h2 class="chart-title">Fold heatmap</h2>
           <div id="fold-chart">

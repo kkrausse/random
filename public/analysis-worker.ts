@@ -3,6 +3,7 @@ import {
   DEFAULT_BIN_COUNT,
   DEFAULT_FEATURE_RATE,
   DEFAULT_PERIOD_SECONDS,
+  DEFAULT_TRACKING_FOLD_BIN_COUNT,
   clamp,
   normalizeRow,
 } from "./data";
@@ -121,6 +122,40 @@ const buildStandardFoldRows = () => {
   return rows;
 };
 
+const buildTrackingFold = (bph: number | null) => {
+  if (!bph) return null;
+
+  const intervalSeconds = (3600 / bph) * state.cycleBeats;
+  const binCount = DEFAULT_TRACKING_FOLD_BIN_COUNT;
+  const counts = new Uint32Array(binCount);
+  const bins = new Float32Array(binCount);
+
+  for (let index = 0; index < state.frames.length; index += 1) {
+    const frame = state.frames[index];
+    const seconds = frame.featureFrame / state.featureRate;
+    const phase = (seconds % intervalSeconds) / intervalSeconds;
+    const bin = Math.min(binCount - 1, Math.floor(phase * binCount));
+    counts[bin] += 1;
+
+    for (let bandIndex = 0; bandIndex < state.bands.length; bandIndex += 1) {
+      bins[bin] += frame.bands[bandIndex];
+    }
+  }
+
+  for (let bin = 0; bin < binCount; bin += 1) {
+    const count = counts[bin];
+    if (!count) continue;
+    bins[bin] /= count;
+  }
+
+  return {
+    bph,
+    binCount,
+    cycleBeats: state.cycleBeats,
+    bins,
+  };
+};
+
 const maybePostAnalysis = () => {
   const now = Date.now();
   if (now - state.lastPostTime < 100 || state.frames.length < state.featureRate * 0.25) {
@@ -138,7 +173,11 @@ const maybePostAnalysis = () => {
     },
     rows,
   );
+  const trackingFold = buildTrackingFold(tracking.measuredBph);
   const transfers = rows.map((row) => row.bins.buffer);
+  if (trackingFold) {
+    transfers.push(trackingFold.bins.buffer);
+  }
 
   workerSelf.postMessage(
     {
@@ -155,6 +194,7 @@ const maybePostAnalysis = () => {
         measuredBph: tracking.measuredBph,
         confidenceBph: tracking.confidenceBph,
       },
+      trackingFold,
     },
     transfers,
   );

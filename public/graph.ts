@@ -1,5 +1,5 @@
 import * as echarts from "echarts";
-import type { AnalysisMessage, FeatureMessage, FoldRow } from "./data";
+import type { AnalysisMessage, FeatureMessage, FoldRow, TrackingFold } from "./data";
 
 type ChartPoint = [number, number];
 type HeatmapPoint = [number, number, number];
@@ -20,6 +20,98 @@ const makeHeatmapData = (rows: FoldRow[], binCount: number) => {
 };
 
 const makeRowLabels = (rows: FoldRow[]) => rows.map((row) => `${row.bph} / ${row.band}`);
+
+const makeTrackingFoldSeries = (fold: TrackingFold) => {
+  const cycleSeconds = (3600 / fold.bph) * fold.cycleBeats;
+
+  return [
+    {
+      name: "summed amplitude",
+      type: "line",
+      data: Array.from(fold.bins, (value, bin) => [
+        Number(((bin / fold.binCount) * cycleSeconds).toFixed(4)),
+        Number(value.toFixed(4)),
+      ]),
+      showSymbol: false,
+      sampling: "max",
+      lineStyle: { width: 1 },
+    },
+  ];
+};
+
+export const createTrackingFoldChart = (element: HTMLElement) => {
+  element.textContent = "";
+  const chart = echarts.init(element, null, { renderer: "canvas" });
+
+  const update = (analysis: AnalysisMessage) => {
+    const fold = analysis.trackingFold;
+
+    if (!fold) {
+      chart.setOption({
+        animation: false,
+        grid: {
+          left: 48,
+          right: 20,
+          top: 32,
+          bottom: 48,
+        },
+        xAxis: {
+          type: "value",
+          name: "tracked cycle seconds",
+          min: 0,
+        },
+        yAxis: {
+          type: "value",
+          name: "amplitude",
+          min: 0,
+          scale: true,
+        },
+        series: [],
+      });
+      return;
+    }
+
+    const cycleSeconds = (3600 / fold.bph) * fold.cycleBeats;
+
+    chart.setOption({
+      animation: false,
+      grid: {
+        left: 48,
+        right: 20,
+        top: 32,
+        bottom: 48,
+      },
+      legend: {
+        type: "scroll",
+        top: 0,
+      },
+      tooltip: {
+        trigger: "axis",
+        valueFormatter(value: number) {
+          return Number(value).toFixed(4);
+        },
+      },
+      xAxis: {
+        type: "value",
+        name: `seconds (${fold.cycleBeats} beat cycle)`,
+        min: 0,
+        max: Number(cycleSeconds.toFixed(4)),
+      },
+      yAxis: {
+        type: "value",
+        name: "amplitude",
+        min: 0,
+        scale: true,
+      },
+      series: makeTrackingFoldSeries(fold),
+    });
+  };
+
+  const resize = () => chart.resize();
+  window.addEventListener("resize", resize);
+
+  return { update, resize };
+};
 
 export const createHeatmap = (element: HTMLElement) => {
   element.textContent = "";

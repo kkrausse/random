@@ -9,7 +9,7 @@ import type {
   MainToWorkletMessage,
   WorkletToMainMessage,
 } from "./data";
-import { createFeatureChart, createHeatmap } from "./graph";
+import { createFeatureChart, createHeatmap, createTrackingFoldChart } from "./graph";
 
 type AppState = {
   audioContext: AudioContext | null;
@@ -18,6 +18,7 @@ type AppState = {
   worklet: AudioWorkletNode | null;
   sink: GainNode | null;
   worker: Worker | null;
+  trackingFoldGraph: ReturnType<typeof createTrackingFoldChart>;
   graph: ReturnType<typeof createHeatmap>;
   featureGraph: ReturnType<typeof createFeatureChart>;
   running: boolean;
@@ -42,6 +43,7 @@ const elements = {
   confidenceBph: query<HTMLElement>("#confidence-bph"),
   secondsPerDay: query<HTMLElement>("#seconds-per-day"),
   status: query<HTMLElement>("#status"),
+  trackingFoldChart: query<HTMLElement>("#tracking-fold-chart"),
   foldChart: query<HTMLElement>("#fold-chart"),
   featureChart: query<HTMLElement>("#feature-chart"),
 };
@@ -53,6 +55,7 @@ const app: AppState = {
   worklet: null,
   sink: null,
   worker: null,
+  trackingFoldGraph: createTrackingFoldChart(elements.trackingFoldChart),
   graph: createHeatmap(elements.foldChart),
   featureGraph: createFeatureChart(elements.featureChart),
   running: false,
@@ -140,6 +143,7 @@ const createWorker = () => {
     if (message.type !== "analysis") return;
 
     app.graph.update(message);
+    app.trackingFoldGraph.update(message);
     updateTrackingDisplay(message);
     elements.featureRate.textContent = `${message.featureRate} Hz`;
   };

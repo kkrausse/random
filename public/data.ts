@@ -1,3 +1,11 @@
+export const DEFAULT_PERIOD_SECONDS = 10;
+export const DEFAULT_FEATURE_RATE = 4000;
+export const DEFAULT_BIN_COUNT = 128;
+export const DEFAULT_TRACKING_FOLD_BIN_COUNT = 512;
+export const DEFAULT_FEATURE_CAP = 2;
+export const MIN_PERIOD_SECONDS = 2;
+export const MAX_PERIOD_SECONDS = 30;
+
 export type Band = {
   name: string;
   low: number;
@@ -53,12 +61,20 @@ export type Tracking = {
   confidenceBph: number | null;
 };
 
+export type TrackingFold = {
+  bph: number;
+  binCount: number;
+  cycleBeats: number;
+  bins: Float32Array;
+};
+
 export type AnalysisMessage = {
   type: "analysis";
   periodSeconds: number;
   featureRate: number;
   standardFolds: StandardFolds;
   tracking: Tracking;
+  trackingFold: TrackingFold | null;
 };
 
 export type WorkletToMainMessage = ReadyMessage | FeatureMessage;
@@ -75,13 +91,6 @@ export const BASE_BANDS: Band[] = [
   { name: "5600-10000", low: 5600, high: 10000 },
   { name: "10000-16000", low: 10000, high: 16000 },
 ];
-
-export const DEFAULT_PERIOD_SECONDS = 10;
-export const DEFAULT_FEATURE_RATE = 1000;
-export const DEFAULT_BIN_COUNT = 128;
-export const DEFAULT_FEATURE_CAP = 2;
-export const MIN_PERIOD_SECONDS = 2;
-export const MAX_PERIOD_SECONDS = 30;
 
 export const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
