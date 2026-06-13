@@ -47,12 +47,18 @@ export type StandardFolds = {
   rows: FoldRow[];
 };
 
+export type Tracking = {
+  standardBph: number | null;
+  measuredBph: number | null;
+  confidenceBph: number | null;
+};
+
 export type AnalysisMessage = {
   type: "analysis";
   periodSeconds: number;
   featureRate: number;
   standardFolds: StandardFolds;
-  tracking: null;
+  tracking: Tracking;
 };
 
 export type WorkletToMainMessage = ReadyMessage | FeatureMessage;

@@ -6,6 +6,7 @@ import {
   clamp,
   normalizeRow,
 } from "./data";
+import { createBphTracker } from "./tracking-fold-fit";
 import type {
   AnalysisWorkerToMainMessage,
   ConfigureAnalysisMessage,
@@ -35,6 +36,7 @@ const state = {
   frames: [] as Frame[],
   nextStartFrame: 0,
   lastPostTime: 0,
+  tracker: createBphTracker(),
 };
 
 const configure = (message: ConfigureAnalysisMessage) => {
@@ -53,6 +55,7 @@ const ensureBandBuffers = (features: FeatureMessage["features"]) => {
     state.bands = names;
     state.frames = [];
     state.nextStartFrame = 0;
+    state.tracker = createBphTracker();
   }
 };
 
@@ -126,6 +129,15 @@ const maybePostAnalysis = () => {
 
   state.lastPostTime = now;
   const rows = buildStandardFoldRows();
+  const tracking = state.tracker.trackStep(
+    {
+      featureRate: state.featureRate,
+      cycleBeats: state.cycleBeats,
+      bands: state.bands,
+      frames: state.frames,
+    },
+    rows,
+  );
   const transfers = rows.map((row) => row.bins.buffer);
 
   workerSelf.postMessage(
@@ -138,7 +150,11 @@ const maybePostAnalysis = () => {
         cycleBeats: state.cycleBeats,
         rows,
       },
-      tracking: null,
+      tracking: {
+        standardBph: tracking.standardBph,
+        measuredBph: tracking.measuredBph,
+        confidenceBph: tracking.confidenceBph,
+      },
     },
     transfers,
   );

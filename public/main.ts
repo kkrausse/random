@@ -37,6 +37,10 @@ const elements = {
   featureCap: query<HTMLSelectElement>("#feature-cap"),
   featureRate: query<HTMLElement>("#feature-rate"),
   bands: query<HTMLElement>("#bands"),
+  standardBph: query<HTMLElement>("#standard-bph"),
+  measuredBph: query<HTMLElement>("#measured-bph"),
+  confidenceBph: query<HTMLElement>("#confidence-bph"),
+  secondsPerDay: query<HTMLElement>("#seconds-per-day"),
   status: query<HTMLElement>("#status"),
   foldChart: query<HTMLElement>("#fold-chart"),
   featureChart: query<HTMLElement>("#feature-chart"),
@@ -62,6 +66,43 @@ const setRunning = (running: boolean) => {
   app.running = running;
   elements.toggle.dataset.running = String(running);
   elements.toggle.textContent = running ? "Stop microphone" : "Start microphone";
+};
+
+const formatBph = (value: number | null) => {
+  if (value === null) return "-";
+  return value.toFixed(1);
+};
+
+const formatSigned = (value: number | null) => {
+  if (value === null) return "-";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(1)}`;
+};
+
+const formatRange = (value: number | null) => {
+  if (value === null) return "-";
+  return `±${value.toFixed(1)}`;
+};
+
+const resetTrackingDisplay = () => {
+  elements.standardBph.textContent = "-";
+  elements.measuredBph.textContent = "-";
+  elements.confidenceBph.textContent = "-";
+  elements.secondsPerDay.textContent = "-";
+};
+
+const updateTrackingDisplay = (message: AnalysisWorkerToMainMessage) => {
+  const tracking = message.tracking;
+  const secondsPerDay =
+    tracking.standardBph && tracking.measuredBph
+      ? (tracking.measuredBph / tracking.standardBph - 1) * 86400
+      : null;
+
+  elements.standardBph.textContent =
+    tracking.standardBph === null ? "-" : String(Math.round(tracking.standardBph));
+  elements.measuredBph.textContent = formatBph(tracking.measuredBph);
+  elements.confidenceBph.textContent = formatRange(tracking.confidenceBph);
+  elements.secondsPerDay.textContent = formatSigned(secondsPerDay);
 };
 
 const configureWorker = () => {
@@ -99,6 +140,7 @@ const createWorker = () => {
     if (message.type !== "analysis") return;
 
     app.graph.update(message);
+    updateTrackingDisplay(message);
     elements.featureRate.textContent = `${message.featureRate} Hz`;
   };
 
@@ -121,6 +163,7 @@ const start = async () => {
   setStatus("Requesting microphone...");
   app.worker = createWorker();
   app.featureGraph.reset();
+  resetTrackingDisplay();
   configureWorker();
 
   try {
@@ -200,6 +243,7 @@ const stop = async () => {
 
   setRunning(false);
   elements.bands.textContent = "-";
+  resetTrackingDisplay();
   if ((elements.status.textContent || "").startsWith("Recording")) {
     setStatus("Stopped");
   }
