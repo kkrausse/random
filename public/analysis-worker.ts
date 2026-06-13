@@ -4,9 +4,8 @@ import {
   DEFAULT_FEATURE_RATE,
   DEFAULT_PERIOD_SECONDS,
   DEFAULT_TRACKING_FOLD_BIN_COUNT,
-  clamp,
-  normalizeRow,
-} from "./data";
+} from "./defaults";
+import { clamp, normalizeRow } from "./data";
 import { createBphTracker } from "./tracking-fold-fit";
 import type {
   AnalysisWorkerToMainMessage,

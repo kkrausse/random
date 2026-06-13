@@ -35,5 +35,18 @@ if (!worker.outputs[0]) {
   process.exit(1);
 }
 
+const worklet = await Bun.build({
+  entrypoints: ["./public/feature-worklet.ts"],
+  target: "browser",
+  format: "esm",
+  minify: true,
+});
+assertBuild(worklet, "feature worklet");
+
+if (!worklet.outputs[0]) {
+  console.error("Feature worklet build did not produce output.");
+  process.exit(1);
+}
+
 await Bun.write("./dist/analysis-worker.js", worker.outputs[0]);
-await Bun.write("./dist/feature-worklet.js", Bun.file("./public/feature-worklet.js"));
+await Bun.write("./dist/feature-worklet.js", worklet.outputs[0]);

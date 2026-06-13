@@ -33,7 +33,6 @@ const makeTrackingFoldSeries = (fold: TrackingFold) => {
         Number(value.toFixed(4)),
       ]),
       showSymbol: false,
-      sampling: "max",
       lineStyle: { width: 1 },
     },
   ];

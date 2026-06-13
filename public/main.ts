@@ -2,7 +2,7 @@ import {
   DEFAULT_BIN_COUNT,
   DEFAULT_FEATURE_CAP,
   DEFAULT_PERIOD_SECONDS,
-} from "./data";
+} from "./defaults";
 import type {
   AnalysisWorkerToMainMessage,
   ConfigureAnalysisMessage,

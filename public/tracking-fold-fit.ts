@@ -1,4 +1,5 @@
-import { CANDIDATE_BPH, clamp, normalizeRow } from "./data";
+import { CANDIDATE_BPH } from "./defaults";
+import { clamp, normalizeRow } from "./data";
 import type { FoldRow, Tracking } from "./data";
 
 export type TrackingFrame = {
