@@ -197,6 +197,44 @@ for each feature frame in the rolling period:
     folded[feature.name][bin] += feature.data[featureFrame];
 ```
 
+The fold is a pure reduction from timestamped feature samples into phase bins.
+For one feature band:
+
+```txt
+B = binCount
+T = (3600 / bph) * cycleBeats
+t_k = featureFrame_k / featureRate
+phase_k = (t_k mod T) / T
+bin_k = min(B - 1, floor(phase_k * B))
+
+foldBins[i] = sum over k where bin_k = i of x_k
+```
+
+Equivalently, split the rolling window into cycle repetitions first:
+
+```txt
+cycle_k = floor(t_k / T)
+periodBins[j][i] = sum over k where cycle_k = j and bin_k = i of x_k
+foldBins[i] = sum over j of periodBins[j][i]
+```
+
+That second form is useful for future noise rejection. A real watch packet
+should repeat at roughly the same phase across multiple cycles. A transient
+noise event may create a large `foldBins[i]`, but only because one or two
+`periodBins[j][i]` values are large.
+
+A simple future coherence penalty could be:
+
+```txt
+mean_i = mean over j of periodBins[j][i]
+std_i = std over j of periodBins[j][i]
+coherence_i = mean_i / (mean_i + std_i + epsilon)
+coherentFoldBins[i] = foldBins[i] * coherence_i
+```
+
+This would keep bins that repeat across cycles and reduce bins dominated by
+single-cycle noise. This should be applied before row normalization.
+
 Normalize each folded row so older/louder recordings do not dominate:
 
 ```js

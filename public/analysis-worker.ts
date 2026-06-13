@@ -6,6 +6,7 @@ import {
   DEFAULT_TRACKING_FOLD_BIN_COUNT,
 } from "./defaults";
 import { clamp, normalizeRow } from "./data";
+import { foldSignal } from "./util";
 import { createBphTracker } from "./tracking-fold-fit";
 import type {
   AnalysisWorkerToMainMessage,
@@ -87,18 +88,16 @@ const receiveFeatures = (message: FeatureMessage) => {
 };
 
 const foldStandardCandidate = (bph: number, bandIndex: number) => {
-  const folded = new Float32Array(state.binCount);
-  const intervalSeconds = (3600 / bph) * state.cycleBeats;
-
-  for (let index = 0; index < state.frames.length; index += 1) {
-    const frame = state.frames[index];
-    const seconds = frame.featureFrame / state.featureRate;
-    const phase = (seconds % intervalSeconds) / intervalSeconds;
-    const bin = Math.min(state.binCount - 1, Math.floor(phase * state.binCount));
-    folded[bin] += frame.bands[bandIndex];
-  }
-
-  return normalizeRow(folded);
+  return normalizeRow(
+    foldSignal({
+      frames: state.frames,
+      featureRate: state.featureRate,
+      bph,
+      cycleBeats: state.cycleBeats,
+      binCount: state.binCount,
+      valueAt: (frame) => frame.bands[bandIndex],
+    }),
+  );
 };
 
 const buildStandardFoldRows = () => {
@@ -124,28 +123,22 @@ const buildStandardFoldRows = () => {
 const buildTrackingFold = (bph: number | null) => {
   if (!bph) return null;
 
-  const intervalSeconds = (3600 / bph) * state.cycleBeats;
   const binCount = DEFAULT_TRACKING_FOLD_BIN_COUNT;
-  const counts = new Uint32Array(binCount);
-  const bins = new Float32Array(binCount);
-
-  for (let index = 0; index < state.frames.length; index += 1) {
-    const frame = state.frames[index];
-    const seconds = frame.featureFrame / state.featureRate;
-    const phase = (seconds % intervalSeconds) / intervalSeconds;
-    const bin = Math.min(binCount - 1, Math.floor(phase * binCount));
-    counts[bin] += 1;
-
-    for (let bandIndex = 0; bandIndex < state.bands.length; bandIndex += 1) {
-      bins[bin] += frame.bands[bandIndex];
-    }
-  }
-
-  for (let bin = 0; bin < binCount; bin += 1) {
-    const count = counts[bin];
-    if (!count) continue;
-    bins[bin] /= count;
-  }
+  const bins = foldSignal({
+    frames: state.frames,
+    featureRate: state.featureRate,
+    bph,
+    cycleBeats: state.cycleBeats,
+    binCount,
+    averageByBin: true,
+    valueAt: (frame) => {
+      let total = 0;
+      for (let bandIndex = 0; bandIndex < state.bands.length; bandIndex += 1) {
+        total += frame.bands[bandIndex];
+      }
+      return total;
+    },
+  });
 
   return {
     bph,

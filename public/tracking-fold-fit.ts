@@ -1,5 +1,6 @@
 import { CANDIDATE_BPH } from "./defaults";
 import { clamp, normalizeRow } from "./data";
+import { foldSignal } from "./util";
 import type { FoldRow, Tracking } from "./data";
 
 export type TrackingFrame = {
@@ -121,18 +122,16 @@ const foldTrackingCandidate = (
   bph: number,
   bandIndex: number,
 ) => {
-  const folded = new Float32Array(TRACKING_BIN_COUNT);
-  const intervalSeconds = (3600 / bph) * globalState.cycleBeats;
-
-  for (let index = 0; index < globalState.frames.length; index += 1) {
-    const frame = globalState.frames[index];
-    const seconds = frame.featureFrame / globalState.featureRate;
-    const phase = (seconds % intervalSeconds) / intervalSeconds;
-    const bin = Math.min(TRACKING_BIN_COUNT - 1, Math.floor(phase * TRACKING_BIN_COUNT));
-    folded[bin] += frame.bands[bandIndex];
-  }
-
-  return normalizeRow(folded);
+  return normalizeRow(
+    foldSignal({
+      frames: globalState.frames,
+      featureRate: globalState.featureRate,
+      bph,
+      cycleBeats: globalState.cycleBeats,
+      binCount: TRACKING_BIN_COUNT,
+      valueAt: (frame) => frame.bands[bandIndex],
+    }),
+  );
 };
 
 const scoreTrialBph = (globalState: TrackingGlobalState, bph: number) => {
