@@ -4,7 +4,7 @@ export const DEFAULT_BIN_COUNT = 128;
 export const DEFAULT_TRACKING_FOLD_BIN_COUNT = 8000;
 export const DEFAULT_FEATURE_CAP = 20;
 export const DEFAULT_FEATURE_POST_FRAME_COUNT = 64;
-export const DEFAULT_FEATURE_LOG_GAIN = 200;
+export const DEFAULT_FEATURE_LOG_GAIN = 20;
 export const MIN_PERIOD_SECONDS = 2;
 export const MAX_PERIOD_SECONDS = 30;
 

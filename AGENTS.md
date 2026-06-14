@@ -3,3 +3,4 @@
 - code should be kept as clean and basic as possible
 - functional programming. avoid object oriented programming. State can be in like a global object if necessary
 - DO NOT add complexity to code unless explicitly asked for. Human needs to evaluate if additional complexity is worth the benefit. Code complexity is very bad for this project because we want more of a minimal POC that can be easily understood
+- DO NOT ever run `bun dev`
