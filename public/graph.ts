@@ -98,8 +98,7 @@ export const createTrackingFoldChart = (element: HTMLElement) => {
       },
       yAxis: {
         type: "value",
-        name: "amplitude",
-        min: 0,
+        name: "normalized amplitude",
         scale: true,
       },
       series: makeTrackingFoldSeries(fold),

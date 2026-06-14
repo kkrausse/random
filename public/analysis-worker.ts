@@ -124,21 +124,23 @@ const buildTrackingFold = (bph: number | null) => {
   if (!bph) return null;
 
   const binCount = DEFAULT_TRACKING_FOLD_BIN_COUNT;
-  const bins = foldSignal({
-    frames: state.frames,
-    featureRate: state.featureRate,
-    bph,
-    cycleBeats: state.cycleBeats,
-    binCount,
-    averageByBin: true,
-    valueAt: (frame) => {
-      let total = 0;
-      for (let bandIndex = 0; bandIndex < state.bands.length; bandIndex += 1) {
-        total += frame.bands[bandIndex];
-      }
-      return total;
-    },
-  });
+  const bins = normalizeRow(
+    foldSignal({
+      frames: state.frames,
+      featureRate: state.featureRate,
+      bph,
+      cycleBeats: state.cycleBeats,
+      binCount,
+      averageByBin: true,
+      valueAt: (frame) => {
+        let total = 0;
+        for (let bandIndex = 0; bandIndex < state.bands.length; bandIndex += 1) {
+          total += frame.bands[bandIndex];
+        }
+        return total;
+      },
+    }),
+  );
 
   return {
     bph,

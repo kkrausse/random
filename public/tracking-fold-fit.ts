@@ -1,5 +1,5 @@
 import { CANDIDATE_BPH } from "./defaults";
-import { clamp, normalizeRow } from "./data";
+import { clamp } from "./data";
 import { foldSignal } from "./util";
 import type { FoldRow, Tracking } from "./data";
 
@@ -23,12 +23,21 @@ export type ActualBphTracker = {
   trackStep(globalState: TrackingGlobalState, foldRows: FoldRow[]): Tracking;
 };
 
-const TRACKING_BIN_COUNT = 256;
+type RowScore = {
+  score: number;
+  debug: Record<string, number>;
+};
+
+const TRACKING_BIN_COUNT = 4096;
 const MIN_TRACKING_SECONDS = 2;
-const MIN_ERROR_BPH = 5;
+const MIN_ERROR_BPH = 2;
 const INITIAL_ERROR_BPH = 300;
 const MAX_ERROR_BPH = 300;
-const SEARCH_OFFSETS = [-1, -0.5, -0.25, 0, 0.25, 0.5, 1];
+const EDGE_SCORE_RATIO = 1.05;
+const EDGE_SCORE_MARGIN = 0.25;
+const BACKGROUND_DELTA = 1;
+const PACKET_AVERAGE_SECONDS = 0.003;
+const SEARCH_OFFSETS = Array.from({ length: 21 }, (_, index) => (index - 10) / 10);
 
 const EMPTY_TRACKING_STATE: TrackingState = {
   standardBph: null,
@@ -37,7 +46,7 @@ const EMPTY_TRACKING_STATE: TrackingState = {
   score: 0,
 };
 
-const average = (values: number[]) => {
+const average = (values: ArrayLike<number>) => {
   if (!values.length) return 0;
   let total = 0;
   for (let index = 0; index < values.length; index += 1) {
@@ -46,13 +55,15 @@ const average = (values: number[]) => {
   return total / values.length;
 };
 
-const maxInWindow = (values: Float32Array, center: number, radius: number) => {
-  let peak = -Infinity;
+const averageInWindow = (values: Float32Array, center: number, radius: number) => {
+  let total = 0;
+  let count = 0;
   for (let offset = -radius; offset <= radius; offset += 1) {
     const index = (center + offset + values.length) % values.length;
-    peak = Math.max(peak, values[index]);
+    total += values[index];
+    count += 1;
   }
-  return peak;
+  return total / count;
 };
 
 const strongestBin = (values: Float32Array) => {
@@ -69,48 +80,106 @@ const strongestBin = (values: Float32Array) => {
   return { bin, value };
 };
 
-const rowPacketScore = (bins: Float32Array) => {
-  if (!bins.length) return 0;
+const strongestBinInWindow = (values: Float32Array, center: number, radius: number) => {
+  let bin = center;
+  let value = -Infinity;
+
+  for (let offset = -radius; offset <= radius; offset += 1) {
+    const index = (center + offset + values.length) % values.length;
+    if (values[index] > value) {
+      bin = index;
+      value = values[index];
+    }
+  }
+
+  return { bin, value };
+};
+
+const belowDeltaRatio = (values: Float32Array, delta: number) => {
+  if (!values.length) return 0;
+
+  let count = 0;
+  for (let index = 0; index < values.length; index += 1) {
+    if (values[index] < delta) {
+      count += 1;
+    }
+  }
+  return count / values.length;
+};
+
+const packetAverageRadius = (binCount: number, bph: number, cycleBeats: number) => {
+  const cycleSeconds = (3600 / bph) * cycleBeats;
+  return Math.max(1, Math.round((PACKET_AVERAGE_SECONDS / cycleSeconds) * binCount * 0.5));
+};
+
+const rowPacketScore = (bins: Float32Array, bph: number, cycleBeats: number): RowScore => {
+  if (!bins.length) {
+    return {
+      score: 0,
+      debug: {},
+    };
+  }
 
   const primary = strongestBin(bins);
   const oppositeBin = (primary.bin + Math.round(bins.length / 2)) % bins.length;
-  const opposite = maxInWindow(bins, oppositeBin, Math.max(2, Math.round(bins.length / 24)));
-  const weakerPacket = Math.min(primary.value, opposite);
-  const strongerPacket = Math.max(primary.value, opposite);
+  const opposite = strongestBinInWindow(
+    bins,
+    oppositeBin,
+    Math.max(2, Math.round(bins.length * 0.02)),
+  );
+  const packetRadius = packetAverageRadius(bins.length, bph, cycleBeats);
+  const primaryPacket = averageInWindow(bins, primary.bin, packetRadius);
+  const oppositePacket = averageInWindow(bins, opposite.bin, packetRadius);
+  const weakerPacket = Math.min(primaryPacket, oppositePacket);
+  const strongerPacket = Math.max(primaryPacket, oppositePacket);
+  const packetScore = weakerPacket + strongerPacket * 0.35;
+  const rowMean = average(bins);
+  const sparseBackground = belowDeltaRatio(bins, (weakerPacket + strongerPacket) / 5);
 
-  return Math.max(0, weakerPacket + strongerPacket * 0.35);
+  return {
+    score: Math.max(0, packetScore * (1 + sparseBackground)),
+    debug: {
+      sparseBackground,
+      rowMean,
+      packetRadius,
+      primaryPacket,
+      oppositePacket,
+    },
+  };
 };
 
-const scoreRows = (rows: Float32Array[]) => {
-  const scores = rows.map(rowPacketScore).filter((score) => score > 0);
-  scores.sort((a, b) => b - a);
+const sumRows = (rows: Float32Array[]) => {
+  if (!rows.length) return new Float32Array();
 
-  const usefulScores = scores.slice(0, Math.min(3, scores.length));
-  return average(usefulScores);
+  const summed = new Float32Array(rows[0].length);
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex];
+    for (let bin = 0; bin < summed.length; bin += 1) {
+      summed[bin] += row[bin];
+    }
+  }
+  return summed;
 };
 
-const scoreStandard = (bph: number, foldRows: FoldRow[]) => {
+const scoreRows = (rows: Float32Array[], bph: number, cycleBeats: number) => {
+  return rowPacketScore(sumRows(rows), bph, cycleBeats);
+};
+
+const scoreStandard = (bph: number, foldRows: FoldRow[], cycleBeats: number) => {
   const rows = foldRows.filter((row) => row.bph === bph).map((row) => row.bins);
-  return scoreRows(rows);
+  return scoreRows(rows, bph, cycleBeats).score;
 };
 
-const chooseStandardBph = (trackingState: TrackingState, foldRows: FoldRow[]) => {
+const chooseStandardBph = (foldRows: FoldRow[], cycleBeats: number) => {
   let bestBph: number | null = null;
   let bestScore = -Infinity;
 
   for (let index = 0; index < CANDIDATE_BPH.length; index += 1) {
     const bph = CANDIDATE_BPH[index];
-    const score = scoreStandard(bph, foldRows);
+    const score = scoreStandard(bph, foldRows, cycleBeats);
     if (score > bestScore) {
       bestBph = bph;
       bestScore = score;
-    }
-  }
-
-  if (trackingState.standardBph && bestBph) {
-    const previousScore = scoreStandard(trackingState.standardBph, foldRows);
-    if (previousScore > 0 && bestScore < previousScore * 1.15) {
-      return trackingState.standardBph;
     }
   }
 
@@ -122,16 +191,14 @@ const foldTrackingCandidate = (
   bph: number,
   bandIndex: number,
 ) => {
-  return normalizeRow(
-    foldSignal({
-      frames: globalState.frames,
-      featureRate: globalState.featureRate,
-      bph,
-      cycleBeats: globalState.cycleBeats,
-      binCount: TRACKING_BIN_COUNT,
-      valueAt: (frame) => frame.bands[bandIndex],
-    }),
-  );
+  return foldSignal({
+    frames: globalState.frames,
+    featureRate: globalState.featureRate,
+    bph,
+    cycleBeats: globalState.cycleBeats,
+    binCount: TRACKING_BIN_COUNT,
+    valueAt: (frame) => frame.bands[bandIndex],
+  });
 };
 
 const scoreTrialBph = (globalState: TrackingGlobalState, bph: number) => {
@@ -139,7 +206,7 @@ const scoreTrialBph = (globalState: TrackingGlobalState, bph: number) => {
   for (let bandIndex = 0; bandIndex < globalState.bands.length; bandIndex += 1) {
     rows.push(foldTrackingCandidate(globalState, bph, bandIndex));
   }
-  return scoreRows(rows);
+  return scoreRows(rows, bph, globalState.cycleBeats);
 };
 
 const searchMeasuredBph = (
@@ -158,6 +225,8 @@ const searchMeasuredBph = (
   let bestBph = center;
   let bestScore = -Infinity;
   let bestOffset = 0;
+  let centerScore = -Infinity;
+  const trials: Record<string, number>[] = [];
 
   for (let index = 0; index < SEARCH_OFFSETS.length; index += 1) {
     const offset = SEARCH_OFFSETS[index];
@@ -166,7 +235,17 @@ const searchMeasuredBph = (
       standardBph - MAX_ERROR_BPH,
       standardBph + MAX_ERROR_BPH,
     );
-    const score = scoreTrialBph(globalState, bph);
+    const trialScore = scoreTrialBph(globalState, bph);
+    const score = trialScore.score;
+    trials.push({
+      index,
+      bph,
+      score,
+      ...trialScore.debug,
+    });
+    if (offset === 0) {
+      centerScore = score;
+    }
     if (score > bestScore) {
       bestBph = bph;
       bestScore = score;
@@ -174,7 +253,29 @@ const searchMeasuredBph = (
     }
   }
 
-  return { measuredBph: bestBph, score: bestScore, edgeHit: Math.abs(bestOffset) === 1 };
+  const edgeHit = Math.abs(bestOffset) === 1;
+  const strongEdgeHit =
+    edgeHit &&
+    bestScore >= centerScore * EDGE_SCORE_RATIO &&
+    bestScore >= centerScore + EDGE_SCORE_MARGIN;
+
+  const selected = edgeHit && !strongEdgeHit
+    ? { bph: center, score: centerScore, offset: 0, edgeHit: false }
+    : { bph: bestBph, score: bestScore, offset: bestOffset, edgeHit: strongEdgeHit };
+
+  console.log("tracking search", {
+    standardBph,
+    center,
+    confidenceBph,
+    selected,
+  });
+  console.table(trials);
+
+  if (edgeHit && !strongEdgeHit) {
+    return { measuredBph: center, score: centerScore, edgeHit: false };
+  }
+
+  return { measuredBph: bestBph, score: bestScore, edgeHit: strongEdgeHit };
 };
 
 const smoothMeasuredBph = (
@@ -220,7 +321,7 @@ const trackStep = (
     return trackingState;
   }
 
-  const standardBph = chooseStandardBph(trackingState, foldRows);
+  const standardBph = chooseStandardBph(foldRows, globalState.cycleBeats);
   if (!standardBph) {
     return trackingState;
   }
