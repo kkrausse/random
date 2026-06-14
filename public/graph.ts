@@ -27,8 +27,10 @@ const makeHeatmapData = (rows: FoldRow[], binCount: number) => {
 
 const makeRowLabels = (rows: FoldRow[]) => rows.map((row) => `${row.bph} / ${row.band}`);
 
-const makeTrackingFoldSeries = (fold: TrackingFold) => {
-  const cycleSeconds = (3600 / fold.bph) * fold.cycleBeats;
+const cycleSecondsFor = (bph: number, cycleBeats: number) => (3600 / bph) * cycleBeats;
+
+const makeTrackingFoldSeries = (fold: TrackingFold, axisBph: number) => {
+  const cycleSeconds = cycleSecondsFor(axisBph, fold.cycleBeats);
 
   return [
     {
@@ -76,7 +78,8 @@ export const createTrackingFoldChart = (element: HTMLElement) => {
       return;
     }
 
-    const cycleSeconds = (3600 / fold.bph) * fold.cycleBeats;
+    const axisBph = analysis.tracking.standardBph || fold.bph;
+    const cycleSeconds = cycleSecondsFor(axisBph, fold.cycleBeats);
 
     chart.setOption({
       animation: false,
@@ -98,7 +101,7 @@ export const createTrackingFoldChart = (element: HTMLElement) => {
       },
       xAxis: {
         type: "value",
-        name: `seconds (${fold.cycleBeats} beat cycle)`,
+        name: `standard seconds (${axisBph} BPH, ${fold.cycleBeats} beat cycle)`,
         min: 0,
         max: Number(cycleSeconds.toFixed(4)),
       },
@@ -107,7 +110,7 @@ export const createTrackingFoldChart = (element: HTMLElement) => {
         name: "normalized amplitude",
         scale: true,
       },
-      series: makeTrackingFoldSeries(fold),
+      series: makeTrackingFoldSeries(fold, axisBph),
     });
   };
 
@@ -117,9 +120,9 @@ export const createTrackingFoldChart = (element: HTMLElement) => {
   return { update, resize };
 };
 
-const makeTrackingBandFoldSeries = (rows: TrackingBandFold[]) => {
+const makeTrackingBandFoldSeries = (rows: TrackingBandFold[], axisBph: number) => {
   return rows.map((row) => {
-    const cycleSeconds = (3600 / row.bph) * row.cycleBeats;
+    const cycleSeconds = cycleSecondsFor(axisBph, row.cycleBeats);
     return {
       name: row.band,
       type: "line",
@@ -166,7 +169,8 @@ export const createTrackingBandFoldChart = (element: HTMLElement) => {
       return;
     }
 
-    const cycleSeconds = (3600 / firstRow.bph) * firstRow.cycleBeats;
+    const axisBph = analysis.tracking.standardBph || firstRow.bph;
+    const cycleSeconds = cycleSecondsFor(axisBph, firstRow.cycleBeats);
 
     chart.setOption({
       animation: false,
@@ -188,7 +192,7 @@ export const createTrackingBandFoldChart = (element: HTMLElement) => {
       },
       xAxis: {
         type: "value",
-        name: `seconds (${firstRow.cycleBeats} beat cycle)`,
+        name: `standard seconds (${axisBph} BPH, ${firstRow.cycleBeats} beat cycle)`,
         min: 0,
         max: Number(cycleSeconds.toFixed(4)),
       },
@@ -197,7 +201,7 @@ export const createTrackingBandFoldChart = (element: HTMLElement) => {
         name: "normalized amplitude",
         scale: true,
       },
-      series: makeTrackingBandFoldSeries(rows),
+      series: makeTrackingBandFoldSeries(rows, axisBph),
     });
   };
 

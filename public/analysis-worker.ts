@@ -206,8 +206,8 @@ const maybePostAnalysis = () => {
     },
     rows,
   );
-  const trackingFold = buildTrackingFold(tracking.measuredBph);
-  const trackingBandFolds = buildTrackingBandFolds(tracking.measuredBph);
+  const trackingFold = buildTrackingFold(tracking.standardBph);
+  const trackingBandFolds = buildTrackingBandFolds(tracking.standardBph);
   const trackingCandidateFolds = buildTrackingCandidateFolds(tracking);
   const transfers = rows.map((row) => row.bins.buffer);
   if (trackingFold) {
