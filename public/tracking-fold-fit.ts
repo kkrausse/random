@@ -33,10 +33,22 @@ const INITIAL_ERROR_BPH = 300;
 const MAX_ERROR_BPH = 300;
 const EDGE_SCORE_RATIO = 1.05;
 const EDGE_SCORE_MARGIN = 0.25;
+const CONVERGE_SCORE_RATIO = 1.01;
+const CONVERGE_SCORE_MARGIN = 0.05;
+const CURVE_DROP_RATIO = 1.01;
+const CURVE_DROP_MARGIN = 0.05;
+const PEAK_PROMINENCE_RATIO = 1.001;
+const PEAK_PROMINENCE_MARGIN = 0.02;
+const COMPETING_PEAK_RATIO = 0.995;
+const COMPETING_PEAK_MARGIN = 0.12;
+const OUTWARD_VIOLATION_RATIO = 1.001;
+const OUTWARD_VIOLATION_MARGIN = 0.04;
+const MAX_OUTWARD_VIOLATIONS = 2;
 const PACKET_AVERAGE_SECONDS = 0.0008;
 const PEAK_WINDOW_SECONDS = 0.0015;
 const EXPAND_ERROR_SCALE = 1.5;
-const SHRINK_ERROR_SCALE = 0.85;
+const SHRINK_ERROR_SCALE = 0.9;
+const UNCERTAIN_ERROR_SCALE = 1.1;
 const SEARCH_OFFSETS = Array.from({ length: 21 }, (_, index) => (index - 10) / 10);
 const SCORE_ROW_COUNT = 2;
 
@@ -215,6 +227,114 @@ const scoreTrialBph = (globalState: TrackingGlobalState, bph: number) => {
   return scoreRows(rows, bph, globalState.cycleBeats);
 };
 
+const scoreIsBetter = (
+  score: number,
+  baseline: number,
+  ratio: number,
+  margin: number,
+) => {
+  return score >= baseline * ratio && score >= baseline + margin;
+};
+
+const scoreCanCompete = (score: number, bestScore: number) => {
+  return (
+    score >= bestScore * COMPETING_PEAK_RATIO ||
+    score >= bestScore - COMPETING_PEAK_MARGIN
+  );
+};
+
+const isProminentPeak = (candidates: TrackingCandidate[], index: number) => {
+  if (index <= 0 || index >= candidates.length - 1) return false;
+
+  const score = candidates[index].score;
+  const neighborScore = Math.max(candidates[index - 1].score, candidates[index + 1].score);
+
+  return scoreIsBetter(score, neighborScore, PEAK_PROMINENCE_RATIO, PEAK_PROMINENCE_MARGIN);
+};
+
+const countCompetingPeaks = (candidates: TrackingCandidate[], bestScore: number) => {
+  let count = 0;
+
+  for (let index = 1; index < candidates.length - 1; index += 1) {
+    if (!isProminentPeak(candidates, index)) continue;
+    if (!scoreCanCompete(candidates[index].score, bestScore)) continue;
+    count += 1;
+  }
+
+  return count;
+};
+
+const countOutwardViolations = (candidates: TrackingCandidate[], bestIndex: number) => {
+  let count = 0;
+
+  for (let index = bestIndex - 1; index > 0; index -= 1) {
+    const closer = candidates[index].score;
+    const farther = candidates[index - 1].score;
+    if (scoreIsBetter(farther, closer, OUTWARD_VIOLATION_RATIO, OUTWARD_VIOLATION_MARGIN)) {
+      count += 1;
+    }
+  }
+
+  for (let index = bestIndex + 1; index < candidates.length - 1; index += 1) {
+    const closer = candidates[index].score;
+    const farther = candidates[index + 1].score;
+    if (scoreIsBetter(farther, closer, OUTWARD_VIOLATION_RATIO, OUTWARD_VIOLATION_MARGIN)) {
+      count += 1;
+    }
+  }
+
+  return count;
+};
+
+const curveDecision = (
+  candidates: TrackingCandidate[],
+  bestIndex: number,
+  centerIndex: number,
+) => {
+  const bestScore = candidates[bestIndex].score;
+  const centerScore = candidates[centerIndex].score;
+  const edgeHit = bestIndex === 0 || bestIndex === candidates.length - 1;
+  const strongEdgeHit =
+    edgeHit &&
+    scoreIsBetter(bestScore, centerScore, EDGE_SCORE_RATIO, EDGE_SCORE_MARGIN);
+
+  if (edgeHit) {
+    return {
+      measuredIndex: strongEdgeHit ? bestIndex : centerIndex,
+      errorScale: strongEdgeHit ? EXPAND_ERROR_SCALE : 1,
+    };
+  }
+
+  const bestBeatsCenter =
+    bestIndex === centerIndex ||
+    scoreIsBetter(bestScore, centerScore, CONVERGE_SCORE_RATIO, CONVERGE_SCORE_MARGIN);
+  const bestBeatsEdges =
+    scoreIsBetter(bestScore, candidates[0].score, CURVE_DROP_RATIO, CURVE_DROP_MARGIN) &&
+    scoreIsBetter(
+      bestScore,
+      candidates[candidates.length - 1].score,
+      CURVE_DROP_RATIO,
+      CURVE_DROP_MARGIN,
+    );
+  const clearPeak =
+    isProminentPeak(candidates, bestIndex) &&
+    countCompetingPeaks(candidates, bestScore) === 1 &&
+    countOutwardViolations(candidates, bestIndex) <= MAX_OUTWARD_VIOLATIONS &&
+    bestBeatsEdges;
+
+  if (clearPeak && bestBeatsCenter) {
+    return {
+      measuredIndex: bestIndex,
+      errorScale: SHRINK_ERROR_SCALE,
+    };
+  }
+
+  return {
+    measuredIndex: centerIndex,
+    errorScale: UNCERTAIN_ERROR_SCALE,
+  };
+};
+
 const searchMeasuredBph = (
   trackingState: TrackingState,
   globalState: TrackingGlobalState,
@@ -228,10 +348,9 @@ const searchMeasuredBph = (
     trackingState.standardBph === standardBph && trackingState.measuredBph
       ? trackingState.measuredBph
       : standardBph;
-  let bestBph = center;
   let bestScore = -Infinity;
-  let bestOffset = 0;
-  let centerScore = -Infinity;
+  let bestIndex = 0;
+  let centerIndex = 0;
   const candidates: TrackingCandidate[] = [];
 
   for (let index = 0; index < SEARCH_OFFSETS.length; index += 1) {
@@ -248,29 +367,21 @@ const searchMeasuredBph = (
       score,
     });
     if (offset === 0) {
-      centerScore = score;
+      centerIndex = index;
     }
     if (score > bestScore) {
-      bestBph = bph;
       bestScore = score;
-      bestOffset = offset;
+      bestIndex = index;
     }
   }
 
-  const edgeHit = Math.abs(bestOffset) === 1;
-  const strongEdgeHit =
-    edgeHit &&
-    bestScore >= centerScore * EDGE_SCORE_RATIO &&
-    bestScore >= centerScore + EDGE_SCORE_MARGIN;
-
-  if (edgeHit && !strongEdgeHit) {
-    return { measuredBph: center, score: centerScore, errorScale: 1, candidates };
-  }
+  const decision = curveDecision(candidates, bestIndex, centerIndex);
+  const measuredCandidate = candidates[decision.measuredIndex];
 
   return {
-    measuredBph: bestBph,
-    score: bestScore,
-    errorScale: strongEdgeHit ? EXPAND_ERROR_SCALE : SHRINK_ERROR_SCALE,
+    measuredBph: measuredCandidate.bph,
+    score: measuredCandidate.score,
+    errorScale: decision.errorScale,
     candidates,
   };
 };
