@@ -37,6 +37,7 @@ const PACKET_AVERAGE_SECONDS = 0.001;
 const EXPAND_ERROR_SCALE = 1.5;
 const SHRINK_ERROR_SCALE = 0.9;
 const SEARCH_OFFSETS = Array.from({ length: 21 }, (_, index) => (index - 10) / 10);
+const SCORE_ROW_COUNT = 2;
 
 const EMPTY_TRACKING_STATE: TrackingState = {
   standardBph: null,
@@ -107,21 +108,29 @@ const rowPacketScore = (bins: Float32Array, bph: number, cycleBeats: number): Ro
   };
 };
 
-const sumRows = (rows: Float32Array[]) => {
-  if (!rows.length) return new Float32Array();
+const scoreRows = (rows: Float32Array[], bph: number, cycleBeats: number) => {
+  const topScores = new Float32Array(SCORE_ROW_COUNT);
 
-  const summed = new Float32Array(rows[0].length);
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
-    const row = rows[rowIndex];
-    for (let bin = 0; bin < summed.length; bin += 1) {
-      summed[bin] += row[bin];
+    const rowScore = rowPacketScore(rows[rowIndex], bph, cycleBeats).score;
+
+    for (let scoreIndex = 0; scoreIndex < topScores.length; scoreIndex += 1) {
+      if (rowScore <= topScores[scoreIndex]) continue;
+
+      for (let moveIndex = topScores.length - 1; moveIndex > scoreIndex; moveIndex -= 1) {
+        topScores[moveIndex] = topScores[moveIndex - 1];
+      }
+      topScores[scoreIndex] = rowScore;
+      break;
     }
   }
-  return summed;
-};
 
-const scoreRows = (rows: Float32Array[], bph: number, cycleBeats: number) => {
-  return rowPacketScore(sumRows(rows), bph, cycleBeats);
+  let score = 0;
+  for (let index = 0; index < topScores.length; index += 1) {
+    score += topScores[index];
+  }
+
+  return { score };
 };
 
 const scoreStandard = (bph: number, foldRows: FoldRow[], cycleBeats: number) => {
