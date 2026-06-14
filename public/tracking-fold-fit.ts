@@ -28,7 +28,7 @@ type RowScore = {
   debug: Record<string, number>;
 };
 
-const TRACKING_BIN_COUNT = 2048;
+const TRACKING_BIN_COUNT = 8000;
 const MIN_TRACKING_SECONDS = 2;
 const MIN_ERROR_BPH = 0.5;
 const INITIAL_ERROR_BPH = 300;
@@ -236,7 +236,7 @@ const searchMeasuredBph = (
     confidenceBph,
     selected,
   });
-  // console.table(trials);
+  console.table(trials);
 
   if (edgeHit && !strongEdgeHit) {
     return { measuredBph: center, score: centerScore, errorScale: 1 };
