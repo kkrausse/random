@@ -10,6 +10,18 @@ import type {
 type ChartPoint = [number, number];
 type HeatmapPoint = [number, number, number];
 
+type TickTockPeakData = {
+  zoomSeconds: number;
+  yMax: number;
+  series: {
+    name: string;
+    type: "line";
+    data: ChartPoint[];
+    showSymbol: false;
+    lineStyle: { width: number };
+  }[];
+};
+
 type TooltipParams = {
   value: [number, number, number];
 };
@@ -29,6 +41,31 @@ const makeRowLabels = (rows: FoldRow[]) => rows.map((row) => `${row.bph} / ${row
 
 const cycleSecondsFor = (bph: number, cycleBeats: number) => (3600 / bph) * cycleBeats;
 
+const wrapIndex = (index: number, count: number) => ((index % count) + count) % count;
+
+const findPeakBin = (bins: Float32Array, start: number, count: number) => {
+  let peakBin = start;
+  let peakValue = bins[start] ?? 0;
+
+  for (let offset = 1; offset < count; offset += 1) {
+    const bin = start + offset;
+    if (bins[bin] > peakValue) {
+      peakBin = bin;
+      peakValue = bins[bin];
+    }
+  }
+
+  return peakBin;
+};
+
+const minValue = (values: Float32Array) => {
+  let min = values[0] ?? 0;
+  for (let index = 1; index < values.length; index += 1) {
+    min = Math.min(min, values[index]);
+  }
+  return min;
+};
+
 const makeTrackingFoldSeries = (fold: TrackingFold, axisBph: number) => {
   const cycleSeconds = cycleSecondsFor(axisBph, fold.cycleBeats);
 
@@ -44,6 +81,88 @@ const makeTrackingFoldSeries = (fold: TrackingFold, axisBph: number) => {
       lineStyle: { width: 1 },
     },
   ];
+};
+
+const makePeakWindow = (
+  fold: TrackingFold,
+  beatStartBin: number,
+  peakBin: number,
+  beatBinCount: number,
+  windowBins: number,
+  binSeconds: number,
+  baseline: number,
+  sign: 1 | -1,
+) => {
+  const peakOffset = peakBin - beatStartBin;
+  const points: ChartPoint[] = [];
+
+  for (let offset = -windowBins; offset <= windowBins; offset += 1) {
+    const beatOffset = wrapIndex(peakOffset + offset, beatBinCount);
+    const bin = beatStartBin + beatOffset;
+    const amplitude = Math.max(0, fold.bins[bin] - baseline);
+    points.push([
+      Number((offset * binSeconds).toFixed(5)),
+      Number((amplitude * sign).toFixed(4)),
+    ]);
+  }
+
+  return points;
+};
+
+const makeTickTockPeakData = (fold: TrackingFold, axisBph: number): TickTockPeakData => {
+  const cycleSeconds = cycleSecondsFor(axisBph, fold.cycleBeats);
+  const binSeconds = cycleSeconds / fold.binCount;
+  const beatBinCount = Math.floor(fold.binCount / fold.cycleBeats);
+  const windowBins = Math.max(2, Math.round(beatBinCount * 0.12));
+  const tickPeakBin = findPeakBin(fold.bins, 0, beatBinCount);
+  const tockStartBin = beatBinCount;
+  const tockPeakBin = findPeakBin(fold.bins, tockStartBin, beatBinCount);
+  const baseline = minValue(fold.bins);
+  const tickData = makePeakWindow(
+    fold,
+    0,
+    tickPeakBin,
+    beatBinCount,
+    windowBins,
+    binSeconds,
+    baseline,
+    1,
+  );
+  const tockData = makePeakWindow(
+    fold,
+    tockStartBin,
+    tockPeakBin,
+    beatBinCount,
+    windowBins,
+    binSeconds,
+    baseline,
+    -1,
+  );
+  const peakAmplitude = Math.max(
+    ...tickData.map((point) => Math.abs(point[1])),
+    ...tockData.map((point) => Math.abs(point[1])),
+  );
+
+  return {
+    zoomSeconds: Number((windowBins * binSeconds).toFixed(5)),
+    yMax: Number((Math.max(peakAmplitude, 1) * 1.1).toFixed(4)),
+    series: [
+      {
+        name: "tick",
+        type: "line",
+        data: tickData,
+        showSymbol: false,
+        lineStyle: { width: 1 },
+      },
+      {
+        name: "tock",
+        type: "line",
+        data: tockData,
+        showSymbol: false,
+        lineStyle: { width: 1 },
+      },
+    ],
+  };
 };
 
 export const createTrackingFoldChart = (element: HTMLElement) => {
@@ -111,6 +230,77 @@ export const createTrackingFoldChart = (element: HTMLElement) => {
         scale: true,
       },
       series: makeTrackingFoldSeries(fold, axisBph),
+    });
+  };
+
+  const resize = () => chart.resize();
+  window.addEventListener("resize", resize);
+
+  return { update, resize };
+};
+
+export const createTickTockPeakChart = (element: HTMLElement) => {
+  element.textContent = "";
+  const chart = echarts.init(element, null, { renderer: "canvas" });
+
+  const update = (analysis: AnalysisMessage) => {
+    const fold = analysis.trackingFold;
+
+    if (!fold || fold.cycleBeats < 2) {
+      chart.setOption({
+        animation: false,
+        grid: {
+          left: 48,
+          right: 20,
+          top: 32,
+          bottom: 48,
+        },
+        xAxis: {
+          type: "value",
+          name: "seconds from peak",
+        },
+        yAxis: {
+          type: "value",
+          name: "tick + / tock -",
+        },
+        series: [],
+      });
+      return;
+    }
+
+    const axisBph = analysis.tracking.standardBph || fold.bph;
+    const peakData = makeTickTockPeakData(fold, axisBph);
+
+    chart.setOption({
+      animation: false,
+      grid: {
+        left: 48,
+        right: 20,
+        top: 32,
+        bottom: 48,
+      },
+      legend: {
+        top: 0,
+      },
+      tooltip: {
+        trigger: "axis",
+        valueFormatter(value: number) {
+          return Number(value).toFixed(4);
+        },
+      },
+      xAxis: {
+        type: "value",
+        name: "seconds from peak",
+        min: -peakData.zoomSeconds,
+        max: peakData.zoomSeconds,
+      },
+      yAxis: {
+        type: "value",
+        name: "tick + / tock -",
+        min: -peakData.yMax,
+        max: peakData.yMax,
+      },
+      series: peakData.series,
     });
   };
 

@@ -12,6 +12,7 @@ import type {
 import {
   createFeatureChart,
   createHeatmap,
+  createTickTockPeakChart,
   createTrackingBandFoldChart,
   createTrackingFoldChart,
 } from "./graph";
@@ -24,6 +25,7 @@ type AppState = {
   sink: GainNode | null;
   worker: Worker | null;
   trackingFoldGraph: ReturnType<typeof createTrackingFoldChart>;
+  tickTockPeakGraph: ReturnType<typeof createTickTockPeakChart>;
   trackingBandFoldGraph: ReturnType<typeof createTrackingBandFoldChart>;
   graph: ReturnType<typeof createHeatmap>;
   featureGraph: ReturnType<typeof createFeatureChart>;
@@ -71,6 +73,7 @@ const elements = {
   errorSecondsPerDay: query<HTMLElement>("#error-seconds-per-day"),
   status: query<HTMLElement>("#status"),
   trackingFoldChart: query<HTMLElement>("#tracking-fold-chart"),
+  tickTockPeakChart: query<HTMLElement>("#tick-tock-peak-chart"),
   trackingBandFoldChart: query<HTMLElement>("#tracking-band-fold-chart"),
   foldChart: query<HTMLElement>("#fold-chart"),
   featureChart: query<HTMLElement>("#feature-chart"),
@@ -101,6 +104,7 @@ const app: AppState = {
   sink: null,
   worker: null,
   trackingFoldGraph: createTrackingFoldChart(elements.trackingFoldChart),
+  tickTockPeakGraph: createTickTockPeakChart(elements.tickTockPeakChart),
   trackingBandFoldGraph: createTrackingBandFoldChart(elements.trackingBandFoldChart),
   graph: createHeatmap(elements.foldChart),
   featureGraph: createFeatureChart(elements.featureChart),
@@ -264,6 +268,7 @@ const createWorker = () => {
 
     app.graph.update(message);
     app.trackingFoldGraph.update(message);
+    app.tickTockPeakGraph.update(message);
     app.trackingBandFoldGraph.update(message);
     updateTrackingDisplay(message);
     elements.featureRate.textContent = `${message.featureRate} Hz`;
