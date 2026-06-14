@@ -55,6 +55,23 @@ const elements = {
   featureChart: query<HTMLElement>("#feature-chart"),
 };
 
+const setDefaultPeriod = () => {
+  const value = String(DEFAULT_PERIOD_SECONDS);
+  const hasOption = Array.from(elements.period.options).some((option) => option.value === value);
+
+  if (!hasOption) {
+    const option = new Option(`${DEFAULT_PERIOD_SECONDS}s`, value);
+    const before = Array.from(elements.period.options).find(
+      (current) => Number(current.value) > DEFAULT_PERIOD_SECONDS,
+    );
+    elements.period.add(option, before);
+  }
+
+  elements.period.value = value;
+};
+
+setDefaultPeriod();
+
 const app: AppState = {
   audioContext: null,
   stream: null,

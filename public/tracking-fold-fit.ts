@@ -33,9 +33,10 @@ const INITIAL_ERROR_BPH = 300;
 const MAX_ERROR_BPH = 300;
 const EDGE_SCORE_RATIO = 1.05;
 const EDGE_SCORE_MARGIN = 0.25;
-const PACKET_AVERAGE_SECONDS = 0.001;
+const PACKET_AVERAGE_SECONDS = 0.0008;
+const PEAK_WINDOW_SECONDS = 0.0015;
 const EXPAND_ERROR_SCALE = 1.5;
-const SHRINK_ERROR_SCALE = 0.9;
+const SHRINK_ERROR_SCALE = 0.85;
 const SEARCH_OFFSETS = Array.from({ length: 21 }, (_, index) => (index - 10) / 10);
 const SCORE_ROW_COUNT = 2;
 
@@ -82,6 +83,30 @@ const packetAverageRadius = (binCount: number, bph: number, cycleBeats: number) 
   return Math.max(1, Math.round((PACKET_AVERAGE_SECONDS / cycleSeconds) * binCount * 0.5));
 };
 
+const peakWindowRadius = (binCount: number, bph: number, cycleBeats: number) => {
+  const cycleSeconds = (3600 / bph) * cycleBeats;
+  return Math.max(1, Math.round((PEAK_WINDOW_SECONDS / cycleSeconds) * binCount));
+};
+
+const circularWindowSums = (values: Float32Array, radius: number) => {
+  const sums = new Float32Array(values.length);
+  if (!values.length) return sums;
+
+  let total = 0;
+  for (let offset = -radius; offset <= radius; offset += 1) {
+    total += values[(offset + values.length) % values.length];
+  }
+
+  for (let index = 0; index < values.length; index += 1) {
+    sums[index] = total;
+    const removed = (index - radius + values.length) % values.length;
+    const added = (index + radius + 1) % values.length;
+    total += values[added] - values[removed];
+  }
+
+  return sums;
+};
+
 const rowPacketScore = (bins: Float32Array, bph: number, cycleBeats: number): RowScore => {
   if (!bins.length) {
     return {
@@ -90,21 +115,34 @@ const rowPacketScore = (bins: Float32Array, bph: number, cycleBeats: number): Ro
   }
 
   const packetRadius = packetAverageRadius(bins.length, bph, cycleBeats);
+  const peakRadius = peakWindowRadius(bins.length, bph, cycleBeats);
   const smoothed = smoothedBins(bins, packetRadius);
   const rowMean = average(smoothed);
   const halfCycle = Math.round(smoothed.length / 2);
-  let pairTotal = 0;
+  const signal = new Float32Array(smoothed.length);
   let signalTotal = 0;
 
   for (let index = 0; index < smoothed.length; index += 1) {
-    const signal = Math.max(0, smoothed[index] - rowMean);
-    const opposite = Math.max(0, smoothed[(index + halfCycle) % smoothed.length] - rowMean);
-    pairTotal += signal * opposite;
-    signalTotal += signal;
+    signal[index] = Math.max(0, smoothed[index] - rowMean);
+    signalTotal += signal[index];
+  }
+
+  if (signalTotal <= 0) {
+    return {
+      score: 0,
+    };
+  }
+
+  const peakSums = circularWindowSums(signal, peakRadius);
+  let bestPair = 0;
+
+  for (let index = 0; index < peakSums.length; index += 1) {
+    const opposite = peakSums[(index + halfCycle) % peakSums.length];
+    bestPair = Math.max(bestPair, Math.min(peakSums[index], opposite));
   }
 
   return {
-    score: signalTotal > 0 ? pairTotal / signalTotal : 0,
+    score: (bestPair * bestPair) / signalTotal,
   };
 };
 

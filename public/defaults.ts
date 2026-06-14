@@ -1,4 +1,4 @@
-export const DEFAULT_PERIOD_SECONDS = 10;
+export const DEFAULT_PERIOD_SECONDS = 4;
 export const DEFAULT_FEATURE_RATE = 24000;
 export const DEFAULT_BIN_COUNT = 128;
 export const DEFAULT_TRACKING_FOLD_BIN_COUNT = 2048;

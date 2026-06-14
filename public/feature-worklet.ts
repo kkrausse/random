@@ -162,8 +162,7 @@ class FeatureProcessor extends AudioWorkletProcessor {
 
     for (let bandIndex = 0; bandIndex < this.bands.length; bandIndex += 1) {
       const compressed = Math.log1p(this.current[bandIndex] * DEFAULT_FEATURE_LOG_GAIN);
-      // this.batch[bandIndex][this.batchOffset] = this.current[bandIndex] //  compressed // Math.min(compressed, this.featureCap);
-      this.batch[bandIndex][this.batchOffset] = compressed // Math.min(compressed, this.featureCap);
+      this.batch[bandIndex][this.batchOffset] = Math.min(compressed, this.featureCap);
       this.current[bandIndex] = 0;
     }
 
