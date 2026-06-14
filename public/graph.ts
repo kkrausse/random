@@ -58,14 +58,6 @@ const findPeakBin = (bins: Float32Array, start: number, count: number) => {
   return peakBin;
 };
 
-const minValue = (values: Float32Array) => {
-  let min = values[0] ?? 0;
-  for (let index = 1; index < values.length; index += 1) {
-    min = Math.min(min, values[index]);
-  }
-  return min;
-};
-
 const makeTrackingFoldSeries = (fold: TrackingFold, axisBph: number) => {
   const cycleSeconds = cycleSecondsFor(axisBph, fold.cycleBeats);
 
@@ -90,7 +82,6 @@ const makePeakWindow = (
   beatBinCount: number,
   windowBins: number,
   binSeconds: number,
-  baseline: number,
   sign: 1 | -1,
 ) => {
   const peakOffset = peakBin - beatStartBin;
@@ -99,10 +90,9 @@ const makePeakWindow = (
   for (let offset = -windowBins; offset <= windowBins; offset += 1) {
     const beatOffset = wrapIndex(peakOffset + offset, beatBinCount);
     const bin = beatStartBin + beatOffset;
-    const amplitude = Math.max(0, fold.bins[bin] - baseline);
     points.push([
       Number((offset * binSeconds).toFixed(5)),
-      Number((amplitude * sign).toFixed(4)),
+      Number((fold.bins[bin] * sign).toFixed(4)),
     ]);
   }
 
@@ -117,7 +107,6 @@ const makeTickTockPeakData = (fold: TrackingFold, axisBph: number): TickTockPeak
   const tickPeakBin = findPeakBin(fold.bins, 0, beatBinCount);
   const tockStartBin = beatBinCount;
   const tockPeakBin = findPeakBin(fold.bins, tockStartBin, beatBinCount);
-  const baseline = minValue(fold.bins);
   const tickData = makePeakWindow(
     fold,
     0,
@@ -125,7 +114,6 @@ const makeTickTockPeakData = (fold: TrackingFold, axisBph: number): TickTockPeak
     beatBinCount,
     windowBins,
     binSeconds,
-    baseline,
     1,
   );
   const tockData = makePeakWindow(
@@ -135,7 +123,6 @@ const makeTickTockPeakData = (fold: TrackingFold, axisBph: number): TickTockPeak
     beatBinCount,
     windowBins,
     binSeconds,
-    baseline,
     -1,
   );
   const peakAmplitude = Math.max(
@@ -226,7 +213,7 @@ export const createTrackingFoldChart = (element: HTMLElement) => {
       },
       yAxis: {
         type: "value",
-        name: "normalized amplitude",
+        name: "amplitude",
         scale: true,
       },
       series: makeTrackingFoldSeries(fold, axisBph),
@@ -388,7 +375,7 @@ export const createTrackingBandFoldChart = (element: HTMLElement) => {
       },
       yAxis: {
         type: "value",
-        name: "normalized amplitude",
+        name: "amplitude",
         scale: true,
       },
       series: makeTrackingBandFoldSeries(rows, axisBph),
