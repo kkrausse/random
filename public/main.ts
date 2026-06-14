@@ -28,6 +28,26 @@ type AppState = {
   graph: ReturnType<typeof createHeatmap>;
   featureGraph: ReturnType<typeof createFeatureChart>;
   running: boolean;
+  captureRecording: boolean;
+  captureStartedAt: string | null;
+  captureReady: CaptureReady | null;
+  captureBatches: CaptureBatch[];
+};
+
+type CaptureReady = {
+  sampleRate: number;
+  featureRate: number;
+  bands: string[];
+};
+
+type CaptureBatch = {
+  startFrame: number;
+  rawFrame: number;
+  featureRate: number;
+  features: {
+    name: string;
+    data: number[];
+  }[];
 };
 
 const query = <T extends HTMLElement>(selector: string) => {
@@ -40,6 +60,7 @@ const query = <T extends HTMLElement>(selector: string) => {
 
 const elements = {
   toggle: query<HTMLButtonElement>("#toggle"),
+  captureToggle: query<HTMLButtonElement>("#capture-toggle"),
   period: query<HTMLSelectElement>("#period"),
   featureCap: query<HTMLSelectElement>("#feature-cap"),
   featureRate: query<HTMLElement>("#feature-rate"),
@@ -84,6 +105,10 @@ const app: AppState = {
   graph: createHeatmap(elements.foldChart),
   featureGraph: createFeatureChart(elements.featureChart),
   running: false,
+  captureRecording: false,
+  captureStartedAt: null,
+  captureReady: null,
+  captureBatches: [],
 };
 
 const setStatus = (text: string) => {
@@ -94,6 +119,67 @@ const setRunning = (running: boolean) => {
   app.running = running;
   elements.toggle.dataset.running = String(running);
   elements.toggle.textContent = running ? "Stop microphone" : "Start microphone";
+};
+
+const updateCaptureDisplay = () => {
+  elements.captureToggle.dataset.running = String(app.captureRecording);
+  elements.captureToggle.textContent = app.captureRecording ? "Stop + copy capture" : "Start capture";
+};
+
+const startCapture = () => {
+  app.captureRecording = true;
+  app.captureStartedAt = new Date().toISOString();
+  app.captureBatches = [];
+  updateCaptureDisplay();
+};
+
+const stopCapture = () => {
+  app.captureRecording = false;
+  updateCaptureDisplay();
+};
+
+const captureFeatureMessage = (message: WorkletToMainMessage) => {
+  if (!app.captureRecording || message.type !== "features") return;
+
+  app.captureBatches.push({
+    startFrame: message.startFrame,
+    rawFrame: message.rawFrame,
+    featureRate: message.featureRate,
+    features: message.features.map((feature) => ({
+      name: feature.name,
+      data: Array.from(feature.data),
+    })),
+  });
+  updateCaptureDisplay();
+};
+
+const makeCaptureJson = () => {
+  return JSON.stringify(
+    {
+      version: 1,
+      createdAt: new Date().toISOString(),
+      startedAt: app.captureStartedAt,
+      periodSeconds: Number(elements.period.value) || DEFAULT_PERIOD_SECONDS,
+      featureCap: getFeatureCap(),
+      ready: app.captureReady,
+      batches: app.captureBatches,
+    },
+    null,
+    2,
+  );
+};
+
+const copyCapture = async () => {
+  if (app.captureBatches.length === 0) return;
+
+  const json = makeCaptureJson();
+
+  try {
+    await navigator.clipboard.writeText(json);
+    elements.captureToggle.textContent = "Copied capture";
+  } catch {
+    elements.captureToggle.textContent = "Copy failed";
+  }
 };
 
 const formatBph = (value: number | null) => {
@@ -227,12 +313,18 @@ const start = async () => {
       const message = event.data;
 
       if (message.type === "ready") {
+        app.captureReady = {
+          sampleRate: message.sampleRate,
+          featureRate: message.featureRate,
+          bands: message.bands,
+        };
         elements.featureRate.textContent = `${message.featureRate} Hz`;
         elements.bands.textContent = String(message.bands.length);
         setStatus(`Recording at ${Math.round(message.sampleRate)} Hz`);
       }
 
       if (message.type === "features" && app.worker) {
+        captureFeatureMessage(message);
         app.featureGraph.update(
           message,
           Number(elements.period.value) || DEFAULT_PERIOD_SECONDS,
@@ -254,6 +346,10 @@ const start = async () => {
 };
 
 const stop = async () => {
+  if (app.captureRecording) {
+    stopCapture();
+  }
+
   if (app.source) {
     app.source.disconnect();
     app.source = null;
@@ -296,5 +392,15 @@ elements.toggle.addEventListener("click", () => {
   }
 });
 
+elements.captureToggle.addEventListener("click", () => {
+  if (app.captureRecording) {
+    stopCapture();
+    copyCapture();
+  } else {
+    startCapture();
+  }
+});
+
 elements.period.addEventListener("change", configureWorker);
 elements.featureCap.addEventListener("change", configureWorklet);
+updateCaptureDisplay();
