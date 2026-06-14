@@ -14,6 +14,7 @@ import type {
   FeatureMessage,
   FoldRow,
   MainToAnalysisWorkerMessage,
+  TrackingBandFold,
 } from "./data";
 
 type Frame = {
@@ -151,6 +152,37 @@ const buildTrackingFold = (bph: number | null, score?: number) => {
   };
 };
 
+const buildTrackingBandFolds = (bph: number | null) => {
+  if (!bph) return [];
+
+  const binCount = DEFAULT_TRACKING_FOLD_BIN_COUNT;
+  const rows: TrackingBandFold[] = [];
+
+  for (let bandIndex = 0; bandIndex < state.bands.length; bandIndex += 1) {
+    const bins = normalizeRow(
+      foldSignal({
+        frames: state.frames,
+        featureRate: state.featureRate,
+        bph,
+        cycleBeats: state.cycleBeats,
+        binCount,
+        averageByBin: true,
+        valueAt: (frame) => frame.bands[bandIndex],
+      }),
+    );
+
+    rows.push({
+      bph,
+      binCount,
+      cycleBeats: state.cycleBeats,
+      band: state.bands[bandIndex],
+      bins,
+    });
+  }
+
+  return rows;
+};
+
 const buildTrackingCandidateFolds = (tracking: ReturnType<typeof state.tracker.trackStep>) => {
   return tracking.candidates
     .map((candidate) => buildTrackingFold(candidate.bph, candidate.score))
@@ -175,10 +207,14 @@ const maybePostAnalysis = () => {
     rows,
   );
   const trackingFold = buildTrackingFold(tracking.measuredBph);
+  const trackingBandFolds = buildTrackingBandFolds(tracking.measuredBph);
   const trackingCandidateFolds = buildTrackingCandidateFolds(tracking);
   const transfers = rows.map((row) => row.bins.buffer);
   if (trackingFold) {
     transfers.push(trackingFold.bins.buffer);
+  }
+  for (let index = 0; index < trackingBandFolds.length; index += 1) {
+    transfers.push(trackingBandFolds[index].bins.buffer);
   }
   for (let index = 0; index < trackingCandidateFolds.length; index += 1) {
     transfers.push(trackingCandidateFolds[index].bins.buffer);
@@ -201,6 +237,7 @@ const maybePostAnalysis = () => {
         candidates: tracking.candidates,
       },
       trackingFold,
+      trackingBandFolds,
       trackingCandidateFolds,
     },
     transfers,

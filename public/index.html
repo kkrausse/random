@@ -122,12 +122,14 @@
       }
 
       #tracking-fold-chart,
+      #tracking-band-fold-chart,
       #fold-chart,
       #feature-chart {
         width: 100%;
       }
 
-      #tracking-fold-chart {
+      #tracking-fold-chart,
+      #tracking-band-fold-chart {
         min-height: 320px;
       }
 
@@ -159,6 +161,7 @@
         }
 
         #tracking-fold-chart,
+        #tracking-band-fold-chart,
         #feature-chart {
           min-height: 280px;
         }
@@ -221,6 +224,12 @@
           <h2 class="chart-title">Tracked fold</h2>
           <div id="tracking-fold-chart">
             <div class="message">Start the microphone to build the tracked fold.</div>
+          </div>
+        </section>
+        <section class="chart-block" aria-label="Tracked BPH folded amplitude by frequency bucket">
+          <h2 class="chart-title">Tracked fold by bucket</h2>
+          <div id="tracking-band-fold-chart">
+            <div class="message">Start the microphone to build the tracked fold buckets.</div>
           </div>
         </section>
         <section class="chart-block" aria-label="Live folded feature heatmap">

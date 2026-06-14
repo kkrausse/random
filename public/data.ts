@@ -83,6 +83,10 @@ export type TrackingFold = {
   score?: number;
 };
 
+export type TrackingBandFold = TrackingFold & {
+  band: string;
+};
+
 export type AnalysisMessage = {
   type: "analysis";
   periodSeconds: number;
@@ -90,6 +94,7 @@ export type AnalysisMessage = {
   standardFolds: StandardFolds;
   tracking: Tracking;
   trackingFold: TrackingFold | null;
+  trackingBandFolds: TrackingBandFold[];
   trackingCandidateFolds: TrackingFold[];
 };
 

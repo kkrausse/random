@@ -1,5 +1,11 @@
 import * as echarts from "echarts";
-import type { AnalysisMessage, FeatureMessage, FoldRow, TrackingFold } from "./data";
+import type {
+  AnalysisMessage,
+  FeatureMessage,
+  FoldRow,
+  TrackingBandFold,
+  TrackingFold,
+} from "./data";
 
 type ChartPoint = [number, number];
 type HeatmapPoint = [number, number, number];
@@ -102,6 +108,96 @@ export const createTrackingFoldChart = (element: HTMLElement) => {
         scale: true,
       },
       series: makeTrackingFoldSeries(fold),
+    });
+  };
+
+  const resize = () => chart.resize();
+  window.addEventListener("resize", resize);
+
+  return { update, resize };
+};
+
+const makeTrackingBandFoldSeries = (rows: TrackingBandFold[]) => {
+  return rows.map((row) => {
+    const cycleSeconds = (3600 / row.bph) * row.cycleBeats;
+    return {
+      name: row.band,
+      type: "line",
+      data: Array.from(row.bins, (value, bin) => [
+        Number(((bin / row.binCount) * cycleSeconds).toFixed(4)),
+        Number(value.toFixed(4)),
+      ]),
+      showSymbol: false,
+      lineStyle: { width: 1 },
+    };
+  });
+};
+
+export const createTrackingBandFoldChart = (element: HTMLElement) => {
+  element.textContent = "";
+  const chart = echarts.init(element, null, { renderer: "canvas" });
+
+  const update = (analysis: AnalysisMessage) => {
+    const rows = analysis.trackingBandFolds;
+    const firstRow = rows[0];
+
+    if (!firstRow) {
+      chart.clear();
+      chart.setOption({
+        animation: false,
+        grid: {
+          left: 48,
+          right: 20,
+          top: 32,
+          bottom: 48,
+        },
+        xAxis: {
+          type: "value",
+          name: "tracked cycle seconds",
+          min: 0,
+        },
+        yAxis: {
+          type: "value",
+          name: "amplitude",
+          scale: true,
+        },
+        series: [],
+      });
+      return;
+    }
+
+    const cycleSeconds = (3600 / firstRow.bph) * firstRow.cycleBeats;
+
+    chart.setOption({
+      animation: false,
+      grid: {
+        left: 48,
+        right: 20,
+        top: 32,
+        bottom: 48,
+      },
+      legend: {
+        type: "scroll",
+        top: 0,
+      },
+      tooltip: {
+        trigger: "axis",
+        valueFormatter(value: number) {
+          return Number(value).toFixed(4);
+        },
+      },
+      xAxis: {
+        type: "value",
+        name: `seconds (${firstRow.cycleBeats} beat cycle)`,
+        min: 0,
+        max: Number(cycleSeconds.toFixed(4)),
+      },
+      yAxis: {
+        type: "value",
+        name: "normalized amplitude",
+        scale: true,
+      },
+      series: makeTrackingBandFoldSeries(rows),
     });
   };
 
