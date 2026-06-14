@@ -1,7 +1,7 @@
 import { CANDIDATE_BPH } from "./defaults";
 import { clamp } from "./data";
 import { foldSignal } from "./util";
-import type { FoldRow, Tracking } from "./data";
+import type { FoldRow, Tracking, TrackingCandidate } from "./data";
 
 export type TrackingFrame = {
   featureFrame: number;
@@ -25,7 +25,6 @@ export type ActualBphTracker = {
 
 type RowScore = {
   score: number;
-  debug: Record<string, number>;
 };
 
 const TRACKING_BIN_COUNT = 8000;
@@ -44,6 +43,7 @@ const EMPTY_TRACKING_STATE: TrackingState = {
   standardBph: null,
   measuredBph: null,
   confidenceBph: null,
+  candidates: [],
   score: 0,
 };
 
@@ -86,7 +86,6 @@ const rowPacketScore = (bins: Float32Array, bph: number, cycleBeats: number): Ro
   if (!bins.length) {
     return {
       score: 0,
-      debug: {},
     };
   }
 
@@ -106,12 +105,6 @@ const rowPacketScore = (bins: Float32Array, bph: number, cycleBeats: number): Ro
 
   return {
     score: signalTotal > 0 ? pairTotal / signalTotal : 0,
-    debug: {
-      rowMean,
-      packetRadius,
-      pairTotal,
-      signalTotal,
-    },
   };
 };
 
@@ -193,7 +186,7 @@ const searchMeasuredBph = (
   let bestScore = -Infinity;
   let bestOffset = 0;
   let centerScore = -Infinity;
-  const trials: Record<string, number>[] = [];
+  const candidates: TrackingCandidate[] = [];
 
   for (let index = 0; index < SEARCH_OFFSETS.length; index += 1) {
     const offset = SEARCH_OFFSETS[index];
@@ -204,11 +197,9 @@ const searchMeasuredBph = (
     );
     const trialScore = scoreTrialBph(globalState, bph);
     const score = trialScore.score;
-    trials.push({
-      index,
+    candidates.push({
       bph,
       score,
-      ...trialScore.debug,
     });
     if (offset === 0) {
       centerScore = score;
@@ -226,26 +217,15 @@ const searchMeasuredBph = (
     bestScore >= centerScore * EDGE_SCORE_RATIO &&
     bestScore >= centerScore + EDGE_SCORE_MARGIN;
 
-  const selected = edgeHit && !strongEdgeHit
-    ? { bph: center, score: centerScore, offset: 0, edgeHit: false }
-    : { bph: bestBph, score: bestScore, offset: bestOffset, edgeHit: strongEdgeHit };
-
-  console.log("tracking search", {
-    standardBph,
-    center,
-    confidenceBph,
-    selected,
-  });
-  console.table(trials);
-
   if (edgeHit && !strongEdgeHit) {
-    return { measuredBph: center, score: centerScore, errorScale: 1 };
+    return { measuredBph: center, score: centerScore, errorScale: 1, candidates };
   }
 
   return {
     measuredBph: bestBph,
     score: bestScore,
     errorScale: strongEdgeHit ? EXPAND_ERROR_SCALE : SHRINK_ERROR_SCALE,
+    candidates,
   };
 };
 
@@ -301,6 +281,7 @@ const trackStep = (
     standardBph,
     measuredBph,
     confidenceBph,
+    candidates: result.candidates,
     score: result.score,
   };
 };
@@ -315,6 +296,7 @@ export const createBphTracker = (): ActualBphTracker => {
         standardBph: trackingState.standardBph,
         measuredBph: trackingState.measuredBph,
         confidenceBph: trackingState.confidenceBph,
+        candidates: trackingState.candidates,
       };
     },
   };
