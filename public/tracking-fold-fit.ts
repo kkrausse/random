@@ -1,4 +1,4 @@
-import { CANDIDATE_BPH } from "./defaults";
+import { CANDIDATE_BPH, DEFAULT_TRACKING_FOLD_BIN_COUNT } from "./defaults";
 import { clamp } from "./data";
 import { foldSignal } from "./util";
 import type { FoldRow, Tracking, TrackingCandidate } from "./data";
@@ -27,7 +27,6 @@ type RowScore = {
   score: number;
 };
 
-const TRACKING_BIN_COUNT = 8000;
 const MIN_TRACKING_SECONDS = 2;
 const MIN_ERROR_BPH = 0.5;
 const INITIAL_ERROR_BPH = 300;
@@ -156,7 +155,7 @@ const foldTrackingCandidate = (
     featureRate: globalState.featureRate,
     bph,
     cycleBeats: globalState.cycleBeats,
-    binCount: TRACKING_BIN_COUNT,
+    binCount: DEFAULT_TRACKING_FOLD_BIN_COUNT,
     valueAt: (frame) => frame.bands[bandIndex],
   });
 };
