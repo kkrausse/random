@@ -40,8 +40,8 @@ const elements = {
   bands: query<HTMLElement>("#bands"),
   standardBph: query<HTMLElement>("#standard-bph"),
   measuredBph: query<HTMLElement>("#measured-bph"),
-  confidenceBph: query<HTMLElement>("#confidence-bph"),
   secondsPerDay: query<HTMLElement>("#seconds-per-day"),
+  errorSecondsPerDay: query<HTMLElement>("#error-seconds-per-day"),
   status: query<HTMLElement>("#status"),
   trackingFoldChart: query<HTMLElement>("#tracking-fold-chart"),
   foldChart: query<HTMLElement>("#fold-chart"),
@@ -87,11 +87,16 @@ const formatRange = (value: number | null) => {
   return `±${value.toFixed(1)}`;
 };
 
+const bphErrorToSecondsPerDay = (errorBph: number | null, standardBph: number | null) => {
+  if (errorBph === null || standardBph === null) return null;
+  return (errorBph / standardBph) * 86400;
+};
+
 const resetTrackingDisplay = () => {
   elements.standardBph.textContent = "-";
   elements.measuredBph.textContent = "-";
-  elements.confidenceBph.textContent = "-";
   elements.secondsPerDay.textContent = "-";
+  elements.errorSecondsPerDay.textContent = "-";
 };
 
 const updateTrackingDisplay = (message: AnalysisWorkerToMainMessage) => {
@@ -100,12 +105,16 @@ const updateTrackingDisplay = (message: AnalysisWorkerToMainMessage) => {
     tracking.standardBph && tracking.measuredBph
       ? (tracking.measuredBph / tracking.standardBph - 1) * 86400
       : null;
+  const errorSecondsPerDay = bphErrorToSecondsPerDay(
+    tracking.confidenceBph,
+    tracking.standardBph,
+  );
 
   elements.standardBph.textContent =
     tracking.standardBph === null ? "-" : String(Math.round(tracking.standardBph));
   elements.measuredBph.textContent = formatBph(tracking.measuredBph);
-  elements.confidenceBph.textContent = formatRange(tracking.confidenceBph);
   elements.secondsPerDay.textContent = formatSigned(secondsPerDay);
+  elements.errorSecondsPerDay.textContent = formatRange(errorSecondsPerDay);
 };
 
 const configureWorker = () => {

@@ -64,12 +64,34 @@
         background: #fff0f6;
       }
 
-      label,
-      .stat {
+      label {
         display: inline-flex;
         gap: 6px;
         align-items: center;
         font-size: 14px;
+      }
+
+      .stats-wrap {
+        max-width: 100%;
+        overflow-x: auto;
+      }
+
+      .stats-table {
+        border-collapse: collapse;
+        font-size: 13px;
+        white-space: nowrap;
+      }
+
+      .stats-table th,
+      .stats-table td {
+        padding: 3px 8px;
+        border: 1px solid #d8dee8;
+        text-align: left;
+      }
+
+      .stats-table th {
+        font-weight: 500;
+        color: #4a5564;
       }
 
       select {
@@ -168,12 +190,30 @@
             <option value="8">8</option>
           </select>
         </label>
-        <span class="stat">Feature rate: <strong id="feature-rate">-</strong></span>
-        <span class="stat">Bands: <strong id="bands">-</strong></span>
-        <span class="stat">Standard: <strong id="standard-bph">-</strong></span>
-        <span class="stat">Measured: <strong id="measured-bph">-</strong></span>
-        <span class="stat">Confidence: <strong id="confidence-bph">-</strong></span>
-        <span class="stat">s/day: <strong id="seconds-per-day">-</strong></span>
+        <div class="stats-wrap">
+          <table class="stats-table">
+            <thead>
+              <tr>
+                <th scope="col">Feature rate</th>
+                <th scope="col">Bands</th>
+                <th scope="col">Standard BPH</th>
+                <th scope="col">Measured</th>
+                <th scope="col">s/day</th>
+                <th scope="col">Error</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong id="feature-rate">-</strong></td>
+                <td><strong id="bands">-</strong></td>
+                <td><strong id="standard-bph">-</strong></td>
+                <td><strong id="measured-bph">-</strong></td>
+                <td><strong id="seconds-per-day">-</strong></td>
+                <td><strong id="error-seconds-per-day">-</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
         <span id="status">Idle</span>
       </header>
       <section class="charts">

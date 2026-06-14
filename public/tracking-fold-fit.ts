@@ -28,15 +28,16 @@ type RowScore = {
   debug: Record<string, number>;
 };
 
-const TRACKING_BIN_COUNT = 4096;
+const TRACKING_BIN_COUNT = 2048;
 const MIN_TRACKING_SECONDS = 2;
-const MIN_ERROR_BPH = 2;
+const MIN_ERROR_BPH = 0.5;
 const INITIAL_ERROR_BPH = 300;
 const MAX_ERROR_BPH = 300;
 const EDGE_SCORE_RATIO = 1.05;
 const EDGE_SCORE_MARGIN = 0.25;
-const BACKGROUND_DELTA = 1;
-const PACKET_AVERAGE_SECONDS = 0.003;
+const PACKET_AVERAGE_SECONDS = 0.001;
+const EXPAND_ERROR_SCALE = 1.5;
+const SHRINK_ERROR_SCALE = 0.9;
 const SEARCH_OFFSETS = Array.from({ length: 21 }, (_, index) => (index - 10) / 10);
 
 const EMPTY_TRACKING_STATE: TrackingState = {
@@ -66,45 +67,14 @@ const averageInWindow = (values: Float32Array, center: number, radius: number) =
   return total / count;
 };
 
-const strongestBin = (values: Float32Array) => {
-  let bin = 0;
-  let value = -Infinity;
+const smoothedBins = (values: Float32Array, radius: number) => {
+  const smoothed = new Float32Array(values.length);
 
   for (let index = 0; index < values.length; index += 1) {
-    if (values[index] > value) {
-      bin = index;
-      value = values[index];
-    }
+    smoothed[index] = averageInWindow(values, index, radius);
   }
 
-  return { bin, value };
-};
-
-const strongestBinInWindow = (values: Float32Array, center: number, radius: number) => {
-  let bin = center;
-  let value = -Infinity;
-
-  for (let offset = -radius; offset <= radius; offset += 1) {
-    const index = (center + offset + values.length) % values.length;
-    if (values[index] > value) {
-      bin = index;
-      value = values[index];
-    }
-  }
-
-  return { bin, value };
-};
-
-const belowDeltaRatio = (values: Float32Array, delta: number) => {
-  if (!values.length) return 0;
-
-  let count = 0;
-  for (let index = 0; index < values.length; index += 1) {
-    if (values[index] < delta) {
-      count += 1;
-    }
-  }
-  return count / values.length;
+  return smoothed;
 };
 
 const packetAverageRadius = (binCount: number, bph: number, cycleBeats: number) => {
@@ -120,30 +90,27 @@ const rowPacketScore = (bins: Float32Array, bph: number, cycleBeats: number): Ro
     };
   }
 
-  const primary = strongestBin(bins);
-  const oppositeBin = (primary.bin + Math.round(bins.length / 2)) % bins.length;
-  const opposite = strongestBinInWindow(
-    bins,
-    oppositeBin,
-    Math.max(2, Math.round(bins.length * 0.02)),
-  );
   const packetRadius = packetAverageRadius(bins.length, bph, cycleBeats);
-  const primaryPacket = averageInWindow(bins, primary.bin, packetRadius);
-  const oppositePacket = averageInWindow(bins, opposite.bin, packetRadius);
-  const weakerPacket = Math.min(primaryPacket, oppositePacket);
-  const strongerPacket = Math.max(primaryPacket, oppositePacket);
-  const packetScore = weakerPacket + strongerPacket * 0.35;
-  const rowMean = average(bins);
-  const sparseBackground = belowDeltaRatio(bins, (weakerPacket + strongerPacket) / 5);
+  const smoothed = smoothedBins(bins, packetRadius);
+  const rowMean = average(smoothed);
+  const halfCycle = Math.round(smoothed.length / 2);
+  let pairTotal = 0;
+  let signalTotal = 0;
+
+  for (let index = 0; index < smoothed.length; index += 1) {
+    const signal = Math.max(0, smoothed[index] - rowMean);
+    const opposite = Math.max(0, smoothed[(index + halfCycle) % smoothed.length] - rowMean);
+    pairTotal += signal * opposite;
+    signalTotal += signal;
+  }
 
   return {
-    score: Math.max(0, packetScore * (1 + sparseBackground)),
+    score: signalTotal > 0 ? pairTotal / signalTotal : 0,
     debug: {
-      sparseBackground,
       rowMean,
       packetRadius,
-      primaryPacket,
-      oppositePacket,
+      pairTotal,
+      signalTotal,
     },
   };
 };
@@ -269,13 +236,17 @@ const searchMeasuredBph = (
     confidenceBph,
     selected,
   });
-  console.table(trials);
+  // console.table(trials);
 
   if (edgeHit && !strongEdgeHit) {
-    return { measuredBph: center, score: centerScore, edgeHit: false };
+    return { measuredBph: center, score: centerScore, errorScale: 1 };
   }
 
-  return { measuredBph: bestBph, score: bestScore, edgeHit: strongEdgeHit };
+  return {
+    measuredBph: bestBph,
+    score: bestScore,
+    errorScale: strongEdgeHit ? EXPAND_ERROR_SCALE : SHRINK_ERROR_SCALE,
+  };
 };
 
 const smoothMeasuredBph = (
@@ -293,18 +264,14 @@ const smoothMeasuredBph = (
 const nextConfidenceBph = (
   previous: TrackingState,
   standardBph: number,
-  edgeHit: boolean,
+  errorScale: number,
 ) => {
   const current =
     previous.standardBph === standardBph && previous.confidenceBph
       ? previous.confidenceBph
       : INITIAL_ERROR_BPH;
 
-  if (edgeHit) {
-    return clamp(current * 1.5, MIN_ERROR_BPH, MAX_ERROR_BPH);
-  }
-
-  return clamp(current * 0.75, MIN_ERROR_BPH, MAX_ERROR_BPH);
+  return clamp(current * errorScale, MIN_ERROR_BPH, MAX_ERROR_BPH);
 };
 
 const trackStep = (
@@ -328,7 +295,7 @@ const trackStep = (
 
   const result = searchMeasuredBph(trackingState, globalState, standardBph);
   const measuredBph = smoothMeasuredBph(trackingState, standardBph, result.measuredBph);
-  const confidenceBph = nextConfidenceBph(trackingState, standardBph, result.edgeHit);
+  const confidenceBph = nextConfidenceBph(trackingState, standardBph, result.errorScale);
 
   return {
     standardBph,
