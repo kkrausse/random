@@ -84,18 +84,19 @@ export const foldSignal = <TFrame extends FoldFrame>({
 
     for (let bin = 0; bin < binCount; bin += 1) {
       const values: number[] = [];
-      let max = 0;
+      let total = 0;
 
       for (let cycle = 0; cycle < cycleBins.length; cycle += 1) {
         if (!cycleCounts[cycle][bin]) continue;
 
         const value = cycleBins[cycle][bin];
         values.push(value);
-        max = Math.max(max, value);
+        total += value;
       }
 
-      if (max > 0) {
-        bins[bin] *= median(values) / max;
+      const mean = values.length ? total / values.length : 0;
+      if (mean > 0) {
+        bins[bin] *= Math.min(1, median(values) / mean);
       }
     }
   }

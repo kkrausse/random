@@ -67,6 +67,12 @@ export type Tracking = {
   standardBph: number | null;
   measuredBph: number | null;
   confidenceBph: number | null;
+  candidates: TrackingCandidate[];
+};
+
+export type TrackingCandidate = {
+  bph: number;
+  score: number;
 };
 
 export type TrackingFold = {
@@ -74,6 +80,7 @@ export type TrackingFold = {
   binCount: number;
   cycleBeats: number;
   bins: Float32Array;
+  score?: number;
 };
 
 export type AnalysisMessage = {
@@ -83,6 +90,7 @@ export type AnalysisMessage = {
   standardFolds: StandardFolds;
   tracking: Tracking;
   trackingFold: TrackingFold | null;
+  trackingCandidateFolds: TrackingFold[];
 };
 
 export type WorkletToMainMessage = ReadyMessage | FeatureMessage;

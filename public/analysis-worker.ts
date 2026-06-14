@@ -120,7 +120,7 @@ const buildStandardFoldRows = () => {
   return rows;
 };
 
-const buildTrackingFold = (bph: number | null) => {
+const buildTrackingFold = (bph: number | null, score?: number) => {
   if (!bph) return null;
 
   const binCount = DEFAULT_TRACKING_FOLD_BIN_COUNT;
@@ -147,7 +147,14 @@ const buildTrackingFold = (bph: number | null) => {
     binCount,
     cycleBeats: state.cycleBeats,
     bins,
+    score,
   };
+};
+
+const buildTrackingCandidateFolds = (tracking: ReturnType<typeof state.tracker.trackStep>) => {
+  return tracking.candidates
+    .map((candidate) => buildTrackingFold(candidate.bph, candidate.score))
+    .filter((fold) => fold !== null);
 };
 
 const maybePostAnalysis = () => {
@@ -168,9 +175,13 @@ const maybePostAnalysis = () => {
     rows,
   );
   const trackingFold = buildTrackingFold(tracking.measuredBph);
+  const trackingCandidateFolds = buildTrackingCandidateFolds(tracking);
   const transfers = rows.map((row) => row.bins.buffer);
   if (trackingFold) {
     transfers.push(trackingFold.bins.buffer);
+  }
+  for (let index = 0; index < trackingCandidateFolds.length; index += 1) {
+    transfers.push(trackingCandidateFolds[index].bins.buffer);
   }
 
   workerSelf.postMessage(
@@ -187,8 +198,10 @@ const maybePostAnalysis = () => {
         standardBph: tracking.standardBph,
         measuredBph: tracking.measuredBph,
         confidenceBph: tracking.confidenceBph,
+        candidates: tracking.candidates,
       },
       trackingFold,
+      trackingCandidateFolds,
     },
     transfers,
   );
