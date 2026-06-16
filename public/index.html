@@ -20,6 +20,7 @@
 
       body {
         margin: 0;
+        background: #f7f9fc;
       }
 
       main {
@@ -30,7 +31,8 @@
 
       header {
         display: grid;
-        gap: 12px;
+        grid-template-columns: auto 1fr auto auto;
+        gap: 12px 16px;
         align-items: start;
         padding: 14px 18px;
         border-bottom: 1px solid #d8dee8;
@@ -57,6 +59,7 @@
         color: #17202a;
         padding: 0 14px;
         cursor: pointer;
+        white-space: nowrap;
       }
 
       button[data-running="true"] {
@@ -73,12 +76,19 @@
 
       .capture-control {
         display: flex;
+        grid-column: 2;
         gap: 12px;
         align-items: center;
+        min-width: 0;
       }
 
       .period-control {
+        grid-column: 3;
         gap: 8px;
+      }
+
+      .lift-angle-control {
+        grid-column: 4;
       }
 
       .period-control input {
@@ -90,13 +100,19 @@
       }
 
       .lift-angle-value {
-        min-width: 34px;
+        width: 48px;
+        min-width: 48px;
         color: #4a5564;
+        text-align: right;
+        white-space: nowrap;
       }
 
       .period-value {
-        min-width: 32px;
+        width: 48px;
+        min-width: 48px;
         color: #4a5564;
+        text-align: right;
+        white-space: nowrap;
       }
 
       .stats-wrap {
@@ -104,10 +120,16 @@
         overflow-x: auto;
       }
 
+      header .stats-wrap {
+        grid-column: 1 / -1;
+        grid-row: 2;
+      }
+
       .stats-table {
         border-collapse: collapse;
         font-size: 13px;
         white-space: nowrap;
+        background: #ffffff;
       }
 
       .stats-table th,
@@ -125,17 +147,22 @@
       #status {
         min-width: 190px;
         color: #4a5564;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .charts {
         display: grid;
-        gap: 16px;
-        padding: 0 0 18px;
+        gap: 12px;
+        padding: 12px 12px 18px;
       }
 
       .chart-block {
         background: #ffffff;
-        border-bottom: 1px solid #d8dee8;
+        border: 1px solid #d8dee8;
+        border-radius: 6px;
+        overflow: hidden;
       }
 
       .chart-block-wide {
@@ -162,11 +189,12 @@
       }
 
       #tick-tock-peak-chart {
-        min-width: 1100px;
+        min-width: 760px;
       }
 
       #fold-chart {
         min-height: 680px;
+        min-width: 720px;
       }
 
       #feature-chart {
@@ -195,23 +223,132 @@
       }
 
       @media (max-width: 740px) {
+        main {
+          min-height: 100svh;
+        }
+
+        header {
+          grid-template-columns: 1fr;
+          gap: 10px;
+          padding: 12px;
+        }
+
+        h1 {
+          font-size: 17px;
+        }
+
+        button {
+          min-height: 40px;
+        }
+
+        .capture-control {
+          display: grid;
+          grid-column: auto;
+          grid-template-columns: 1fr;
+          gap: 8px;
+        }
+
+        #status {
+          min-width: 0;
+          white-space: normal;
+        }
+
+        header .stats-wrap {
+          grid-row: auto;
+          overflow-x: visible;
+        }
+
+        header .stats-table,
+        header .stats-table tbody {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px;
+          width: 100%;
+        }
+
+        header .stats-table tr {
+          display: grid;
+          gap: 2px;
+          padding: 8px;
+          border: 1px solid #d8dee8;
+          border-radius: 6px;
+        }
+
+        header .stats-table th,
+        header .stats-table td {
+          display: block;
+          padding: 0;
+          border: 0;
+        }
+
         .period-control {
           width: 100%;
         }
 
-        .period-control input {
+        .period-control,
+        .lift-angle-control {
+          display: grid;
+          grid-column: auto;
+          grid-template-columns: 72px minmax(0, 1fr) 52px;
+          gap: 8px;
+        }
+
+        .period-control input,
+        .lift-angle-control input {
           flex: 1;
           width: auto;
+          min-width: 0;
+        }
+
+        .charts {
+          gap: 10px;
+          padding: 10px;
+        }
+
+        .chart-title {
+          padding: 10px 12px 0;
+        }
+
+        #tick-tock-peak-chart {
+          min-width: 640px;
         }
 
         #fold-chart {
-          min-height: 560px;
+          min-height: 520px;
+          min-width: 620px;
         }
 
         #tick-tock-peak-chart,
         #tracking-band-fold-chart,
         #feature-chart {
-          min-height: 280px;
+          min-height: 260px;
+        }
+
+        .diagnostics {
+          padding: 12px;
+        }
+      }
+
+      @media (max-width: 420px) {
+        header .stats-table,
+        header .stats-table tbody {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .period-control,
+        .lift-angle-control {
+          grid-template-columns: 1fr 52px;
+        }
+
+        .period-control input,
+        .lift-angle-control input {
+          grid-column: 1 / -1;
+          grid-row: 2;
+        }
+
+        .period-value,
+        .lift-angle-value {
+          justify-self: end;
         }
       }
     </style>
@@ -270,7 +407,7 @@
             <div class="message">Start the microphone to build the tracked fold buckets.</div>
           </div>
         </section>
-        <section class="chart-block" aria-label="Live folded feature heatmap">
+        <section class="chart-block chart-block-wide" aria-label="Live folded feature heatmap">
           <h2 class="chart-title">Fold heatmap</h2>
           <div id="fold-chart">
             <div class="message">Start the microphone to build the live fold heatmap.</div>

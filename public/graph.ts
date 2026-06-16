@@ -390,8 +390,8 @@ export const createTickTockPeakChart = (element: HTMLElement) => {
       chart.setOption({
         animation: false,
         grid: {
-          left: 48,
-          right: 20,
+          left: 34,
+          right: 12,
           top: 32,
           bottom: 48,
         },
@@ -401,7 +401,12 @@ export const createTickTockPeakChart = (element: HTMLElement) => {
         },
         yAxis: {
           type: "value",
-          name: "tick + / tock -",
+          axisLabel: {
+            margin: 4,
+            formatter(value: number) {
+              return value.toFixed(2);
+            },
+          },
         },
         series: [],
       });
@@ -414,8 +419,8 @@ export const createTickTockPeakChart = (element: HTMLElement) => {
     chart.setOption({
       animation: false,
       grid: {
-        left: 48,
-        right: 20,
+        left: 34,
+        right: 12,
         top: 24,
         bottom: 72,
       },
@@ -439,9 +444,14 @@ export const createTickTockPeakChart = (element: HTMLElement) => {
       },
       yAxis: {
         type: "value",
-        name: "tick + / tock -",
         min: peakData.yMin,
         max: peakData.yMax,
+        axisLabel: {
+          margin: 4,
+          formatter(value: number) {
+            return value.toFixed(2);
+          },
+        },
       },
       series: peakData.series,
     });
@@ -483,18 +493,16 @@ export const createTrackingBandFoldChart = (element: HTMLElement) => {
         animation: false,
         grid: {
           left: 48,
-          right: 20,
-          top: 32,
-          bottom: 48,
+          right: 12,
+          top: 16,
+          bottom: 32,
         },
         xAxis: {
           type: "value",
-          name: "tracked cycle seconds",
           min: 0,
         },
         yAxis: {
           type: "value",
-          name: "amplitude",
           scale: true,
         },
         series: [],
@@ -509,13 +517,9 @@ export const createTrackingBandFoldChart = (element: HTMLElement) => {
       animation: false,
       grid: {
         left: 48,
-        right: 20,
-        top: 32,
-        bottom: 48,
-      },
-      legend: {
-        type: "scroll",
-        top: 0,
+        right: 12,
+        top: 16,
+        bottom: 32,
       },
       tooltip: {
         trigger: "axis",
@@ -525,13 +529,11 @@ export const createTrackingBandFoldChart = (element: HTMLElement) => {
       },
       xAxis: {
         type: "value",
-        name: `standard seconds (${axisBph} BPH, ${firstRow.cycleBeats} beat cycle)`,
         min: 0,
         max: Number(cycleSeconds.toFixed(4)),
       },
       yAxis: {
         type: "value",
-        name: "amplitude",
         scale: true,
       },
       series: makeTrackingBandFoldSeries(rows, axisBph),
@@ -556,7 +558,7 @@ export const createHeatmap = (element: HTMLElement) => {
     chart.setOption({
       animation: false,
       grid: {
-        left: 160,
+        left: 96,
         right: 24,
         top: 24,
         bottom: 36,
@@ -585,7 +587,11 @@ export const createHeatmap = (element: HTMLElement) => {
         type: "category",
         data: labels,
         inverse: true,
-        axisLabel: { fontSize: 11 },
+        axisLabel: {
+          fontSize: 11,
+          overflow: "truncate",
+          width: 82,
+        },
       },
       visualMap: {
         min: -2,
