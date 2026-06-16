@@ -297,6 +297,7 @@ export const createTickTockPeakChart = (element: HTMLElement) => {
       },
       legend: {
         top: 0,
+        data: ["tick", "tock"],
       },
       tooltip: {
         trigger: "axis",

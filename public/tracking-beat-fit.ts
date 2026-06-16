@@ -52,6 +52,7 @@ const TOP_BAND_COUNT = 2;
 const GATE_SECONDS = 0.001;
 const PEAK_WINDOW_SECONDS = 0.0015;
 const PACKET_AVERAGE_SECONDS = 0.0008;
+const TEMPLATE_LOG_GAIN = 10;
 const HISTORY_BEATS = [8, 10, 12, 14, 16, 18, 20, 24, 30, 36, 40];
 
 const EMPTY_TRACKING_STATE: TrackingState = {
@@ -273,7 +274,7 @@ const findFoldTemplate = (
   let totalScore = 0;
 
   for (let bin = 0; bin < smoothed.length; bin += 1) {
-    template[bin] = Math.max(0, smoothed[bin] - rowMean);
+    template[bin] = Math.log1p(Math.max(0, smoothed[bin] - rowMean) * TEMPLATE_LOG_GAIN);
   }
 
   for (let segment = 0; segment < segmentCount; segment += 1) {
@@ -459,6 +460,22 @@ const estimateBph = (picks: BeatPick[], standardBph: number) => {
   };
 };
 
+const estimateWithTemplate = (
+  globalState: TrackingGlobalState,
+  bandIndexes: number[],
+  templateBph: number,
+  standardBph: number,
+) => {
+  const template = findFoldTemplate(globalState, templateBph, bandIndexes);
+  const picks = pickBeats(globalState, templateBph, template, bandIndexes);
+  const estimate = estimateBph(picks, standardBph);
+
+  return {
+    template,
+    estimate,
+  };
+};
+
 const trackStep = (
   previous: TrackingState,
   globalState: TrackingGlobalState,
@@ -477,16 +494,26 @@ const trackStep = (
   if (!standardBph) return previous;
 
   const bandIndexes = chooseBandIndexes(globalState, foldRows, standardBph);
-  const template = findFoldTemplate(globalState, standardBph, bandIndexes);
-  const picks = pickBeats(globalState, standardBph, template, bandIndexes);
-  const estimate = estimateBph(picks, standardBph);
+  let result = estimateWithTemplate(globalState, bandIndexes, standardBph, standardBph);
+
+  if (
+    result.estimate.measuredBph !== null &&
+    Math.abs(result.estimate.measuredBph - standardBph) <= MAX_ERROR_BPH
+  ) {
+    result = estimateWithTemplate(
+      globalState,
+      bandIndexes,
+      result.estimate.measuredBph,
+      standardBph,
+    );
+  }
 
   return {
     standardBph,
-    measuredBph: estimate.measuredBph ?? previous.measuredBph,
-    confidenceBph: estimate.confidenceBph,
-    candidates: estimate.candidates,
-    score: template.score,
+    measuredBph: result.estimate.measuredBph ?? previous.measuredBph,
+    confidenceBph: result.estimate.confidenceBph,
+    candidates: result.estimate.candidates,
+    score: result.template.score,
   };
 };
 

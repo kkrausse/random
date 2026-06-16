@@ -33,12 +33,10 @@ const INITIAL_ERROR_BPH = 300;
 const MAX_ERROR_BPH = 300;
 const EDGE_SCORE_RATIO = 1.05;
 const EDGE_SCORE_MARGIN = 0.25;
-const CONVERGE_SCORE_RATIO = 1.01;
-const CONVERGE_SCORE_MARGIN = 0.05;
 const CURVE_DROP_RATIO = 1.01;
 const CURVE_DROP_MARGIN = 0.05;
 const PEAK_PROMINENCE_RATIO = 1.001;
-const PEAK_PROMINENCE_MARGIN = 0.02;
+const PEAK_PROMINENCE_MARGIN = 0.0000002;
 const COMPETING_PEAK_RATIO = 0.995;
 const COMPETING_PEAK_MARGIN = 0.12;
 const OUTWARD_VIOLATION_RATIO = 1.001;
@@ -46,8 +44,8 @@ const OUTWARD_VIOLATION_MARGIN = 0.04;
 const MAX_OUTWARD_VIOLATIONS = 2;
 const PACKET_AVERAGE_SECONDS = 0.0008;
 const PEAK_WINDOW_SECONDS = 0.0015;
-const EXPAND_ERROR_SCALE = 1.5;
-const SHRINK_ERROR_SCALE = 0.9;
+const EXPAND_ERROR_SCALE = 1.4;
+const SHRINK_ERROR_SCALE = 0.7;
 const UNCERTAIN_ERROR_SCALE = 1.1;
 const SEARCH_OFFSETS = Array.from({ length: 21 }, (_, index) => (index - 10) / 10);
 const SCORE_ROW_COUNT = 2;
@@ -305,9 +303,7 @@ const curveDecision = (
     };
   }
 
-  const bestBeatsCenter =
-    bestIndex === centerIndex ||
-    scoreIsBetter(bestScore, centerScore, CONVERGE_SCORE_RATIO, CONVERGE_SCORE_MARGIN);
+  const bestBeatsCenter = bestIndex === centerIndex || bestScore > centerScore;
   const bestBeatsEdges =
     scoreIsBetter(bestScore, candidates[0].score, CURVE_DROP_RATIO, CURVE_DROP_MARGIN) &&
     scoreIsBetter(
@@ -322,10 +318,10 @@ const curveDecision = (
     countOutwardViolations(candidates, bestIndex) <= MAX_OUTWARD_VIOLATIONS &&
     bestBeatsEdges;
 
-  if (clearPeak && bestBeatsCenter) {
+  if (bestBeatsCenter) {
     return {
       measuredIndex: bestIndex,
-      errorScale: SHRINK_ERROR_SCALE,
+      errorScale: clearPeak ? SHRINK_ERROR_SCALE : 1,
     };
   }
 
@@ -395,7 +391,7 @@ const smoothMeasuredBph = (
     return measuredBph;
   }
 
-  return previous.measuredBph * 0.75 + measuredBph * 0.25;
+  return previous.measuredBph * 0.25 + measuredBph * 0.75;
 };
 
 const nextConfidenceBph = (
