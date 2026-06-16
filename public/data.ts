@@ -7,6 +7,7 @@ export {
   DEFAULT_FEATURE_LOG_GAIN,
   DEFAULT_FEATURE_POST_FRAME_COUNT,
   DEFAULT_FEATURE_RATE,
+  DEFAULT_LIFT_ANGLE_DEGREES,
   DEFAULT_ANALYSIS_INTERVAL_MS,
   DEFAULT_PERIOD_SECONDS,
   DEFAULT_TRACKING_FOLD_BIN_COUNT,
@@ -46,6 +47,7 @@ export type ConfigureAnalysisMessage = {
   type: "configure";
   periodSeconds: number;
   binCount: number;
+  liftAngleDegrees: number;
 };
 
 export type FoldRow = {
@@ -90,6 +92,20 @@ export type TickTockPeakSample = {
   points: number[];
 };
 
+export type AmplitudeMeasurement = {
+  name: "tick" | "tock";
+  firstOffsetSeconds: number;
+  liftSeconds: number;
+  amplitudeDegrees: number | null;
+};
+
+export type BalanceAmplitude = {
+  liftAngleDegrees: number;
+  averageDegrees: number | null;
+  averageLiftSeconds: number | null;
+  measurements: AmplitudeMeasurement[];
+};
+
 export type AnalysisMessage = {
   type: "analysis";
   periodSeconds: number;
@@ -102,6 +118,7 @@ export type AnalysisMessage = {
   trackingBandFolds: TrackingBandFold[];
   trackingCandidateFolds: TrackingFold[];
   tickTockPeakSamples: TickTockPeakSample[];
+  balanceAmplitude: BalanceAmplitude | null;
 };
 
 export type WorkletToMainMessage = ReadyMessage | FeatureMessage;

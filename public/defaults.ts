@@ -1,4 +1,5 @@
-export const DEFAULT_PERIOD_SECONDS = 3;
+export const DEFAULT_PERIOD_SECONDS = 6;
+export const DEFAULT_LIFT_ANGLE_DEGREES = 52;
 export const DEFAULT_FEATURE_RATE = 2**13;
 export const DEFAULT_BIN_COUNT = 64;
 export const DEFAULT_TRACKING_FOLD_BIN_COUNT = 4096;

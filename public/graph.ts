@@ -12,15 +12,31 @@ type HeatmapPoint = [number, number, number];
 
 type TickTockPeakData = {
   zoomSeconds: number;
+  yMin: number;
   yMax: number;
-  series: {
+  series: ({
     name: string;
     type: "line";
     data: ChartPoint[];
     showSymbol: false;
-    lineStyle: { width: number; opacity?: number };
+    lineStyle: {
+      width: number;
+      opacity?: number;
+      color?: string;
+      type?: "solid" | "dashed" | "dotted";
+    };
+    z?: number;
     silent?: boolean;
-  }[];
+  } | {
+    name: string;
+    type: "scatter";
+    data: ChartPoint[];
+    symbolSize: number;
+    itemStyle: { color: string; borderColor?: string; borderWidth?: number };
+    label?: { show: boolean; formatter: string; position: string; fontSize: number };
+    z?: number;
+    silent?: boolean;
+  })[];
 };
 
 type TooltipParams = {
@@ -100,24 +116,106 @@ const makePeakWindow = (
   return points;
 };
 
-const normalizePoints = (points: ChartPoint[], sign: 1 | -1 = 1) => {
-  let peak = 0;
+const makeMarkerLine = (offsetSeconds: number, yMin: number, yMax: number): ChartPoint[] => [
+  [offsetSeconds, yMin],
+  [offsetSeconds, yMax],
+];
+
+const yBoundsFor = (points: ChartPoint[]) => {
+  let yMin = 0;
+  let yMax = 0;
+
   for (let index = 0; index < points.length; index += 1) {
-    peak = Math.max(peak, Math.abs(points[index][1]));
+    yMin = Math.min(yMin, points[index][1]);
+    yMax = Math.max(yMax, points[index][1]);
   }
 
-  if (peak <= 0) return points;
-
-  return points.map((point) => [
-    point[0],
-    Number(((point[1] / peak) * sign).toFixed(4)),
-  ] as ChartPoint);
+  const padding = Math.max((yMax - yMin) * 0.08, 0.001);
+  return {
+    yMin: Number((yMin - padding).toFixed(4)),
+    yMax: Number((yMax + padding).toFixed(4)),
+  };
 };
 
-const makeEstimateLine = (offsetSeconds: number): ChartPoint[] => [
-  [offsetSeconds, -1.05],
-  [offsetSeconds, 1.05],
-];
+const nearestPoint = (points: ChartPoint[], x: number) => {
+  let best = points[0] ?? [x, 0] as ChartPoint;
+  let bestDistance = Math.abs(best[0] - x);
+
+  for (let index = 1; index < points.length; index += 1) {
+    const distance = Math.abs(points[index][0] - x);
+    if (distance < bestDistance) {
+      best = points[index];
+      bestDistance = distance;
+    }
+  }
+
+  return best;
+};
+
+const makeAmplitudeMarkerSeries = (
+  analysis: AnalysisMessage,
+  tickPoints: ChartPoint[],
+  tockPoints: ChartPoint[],
+  yMin: number,
+  yMax: number,
+) => {
+  const amplitude = analysis.balanceAmplitude;
+  if (!amplitude) return [];
+
+  const unlockPoints: ChartPoint[] = [];
+  const dropPoints: ChartPoint[] = [];
+  const series = [
+    {
+      name: "drop line",
+      type: "line" as const,
+      data: makeMarkerLine(0, yMin, yMax),
+      showSymbol: false as const,
+      lineStyle: { width: 3, opacity: 1, color: "#f97316", type: "dotted" as const },
+      z: 20,
+      silent: true,
+    },
+  ];
+
+  for (let index = 0; index < amplitude.measurements.length; index += 1) {
+    const measurement = amplitude.measurements[index];
+    const points = measurement.name === "tick" ? tickPoints : tockPoints;
+    unlockPoints.push(nearestPoint(points, measurement.firstOffsetSeconds));
+    dropPoints.push(nearestPoint(points, 0));
+    series.push({
+      name: `${measurement.name} unlock line`,
+      type: "line" as const,
+      data: makeMarkerLine(measurement.firstOffsetSeconds, yMin, yMax),
+      showSymbol: false as const,
+      lineStyle: { width: 3, opacity: 1, color: "#f97316", type: "dotted" as const },
+      z: 20,
+      silent: true,
+    });
+  }
+
+  return [
+    ...series,
+    {
+      name: "unlock",
+      type: "scatter" as const,
+      data: unlockPoints,
+      symbolSize: 8,
+      itemStyle: { color: "#f97316", borderColor: "#111827", borderWidth: 1 },
+      label: { show: true, formatter: "unlock", position: "top", fontSize: 11 },
+      z: 30,
+      silent: true,
+    },
+    {
+      name: "drop",
+      type: "scatter" as const,
+      data: dropPoints,
+      symbolSize: 8,
+      itemStyle: { color: "#f97316", borderColor: "#111827", borderWidth: 1 },
+      label: { show: true, formatter: "drop", position: "bottom", fontSize: 11 },
+      z: 30,
+      silent: true,
+    },
+  ];
+};
 
 const makeTickTockPeakData = (
   analysis: AnalysisMessage,
@@ -149,6 +247,9 @@ const makeTickTockPeakData = (
     binSeconds,
     -1,
   );
+  const tickPoints = tickData;
+  const tockPoints = tockData;
+  const { yMin, yMax } = yBoundsFor([...tickPoints, ...tockPoints]);
   const sampleSeries = analysis.tickTockPeakSamples.flatMap((sample) => {
     const points = Array.from({ length: Math.floor(sample.points.length / 2) }, (_, index) => [
       sample.points[index * 2],
@@ -158,7 +259,7 @@ const makeTickTockPeakData = (
       {
         name: sample.name,
         type: "line" as const,
-        data: normalizePoints(points),
+        data: points,
         showSymbol: false as const,
         lineStyle: { width: 1, opacity: 0.18 },
         silent: true,
@@ -170,7 +271,7 @@ const makeTickTockPeakData = (
     series.push({
       name: `${sample.name} estimate`,
       type: "line" as const,
-      data: makeEstimateLine(sample.estimateOffsetSeconds),
+      data: makeMarkerLine(sample.estimateOffsetSeconds, yMin, yMax),
       showSymbol: false as const,
       lineStyle: { width: 1, opacity: 0.12 },
       silent: true,
@@ -181,23 +282,25 @@ const makeTickTockPeakData = (
 
   return {
     zoomSeconds: Number((windowBins * binSeconds).toFixed(5)),
-    yMax: 1.1,
+    yMin,
+    yMax,
     series: [
       ...sampleSeries,
       {
         name: "tick",
         type: "line",
-        data: normalizePoints(tickData),
+        data: tickPoints,
         showSymbol: false,
         lineStyle: { width: 2 },
       },
       {
         name: "tock",
         type: "line",
-        data: normalizePoints(tockData),
+        data: tockPoints,
         showSymbol: false,
         lineStyle: { width: 2 },
       },
+      ...makeAmplitudeMarkerSeries(analysis, tickPoints, tockPoints, yMin, yMax),
     ],
   };
 };
@@ -216,7 +319,7 @@ export const createTrackingFoldChart = (element: HTMLElement) => {
           left: 48,
           right: 20,
           top: 32,
-          bottom: 48,
+          bottom: 64,
         },
         xAxis: {
           type: "value",
@@ -313,12 +416,14 @@ export const createTickTockPeakChart = (element: HTMLElement) => {
       grid: {
         left: 48,
         right: 20,
-        top: 32,
-        bottom: 48,
+        top: 24,
+        bottom: 72,
       },
       legend: {
-        top: 0,
-        data: ["tick", "tock"],
+        bottom: 8,
+        left: "center",
+        itemGap: 40,
+        data: ["tick", "tock", "unlock", "drop"],
       },
       tooltip: {
         trigger: "axis",
@@ -334,8 +439,8 @@ export const createTickTockPeakChart = (element: HTMLElement) => {
       },
       yAxis: {
         type: "value",
-        name: "normalized tick + / tock -",
-        min: -peakData.yMax,
+        name: "tick + / tock -",
+        min: peakData.yMin,
         max: peakData.yMax,
       },
       series: peakData.series,

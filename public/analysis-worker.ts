@@ -3,6 +3,7 @@ import {
   DEFAULT_ANALYSIS_INTERVAL_MS,
   DEFAULT_BIN_COUNT,
   DEFAULT_FEATURE_RATE,
+  DEFAULT_LIFT_ANGLE_DEGREES,
   DEFAULT_PERIOD_SECONDS,
   DEFAULT_TRACKING_FOLD_BIN_COUNT,
 } from "./defaults";
@@ -15,6 +16,7 @@ import type {
   FeatureMessage,
   FoldRow,
   MainToAnalysisWorkerMessage,
+  AmplitudeMeasurement,
   TickTockPeakSample,
   TrackingBandFold,
 } from "./data";
@@ -36,6 +38,7 @@ const state = {
   periodSeconds: DEFAULT_PERIOD_SECONDS,
   featureRate: DEFAULT_FEATURE_RATE,
   binCount: DEFAULT_BIN_COUNT,
+  liftAngleDegrees: DEFAULT_LIFT_ANGLE_DEGREES,
   cycleBeats: 2,
   bands: [] as string[],
   frames: [] as Frame[],
@@ -47,6 +50,11 @@ const state = {
 const configure = (message: ConfigureAnalysisMessage) => {
   state.periodSeconds = clamp(Number(message.periodSeconds) || DEFAULT_PERIOD_SECONDS, 2, 30);
   state.binCount = Number(message.binCount) || DEFAULT_BIN_COUNT;
+  state.liftAngleDegrees = clamp(
+    Number(message.liftAngleDegrees) || DEFAULT_LIFT_ANGLE_DEGREES,
+    20,
+    90,
+  );
   trimFrames();
 };
 
@@ -204,6 +212,8 @@ const frameEnergy = (frame: Frame) => {
   return total;
 };
 
+const wrapIndex = (index: number, count: number) => ((index % count) + count) % count;
+
 const findPeakBin = (bins: Float32Array, start: number, count: number) => {
   let peakBin = start;
   let peakValue = bins[start] ?? 0;
@@ -217,6 +227,192 @@ const findPeakBin = (bins: Float32Array, start: number, count: number) => {
   }
 
   return peakBin;
+};
+
+const smoothBeatValue = (
+  bins: Float32Array,
+  beatStartBin: number,
+  beatBinCount: number,
+  beatOffset: number,
+  radius: number,
+) => {
+  let total = 0;
+  let count = 0;
+
+  for (let offset = -radius; offset <= radius; offset += 1) {
+    const bin = beatStartBin + wrapIndex(beatOffset + offset, beatBinCount);
+    total += bins[bin] ?? 0;
+    count += 1;
+  }
+
+  return count ? total / count : 0;
+};
+
+const findFirstLumpOffset = (
+  bins: Float32Array,
+  beatStartBin: number,
+  peakBin: number,
+  beatBinCount: number,
+  windowBins: number,
+  smoothRadius: number,
+) => {
+  const peakOffset = peakBin - beatStartBin;
+  const peakValue = smoothBeatValue(
+    bins,
+    beatStartBin,
+    beatBinCount,
+    peakOffset,
+    smoothRadius,
+  );
+  const minValue = peakValue * 0.08;
+  let firstAboveOffset: number | null = null;
+  let bestOffset = 0;
+  let bestValue = 0;
+
+  for (let offset = -windowBins + 1; offset < -1; offset += 1) {
+    const beatOffset = wrapIndex(peakOffset + offset, beatBinCount);
+    const prev = smoothBeatValue(
+      bins,
+      beatStartBin,
+      beatBinCount,
+      beatOffset - 1,
+      smoothRadius,
+    );
+    const value = smoothBeatValue(
+      bins,
+      beatStartBin,
+      beatBinCount,
+      beatOffset,
+      smoothRadius,
+    );
+    const next = smoothBeatValue(
+      bins,
+      beatStartBin,
+      beatBinCount,
+      beatOffset + 1,
+      smoothRadius,
+    );
+
+    if (firstAboveOffset === null && value >= minValue) {
+      firstAboveOffset = offset;
+    }
+
+    if (value >= minValue && value >= prev && value > next) {
+      return offset;
+    }
+
+    if (value > bestValue) {
+      bestOffset = offset;
+      bestValue = value;
+    }
+  }
+
+  if (firstAboveOffset !== null) return firstAboveOffset;
+
+  return bestValue >= minValue ? bestOffset : null;
+};
+
+const amplitudeFromLiftTime = (
+  liftAngleDegrees: number,
+  liftSeconds: number,
+  cycleSeconds: number,
+) => {
+  if (liftSeconds <= 0 || cycleSeconds <= 0) return null;
+
+  const denominator = 2 * Math.sin((Math.PI * liftSeconds) / cycleSeconds);
+  if (denominator <= 0) return null;
+
+  return liftAngleDegrees / denominator;
+};
+
+const buildAmplitudeMeasurement = (
+  name: "tick" | "tock",
+  fold: NonNullable<ReturnType<typeof buildTrackingFold>>,
+  beatStartBin: number,
+  peakBin: number,
+  beatBinCount: number,
+  windowBins: number,
+  binSeconds: number,
+  cycleSeconds: number,
+) => {
+  const smoothRadius = Math.max(1, Math.round(0.00025 / binSeconds));
+  const firstOffset = findFirstLumpOffset(
+    fold.bins,
+    beatStartBin,
+    peakBin,
+    beatBinCount,
+    windowBins,
+    smoothRadius,
+  );
+
+  if (firstOffset === null) return null;
+
+  const liftSeconds = Math.abs(firstOffset * binSeconds);
+  const amplitudeDegrees = amplitudeFromLiftTime(
+    state.liftAngleDegrees,
+    liftSeconds,
+    cycleSeconds,
+  );
+
+  return {
+    name,
+    firstOffsetSeconds: Number((firstOffset * binSeconds).toFixed(5)),
+    liftSeconds: Number(liftSeconds.toFixed(5)),
+    amplitudeDegrees:
+      amplitudeDegrees === null ? null : Number(amplitudeDegrees.toFixed(1)),
+  };
+};
+
+const buildBalanceAmplitude = (fold: NonNullable<ReturnType<typeof buildTrackingFold>>) => {
+  if (fold.cycleBeats < 2) return null;
+
+  const cycleSeconds = (3600 / fold.bph) * fold.cycleBeats;
+  const beatBinCount = Math.floor(fold.binCount / fold.cycleBeats);
+  const binSeconds = cycleSeconds / fold.binCount;
+  const windowBins = Math.max(2, Math.round(beatBinCount * 0.12));
+  const tickPeakBin = findPeakBin(fold.bins, 0, beatBinCount);
+  const tockStartBin = beatBinCount;
+  const tockPeakBin = findPeakBin(fold.bins, tockStartBin, beatBinCount);
+  const measurements = [
+    buildAmplitudeMeasurement(
+      "tick",
+      fold,
+      0,
+      tickPeakBin,
+      beatBinCount,
+      windowBins,
+      binSeconds,
+      cycleSeconds,
+    ),
+    buildAmplitudeMeasurement(
+      "tock",
+      fold,
+      tockStartBin,
+      tockPeakBin,
+      beatBinCount,
+      windowBins,
+      binSeconds,
+      cycleSeconds,
+    ),
+  ].filter((measurement) => measurement !== null) as AmplitudeMeasurement[];
+  const valid = measurements
+    .map((measurement) => measurement.amplitudeDegrees)
+    .filter((value) => value !== null) as number[];
+  const averageDegrees = valid.length
+    ? valid.reduce((total, value) => total + value, 0) / valid.length
+    : null;
+  const averageLiftSeconds = measurements.length
+    ? measurements.reduce((total, measurement) => total + measurement.liftSeconds, 0) /
+      measurements.length
+    : null;
+
+  return {
+    liftAngleDegrees: state.liftAngleDegrees,
+    averageDegrees: averageDegrees === null ? null : Number(averageDegrees.toFixed(1)),
+    averageLiftSeconds:
+      averageLiftSeconds === null ? null : Number(averageLiftSeconds.toFixed(5)),
+    measurements,
+  };
 };
 
 const buildPeakSample = (
@@ -362,6 +558,7 @@ const maybePostAnalysis = () => {
   const tickTockPeakSamples = trackingFold
     ? buildTickTockPeakSamples(trackingFold, estimateFold)
     : [];
+  const balanceAmplitude = trackingFold ? buildBalanceAmplitude(trackingFold) : null;
   const transfers = rows.map((row) => row.bins.buffer);
   if (trackingFold) {
     transfers.push(trackingFold.bins.buffer);
@@ -396,6 +593,7 @@ const maybePostAnalysis = () => {
       trackingBandFolds,
       trackingCandidateFolds,
       tickTockPeakSamples,
+      balanceAmplitude,
     },
     transfers,
   );

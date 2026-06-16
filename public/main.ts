@@ -1,5 +1,6 @@
 import {
   DEFAULT_BIN_COUNT,
+  DEFAULT_LIFT_ANGLE_DEGREES,
   DEFAULT_PERIOD_SECONDS,
   MAX_PERIOD_SECONDS,
   MIN_PERIOD_SECONDS,
@@ -50,7 +51,22 @@ type CaptureBatch = {
   }[];
 };
 
+type TimegraphAssets = {
+  analysisWorker?: string;
+  featureWorklet?: string;
+  version?: string;
+};
+
 const CAPTURE_WINDOW_SECONDS = 20;
+const assetConfig = (window as Window & { __TIMEGRAPH_ASSETS__?: TimegraphAssets })
+  .__TIMEGRAPH_ASSETS__;
+const sourceVersion = assetConfig?.version || String(Date.now());
+
+const sourceUrl = (path: string, configuredPath?: string) => {
+  const url = configuredPath || path;
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}v=${sourceVersion}`;
+};
 
 const query = <T extends HTMLElement>(selector: string) => {
   const element = document.querySelector<T>(selector);
@@ -65,12 +81,16 @@ const elements = {
   captureToggle: query<HTMLButtonElement>("#capture-toggle"),
   period: query<HTMLInputElement>("#period"),
   periodValue: query<HTMLOutputElement>("#period-value"),
+  liftAngle: query<HTMLInputElement>("#lift-angle"),
+  liftAngleValue: query<HTMLOutputElement>("#lift-angle-value"),
   featureRate: query<HTMLElement>("#feature-rate"),
   sampleRate: query<HTMLElement>("#sample-rate"),
   bands: query<HTMLElement>("#bands"),
   standardBph: query<HTMLElement>("#standard-bph"),
   measuredBph: query<HTMLElement>("#measured-bph"),
   secondsPerDay: query<HTMLElement>("#seconds-per-day"),
+  amplitude: query<HTMLElement>("#amplitude"),
+  unlockDrop: query<HTMLElement>("#unlock-drop"),
   errorSecondsPerDay: query<HTMLElement>("#error-seconds-per-day"),
   analysisMs: query<HTMLElement>("#analysis-ms"),
   framesBuffered: query<HTMLElement>("#frames-buffered"),
@@ -89,6 +109,8 @@ const setDefaultPeriod = () => {
 };
 
 setDefaultPeriod();
+elements.liftAngle.value = String(DEFAULT_LIFT_ANGLE_DEGREES);
+elements.liftAngleValue.textContent = `${DEFAULT_LIFT_ANGLE_DEGREES}°`;
 
 const app: AppState = {
   audioContext: null,
@@ -153,8 +175,15 @@ const trimCaptureBatches = () => {
 
 const getPeriodSeconds = () => Number(elements.period.value) || DEFAULT_PERIOD_SECONDS;
 
+const getLiftAngleDegrees = () =>
+  Number(elements.liftAngle.value) || DEFAULT_LIFT_ANGLE_DEGREES;
+
 const updatePeriodDisplay = () => {
   elements.periodValue.textContent = `${getPeriodSeconds()}s`;
+};
+
+const updateLiftAngleDisplay = () => {
+  elements.liftAngleValue.textContent = `${getLiftAngleDegrees()}°`;
 };
 
 const makeCaptureJson = () => {
@@ -213,6 +242,8 @@ const resetTrackingDisplay = () => {
   elements.standardBph.textContent = "-";
   elements.measuredBph.textContent = "-";
   elements.secondsPerDay.textContent = "-";
+  elements.amplitude.textContent = "-";
+  elements.unlockDrop.textContent = "-";
   elements.errorSecondsPerDay.textContent = "-";
   elements.sampleRate.textContent = "-";
   elements.analysisMs.textContent = "-";
@@ -234,6 +265,16 @@ const updateTrackingDisplay = (message: AnalysisWorkerToMainMessage) => {
     tracking.standardBph === null ? "-" : String(Math.round(tracking.standardBph));
   elements.measuredBph.textContent = formatBph(tracking.measuredBph);
   elements.secondsPerDay.textContent = formatSigned(secondsPerDay);
+  elements.amplitude.textContent =
+    message.balanceAmplitude?.averageDegrees === null ||
+    message.balanceAmplitude?.averageDegrees === undefined
+      ? "-"
+      : `${message.balanceAmplitude.averageDegrees.toFixed(1)}°`;
+  elements.unlockDrop.textContent =
+    message.balanceAmplitude?.averageLiftSeconds === null ||
+    message.balanceAmplitude?.averageLiftSeconds === undefined
+      ? "-"
+      : `${(message.balanceAmplitude.averageLiftSeconds * 1000).toFixed(2)} ms`;
   elements.errorSecondsPerDay.textContent = formatRange(errorSecondsPerDay);
   elements.analysisMs.textContent = `${message.analysisMs.toFixed(1)} ms`;
   elements.framesBuffered.textContent = `${(message.framesBuffered / message.featureRate).toFixed(1)}s`;
@@ -246,13 +287,14 @@ const configureWorker = () => {
     type: "configure",
     periodSeconds: getPeriodSeconds(),
     binCount: DEFAULT_BIN_COUNT,
+    liftAngleDegrees: getLiftAngleDegrees(),
   };
 
   app.worker.postMessage(message);
 };
 
 const createWorker = () => {
-  const worker = new Worker("analysis-worker.js", {
+  const worker = new Worker(sourceUrl("analysis-worker.js", assetConfig?.analysisWorker), {
     type: "module",
   });
 
@@ -301,7 +343,9 @@ const start = async () => {
     });
 
     app.audioContext = new AudioContext();
-    await app.audioContext.audioWorklet.addModule("feature-worklet.js");
+    await app.audioContext.audioWorklet.addModule(
+      sourceUrl("feature-worklet.js", assetConfig?.featureWorklet),
+    );
 
     app.source = app.audioContext.createMediaStreamSource(app.stream);
     app.worklet = new AudioWorkletNode(app.audioContext, "feature-processor");
@@ -390,5 +434,10 @@ elements.captureToggle.addEventListener("click", () => {
 
 elements.period.addEventListener("input", () => {
   updatePeriodDisplay();
+  configureWorker();
+});
+
+elements.liftAngle.addEventListener("input", () => {
+  updateLiftAngleDisplay();
   configureWorker();
 });

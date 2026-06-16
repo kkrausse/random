@@ -44,7 +44,8 @@
       }
 
       button,
-      input[type="range"] {
+      input[type="range"],
+      output {
         min-height: 34px;
         font: inherit;
       }
@@ -82,6 +83,15 @@
 
       .period-control input {
         width: 160px;
+      }
+
+      .lift-angle-control input {
+        width: 160px;
+      }
+
+      .lift-angle-value {
+        min-width: 34px;
+        color: #4a5564;
       }
 
       .period-value {
@@ -128,6 +138,10 @@
         border-bottom: 1px solid #d8dee8;
       }
 
+      .chart-block-wide {
+        overflow-x: auto;
+      }
+
       .chart-title {
         margin: 0;
         padding: 12px 18px 0;
@@ -145,6 +159,10 @@
       #tick-tock-peak-chart,
       #tracking-band-fold-chart {
         min-height: 320px;
+      }
+
+      #tick-tock-peak-chart {
+        min-width: 1100px;
       }
 
       #fold-chart {
@@ -218,6 +236,10 @@
                 <td><strong id="seconds-per-day">-</strong></td>
               </tr>
               <tr>
+                <th scope="row">Amplitude</th>
+                <td><strong id="amplitude">-</strong></td>
+              </tr>
+              <tr>
                 <th scope="row">s/day error</th>
                 <td><strong id="error-seconds-per-day">-</strong></td>
               </tr>
@@ -229,9 +251,14 @@
           <input id="period" type="range" min="2" max="30" step="1" />
           <output id="period-value" class="period-value" for="period">-</output>
         </label>
+        <label class="lift-angle-control">
+          Lift angle
+          <input id="lift-angle" type="range" min="20" max="90" step="1" />
+          <output id="lift-angle-value" class="lift-angle-value" for="lift-angle">-</output>
+        </label>
       </header>
       <section class="charts">
-        <section class="chart-block" aria-label="Tracked tick tock peak detail">
+        <section class="chart-block chart-block-wide" aria-label="Tracked tick tock peak detail">
           <h2 class="chart-title">Tick/tock peak detail</h2>
           <div id="tick-tock-peak-chart">
             <div class="message">Start the microphone to see the tick/tock peak detail.</div>
@@ -285,6 +312,10 @@
                 <th scope="row">Worker buffer</th>
                 <td><strong id="frames-buffered">-</strong></td>
               </tr>
+              <tr>
+                <th scope="row">Unlock-drop</th>
+                <td><strong id="unlock-drop">-</strong></td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -294,6 +325,13 @@
       </section>
     </main>
 
+    <script>
+      window.__TIMEGRAPH_ASSETS__ = {
+        analysisWorker: "./analysis-worker.js",
+        featureWorklet: "./feature-worklet.js",
+        version: "dev",
+      };
+    </script>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>
