@@ -577,7 +577,7 @@ export const createFeatureChart = (element: HTMLElement) => {
     }
   };
 
-  const draw = (windowSeconds: number, featureCap: number) => {
+  const draw = (windowSeconds: number) => {
     const series = state.bands.map((band) => ({
       name: band,
       type: "line",
@@ -615,14 +615,13 @@ export const createFeatureChart = (element: HTMLElement) => {
         type: "value",
         name: "amplitude",
         min: 0,
-        max: featureCap,
         scale: true,
       },
       series,
     });
   };
 
-  const update = (message: FeatureMessage, windowSeconds: number, featureCap: number) => {
+  const update = (message: FeatureMessage, windowSeconds: number) => {
     ensureBands(message.features);
     appendBatch(message);
     trim(windowSeconds);
@@ -631,7 +630,7 @@ export const createFeatureChart = (element: HTMLElement) => {
     if (now - state.lastDraw < 100) return;
 
     state.lastDraw = now;
-    draw(windowSeconds, featureCap);
+    draw(windowSeconds);
   };
 
   const resize = () => chart.resize();

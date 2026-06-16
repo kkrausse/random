@@ -1,12 +1,12 @@
 import {
   DEFAULT_BIN_COUNT,
-  DEFAULT_FEATURE_CAP,
   DEFAULT_PERIOD_SECONDS,
+  MAX_PERIOD_SECONDS,
+  MIN_PERIOD_SECONDS,
 } from "./defaults";
 import type {
   AnalysisWorkerToMainMessage,
   ConfigureAnalysisMessage,
-  MainToWorkletMessage,
   WorkletToMainMessage,
 } from "./data";
 import {
@@ -30,8 +30,6 @@ type AppState = {
   graph: ReturnType<typeof createHeatmap>;
   featureGraph: ReturnType<typeof createFeatureChart>;
   running: boolean;
-  captureRecording: boolean;
-  captureStartedAt: string | null;
   captureReady: CaptureReady | null;
   captureBatches: CaptureBatch[];
 };
@@ -54,6 +52,8 @@ type CaptureBatch = {
   }[];
 };
 
+const CAPTURE_WINDOW_SECONDS = 20;
+
 const query = <T extends HTMLElement>(selector: string) => {
   const element = document.querySelector<T>(selector);
   if (!element) {
@@ -65,9 +65,10 @@ const query = <T extends HTMLElement>(selector: string) => {
 const elements = {
   toggle: query<HTMLButtonElement>("#toggle"),
   captureToggle: query<HTMLButtonElement>("#capture-toggle"),
-  period: query<HTMLSelectElement>("#period"),
-  featureCap: query<HTMLSelectElement>("#feature-cap"),
+  period: query<HTMLInputElement>("#period"),
+  periodValue: query<HTMLOutputElement>("#period-value"),
   featureRate: query<HTMLElement>("#feature-rate"),
+  sampleRate: query<HTMLElement>("#sample-rate"),
   bands: query<HTMLElement>("#bands"),
   standardBph: query<HTMLElement>("#standard-bph"),
   measuredBph: query<HTMLElement>("#measured-bph"),
@@ -84,18 +85,10 @@ const elements = {
 };
 
 const setDefaultPeriod = () => {
-  const value = String(DEFAULT_PERIOD_SECONDS);
-  const hasOption = Array.from(elements.period.options).some((option) => option.value === value);
-
-  if (!hasOption) {
-    const option = new Option(`${DEFAULT_PERIOD_SECONDS}s`, value);
-    const before = Array.from(elements.period.options).find(
-      (current) => Number(current.value) > DEFAULT_PERIOD_SECONDS,
-    );
-    elements.period.add(option, before);
-  }
-
-  elements.period.value = value;
+  elements.period.min = String(MIN_PERIOD_SECONDS);
+  elements.period.max = String(MAX_PERIOD_SECONDS);
+  elements.period.value = String(DEFAULT_PERIOD_SECONDS);
+  elements.periodValue.textContent = `${DEFAULT_PERIOD_SECONDS}s`;
 };
 
 setDefaultPeriod();
@@ -113,8 +106,6 @@ const app: AppState = {
   graph: createHeatmap(elements.foldChart),
   featureGraph: createFeatureChart(elements.featureChart),
   running: false,
-  captureRecording: false,
-  captureStartedAt: null,
   captureReady: null,
   captureBatches: [],
 };
@@ -129,25 +120,8 @@ const setRunning = (running: boolean) => {
   elements.toggle.textContent = running ? "Stop microphone" : "Start microphone";
 };
 
-const updateCaptureDisplay = () => {
-  elements.captureToggle.dataset.running = String(app.captureRecording);
-  elements.captureToggle.textContent = app.captureRecording ? "Stop + copy capture" : "Start capture";
-};
-
-const startCapture = () => {
-  app.captureRecording = true;
-  app.captureStartedAt = new Date().toISOString();
-  app.captureBatches = [];
-  updateCaptureDisplay();
-};
-
-const stopCapture = () => {
-  app.captureRecording = false;
-  updateCaptureDisplay();
-};
-
 const captureFeatureMessage = (message: WorkletToMainMessage) => {
-  if (!app.captureRecording || message.type !== "features") return;
+  if (message.type !== "features") return;
 
   app.captureBatches.push({
     startFrame: message.startFrame,
@@ -160,7 +134,31 @@ const captureFeatureMessage = (message: WorkletToMainMessage) => {
       data: Array.from(feature.data),
     })),
   });
-  updateCaptureDisplay();
+  trimCaptureBatches();
+};
+
+const captureBatchEndFrame = (batch: CaptureBatch) =>
+  batch.startFrame + (batch.features[0]?.data.length || 0);
+
+const trimCaptureBatches = () => {
+  const lastBatch = app.captureBatches[app.captureBatches.length - 1];
+  if (!lastBatch) return;
+
+  const latestSeconds = captureBatchEndFrame(lastBatch) / lastBatch.featureRate;
+  const cutoffSeconds = latestSeconds - CAPTURE_WINDOW_SECONDS;
+
+  while (app.captureBatches.length > 1) {
+    const firstBatch = app.captureBatches[0];
+    const firstEndSeconds = captureBatchEndFrame(firstBatch) / firstBatch.featureRate;
+    if (firstEndSeconds >= cutoffSeconds) break;
+    app.captureBatches.shift();
+  }
+};
+
+const getPeriodSeconds = () => Number(elements.period.value) || DEFAULT_PERIOD_SECONDS;
+
+const updatePeriodDisplay = () => {
+  elements.periodValue.textContent = `${getPeriodSeconds()}s`;
 };
 
 const makeCaptureJson = () => {
@@ -168,9 +166,8 @@ const makeCaptureJson = () => {
     {
       version: 1,
       createdAt: new Date().toISOString(),
-      startedAt: app.captureStartedAt,
-      periodSeconds: Number(elements.period.value) || DEFAULT_PERIOD_SECONDS,
-      featureCap: getFeatureCap(),
+      windowSeconds: CAPTURE_WINDOW_SECONDS,
+      periodSeconds: getPeriodSeconds(),
       ready: app.captureReady,
       batches: app.captureBatches,
     },
@@ -180,15 +177,18 @@ const makeCaptureJson = () => {
 };
 
 const copyCapture = async () => {
-  if (app.captureBatches.length === 0) return;
+  if (app.captureBatches.length === 0) {
+    setStatus("No capture data yet.");
+    return;
+  }
 
   const json = makeCaptureJson();
 
   try {
     await navigator.clipboard.writeText(json);
-    elements.captureToggle.textContent = "Copied capture";
+    setStatus(`Copied last ${CAPTURE_WINDOW_SECONDS}s capture.`);
   } catch {
-    elements.captureToggle.textContent = "Copy failed";
+    setStatus("Could not copy capture.");
   }
 };
 
@@ -218,6 +218,7 @@ const resetTrackingDisplay = () => {
   elements.measuredBph.textContent = "-";
   elements.secondsPerDay.textContent = "-";
   elements.errorSecondsPerDay.textContent = "-";
+  elements.sampleRate.textContent = "-";
   elements.analysisMs.textContent = "-";
   elements.framesBuffered.textContent = "-";
 };
@@ -247,24 +248,11 @@ const configureWorker = () => {
 
   const message: ConfigureAnalysisMessage = {
     type: "configure",
-    periodSeconds: Number(elements.period.value) || DEFAULT_PERIOD_SECONDS,
+    periodSeconds: getPeriodSeconds(),
     binCount: DEFAULT_BIN_COUNT,
   };
 
   app.worker.postMessage(message);
-};
-
-const getFeatureCap = () => Number(elements.featureCap.value) || DEFAULT_FEATURE_CAP;
-
-const configureWorklet = () => {
-  if (!app.worklet) return;
-
-  const message: MainToWorkletMessage = {
-    type: "configure",
-    featureCap: getFeatureCap(),
-  };
-
-  app.worklet.port.postMessage(message);
 };
 
 const createWorker = () => {
@@ -302,6 +290,8 @@ const start = async () => {
 
   setStatus("Requesting microphone...");
   app.worker = createWorker();
+  app.captureReady = null;
+  app.captureBatches = [];
   app.featureGraph.reset();
   resetTrackingDisplay();
   configureWorker();
@@ -322,7 +312,6 @@ const start = async () => {
     app.worklet = new AudioWorkletNode(app.audioContext, "feature-processor");
     app.sink = app.audioContext.createGain();
     app.sink.gain.value = 0;
-    configureWorklet();
 
     app.worklet.port.onmessage = (event: MessageEvent<WorkletToMainMessage>) => {
       const message = event.data;
@@ -334,17 +323,14 @@ const start = async () => {
           bands: message.bands,
         };
         elements.featureRate.textContent = `${message.featureRate} Hz`;
+        elements.sampleRate.textContent = `${Math.round(message.sampleRate)} Hz`;
         elements.bands.textContent = String(message.bands.length);
-        setStatus(`Recording at ${Math.round(message.sampleRate)} Hz`);
+        setStatus("Recording");
       }
 
       if (message.type === "features" && app.worker) {
         captureFeatureMessage(message);
-        app.featureGraph.update(
-          message,
-          Number(elements.period.value) || DEFAULT_PERIOD_SECONDS,
-          getFeatureCap(),
-        );
+        app.featureGraph.update(message, getPeriodSeconds());
         const transfers = message.features.map((feature) => feature.data.buffer as ArrayBuffer);
         app.worker.postMessage(message, transfers);
       }
@@ -361,10 +347,6 @@ const start = async () => {
 };
 
 const stop = async () => {
-  if (app.captureRecording) {
-    stopCapture();
-  }
-
   if (app.source) {
     app.source.disconnect();
     app.source = null;
@@ -408,14 +390,10 @@ elements.toggle.addEventListener("click", () => {
 });
 
 elements.captureToggle.addEventListener("click", () => {
-  if (app.captureRecording) {
-    stopCapture();
-    copyCapture();
-  } else {
-    startCapture();
-  }
+  copyCapture();
 });
 
-elements.period.addEventListener("change", configureWorker);
-elements.featureCap.addEventListener("change", configureWorklet);
-updateCaptureDisplay();
+elements.period.addEventListener("input", () => {
+  updatePeriodDisplay();
+  configureWorker();
+});

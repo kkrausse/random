@@ -4,7 +4,6 @@ export {
   BASE_BANDS,
   CANDIDATE_BPH,
   DEFAULT_BIN_COUNT,
-  DEFAULT_FEATURE_CAP,
   DEFAULT_FEATURE_LOG_GAIN,
   DEFAULT_FEATURE_POST_FRAME_COUNT,
   DEFAULT_FEATURE_RATE,
@@ -47,11 +46,6 @@ export type ConfigureAnalysisMessage = {
   type: "configure";
   periodSeconds: number;
   binCount: number;
-};
-
-export type ConfigureWorkletMessage = {
-  type: "configure";
-  featureCap: number;
 };
 
 export type FoldRow = {
@@ -111,7 +105,6 @@ export type AnalysisMessage = {
 };
 
 export type WorkletToMainMessage = ReadyMessage | FeatureMessage;
-export type MainToWorkletMessage = ConfigureWorkletMessage;
 export type MainToAnalysisWorkerMessage = ConfigureAnalysisMessage | FeatureMessage;
 export type AnalysisWorkerToMainMessage = AnalysisMessage;
 

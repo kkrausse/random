@@ -1,11 +1,9 @@
 import {
   BASE_BANDS,
-  DEFAULT_FEATURE_CAP,
   DEFAULT_FEATURE_LOG_GAIN,
   DEFAULT_FEATURE_POST_FRAME_COUNT,
   DEFAULT_FEATURE_RATE,
 } from "./defaults";
-import type { ConfigureWorkletMessage } from "./data";
 
 declare const sampleRate: number;
 declare function registerProcessor(
@@ -88,7 +86,6 @@ class FeatureProcessor extends AudioWorkletProcessor {
   featurePhase = 0;
   startFeatureFrame = 0;
   startRawFrame = 0;
-  featureCap = DEFAULT_FEATURE_CAP;
 
   constructor() {
     super();
@@ -102,16 +99,6 @@ class FeatureProcessor extends AudioWorkletProcessor {
     this.slow = new Float32Array(this.bands.length);
     this.current = new Float32Array(this.bands.length);
     this.batch = this.bands.map(() => new Float32Array(DEFAULT_FEATURE_POST_FRAME_COUNT));
-
-    this.port.onmessage = (event: MessageEvent<ConfigureWorkletMessage>) => {
-      const message = event.data;
-      if (message.type !== "configure") return;
-
-      const featureCap = Number(message.featureCap);
-      if (Number.isFinite(featureCap) && featureCap > 0) {
-        this.featureCap = featureCap;
-      }
-    };
 
     this.port.postMessage({
       type: "ready",
@@ -166,7 +153,7 @@ class FeatureProcessor extends AudioWorkletProcessor {
 
     for (let bandIndex = 0; bandIndex < this.bands.length; bandIndex += 1) {
       const compressed = Math.log1p(this.current[bandIndex] * DEFAULT_FEATURE_LOG_GAIN);
-      this.batch[bandIndex][this.batchOffset] = Math.min(compressed, this.featureCap);
+      this.batch[bandIndex][this.batchOffset] = compressed;
       this.current[bandIndex] = 0;
     }
 

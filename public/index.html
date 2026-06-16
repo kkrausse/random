@@ -45,16 +45,16 @@
       }
 
       button,
-      select {
+      input[type="range"] {
         min-height: 34px;
-        border: 1px solid #aeb8c6;
-        border-radius: 6px;
-        background: #ffffff;
-        color: #17202a;
         font: inherit;
       }
 
       button {
+        border: 1px solid #aeb8c6;
+        border-radius: 6px;
+        background: #ffffff;
+        color: #17202a;
         padding: 0 14px;
         cursor: pointer;
       }
@@ -69,6 +69,19 @@
         gap: 6px;
         align-items: center;
         font-size: 14px;
+      }
+
+      .period-control {
+        gap: 8px;
+      }
+
+      .period-control input {
+        width: 160px;
+      }
+
+      .period-value {
+        min-width: 32px;
+        color: #4a5564;
       }
 
       .stats-wrap {
@@ -92,10 +105,6 @@
       .stats-table th {
         font-weight: 500;
         color: #4a5564;
-      }
-
-      select {
-        padding: 0 8px;
       }
 
       #status {
@@ -148,6 +157,22 @@
         color: #6b7280;
       }
 
+      .diagnostics {
+        padding: 18px;
+        background: #ffffff;
+        border-top: 1px solid #d8dee8;
+      }
+
+      .diagnostics h2 {
+        margin: 0 0 10px;
+        font-size: 14px;
+        font-weight: 650;
+      }
+
+      .diagnostics-actions {
+        margin-top: 10px;
+      }
+
       @media (max-width: 740px) {
         header {
           align-items: stretch;
@@ -156,6 +181,15 @@
         h1,
         #status {
           width: 100%;
+        }
+
+        .period-control {
+          width: 100%;
+        }
+
+        .period-control input {
+          flex: 1;
+          width: auto;
         }
 
         #fold-chart {
@@ -176,62 +210,25 @@
       <header>
         <h1>timegrapher</h1>
         <button id="toggle" type="button" data-running="false">Start microphone</button>
-        <button id="capture-toggle" type="button" data-running="false">Start capture</button>
-        <label>
+        <label class="period-control">
           Period
-          <select id="period">
-            <option value="2">2s</option>
-            <option value="4">4s</option>
-            <option value="5">5s</option>
-            <option value="10">10s</option>
-            <option value="20">20s</option>
-            <option value="30">30s</option>
-          </select>
-        </label>
-        <label>
-          Cap
-          <select id="feature-cap">
-            <option value="0.5">0.5</option>
-            <option value="1">1</option>
-            <option value="2" selected>2</option>
-            <option value="4">4</option>
-            <option value="8">8</option>
-          </select>
+          <input id="period" type="range" min="2" max="30" step="1" />
+          <output id="period-value" class="period-value" for="period">-</output>
         </label>
         <div class="stats-wrap">
           <table class="stats-table">
             <tbody>
               <tr>
-                <th scope="row">Feature rate</th>
-                <td><strong id="feature-rate">-</strong></td>
-              </tr>
-              <tr>
-                <th scope="row">Bands</th>
-                <td><strong id="bands">-</strong></td>
-              </tr>
-              <tr>
                 <th scope="row">Standard BPH</th>
                 <td><strong id="standard-bph">-</strong></td>
-              </tr>
-              <tr>
-                <th scope="row">Measured</th>
-                <td><strong id="measured-bph">-</strong></td>
               </tr>
               <tr>
                 <th scope="row">s/day</th>
                 <td><strong id="seconds-per-day">-</strong></td>
               </tr>
               <tr>
-                <th scope="row">Error</th>
+                <th scope="row">s/day error</th>
                 <td><strong id="error-seconds-per-day">-</strong></td>
-              </tr>
-              <tr>
-                <th scope="row">Analysis</th>
-                <td><strong id="analysis-ms">-</strong></td>
-              </tr>
-              <tr>
-                <th scope="row">Worker buffer</th>
-                <td><strong id="frames-buffered">-</strong></td>
               </tr>
             </tbody>
           </table>
@@ -269,6 +266,42 @@
             <div class="message">Start the microphone to see per-band feature amplitude.</div>
           </div>
         </section>
+      </section>
+      <section class="diagnostics" aria-label="Diagnostics">
+        <h2>Diagnostics</h2>
+        <div class="stats-wrap">
+          <table class="stats-table">
+            <tbody>
+              <tr>
+                <th scope="row">Measured BPH</th>
+                <td><strong id="measured-bph">-</strong></td>
+              </tr>
+              <tr>
+                <th scope="row">Feature rate</th>
+                <td><strong id="feature-rate">-</strong></td>
+              </tr>
+              <tr>
+                <th scope="row">Sample rate</th>
+                <td><strong id="sample-rate">-</strong></td>
+              </tr>
+              <tr>
+                <th scope="row">Bands</th>
+                <td><strong id="bands">-</strong></td>
+              </tr>
+              <tr>
+                <th scope="row">Analysis</th>
+                <td><strong id="analysis-ms">-</strong></td>
+              </tr>
+              <tr>
+                <th scope="row">Worker buffer</th>
+                <td><strong id="frames-buffered">-</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="diagnostics-actions">
+          <button id="capture-toggle" type="button">Save capture</button>
+        </div>
       </section>
     </main>
 
