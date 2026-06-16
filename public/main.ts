@@ -14,7 +14,6 @@ import {
   createHeatmap,
   createTickTockPeakChart,
   createTrackingBandFoldChart,
-  createTrackingFoldChart,
 } from "./graph";
 
 type AppState = {
@@ -24,7 +23,6 @@ type AppState = {
   worklet: AudioWorkletNode | null;
   sink: GainNode | null;
   worker: Worker | null;
-  trackingFoldGraph: ReturnType<typeof createTrackingFoldChart>;
   tickTockPeakGraph: ReturnType<typeof createTickTockPeakChart>;
   trackingBandFoldGraph: ReturnType<typeof createTrackingBandFoldChart>;
   graph: ReturnType<typeof createHeatmap>;
@@ -77,7 +75,6 @@ const elements = {
   analysisMs: query<HTMLElement>("#analysis-ms"),
   framesBuffered: query<HTMLElement>("#frames-buffered"),
   status: query<HTMLElement>("#status"),
-  trackingFoldChart: query<HTMLElement>("#tracking-fold-chart"),
   tickTockPeakChart: query<HTMLElement>("#tick-tock-peak-chart"),
   trackingBandFoldChart: query<HTMLElement>("#tracking-band-fold-chart"),
   foldChart: query<HTMLElement>("#fold-chart"),
@@ -100,7 +97,6 @@ const app: AppState = {
   worklet: null,
   sink: null,
   worker: null,
-  trackingFoldGraph: createTrackingFoldChart(elements.trackingFoldChart),
   tickTockPeakGraph: createTickTockPeakChart(elements.tickTockPeakChart),
   trackingBandFoldGraph: createTrackingBandFoldChart(elements.trackingBandFoldChart),
   graph: createHeatmap(elements.foldChart),
@@ -265,7 +261,6 @@ const createWorker = () => {
     if (message.type !== "analysis") return;
 
     app.graph.update(message);
-    app.trackingFoldGraph.update(message);
     app.tickTockPeakGraph.update(message);
     app.trackingBandFoldGraph.update(message);
     updateTrackingDisplay(message);
