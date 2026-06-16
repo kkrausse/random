@@ -252,7 +252,7 @@ const configureWorker = () => {
 };
 
 const createWorker = () => {
-  const worker = new Worker("/analysis-worker.js", {
+  const worker = new Worker("analysis-worker.js", {
     type: "module",
   });
 
@@ -301,7 +301,7 @@ const start = async () => {
     });
 
     app.audioContext = new AudioContext();
-    await app.audioContext.audioWorklet.addModule("/feature-worklet.js");
+    await app.audioContext.audioWorklet.addModule("feature-worklet.js");
 
     app.source = app.audioContext.createMediaStreamSource(app.stream);
     app.worklet = new AudioWorkletNode(app.audioContext, "feature-processor");
