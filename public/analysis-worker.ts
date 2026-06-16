@@ -224,16 +224,15 @@ const buildPeakSample = (
   peakTime: number,
   windowSeconds: number,
   sign: 1 | -1,
+  estimateTime?: number,
 ) => {
   const points: number[] = [];
-  const frameStep = Math.max(1, Math.ceil(windowSeconds * 2 * state.featureRate / 160));
 
   for (let index = 0; index < state.frames.length; index += 1) {
     const frame = state.frames[index];
     const seconds = frameSeconds(frame);
     if (seconds < peakTime - windowSeconds) continue;
     if (seconds > peakTime + windowSeconds) break;
-    if (points.length && index % frameStep !== 0) continue;
 
     points.push(
       Number((seconds - peakTime).toFixed(5)),
@@ -241,10 +240,31 @@ const buildPeakSample = (
     );
   }
 
-  return points.length ? { name, points } : null;
+  if (!points.length) return null;
+
+  return {
+    name,
+    estimateOffsetSeconds:
+      estimateTime === undefined ? undefined : Number((estimateTime - peakTime).toFixed(5)),
+    points,
+  };
 };
 
-const buildTickTockPeakSamples = (fold: NonNullable<ReturnType<typeof buildTrackingFold>>) => {
+const estimatedPeakTime = (
+  fold: NonNullable<ReturnType<typeof buildTrackingFold>>,
+  peakBin: number,
+  approximateTime: number,
+) => {
+  const cycleSeconds = (3600 / fold.bph) * fold.cycleBeats;
+  const phaseSeconds = (peakBin / fold.binCount) * cycleSeconds;
+  const cycle = Math.round((approximateTime - phaseSeconds) / cycleSeconds);
+  return cycle * cycleSeconds + phaseSeconds;
+};
+
+const buildTickTockPeakSamples = (
+  fold: NonNullable<ReturnType<typeof buildTrackingFold>>,
+  estimateFold: ReturnType<typeof buildTrackingFold>,
+) => {
   if (fold.cycleBeats < 2 || state.frames.length === 0) return [];
 
   const cycleSeconds = (3600 / fold.bph) * fold.cycleBeats;
@@ -253,23 +273,40 @@ const buildTickTockPeakSamples = (fold: NonNullable<ReturnType<typeof buildTrack
   const windowSeconds = Math.max(0.002, beatBinCount * 0.12 * binSeconds);
   const tickPeakBin = findPeakBin(fold.bins, 0, beatBinCount);
   const tockPeakBin = findPeakBin(fold.bins, beatBinCount, beatBinCount);
+  const estimateBeatBinCount = estimateFold
+    ? Math.floor(estimateFold.binCount / estimateFold.cycleBeats)
+    : 0;
+  const estimateTickPeakBin = estimateFold
+    ? findPeakBin(estimateFold.bins, 0, estimateBeatBinCount)
+    : 0;
+  const estimateTockPeakBin = estimateFold
+    ? findPeakBin(estimateFold.bins, estimateBeatBinCount, estimateBeatBinCount)
+    : 0;
   const firstSeconds = frameSeconds(state.frames[0]);
   const lastSeconds = frameSeconds(state.frames[state.frames.length - 1]);
   const firstCycle = Math.floor(firstSeconds / cycleSeconds) - 1;
   const lastCycle = Math.ceil(lastSeconds / cycleSeconds) + 1;
   const samples: TickTockPeakSample[] = [];
-  const peakTimes: { name: string; time: number; sign: 1 | -1 }[] = [];
+  const peakTimes: { name: string; time: number; sign: 1 | -1; estimateTime?: number }[] = [];
 
   for (let cycle = firstCycle; cycle <= lastCycle; cycle += 1) {
+    const tickTime = cycle * cycleSeconds + (tickPeakBin / fold.binCount) * cycleSeconds;
+    const tockTime = cycle * cycleSeconds + (tockPeakBin / fold.binCount) * cycleSeconds;
     peakTimes.push({
       name: "tick sample",
-      time: cycle * cycleSeconds + (tickPeakBin / fold.binCount) * cycleSeconds,
+      time: tickTime,
       sign: 1,
+      estimateTime: estimateFold
+        ? estimatedPeakTime(estimateFold, estimateTickPeakBin, tickTime)
+        : undefined,
     });
     peakTimes.push({
       name: "tock sample",
-      time: cycle * cycleSeconds + (tockPeakBin / fold.binCount) * cycleSeconds,
+      time: tockTime,
       sign: -1,
+      estimateTime: estimateFold
+        ? estimatedPeakTime(estimateFold, estimateTockPeakBin, tockTime)
+        : undefined,
     });
   }
 
@@ -288,6 +325,7 @@ const buildTickTockPeakSamples = (fold: NonNullable<ReturnType<typeof buildTrack
       peak.time,
       windowSeconds,
       peak.sign,
+      peak.estimateTime,
     );
     if (sample) samples.push(sample);
   }
@@ -319,7 +357,11 @@ const maybePostAnalysis = () => {
   const trackingFold = buildTrackingFold(tracking.standardBph);
   const trackingBandFolds = buildTrackingBandFolds(tracking.standardBph);
   const trackingCandidateFolds = buildTrackingCandidateFolds(tracking);
-  const tickTockPeakSamples = trackingFold ? buildTickTockPeakSamples(trackingFold) : [];
+  const estimateFold =
+    tracking.measuredBph === null ? null : buildTrackingFold(tracking.measuredBph);
+  const tickTockPeakSamples = trackingFold
+    ? buildTickTockPeakSamples(trackingFold, estimateFold)
+    : [];
   const transfers = rows.map((row) => row.bins.buffer);
   if (trackingFold) {
     transfers.push(trackingFold.bins.buffer);

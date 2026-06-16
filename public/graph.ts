@@ -114,6 +114,11 @@ const normalizePoints = (points: ChartPoint[], sign: 1 | -1 = 1) => {
   ] as ChartPoint);
 };
 
+const makeEstimateLine = (offsetSeconds: number): ChartPoint[] => [
+  [offsetSeconds, -1.05],
+  [offsetSeconds, 1.05],
+];
+
 const makeTickTockPeakData = (
   analysis: AnalysisMessage,
   fold: TrackingFold,
@@ -144,19 +149,35 @@ const makeTickTockPeakData = (
     binSeconds,
     -1,
   );
-  const sampleSeries = analysis.tickTockPeakSamples.map((sample) => ({
-    name: sample.name,
-    type: "line" as const,
-    data: normalizePoints(
-      Array.from({ length: Math.floor(sample.points.length / 2) }, (_, index) => [
-        sample.points[index * 2],
-        sample.points[index * 2 + 1],
-      ] as ChartPoint),
-    ),
-    showSymbol: false as const,
-    lineStyle: { width: 1, opacity: 0.18 },
-    silent: true,
-  }));
+  const sampleSeries = analysis.tickTockPeakSamples.flatMap((sample) => {
+    const points = Array.from({ length: Math.floor(sample.points.length / 2) }, (_, index) => [
+      sample.points[index * 2],
+      sample.points[index * 2 + 1],
+    ] as ChartPoint);
+    const series = [
+      {
+        name: sample.name,
+        type: "line" as const,
+        data: normalizePoints(points),
+        showSymbol: false as const,
+        lineStyle: { width: 1, opacity: 0.18 },
+        silent: true,
+      },
+    ];
+
+    if (sample.estimateOffsetSeconds === undefined) return series;
+
+    series.push({
+      name: `${sample.name} estimate`,
+      type: "line" as const,
+      data: makeEstimateLine(sample.estimateOffsetSeconds),
+      showSymbol: false as const,
+      lineStyle: { width: 1, opacity: 0.12 },
+      silent: true,
+    });
+
+    return series;
+  });
 
   return {
     zoomSeconds: Number((windowBins * binSeconds).toFixed(5)),
