@@ -9,12 +9,14 @@ type CaptureFeature = {
 
 type CaptureBatch = {
   startFrame: number;
+  sampleRate?: number;
   featureRate: number;
   features: CaptureFeature[];
 };
 
 type CaptureFile = {
   ready?: {
+    sampleRate?: number;
     featureRate?: number;
     bands?: string[];
   } | null;
@@ -23,6 +25,7 @@ type CaptureFile = {
 
 type Frame = {
   featureFrame: number;
+  seconds?: number;
   bands: Float32Array;
 };
 
@@ -51,6 +54,7 @@ const featureRate =
   Number(firstBatch.featureRate) ||
   Number(capture.ready?.featureRate) ||
   DEFAULT_FEATURE_RATE;
+const sampleRate = Number(firstBatch.sampleRate) || Number(capture.ready?.sampleRate) || 0;
 const bands = capture.ready?.bands || firstBatch.features.map((feature) => feature.name);
 const centerBph = Number(Bun.argv[3]) || 17964;
 const cycleBeats = 2;
@@ -66,6 +70,11 @@ for (const batch of capture.batches) {
     }
     frames.push({
       featureFrame: batch.startFrame + offset,
+      seconds:
+        sampleRate > 0
+          ? Math.ceil(((batch.startFrame + offset + 1) * sampleRate) / featureRate) /
+            sampleRate
+          : undefined,
       bands: frameBands,
     });
   }

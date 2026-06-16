@@ -8,6 +8,7 @@ export {
   DEFAULT_FEATURE_LOG_GAIN,
   DEFAULT_FEATURE_POST_FRAME_COUNT,
   DEFAULT_FEATURE_RATE,
+  DEFAULT_ANALYSIS_INTERVAL_MS,
   DEFAULT_PERIOD_SECONDS,
   DEFAULT_TRACKING_FOLD_BIN_COUNT,
   MAX_PERIOD_SECONDS,
@@ -28,7 +29,9 @@ export type Feature = {
 export type FeatureMessage = {
   type: "features";
   startFrame: number;
+  startRawFrame?: number;
   rawFrame: number;
+  sampleRate?: number;
   featureRate: number;
   features: Feature[];
 };
@@ -87,15 +90,23 @@ export type TrackingBandFold = TrackingFold & {
   band: string;
 };
 
+export type TickTockPeakSample = {
+  name: string;
+  points: number[];
+};
+
 export type AnalysisMessage = {
   type: "analysis";
   periodSeconds: number;
   featureRate: number;
+  analysisMs: number;
+  framesBuffered: number;
   standardFolds: StandardFolds;
   tracking: Tracking;
   trackingFold: TrackingFold | null;
   trackingBandFolds: TrackingBandFold[];
   trackingCandidateFolds: TrackingFold[];
+  tickTockPeakSamples: TickTockPeakSample[];
 };
 
 export type WorkletToMainMessage = ReadyMessage | FeatureMessage;

@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { CANDIDATE_BPH, DEFAULT_BIN_COUNT, DEFAULT_FEATURE_RATE } from "../public/defaults";
 import { normalizeRow } from "../public/data";
 import { foldSignal } from "../public/util";
-import { createBphTracker } from "../public/tracking-fold-fit";
+import { createBphTracker } from "../public/tracking-beat-fit";
 import type { FoldRow } from "../public/data";
 
 type CaptureFeature = {
@@ -12,7 +12,9 @@ type CaptureFeature = {
 
 type CaptureBatch = {
   startFrame: number;
+  startRawFrame?: number;
   rawFrame: number;
+  sampleRate?: number;
   featureRate: number;
   features: CaptureFeature[];
 };
@@ -20,6 +22,7 @@ type CaptureBatch = {
 type CaptureFile = {
   periodSeconds?: number;
   ready?: {
+    sampleRate?: number;
     featureRate?: number;
     bands?: string[];
   } | null;
@@ -28,6 +31,7 @@ type CaptureFile = {
 
 type Frame = {
   featureFrame: number;
+  seconds?: number;
   bands: Float32Array;
 };
 
@@ -50,6 +54,7 @@ const featureRate =
   Number(firstBatch.featureRate) ||
   Number(capture.ready?.featureRate) ||
   DEFAULT_FEATURE_RATE;
+const sampleRate = Number(firstBatch.sampleRate) || Number(capture.ready?.sampleRate) || 0;
 const periodSeconds = Number(Bun.argv[3]) || Number(capture.periodSeconds) || 10;
 const cycleBeats = 2;
 const frames: Frame[] = [];
@@ -105,6 +110,11 @@ const addBatch = (batch: CaptureBatch) => {
     }
     frames.push({
       featureFrame: batch.startFrame + offset,
+      seconds:
+        sampleRate > 0
+          ? Math.ceil(((batch.startFrame + offset + 1) * sampleRate) / featureRate) /
+            sampleRate
+          : undefined,
       bands: frameBands,
     });
   }

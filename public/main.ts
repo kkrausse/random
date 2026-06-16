@@ -44,7 +44,9 @@ type CaptureReady = {
 
 type CaptureBatch = {
   startFrame: number;
+  startRawFrame?: number;
   rawFrame: number;
+  sampleRate?: number;
   featureRate: number;
   features: {
     name: string;
@@ -71,6 +73,8 @@ const elements = {
   measuredBph: query<HTMLElement>("#measured-bph"),
   secondsPerDay: query<HTMLElement>("#seconds-per-day"),
   errorSecondsPerDay: query<HTMLElement>("#error-seconds-per-day"),
+  analysisMs: query<HTMLElement>("#analysis-ms"),
+  framesBuffered: query<HTMLElement>("#frames-buffered"),
   status: query<HTMLElement>("#status"),
   trackingFoldChart: query<HTMLElement>("#tracking-fold-chart"),
   tickTockPeakChart: query<HTMLElement>("#tick-tock-peak-chart"),
@@ -147,7 +151,9 @@ const captureFeatureMessage = (message: WorkletToMainMessage) => {
 
   app.captureBatches.push({
     startFrame: message.startFrame,
+    startRawFrame: message.startRawFrame,
     rawFrame: message.rawFrame,
+    sampleRate: message.sampleRate,
     featureRate: message.featureRate,
     features: message.features.map((feature) => ({
       name: feature.name,
@@ -212,6 +218,8 @@ const resetTrackingDisplay = () => {
   elements.measuredBph.textContent = "-";
   elements.secondsPerDay.textContent = "-";
   elements.errorSecondsPerDay.textContent = "-";
+  elements.analysisMs.textContent = "-";
+  elements.framesBuffered.textContent = "-";
 };
 
 const updateTrackingDisplay = (message: AnalysisWorkerToMainMessage) => {
@@ -230,6 +238,8 @@ const updateTrackingDisplay = (message: AnalysisWorkerToMainMessage) => {
   elements.measuredBph.textContent = formatBph(tracking.measuredBph);
   elements.secondsPerDay.textContent = formatSigned(secondsPerDay);
   elements.errorSecondsPerDay.textContent = formatRange(errorSecondsPerDay);
+  elements.analysisMs.textContent = `${message.analysisMs.toFixed(1)} ms`;
+  elements.framesBuffered.textContent = `${(message.framesBuffered / message.featureRate).toFixed(1)}s`;
 };
 
 const configureWorker = () => {

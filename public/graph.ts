@@ -18,7 +18,8 @@ type TickTockPeakData = {
     type: "line";
     data: ChartPoint[];
     showSymbol: false;
-    lineStyle: { width: number };
+    lineStyle: { width: number; opacity?: number };
+    silent?: boolean;
   }[];
 };
 
@@ -99,7 +100,25 @@ const makePeakWindow = (
   return points;
 };
 
-const makeTickTockPeakData = (fold: TrackingFold, axisBph: number): TickTockPeakData => {
+const normalizePoints = (points: ChartPoint[], sign: 1 | -1 = 1) => {
+  let peak = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    peak = Math.max(peak, Math.abs(points[index][1]));
+  }
+
+  if (peak <= 0) return points;
+
+  return points.map((point) => [
+    point[0],
+    Number(((point[1] / peak) * sign).toFixed(4)),
+  ] as ChartPoint);
+};
+
+const makeTickTockPeakData = (
+  analysis: AnalysisMessage,
+  fold: TrackingFold,
+  axisBph: number,
+): TickTockPeakData => {
   const cycleSeconds = cycleSecondsFor(axisBph, fold.cycleBeats);
   const binSeconds = cycleSeconds / fold.binCount;
   const beatBinCount = Math.floor(fold.binCount / fold.cycleBeats);
@@ -125,28 +144,38 @@ const makeTickTockPeakData = (fold: TrackingFold, axisBph: number): TickTockPeak
     binSeconds,
     -1,
   );
-  const peakAmplitude = Math.max(
-    ...tickData.map((point) => Math.abs(point[1])),
-    ...tockData.map((point) => Math.abs(point[1])),
-  );
+  const sampleSeries = analysis.tickTockPeakSamples.map((sample) => ({
+    name: sample.name,
+    type: "line" as const,
+    data: normalizePoints(
+      Array.from({ length: Math.floor(sample.points.length / 2) }, (_, index) => [
+        sample.points[index * 2],
+        sample.points[index * 2 + 1],
+      ] as ChartPoint),
+    ),
+    showSymbol: false as const,
+    lineStyle: { width: 1, opacity: 0.18 },
+    silent: true,
+  }));
 
   return {
     zoomSeconds: Number((windowBins * binSeconds).toFixed(5)),
-    yMax: Number((Math.max(peakAmplitude, 1) * 1.1).toFixed(4)),
+    yMax: 1.1,
     series: [
+      ...sampleSeries,
       {
         name: "tick",
         type: "line",
-        data: tickData,
+        data: normalizePoints(tickData),
         showSymbol: false,
-        lineStyle: { width: 1 },
+        lineStyle: { width: 2 },
       },
       {
         name: "tock",
         type: "line",
-        data: tockData,
+        data: normalizePoints(tockData),
         showSymbol: false,
-        lineStyle: { width: 1 },
+        lineStyle: { width: 2 },
       },
     ],
   };
@@ -256,7 +285,7 @@ export const createTickTockPeakChart = (element: HTMLElement) => {
     }
 
     const axisBph = analysis.tracking.standardBph || fold.bph;
-    const peakData = makeTickTockPeakData(fold, axisBph);
+    const peakData = makeTickTockPeakData(analysis, fold, axisBph);
 
     chart.setOption({
       animation: false,
@@ -283,7 +312,7 @@ export const createTickTockPeakChart = (element: HTMLElement) => {
       },
       yAxis: {
         type: "value",
-        name: "tick + / tock -",
+        name: "normalized tick + / tock -",
         min: -peakData.yMax,
         max: peakData.yMax,
       },

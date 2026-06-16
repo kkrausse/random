@@ -1,5 +1,6 @@
 export type FoldFrame = {
   featureFrame: number;
+  seconds?: number;
 };
 
 export type FoldSignalOptions<TFrame extends FoldFrame> = {
@@ -23,6 +24,25 @@ const median = (values: number[]) => {
   return (values[middle - 1] + values[middle]) / 2;
 };
 
+const addToBin = (
+  bins: Float32Array,
+  counts: Float32Array | null,
+  position: number,
+  value: number,
+) => {
+  const lowerBin = Math.floor(position) % bins.length;
+  const upperBin = (lowerBin + 1) % bins.length;
+  const upperWeight = position - Math.floor(position);
+  const lowerWeight = 1 - upperWeight;
+
+  bins[lowerBin] += value * lowerWeight;
+  bins[upperBin] += value * upperWeight;
+  if (counts) {
+    counts[lowerBin] += lowerWeight;
+    counts[upperBin] += upperWeight;
+  }
+};
+
 export const foldSignal = <TFrame extends FoldFrame>({
   frames,
   featureRate,
@@ -34,21 +54,20 @@ export const foldSignal = <TFrame extends FoldFrame>({
   applyCycleCoherence = true,
 }: FoldSignalOptions<TFrame>) => {
   const bins = new Float32Array(binCount);
-  const counts = averageByBin ? new Uint32Array(binCount) : null;
+  const counts = averageByBin ? new Float32Array(binCount) : null;
   const cycleBins = applyCycleCoherence ? ([] as Float32Array[]) : null;
-  const cycleCounts = applyCycleCoherence ? ([] as Uint32Array[]) : null;
+  const cycleCounts = applyCycleCoherence ? ([] as Float32Array[]) : null;
   const cycleIndexes = applyCycleCoherence ? new Map<number, number>() : null;
   const intervalSeconds = (3600 / bph) * cycleBeats;
 
   for (let index = 0; index < frames.length; index += 1) {
     const frame = frames[index];
-    const seconds = frame.featureFrame / featureRate;
+    const seconds = frame.seconds ?? frame.featureFrame / featureRate;
     const phase = (seconds % intervalSeconds) / intervalSeconds;
-    const bin = Math.min(binCount - 1, Math.floor(phase * binCount));
+    const position = phase * binCount;
     const value = valueAt(frame);
 
-    bins[bin] += value;
-    if (counts) counts[bin] += 1;
+    addToBin(bins, counts, position, value);
 
     if (cycleBins && cycleCounts && cycleIndexes) {
       const cycle = Math.floor(seconds / intervalSeconds);
@@ -57,11 +76,10 @@ export const foldSignal = <TFrame extends FoldFrame>({
         cycleIndex = cycleBins.length;
         cycleIndexes.set(cycle, cycleIndex);
         cycleBins.push(new Float32Array(binCount));
-        cycleCounts.push(new Uint32Array(binCount));
+        cycleCounts.push(new Float32Array(binCount));
       }
 
-      cycleBins[cycleIndex][bin] += value;
-      cycleCounts[cycleIndex][bin] += 1;
+      addToBin(cycleBins[cycleIndex], cycleCounts[cycleIndex], position, value);
     }
   }
 
@@ -87,7 +105,7 @@ export const foldSignal = <TFrame extends FoldFrame>({
       let total = 0;
 
       for (let cycle = 0; cycle < cycleBins.length; cycle += 1) {
-        if (!cycleCounts[cycle][bin]) continue;
+        if (cycleCounts[cycle][bin] <= 0) continue;
 
         const value = cycleBins[cycle][bin];
         values.push(value);

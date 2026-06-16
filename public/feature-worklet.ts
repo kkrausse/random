@@ -81,16 +81,19 @@ class FeatureProcessor extends AudioWorkletProcessor {
   slow: Float32Array;
   current: Float32Array;
   batch: Float32Array[];
+  featureRate: number;
   batchOffset = 0;
   rawFrame = 0;
   featureFrame = 0;
   featurePhase = 0;
   startFeatureFrame = 0;
+  startRawFrame = 0;
   featureCap = DEFAULT_FEATURE_CAP;
 
   constructor() {
     super();
     const nyquist = sampleRate / 2;
+    this.featureRate = Math.min(DEFAULT_FEATURE_RATE, sampleRate);
     this.bands = BASE_BANDS.filter((band) => band.high < nyquist * 0.92);
     this.filters = this.bands.map((band) => makeBandpass(band, sampleRate));
     this.fastAlpha = 1 - Math.exp(-1 / (sampleRate * 0.002));
@@ -113,7 +116,7 @@ class FeatureProcessor extends AudioWorkletProcessor {
     this.port.postMessage({
       type: "ready",
       sampleRate,
-      featureRate: DEFAULT_FEATURE_RATE,
+      featureRate: this.featureRate,
       bands: this.bands.map((band) => band.name),
     });
   }
@@ -144,7 +147,7 @@ class FeatureProcessor extends AudioWorkletProcessor {
       }
 
       this.rawFrame += 1;
-      this.featurePhase += DEFAULT_FEATURE_RATE / sampleRate;
+      this.featurePhase += this.featureRate / sampleRate;
 
       if (this.featurePhase >= 1) {
         this.featurePhase -= 1;
@@ -158,6 +161,7 @@ class FeatureProcessor extends AudioWorkletProcessor {
   writeFeatureFrame() {
     if (this.batchOffset === 0) {
       this.startFeatureFrame = this.featureFrame;
+      this.startRawFrame = this.rawFrame;
     }
 
     for (let bandIndex = 0; bandIndex < this.bands.length; bandIndex += 1) {
@@ -184,8 +188,10 @@ class FeatureProcessor extends AudioWorkletProcessor {
       {
         type: "features",
         startFrame: this.startFeatureFrame,
+        startRawFrame: this.startRawFrame,
         rawFrame: this.rawFrame,
-        featureRate: DEFAULT_FEATURE_RATE,
+        sampleRate,
+        featureRate: this.featureRate,
         features,
       },
       features.map((feature) => feature.data.buffer),
