@@ -121,11 +121,61 @@ const makeTickTockPeakData = (
     zoomSeconds = Math.max(zoomSeconds, Math.abs(allPoints[index][0]));
   }
 
+  const thresholdPercentile = analysis.balanceAmplitude?.precedingEventThresholdPercentile;
+  const thresholdValue = analysis.balanceAmplitude?.precedingEventThresholdValue;
+  const thresholdLines = thresholdPercentile === undefined || thresholdValue === undefined
+    ? []
+    : sampleSeries.flatMap((series) => {
+      const isTock = series.name.endsWith("tock");
+      const threshold = thresholdValue * (isTock ? -1 : 1);
+      return [{
+        name: `${isTock ? "tock" : "tick"} threshold (${thresholdPercentile}th percentile)`,
+        type: "line" as const,
+        data: [[-zoomSeconds, threshold], [zoomSeconds, threshold]] as ChartPoint[],
+        showSymbol: false as const,
+        lineStyle: {
+          width: 1,
+          color: isTock ? "#2563eb" : "#16a34a",
+          type: "dotted" as const,
+        },
+        z: 2,
+        silent: true,
+      }];
+    });
+
+  const measurementLines = (analysis.balanceAmplitude?.measurements || []).map(
+    (measurement) => ({
+      name: `${measurement.name} unlock`,
+      type: "line" as const,
+      data: [
+        [measurement.firstOffsetSeconds, yMin],
+        [measurement.firstOffsetSeconds, yMax],
+      ] as ChartPoint[],
+      showSymbol: false as const,
+      lineStyle: {
+        width: 2,
+        color: measurement.name === "tick" ? "#16a34a" : "#2563eb",
+        type: "dashed" as const,
+      },
+      z: 3,
+      silent: true,
+    }),
+  );
+  const dropLine = {
+    name: "drop",
+    type: "line" as const,
+    data: [[0, yMin], [0, yMax]] as ChartPoint[],
+    showSymbol: false as const,
+    lineStyle: { width: 2, color: "#dc2626" },
+    z: 3,
+    silent: true,
+  };
+
   return {
     zoomSeconds: Number(zoomSeconds.toFixed(5)),
     yMin,
     yMax,
-    series: sampleSeries,
+    series: [...sampleSeries, ...thresholdLines, ...measurementLines, dropLine],
   };
 };
 

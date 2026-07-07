@@ -10,6 +10,8 @@ export {
   DEFAULT_LIFT_ANGLE_DEGREES,
   DEFAULT_ANALYSIS_INTERVAL_MS,
   DEFAULT_PERIOD_SECONDS,
+  DEFAULT_PRECEDING_EVENT_SMOOTHING_RADIUS_SECONDS,
+  DEFAULT_PRECEDING_EVENT_THRESHOLD_PERCENTILE,
   DEFAULT_TRACKING_FOLD_BIN_COUNT,
   MAX_PERIOD_SECONDS,
   MIN_PERIOD_SECONDS,
@@ -103,6 +105,8 @@ export type AmplitudeMeasurement = {
 
 export type BalanceAmplitude = {
   liftAngleDegrees: number;
+  precedingEventThresholdPercentile: number;
+  precedingEventThresholdValue: number;
   averageDegrees: number | null;
   averageLiftSeconds: number | null;
   measurements: AmplitudeMeasurement[];

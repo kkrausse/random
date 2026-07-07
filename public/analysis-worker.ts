@@ -5,6 +5,8 @@ import {
   DEFAULT_FEATURE_RATE,
   DEFAULT_LIFT_ANGLE_DEGREES,
   DEFAULT_PERIOD_SECONDS,
+  DEFAULT_PRECEDING_EVENT_SMOOTHING_RADIUS_SECONDS,
+  DEFAULT_PRECEDING_EVENT_THRESHOLD_PERCENTILE,
   DEFAULT_TRACKING_FOLD_BIN_COUNT,
 } from "./defaults";
 import { clamp, normalizeRow } from "./data";
@@ -237,6 +239,31 @@ const smoothBeatValue = (
   return count ? total / count : 0;
 };
 
+const smoothedFoldPercentile = (
+  bins: Float32Array,
+  beatBinCount: number,
+  smoothRadius: number,
+  percentile: number,
+) => {
+  const values = Array.from(bins, (_, bin) => {
+    const beatStartBin = Math.floor(bin / beatBinCount) * beatBinCount;
+    return smoothBeatValue(
+      bins,
+      beatStartBin,
+      beatBinCount,
+      bin - beatStartBin,
+      smoothRadius,
+    );
+  }).sort((left, right) => left - right);
+  if (values.length === 0) return 0;
+
+  const position = (values.length - 1) * clamp(percentile, 0, 100) / 100;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  const fraction = position - lower;
+  return values[lower] * (1 - fraction) + values[upper] * fraction;
+};
+
 const findFirstLumpOffset = (
   bins: Float32Array,
   beatStartBin: number,
@@ -244,16 +271,9 @@ const findFirstLumpOffset = (
   beatBinCount: number,
   windowBins: number,
   smoothRadius: number,
+  minValue: number,
 ) => {
   const peakOffset = peakBin - beatStartBin;
-  const peakValue = smoothBeatValue(
-    bins,
-    beatStartBin,
-    beatBinCount,
-    peakOffset,
-    smoothRadius,
-  );
-  const minValue = peakValue * 0.18;
   let firstAboveOffset: number | null = null;
   let bestOffset = 0;
   let bestValue = 0;
@@ -323,8 +343,9 @@ const buildAmplitudeMeasurement = (
   windowBins: number,
   binSeconds: number,
   cycleSeconds: number,
+  smoothRadius: number,
+  thresholdValue: number,
 ) => {
-  const smoothRadius = Math.max(1, Math.round(0.00025 / binSeconds));
   const firstOffset = findFirstLumpOffset(
     fold.bins,
     beatStartBin,
@@ -332,6 +353,7 @@ const buildAmplitudeMeasurement = (
     beatBinCount,
     windowBins,
     smoothRadius,
+    thresholdValue,
   );
 
   if (firstOffset === null) return null;
@@ -359,6 +381,16 @@ const buildBalanceAmplitude = (fold: NonNullable<ReturnType<typeof buildTracking
   const beatBinCount = Math.floor(fold.binCount / fold.cycleBeats);
   const binSeconds = cycleSeconds / fold.binCount;
   const windowBins = Math.max(2, Math.round(beatBinCount * 0.15));
+  const smoothRadius = Math.max(
+    1,
+    Math.round(DEFAULT_PRECEDING_EVENT_SMOOTHING_RADIUS_SECONDS / binSeconds),
+  );
+  const thresholdValue = smoothedFoldPercentile(
+    fold.bins,
+    beatBinCount,
+    smoothRadius,
+    DEFAULT_PRECEDING_EVENT_THRESHOLD_PERCENTILE,
+  );
   const tickPeakBin = findPeakBin(fold.bins, 0, beatBinCount);
   const tockStartBin = beatBinCount;
   const tockPeakBin = findPeakBin(fold.bins, tockStartBin, beatBinCount);
@@ -372,6 +404,8 @@ const buildBalanceAmplitude = (fold: NonNullable<ReturnType<typeof buildTracking
       windowBins,
       binSeconds,
       cycleSeconds,
+      smoothRadius,
+      thresholdValue,
     ),
     buildAmplitudeMeasurement(
       "tock",
@@ -382,6 +416,8 @@ const buildBalanceAmplitude = (fold: NonNullable<ReturnType<typeof buildTracking
       windowBins,
       binSeconds,
       cycleSeconds,
+      smoothRadius,
+      thresholdValue,
     ),
   ].filter((measurement) => measurement !== null) as AmplitudeMeasurement[];
   const valid = measurements
@@ -397,6 +433,8 @@ const buildBalanceAmplitude = (fold: NonNullable<ReturnType<typeof buildTracking
 
   return {
     liftAngleDegrees: state.liftAngleDegrees,
+    precedingEventThresholdPercentile: DEFAULT_PRECEDING_EVENT_THRESHOLD_PERCENTILE,
+    precedingEventThresholdValue: thresholdValue,
     averageDegrees: averageDegrees === null ? null : Number(averageDegrees.toFixed(1)),
     averageLiftSeconds:
       averageLiftSeconds === null ? null : Number(averageLiftSeconds.toFixed(5)),
@@ -452,8 +490,11 @@ const buildTickTockPeakSamples = (
     const cycleSeconds = (3600 / fold.bph) * fold.cycleBeats;
     const beatBinCount = Math.floor(fold.binCount / fold.cycleBeats);
     const binSeconds = cycleSeconds / fold.binCount;
-    const windowBins = Math.max(2, Math.round(beatBinCount * 0.12));
-    const smoothRadius = Math.max(1, Math.round(0.00025 / binSeconds));
+    const windowBins = Math.max(2, Math.round(beatBinCount * 0.15));
+    const smoothRadius = Math.max(
+      1,
+      Math.round(DEFAULT_PRECEDING_EVENT_SMOOTHING_RADIUS_SECONDS / binSeconds),
+    );
     const tickPeakBin = findPeakBin(fold.bins, 0, beatBinCount);
     const tockStartBin = beatBinCount;
     const tockPeakBin = findPeakBin(fold.bins, beatBinCount, beatBinCount);
@@ -510,7 +551,7 @@ const maybePostAnalysis = () => {
   const trackingFold = buildTrackingFold(tracking.standardBph);
   const trackingBandFolds = buildTrackingBandFolds(tracking.standardBph);
   const trackingCandidateFolds = buildTrackingCandidateFolds(tracking);
-  const tickTockPeakSamples = buildTickTockPeakSamples(trackingCandidateFolds);
+  const tickTockPeakSamples = buildTickTockPeakSamples(trackingFold ? [trackingFold] : []);
   const balanceAmplitude = trackingFold ? buildBalanceAmplitude(trackingFold) : null;
   const transfers = rows.map((row) => row.bins.buffer);
   if (trackingFold) {
