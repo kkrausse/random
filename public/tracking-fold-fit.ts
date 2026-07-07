@@ -361,6 +361,7 @@ const searchMeasuredBph = (
     candidates.push({
       bph,
       score,
+      offset,
     });
     if (offset === 0) {
       centerIndex = index;
@@ -373,6 +374,8 @@ const searchMeasuredBph = (
 
   const decision = curveDecision(candidates, bestIndex, centerIndex);
   const measuredCandidate = candidates[decision.measuredIndex];
+  candidates[bestIndex].best = true;
+  measuredCandidate.selected = true;
 
   return {
     measuredBph: measuredCandidate.bph,

@@ -189,7 +189,7 @@
       }
 
       #tick-tock-peak-chart {
-        min-width: 760px;
+        min-width: 1100px;
       }
 
       #fold-chart {
@@ -310,7 +310,7 @@
         }
 
         #tick-tock-peak-chart {
-          min-width: 640px;
+          min-width: 900px;
         }
 
         #fold-chart {
@@ -450,8 +450,31 @@
                 <td><strong id="frames-buffered">-</strong></td>
               </tr>
               <tr>
+                <th scope="row">BPH error</th>
+                <td><strong id="confidence-bph">-</strong></td>
+              </tr>
+              <tr>
                 <th scope="row">Unlock-drop</th>
                 <td><strong id="unlock-drop">-</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="stats-wrap">
+          <table class="stats-table">
+            <thead>
+              <tr>
+                <th scope="col">Candidate</th>
+                <th scope="col">Offset</th>
+                <th scope="col">BPH</th>
+                <th scope="col">Score</th>
+                <th scope="col">Δ BPH</th>
+                <th scope="col">s/day</th>
+              </tr>
+            </thead>
+            <tbody id="candidate-rows">
+              <tr>
+                <td colspan="6">-</td>
               </tr>
             </tbody>
           </table>

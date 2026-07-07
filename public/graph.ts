@@ -75,11 +75,6 @@ const makeTrackingFoldSeries = (fold: TrackingFold, axisBph: number) => {
   ];
 };
 
-const makeMarkerLine = (offsetSeconds: number, yMin: number, yMax: number): ChartPoint[] => [
-  [offsetSeconds, yMin],
-  [offsetSeconds, yMax],
-];
-
 const yBoundsFor = (points: ChartPoint[]) => {
   let yMin = 0;
   let yMax = 0;
@@ -96,86 +91,6 @@ const yBoundsFor = (points: ChartPoint[]) => {
   };
 };
 
-const nearestPoint = (points: ChartPoint[], x: number) => {
-  let best = points[0] ?? [x, 0] as ChartPoint;
-  let bestDistance = Math.abs(best[0] - x);
-
-  for (let index = 1; index < points.length; index += 1) {
-    const distance = Math.abs(points[index][0] - x);
-    if (distance < bestDistance) {
-      best = points[index];
-      bestDistance = distance;
-    }
-  }
-
-  return best;
-};
-
-const makeAmplitudeMarkerSeries = (
-  analysis: AnalysisMessage,
-  tickPoints: ChartPoint[],
-  tockPoints: ChartPoint[],
-  yMin: number,
-  yMax: number,
-) => {
-  const amplitude = analysis.balanceAmplitude;
-  if (!amplitude) return [];
-
-  const unlockPoints: ChartPoint[] = [];
-  const dropPoints: ChartPoint[] = [];
-  const series = [
-    {
-      name: "drop line",
-      type: "line" as const,
-      data: makeMarkerLine(0, yMin, yMax),
-      showSymbol: false as const,
-      lineStyle: { width: 3, opacity: 1, color: "#f97316", type: "dotted" as const },
-      z: 20,
-      silent: true,
-    },
-  ];
-
-  for (let index = 0; index < amplitude.measurements.length; index += 1) {
-    const measurement = amplitude.measurements[index];
-    const points = measurement.name === "tick" ? tickPoints : tockPoints;
-    unlockPoints.push(nearestPoint(points, measurement.firstOffsetSeconds));
-    dropPoints.push(nearestPoint(points, 0));
-    series.push({
-      name: `${measurement.name} unlock line`,
-      type: "line" as const,
-      data: makeMarkerLine(measurement.firstOffsetSeconds, yMin, yMax),
-      showSymbol: false as const,
-      lineStyle: { width: 3, opacity: 1, color: "#f97316", type: "dotted" as const },
-      z: 20,
-      silent: true,
-    });
-  }
-
-  return [
-    ...series,
-    {
-      name: "unlock",
-      type: "scatter" as const,
-      data: unlockPoints,
-      symbolSize: 8,
-      itemStyle: { color: "#f97316", borderColor: "#111827", borderWidth: 1 },
-      label: { show: true, formatter: "unlock", position: "top", fontSize: 11 },
-      z: 30,
-      silent: true,
-    },
-    {
-      name: "drop",
-      type: "scatter" as const,
-      data: dropPoints,
-      symbolSize: 8,
-      itemStyle: { color: "#f97316", borderColor: "#111827", borderWidth: 1 },
-      label: { show: true, formatter: "drop", position: "bottom", fontSize: 11 },
-      z: 30,
-      silent: true,
-    },
-  ];
-};
-
 const makeTickTockPeakData = (
   analysis: AnalysisMessage,
 ): TickTockPeakData => {
@@ -184,21 +99,21 @@ const makeTickTockPeakData = (
       sample.points[index * 2],
       sample.points[index * 2 + 1],
     ] as ChartPoint);
-    const isFoldTrace = sample.name === "tick" || sample.name === "tock";
+    const isTock = sample.name.endsWith("tock");
 
     return {
       name: sample.name,
       type: "line" as const,
       data: points,
       showSymbol: false as const,
-      lineStyle: isFoldTrace
-        ? { width: 2 }
-        : { width: 1, opacity: 0.18 },
-      silent: !isFoldTrace,
+      lineStyle: {
+        width: 1,
+        opacity: 0.55,
+        type: isTock ? "dashed" as const : "solid" as const,
+      },
+      silent: false,
     };
   });
-  const tickPoints = sampleSeries.find((series) => series.name === "tick")?.data ?? [];
-  const tockPoints = sampleSeries.find((series) => series.name === "tock")?.data ?? [];
   const allPoints = sampleSeries.flatMap((series) => series.data);
   const { yMin, yMax } = yBoundsFor(allPoints);
   let zoomSeconds = 0.002;
@@ -210,10 +125,7 @@ const makeTickTockPeakData = (
     zoomSeconds: Number(zoomSeconds.toFixed(5)),
     yMin,
     yMax,
-    series: [
-      ...sampleSeries,
-      ...makeAmplitudeMarkerSeries(analysis, tickPoints, tockPoints, yMin, yMax),
-    ],
+    series: sampleSeries,
   };
 };
 
@@ -296,9 +208,7 @@ export const createTickTockPeakChart = (element: HTMLElement) => {
   const chart = echarts.init(element, null, { renderer: "canvas" });
 
   const update = (analysis: AnalysisMessage) => {
-    const fold = analysis.trackingFold;
-
-    if (!fold || fold.cycleBeats < 2) {
+    if (analysis.tickTockPeakSamples.length === 0) {
       chart.setOption({
         animation: false,
         grid: {
@@ -338,8 +248,7 @@ export const createTickTockPeakChart = (element: HTMLElement) => {
       legend: {
         bottom: 8,
         left: "center",
-        itemGap: 40,
-        data: ["tick", "tock", "unlock", "drop"],
+        type: "scroll",
       },
       tooltip: {
         trigger: "axis",

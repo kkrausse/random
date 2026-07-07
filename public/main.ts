@@ -92,8 +92,10 @@ const elements = {
   amplitude: query<HTMLElement>("#amplitude"),
   unlockDrop: query<HTMLElement>("#unlock-drop"),
   errorSecondsPerDay: query<HTMLElement>("#error-seconds-per-day"),
+  confidenceBph: query<HTMLElement>("#confidence-bph"),
   analysisMs: query<HTMLElement>("#analysis-ms"),
   framesBuffered: query<HTMLElement>("#frames-buffered"),
+  candidateRows: query<HTMLTableSectionElement>("#candidate-rows"),
   status: query<HTMLElement>("#status"),
   tickTockPeakChart: query<HTMLElement>("#tick-tock-peak-chart"),
   trackingBandFoldChart: query<HTMLElement>("#tracking-band-fold-chart"),
@@ -233,9 +235,41 @@ const formatRange = (value: number | null) => {
   return `±${value.toFixed(1)}`;
 };
 
+const formatScore = (value: number) => {
+  if (value === 0) return "0";
+  if (Math.abs(value) >= 1000 || Math.abs(value) < 0.001) return value.toExponential(2);
+  return value.toPrecision(4);
+};
+
 const bphErrorToSecondsPerDay = (errorBph: number | null, standardBph: number | null) => {
   if (errorBph === null || standardBph === null) return null;
   return (errorBph / standardBph) * 86400;
+};
+
+const renderCandidateTable = (message: AnalysisWorkerToMainMessage) => {
+  const { standardBph, candidates } = message.tracking;
+  if (!standardBph || candidates.length === 0) {
+    elements.candidateRows.innerHTML = `<tr><td colspan="6">-</td></tr>`;
+    return;
+  }
+
+  elements.candidateRows.innerHTML = candidates.map((candidate) => {
+    const deltaBph = candidate.bph - standardBph;
+    const secondsPerDay = (candidate.bph / standardBph - 1) * 86400;
+    const label = [
+      candidate.selected ? "pick" : "",
+      candidate.best ? "best" : "",
+    ].filter(Boolean).join(" ");
+
+    return `<tr>
+      <td>${label || "-"}</td>
+      <td>${candidate.offset === undefined ? "-" : candidate.offset.toFixed(1)}</td>
+      <td>${candidate.bph.toFixed(2)}</td>
+      <td>${formatScore(candidate.score)}</td>
+      <td>${formatSigned(deltaBph)}</td>
+      <td>${formatSigned(secondsPerDay)}</td>
+    </tr>`;
+  }).join("");
 };
 
 const resetTrackingDisplay = () => {
@@ -245,9 +279,11 @@ const resetTrackingDisplay = () => {
   elements.amplitude.textContent = "-";
   elements.unlockDrop.textContent = "-";
   elements.errorSecondsPerDay.textContent = "-";
+  elements.confidenceBph.textContent = "-";
   elements.sampleRate.textContent = "-";
   elements.analysisMs.textContent = "-";
   elements.framesBuffered.textContent = "-";
+  elements.candidateRows.innerHTML = `<tr><td colspan="6">-</td></tr>`;
 };
 
 const updateTrackingDisplay = (message: AnalysisWorkerToMainMessage) => {
@@ -276,8 +312,10 @@ const updateTrackingDisplay = (message: AnalysisWorkerToMainMessage) => {
       ? "-"
       : `${(message.balanceAmplitude.averageLiftSeconds * 1000).toFixed(2)} ms`;
   elements.errorSecondsPerDay.textContent = formatRange(errorSecondsPerDay);
+  elements.confidenceBph.textContent = formatRange(tracking.confidenceBph);
   elements.analysisMs.textContent = `${message.analysisMs.toFixed(1)} ms`;
   elements.framesBuffered.textContent = `${(message.framesBuffered / message.featureRate).toFixed(1)}s`;
+  renderCandidateTable(message);
 };
 
 const configureWorker = () => {

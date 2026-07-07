@@ -72,6 +72,9 @@ export type Tracking = {
 export type TrackingCandidate = {
   bph: number;
   score: number;
+  offset?: number;
+  selected?: boolean;
+  best?: boolean;
 };
 
 export type TrackingFold = {
