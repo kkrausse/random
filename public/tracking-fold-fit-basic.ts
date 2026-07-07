@@ -1,5 +1,5 @@
 import { CANDIDATE_BPH, DEFAULT_TRACKING_FOLD_BIN_COUNT } from "./defaults";
-import { clamp } from "./data";
+import { clamp, normalizeRow } from "./data";
 import { foldSignal } from "./util";
 import type { FoldRow, Tracking, TrackingCandidate } from "./data";
 
@@ -26,7 +26,7 @@ const MIN_TRACKING_SECONDS = 2;
 const MIN_ERROR_BPH = 0.1;
 const INITIAL_ERROR_BPH = 300;
 const MAX_ERROR_BPH = 300;
-const SEARCH_OFFSETS = [-1, 0, 1];
+const SEARCH_OFFSETS = [-1, -0.5, 0, 0.5, 1];
 
 const EMPTY_STATE: TrackingState = {
   standardBph: null,
@@ -36,15 +36,27 @@ const EMPTY_STATE: TrackingState = {
 };
 
 const rowScore = (bins: Float32Array) => {
-  if (!bins.length) return 0;
+  if (bins.length < 2) return 0;
 
-  let max = -Infinity;
-  for (let index = 0; index < bins.length; index += 1) {
-    const value = bins[index];
-    if (value > max) max = value;
+  const row = normalizeRow(bins);
+  const half = Math.floor(bins.length / 2);
+  const spacingSlack = Math.max(1, Math.round(bins.length * 0.05));
+  let bestPair = 0;
+  let total = 0;
+
+  for (let index = 0; index < row.length; index += 1) {
+    const first = Math.max(0, row[index]);
+    total += first;
+
+    for (let offset = -spacingSlack; offset <= spacingSlack; offset += 1) {
+      const oppositeIndex = (index + half + offset + row.length) % row.length;
+      const second = Math.max(0, row[oppositeIndex]);
+      bestPair = Math.max(bestPair, first * second);
+    }
   }
 
-  return max;
+  if (!total) return 0;
+  return bestPair / total;
 };
 
 const standardScore = (bph: number, foldRows: FoldRow[]) => {
