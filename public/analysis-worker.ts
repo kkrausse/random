@@ -9,7 +9,7 @@ import {
 } from "./defaults";
 import { clamp, normalizeRow } from "./data";
 import { foldSignal } from "./util";
-import { createBphTracker } from "./tracking-fold-fit";
+import { createBphTracker } from "./tracking-fold-fit-basic";
 import type {
   AnalysisWorkerToMainMessage,
   ConfigureAnalysisMessage,

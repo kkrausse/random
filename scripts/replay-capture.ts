@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { CANDIDATE_BPH, DEFAULT_BIN_COUNT, DEFAULT_FEATURE_RATE } from "../public/defaults";
 import { normalizeRow } from "../public/data";
 import { foldSignal } from "../public/util";
-import { createBphTracker } from "../public/tracking-fold-fit";
+import { createBphTracker } from "../public/tracking-fold-fit-basic";
 import type { FoldRow } from "../public/data";
 
 type CaptureFeature = {
