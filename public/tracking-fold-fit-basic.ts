@@ -26,7 +26,11 @@ const MIN_TRACKING_SECONDS = 2;
 const MIN_ERROR_BPH = 0.1;
 const INITIAL_ERROR_BPH = 300;
 const MAX_ERROR_BPH = 300;
-const SEARCH_OFFSETS = [-1, -0.5, 0, 0.5, 1];
+const SEARCH_STEPS_PER_SIDE = 2;
+const SEARCH_OFFSETS = Array.from(
+  { length: SEARCH_STEPS_PER_SIDE * 2 + 1 },
+  (_, index) => (index - SEARCH_STEPS_PER_SIDE) / SEARCH_STEPS_PER_SIDE,
+);
 
 const EMPTY_STATE: TrackingState = {
   standardBph: null,
@@ -40,11 +44,11 @@ const rowScore = (bins: Float32Array) => {
 
   const row = normalizeRow(bins);
   const half = Math.floor(bins.length / 2);
-  const spacingSlack = Math.max(1, Math.round(bins.length * 0.05));
+  const spacingSlack = Math.max(5, Math.round(bins.length * 0.05));
   let bestPair = 0;
   let total = 0;
 
-  for (let index = 0; index < row.length; index += 1) {
+  for (let index = 0; index < half + 3; index += 1) {
     const first = Math.max(0, row[index]);
     total += first;
 
