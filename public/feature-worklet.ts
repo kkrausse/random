@@ -93,8 +93,8 @@ class FeatureProcessor extends AudioWorkletProcessor {
     this.featureRate = Math.min(DEFAULT_FEATURE_RATE, sampleRate);
     this.bands = BASE_BANDS.filter((band) => band.high < nyquist * 0.92);
     this.filters = this.bands.map((band) => makeBandpass(band, sampleRate));
-    this.fastAlpha = 1 - Math.exp(-1 / (sampleRate * 0.0005));
-    this.slowAlpha = 1 - Math.exp(-1 / (sampleRate * 0.08));
+    this.fastAlpha = 1 - Math.exp(-1 / (sampleRate * 0.00001));
+    this.slowAlpha = 1 - Math.exp(-1 / (sampleRate * 0.12));
     this.fast = new Float32Array(this.bands.length);
     this.slow = new Float32Array(this.bands.length);
     this.current = new Float32Array(this.bands.length);
