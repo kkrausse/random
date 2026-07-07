@@ -31,9 +31,16 @@ type BeatPick = {
 };
 
 type FoldTemplate = {
+  bandIndex: number;
   bins: Float32Array;
   peakBins: number[];
   cycleSeconds: number;
+  score: number;
+};
+
+type TemplateSet = {
+  templates: FoldTemplate[];
+  guide: FoldTemplate;
   score: number;
 };
 
@@ -195,47 +202,6 @@ const chooseStandardBph = (foldRows: FoldRow[], cycleBeats: number) => {
   return bestBph;
 };
 
-const chooseBandIndexes = (
-  globalState: TrackingGlobalState,
-  foldRows: FoldRow[],
-  standardBph: number,
-) => {
-  const scores: RowScore[] = [];
-
-  for (let rowIndex = 0; rowIndex < foldRows.length; rowIndex += 1) {
-    const row = foldRows[rowIndex];
-    if (row.bph !== standardBph) continue;
-
-    const bandIndex = globalState.bands.indexOf(row.band);
-    if (bandIndex < 0) continue;
-
-    scores.push({
-      bandIndex,
-      score: rowPacketScore(row.bins, standardBph, globalState.cycleBeats),
-    });
-  }
-
-  scores.sort((left, right) => right.score - left.score);
-
-  const selected: number[] = [];
-  for (let index = 0; index < scores.length && selected.length < TOP_BAND_COUNT; index += 1) {
-    if (scores[index].score <= 0) continue;
-    if (selected.includes(scores[index].bandIndex)) continue;
-    selected.push(scores[index].bandIndex);
-  }
-
-  if (selected.length) return selected;
-  return globalState.bands.map((_, index) => index);
-};
-
-const frameEnergy = (frame: TrackingFrame, bandIndexes: number[]) => {
-  let total = 0;
-  for (let index = 0; index < bandIndexes.length; index += 1) {
-    total += frame.bands[bandIndexes[index]] || 0;
-  }
-  return total;
-};
-
 const templateValueAt = (template: FoldTemplate, position: number) => {
   const lower = Math.floor(position);
   const upperWeight = position - lower;
@@ -249,7 +215,7 @@ const templateValueAt = (template: FoldTemplate, position: number) => {
 const findFoldTemplate = (
   globalState: TrackingGlobalState,
   standardBph: number,
-  bandIndexes: number[],
+  bandIndex: number,
 ): FoldTemplate => {
   const bins = foldSignal({
     frames: globalState.frames,
@@ -258,7 +224,7 @@ const findFoldTemplate = (
     cycleBeats: globalState.cycleBeats,
     binCount: DEFAULT_TRACKING_FOLD_BIN_COUNT,
     averageByBin: true,
-    valueAt: (frame) => frameEnergy(frame, bandIndexes),
+    valueAt: (frame) => frame.bands[bandIndex] || 0,
   });
   const packetRadius = packetAverageRadius(
     bins.length,
@@ -298,6 +264,7 @@ const findFoldTemplate = (
 
   const cycleSeconds = (3600 / standardBph) * globalState.cycleBeats;
   return {
+    bandIndex,
     bins: template,
     peakBins,
     cycleSeconds,
@@ -305,9 +272,38 @@ const findFoldTemplate = (
   };
 };
 
+const findTemplateSet = (
+  globalState: TrackingGlobalState,
+  templateBph: number,
+): TemplateSet | null => {
+  const templates: FoldTemplate[] = [];
+  let guide: FoldTemplate | null = null;
+
+  for (let bandIndex = 0; bandIndex < globalState.bands.length; bandIndex += 1) {
+    const template = findFoldTemplate(globalState, templateBph, bandIndex);
+    templates.push(template);
+    if (!guide || template.score > guide.score) guide = template;
+  }
+
+  if (!guide) return null;
+
+  const scores = templates
+    .map((template) => template.score)
+    .sort((left, right) => right - left);
+  let score = 0;
+  for (let index = 0; index < scores.length && index < TOP_BAND_COUNT; index += 1) {
+    score += scores[index];
+  }
+
+  return {
+    templates,
+    guide,
+    score,
+  };
+};
+
 const dotTemplateAt = (
   globalState: TrackingGlobalState,
-  bandIndexes: number[],
   template: FoldTemplate,
   beatIndex: number,
   centerTime: number,
@@ -324,16 +320,46 @@ const dotTemplateAt = (
 
     const offsetSeconds = seconds - centerTime;
     const offsetBins = (offsetSeconds / template.cycleSeconds) * template.bins.length;
-    score += frameEnergy(frame, bandIndexes) * templateValueAt(template, peakBin + offsetBins);
+    score +=
+      (frame.bands[template.bandIndex] || 0) *
+      templateValueAt(template, peakBin + offsetBins);
   }
 
   return score;
 };
 
+const dotTemplateSetAt = (
+  globalState: TrackingGlobalState,
+  templateSet: TemplateSet,
+  beatIndex: number,
+  centerTime: number,
+) => {
+  const scores: RowScore[] = [];
+
+  for (let index = 0; index < templateSet.templates.length; index += 1) {
+    const template = templateSet.templates[index];
+    const score = dotTemplateAt(globalState, template, beatIndex, centerTime);
+    if (score <= 0) continue;
+
+    scores.push({
+      bandIndex: template.bandIndex,
+      score,
+    });
+  }
+
+  scores.sort((left, right) => right.score - left.score);
+
+  let total = 0;
+  for (let index = 0; index < scores.length && index < TOP_BAND_COUNT; index += 1) {
+    total += scores[index].score;
+  }
+
+  return total;
+};
+
 const pickBeat = (
   globalState: TrackingGlobalState,
-  bandIndexes: number[],
-  template: FoldTemplate,
+  templateSet: TemplateSet,
   beatIndex: number,
   predictedTime: number,
 ) => {
@@ -346,7 +372,7 @@ const pickBeat = (
     if (seconds < predictedTime - GATE_SECONDS) continue;
     if (seconds > predictedTime + GATE_SECONDS) break;
 
-    const score = dotTemplateAt(globalState, bandIndexes, template, beatIndex, seconds);
+    const score = dotTemplateSetAt(globalState, templateSet, beatIndex, seconds);
     if (score > bestScore) {
       bestScore = score;
       bestTime = seconds;
@@ -365,9 +391,9 @@ const pickBeat = (
 const pickBeats = (
   globalState: TrackingGlobalState,
   standardBph: number,
-  template: FoldTemplate,
-  bandIndexes: number[],
+  templateSet: TemplateSet,
 ) => {
+  const template = templateSet.guide;
   const firstFrame = globalState.frames[0];
   const lastFrame = globalState.frames[globalState.frames.length - 1];
   if (!firstFrame || !lastFrame) return [];
@@ -388,7 +414,7 @@ const pickBeats = (
     if (predictedTime < firstSeconds - GATE_SECONDS) continue;
     if (predictedTime > lastSeconds + GATE_SECONDS) continue;
 
-    const pick = pickBeat(globalState, bandIndexes, template, beatIndex, predictedTime);
+    const pick = pickBeat(globalState, templateSet, beatIndex, predictedTime);
     if (pick) picks.push(pick);
   }
 
@@ -462,16 +488,26 @@ const estimateBph = (picks: BeatPick[], standardBph: number) => {
 
 const estimateWithTemplate = (
   globalState: TrackingGlobalState,
-  bandIndexes: number[],
   templateBph: number,
   standardBph: number,
 ) => {
-  const template = findFoldTemplate(globalState, templateBph, bandIndexes);
-  const picks = pickBeats(globalState, templateBph, template, bandIndexes);
+  const templateSet = findTemplateSet(globalState, templateBph);
+  if (!templateSet) {
+    return {
+      template: null,
+      estimate: {
+        measuredBph: null,
+        confidenceBph: null,
+        candidates: [] as TrackingCandidate[],
+      },
+    };
+  }
+
+  const picks = pickBeats(globalState, templateBph, templateSet);
   const estimate = estimateBph(picks, standardBph);
 
   return {
-    template,
+    template: templateSet,
     estimate,
   };
 };
@@ -493,8 +529,7 @@ const trackStep = (
   const standardBph = chooseStandardBph(foldRows, globalState.cycleBeats);
   if (!standardBph) return previous;
 
-  const bandIndexes = chooseBandIndexes(globalState, foldRows, standardBph);
-  let result = estimateWithTemplate(globalState, bandIndexes, standardBph, standardBph);
+  let result = estimateWithTemplate(globalState, standardBph, standardBph);
 
   if (
     result.estimate.measuredBph !== null &&
@@ -502,7 +537,6 @@ const trackStep = (
   ) {
     result = estimateWithTemplate(
       globalState,
-      bandIndexes,
       result.estimate.measuredBph,
       standardBph,
     );
@@ -513,7 +547,7 @@ const trackStep = (
     measuredBph: result.estimate.measuredBph ?? previous.measuredBph,
     confidenceBph: result.estimate.confidenceBph,
     candidates: result.estimate.candidates,
-    score: result.template.score,
+    score: result.template?.score ?? 0,
   };
 };
 

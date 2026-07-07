@@ -27,6 +27,13 @@ type Frame = {
   bands: Float32Array;
 };
 
+type BandScoreTemplate = {
+  bandIndex: number;
+  bins: Float32Array;
+  tickPeakBin: number;
+  tockPeakBin: number;
+};
+
 type WorkerScope = {
   postMessage(message: AnalysisWorkerToMainMessage, transfer: Transferable[]): void;
   onmessage: ((event: MessageEvent<MainToAnalysisWorkerMessage>) => void) | null;
@@ -46,6 +53,10 @@ const state = {
   lastPostTime: 0,
   tracker: createBphTracker(),
 };
+
+const PEAK_SCORE_WINDOW_SECONDS = 0.0015;
+const TOP_SCORE_BAND_COUNT = 2;
+const TEMPLATE_LOG_GAIN = 10;
 
 const configure = (message: ConfigureAnalysisMessage) => {
   state.periodSeconds = clamp(Number(message.periodSeconds) || DEFAULT_PERIOD_SECONDS, 2, 30);
@@ -213,6 +224,49 @@ const frameEnergy = (frame: Frame) => {
 };
 
 const wrapIndex = (index: number, count: number) => ((index % count) + count) % count;
+
+const average = (values: Float32Array) => {
+  if (!values.length) return 0;
+
+  let total = 0;
+  for (let index = 0; index < values.length; index += 1) {
+    total += values[index];
+  }
+  return total / values.length;
+};
+
+const templateValueAt = (template: Float32Array, position: number) => {
+  const lower = Math.floor(position);
+  const upperWeight = position - lower;
+  const lowerWeight = 1 - upperWeight;
+  return (
+    template[wrapIndex(lower, template.length)] * lowerWeight +
+    template[wrapIndex(lower + 1, template.length)] * upperWeight
+  );
+};
+
+const buildScoreTemplate = (bins: Float32Array) => {
+  const rowMean = average(bins);
+  const template = new Float32Array(bins.length);
+
+  for (let bin = 0; bin < bins.length; bin += 1) {
+    template[bin] = Math.log1p(Math.max(0, bins[bin] - rowMean) * TEMPLATE_LOG_GAIN);
+  }
+
+  return template;
+};
+
+const buildBandScoreTemplates = (rows: TrackingBandFold[], beatBinCount: number) => {
+  return rows.map((row, bandIndex) => {
+    const bins = buildScoreTemplate(row.bins);
+    return {
+      bandIndex,
+      bins,
+      tickPeakBin: findPeakBin(bins, 0, beatBinCount),
+      tockPeakBin: findPeakBin(bins, beatBinCount, beatBinCount),
+    };
+  });
+};
 
 const findPeakBin = (bins: Float32Array, start: number, count: number) => {
   let peakBin = start;
@@ -417,26 +471,83 @@ const buildBalanceAmplitude = (fold: NonNullable<ReturnType<typeof buildTracking
 
 const buildPeakSample = (
   name: string,
+  fold: NonNullable<ReturnType<typeof buildTrackingFold>>,
+  templates: BandScoreTemplate[],
   peakTime: number,
   windowSeconds: number,
   sign: 1 | -1,
   estimateTime?: number,
 ) => {
-  const points: number[] = [];
+  const rawScores: number[] = [];
+  const cycleSeconds = (3600 / fold.bph) * fold.cycleBeats;
+  const beatBinCount = Math.floor(fold.binCount / fold.cycleBeats);
+  const peakBin =
+    sign === 1
+      ? findPeakBin(fold.bins, 0, beatBinCount)
+      : findPeakBin(fold.bins, beatBinCount, beatBinCount);
+  const peakScale = Math.max(0.0001, fold.bins[peakBin] ?? 0);
+  let maxScore = 0;
 
   for (let index = 0; index < state.frames.length; index += 1) {
     const frame = state.frames[index];
     const seconds = frameSeconds(frame);
     if (seconds < peakTime - windowSeconds) continue;
     if (seconds > peakTime + windowSeconds) break;
+    const scores: number[] = [];
 
-    points.push(
-      Number((seconds - peakTime).toFixed(5)),
-      Number((frameEnergy(frame) * sign).toFixed(4)),
-    );
+    for (let templateIndex = 0; templateIndex < templates.length; templateIndex += 1) {
+      const template = templates[templateIndex];
+      const bandPeakBin = sign === 1 ? template.tickPeakBin : template.tockPeakBin;
+      let score = 0;
+
+      for (let scan = index; scan >= 0; scan -= 1) {
+        const scanFrame = state.frames[scan];
+        const offsetSeconds = frameSeconds(scanFrame) - seconds;
+        if (offsetSeconds < -PEAK_SCORE_WINDOW_SECONDS) break;
+
+        const offsetBins = (offsetSeconds / cycleSeconds) * fold.binCount;
+        score +=
+          (scanFrame.bands[template.bandIndex] || 0) *
+          templateValueAt(template.bins, bandPeakBin + offsetBins);
+      }
+
+      for (let scan = index + 1; scan < state.frames.length; scan += 1) {
+        const scanFrame = state.frames[scan];
+        const offsetSeconds = frameSeconds(scanFrame) - seconds;
+        if (offsetSeconds > PEAK_SCORE_WINDOW_SECONDS) break;
+
+        const offsetBins = (offsetSeconds / cycleSeconds) * fold.binCount;
+        score +=
+          (scanFrame.bands[template.bandIndex] || 0) *
+          templateValueAt(template.bins, bandPeakBin + offsetBins);
+      }
+
+      if (score > 0) scores.push(score);
+    }
+
+    scores.sort((left, right) => right - left);
+    let score = 0;
+    for (
+      let scoreIndex = 0;
+      scoreIndex < scores.length && scoreIndex < TOP_SCORE_BAND_COUNT;
+      scoreIndex += 1
+    ) {
+      score += scores[scoreIndex];
+    }
+
+    rawScores.push(Number((seconds - peakTime).toFixed(5)), score);
+    maxScore = Math.max(maxScore, score);
   }
 
-  if (!points.length) return null;
+  if (!rawScores.length || maxScore <= 0) return null;
+
+  const points: number[] = [];
+  for (let index = 0; index < rawScores.length; index += 2) {
+    points.push(
+      rawScores[index],
+      Number((((rawScores[index + 1] / maxScore) * peakScale) * sign).toFixed(4)),
+    );
+  }
 
   return {
     name,
@@ -459,6 +570,7 @@ const estimatedPeakTime = (
 
 const buildTickTockPeakSamples = (
   fold: NonNullable<ReturnType<typeof buildTrackingFold>>,
+  bandFolds: TrackingBandFold[],
   estimateFold: ReturnType<typeof buildTrackingFold>,
 ) => {
   if (fold.cycleBeats < 2 || state.frames.length === 0) return [];
@@ -469,6 +581,8 @@ const buildTickTockPeakSamples = (
   const windowSeconds = Math.max(0.002, beatBinCount * 0.12 * binSeconds);
   const tickPeakBin = findPeakBin(fold.bins, 0, beatBinCount);
   const tockPeakBin = findPeakBin(fold.bins, beatBinCount, beatBinCount);
+  const templates = buildBandScoreTemplates(bandFolds, beatBinCount);
+  if (!templates.length) return [];
   const estimateBeatBinCount = estimateFold
     ? Math.floor(estimateFold.binCount / estimateFold.cycleBeats)
     : 0;
@@ -518,6 +632,8 @@ const buildTickTockPeakSamples = (
     const peak = visiblePeakTimes[index];
     const sample = buildPeakSample(
       `${peak.name} ${index + 1}`,
+      fold,
+      templates,
       peak.time,
       windowSeconds,
       peak.sign,
@@ -556,7 +672,7 @@ const maybePostAnalysis = () => {
   const estimateFold =
     tracking.measuredBph === null ? null : buildTrackingFold(tracking.measuredBph);
   const tickTockPeakSamples = trackingFold
-    ? buildTickTockPeakSamples(trackingFold, estimateFold)
+    ? buildTickTockPeakSamples(trackingFold, trackingBandFolds, estimateFold)
     : [];
   const balanceAmplitude = trackingFold ? buildBalanceAmplitude(trackingFold) : null;
   const transfers = rows.map((row) => row.bins.buffer);

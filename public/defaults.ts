@@ -12,9 +12,10 @@ export const MAX_PERIOD_SECONDS = 30;
 export const CANDIDATE_BPH = [14400, 18000, 19800, 21600, 25200, 28800, 36000];
 
 export const BASE_BANDS = [
-  { name: "700-1400", low: 700, high: 1400 },
-  { name: "1400-2800", low: 1400, high: 2800 },
-  { name: "2800-5600", low: 2800, high: 5600 },
-  { name: "5600-10000", low: 5600, high: 10000 },
-  { name: "10000-16000", low: 10000, high: 16000 },
+  { name: "4000-5600", low: 4000, high: 5600 },
+  { name: "5600-7500", low: 5600, high: 7500 },
+  { name: "7500-10000", low: 7500, high: 10000 },
+  { name: "10000-12000", low: 10000, high: 14000 },
+  { name: "12000-14000", low: 10000, high: 14000 },
+  { name: "14000-20000", low: 14000, high: 20000 },
 ];
