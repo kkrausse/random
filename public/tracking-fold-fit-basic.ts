@@ -21,12 +21,17 @@ export type ActualBphTracker = {
 };
 
 type TrackingState = Tracking;
+type StandardChoice = {
+  standardBph: number;
+  bandIndexes: number[];
+};
 
 const MIN_TRACKING_SECONDS = 2;
-const MIN_ERROR_BPH = 0.1;
+const MIN_ERROR_BPH = 1;
 const INITIAL_ERROR_BPH = 300;
 const MAX_ERROR_BPH = 300;
-const SEARCH_STEPS_PER_SIDE = 2;
+const TRACKING_BAND_COUNT = 2;
+const SEARCH_STEPS_PER_SIDE = 4;
 const SEARCH_OFFSETS = Array.from(
   { length: SEARCH_STEPS_PER_SIDE * 2 + 1 },
   (_, index) => (index - SEARCH_STEPS_PER_SIDE) / SEARCH_STEPS_PER_SIDE,
@@ -44,7 +49,7 @@ const rowScore = (bins: Float32Array) => {
 
   const row = normalizeRow(bins);
   const half = Math.floor(bins.length / 2);
-  const spacingSlack = Math.max(5, Math.round(bins.length * 0.05));
+  const spacingSlack = Math.max(1, Math.round(bins.length * 0.05));
   let bestPair = 0;
   let total = 0;
 
@@ -72,7 +77,25 @@ const standardScore = (bph: number, foldRows: FoldRow[]) => {
   return score;
 };
 
-const chooseStandardBph = (foldRows: FoldRow[]) => {
+const bestBandIndexes = (standardBph: number, bandNames: string[], foldRows: FoldRow[]) => {
+  const scores: { bandIndex: number; score: number }[] = [];
+
+  for (let index = 0; index < foldRows.length; index += 1) {
+    const row = foldRows[index];
+    if (row.bph !== standardBph) continue;
+
+    const bandIndex = bandNames.indexOf(row.band);
+    if (bandIndex < 0) continue;
+    scores.push({ bandIndex, score: rowScore(row.bins) });
+  }
+
+  return scores
+    .sort((left, right) => right.score - left.score)
+    .slice(0, TRACKING_BAND_COUNT)
+    .map((score) => score.bandIndex);
+};
+
+const chooseStandardBph = (foldRows: FoldRow[], bandNames: string[]): StandardChoice | null => {
   let bestBph: number | null = null;
   let bestScore = -Infinity;
 
@@ -85,12 +108,18 @@ const chooseStandardBph = (foldRows: FoldRow[]) => {
     }
   }
 
-  return bestBph;
+  if (!bestBph) return null;
+
+  return {
+    standardBph: bestBph,
+    bandIndexes: bestBandIndexes(bestBph, bandNames, foldRows),
+  };
 };
 
-const trialScore = (globalState: TrackingGlobalState, bph: number) => {
+const trialScore = (globalState: TrackingGlobalState, bph: number, bandIndexes: number[]) => {
   let score = 0;
-  for (let bandIndex = 0; bandIndex < globalState.bands.length; bandIndex += 1) {
+  for (let index = 0; index < bandIndexes.length; index += 1) {
+    const bandIndex = bandIndexes[index];
     score += rowScore(
       foldSignal({
         frames: globalState.frames,
@@ -110,6 +139,7 @@ const buildCandidates = (
   state: TrackingState,
   globalState: TrackingGlobalState,
   standardBph: number,
+  bandIndexes: number[],
 ): TrackingCandidate[] => {
   const sameStandard = state.standardBph === standardBph;
   const center = sameStandard && state.measuredBph ? state.measuredBph : standardBph;
@@ -121,7 +151,7 @@ const buildCandidates = (
       standardBph - MAX_ERROR_BPH,
       standardBph + MAX_ERROR_BPH,
     );
-    return { bph, offset, score: trialScore(globalState, bph) };
+    return { bph, offset, score: trialScore(globalState, bph, bandIndexes) };
   });
 };
 
@@ -154,14 +184,19 @@ const trackStep = (
     return state;
   }
 
-  const standardBph = chooseStandardBph(foldRows);
-  if (!standardBph) return state;
+  const standard = chooseStandardBph(foldRows, globalState.bands);
+  if (!standard) return state;
+
+  const { standardBph } = standard;
+  const bandIndexes = standard.bandIndexes.length
+    ? standard.bandIndexes
+    : globalState.bands.map((_, index) => index);
 
   const previousError =
     state.standardBph === standardBph && state.confidenceBph
       ? state.confidenceBph
       : INITIAL_ERROR_BPH;
-  const candidates = buildCandidates(state, globalState, standardBph);
+  const candidates = buildCandidates(state, globalState, standardBph, bandIndexes);
   const bestIndex = bestCandidateIndex(candidates);
   const nextError = candidates[bestIndex].offset === 0 ? previousError / 2 : previousError;
 
