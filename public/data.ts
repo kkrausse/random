@@ -88,7 +88,6 @@ export type TrackingBandFold = TrackingFold & {
 
 export type TickTockPeakSample = {
   name: string;
-  estimateOffsetSeconds?: number;
   points: number[];
 };
 

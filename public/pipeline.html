@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Timegrapher measurement pipeline</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+        line-height: 1.5;
+      }
+
+      body {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+
+      h1,
+      h2,
+      h3 {
+        line-height: 1.2;
+      }
+
+      h2 {
+        margin-top: 40px;
+        border-bottom: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+        padding-bottom: 6px;
+      }
+
+      code,
+      .formula,
+      .flow {
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      }
+
+      .formula,
+      .flow,
+      .note,
+      .source {
+        padding: 12px 16px;
+        border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+        border-radius: 4px;
+      }
+
+      .formula {
+        overflow-x: auto;
+        font-size: 1.05rem;
+      }
+
+      .flow {
+        line-height: 1.8;
+      }
+
+      .note {
+        border-left-width: 4px;
+      }
+
+      .source {
+        font-size: 0.9rem;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        padding: 8px;
+        border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+        text-align: left;
+      }
+
+      a {
+        color: inherit;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>How the timegrapher calculates rate and amplitude</h1>
+
+      <p>
+        This documents the complete implementation pipeline from microphone samples to the
+        displayed seconds/day, seconds/day error, and amplitude.
+      </p>
+
+      <div class="flow">
+        microphone PCM<br />
+        ↓ mono audio<br />
+        ↓ high-frequency band-pass filters<br />
+        ↓ transient features at 8192 Hz<br />
+        ↓ rolling analysis window<br />
+        ├─→ nominal BPH → individual beat times → measured BPH → seconds/day + error<br />
+        └─→ two-beat folded waveform → lift time → amplitude
+      </div>
+
+      <h2>1. Microphone capture</h2>
+
+      <div class="source">
+        Code: <a href="./main.ts"><code>public/main.ts:320–380</code></a>. Microphone constraints:
+        lines 336–343. Audio graph: lines 345–380.
+      </div>
+
+      <p>The browser requests an audio stream with these processing options disabled:</p>
+
+      <ul>
+        <li>Echo cancellation</li>
+        <li>Noise suppression</li>
+        <li>Automatic gain control</li>
+      </ul>
+
+      <p>
+        These are browser constraints, not guarantees. The operating system or microphone
+        hardware may still process the signal. The stream is connected to an audio worklet.
+        The worklet output passes through a zero-gain node so the microphone is processed but
+        not played through the speakers.
+      </p>
+
+      <h2>2. PCM to transient features</h2>
+
+      <div class="source">
+        Code: <a href="./feature-worklet.ts"><code>public/feature-worklet.ts:27–188</code></a>.
+        Band configuration: <a href="./defaults.ts"><code>public/defaults.ts:14–21</code></a>.
+      </div>
+
+      <h3>Relevant configuration</h3>
+
+      <table>
+        <thead><tr><th>Setting</th><th>Value</th><th>Effect</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td><code>BASE_BANDS</code></td><td>6 frequency ranges</td><td>Defines the band-pass filters</td><td><a href="./defaults.ts"><code>defaults.ts:14–21</code></a></td></tr>
+          <tr><td>Nyquist margin</td><td>92%</td><td>Removes bands too close to Nyquist</td><td><a href="./feature-worklet.ts"><code>feature-worklet.ts:92–95</code></a></td></tr>
+          <tr><td>Fast envelope</td><td>2 ms</td><td>Follows short impulses</td><td><code>feature-worklet.ts:96</code></td></tr>
+          <tr><td>Slow envelope</td><td>80 ms</td><td>Tracks background energy</td><td><code>feature-worklet.ts:97</code></td></tr>
+          <tr><td><code>DEFAULT_FEATURE_RATE</code></td><td>8192 Hz</td><td>Sets feature timing resolution</td><td><a href="./defaults.ts"><code>defaults.ts:3</code></a></td></tr>
+          <tr><td><code>DEFAULT_FEATURE_LOG_GAIN</code></td><td>100</td><td>Controls feature compression</td><td><code>defaults.ts:8</code></td></tr>
+          <tr><td><code>DEFAULT_FEATURE_POST_FRAME_COUNT</code></td><td>2048 frames</td><td>Sets worklet message batch size</td><td><code>defaults.ts:6</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3>Convert to mono</h3>
+
+      <p class="source">Implementation: <code>feature-worklet.ts:111–125</code>.</p>
+
+      <p>For every PCM frame, all microphone channels are averaged:</p>
+
+      <div class="formula">mono sample = sum of channel samples / channel count</div>
+
+      <h3>Band-pass filters</h3>
+
+      <p class="source">
+        Biquad construction and execution: <code>feature-worklet.ts:27–70</code>. Nyquist filtering:
+        <code>feature-worklet.ts:90–101</code>.
+      </p>
+
+      <p>
+        The mono sample passes through several biquad band-pass filters. A band is only enabled
+        when its upper frequency is below 92% of the sample rate's Nyquist frequency.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Displayed name</th>
+            <th>Actual configured range</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>4000–5600</td><td>4000–5600 Hz</td></tr>
+          <tr><td>5600–7500</td><td>5600–7500 Hz</td></tr>
+          <tr><td>7500–10000</td><td>7500–10000 Hz</td></tr>
+          <tr><td>10000–12000</td><td>10000–14000 Hz</td></tr>
+          <tr><td>12000–14000</td><td>10000–14000 Hz</td></tr>
+          <tr><td>14000–20000</td><td>14000–20000 Hz</td></tr>
+        </tbody>
+      </table>
+
+      <div class="note">
+        The two 10–14 kHz entries currently produce duplicate filtered signals despite having
+        different displayed names.
+      </div>
+
+      <h3>Detect transients</h3>
+
+      <p class="source">Implementation: <code>feature-worklet.ts:96–100, 127–134</code>.</p>
+
+      <p>For each filtered band:</p>
+
+      <ol>
+        <li>Take the absolute value of the filtered sample.</li>
+        <li>Track a fast envelope with a 2 ms time constant.</li>
+        <li>Track a slow envelope with an 80 ms time constant.</li>
+        <li>Subtract the slow envelope from the fast envelope.</li>
+        <li>Clamp negative results to zero.</li>
+      </ol>
+
+      <div class="formula">novelty = max(0, fast envelope − slow envelope)</div>
+
+      <p>
+        This suppresses steady background sound and emphasizes the leading edges of watch
+        sounds.
+      </p>
+
+      <h3>Reduce to 8192 feature frames per second</h3>
+
+      <p class="source">
+        Feature clock: <code>feature-worklet.ts:93, 136–142</code>. Compression and batching:
+        <code>feature-worklet.ts:148–188</code>.
+      </p>
+
+      <p>
+        The feature rate is the smaller of 8192 Hz and the microphone sample rate. Between two
+        feature frames, the processor keeps the maximum novelty value, then compresses it:
+      </p>
+
+      <div class="formula">feature = log(1 + 100 × maximum novelty)</div>
+
+      <p>
+        At 8192 Hz, adjacent feature frames are about 0.122 ms apart. Features are sent to the
+        analysis worker in batches of 2048 frames, or about 0.25 seconds.
+      </p>
+
+      <h2>3. Rolling analysis window</h2>
+
+      <div class="source">
+        Code: <a href="./analysis-worker.ts"><code>public/analysis-worker.ts:49–105</code></a>.
+        Analysis scheduling: <code>analysis-worker.ts:577–587</code>. Minimum tracking duration:
+        <a href="./tracking-beat-fit.ts"><code>tracking-beat-fit.ts:515–527</code></a>.
+      </div>
+
+      <h3>Relevant configuration</h3>
+
+      <table>
+        <thead><tr><th>Setting</th><th>Value</th><th>Effect</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td><code>DEFAULT_PERIOD_SECONDS</code></td><td>6 s</td><td>Default amount of recent audio analyzed</td><td><a href="./defaults.ts"><code>defaults.ts:1</code></a></td></tr>
+          <tr><td><code>MIN_PERIOD_SECONDS</code></td><td>2 s</td><td>Minimum selectable window</td><td><code>defaults.ts:9</code></td></tr>
+          <tr><td><code>MAX_PERIOD_SECONDS</code></td><td>30 s</td><td>Maximum selectable window</td><td><code>defaults.ts:10</code></td></tr>
+          <tr><td><code>MIN_TRACKING_SECONDS</code></td><td>2 s</td><td>Blocks rate tracking until enough data exists</td><td><a href="./tracking-beat-fit.ts"><code>tracking-beat-fit.ts:56</code></a></td></tr>
+          <tr><td><code>DEFAULT_ANALYSIS_INTERVAL_MS</code></td><td>500 ms</td><td>Minimum interval between worker results</td><td><code>defaults.ts:7</code></td></tr>
+        </tbody>
+      </table>
+
+      <p>
+        The worker reconstructs timestamped frames containing all frequency-band values. It
+        retains only the selected analysis period: six seconds by default, adjustable from two
+        to thirty seconds.
+      </p>
+
+      <p>
+        Tracking starts after at least two seconds of audio. Analysis is limited to roughly one
+        result every 500 ms.
+      </p>
+
+      <h2>4. Select the nominal BPH</h2>
+
+      <div class="source">
+        Fold creation: <a href="./analysis-worker.ts"><code>analysis-worker.ts:107–138</code></a>.
+        Folding algorithm: <a href="./util.ts"><code>util.ts:28–123</code></a>. Candidate scoring and
+        selection: <a href="./tracking-beat-fit.ts"><code>tracking-beat-fit.ts:119–203</code></a>.
+      </div>
+
+      <h3>Relevant configuration</h3>
+
+      <table>
+        <thead><tr><th>Setting</th><th>Value</th><th>Effect</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td><code>CANDIDATE_BPH</code></td><td>14400, 18000, 19800, 21600, 25200, 28800, 36000</td><td>Limits nominal-rate classification to known standards</td><td><a href="./defaults.ts"><code>defaults.ts:12</code></a></td></tr>
+          <tr><td><code>DEFAULT_BIN_COUNT</code></td><td>64 bins</td><td>Sets coarse-fold phase resolution</td><td><code>defaults.ts:4</code></td></tr>
+          <tr><td>Cycle beat count</td><td>2 beats</td><td>Makes the fold contain both tick and tock</td><td><a href="./analysis-worker.ts"><code>analysis-worker.ts:41</code></a></td></tr>
+          <tr><td>Cycle-coherence adjustment</td><td>Enabled</td><td>Reduces phase bins not repeated across cycles</td><td><a href="./util.ts"><code>util.ts:54, 93–119</code></a></td></tr>
+        </tbody>
+      </table>
+
+      <p>The program first chooses among these standard watch rates:</p>
+
+      <div class="formula">14400, 18000, 19800, 21600, 25200, 28800, or 36000 BPH</div>
+
+      <p>For every candidate BPH, its two-beat cycle duration is:</p>
+
+      <div class="formula">cycle seconds = (3600 / candidate BPH) × 2</div>
+
+      <p>
+        Each frequency band is folded into this repeating cycle. In other words, all samples at
+        the same phase of different cycles are accumulated together. The standard-selection
+        fold uses 64 phase bins.
+      </p>
+
+      <div class="formula">
+        phase = (sample time modulo cycle seconds) / cycle seconds
+      </div>
+
+      <p>
+        The fold reduces bins whose energy is inconsistent between cycles. Each folded band is
+        then normalized to zero mean and unit standard deviation.
+      </p>
+
+      <p>
+        The candidate is scored by looking for two strong sound packets separated by half a
+        cycle: one tick and one tock. Scores from all bands are added together. The candidate
+        with the highest score becomes <code>standardBph</code>.
+      </p>
+
+      <div class="note">
+        This is categorical selection: for example, “this is approximately a 28,800 BPH
+        movement.” It is not yet the precision rate measurement.
+      </div>
+
+      <h2>5. Build tick and tock templates</h2>
+
+      <div class="source">
+        Code: <a href="./tracking-beat-fit.ts"><code>public/tracking-beat-fit.ts:205–303</code></a>.
+      </div>
+
+      <h3>Relevant configuration</h3>
+
+      <table>
+        <thead><tr><th>Setting</th><th>Value</th><th>Effect</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td><code>DEFAULT_TRACKING_FOLD_BIN_COUNT</code></td><td>4096 bins</td><td>Sets precision-fold phase resolution</td><td><a href="./defaults.ts"><code>defaults.ts:5</code></a></td></tr>
+          <tr><td><code>PACKET_AVERAGE_SECONDS</code></td><td>0.8 ms</td><td>Controls template smoothing</td><td><a href="./tracking-beat-fit.ts"><code>tracking-beat-fit.ts:61, 119–122</code></a></td></tr>
+          <tr><td><code>TEMPLATE_LOG_GAIN</code></td><td>10</td><td>Controls template compression</td><td><code>tracking-beat-fit.ts:62, 242–244</code></td></tr>
+          <tr><td><code>TOP_BAND_COUNT</code></td><td>2 bands</td><td>Limits combined matching score to the strongest bands</td><td><code>tracking-beat-fit.ts:58, 350–355</code></td></tr>
+        </tbody>
+      </table>
+
+      <p>
+        Every band is folded again at <code>standardBph</code>, this time into 4096 bins. For
+        each band, the program:
+      </p>
+
+      <ol>
+        <li>Smooths the folded signal over approximately 0.8 ms.</li>
+        <li>Subtracts its mean and removes negative values.</li>
+        <li>Applies logarithmic compression.</li>
+        <li>Splits the two-beat cycle into a tick half and a tock half.</li>
+        <li>Finds the strongest peak in each half.</li>
+      </ol>
+
+      <p>
+        The strongest individual band becomes the phase guide. When matching an actual beat,
+        the program uses the two frequency bands with the strongest match scores.
+      </p>
+
+      <h2>6. Locate individual beats</h2>
+
+      <div class="source">
+        Template correlation: <a href="./tracking-beat-fit.ts"><code>tracking-beat-fit.ts:305–358</code></a>.
+        Beat search and prediction: <code>tracking-beat-fit.ts:360–422</code>.
+      </div>
+
+      <h3>Relevant configuration</h3>
+
+      <table>
+        <thead><tr><th>Setting</th><th>Value</th><th>Effect</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td><code>GATE_SECONDS</code></td><td>±1 ms</td><td>Limits how far a selected beat may move from its prediction</td><td><a href="./tracking-beat-fit.ts"><code>tracking-beat-fit.ts:59, 369–380</code></a></td></tr>
+          <tr><td><code>PEAK_WINDOW_SECONDS</code></td><td>±1.5 ms</td><td>Sets the audio region correlated against the template</td><td><code>tracking-beat-fit.ts:60, 315–326</code></td></tr>
+          <tr><td>Feature-frame spacing</td><td>About 0.122 ms at 8192 Hz</td><td>Quantizes selected beat times</td><td><a href="./defaults.ts"><code>defaults.ts:3</code></a></td></tr>
+        </tbody>
+      </table>
+
+      <p>The template predicts the expected time of every tick and tock. For each one:</p>
+
+      <ol>
+        <li>Search feature-frame times within 1 ms before or after the prediction.</li>
+        <li>
+          At each candidate time, correlate 1.5 ms on either side against the appropriate tick
+          or tock template.
+        </li>
+        <li>Add the two strongest frequency-band scores.</li>
+        <li>Choose the candidate time with the highest score.</li>
+      </ol>
+
+      <p>
+        Selected times are quantized to feature frames, about 0.122 ms at 8192 Hz. There is no
+        sub-frame peak interpolation.
+      </p>
+
+      <h2>7. Calculate individual BPH estimates</h2>
+
+      <div class="source">
+        Code: <a href="./tracking-beat-fit.ts"><code>public/tracking-beat-fit.ts:424–450</code></a>.
+        Beat-distance configuration: <code>tracking-beat-fit.ts:63</code>.
+      </div>
+
+      <h3>Relevant configuration</h3>
+
+      <table>
+        <thead><tr><th>Setting</th><th>Value</th><th>Effect</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td><code>HISTORY_BEATS</code></td><td>8, 10, 12, 14, 16, 18, 20, 24, 30, 36, 40</td><td>Selects the beat-pair distances measured</td><td><a href="./tracking-beat-fit.ts"><code>tracking-beat-fit.ts:63, 434–449</code></a></td></tr>
+          <tr><td><code>MAX_ERROR_BPH</code></td><td>300 BPH</td><td>Rejects interval estimates too far from nominal BPH</td><td><code>tracking-beat-fit.ts:57, 442–443</code></td></tr>
+        </tbody>
+      </table>
+
+      <p>The program compares selected beats separated by these distances:</p>
+
+      <div class="formula">8, 10, 12, 14, 16, 18, 20, 24, 30, 36, or 40 beats</div>
+
+      <p>For two selected events separated by a known number of beats:</p>
+
+      <div class="formula">estimated BPH = 3600 × beat distance / elapsed seconds</div>
+
+      <p>
+        Every distance is even. Tick is therefore compared to a later tick, and tock to a later
+        tock. This largely prevents tick/tock beat error from affecting the rate result. Any
+        estimate more than 300 BPH from the selected standard is discarded.
+      </p>
+
+      <h2>8. Combine estimates into measured BPH</h2>
+
+      <div class="source">
+        Robust filtering and median: <a href="./tracking-beat-fit.ts"><code>tracking-beat-fit.ts:452–487</code></a>.
+        Two-pass estimation and retained state: <code>tracking-beat-fit.ts:489–568</code>.
+      </div>
+
+      <h3>Relevant tuning values</h3>
+
+      <table>
+        <thead><tr><th>Setting</th><th>Value</th><th>Effect</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td>MAD scale</td><td>1.4826</td><td>Converts median absolute deviation to a standard-deviation-like scale</td><td><a href="./tracking-beat-fit.ts"><code>tracking-beat-fit.ts:463, 472</code></a></td></tr>
+          <tr><td>Minimum rough spread</td><td>2 BPH</td><td>Prevents overly narrow initial outlier rejection</td><td><code>tracking-beat-fit.ts:463</code></td></tr>
+          <tr><td>Outlier cutoff</td><td>2.5 × rough spread</td><td>Removes interval estimates far from the rough median</td><td><code>tracking-beat-fit.ts:464–466</code></td></tr>
+          <tr><td>Estimation passes</td><td>2</td><td>Refines the template around the first measured BPH</td><td><code>tracking-beat-fit.ts:532–543</code></td></tr>
+        </tbody>
+      </table>
+
+      <p>The individual estimates are robustly combined:</p>
+
+      <ol>
+        <li>Find the median BPH.</li>
+        <li>Find every estimate's absolute distance from that median.</li>
+        <li>Take the median of those distances and multiply it by 1.4826.</li>
+        <li>Use at least 2 BPH as the preliminary spread.</li>
+        <li>Discard estimates more than 2.5 preliminary spreads from the median.</li>
+        <li>Take the median of the remaining estimates as <code>measuredBph</code>.</li>
+      </ol>
+
+      <p>
+        The factor 1.4826 makes median absolute deviation comparable to standard deviation when
+        the values are normally distributed.
+      </p>
+
+      <p>
+        The program then rebuilds its templates at the first measured BPH and runs the beat
+        selection and BPH calculation a second time. The second result is returned.
+      </p>
+
+      <h2>9. Convert measured BPH to seconds/day</h2>
+
+      <div class="source">
+        Code: <a href="./main.ts"><code>public/main.ts:253–278</code></a>; the seconds/day formula is
+        on lines 255–258.
+      </div>
+
+      <div class="formula">
+        seconds/day = (measured BPH / standard BPH − 1) × 86400
+      </div>
+
+      <p>Example:</p>
+
+      <div class="formula">
+        standard BPH = 28800<br />
+        measured BPH = 28802<br />
+        seconds/day = (28802 / 28800 − 1) × 86400 = +6.0
+      </div>
+
+      <p>A positive result means the watch is running fast. A negative result means slow.</p>
+
+      <h2>10. Calculate the displayed seconds/day error</h2>
+
+      <div class="source">
+        BPH spread: <a href="./tracking-beat-fit.ts"><code>tracking-beat-fit.ts:460–472</code></a>.
+        Conversion and display: <a href="./main.ts"><code>main.ts:231–239, 259–278</code></a>.
+      </div>
+
+      <h3>Relevant tuning values</h3>
+
+      <table>
+        <thead><tr><th>Setting</th><th>Value</th><th>Effect</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td>MAD scale</td><td>1.4826</td><td>Defines the reported robust BPH spread</td><td><a href="./tracking-beat-fit.ts"><code>tracking-beat-fit.ts:471–472</code></a></td></tr>
+          <tr><td>Minimum reported BPH spread</td><td>0.1 BPH</td><td>Places a floor on displayed seconds/day error</td><td><code>tracking-beat-fit.ts:472</code></td></tr>
+          <tr><td>Seconds per day</td><td>86400</td><td>Converts fractional BPH error to daily time error</td><td><a href="./main.ts"><code>main.ts:236–239</code></a></td></tr>
+        </tbody>
+      </table>
+
+      <p>
+        After outlier filtering, the BPH error is the scaled median absolute deviation of all
+        retained estimates, with a minimum of 0.1 BPH:
+      </p>
+
+      <div class="formula">
+        BPH error = max(0.1, 1.4826 × median absolute BPH deviation)
+      </div>
+
+      <p>That is converted to seconds/day:</p>
+
+      <div class="formula">
+        seconds/day error = BPH error / standard BPH × 86400
+      </div>
+
+      <p>For a 28,800 BPH watch, the 0.1 BPH floor produces:</p>
+
+      <div class="formula">0.1 / 28800 × 86400 = ±0.3 seconds/day</div>
+
+      <div class="note">
+        <strong>Meaning of this error:</strong> it is the robust spread of the interval-derived
+        BPH estimates. It is not a calibrated statistical confidence interval, and it does not
+        include systematic microphone or algorithm error. Because many measured intervals
+        overlap, the estimates are also correlated. The value primarily measures short-window
+        internal consistency.
+      </div>
+
+      <h2>11. Calculate amplitude</h2>
+
+      <div class="source">
+        Summed tracking fold: <a href="./analysis-worker.ts"><code>analysis-worker.ts:140–167</code></a>.
+        Event detection and amplitude calculation: <code>analysis-worker.ts:229–430</code>. Use of
+        nominal BPH: <code>analysis-worker.ts:598–604</code>.
+      </div>
+
+      <h3>Relevant configuration</h3>
+
+      <table>
+        <thead><tr><th>Setting</th><th>Value</th><th>Effect</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td><code>DEFAULT_LIFT_ANGLE_DEGREES</code></td><td>52°</td><td>Default numerator in the amplitude formula</td><td><a href="./defaults.ts"><code>defaults.ts:2</code></a></td></tr>
+          <tr><td>Allowed lift angle</td><td>20–90°</td><td>Worker clamps user input to this range</td><td><a href="./analysis-worker.ts"><code>analysis-worker.ts:52–56</code></a></td></tr>
+          <tr><td><code>DEFAULT_TRACKING_FOLD_BIN_COUNT</code></td><td>4096 bins</td><td>Sets amplitude-fold phase spacing</td><td><a href="./defaults.ts"><code>defaults.ts:5</code></a></td></tr>
+          <tr><td>Amplitude smoothing radius</td><td>About 0.25 ms</td><td>Smooths the folded event detector</td><td><a href="./analysis-worker.ts"><code>analysis-worker.ts:352</code></a></td></tr>
+          <tr><td>Pre-impulse search window</td><td>12% of one beat</td><td>Limits where the preceding acoustic event may be found</td><td><code>analysis-worker.ts:386</code></td></tr>
+          <tr><td>Preceding-event threshold</td><td>8% of main peak</td><td>Rejects weak preceding structure</td><td><code>analysis-worker.ts:281</code></td></tr>
+        </tbody>
+      </table>
+
+      <p>
+        Amplitude uses the same transient features, but not the individually selected beat
+        times. All frequency bands are added together and folded into a 4096-bin two-beat cycle
+        at <code>standardBph</code>.
+      </p>
+
+      <div class="note">
+        Amplitude uses nominal <code>standardBph</code>, not precision
+        <code>measuredBph</code>.
+      </div>
+
+      <h3>Find the main tick and tock peaks</h3>
+
+      <p class="source">Implementation: <code>analysis-worker.ts:231–263, 380–411</code>.</p>
+
+      <p>
+        The folded cycle is split in half. The maximum bin in the first half becomes the main
+        tick impulse; the maximum bin in the second half becomes the main tock impulse.
+      </p>
+
+      <div class="formula">seconds per fold bin = two-beat cycle seconds / 4096</div>
+
+      <p>For 28,800 BPH:</p>
+
+      <div class="formula">
+        two-beat cycle = 0.25 seconds<br />
+        seconds per fold bin = 0.25 / 4096 = about 0.061 ms
+      </div>
+
+      <p>
+        This fold spacing is finer than the original 0.122 ms feature-frame spacing. Folding
+        does not create new timing information.
+      </p>
+
+      <h3>Find the preceding acoustic event</h3>
+
+      <p class="source">Implementation: <code>analysis-worker.ts:265–327, 342–378</code>.</p>
+
+      <p>For tick and tock independently, the program:</p>
+
+      <ol>
+        <li>Smooths the fold over approximately 0.25 ms.</li>
+        <li>Searches backward from the main peak through 12% of one beat.</li>
+        <li>Requires a preceding event to reach at least 8% of the main peak.</li>
+        <li>Prefers the earliest qualifying local maximum.</li>
+        <li>Falls back to the earliest threshold crossing or strongest qualifying point.</li>
+      </ol>
+
+      <p>The separation from that preceding event to the main impulse is the lift time:</p>
+
+      <div class="formula">lift seconds = absolute offset in bins × seconds per fold bin</div>
+
+      <p>
+        The UI calls this “unlock/drop.” More precisely, the implementation measures the time
+        from a detected preceding acoustic lump to the main folded peak.
+      </p>
+
+      <h3>Convert lift time to amplitude</h3>
+
+      <p class="source">
+        Formula: <code>analysis-worker.ts:329–340</code>. Tick/tock averaging:
+        <code>analysis-worker.ts:412–429</code>. Lift-angle UI configuration:
+        <a href="./main.ts"><code>main.ts:176–184, 283–293</code></a>.
+      </p>
+
+      <p>Let:</p>
+
+      <ul>
+        <li><code>L</code> = configured lift angle in degrees, 52° by default</li>
+        <li><code>t</code> = detected lift time in seconds</li>
+        <li><code>C</code> = two-beat cycle duration in seconds</li>
+      </ul>
+
+      <div class="formula">amplitude in degrees = L / (2 × sin(π × t / C))</div>
+
+      <p>
+        Tick and tock amplitude are calculated separately. The displayed amplitude is their
+        arithmetic mean. If only one side produces a result, that one result is displayed.
+      </p>
+
+      <h2>12. Interpretation limits</h2>
+
+      <div class="source">
+        Result data model: <a href="./data.ts"><code>public/data.ts:87–123</code></a>. Worker result
+        assembly: <a href="./analysis-worker.ts"><code>analysis-worker.ts:617–642</code></a>.
+      </div>
+
+      <ul>
+        <li>No uncertainty or error value is calculated for amplitude.</li>
+        <li>Amplitude depends directly on the configured lift angle.</li>
+        <li>
+          The code assumes that the detected preceding sound corresponds to the physical unlock
+          event; it does not independently verify that assumption.
+        </li>
+        <li>A large rate offset can smear amplitude because amplitude folds at nominal BPH.</li>
+        <li>The rate error describes consistency, not guaranteed absolute accuracy.</li>
+        <li>All values describe only the current rolling window, six seconds by default.</li>
+      </ul>
+
+      <p><a href="./">Back to the timegrapher</a></p>
+    </main>
+  </body>
+</html>

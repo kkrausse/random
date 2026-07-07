@@ -58,23 +58,6 @@ const makeRowLabels = (rows: FoldRow[]) => rows.map((row) => `${row.bph} / ${row
 
 const cycleSecondsFor = (bph: number, cycleBeats: number) => (3600 / bph) * cycleBeats;
 
-const wrapIndex = (index: number, count: number) => ((index % count) + count) % count;
-
-const findPeakBin = (bins: Float32Array, start: number, count: number) => {
-  let peakBin = start;
-  let peakValue = bins[start] ?? 0;
-
-  for (let offset = 1; offset < count; offset += 1) {
-    const bin = start + offset;
-    if (bins[bin] > peakValue) {
-      peakBin = bin;
-      peakValue = bins[bin];
-    }
-  }
-
-  return peakBin;
-};
-
 const makeTrackingFoldSeries = (fold: TrackingFold, axisBph: number) => {
   const cycleSeconds = cycleSecondsFor(axisBph, fold.cycleBeats);
 
@@ -90,30 +73,6 @@ const makeTrackingFoldSeries = (fold: TrackingFold, axisBph: number) => {
       lineStyle: { width: 1 },
     },
   ];
-};
-
-const makePeakWindow = (
-  fold: TrackingFold,
-  beatStartBin: number,
-  peakBin: number,
-  beatBinCount: number,
-  windowBins: number,
-  binSeconds: number,
-  sign: 1 | -1,
-) => {
-  const peakOffset = peakBin - beatStartBin;
-  const points: ChartPoint[] = [];
-
-  for (let offset = -windowBins; offset <= windowBins; offset += 1) {
-    const beatOffset = wrapIndex(peakOffset + offset, beatBinCount);
-    const bin = beatStartBin + beatOffset;
-    points.push([
-      Number((offset * binSeconds).toFixed(5)),
-      Number((fold.bins[bin] * sign).toFixed(4)),
-    ]);
-  }
-
-  return points;
 };
 
 const makeMarkerLine = (offsetSeconds: number, yMin: number, yMax: number): ChartPoint[] => [
@@ -219,87 +178,40 @@ const makeAmplitudeMarkerSeries = (
 
 const makeTickTockPeakData = (
   analysis: AnalysisMessage,
-  fold: TrackingFold,
-  axisBph: number,
 ): TickTockPeakData => {
-  const cycleSeconds = cycleSecondsFor(axisBph, fold.cycleBeats);
-  const binSeconds = cycleSeconds / fold.binCount;
-  const beatBinCount = Math.floor(fold.binCount / fold.cycleBeats);
-  const windowBins = Math.max(2, Math.round(beatBinCount * 0.12));
-  const tickPeakBin = findPeakBin(fold.bins, 0, beatBinCount);
-  const tockStartBin = beatBinCount;
-  const tockPeakBin = findPeakBin(fold.bins, tockStartBin, beatBinCount);
-  const tickData = makePeakWindow(
-    fold,
-    0,
-    tickPeakBin,
-    beatBinCount,
-    windowBins,
-    binSeconds,
-    1,
-  );
-  const tockData = makePeakWindow(
-    fold,
-    tockStartBin,
-    tockPeakBin,
-    beatBinCount,
-    windowBins,
-    binSeconds,
-    -1,
-  );
-  const tickPoints = tickData;
-  const tockPoints = tockData;
-  const { yMin, yMax } = yBoundsFor([...tickPoints, ...tockPoints]);
-  const sampleSeries = analysis.tickTockPeakSamples.flatMap((sample) => {
+  const sampleSeries = analysis.tickTockPeakSamples.map((sample) => {
     const points = Array.from({ length: Math.floor(sample.points.length / 2) }, (_, index) => [
       sample.points[index * 2],
       sample.points[index * 2 + 1],
     ] as ChartPoint);
-    const series = [
-      {
-        name: sample.name,
-        type: "line" as const,
-        data: points,
-        showSymbol: false as const,
-        lineStyle: { width: 1, opacity: 0.18 },
-        silent: true,
-      },
-    ];
+    const isFoldTrace = sample.name === "tick" || sample.name === "tock";
 
-    if (sample.estimateOffsetSeconds === undefined) return series;
-
-    series.push({
-      name: `${sample.name} estimate`,
+    return {
+      name: sample.name,
       type: "line" as const,
-      data: makeMarkerLine(sample.estimateOffsetSeconds, yMin, yMax),
+      data: points,
       showSymbol: false as const,
-      lineStyle: { width: 1, opacity: 0.12 },
-      silent: true,
-    });
-
-    return series;
+      lineStyle: isFoldTrace
+        ? { width: 2 }
+        : { width: 1, opacity: 0.18 },
+      silent: !isFoldTrace,
+    };
   });
+  const tickPoints = sampleSeries.find((series) => series.name === "tick")?.data ?? [];
+  const tockPoints = sampleSeries.find((series) => series.name === "tock")?.data ?? [];
+  const allPoints = sampleSeries.flatMap((series) => series.data);
+  const { yMin, yMax } = yBoundsFor(allPoints);
+  let zoomSeconds = 0.002;
+  for (let index = 0; index < allPoints.length; index += 1) {
+    zoomSeconds = Math.max(zoomSeconds, Math.abs(allPoints[index][0]));
+  }
 
   return {
-    zoomSeconds: Number((windowBins * binSeconds).toFixed(5)),
+    zoomSeconds: Number(zoomSeconds.toFixed(5)),
     yMin,
     yMax,
     series: [
       ...sampleSeries,
-      {
-        name: "tick",
-        type: "line",
-        data: tickPoints,
-        showSymbol: false,
-        lineStyle: { width: 2 },
-      },
-      {
-        name: "tock",
-        type: "line",
-        data: tockPoints,
-        showSymbol: false,
-        lineStyle: { width: 2 },
-      },
       ...makeAmplitudeMarkerSeries(analysis, tickPoints, tockPoints, yMin, yMax),
     ],
   };
@@ -397,7 +309,7 @@ export const createTickTockPeakChart = (element: HTMLElement) => {
         },
         xAxis: {
           type: "value",
-          name: "seconds from peak",
+          name: "seconds from drop",
         },
         yAxis: {
           type: "value",
@@ -413,8 +325,7 @@ export const createTickTockPeakChart = (element: HTMLElement) => {
       return;
     }
 
-    const axisBph = analysis.tracking.standardBph || fold.bph;
-    const peakData = makeTickTockPeakData(analysis, fold, axisBph);
+    const peakData = makeTickTockPeakData(analysis);
 
     chart.setOption({
       animation: false,
@@ -438,7 +349,7 @@ export const createTickTockPeakChart = (element: HTMLElement) => {
       },
       xAxis: {
         type: "value",
-        name: "seconds from peak",
+        name: "seconds from drop",
         min: -peakData.zoomSeconds,
         max: peakData.zoomSeconds,
       },
