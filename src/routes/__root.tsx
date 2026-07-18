@@ -25,8 +25,20 @@ export const Route = createRootRoute({
 			},
 		],
 	}),
+	notFoundComponent: NotFoundPage,
 	shellComponent: RootDocument,
 });
+
+function NotFoundPage() {
+	return (
+		<main className="not-found">
+			<p className="eyebrow">404</p>
+			<h1>Route not found</h1>
+			<p>The page you requested does not exist.</p>
+			<a href="/">Return to workout routes</a>
+		</main>
+	);
+}
 
 function RootDocument({ children }: { children: React.ReactNode }) {
 	return (

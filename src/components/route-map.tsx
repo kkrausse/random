@@ -1,8 +1,10 @@
 import { useEffect, useRef } from "react";
 import MapView, {
+	FullscreenControl,
 	Layer,
 	type MapRef,
 	NavigationControl,
+	ScaleControl,
 	Source,
 } from "react-map-gl/maplibre";
 import type { WorkoutRoute } from "../lib/apple-health";
@@ -59,10 +61,17 @@ export function RouteMap({ route }: RouteMapProps) {
 				initialViewState={{ longitude: -98.58, latitude: 39.83, zoom: 3.3 }}
 				mapStyle="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
 				attributionControl={false}
+				boxZoom
 				scrollZoom
 				doubleClickZoom
+				dragPan
+				dragRotate
+				keyboard
+				touchZoomRotate
 			>
-				<NavigationControl position="top-right" showCompass={false} />
+				<NavigationControl position="top-right" showCompass visualizePitch />
+				<FullscreenControl position="top-right" />
+				<ScaleControl position="bottom-left" unit="imperial" />
 				{routeGeoJson && (
 					<Source id="workout-route-source" type="geojson" data={routeGeoJson}>
 						<Layer {...lineLayer} />

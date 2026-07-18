@@ -168,6 +168,30 @@ function Home() {
 						placeholder="Search by date"
 					/>
 				</label>
+				{(isLoadingRoute || selectedSummary) && (
+					<section className="sidebar-route-detail" aria-label="Selected route">
+						<div className="sidebar-route-heading">
+							<div>
+								<p className="eyebrow">Workout route</p>
+								<h2>{workout?.label ?? selectedSummary?.label}</h2>
+							</div>
+							{isLoadingRoute && <LoaderCircle className="spin" size={18} />}
+						</div>
+						{workout && !isLoadingRoute && (
+							<div className="route-stats">
+								<span>
+									<b>{formatDistance(workout.distanceMeters)}</b>distance
+								</span>
+								<span>
+									<b>{formatDuration(workout.durationSeconds)}</b>duration
+								</span>
+								<span>
+									<b>{workout.points.length.toLocaleString()}</b>points
+								</span>
+							</div>
+						)}
+					</section>
+				)}
 
 				<div className="route-list">
 					{isLoadingExport && <LoadingMessage label="Reading workout routes" />}
@@ -204,31 +228,6 @@ function Home() {
 					</div>
 					<span className="privacy-note">Processed in your browser</span>
 				</div>
-				{(isLoadingRoute || selectedSummary) && (
-					<div className="route-detail">
-						<div>
-							<p className="eyebrow">Workout route</p>
-							<h2>{workout?.label ?? selectedSummary?.label}</h2>
-						</div>
-						{isLoadingRoute ? (
-							<LoaderCircle className="spin" size={20} />
-						) : (
-							workout && (
-								<div className="route-stats">
-									<span>
-										<b>{formatDistance(workout.distanceMeters)}</b>distance
-									</span>
-									<span>
-										<b>{formatDuration(workout.durationSeconds)}</b>duration
-									</span>
-									<span>
-										<b>{workout.points.length.toLocaleString()}</b>points
-									</span>
-								</div>
-							)
-						)}
-					</div>
-				)}
 				{!isLoadingExport && !selectedSummary && !error && (
 					<div className="map-empty">
 						<MapPinned size={26} />
