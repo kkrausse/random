@@ -94,19 +94,24 @@ struct PhotoResourceExporter {
         guard !resources.isEmpty else { throw PicSyncError.sourceUnavailable }
         let directory = try stagingDirectory(runID: runID, transferID: transferID)
         var manifests = [ResourceManifest]()
-        for (index, resource) in resources.enumerated() {
-            try Task.checkCancellation()
-            let role = PhotoResourceSelector.role(for: resource.type)
-            let ext = URL(fileURLWithPath: resource.originalFilename).pathExtension
-            let fallback = "\(asset.creationDate.map { Self.fallbackDate.string(from: $0) } ?? "asset")_\(String(asset.localIdentifier.prefix(8)))_\(role)\(ext.isEmpty ? "" : ".\(ext)")"
-            let filename = SafeFilename.make(resource.originalFilename, fallback: fallback)
-            let localURL = directory.appendingPathComponent("\(index)-\(UUID().uuidString).\(URL(fileURLWithPath: filename).pathExtension)")
-            let temporaryURL = localURL.appendingPathExtension("partial")
-            try await export(resource, to: temporaryURL)
-            try FileManager.default.moveItem(at: temporaryURL, to: localURL)
-            let hash = try ContentHasher.hash(file: localURL)
-            let size = try localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize.map(Int64.init) ?? 0
-            manifests.append(ResourceManifest(role: role, filename: filename, stagingPath: localURL.path, byteCount: size, sha256: hash, finalPath: nil, temporaryPath: nil))
+        do {
+            for (index, resource) in resources.enumerated() {
+                try Task.checkCancellation()
+                let role = PhotoResourceSelector.role(for: resource.type)
+                let ext = URL(fileURLWithPath: resource.originalFilename).pathExtension
+                let fallback = "\(asset.creationDate.map { Self.fallbackDate.string(from: $0) } ?? "asset")_\(String(asset.localIdentifier.prefix(8)))_\(role)\(ext.isEmpty ? "" : ".\(ext)")"
+                let filename = SafeFilename.make(resource.originalFilename, fallback: fallback)
+                let localURL = directory.appendingPathComponent("\(index)-\(UUID().uuidString).\(URL(fileURLWithPath: filename).pathExtension)")
+                let temporaryURL = localURL.appendingPathExtension("partial")
+                try await export(resource, to: temporaryURL)
+                try FileManager.default.moveItem(at: temporaryURL, to: localURL)
+                let hash = try ContentHasher.hash(file: localURL)
+                let size = try localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize.map(Int64.init) ?? 0
+                manifests.append(ResourceManifest(role: role, filename: filename, stagingPath: localURL.path, byteCount: size, sha256: hash, finalPath: nil, temporaryPath: nil))
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
         }
         return manifests
     }
@@ -143,11 +148,11 @@ enum ContentHasher {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         var hasher = SHA256()
-        while autoreleasepool(invoking: {
-            let data = try? handle.read(upToCount: chunkSize) ?? Data()
-            if let data, !data.isEmpty { hasher.update(data: data); return true }
-            return false
-        }) {}
+        while true {
+            let data = try handle.read(upToCount: chunkSize) ?? Data()
+            guard !data.isEmpty else { break }
+            hasher.update(data: data)
+        }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 

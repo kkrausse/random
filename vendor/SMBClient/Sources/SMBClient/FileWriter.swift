@@ -22,13 +22,14 @@ public class FileWriter {
     while offset < data.count {
       let buffer = data[offset..<min(offset + UInt64(session.maxWriteSize), UInt64(data.count))]
 
-      _ = try await session.write(
+      let response = try await session.write(
         data: buffer,
         fileId: fileProxy.id,
         offset: offset
       )
 
-      offset += UInt64(buffer.count)
+      guard response.count > 0 else { throw CocoaError(.fileWriteUnknown) }
+      offset += UInt64(response.count)
       progressHandler(Double(offset) / Double(data.count))
     }
   }
@@ -46,13 +47,14 @@ public class FileWriter {
       let data = fileHandle.readData(ofLength: Int(session.maxWriteSize))
       if data.isEmpty { break }
 
-      _ = try await session.write(
+      let response = try await session.write(
         data: data,
         fileId: fileProxy.id,
         offset: offset
       )
 
-      progressHandler(Double(offset) / Double(fileSize))
+      guard response.count == data.count else { throw CocoaError(.fileWriteUnknown) }
+      progressHandler(Double(offset + UInt64(response.count)) / Double(fileSize))
     }
   }
 
@@ -117,8 +119,7 @@ public class FileWriter {
           .writeData,
           .appendData,
           .readAttributes,
-          .readControl,
-          .writeDac
+          .readControl
         ],
         fileAttributes: [.archive, .normal],
         shareAccess: [.read, .write, .delete],

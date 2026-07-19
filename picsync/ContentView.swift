@@ -57,7 +57,7 @@ struct ContentView: View {
 
                 Section("Transfer Settings") {
                     Stepper("Parallel transfers: \(model.parallelism)", value: $model.parallelism, in: 1...20)
-                    Text("Applied to all new syncs. Active and saved runs keep their original worker count.")
+                    Text("Applied to new syncs and the next time a paused or failed sync resumes. Running workers are unchanged until you pause.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -73,11 +73,23 @@ struct ContentView: View {
                                 RunRow(run: run)
                             }
                         }
+                        .onDelete { offsets in
+                            let runIDs = offsets.map { model.runs[$0].id }
+                            Task {
+                                for runID in runIDs { _ = await model.delete(runID: runID) }
+                            }
+                        }
                     }
                 }
             }
             .navigationTitle("PicSync")
-            .task { await model.load() }
+            .task {
+                await model.load()
+                while !Task.isCancelled {
+                    await model.refresh()
+                    try? await Task.sleep(for: .seconds(1))
+                }
+            }
             .navigationDestination(isPresented: $model.presentsPhotoSelection) {
                 PhotoSelectionView(model: model)
             }
@@ -332,6 +344,7 @@ private struct AlbumReviewView: View {
     @Bindable var model: AppModel
     let album: PhotoAlbum
     @State private var run: SyncRun?
+    @State private var isStarting = false
 
     var body: some View {
         Form {
@@ -344,6 +357,8 @@ private struct AlbumReviewView: View {
             Section {
                 Button("Start Album Sync") {
                     Task {
+                        isStarting = true
+                        defer { isStarting = false }
                         do {
                             let createdRun = try await model.createAlbumRun(album, parallelism: model.parallelism)
                             run = createdRun
@@ -352,6 +367,7 @@ private struct AlbumReviewView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(isStarting)
             }
         }
         .navigationTitle("Review Album")
@@ -363,6 +379,7 @@ private struct SyncReviewView: View {
     @Bindable var model: AppModel
     let selectedItems: [PhotosPickerItem]
     @State private var run: SyncRun?
+    @State private var isStarting = false
 
     var body: some View {
         Form {
@@ -386,6 +403,8 @@ private struct SyncReviewView: View {
             Section {
                 Button("Start Sync") {
                     Task {
+                        isStarting = true
+                        defer { isStarting = false }
                         do {
                             let createdRun = try await model.createRun(items: selectedItems, parallelism: model.parallelism)
                             run = createdRun
@@ -395,6 +414,7 @@ private struct SyncReviewView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(isStarting)
             }
         }
         .navigationTitle("Review Sync")
@@ -403,6 +423,7 @@ private struct SyncReviewView: View {
 }
 
 private struct RunDetailView: View {
+    @Environment(\.dismiss) private var dismiss
     @Bindable var model: AppModel
     let run: SyncRun
     @State private var showsErrors = false
@@ -412,26 +433,37 @@ private struct RunDetailView: View {
     var body: some View {
         List {
             Section("Progress") {
-                ProgressView(value: currentRun.totalBytes == 0 ? 0 : Double(currentRun.completedBytes) / Double(currentRun.totalBytes))
+                let finishedCount = currentRun.completedCount + currentRun.skippedCount + currentRun.failedCount
+                ProgressView(value: currentRun.assetIdentifiers.isEmpty ? 0 : Double(finishedCount) / Double(currentRun.assetIdentifiers.count))
                 LabeledContent("State", value: currentRun.state.displayName)
+                LabeledContent("Active workers", value: "\(currentRun.activeWorkerCount ?? 0)")
+                if currentRun.state.isResumable {
+                    LabeledContent("Next resume limit", value: "\(model.parallelism)")
+                }
                 LabeledContent("Completed", value: "\(currentRun.completedCount)")
                 LabeledContent("Skipped duplicates", value: "\(currentRun.skippedCount)")
                 LabeledContent("Failed", value: "\(currentRun.failedCount)")
             }
             Section("Actions") {
                 if currentRun.state.isResumable {
-                    Button(model.isResuming ? "Resuming..." : "Resume") { Task { await model.resume(runID: currentRun.id) } }
-                        .disabled(model.isResuming)
+                    Button("Resume") { Task { await model.resume(runID: currentRun.id) } }
+                        .disabled(!model.activeRunIDs.isEmpty)
                 }
                 if currentRun.state == .running {
                     Button("Pause") { Task { await model.pause(runID: currentRun.id) } }
                 }
-                if currentRun.failedCount > 0 {
-                    Button("Retry Failed") { Task { await model.retryFailed(runID: currentRun.id) } }
+                if currentRun.state == .pausing {
+                    LabeledContent("Finishing active items", value: "Pausing")
                 }
+                Button("Delete Run", role: .destructive) {
+                    Task {
+                        if await model.delete(runID: currentRun.id) { dismiss() }
+                    }
+                }
+                .disabled(model.activeRunIDs.contains(currentRun.id))
             }
             Section("Error Output") {
-                let transfers = model.transferItems.filter { $0.runID == currentRun.id }
+                let transfers = model.transfers(for: currentRun.id)
                 let failures = transfers.filter { $0.state == .failed }
                 if failures.isEmpty {
                     Text(transfers.isEmpty ? "No transfer output yet." : "No asset errors recorded.")
@@ -458,14 +490,15 @@ private struct RunDetailView: View {
             }
         }
         .navigationTitle(currentRun.sourceLabel)
-        .task(id: currentRun.id) { await model.loadTransfers(runID: currentRun.id) }
         .task(id: currentRun.id) {
             while !Task.isCancelled {
-                await model.refreshRun(runID: currentRun.id)
+                await model.refresh()
+                await model.loadTransfers(runID: currentRun.id)
                 try? await Task.sleep(for: .seconds(1))
             }
         }
     }
+
 }
 
 #Preview {

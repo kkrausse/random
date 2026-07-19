@@ -44,7 +44,7 @@ The home screen shows the saved server, share, folder, password-storage status, 
 
 Set **Parallel transfers** on the home screen under **Transfer Settings**. The setting persists across launches, applies to new runs, and supports 1 through 20 workers.
 
-Each active asset worker creates its own SMB session. This avoids interleaving requests through one SMBClient session. Existing runs keep the parallelism value recorded when they were created.
+Each active asset worker creates its own SMB session. This avoids interleaving requests through one SMBClient session. Changing the setting does not resize a running pool, but the current setting is applied when a paused or failed run resumes.
 
 ## Building
 

@@ -16,7 +16,8 @@ protocol RemoteFileService: Sendable {
     func listDirectory(path: String) async throws -> [RemoteItem]
     func createDirectory(path: String) async throws
     func stat(path: String) async throws -> RemoteItem?
-    func upload(file: URL, to path: String, progress: @escaping @Sendable (Int64) async -> Void) async throws
+    func read(path: String) async throws -> Data
+    func upload(file: URL, to path: String, progress: @escaping @Sendable (Int64) -> Void) async throws
     func rename(from: String, to: String) async throws
     func delete(path: String) async throws
 }
@@ -29,23 +30,30 @@ actor SMBRemoteFileService: RemoteFileService {
         #if DEBUG
         print("[PicSync SMB] authenticating host=\(profile.host) port=\(profile.port)")
         #endif
-        try await client.login(username: profile.username, password: password, domain: profile.domain)
-        if !profile.share.isEmpty {
+        do {
+            try await client.login(username: profile.username, password: password, domain: profile.domain)
+            if !profile.share.isEmpty {
             #if DEBUG
             print("[PicSync SMB] opening share=\(profile.share)")
             #endif
-            try await client.connectShare(profile.share)
+                try await client.connectShare(profile.share)
             #if DEBUG
             print("[PicSync SMB] opened share=\(profile.share)")
             #endif
+            }
+            self.client = client
+        } catch {
+            client.session.disconnect()
+            self.client = nil
+            throw error
         }
-        self.client = client
     }
 
     func disconnect() async {
         guard let client else { return }
         _ = try? await client.disconnectShare()
         _ = try? await client.logoff()
+        client.session.disconnect()
         self.client = nil
     }
 
@@ -82,12 +90,14 @@ actor SMBRemoteFileService: RemoteFileService {
         }
     }
 
-    func upload(file: URL, to path: String, progress: @escaping @Sendable (Int64) async -> Void) async throws {
+    func read(path: String) async throws -> Data { try await connectedClient().download(path: path) }
+
+    func upload(file: URL, to path: String, progress: @escaping @Sendable (Int64) -> Void) async throws {
         let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize.map(Int64.init) ?? 0
         let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
         try await connectedClient().upload(fileHandle: handle, path: path) { fraction in
-            Task { await progress(Int64(Double(size) * fraction)) }
+            progress(Int64(Double(size) * fraction))
         }
     }
 

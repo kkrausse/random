@@ -22,10 +22,22 @@ actor SyncStore {
     func save(profile: ServerProfile) throws { snapshot.profiles.removeAll { $0.id == profile.id }; snapshot.profiles.append(profile); try save() }
     func save(run: SyncRun, transfers: [AssetTransfer]? = nil) throws { snapshot.runs.removeAll { $0.id == run.id }; snapshot.runs.append(run); if let transfers { snapshot.transfers.removeAll { $0.runID == run.id }; snapshot.transfers.append(contentsOf: transfers) }; try save() }
     func save(transfer: AssetTransfer) throws { snapshot.transfers.removeAll { $0.id == transfer.id }; snapshot.transfers.append(transfer); try save() }
+    func deleteRun(_ runID: UUID) throws {
+        snapshot.runs.removeAll { $0.id == runID }
+        snapshot.transfers.removeAll { $0.runID == runID }
+        try save()
+    }
+    func setActiveWorkerCount(_ count: Int, for runID: UUID) throws {
+        guard let index = snapshot.runs.firstIndex(where: { $0.id == runID }) else { return }
+        snapshot.runs[index].activeWorkerCount = count
+        snapshot.runs[index].updatedAt = Date()
+        try save()
+    }
     func requeueFailedTransfers(for runID: UUID) throws -> Int {
         var count = 0
         for index in snapshot.transfers.indices where snapshot.transfers[index].runID == runID && snapshot.transfers[index].state == .failed {
-            snapshot.transfers[index].state = .queued
+            let manifest = snapshot.transfers[index].manifest
+            snapshot.transfers[index].state = Self.hasValidStaging(manifest) ? .staged : .queued
             snapshot.transfers[index].errorMessage = nil
             snapshot.transfers[index].updatedAt = Date()
             count += 1
@@ -35,8 +47,25 @@ actor SyncStore {
     }
 
     private func recoverInterruptedRuns() {
-        for index in snapshot.runs.indices where [.running, .pausing].contains(snapshot.runs[index].state) { snapshot.runs[index].state = .paused; snapshot.runs[index].updatedAt = Date() }
-        for index in snapshot.transfers.indices where [.exporting, .uploading].contains(snapshot.transfers[index].state) { snapshot.transfers[index].state = .queued; snapshot.transfers[index].updatedAt = Date() }
+        for index in snapshot.runs.indices {
+            snapshot.runs[index].activeWorkerCount = 0
+            if [.running, .pausing].contains(snapshot.runs[index].state) {
+                snapshot.runs[index].state = .paused
+                snapshot.runs[index].updatedAt = Date()
+            }
+        }
+        for index in snapshot.transfers.indices where [.exporting, .deduplicating, .uploading, .committing, .indexing].contains(snapshot.transfers[index].state) {
+            let manifest = snapshot.transfers[index].manifest
+            snapshot.transfers[index].state = Self.hasValidStaging(manifest) ? .staged : .queued
+            snapshot.transfers[index].updatedAt = Date()
+        }
+    }
+    private static func hasValidStaging(_ manifest: [ResourceManifest]) -> Bool {
+        !manifest.isEmpty && manifest.allSatisfy { resource in
+            guard let size = try? URL(fileURLWithPath: resource.stagingPath).resourceValues(forKeys: [.fileSizeKey]).fileSize else { return false }
+            guard Int64(size) == resource.byteCount else { return false }
+            return (try? ContentHasher.hash(file: URL(fileURLWithPath: resource.stagingPath))) == resource.sha256
+        }
     }
     private func save() throws { try JSONEncoder().encode(snapshot).write(to: url, options: .atomic) }
 }

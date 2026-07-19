@@ -35,4 +35,26 @@ struct picsyncTests {
         try Data(repeating: 0x61, count: 2_500_000).write(to: url)
         #expect(try ContentHasher.hash(file: url, chunkSize: 1024) == "38a637965059125eeb67f54c30e7f48a61859a467a800ba09740ba48a924f2b9")
     }
+
+    @Test func workersPullEachTransferFromQueueExactlyOnce() async {
+        let runID = UUID()
+        let transfers = (0..<50).map {
+            AssetTransfer(id: UUID(), runID: runID, localIdentifier: "\($0)", state: .queued, manifest: [], fingerprint: nil, attempts: 0, errorMessage: nil, updatedAt: Date())
+        }
+        let queue = TransferWorkQueue(transfers)
+        let identifiers = await withTaskGroup(of: [String].self, returning: [String].self) { group in
+            for _ in 0..<7 {
+                group.addTask {
+                    var values = [String]()
+                    while let transfer = await queue.next() { values.append(transfer.localIdentifier) }
+                    return values
+                }
+            }
+            return await group.reduce(into: []) { $0.append(contentsOf: $1) }
+        }
+
+        #expect(identifiers.count == transfers.count)
+        #expect(Set(identifiers).count == transfers.count)
+        #expect(Set(identifiers) == Set(transfers.map(\.localIdentifier)))
+    }
 }

@@ -93,6 +93,7 @@ enum PicSyncError: LocalizedError, Equatable {
     case sourceUnavailable
     case unsupportedSMB
     case cancelled
+    case runActive
 
     var errorDescription: String? {
         switch self {
@@ -103,6 +104,7 @@ enum PicSyncError: LocalizedError, Equatable {
         case .sourceUnavailable: "One or more selected photos are no longer available."
         case .unsupportedSMB: "The SMB transport has not been installed in this build."
         case .cancelled: "The sync was cancelled."
+        case .runActive: "Pause this sync and wait for its active workers to finish before deleting it."
         }
     }
 }
@@ -115,6 +117,10 @@ enum SyncRunState: String, Codable, Sendable {
 }
 
 enum AssetTransferState: String, Codable, Sendable { case queued, exporting, staged, deduplicating, uploading, committing, indexing, completed, skippedDuplicate, failed, cancelled }
+
+extension AssetTransferState {
+    var isTerminal: Bool { self == .completed || self == .skippedDuplicate || self == .failed || self == .cancelled }
+}
 
 struct ResourceManifest: Codable, Sendable, Equatable {
     var role: String
@@ -146,6 +152,7 @@ struct SyncRun: Codable, Identifiable, Sendable, Equatable, Hashable {
     var share: String
     var destinationPath: String
     var parallelism: Int
+    var activeWorkerCount: Int?
     var state: SyncRunState
     var createdAt: Date
     var updatedAt: Date

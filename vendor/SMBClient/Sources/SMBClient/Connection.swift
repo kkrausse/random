@@ -118,7 +118,7 @@ public class Connection {
   }
 
   private func receive(completion: @escaping (Result<Data, Error>) -> Void) {
-    let minimumIncompleteLength = 0
+    let minimumIncompleteLength = 4
     let maximumLength = 65536
 
     connection.receive(
@@ -139,6 +139,10 @@ public class Connection {
         return
       }
 
+      guard content.count >= 4 else {
+        completion(.failure(ConnectionError.noData))
+        return
+      }
       let transportPacket = DirectTCPPacket(response: content)
       let length = Int(transportPacket.protocolLength)
 

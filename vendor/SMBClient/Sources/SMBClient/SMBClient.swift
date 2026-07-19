@@ -122,11 +122,14 @@ public class SMBClient {
 
   public func download(path: String, progressHandler: (_ progress: Double) -> Void) async throws -> Data {
     let fileReader = fileReader(path: Pathname.normalize(path))
-
-    let data = try await fileReader.download(progressHandler: progressHandler)
-    try await fileReader.close()
-
-    return data
+    do {
+      let data = try await fileReader.download(progressHandler: progressHandler)
+      try await fileReader.close()
+      return data
+    } catch {
+      try? await fileReader.close()
+      throw error
+    }
   }
 
   public func download(path: String, localPath: URL, overwrite: Bool = false, progressHandler: (_ progress: Double) -> Void = { _ in }) async throws {
@@ -142,9 +145,13 @@ public class SMBClient {
 
   public func upload(content: Data, path: String, progressHandler: (_ progress: Double) -> Void) async throws {
     let fileWriter = fileWriter(path: Pathname.normalize(path))
-
-    try await fileWriter.upload(data: content, progressHandler: progressHandler)
-    try await fileWriter.close()
+    do {
+      try await fileWriter.upload(data: content, progressHandler: progressHandler)
+      try await fileWriter.close()
+    } catch {
+      try? await fileWriter.close()
+      throw error
+    }
   }
 
   public func upload(fileHandle: FileHandle, path: String) async throws {
@@ -153,9 +160,13 @@ public class SMBClient {
 
   public func upload(fileHandle: FileHandle, path: String, progressHandler: (_ progress: Double) -> Void) async throws {
     let fileWriter = fileWriter(path: Pathname.normalize(path))
-
-    try await fileWriter.upload(fileHandle: fileHandle, progressHandler: progressHandler)
-    try await fileWriter.close()
+    do {
+      try await fileWriter.upload(fileHandle: fileHandle, progressHandler: progressHandler)
+      try await fileWriter.close()
+    } catch {
+      try? await fileWriter.close()
+      throw error
+    }
   }
 
   public func upload(localPath: URL, remotePath path: String) async throws {
