@@ -23,12 +23,13 @@ final class picsyncUITests: XCTestCase {
     }
 
     @MainActor
-    func testExample() throws {
+    func testLaunchShowsSyncWorkflow() throws {
         // UI tests must launch the application that they test.
         let app = XCUIApplication()
         app.launch()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
+        XCTAssertTrue(app.navigationBars["PicSync"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["New Sync"].exists)
     }
 
     @MainActor

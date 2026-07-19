@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A00000000000000000000001 /* SMBClient in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000003 /* SMBClient */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		CEAB31AA300D25C30024FB8E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +56,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A00000000000000000000001 /* SMBClient in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +117,7 @@
 			);
 			name = picsync;
 			packageProductDependencies = (
+				A00000000000000000000003 /* SMBClient */,
 			);
 			productName = picsync;
 			productReference = CEAB3199300D25C30024FB8E /* picsync.app */;
@@ -199,6 +205,9 @@
 			productRefGroup = CEAB319A300D25C30024FB8E /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
+			packageReferences = (
+				A00000000000000000000002 /* XCLocalSwiftPackageReference "vendor/SMBClient" */,
+			);
 			targets = (
 				CEAB3198300D25C30024FB8E /* picsync */,
 				CEAB31A8300D25C30024FB8E /* picsyncTests */,
@@ -206,6 +215,21 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A00000000000000000000002 /* XCLocalSwiftPackageReference "vendor/SMBClient" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = vendor/SMBClient;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A00000000000000000000003 /* SMBClient */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A00000000000000000000002 /* XCLocalSwiftPackageReference "vendor/SMBClient" */;
+			productName = SMBClient;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin PBXResourcesBuildPhase section */
 		CEAB3197300D25C30024FB8E /* Resources */ = {
@@ -396,8 +420,11 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"picsync/Preview Content\"";
+				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "PicSync connects to your SMB server on the local network to copy original photos and videos.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "PicSync reads the photos and videos you select so it can copy their original resources to your SMB server.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -424,8 +451,11 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"picsync/Preview Content\"";
+				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "PicSync connects to your SMB server on the local network to copy original photos and videos.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "PicSync reads the photos and videos you select so it can copy their original resources to your SMB server.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
