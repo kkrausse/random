@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import PhotosUI
 import SwiftUI
+import UIKit
 
 actor SyncCoordinator {
     private let store: SyncStore
@@ -356,7 +357,9 @@ actor FingerprintGate {
     var connectionStatus: String?
     var isTestingConnection = false
     var hasSavedPassword = false
-    private(set) var activeRunIDs = Set<UUID>()
+    private(set) var activeRunIDs = Set<UUID>() {
+        didSet { UIApplication.shared.isIdleTimerDisabled = !activeRunIDs.isEmpty }
+    }
     private(set) var transferItemsByRun = [UUID: [AssetTransfer]]()
     var presentsPhotoSelection = false
     var parallelism: Int {

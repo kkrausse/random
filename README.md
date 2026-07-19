@@ -39,6 +39,7 @@ The home screen shows the saved server, share, folder, password-storage status, 
 - Filename collisions receive deterministic hash suffixes; existing media is never intentionally overwritten.
 - Interrupted and failed runs persist in the local journal. **Resume** requeues failed items in one transaction and resumes from valid local staging where available.
 - The run detail view updates completed, skipped-duplicate, and failed counts while a run is active. Error output is collapsed and capped at five inline examples.
+- PicSync disables the iOS idle timer while a sync is active, including photo export and upload, then restores normal Auto-Lock behavior when the run pauses, completes, or fails. Manual locking or leaving the app can still suspend it.
 
 ## Parallelism
 
@@ -64,6 +65,34 @@ xcodebuild -project picsync.xcodeproj -scheme picsync \
   -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
   -only-testing:picsyncTests test
 ```
+
+## Deploying to a connected iPhone
+
+Keep the iPhone unlocked, connected, paired with Xcode, and enabled for Developer Mode. First obtain both identifiers; Xcode and `devicectl` may report different IDs for the same phone:
+
+```sh
+xcrun devicectl list devices
+xcodebuild -project picsync.xcodeproj -scheme picsync -showdestinations
+```
+
+Build a signed Debug app for the phone using the `platform:iOS` destination ID from `-showdestinations`:
+
+```sh
+xcodebuild -project picsync.xcodeproj -scheme picsync \
+  -configuration Debug -destination 'id=<XCODE_DESTINATION_ID>' \
+  -derivedDataPath /tmp/picsync-derived-data build
+```
+
+Install and launch it using the CoreDevice identifier from `devicectl list devices`:
+
+```sh
+xcrun devicectl device install app --device '<COREDEVICE_ID>' \
+  /tmp/picsync-derived-data/Build/Products/Debug-iphoneos/picsync.app
+xcrun devicectl device process launch --device '<COREDEVICE_ID>' \
+  com.example.picsync
+```
+
+Last verified on July 19, 2026 with Xcode destination `<device-id>` and CoreDevice `<core-device-id>` (`device owner`, iPhone 16 Pro Max). Automatic signing used team `<team-id>`; build, install, and launch all succeeded.
 
 ## Network and security notes
 
