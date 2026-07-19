@@ -119,19 +119,39 @@ actor SyncCoordinator {
     }
 
     private func work(queue: TransferWorkQueue, runID: UUID, profile: ServerProfile, password: String?) async {
-        while !isPaused(runID), let transfer = await queue.next() {
-            guard !isPaused(runID) else { return }
-            await process(transfer, runID: runID, profile: profile, password: password)
-        }
-    }
-
-    private func process(_ original: AssetTransfer, runID: UUID, profile: ServerProfile, password: String?) async {
-        guard !pausedRuns.contains(runID) else { return }
-        var transfer = original
         let remote = makeRemote()
-        var lockedFingerprint: String?
         do {
             try await remote.connect(profile: profile, password: password)
+        } catch {
+            #if DEBUG
+            print("[PicSync Sync] worker connection failed run=\(runID.uuidString) error=\(String(reflecting: error))")
+            #endif
+            await remote.disconnect()
+            return
+        }
+        while !isPaused(runID), let transfer = await queue.next() {
+            guard !isPaused(runID) else { break }
+            let succeeded = await process(transfer, runID: runID, remote: remote)
+            if !succeeded, !isPaused(runID) {
+                await remote.disconnect()
+                do {
+                    try await remote.connect(profile: profile, password: password)
+                } catch {
+                    #if DEBUG
+                    print("[PicSync Sync] worker reconnect failed run=\(runID.uuidString) error=\(String(reflecting: error))")
+                    #endif
+                    break
+                }
+            }
+        }
+        await remote.disconnect()
+    }
+
+    private func process(_ original: AssetTransfer, runID: UUID, remote: any RemoteFileService) async -> Bool {
+        guard !pausedRuns.contains(runID) else { return true }
+        var transfer = original
+        var lockedFingerprint: String?
+        do {
             if transfer.state == .queued {
                 transfer.state = .exporting; transfer.updatedAt = Date(); try await store.save(transfer: transfer)
                 let asset = try photoLibrary.asset(for: transfer.localIdentifier)
@@ -151,8 +171,7 @@ actor SyncCoordinator {
                 try await updateRunningSummary(runID)
                 cleanupStaging(for: transfer)
                 await fingerprintGate.release(fingerprint)
-                await remote.disconnect()
-                return
+                return true
             }
             transfer.state = .uploading; transfer.updatedAt = Date(); try await store.save(transfer: transfer)
             for index in transfer.manifest.indices {
@@ -187,16 +206,16 @@ actor SyncCoordinator {
             try await updateRunningSummary(runID)
             cleanupStaging(for: transfer)
             await fingerprintGate.release(fingerprint)
-            await remote.disconnect()
+            return true
         } catch {
             if let lockedFingerprint { await fingerprintGate.release(lockedFingerprint) }
-            await remote.disconnect()
             #if DEBUG
             let paths = transfer.manifest.compactMap(\.finalPath).joined(separator: ",")
             print("[PicSync Sync] asset failed transfer=\(transfer.id.uuidString) state=\(transfer.state.rawValue) paths=\(paths) error=\(String(reflecting: error))")
             #endif
             transfer.state = .failed; transfer.attempts += 1; transfer.errorMessage = error.localizedDescription; transfer.updatedAt = Date(); try? await store.save(transfer: transfer)
             try? await updateRunningSummary(runID)
+            return false
         }
     }
 
