@@ -114,13 +114,32 @@ body:has(.trips-page), body:has(.trip-detail-page) { overflow: auto; background:
 .assigned-workouts strong, .assigned-workouts span { display: block; }
 .assigned-workouts strong { font-size: 12px; }
 .assigned-workouts span { margin-top: 5px; color: #7c827a; font-size: 10px; }
-.workout-selector { max-height: 370px; overflow: auto; margin-top: 14px; padding: 12px; border: 1px solid #d8d4cd; border-radius: 9px; background: #fbfaf7; }
-.selector-search { display: flex; gap: 10px; margin-bottom: 9px; }
-.selector-search input { min-width: 0; flex: 1; padding: 9px 11px; border: 1px solid #ddd9d1; border-radius: 5px; }
-.workout-selector > label { display: flex; align-items: center; gap: 10px; padding: 10px; border-top: 1px solid #ebe8e2; cursor: pointer; }
-.workout-selector strong, .workout-selector small { display: block; }
-.workout-selector strong { font-size: 12px; }.workout-selector small { margin-top: 3px; color: #81867e; font-size: 10px; }
-.workout-preview-map { height: 260px; margin-top: 12px; }
+.workout-selector { margin-top: 14px; padding: 18px; border: 1px solid #d8d4cd; border-radius: 9px; background: #fbfaf7; }
+.workout-selector-header, .selector-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.workout-selector-header { padding-bottom: 14px; border-bottom: 1px solid #e2ded7; }
+.workout-selector-header .eyebrow { margin-bottom: 4px; }
+.workout-selector-header h3 { margin: 0; font-family: Georgia, serif; font-size: 23px; font-weight: 400; }
+.workout-import-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding-top: 14px; }
+.workout-import-list > button { display: flex; min-width: 0; align-items: center; gap: 11px; padding: 13px; border: 1px solid #e0dcd5; border-radius: 7px; color: #353a35; background: white; cursor: pointer; text-align: left; }
+.workout-import-list > button:hover { border-color: #aebdb2; background: #f7f8f5; }
+.workout-import-list > button > span:nth-child(2) { min-width: 0; flex: 1; }
+.workout-import-list strong, .workout-import-list small, .workout-route-list strong, .workout-route-list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workout-import-list strong, .workout-route-list strong { font-size: 12px; }
+.workout-import-list small, .workout-route-list small { margin-top: 4px; color: #81867e; font-size: 10px; }
+.workout-import-icon { display: grid; width: 34px; height: 34px; flex: none; place-items: center; border-radius: 6px; color: #3b6d52; background: #e6eee8; }
+.selector-toolbar { padding: 12px 0; }
+.selector-search { display: flex; min-width: 180px; flex: 1; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #ddd9d1; border-radius: 5px; color: #858b84; background: white; }
+.selector-search input { min-width: 0; flex: 1; padding: 0; border: 0; outline: 0; }
+.workout-browser { display: grid; grid-template-columns: minmax(240px, .8fr) minmax(360px, 1.2fr); height: 390px; overflow: hidden; border: 1px solid #ddd9d2; border-radius: 8px; }
+.workout-route-list { overflow-y: auto; border-right: 1px solid #ddd9d2; }
+.workout-route-list > div { display: flex; width: 100%; align-items: center; gap: 10px; padding-left: 12px; border-bottom: 1px solid #ebe8e2; color: #353a35; background: white; }
+.workout-route-list > div:hover { background: #f3f1ed; }
+.workout-route-list > div.is-previewed { background: #e7efe9; box-shadow: inset 3px 0 #3b6d52; }
+.workout-route-list > div > button { min-width: 0; flex: 1; padding: 12px 12px 12px 0; border: 0; color: inherit; background: transparent; cursor: pointer; text-align: left; }
+.workout-preview-map { position: relative; min-width: 0; min-height: 0; background: #e8e5de; }
+.workout-preview-map .trip-map { border: 0; border-radius: 0; box-shadow: none; }
+.workout-preview-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #687168; text-align: center; }
+.workout-preview-empty span { color: #858b84; font-size: 11px; }
 .media-browser { position: relative; padding-top: 14px; }
 .section-toolbar { display: flex; justify-content: space-between; gap: 12px; }
 .segmented { display: flex; padding: 3px; margin: 0; border: 1px solid #d8d4cd; border-radius: 6px; background: #e9e6df; }
@@ -153,4 +172,5 @@ body:has(.trips-page), body:has(.trip-detail-page) { overflow: auto; background:
 	.trip-detail-header { grid-template-columns: 1fr auto; padding: 15px; }.trip-detail-header input { grid-column: 1 / -1; grid-row: 2; text-align: left; }.trip-detail-header p { grid-column: 2; grid-row: 1; }
 	.trip-map-panel { height: 42vh; padding: 9px; }.trip-content { width: calc(100% - 24px); padding-top: 34px; }.detail-section-heading { align-items: flex-start; flex-direction: column; }
 	.assigned-workouts { grid-template-columns: 1fr; }.media-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }.section-toolbar { align-items: flex-start; }.media-tile > input { font-size: 8px; }
+	.workout-import-list { grid-template-columns: 1fr; }.selector-toolbar { align-items: stretch; flex-direction: column; }.workout-browser { grid-template-columns: 1fr; grid-template-rows: minmax(160px, .8fr) minmax(220px, 1.2fr); height: 520px; }.workout-route-list { border-right: 0; border-bottom: 1px solid #ddd9d2; }
 }

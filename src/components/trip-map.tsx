@@ -50,44 +50,8 @@ export function TripMap({
 				position: NonNullable<typeof value.position>;
 			} => value.position !== null,
 		);
-
 	useEffect(() => {
-		const mediaPositions = media
-			.map((item) => resolveMediaMapPosition({ media: item, workouts }))
-			.filter(
-				(position): position is NonNullable<typeof position> =>
-					position !== null,
-			);
-		const coordinates = [
-			...workouts.flatMap((workout) =>
-				workout.points.map(
-					(point) => [point.longitude, point.latitude] as [number, number],
-				),
-			),
-			...mediaPositions.map(
-				(position) =>
-					[position.longitude, position.latitude] as [number, number],
-			),
-		];
-		if (coordinates.length && mapRef.current) {
-			let west = Infinity,
-				south = Infinity,
-				east = -Infinity,
-				north = -Infinity;
-			for (const [longitude, latitude] of coordinates) {
-				west = Math.min(west, longitude);
-				east = Math.max(east, longitude);
-				south = Math.min(south, latitude);
-				north = Math.max(north, latitude);
-			}
-			mapRef.current.fitBounds(
-				[
-					[west, south],
-					[east, north],
-				],
-				{ padding: 54, maxZoom: 15, duration: 600 },
-			);
-		}
+		fitMap(mapRef.current, workouts, media);
 	}, [workouts, media]);
 
 	return (
@@ -96,6 +60,7 @@ export function TripMap({
 				ref={mapRef}
 				initialViewState={{ longitude: -98.58, latitude: 39.83, zoom: 3 }}
 				mapStyle="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
+				onLoad={() => fitMap(mapRef.current, workouts, media)}
 				onZoom={(event) => setZoom(event.viewState.zoom)}
 			>
 				<NavigationControl position="top-right" />
@@ -126,5 +91,46 @@ export function TripMap({
 				))}
 			</MapView>
 		</div>
+	);
+}
+
+function fitMap(
+	map: MapRef | null,
+	workouts: WorkoutWithPoints[],
+	media: MediaBrowserItem[],
+) {
+	const mediaPositions = media
+		.map((item) => resolveMediaMapPosition({ media: item, workouts }))
+		.filter(
+			(position): position is NonNullable<typeof position> => position !== null,
+		);
+	const coordinates = [
+		...workouts.flatMap((workout) =>
+			workout.points.map(
+				(point) => [point.longitude, point.latitude] as [number, number],
+			),
+		),
+		...mediaPositions.map(
+			(position) => [position.longitude, position.latitude] as [number, number],
+		),
+	];
+	if (!coordinates.length || !map) return;
+
+	let west = Infinity,
+		south = Infinity,
+		east = -Infinity,
+		north = -Infinity;
+	for (const [longitude, latitude] of coordinates) {
+		west = Math.min(west, longitude);
+		east = Math.max(east, longitude);
+		south = Math.min(south, latitude);
+		north = Math.max(north, latitude);
+	}
+	map.fitBounds(
+		[
+			[west, south],
+			[east, north],
+		],
+		{ padding: 54, maxZoom: 15, duration: 600 },
 	);
 }

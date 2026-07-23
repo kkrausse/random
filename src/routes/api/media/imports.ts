@@ -4,6 +4,18 @@ import { getLibrary } from "../../../server/library";
 export const Route = createFileRoute("/api/media/imports")({
 	server: {
 		handlers: {
+			GET: ({ request }: { request: Request }) => {
+				const kind = new URL(request.url).searchParams.get("kind");
+				if (kind !== null && kind !== "media" && kind !== "workout") {
+					return Response.json(
+						{ error: "Invalid import kind." },
+						{ status: 400 },
+					);
+				}
+				return Response.json(
+					getLibrary().repository.listImports(kind ?? undefined),
+				);
+			},
 			POST: async ({ request }: { request: Request }) => {
 				const body = (await request.json()) as {
 					sourceName?: string;

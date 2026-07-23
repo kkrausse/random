@@ -1,10 +1,19 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, Check, Dumbbell, Upload } from "lucide-react";
+import {
+	Archive,
+	ArrowLeft,
+	Check,
+	ChevronRight,
+	Dumbbell,
+	MapPinned,
+	Search,
+	Upload,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { MediaBrowser } from "../components/media-browser";
 import { TripMap } from "../components/trip-map";
 import { Button } from "../components/ui/button";
-import type { TripRecord, WorkoutListItem } from "../db/library";
+import type { ImportRecord, TripRecord, WorkoutListItem } from "../db/library";
 import type { MediaBrowserItem, WorkoutWithPoints } from "../media/types";
 
 export const Route = createFileRoute("/trips/$tripId")({
@@ -23,6 +32,8 @@ function TripDetail() {
 	const [detail, setDetail] = useState<Detail>();
 	const [title, setTitle] = useState("");
 	const [unassigned, setUnassigned] = useState<WorkoutListItem[]>([]);
+	const [workoutImports, setWorkoutImports] = useState<ImportRecord[]>([]);
+	const [selectedImportId, setSelectedImportId] = useState<string>();
 	const [workoutSelection, setWorkoutSelection] = useState<Set<string>>(
 		new Set(),
 	);
@@ -53,18 +64,48 @@ function TripDetail() {
 		await load();
 	}
 
-	async function findWorkouts(search = query) {
-		const params = new URLSearchParams({ unassigned: "true", query: search });
+	async function openWorkoutSelector() {
+		const response = await fetch("/api/media/imports?kind=workout");
+		if (response.ok) setWorkoutImports(await response.json());
+		setSelectedImportId(undefined);
+		setUnassigned([]);
+		setWorkoutSelection(new Set());
+		setPreviewWorkout(undefined);
+		setQuery("");
+		setShowWorkouts(true);
+	}
+
+	async function findWorkouts(importId: string, search = query) {
+		const params = new URLSearchParams({
+			unassigned: "true",
+			query: search,
+			importId,
+		});
 		const response = await fetch(`/api/workouts?${params}`);
 		if (response.ok) setUnassigned(await response.json());
-		setShowWorkouts(true);
+	}
+
+	function selectImport(importId: string) {
+		setSelectedImportId(importId);
+		setWorkoutSelection(new Set());
+		setPreviewWorkout(undefined);
+		setQuery("");
+		void findWorkouts(importId, "");
 	}
 
 	async function uploadWorkout(file: File) {
 		const form = new FormData();
 		form.set("file", file);
-		await fetch("/api/workouts", { method: "POST", body: form });
-		await findWorkouts();
+		const response = await fetch("/api/workouts", {
+			method: "POST",
+			body: form,
+		});
+		if (!response.ok) return;
+		const result: { importId: string } = await response.json();
+		const importsResponse = await fetch("/api/media/imports?kind=workout");
+		if (importsResponse.ok) setWorkoutImports(await importsResponse.json());
+		setShowWorkouts(true);
+		selectImport(result.importId);
 	}
 
 	async function assignWorkouts() {
@@ -140,7 +181,7 @@ function TripDetail() {
 							>
 								<Upload size={14} /> Upload export
 							</Button>
-							<Button onClick={() => void findWorkouts()}>
+							<Button onClick={() => void openWorkoutSelector()}>
 								Choose imported
 							</Button>
 						</div>
@@ -165,50 +206,134 @@ function TripDetail() {
 					)}
 					{showWorkouts && (
 						<div className="workout-selector">
-							<div className="selector-search">
-								<input
-									value={query}
-									placeholder="Search title or activity"
-									onChange={(event) => {
-										setQuery(event.target.value);
-										void findWorkouts(event.target.value);
-									}}
-								/>
-								<Button
-									disabled={!workoutSelection.size}
-									onClick={() => void assignWorkouts()}
-								>
-									<Check size={14} /> Add selected
-								</Button>
-							</div>
-							{unassigned.map((workout) => (
-								<label key={workout.id}>
-									<input
-										type="checkbox"
-										checked={workoutSelection.has(workout.id)}
-										onChange={() => {
-											void previewWorkoutRoute(workout.id);
-											setWorkoutSelection((current) => {
-												const next = new Set(current);
-												if (next.has(workout.id)) next.delete(workout.id);
-												else next.add(workout.id);
-												return next;
-											});
-										}}
-									/>
-									<span>
-										<strong>{workout.title ?? "Workout route"}</strong>
-										<small>
-											{new Date(workout.startedAt).toLocaleString()} ·{" "}
-											{formatDistance(workout.distanceMeters)}
-										</small>
-									</span>
-								</label>
-							))}
-							{previewWorkout && (
-								<div className="workout-preview-map">
-									<TripMap workouts={[previewWorkout]} media={[]} />
+							<header className="workout-selector-header">
+								<div>
+									<p className="eyebrow">Add workouts</p>
+									<h3>
+										{selectedImportId ? "Choose workouts" : "Choose an import"}
+									</h3>
 								</div>
+								<Button variant="ghost" onClick={() => setShowWorkouts(false)}>
+									Close
+								</Button>
+							</header>
+							{!selectedImportId ? (
+								<div className="workout-import-list">
+									{workoutImports.map((item) => (
+										<button
+											key={item.id}
+											type="button"
+											onClick={() => selectImport(item.id)}
+										>
+											<span className="workout-import-icon">
+												<Archive size={17} />
+											</span>
+											<span>
+												<strong>{item.sourceName}</strong>
+												<small>
+													{new Date(item.createdAt).toLocaleString()} ·{" "}
+													{formatImportStatus(item.status)}
+												</small>
+											</span>
+											<ChevronRight size={16} />
+										</button>
+									))}
+									{workoutImports.length === 0 && (
+										<p className="section-empty">
+											No workout imports yet. Upload an Apple Health export
+											first.
+										</p>
+									)}
+								</div>
+							) : (
+								<>
+									<div className="selector-toolbar">
+										<Button
+											variant="ghost"
+											onClick={() => {
+												setSelectedImportId(undefined);
+												setPreviewWorkout(undefined);
+											}}
+										>
+											← Imports
+										</Button>
+										<label className="selector-search">
+											<Search size={14} />
+											<input
+												value={query}
+												placeholder="Search title or activity"
+												onChange={(event) => {
+													setQuery(event.target.value);
+													void findWorkouts(
+														selectedImportId,
+														event.target.value,
+													);
+												}}
+											/>
+										</label>
+										<Button
+											disabled={!workoutSelection.size}
+											onClick={() => void assignWorkouts()}
+										>
+											<Check size={14} /> Add selected
+										</Button>
+									</div>
+									<div className="workout-browser">
+										<div className="workout-route-list">
+											{unassigned.map((workout) => (
+												<div
+													className={
+														previewWorkout?.id === workout.id
+															? "is-previewed"
+															: ""
+													}
+													key={workout.id}
+												>
+													<input
+														type="checkbox"
+														aria-label={`Select ${workout.title ?? "workout route"}`}
+														checked={workoutSelection.has(workout.id)}
+														onChange={() =>
+															setWorkoutSelection((current) => {
+																const next = new Set(current);
+																if (next.has(workout.id))
+																	next.delete(workout.id);
+																else next.add(workout.id);
+																return next;
+															})
+														}
+													/>
+													<button
+														type="button"
+														onClick={() => void previewWorkoutRoute(workout.id)}
+													>
+														<strong>{workout.title ?? "Workout route"}</strong>
+														<small>
+															{new Date(workout.startedAt).toLocaleString()} ·{" "}
+															{formatDistance(workout.distanceMeters)}
+														</small>
+													</button>
+												</div>
+											))}
+											{unassigned.length === 0 && (
+												<p className="section-empty">
+													No unassigned workouts in this import.
+												</p>
+											)}
+										</div>
+										<div className="workout-preview-map">
+											{previewWorkout ? (
+												<TripMap workouts={[previewWorkout]} media={[]} />
+											) : (
+												<div className="workout-preview-empty">
+													<MapPinned size={24} />
+													<strong>Select a workout</strong>
+													<span>Click a route to preview its outline.</span>
+												</div>
+											)}
+										</div>
+									</div>
+								</>
 							)}
 						</div>
 					)}
@@ -235,4 +360,8 @@ function formatDistance(meters: number | null) {
 	return meters === null
 		? "Distance unavailable"
 		: `${(meters / 1609.344).toFixed(1)} mi`;
+}
+
+function formatImportStatus(status: ImportRecord["status"]) {
+	return status.replaceAll("-", " ");
 }
