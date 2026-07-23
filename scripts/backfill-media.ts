@@ -3,6 +3,7 @@ import { basename, extname, relative, resolve } from "node:path";
 import { loadConfig } from "../src/config";
 import { openDatabase } from "../src/db";
 import { LibraryRepository } from "../src/db/library";
+import { mapWithConcurrency } from "../src/lib/map-with-concurrency";
 import { SUPPORTED_MEDIA_EXTENSIONS } from "../src/media/classify-media";
 import { hashFile } from "../src/media/content-hash";
 import { ingestMediaFromPath } from "../src/media/ingest";
@@ -17,14 +18,18 @@ type Arguments = {
 	include: Set<string>;
 	limit?: number;
 	continueImport?: string;
+	concurrency?: number;
 };
 
 async function main() {
 	const args = parseArguments(Bun.argv.slice(2));
+	if (!args.storeOnly && args.concurrency !== undefined)
+		throw new Error("--concurrency is supported only with --store-only");
+	const concurrency = args.storeOnly ? (args.concurrency ?? 4) : 1;
 	let pauseRequested = false;
 	process.on("SIGUSR1", () => {
 		pauseRequested = true;
-		console.log("Pause requested; the current file will finish before the import stops.");
+		console.log("Pause requested; active workers will finish before the import stops.");
 	});
 	const config = loadConfig();
 	const source = resolve(args.source);
@@ -50,37 +55,47 @@ async function main() {
 	let completed = 0;
 	let failed = 0;
 	let skipped = 0;
-	for (const [index, path] of files.entries()) {
+	let paused = false;
+	const hashLocks = new Map<string, Promise<void>>();
+	await mapWithConcurrency(files, concurrency, async (path, index) => {
 		if (pauseRequested) {
-			repository.updateImportStatus(importRecord.id, "processing");
-			database.close();
-			console.log(`Backfill paused (import ${importRecord.id})`);
+			paused = true;
 			return;
 		}
 		const sourceKey = relative(source, path).split("\\").join("/");
 		let item = repository.getImportItemBySource(importRecord.id, sourceKey);
 		if (item?.status === "completed") {
 			completed += 1;
-			continue;
+			return;
 		}
 		if (!item) item = repository.createImportItem({ importId: importRecord.id, sourceKey, entityType: "media", originalFilename: basename(path) });
 		console.log(`[${index + 1}/${files.length}] ${sourceKey} (${completeLabel} ${completed}, skipped ${skipped}, failed ${failed})`);
 		try {
 			const contentHash = await hashFile(path);
-			const duplicate = repository.getMediaByContentHash(contentHash);
-			if (duplicate) {
-				repository.setImportItemStatus(item.id, "completed", { entityId: duplicate.id });
-				skipped += 1;
-				console.log(`[${index + 1}/${files.length}] skipped duplicate ${sourceKey}`);
-				continue;
-			}
-			const media = await ingestMediaFromPath({ sourcePath: path, contentHash, deferProcessing: args.storeOnly, importId: importRecord.id, importItemId: item.id, storageMode: args.mode, context: { repository, assetRoot: config.ASSET_ROOT, tempRoot: config.ASSET_TEMP_ROOT ?? `${config.ASSET_ROOT}/.tmp` } });
-			if (args.storeOnly || media.status === "ready") completed += 1;
-			else failed += 1;
+			await withHashLock(hashLocks, contentHash, async () => {
+				const duplicate = repository.getMediaByContentHash(contentHash);
+				if (duplicate) {
+					repository.setImportItemStatus(item.id, "completed", {
+						entityId: duplicate.id,
+					});
+					skipped += 1;
+					console.log(`[${index + 1}/${files.length}] skipped duplicate ${sourceKey}`);
+					return;
+				}
+				const media = await ingestMediaFromPath({ sourcePath: path, contentHash, deferProcessing: args.storeOnly, importId: importRecord.id, importItemId: item.id, storageMode: args.mode, context: { repository, assetRoot: config.ASSET_ROOT, tempRoot: config.ASSET_TEMP_ROOT ?? `${config.ASSET_ROOT}/.tmp` } });
+				if (args.storeOnly || media.status === "ready") completed += 1;
+				else failed += 1;
+			});
 		} catch (error) {
 			failed += 1;
 			repository.setImportItemStatus(item.id, "failed", { errorMessage: error instanceof Error ? error.message : "Ingestion failed." });
 		}
+	});
+	if (paused) {
+		repository.updateImportStatus(importRecord.id, "processing");
+		database.close();
+		console.log(`Backfill paused (import ${importRecord.id})`);
+		return;
 	}
 	repository.updateImportStatus(importRecord.id, failed ? "completed-with-errors" : "completed");
 	database.close();
@@ -128,11 +143,33 @@ function parseArguments(values: string[]): Arguments {
 		} else if (value === "--include") result.include = new Set(requiredValue(values, ++index, value).split(",").map((extension) => extension.startsWith(".") ? extension.toLowerCase() : `.${extension.toLowerCase()}`));
 		else if (value === "--limit") result.limit = Number(requiredValue(values, ++index, value));
 		else if (value === "--continue-import") result.continueImport = requiredValue(values, ++index, value);
+		else if (value === "--concurrency") result.concurrency = Number(requiredValue(values, ++index, value));
 		else throw new Error(`Unknown argument: ${value}`);
 	}
 	if (!result.source) throw new Error("--source is required");
 	if (result.limit !== undefined && (!Number.isInteger(result.limit) || result.limit < 1)) throw new Error("--limit must be a positive integer");
+	if (result.concurrency !== undefined && (!Number.isInteger(result.concurrency) || result.concurrency < 1)) throw new Error("--concurrency must be a positive integer");
 	return result;
+}
+
+async function withHashLock<T>(
+	locks: Map<string, Promise<void>>,
+	hash: string,
+	action: () => Promise<T>,
+): Promise<T> {
+	const previous = locks.get(hash);
+	let release: () => void;
+	const current = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	locks.set(hash, current);
+	await previous;
+	try {
+		return await action();
+	} finally {
+		release!();
+		if (locks.get(hash) === current) locks.delete(hash);
+	}
 }
 
 function requiredValue(values: string[], index: number, option: string) {
