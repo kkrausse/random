@@ -74,7 +74,7 @@ async function enumerate(directory: string, recursive: boolean): Promise<string[
 }
 
 function parseArguments(values: string[]): Arguments {
-	const result: Arguments = { source: "", mode: "copy", recursive: false, dryRun: false, include: new Set(SUPPORTED_MEDIA_EXTENSIONS) };
+	const result: Arguments = { source: "", mode: "hardlink", recursive: false, dryRun: false, include: new Set(SUPPORTED_MEDIA_EXTENSIONS) };
 	for (let index = 0; index < values.length; index += 1) {
 		const value = values[index];
 		if (value === "--recursive") result.recursive = true;

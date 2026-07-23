@@ -2,6 +2,7 @@ import "@tanstack/react-start/server-only";
 import { constants } from "node:fs";
 import {
 	access,
+	chmod,
 	copyFile,
 	link,
 	mkdir,
@@ -106,6 +107,9 @@ async function storeAndProcess(input: {
 	const file = await stat(input.temporaryPath);
 	if (!file.isFile() || file.size <= 0)
 		throw new Error("Stored original is empty.");
+	// Originals are read-only after ingestion; all subsequent work reads them and
+	// writes separate derivatives. For hard links this also protects the source.
+	await chmod(input.temporaryPath, 0o444);
 	const originalRelativePath = originalMediaKey(
 		input.mediaId,
 		input.originalFilename,

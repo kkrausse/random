@@ -61,9 +61,10 @@ Run a deterministic recursive backfill:
 ```bash
 bun run backfill-media -- \
   --source /path/to/media \
-  --mode hardlink \
   --recursive
 ```
+
+Directory backfills default to `hardlink`, which does not duplicate the original file data. Use `--mode copy` or `--mode move` explicitly when linking is not appropriate.
 
 Preview without database or filesystem writes:
 
@@ -91,8 +92,10 @@ Storage modes:
 
 - `copy` preserves the source and creates a managed original.
 - `move` renames on the same filesystem, or validates a cross-device copy before deleting the source.
-- `hardlink` is local-path-only and never falls back to copying. Source and asset storage must share a filesystem. Both paths reference the same inode, so modifying either path modifies the managed original; treat both as immutable.
+- `hardlink` is the default, is local-path-only, and never falls back to copying. Source and asset storage must share a filesystem. Both paths reference the same inode.
 - Browser uploads use `upload` and stream into managed temporary storage.
+
+Every managed original is changed to read-only mode (`0444`) before it is placed in permanent storage. The application only reads originals after that point and writes generated files under `media/derived/`. For a hard link, permissions belong to the shared inode, so the source path also becomes read-only. This prevents accidental writes through either name, though a user with ownership or elevated filesystem privileges can deliberately restore write permission.
 
 ## Failed Media
 
