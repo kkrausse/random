@@ -1,4 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
+import {
+	isValidTimeZone,
+	resolveLocalDateTime,
+} from "../../../media/capture-time";
 import { getLibrary } from "../../../server/library";
 
 export const Route = createFileRoute("/api/trips/$tripId")({
@@ -28,14 +32,32 @@ export const Route = createFileRoute("/api/trips/$tripId")({
 				const repository = getLibrary().repository;
 				const body = (await request.json()) as {
 					title?: string;
+					tripTimeZone?: string | null;
 					attachMediaIds?: string[];
 					detachMediaId?: string;
 					assignWorkoutIds?: string[];
-					mediaTimestamp?: { id: string; value: string | null };
+					mediaTimestamp?: {
+						id: string;
+						value: string | null;
+						timeZone?: string | null;
+					};
 					shiftMediaTimestamps?: { ids: string[]; offsetMinutes: number };
+					setMediaTimeZone?: { ids: string[]; timeZone: string };
 				};
 				if (body.title !== undefined)
 					repository.updateTrip(params.tripId, body.title);
+				if (body.tripTimeZone !== undefined) {
+					if (
+						body.tripTimeZone !== null &&
+						!isValidTimeZone(body.tripTimeZone)
+					) {
+						return Response.json(
+							{ error: "Invalid time zone." },
+							{ status: 400 },
+						);
+					}
+					repository.updateTripTimeZone(params.tripId, body.tripTimeZone);
+				}
 				if (body.attachMediaIds)
 					repository.attachMediaToTrip(params.tripId, body.attachMediaIds);
 				if (body.detachMediaId)
@@ -45,7 +67,12 @@ export const Route = createFileRoute("/api/trips/$tripId")({
 				if (body.mediaTimestamp)
 					repository.updateMediaTimestampOverride(
 						body.mediaTimestamp.id,
-						body.mediaTimestamp.value,
+						body.mediaTimestamp.value && body.mediaTimestamp.timeZone
+							? resolveLocalDateTime(
+									body.mediaTimestamp.value,
+									body.mediaTimestamp.timeZone,
+								)
+							: body.mediaTimestamp.value,
 					);
 				let shifted: number | undefined;
 				if (body.shiftMediaTimestamps) {
@@ -58,7 +85,18 @@ export const Route = createFileRoute("/api/trips/$tripId")({
 					}
 					shifted = repository.shiftMediaTimestampOverrides(ids, offsetMinutes);
 				}
-				return Response.json({ ok: true, shifted });
+				let timeZonesSet: number | undefined;
+				if (body.setMediaTimeZone) {
+					const { ids, timeZone } = body.setMediaTimeZone;
+					if (!Array.isArray(ids) || !isValidTimeZone(timeZone)) {
+						return Response.json(
+							{ error: "Invalid media time zone." },
+							{ status: 400 },
+						);
+					}
+					timeZonesSet = repository.setMediaTimeZone(ids, timeZone);
+				}
+				return Response.json({ ok: true, shifted, timeZonesSet });
 			},
 		},
 	},

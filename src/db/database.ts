@@ -41,6 +41,18 @@ const migrations: Migration[] = [
 			"utf8",
 		),
 	},
+	{
+		version: 3,
+		name: "media_time_zones",
+		sql: readFileSync(
+			join(
+				dirname(fileURLToPath(import.meta.url)),
+				"migrations",
+				"003_media_time_zones.sql",
+			),
+			"utf8",
+		),
+	},
 ];
 
 function checksum(sql: string): string {

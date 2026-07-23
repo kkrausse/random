@@ -7,6 +7,10 @@ export type MediaBrowserItem = {
 	kind: MediaKind;
 	status: "ready";
 	effectiveCapturedAt: string | null;
+	capturedAtLocal: string | null;
+	capturedTimeZone: string | null;
+	capturedTimeZoneSource: string | null;
+	hasCapturedAtOverride: boolean;
 	latitude: number | null;
 	longitude: number | null;
 	width: number | null;

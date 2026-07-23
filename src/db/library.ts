@@ -1,9 +1,15 @@
 import type { Database } from "bun:sqlite";
+import {
+	extractExifLocalDateTime,
+	isValidTimeZone,
+	resolveLocalDateTime,
+} from "../media/capture-time";
 import type { MediaBrowserItem, WorkoutWithPoints } from "../media/types";
 
 export type TripRecord = {
 	id: string;
 	title: string;
+	timeZone: string | null;
 	createdAt: string;
 	updatedAt: string;
 };
@@ -45,6 +51,9 @@ export type StoredMediaRecord = {
 	durationMs: number | null;
 	capturedAt: string | null;
 	capturedAtOverride: string | null;
+	capturedAtLocal: string | null;
+	capturedTimeZone: string | null;
+	capturedTimeZoneSource: string | null;
 	latitude: number | null;
 	longitude: number | null;
 	metadataJson: string;
@@ -83,7 +92,13 @@ export class LibraryRepository {
 	getTrip(id: string): TripRecord | null {
 		const row = this.db
 			.query<
-				{ id: string; title: string; created_at: string; updated_at: string },
+				{
+					id: string;
+					title: string;
+					time_zone: string | null;
+					created_at: string;
+					updated_at: string;
+				},
 				[string]
 			>("SELECT * FROM trips WHERE id = ?")
 			.get(id);
@@ -91,6 +106,7 @@ export class LibraryRepository {
 			? {
 					id: row.id,
 					title: row.title,
+					timeZone: row.time_zone,
 					createdAt: row.created_at,
 					updatedAt: row.updated_at,
 				}
@@ -100,13 +116,20 @@ export class LibraryRepository {
 	listTrips(): TripRecord[] {
 		return this.db
 			.query<
-				{ id: string; title: string; created_at: string; updated_at: string },
+				{
+					id: string;
+					title: string;
+					time_zone: string | null;
+					created_at: string;
+					updated_at: string;
+				},
 				[]
 			>("SELECT * FROM trips ORDER BY updated_at DESC")
 			.all()
 			.map((row) => ({
 				id: row.id,
 				title: row.title,
+				timeZone: row.time_zone,
 				createdAt: row.created_at,
 				updatedAt: row.updated_at,
 			}));
@@ -118,6 +141,15 @@ export class LibraryRepository {
 		this.db
 			.query("UPDATE trips SET title = ?, updated_at = ? WHERE id = ?")
 			.run(trimmed, new Date().toISOString(), id);
+		return this.getTrip(id);
+	}
+
+	updateTripTimeZone(id: string, timeZone: string | null) {
+		if (timeZone !== null && !isValidTimeZone(timeZone))
+			throw new Error("Invalid time zone.");
+		this.db
+			.query("UPDATE trips SET time_zone = ?, updated_at = ? WHERE id = ?")
+			.run(timeZone, new Date().toISOString(), id);
 		return this.getTrip(id);
 	}
 
@@ -360,6 +392,9 @@ export class LibraryRepository {
 			height: number | null;
 			durationMs: number | null;
 			capturedAt: string | null;
+			capturedAtLocal: string | null;
+			capturedTimeZone: string | null;
+			capturedTimeZoneSource: string | null;
 			latitude: number | null;
 			longitude: number | null;
 			metadataJson: string;
@@ -398,7 +433,7 @@ export class LibraryRepository {
 			}
 			this.db
 				.query(
-					"UPDATE media SET status = 'ready', kind = ?, original_mime_type = ?, width = ?, height = ?, duration_ms = ?, captured_at = ?, latitude = ?, longitude = ?, metadata_json = ?, failure_code = NULL, failure_message = NULL, updated_at = ? WHERE id = ?",
+					"UPDATE media SET status = 'ready', kind = ?, original_mime_type = ?, width = ?, height = ?, duration_ms = ?, captured_at = ?, captured_at_local = ?, captured_time_zone = ?, captured_time_zone_source = ?, latitude = ?, longitude = ?, metadata_json = ?, failure_code = NULL, failure_message = NULL, updated_at = ? WHERE id = ?",
 				)
 				.run(
 					input.kind,
@@ -407,6 +442,9 @@ export class LibraryRepository {
 					input.height,
 					input.durationMs,
 					input.capturedAt,
+					input.capturedAtLocal,
+					input.capturedTimeZone,
+					input.capturedTimeZoneSource,
 					input.latitude,
 					input.longitude,
 					input.metadataJson,
@@ -462,6 +500,10 @@ export class LibraryRepository {
 			effectiveCapturedAt: (row.captured_at_override ?? row.captured_at) as
 				| string
 				| null,
+			capturedAtLocal: row.captured_at_local as string | null,
+			capturedTimeZone: row.captured_time_zone as string | null,
+			capturedTimeZoneSource: row.captured_time_zone_source as string | null,
+			hasCapturedAtOverride: row.captured_at_override !== null,
 			latitude: row.latitude as number | null,
 			longitude: row.longitude as number | null,
 			width: row.width as number | null,
@@ -481,6 +523,39 @@ export class LibraryRepository {
 			)
 			.run(normalized, new Date().toISOString(), id);
 		return this.getMedia(id);
+	}
+
+	setMediaTimeZone(ids: string[], timeZone: string) {
+		if (!isValidTimeZone(timeZone)) throw new Error("Invalid time zone.");
+		const select = this.db.query<
+			{ captured_at_local: string | null; metadata_json: string },
+			[string]
+		>(
+			"SELECT captured_at_local, metadata_json FROM media WHERE id = ? AND status = 'ready'",
+		);
+		const update = this.db.query(
+			"UPDATE media SET captured_at = ?, captured_at_local = ?, captured_time_zone = ?, captured_time_zone_source = 'user', captured_at_override = NULL, updated_at = ? WHERE id = ?",
+		);
+		let updated = 0;
+		this.db.transaction(() => {
+			for (const id of new Set(ids)) {
+				const media = select.get(id);
+				if (!media) continue;
+				const local =
+					media.captured_at_local ??
+					extractExifLocalDateTime(media.metadata_json);
+				if (!local) continue;
+				update.run(
+					resolveLocalDateTime(local, timeZone),
+					local,
+					timeZone,
+					new Date().toISOString(),
+					id,
+				);
+				updated += 1;
+			}
+		})();
+		return updated;
 	}
 
 	shiftMediaTimestampOverrides(ids: string[], offsetMinutes: number) {
@@ -709,6 +784,9 @@ function mapStoredMedia(
 		durationMs: row.duration_ms as number | null,
 		capturedAt: row.captured_at as string | null,
 		capturedAtOverride: row.captured_at_override as string | null,
+		capturedAtLocal: row.captured_at_local as string | null,
+		capturedTimeZone: row.captured_time_zone as string | null,
+		capturedTimeZoneSource: row.captured_time_zone_source as string | null,
 		latitude: row.latitude as number | null,
 		longitude: row.longitude as number | null,
 		metadataJson: String(row.metadata_json),

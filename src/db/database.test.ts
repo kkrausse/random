@@ -12,7 +12,7 @@ describe("database migrations", () => {
 					"SELECT count(*) AS count FROM schema_migrations",
 				)
 				.get()?.count,
-		).toBe(2);
+		).toBe(3);
 		const repository = new LibraryRepository(db);
 		const trip = repository.createTrip("Test trip");
 		const importRecord = repository.createImport({
@@ -138,6 +138,32 @@ describe("database migrations", () => {
 		expect(repository.getMedia("overridden")?.capturedAtOverride).toBe(
 			"2025-02-01T11:30:00.000Z",
 		);
+		db.close();
+	});
+
+	it("assigns an IANA timezone to preserved camera wall times", () => {
+		const db = openDatabase(":memory:");
+		const repository = new LibraryRepository(db);
+		const record = repository.createImport({
+			kind: "media",
+			sourceType: "browser",
+			sourceName: "test",
+		});
+		const now = new Date().toISOString();
+		db.query(
+			"INSERT INTO media (id, import_id, status, kind, original_filename, original_relative_path, original_byte_size, storage_mode, captured_at, captured_at_local, metadata_json, processing_version, created_at, updated_at) VALUES ('photo', ?, 'ready', 'photo', 'photo.jpg', 'media/originals/photo/original.jpg', 1, 'upload', '2025-07-20T15:30:00Z', '2025-07-20T15:30:00', '{}', 'media-v1', ?, ?)",
+		).run(record.id, now, now);
+
+		expect(repository.setMediaTimeZone(["photo"], "America/Los_Angeles")).toBe(
+			1,
+		);
+		expect(repository.getMedia("photo")).toMatchObject({
+			capturedAt: "2025-07-20T22:30:00Z",
+			capturedAtLocal: "2025-07-20T15:30:00",
+			capturedTimeZone: "America/Los_Angeles",
+			capturedTimeZoneSource: "user",
+			capturedAtOverride: null,
+		});
 		db.close();
 	});
 

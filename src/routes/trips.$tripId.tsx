@@ -31,6 +31,7 @@ function TripDetail() {
 	const { tripId } = Route.useParams();
 	const [detail, setDetail] = useState<Detail>();
 	const [title, setTitle] = useState("");
+	const [tripTimeZone, setTripTimeZone] = useState("");
 	const [unassigned, setUnassigned] = useState<WorkoutListItem[]>([]);
 	const [workoutImports, setWorkoutImports] = useState<ImportRecord[]>([]);
 	const [selectedImportId, setSelectedImportId] = useState<string>();
@@ -48,6 +49,7 @@ function TripDetail() {
 			const value: Detail = await response.json();
 			setDetail(value);
 			setTitle(value.trip.title);
+			setTripTimeZone(value.trip.timeZone ?? "");
 		});
 	}, [tripId]);
 
@@ -57,11 +59,19 @@ function TripDetail() {
 		const value: Detail = await response.json();
 		setDetail(value);
 		setTitle(value.trip.title);
+		setTripTimeZone(value.trip.timeZone ?? "");
 	}
 
 	async function saveTitle() {
 		if (!title.trim() || title === detail?.trip.title) return;
 		await patch({ title });
+		await load();
+	}
+
+	async function saveTripTimeZone() {
+		const value = tripTimeZone.trim() || null;
+		if (value === detail?.trip.timeZone) return;
+		await patch({ tripTimeZone: value });
 		await load();
 	}
 
@@ -148,6 +158,24 @@ function TripDetail() {
 					onChange={(event) => setTitle(event.target.value)}
 					onBlur={() => void saveTitle()}
 				/>
+				<label className="trip-time-zone">
+					Local timezone
+					<input
+						list="trip-time-zones"
+						value={tripTimeZone}
+						placeholder="Browser local time"
+						onChange={(event) => setTripTimeZone(event.target.value)}
+						onBlur={() => void saveTripTimeZone()}
+					/>
+					<datalist id="trip-time-zones">
+						<option value="America/Los_Angeles" />
+						<option value="America/New_York" />
+						<option value="Europe/London" />
+						<option value="Europe/Paris" />
+						<option value="Asia/Tokyo" />
+						<option value="UTC" />
+					</datalist>
+				</label>
 				<p>
 					{detail.workouts.length} workout
 					{detail.workouts.length === 1 ? "" : "s"} ·{" "}
@@ -201,7 +229,7 @@ function TripDetail() {
 								<div key={workout.id}>
 									<strong>{workout.title ?? "Workout route"}</strong>
 									<span>
-										{new Date(workout.startedAt).toLocaleString()} ·{" "}
+										{formatDateTime(workout.startedAt, detail.trip.timeZone)} ·{" "}
 										{formatDistance(workout.distanceMeters)}
 									</span>
 								</div>
@@ -313,8 +341,11 @@ function TripDetail() {
 													>
 														<strong>{workout.title ?? "Workout route"}</strong>
 														<small>
-															{new Date(workout.startedAt).toLocaleString()} ·{" "}
-															{formatDistance(workout.distanceMeters)}
+															{formatDateTime(
+																workout.startedAt,
+																detail.trip.timeZone,
+															)}{" "}
+															· {formatDistance(workout.distanceMeters)}
 														</small>
 													</button>
 												</div>
@@ -364,6 +395,14 @@ function formatDistance(meters: number | null) {
 	return meters === null
 		? "Distance unavailable"
 		: `${(meters / 1609.344).toFixed(1)} mi`;
+}
+
+function formatDateTime(value: string, timeZone: string | null) {
+	return new Intl.DateTimeFormat(undefined, {
+		dateStyle: "medium",
+		timeStyle: "short",
+		...(timeZone ? { timeZone } : {}),
+	}).format(new Date(value));
 }
 
 function formatImportStatus(status: ImportRecord["status"]) {

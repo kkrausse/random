@@ -1,6 +1,11 @@
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import sharp from "sharp";
+import {
+	type CaptureTimeZoneSource,
+	captureTimeFromPhotoMetadata,
+	captureTimeFromVideoMetadata,
+} from "./capture-time";
 import { classifyMedia } from "./classify-media";
 import { MediaPipelineError } from "./errors";
 import { runCommand } from "./run-command";
@@ -15,6 +20,9 @@ export type ProcessedMedia = {
 	height: number | null;
 	durationMs: number | null;
 	capturedAt: string | null;
+	capturedAtLocal: string | null;
+	capturedTimeZone: string | null;
+	capturedTimeZoneSource: CaptureTimeZoneSource | null;
 	latitude: number | null;
 	longitude: number | null;
 	metadata: Record<string, unknown>;
@@ -51,16 +59,24 @@ async function processPhoto(
 		"-ImageWidth",
 		"-ImageHeight",
 		"-Orientation",
+		"-SubSecDateTimeOriginal",
 		"-DateTimeOriginal",
+		"-OffsetTimeOriginal",
+		"-SubSecCreateDate",
 		"-CreateDate",
+		"-OffsetTimeDigitized",
+		"-GPSDateTime",
 		"-GPSLatitude",
 		"-GPSLongitude",
+		"-TimeZone",
+		"-DaylightSavings",
 		"-Make",
 		"-Model",
 		"-LensModel",
 		originalPath,
 	]);
 	const metadata = parseJsonArray(metadataResult.stdout)[0] ?? {};
+	const captureTime = captureTimeFromPhotoMetadata(metadata);
 	let source: string | Uint8Array = originalPath;
 	if (originalPath.toLowerCase().endsWith(".arw")) {
 		source = await getRawSource(originalPath);
@@ -92,7 +108,7 @@ async function processPhoto(
 		width: numberValue(metadata.ImageWidth),
 		height: numberValue(metadata.ImageHeight),
 		durationMs: null,
-		capturedAt: parseExifDate(metadata.DateTimeOriginal ?? metadata.CreateDate),
+		...captureTime,
 		latitude: numberValue(metadata.GPSLatitude),
 		longitude: numberValue(metadata.GPSLongitude),
 		metadata,
@@ -219,13 +235,15 @@ async function processVideo(
 	]);
 	const poster = await validateImage(posterPath, "poster", 960);
 	const proxy = await validateProxy(proxyPath, durationMs);
+	const tags = objectValue(format.tags);
+	const captureTime = captureTimeFromVideoMetadata(tags);
 	return {
 		kind: "video",
 		mimeType: "video/mp4",
 		width: numberValue(video.width),
 		height: numberValue(video.height),
 		durationMs,
-		capturedAt: parseIsoDate(objectValue(format.tags).creation_time),
+		...captureTime,
 		latitude: null,
 		longitude: null,
 		metadata: probe,
@@ -348,19 +366,4 @@ function stringValue(value: unknown) {
 function numberValue(value: unknown) {
 	const number = typeof value === "number" ? value : Number(value);
 	return Number.isFinite(number) ? number : null;
-}
-
-function parseIsoDate(value: unknown) {
-	if (typeof value !== "string") return null;
-	const date = new Date(value);
-	return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
-
-function parseExifDate(value: unknown) {
-	if (typeof value !== "string") return null;
-	const normalized = value.replace(
-		/^(\d{4}):(\d{2}):(\d{2}) (\d{2}:\d{2}:\d{2})/,
-		"$1-$2-$3T$4",
-	);
-	return parseIsoDate(normalized);
 }

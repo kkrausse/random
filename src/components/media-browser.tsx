@@ -39,6 +39,10 @@ export function MediaBrowser({
 	);
 	const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 	const [showTimeEditor, setShowTimeEditor] = useState(false);
+	const [timeEditOperation, setTimeEditOperation] = useState<
+		"shift" | "timezone"
+	>("shift");
+	const [timeZone, setTimeZone] = useState("America/Los_Angeles");
 	const [shiftDays, setShiftDays] = useState("0");
 	const [shiftHours, setShiftHours] = useState("0");
 	const [shiftMinutes, setShiftMinutes] = useState("0");
@@ -141,14 +145,18 @@ export function MediaBrowser({
 		onChanged();
 	}
 
-	async function updateTimestamp(id: string, value: string) {
+	async function updateTimestamp(item: MediaBrowserItem, value: string) {
 		await fetch(`/api/trips/${tripId}`, {
 			method: "PATCH",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
 				mediaTimestamp: {
-					id,
-					value: value ? new Date(value).toISOString() : null,
+					id: item.id,
+					value:
+						value && !item.capturedTimeZone
+							? new Date(value).toISOString()
+							: value || null,
+					timeZone: item.capturedTimeZone,
 				},
 			}),
 		});
@@ -183,6 +191,38 @@ export function MediaBrowser({
 		}
 		if (!result.shifted) {
 			setError("None of the selected media has a capture time to shift.");
+			return;
+		}
+		setError(undefined);
+		setShowTimeEditor(false);
+		setExpandedGroups(new Set());
+		await refresh();
+		onChanged();
+	}
+
+	async function setSelectedTimeZone(event: React.FormEvent) {
+		event.preventDefault();
+		if (!timeZone.trim()) {
+			setError("Choose a time zone.");
+			return;
+		}
+		const response = await fetch(`/api/trips/${tripId}`, {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				setMediaTimeZone: { ids: [...selection], timeZone: timeZone.trim() },
+			}),
+		});
+		const result = (await response.json()) as {
+			timeZonesSet?: number;
+			error?: string;
+		};
+		if (!response.ok) {
+			setError(result.error ?? "The selected time zone could not be set.");
+			return;
+		}
+		if (!result.timeZonesSet) {
+			setError("None of the selected media has a local capture time.");
 			return;
 		}
 		setError(undefined);
@@ -368,11 +408,16 @@ export function MediaBrowser({
 											<span>Taken</span>
 											<input
 												type="datetime-local"
-												defaultValue={toLocalInput(item.effectiveCapturedAt)}
-												onBlur={(event) =>
-													void updateTimestamp(item.id, event.target.value)
-												}
+												defaultValue={mediaLocalInput(item)}
+												onBlur={(event) => {
+													if (event.target.value !== mediaLocalInput(item))
+														void updateTimestamp(item, event.target.value);
+												}}
 											/>
+											<small>
+												{item.capturedTimeZone ?? "Timezone unknown"}
+												{item.hasCapturedAtOverride ? " · exact override" : ""}
+											</small>
 										</label>
 									</article>
 								))}
@@ -386,37 +431,71 @@ export function MediaBrowser({
 					{showTimeEditor && (
 						<form
 							className="bulk-time-editor"
-							onSubmit={shiftSelectedTimestamps}
+							onSubmit={
+								timeEditOperation === "shift"
+									? shiftSelectedTimestamps
+									: setSelectedTimeZone
+							}
 						>
-							<select aria-label="Bulk edit operation">
-								<option>Shift day and time</option>
+							<select
+								aria-label="Bulk edit operation"
+								value={timeEditOperation}
+								onChange={(event) =>
+									setTimeEditOperation(
+										event.target.value as "shift" | "timezone",
+									)
+								}
+							>
+								<option value="shift">Shift day and time</option>
+								<option value="timezone">Set timezone</option>
 							</select>
-							<label>
-								Days
-								<input
-									type="number"
-									value={shiftDays}
-									onChange={(event) => setShiftDays(event.target.value)}
-								/>
-							</label>
-							<label>
-								Hours
-								<input
-									type="number"
-									value={shiftHours}
-									onChange={(event) => setShiftHours(event.target.value)}
-								/>
-							</label>
-							<label>
-								Minutes
-								<input
-									type="number"
-									value={shiftMinutes}
-									onChange={(event) => setShiftMinutes(event.target.value)}
-								/>
-							</label>
+							{timeEditOperation === "timezone" ? (
+								<label>
+									Timezone
+									<input
+										list="media-time-zones"
+										value={timeZone}
+										onChange={(event) => setTimeZone(event.target.value)}
+									/>
+									<datalist id="media-time-zones">
+										<option value="America/Los_Angeles" />
+										<option value="America/New_York" />
+										<option value="Europe/London" />
+										<option value="Europe/Paris" />
+										<option value="Asia/Tokyo" />
+										<option value="UTC" />
+									</datalist>
+								</label>
+							) : (
+								<>
+									<label>
+										Days
+										<input
+											type="number"
+											value={shiftDays}
+											onChange={(event) => setShiftDays(event.target.value)}
+										/>
+									</label>
+									<label>
+										Hours
+										<input
+											type="number"
+											value={shiftHours}
+											onChange={(event) => setShiftHours(event.target.value)}
+										/>
+									</label>
+									<label>
+										Minutes
+										<input
+											type="number"
+											value={shiftMinutes}
+											onChange={(event) => setShiftMinutes(event.target.value)}
+										/>
+									</label>
+								</>
+							)}
 							<Button size="sm" type="submit">
-								Apply shift
+								{timeEditOperation === "shift" ? "Apply shift" : "Set timezone"}
 							</Button>
 						</form>
 					)}
@@ -464,4 +543,10 @@ function toLocalInput(value: string | null) {
 	const date = new Date(value);
 	const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
 	return local.toISOString().slice(0, 16);
+}
+
+function mediaLocalInput(item: MediaBrowserItem) {
+	return !item.hasCapturedAtOverride && item.capturedAtLocal
+		? item.capturedAtLocal.slice(0, 16)
+		: toLocalInput(item.effectiveCapturedAt);
 }
