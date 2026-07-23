@@ -12,8 +12,7 @@ import {
 	groupMediaByGap,
 	toggleMediaSelection,
 } from "../media/browser";
-import type { MediaBrowserItem, WorkoutWithPoints } from "../media/types";
-import { TripMap } from "./trip-map";
+import type { MediaBrowserItem } from "../media/types";
 import { Button } from "./ui/button";
 
 type UploadState = {
@@ -24,16 +23,16 @@ type UploadState = {
 
 export function MediaBrowser({
 	tripId,
-	workouts,
 	onChanged,
+	onSelectionChange,
 }: {
 	tripId: string;
-	workouts: WorkoutWithPoints[];
 	onChanged: () => void;
+	onSelectionChange: (items: MediaBrowserItem[]) => void;
 }) {
 	const [items, setItems] = useState<MediaBrowserItem[]>([]);
 	const [selection, setSelection] = useState<Set<string>>(new Set());
-	const [kind, setKind] = useState<"all" | "photo" | "video">("all");
+	const [kind, setKind] = useState<"all" | "photo" | "video">("photo");
 	const [groupBy, setGroupBy] = useState<"time" | "kind">("time");
 	const [groupGapHours, setGroupGapHours] = useState(
 		DEFAULT_MEDIA_GROUP_GAP_HOURS,
@@ -53,6 +52,9 @@ export function MediaBrowser({
 			if (response.ok) setItems(await response.json());
 		});
 	}, [kind, tripId]);
+	useEffect(() => {
+		onSelectionChange(items.filter((item) => selection.has(item.id)));
+	}, [items, onSelectionChange, selection]);
 
 	async function refresh() {
 		const query = new URLSearchParams({ tripId });
@@ -213,7 +215,11 @@ export function MediaBrowser({
 							className={kind === value ? "active" : ""}
 							key={value}
 							type="button"
-							onClick={() => setKind(value)}
+							onClick={() => {
+								setKind(value);
+								setSelection(new Set());
+								setShowTimeEditor(false);
+							}}
 						>
 							{value}
 						</button>
@@ -414,12 +420,6 @@ export function MediaBrowser({
 							</Button>
 						</form>
 					)}
-					<div className="selector-map">
-						<TripMap
-							workouts={workouts}
-							media={items.filter((item) => selection.has(item.id))}
-						/>
-					</div>
 					<div className="selection-bar">
 						<button
 							type="button"

@@ -40,6 +40,7 @@ function TripDetail() {
 	const [previewWorkout, setPreviewWorkout] = useState<WorkoutWithPoints>();
 	const [query, setQuery] = useState("");
 	const [showWorkouts, setShowWorkouts] = useState(false);
+	const [selectedMedia, setSelectedMedia] = useState<MediaBrowserItem[]>([]);
 	const workoutFile = useRef<HTMLInputElement>(null);
 	useEffect(() => {
 		void fetch(`/api/trips/${tripId}`).then(async (response) => {
@@ -129,6 +130,12 @@ function TripDetail() {
 	}
 
 	if (!detail) return <main className="detail-loading">Opening trip...</main>;
+	const assignedMedia = detail.media.filter((item) => item.isInCurrentTrip);
+	const assignedMediaIds = new Set(assignedMedia.map((item) => item.id));
+	const mapMedia = [
+		...assignedMedia,
+		...selectedMedia.filter((item) => !assignedMediaIds.has(item.id)),
+	];
 	return (
 		<main className="trip-detail-page">
 			<header className="trip-detail-header">
@@ -149,10 +156,7 @@ function TripDetail() {
 				</p>
 			</header>
 			<section className="trip-map-panel">
-				<TripMap
-					workouts={detail.workoutsWithPoints}
-					media={detail.media.filter((item) => item.isInCurrentTrip)}
-				/>
+				<TripMap workouts={detail.workoutsWithPoints} media={mapMedia} />
 			</section>
 			<div className="trip-content">
 				<section className="detail-section">
@@ -347,8 +351,8 @@ function TripDetail() {
 					</div>
 					<MediaBrowser
 						tripId={tripId}
-						workouts={detail.workoutsWithPoints}
 						onChanged={() => void load()}
+						onSelectionChange={setSelectedMedia}
 					/>
 				</section>
 			</div>

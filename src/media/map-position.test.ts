@@ -58,7 +58,7 @@ describe("interpolateWorkoutPosition", () => {
 	});
 });
 
-it("prefers explicit media GPS and finds a matching workout", () => {
+it("uses effective capture time on a matching workout before GPS", () => {
 	const media: MediaBrowserItem = {
 		id: "media",
 		kind: "photo",
@@ -74,14 +74,18 @@ it("prefers explicit media GPS and finds a matching workout", () => {
 	};
 	expect(resolveMediaMapPosition({ media, workouts: [workout] })).toMatchObject(
 		{
-			source: "gps",
-			latitude: 40,
+			source: "workout",
+			latitude: 5,
+			longitude: 15,
 		},
 	);
 	expect(
 		resolveMediaMapPosition({
-			media: { ...media, latitude: null, longitude: null },
+			media: {
+				...media,
+				effectiveCapturedAt: "2025-01-02T00:05:00Z",
+			},
 			workouts: [workout],
 		}),
-	).toMatchObject({ source: "workout", latitude: 5, longitude: 15 });
+	).toMatchObject({ source: "gps", latitude: 40, longitude: -70 });
 });

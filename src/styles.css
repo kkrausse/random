@@ -176,7 +176,6 @@ body:has(.trips-page), body:has(.trip-detail-page) { overflow: auto; background:
 .bulk-time-editor label { color: #737a72; font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
 .bulk-time-editor input { display: block; width: 68px; margin-top: 4px; padding: 7px; border: 1px solid #d5d8d3; border-radius: 5px; color: #343a34; background: white; font-size: 11px; font-weight: 400; text-transform: none; }
 .selection-bar { position: sticky; bottom: 18px; display: flex; width: max-content; align-items: center; gap: 14px; margin: 18px auto 0; padding: 7px 8px 7px 14px; border: 1px solid #c5ccc5; border-radius: 9px; background: #fbfaf7ed; box-shadow: 0 8px 25px #27362d2b; backdrop-filter: blur(9px); }
-.selector-map { height: 280px; margin-top: 20px; }
 .selection-bar > button { display: flex; align-items: center; gap: 5px; border: 0; color: #6e756e; background: transparent; font-size: 11px; cursor: pointer; }
 @media (max-width: 760px) {
 	.trips-page { width: calc(100% - 28px); padding: 38px 0; }.page-header { align-items: flex-start; }.page-header h1 { font-size: 54px; }.page-header > div > p:last-child { max-width: 210px; }
