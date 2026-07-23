@@ -92,4 +92,64 @@ describe("database migrations", () => {
 		expect(() => create("two")).toThrow();
 		db.close();
 	});
+
+	it("lists pending media once when later imports deduplicate to it", () => {
+		const db = openDatabase(":memory:");
+		const repository = new LibraryRepository(db);
+		const owner = repository.createImport({
+			kind: "media",
+			sourceType: "local-backfill",
+			sourceName: "owner",
+		});
+		const ownerItem = repository.createImportItem({
+			importId: owner.id,
+			sourceKey: "video.mp4",
+			entityType: "media",
+			originalFilename: "video.mp4",
+		});
+		repository.createProcessingMedia({
+			id: "media",
+			importId: owner.id,
+			originalFilename: "video.mp4",
+			originalRelativePath: "media/originals/media/original.mp4",
+			originalByteSize: 1,
+			contentHash: "sha256",
+			storageMode: "copy",
+			processingVersion: "media-v1",
+		});
+		repository.setImportItemStatus(ownerItem.id, "completed", {
+			entityId: "media",
+		});
+		const sameImportDuplicate = repository.createImportItem({
+			importId: owner.id,
+			sourceKey: "duplicate-video.mp4",
+			entityType: "media",
+			originalFilename: "duplicate-video.mp4",
+		});
+		repository.setImportItemStatus(sameImportDuplicate.id, "completed", {
+			entityId: "media",
+		});
+
+		for (const sourceName of ["duplicate-one", "duplicate-two"]) {
+			const duplicate = repository.createImport({
+				kind: "media",
+				sourceType: "local-backfill",
+				sourceName,
+			});
+			const duplicateItem = repository.createImportItem({
+				importId: duplicate.id,
+				sourceKey: "video.mp4",
+				entityType: "media",
+				originalFilename: "video.mp4",
+			});
+			repository.setImportItemStatus(duplicateItem.id, "completed", {
+				entityId: "media",
+			});
+		}
+
+		const pending = repository.listProcessingMedia();
+		expect(pending).toHaveLength(1);
+		expect(pending[0]?.media.id).toBe("media");
+		db.close();
+	});
 });

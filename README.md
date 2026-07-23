@@ -31,6 +31,27 @@ ASSET_TEMP_ROOT=./app_data/assets/.tmp
 
 Temporary assets should remain on the same filesystem as `ASSET_ROOT` so completed originals and derivatives can be moved into place atomically. SQLite stores only validated relative asset paths; server responses never expose absolute local paths.
 
+### Local development with remote assets
+
+A useful development setup is to keep a point-in-time copy of the server's
+SQLite database on the development machine while leaving the much larger asset
+library on a mounted server volume. For example, with the Raspberry Pi share
+mounted at `/Volumes/TravelMapApp`:
+
+```env
+DATABASE_PATH=./app_data/app.sqlite
+ASSET_ROOT=/Volumes/TravelMapApp/app_data/assets
+ASSET_TEMP_ROOT=/Volumes/TravelMapApp/app_data/assets/.tmp
+```
+
+Create the local database with SQLite's `.backup` command while the server
+application is stopped, then transfer that snapshot. Do not copy an active
+database file or point `DATABASE_PATH` at the mounted volume. Local database
+changes do not automatically sync back to the server, and writes to the shared
+asset directory can leave the two databases inconsistent. Treat this as a
+read-oriented development setup unless performing the controlled
+[remote media processing handoff](./docs/media-processing-handoff.md).
+
 ## Run
 
 ```bash
@@ -81,6 +102,9 @@ bun run process-media
 ```
 
 `--store-only` records each original as `processing` but does not run ExifTool, FFmpeg, Sharp, or LibRaw. `process-media` processes every stored pending item; use `--import <import-id>` to limit it to one backfill, or `--limit <count>` to process a batch. A stopped processor can be rerun to continue processing remaining items.
+
+To process server assets on another machine without opening SQLite over SMB,
+follow the [remote media processing handoff](./docs/media-processing-handoff.md).
 
 Store-only backfills hash files concurrently before linking them into the library. They use four workers by default; pass `--concurrency <count>` to tune that for the storage device.
 

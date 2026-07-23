@@ -310,7 +310,13 @@ export class LibraryRepository {
 			>(`
 				SELECT m.*, i.id AS import_item_id
 				FROM media m
-				JOIN import_items i ON i.entity_id = m.id
+				JOIN import_items i ON i.id = (
+					SELECT candidate.id
+					FROM import_items candidate
+					WHERE candidate.entity_id = m.id AND candidate.import_id = m.import_id
+					ORDER BY candidate.created_at, candidate.id
+					LIMIT 1
+				)
 				WHERE m.status = 'processing'
 					AND (? IS NULL OR m.import_id = ?)
 				ORDER BY m.created_at
