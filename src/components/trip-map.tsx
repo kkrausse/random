@@ -1,6 +1,6 @@
 import type { Feature, FeatureCollection, LineString } from "geojson";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
-import { useEffect, useRef, useState, type WheelEvent } from "react";
+import { X } from "lucide-react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import MapView, {
 	Layer,
 	type MapRef,
@@ -21,6 +21,7 @@ export function TripMap({
 	media: MediaBrowserItem[];
 }) {
 	const mapRef = useRef<MapRef>(null);
+	const photoStageRef = useRef<HTMLDivElement>(null);
 	const [zoom, setZoom] = useState(3);
 	const [selectedPhoto, setSelectedPhoto] = useState<MediaBrowserItem>();
 	const [photoZoom, setPhotoZoom] = useState(DEFAULT_PHOTO_ZOOM);
@@ -80,9 +81,10 @@ export function TripMap({
 		}
 	}
 
-	function zoomPhoto(event: WheelEvent<HTMLDivElement>) {
+	const zoomPhoto = useEffectEvent((event: WheelEvent) => {
 		event.preventDefault();
-		const bounds = event.currentTarget.getBoundingClientRect();
+		const bounds = photoStageRef.current?.getBoundingClientRect();
+		if (!bounds) return;
 		setPhotoZoom((current) => ({
 			scale: Math.min(
 				6,
@@ -91,7 +93,32 @@ export function TripMap({
 			x: ((event.clientX - bounds.left) / bounds.width) * 100,
 			y: ((event.clientY - bounds.top) / bounds.height) * 100,
 		}));
-	}
+	});
+
+	const navigatePhoto = useEffectEvent((offset: number) => {
+		const photo = photos[selectedPhotoIndex + offset];
+		if (photo) showPhoto(photo);
+	});
+
+	useEffect(() => {
+		if (!selectedPhoto) return;
+		function handleKeyDown(event: KeyboardEvent) {
+			if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+			event.preventDefault();
+			navigatePhoto(event.key === "ArrowLeft" ? -1 : 1);
+		}
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, [selectedPhoto]);
+
+	// The wheel target is mounted only while a photo is selected.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: selectedPhoto triggers attachment after mount.
+	useEffect(() => {
+		const stage = photoStageRef.current;
+		if (!stage) return;
+		stage.addEventListener("wheel", zoomPhoto, { passive: false });
+		return () => stage.removeEventListener("wheel", zoomPhoto);
+	}, [selectedPhoto]);
 
 	return (
 		<div className={`trip-map ${selectedPhoto ? "has-photo" : ""}`}>
@@ -153,16 +180,7 @@ export function TripMap({
 					>
 						<X size={18} />
 					</button>
-					<button
-						type="button"
-						className="photo-viewer-previous"
-						aria-label="Previous photo"
-						disabled={selectedPhotoIndex <= 0}
-						onClick={() => showPhoto(photos[selectedPhotoIndex - 1])}
-					>
-						<ChevronLeft size={24} />
-					</button>
-					<div className="trip-photo-stage" onWheel={zoomPhoto}>
+					<div ref={photoStageRef} className="trip-photo-stage">
 						<img
 							src={`/media/${selectedPhoto.id}/viewer`}
 							alt="Selected"
@@ -173,15 +191,6 @@ export function TripMap({
 							}}
 						/>
 					</div>
-					<button
-						type="button"
-						className="photo-viewer-next"
-						aria-label="Next photo"
-						disabled={selectedPhotoIndex >= photos.length - 1}
-						onClick={() => showPhoto(photos[selectedPhotoIndex + 1])}
-					>
-						<ChevronRight size={24} />
-					</button>
 				</aside>
 			) : null}
 		</div>
