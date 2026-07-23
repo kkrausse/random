@@ -32,6 +32,7 @@ export const Route = createFileRoute("/api/trips/$tripId")({
 					detachMediaId?: string;
 					assignWorkoutIds?: string[];
 					mediaTimestamp?: { id: string; value: string | null };
+					shiftMediaTimestamps?: { ids: string[]; offsetMinutes: number };
 				};
 				if (body.title !== undefined)
 					repository.updateTrip(params.tripId, body.title);
@@ -46,7 +47,18 @@ export const Route = createFileRoute("/api/trips/$tripId")({
 						body.mediaTimestamp.id,
 						body.mediaTimestamp.value,
 					);
-				return Response.json({ ok: true });
+				let shifted: number | undefined;
+				if (body.shiftMediaTimestamps) {
+					const { ids, offsetMinutes } = body.shiftMediaTimestamps;
+					if (!Array.isArray(ids) || !Number.isFinite(offsetMinutes)) {
+						return Response.json(
+							{ error: "Invalid media time shift." },
+							{ status: 400 },
+						);
+					}
+					shifted = repository.shiftMediaTimestampOverrides(ids, offsetMinutes);
+				}
+				return Response.json({ ok: true, shifted });
 			},
 		},
 	},

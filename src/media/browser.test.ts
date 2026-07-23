@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupMediaByDay, toggleMediaSelection } from "./browser";
+import { groupMediaByGap, toggleMediaSelection } from "./browser";
 import type { MediaBrowserItem } from "./types";
 
 const item = (
@@ -19,14 +19,17 @@ const item = (
 	isInCurrentTrip: false,
 });
 
-describe("groupMediaByDay", () => {
-	it("groups media by calendar day and groups unknown timestamps", () => {
-		const groups = groupMediaByDay([
-			item("unknown", null),
-			item("c", "2025-01-02T16:00:00.000Z"),
-			item("a", "2025-01-01T16:00:00.000Z"),
-			item("b", "2025-01-01T16:01:00.000Z"),
-		]);
+describe("groupMediaByGap", () => {
+	it("starts a group only when the adjacent gap exceeds the threshold", () => {
+		const groups = groupMediaByGap(
+			[
+				item("unknown", null),
+				item("c", "2025-01-02T04:00:00.001Z"),
+				item("a", "2025-01-01T00:00:00.000Z"),
+				item("b", "2025-01-01T12:00:00.000Z"),
+			],
+			12,
+		);
 		expect(groups.map((group) => group.items.map(({ id }) => id))).toEqual([
 			["a", "b"],
 			["c"],

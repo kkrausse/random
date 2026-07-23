@@ -93,6 +93,54 @@ describe("database migrations", () => {
 		db.close();
 	});
 
+	it("bulk shifts each media item's effective capture timestamp", () => {
+		const db = openDatabase(":memory:");
+		const repository = new LibraryRepository(db);
+		const record = repository.createImport({
+			kind: "media",
+			sourceType: "browser",
+			sourceName: "test",
+		});
+		const now = new Date().toISOString();
+		const insert = db.query(
+			"INSERT INTO media (id, import_id, status, kind, original_filename, original_relative_path, original_byte_size, storage_mode, captured_at, captured_at_override, metadata_json, processing_version, created_at, updated_at) VALUES (?, ?, 'ready', 'photo', ?, ?, 1, 'upload', ?, ?, '{}', 'media-v1', ?, ?)",
+		);
+		insert.run(
+			"original",
+			record.id,
+			"original.jpg",
+			"media/originals/original/original.jpg",
+			"2025-01-01T10:00:00.000Z",
+			null,
+			now,
+			now,
+		);
+		insert.run(
+			"overridden",
+			record.id,
+			"overridden.jpg",
+			"media/originals/overridden/original.jpg",
+			"2025-01-01T10:00:00.000Z",
+			"2025-02-01T10:00:00.000Z",
+			now,
+			now,
+		);
+
+		expect(
+			repository.shiftMediaTimestampOverrides(
+				["original", "overridden", "original", "missing"],
+				90,
+			),
+		).toBe(2);
+		expect(repository.getMedia("original")?.capturedAtOverride).toBe(
+			"2025-01-01T11:30:00.000Z",
+		);
+		expect(repository.getMedia("overridden")?.capturedAtOverride).toBe(
+			"2025-02-01T11:30:00.000Z",
+		);
+		db.close();
+	});
+
 	it("lists pending media once when later imports deduplicate to it", () => {
 		const db = openDatabase(":memory:");
 		const repository = new LibraryRepository(db);

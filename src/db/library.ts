@@ -483,6 +483,34 @@ export class LibraryRepository {
 		return this.getMedia(id);
 	}
 
+	shiftMediaTimestampOverrides(ids: string[], offsetMinutes: number) {
+		const select = this.db.query<
+			{ effective_captured_at: string | null },
+			[string]
+		>(
+			"SELECT COALESCE(captured_at_override, captured_at) AS effective_captured_at FROM media WHERE id = ?",
+		);
+		const update = this.db.query(
+			"UPDATE media SET captured_at_override = ?, updated_at = ? WHERE id = ?",
+		);
+		let shifted = 0;
+		this.db.transaction(() => {
+			for (const id of new Set(ids)) {
+				const value = select.get(id)?.effective_captured_at;
+				if (!value) continue;
+				const timestamp = Date.parse(value);
+				if (!Number.isFinite(timestamp)) continue;
+				update.run(
+					new Date(timestamp + offsetMinutes * 60_000).toISOString(),
+					new Date().toISOString(),
+					id,
+				);
+				shifted += 1;
+			}
+		})();
+		return shifted;
+	}
+
 	attachMediaToTrip(tripId: string, mediaIds: string[]) {
 		const insert = this.db.query(
 			"INSERT OR IGNORE INTO trip_media (trip_id, media_id, added_at) VALUES (?, ?, ?)",

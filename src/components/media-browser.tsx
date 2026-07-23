@@ -1,6 +1,17 @@
-import { ChevronRight, ImagePlus, LoaderCircle, Upload, X } from "lucide-react";
+import {
+	ChevronRight,
+	Clock3,
+	ImagePlus,
+	LoaderCircle,
+	Upload,
+	X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { groupMediaByDay, toggleMediaSelection } from "../media/browser";
+import {
+	DEFAULT_MEDIA_GROUP_GAP_HOURS,
+	groupMediaByGap,
+	toggleMediaSelection,
+} from "../media/browser";
 import type { MediaBrowserItem, WorkoutWithPoints } from "../media/types";
 import { TripMap } from "./trip-map";
 import { Button } from "./ui/button";
@@ -23,8 +34,15 @@ export function MediaBrowser({
 	const [items, setItems] = useState<MediaBrowserItem[]>([]);
 	const [selection, setSelection] = useState<Set<string>>(new Set());
 	const [kind, setKind] = useState<"all" | "photo" | "video">("all");
-	const [groupBy, setGroupBy] = useState<"day" | "kind">("day");
+	const [groupBy, setGroupBy] = useState<"time" | "kind">("time");
+	const [groupGapHours, setGroupGapHours] = useState(
+		DEFAULT_MEDIA_GROUP_GAP_HOURS,
+	);
 	const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+	const [showTimeEditor, setShowTimeEditor] = useState(false);
+	const [shiftDays, setShiftDays] = useState("0");
+	const [shiftHours, setShiftHours] = useState("0");
+	const [shiftMinutes, setShiftMinutes] = useState("0");
 	const [uploads, setUploads] = useState<UploadState[]>([]);
 	const [error, setError] = useState<string>();
 	const fileInput = useRef<HTMLInputElement>(null);
@@ -108,11 +126,13 @@ export function MediaBrowser({
 	}
 
 	async function attachSelected() {
-		if (!selection.size) return;
+		if (!attachableSelection.length) return;
 		await fetch(`/api/trips/${tripId}`, {
 			method: "PATCH",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ attachMediaIds: [...selection] }),
+			body: JSON.stringify({
+				attachMediaIds: attachableSelection.map((item) => item.id),
+			}),
 		});
 		setSelection(new Set());
 		await refresh();
@@ -134,9 +154,45 @@ export function MediaBrowser({
 		onChanged();
 	}
 
+	async function shiftSelectedTimestamps(event: React.FormEvent) {
+		event.preventDefault();
+		const offsetMinutes =
+			Number(shiftDays) * 24 * 60 +
+			Number(shiftHours) * 60 +
+			Number(shiftMinutes);
+		if (!Number.isFinite(offsetMinutes) || offsetMinutes === 0) {
+			setError("Enter a non-zero time shift.");
+			return;
+		}
+		const response = await fetch(`/api/trips/${tripId}`, {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				shiftMediaTimestamps: { ids: [...selection], offsetMinutes },
+			}),
+		});
+		const result = (await response.json()) as {
+			shifted?: number;
+			error?: string;
+		};
+		if (!response.ok) {
+			setError(result.error ?? "The selected timestamps could not be shifted.");
+			return;
+		}
+		if (!result.shifted) {
+			setError("None of the selected media has a capture time to shift.");
+			return;
+		}
+		setError(undefined);
+		setShowTimeEditor(false);
+		setExpandedGroups(new Set());
+		await refresh();
+		onChanged();
+	}
+
 	const groups =
-		groupBy === "day"
-			? groupMediaByDay(items)
+		groupBy === "time"
+			? groupMediaByGap(items, groupGapHours)
 			: (["photo", "video"] as const)
 					.map((mediaKind) => ({
 						id: `kind-${mediaKind}`,
@@ -144,6 +200,9 @@ export function MediaBrowser({
 						items: items.filter((item) => item.kind === mediaKind),
 					}))
 					.filter((group) => group.items.length > 0);
+	const attachableSelection = items.filter(
+		(item) => selection.has(item.id) && !item.isInCurrentTrip,
+	);
 	return (
 		<div className="media-browser">
 			<div className="section-toolbar">
@@ -160,19 +219,41 @@ export function MediaBrowser({
 						</button>
 					))}
 				</fieldset>
-				<fieldset className="segmented">
-					<legend className="sr-only">Group media by</legend>
-					{(["day", "kind"] as const).map((value) => (
-						<button
-							className={groupBy === value ? "active" : ""}
-							key={value}
-							type="button"
-							onClick={() => setGroupBy(value)}
-						>
-							{value}
-						</button>
-					))}
-				</fieldset>
+				<div className="grouping-controls">
+					<fieldset className="segmented">
+						<legend className="sr-only">Group media by</legend>
+						{(["time", "kind"] as const).map((value) => (
+							<button
+								className={groupBy === value ? "active" : ""}
+								key={value}
+								type="button"
+								onClick={() => {
+									setGroupBy(value);
+									setExpandedGroups(new Set());
+								}}
+							>
+								{value === "time" ? "time gaps" : value}
+							</button>
+						))}
+					</fieldset>
+					{groupBy === "time" && (
+						<label className="group-gap-input">
+							Gap
+							<input
+								type="number"
+								min="0.5"
+								max="168"
+								step="0.5"
+								value={groupGapHours}
+								onChange={(event) => {
+									setGroupGapHours(Number(event.target.value));
+									setExpandedGroups(new Set());
+								}}
+							/>
+							hrs
+						</label>
+					)}
+				</div>
 				<input
 					ref={fileInput}
 					className="sr-only"
@@ -211,7 +292,7 @@ export function MediaBrowser({
 				</div>
 			)}
 			{groups.map((group) => {
-				const selectable = group.items.filter((item) => !item.isInCurrentTrip);
+				const selectable = group.items;
 				const allSelected =
 					selectable.length > 0 &&
 					selectable.every((item) => selection.has(item.id));
@@ -224,7 +305,6 @@ export function MediaBrowser({
 									<input
 										type="checkbox"
 										checked={allSelected}
-										disabled={!selectable.length}
 										onChange={() =>
 											setSelection((current) =>
 												toggleMediaSelection(
@@ -267,7 +347,6 @@ export function MediaBrowser({
 									>
 										<button
 											type="button"
-											disabled={item.isInCurrentTrip}
 											onClick={() =>
 												setSelection((current) =>
 													toggleMediaSelection(current, [item.id]),
@@ -298,6 +377,43 @@ export function MediaBrowser({
 			})}
 			{selection.size > 0 && (
 				<>
+					{showTimeEditor && (
+						<form
+							className="bulk-time-editor"
+							onSubmit={shiftSelectedTimestamps}
+						>
+							<select aria-label="Bulk edit operation">
+								<option>Shift day and time</option>
+							</select>
+							<label>
+								Days
+								<input
+									type="number"
+									value={shiftDays}
+									onChange={(event) => setShiftDays(event.target.value)}
+								/>
+							</label>
+							<label>
+								Hours
+								<input
+									type="number"
+									value={shiftHours}
+									onChange={(event) => setShiftHours(event.target.value)}
+								/>
+							</label>
+							<label>
+								Minutes
+								<input
+									type="number"
+									value={shiftMinutes}
+									onChange={(event) => setShiftMinutes(event.target.value)}
+								/>
+							</label>
+							<Button size="sm" type="submit">
+								Apply shift
+							</Button>
+						</form>
+					)}
 					<div className="selector-map">
 						<TripMap
 							workouts={workouts}
@@ -305,11 +421,26 @@ export function MediaBrowser({
 						/>
 					</div>
 					<div className="selection-bar">
-						<button type="button" onClick={() => setSelection(new Set())}>
+						<button
+							type="button"
+							onClick={() => {
+								setSelection(new Set());
+								setShowTimeEditor(false);
+							}}
+						>
 							<X size={14} /> Clear
 						</button>
-						<Button onClick={() => void attachSelected()}>
-							Add {selection.size} to trip
+						<Button
+							variant="outline"
+							onClick={() => setShowTimeEditor((current) => !current)}
+						>
+							<Clock3 size={14} /> Edit time
+						</Button>
+						<Button
+							disabled={!attachableSelection.length}
+							onClick={() => void attachSelected()}
+						>
+							Add {attachableSelection.length} to trip
 						</Button>
 					</div>
 				</>

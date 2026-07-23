@@ -142,6 +142,9 @@ body:has(.trips-page), body:has(.trip-detail-page) { overflow: auto; background:
 .workout-preview-empty span { color: #858b84; font-size: 11px; }
 .media-browser { position: relative; padding-top: 14px; }
 .section-toolbar { display: flex; justify-content: space-between; gap: 12px; }
+.grouping-controls { display: flex; align-items: center; gap: 7px; }
+.group-gap-input { display: flex; align-items: center; gap: 4px; color: #777d76; font-size: 10px; }
+.group-gap-input input { width: 48px; padding: 5px; border: 1px solid #d8d4cd; border-radius: 4px; color: #3e443e; background: #fff; font-size: 10px; }
 .segmented { display: flex; padding: 3px; margin: 0; border: 1px solid #d8d4cd; border-radius: 6px; background: #e9e6df; }
 .segmented button { padding: 5px 11px; border: 0; border-radius: 4px; color: #6c746b; background: transparent; font-size: 10px; text-transform: capitalize; cursor: pointer; }
 .segmented button.active { color: #26372d; background: #fff; box-shadow: 0 1px 3px #29382f1b; }
@@ -168,6 +171,10 @@ body:has(.trips-page), body:has(.trip-detail-page) { overflow: auto; background:
 .media-tile button span { position: absolute; right: 6px; bottom: 6px; padding: 3px 5px; border-radius: 4px; color: white; background: #1e2923c7; font-size: 8px; text-transform: uppercase; }
 .media-capture-time { display: block; padding: 6px; color: #777d76; background: #fbfaf7; font-size: 8px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .media-capture-time input { display: block; width: 100%; margin-top: 3px; padding: 0; border: 0; color: #626961; background: transparent; font-size: 9px; font-weight: 400; letter-spacing: 0; text-transform: none; }
+.bulk-time-editor { display: flex; align-items: flex-end; gap: 9px; margin-top: 18px; padding: 13px; border: 1px solid #d3d8d2; border-radius: 8px; background: #f8faf7; }
+.bulk-time-editor select { align-self: stretch; min-width: 170px; padding: 0 9px; border: 1px solid #d5d8d3; border-radius: 5px; color: #343a34; background: white; font-size: 11px; }
+.bulk-time-editor label { color: #737a72; font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.bulk-time-editor input { display: block; width: 68px; margin-top: 4px; padding: 7px; border: 1px solid #d5d8d3; border-radius: 5px; color: #343a34; background: white; font-size: 11px; font-weight: 400; text-transform: none; }
 .selection-bar { position: sticky; bottom: 18px; display: flex; width: max-content; align-items: center; gap: 14px; margin: 18px auto 0; padding: 7px 8px 7px 14px; border: 1px solid #c5ccc5; border-radius: 9px; background: #fbfaf7ed; box-shadow: 0 8px 25px #27362d2b; backdrop-filter: blur(9px); }
 .selector-map { height: 280px; margin-top: 20px; }
 .selection-bar > button { display: flex; align-items: center; gap: 5px; border: 0; color: #6e756e; background: transparent; font-size: 11px; cursor: pointer; }
@@ -177,5 +184,6 @@ body:has(.trips-page), body:has(.trip-detail-page) { overflow: auto; background:
 	.trip-detail-header { grid-template-columns: 1fr auto; padding: 15px; }.trip-detail-header input { grid-column: 1 / -1; grid-row: 2; text-align: left; }.trip-detail-header p { grid-column: 2; grid-row: 1; }
 	.trip-map-panel { height: 42vh; padding: 9px; }.trip-content { width: calc(100% - 24px); padding-top: 34px; }.detail-section-heading { align-items: flex-start; flex-direction: column; }
 	.assigned-workouts { grid-template-columns: 1fr; }.media-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }.section-toolbar { align-items: flex-start; }.media-capture-time input { font-size: 8px; }
+	.grouping-controls { align-items: flex-start; flex-direction: column; }.bulk-time-editor { align-items: stretch; flex-wrap: wrap; }.bulk-time-editor select { min-height: 34px; flex-basis: 100%; }.bulk-time-editor label { flex: 1; }.bulk-time-editor input { width: 100%; }
 	.workout-import-list { grid-template-columns: 1fr; }.selector-toolbar { align-items: stretch; flex-direction: column; }.workout-browser { grid-template-columns: 1fr; grid-template-rows: minmax(160px, .8fr) minmax(220px, 1.2fr); height: 520px; }.workout-route-list { border-right: 0; border-bottom: 1px solid #ddd9d2; }
 }
