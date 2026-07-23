@@ -64,16 +64,24 @@ export const Route = createFileRoute("/api/trips/$tripId")({
 					repository.detachMediaFromTrip(params.tripId, body.detachMediaId);
 				if (body.assignWorkoutIds)
 					repository.assignWorkoutsToTrip(params.tripId, body.assignWorkoutIds);
-				if (body.mediaTimestamp)
-					repository.updateMediaTimestampOverride(
-						body.mediaTimestamp.id,
-						body.mediaTimestamp.value && body.mediaTimestamp.timeZone
-							? resolveLocalDateTime(
-									body.mediaTimestamp.value,
-									body.mediaTimestamp.timeZone,
-								)
-							: body.mediaTimestamp.value,
-					);
+				if (body.mediaTimestamp) {
+					try {
+						repository.updateMediaTimestampOverride(
+							body.mediaTimestamp.id,
+							body.mediaTimestamp.value && body.mediaTimestamp.timeZone
+								? resolveLocalDateTime(
+										body.mediaTimestamp.value,
+										body.mediaTimestamp.timeZone,
+									)
+								: body.mediaTimestamp.value,
+						);
+					} catch {
+						return Response.json(
+							{ error: "Invalid media capture time." },
+							{ status: 400 },
+						);
+					}
+				}
 				let shifted: number | undefined;
 				if (body.shiftMediaTimestamps) {
 					const { ids, offsetMinutes } = body.shiftMediaTimestamps;

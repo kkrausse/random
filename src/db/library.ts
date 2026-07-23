@@ -4,6 +4,7 @@ import {
 	isValidTimeZone,
 	resolveLocalDateTime,
 } from "../media/capture-time";
+import type { CaptureMetadata } from "../media/read-capture-metadata";
 import type { MediaBrowserItem, WorkoutWithPoints } from "../media/types";
 
 export type TripRecord = {
@@ -372,6 +373,67 @@ export class LibraryRepository {
 			)
 			.all()
 			.map(mapStoredMedia);
+	}
+
+	listReadyMediaForTimeBackfill(
+		input: { kind?: "photo" | "video"; limit?: number } = {},
+	): StoredMediaRecord[] {
+		return this.db
+			.query<
+				Record<string, string | number | null>,
+				[string | null, string | null, number]
+			>(
+				"SELECT * FROM media WHERE status = 'ready' AND (? IS NULL OR kind = ?) ORDER BY created_at, id LIMIT ?",
+			)
+			.all(
+				input.kind ?? null,
+				input.kind ?? null,
+				input.limit ?? Number.MAX_SAFE_INTEGER,
+			)
+			.map(mapStoredMedia);
+	}
+
+	updateMediaCaptureMetadata(
+		id: string,
+		capture: CaptureMetadata,
+		options: { replaceUserTimeZone?: boolean } = {},
+	) {
+		const current = this.getMedia(id);
+		if (!current) return null;
+		let capturedAt = capture.capturedAt;
+		let capturedAtLocal = capture.capturedAtLocal;
+		let capturedTimeZone = capture.capturedTimeZone;
+		let capturedTimeZoneSource = capture.capturedTimeZoneSource;
+		if (
+			!options.replaceUserTimeZone &&
+			current.capturedTimeZoneSource === "user"
+		) {
+			capturedAtLocal ??= current.capturedAtLocal;
+			capturedTimeZone = current.capturedTimeZone;
+			capturedTimeZoneSource = "user";
+			capturedAt =
+				capturedAtLocal && capturedTimeZone
+					? resolveLocalDateTime(capturedAtLocal, capturedTimeZone)
+					: current.capturedAt;
+		}
+		const metadata = {
+			...parseMetadataJson(current.metadataJson),
+			...capture.metadata,
+		};
+		this.db
+			.query(
+				"UPDATE media SET captured_at = ?, captured_at_local = ?, captured_time_zone = ?, captured_time_zone_source = ?, metadata_json = ?, updated_at = ? WHERE id = ?",
+			)
+			.run(
+				capturedAt,
+				capturedAtLocal,
+				capturedTimeZone,
+				capturedTimeZoneSource,
+				JSON.stringify(metadata),
+				new Date().toISOString(),
+				id,
+			);
+		return this.getMedia(id);
 	}
 
 	setMediaContentHashIfAvailable(id: string, contentHash: string): boolean {
@@ -751,6 +813,17 @@ function mapImport(row: Record<string, string | null>): ImportRecord {
 		createdAt: String(row.created_at),
 		completedAt: row.completed_at,
 	};
+}
+
+function parseMetadataJson(value: string): Record<string, unknown> {
+	try {
+		const parsed: unknown = JSON.parse(value);
+		return typeof parsed === "object" && parsed !== null
+			? (parsed as Record<string, unknown>)
+			: {};
+	} catch {
+		return {};
+	}
 }
 
 function mapImportItem(row: Record<string, string | null>): ImportItemRecord {

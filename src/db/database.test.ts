@@ -164,6 +164,18 @@ describe("database migrations", () => {
 			capturedTimeZoneSource: "user",
 			capturedAtOverride: null,
 		});
+		repository.updateMediaCaptureMetadata("photo", {
+			capturedAt: "2025-07-20T23:30:00Z",
+			capturedAtLocal: "2025-07-20T15:30:00",
+			capturedTimeZone: "-08:00",
+			capturedTimeZoneSource: "metadata-offset",
+			metadata: { OffsetTimeOriginal: "-08:00" },
+		});
+		expect(repository.getMedia("photo")).toMatchObject({
+			capturedAt: "2025-07-20T22:30:00Z",
+			capturedTimeZone: "America/Los_Angeles",
+			capturedTimeZoneSource: "user",
+		});
 		db.close();
 	});
 

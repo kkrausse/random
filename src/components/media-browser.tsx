@@ -546,7 +546,42 @@ function toLocalInput(value: string | null) {
 }
 
 function mediaLocalInput(item: MediaBrowserItem) {
+	if (
+		item.hasCapturedAtOverride &&
+		item.effectiveCapturedAt &&
+		item.capturedTimeZone
+	) {
+		return formatInstantForLocalInput(
+			item.effectiveCapturedAt,
+			item.capturedTimeZone,
+		);
+	}
 	return !item.hasCapturedAtOverride && item.capturedAtLocal
 		? item.capturedAtLocal.slice(0, 16)
 		: toLocalInput(item.effectiveCapturedAt);
+}
+
+function formatInstantForLocalInput(instant: string, timeZone: string) {
+	const offset = timeZone.match(/^([+-])(\d{2}):(\d{2})$/);
+	if (offset) {
+		const minutes =
+			(offset[1] === "-" ? -1 : 1) *
+			(Number(offset[2]) * 60 + Number(offset[3]));
+		return new Date(Date.parse(instant) + minutes * 60_000)
+			.toISOString()
+			.slice(0, 16);
+	}
+	const parts = new Intl.DateTimeFormat("en-US", {
+		timeZone,
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+		hour: "2-digit",
+		minute: "2-digit",
+		hourCycle: "h23",
+	}).formatToParts(new Date(instant));
+	const value = Object.fromEntries(
+		parts.map((part) => [part.type, part.value]),
+	);
+	return `${value.year}-${value.month}-${value.day}T${value.hour}:${value.minute}`;
 }

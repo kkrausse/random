@@ -13,6 +13,7 @@
     "test": "bun --bun vitest run",
     "migrate": "bun run scripts/migrate.ts",
     "backfill-media": "bun run scripts/backfill-media.ts",
+    "backfill-media-time": "bun run scripts/backfill-media-time.ts",
     "process-media": "bun run scripts/process-media.ts",
     "format": "biome format",
     "lint": "biome lint",

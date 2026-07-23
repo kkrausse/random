@@ -3,11 +3,11 @@ import { join } from "node:path";
 import sharp from "sharp";
 import {
 	type CaptureTimeZoneSource,
-	captureTimeFromPhotoMetadata,
 	captureTimeFromVideoMetadata,
 } from "./capture-time";
 import { classifyMedia } from "./classify-media";
 import { MediaPipelineError } from "./errors";
+import { readPhotoCaptureMetadata } from "./read-capture-metadata";
 import { runCommand } from "./run-command";
 import type { MediaDerivativeKind, MediaKind } from "./types";
 
@@ -51,32 +51,8 @@ async function processPhoto(
 	originalPath: string,
 	derivedDirectory: string,
 ): Promise<ProcessedMedia> {
-	const metadataResult = await runCommand([
-		"exiftool",
-		"-json",
-		"-n",
-		"-MIMEType",
-		"-ImageWidth",
-		"-ImageHeight",
-		"-Orientation",
-		"-SubSecDateTimeOriginal",
-		"-DateTimeOriginal",
-		"-OffsetTimeOriginal",
-		"-SubSecCreateDate",
-		"-CreateDate",
-		"-OffsetTimeDigitized",
-		"-GPSDateTime",
-		"-GPSLatitude",
-		"-GPSLongitude",
-		"-TimeZone",
-		"-DaylightSavings",
-		"-Make",
-		"-Model",
-		"-LensModel",
-		originalPath,
-	]);
-	const metadata = parseJsonArray(metadataResult.stdout)[0] ?? {};
-	const captureTime = captureTimeFromPhotoMetadata(metadata);
+	const { metadata, ...captureTime } =
+		await readPhotoCaptureMetadata(originalPath);
 	let source: string | Uint8Array = originalPath;
 	if (originalPath.toLowerCase().endsWith(".arw")) {
 		source = await getRawSource(originalPath);
@@ -346,11 +322,6 @@ function parseJson(bytes: Uint8Array): Record<string, unknown> {
 			String(error),
 		);
 	}
-}
-
-function parseJsonArray(bytes: Uint8Array): Record<string, unknown>[] {
-	const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
-	return Array.isArray(value) ? value.map(objectValue) : [];
 }
 
 function objectValue(value: unknown): Record<string, unknown> {

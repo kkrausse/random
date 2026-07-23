@@ -63,6 +63,24 @@ describe("photo capture time metadata", () => {
 			capturedTimeZoneSource: "gps",
 		});
 	});
+
+	it("ignores invalid EXIF dates and implausible GPS offsets", () => {
+		expect(
+			captureTimeFromPhotoMetadata({
+				DateTimeOriginal: "0000:00:00 00:00:00",
+				OffsetTimeOriginal: "-08:00",
+			}),
+		).toMatchObject({ capturedAt: null, capturedAtLocal: null });
+		expect(
+			captureTimeFromPhotoMetadata({
+				DateTimeOriginal: "2025:07:21 15:30:00",
+				GPSDateTime: "2025:07:20 15:30:00Z",
+			}),
+		).toMatchObject({
+			capturedTimeZone: null,
+			capturedAt: "2025-07-20T15:30:00Z",
+		});
+	});
 });
 
 it("uses an iPhone QuickTime creation date before generic UTC metadata", () => {

@@ -139,9 +139,13 @@ function normalizeExifLocalDate(value: string | null): string | null {
 	const match = value.match(
 		/^(\d{4})[:-](\d{2})[:-](\d{2})[ T](\d{2}):(\d{2}):(\d{2})(\.\d+)?/,
 	);
-	return match
-		? `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}${match[7] ?? ""}`
-		: null;
+	if (!match) return null;
+	const normalized = `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}${match[7] ?? ""}`;
+	try {
+		return Temporal.PlainDateTime.from(normalized).toString();
+	} catch {
+		return null;
+	}
 }
 
 function extractOffset(value: string | null): string | null {
@@ -182,7 +186,7 @@ function inferOffset(local: string, instant: string): string | null {
 			.toInstant().epochMilliseconds;
 		const actual = Temporal.Instant.from(instant).epochMilliseconds;
 		const minutes = Math.round((localAsUtc - actual) / 60_000);
-		return Math.abs(minutes) <= 24 * 60 ? formatOffset(minutes) : null;
+		return Math.abs(minutes) <= 14 * 60 ? formatOffset(minutes) : null;
 	} catch {
 		return null;
 	}
