@@ -1,0 +1,644 @@
+import type { Database } from "bun:sqlite";
+import type { MediaBrowserItem, WorkoutWithPoints } from "../media/types";
+
+export type TripRecord = {
+	id: string;
+	title: string;
+	createdAt: string;
+	updatedAt: string;
+};
+
+export type ImportRecord = {
+	id: string;
+	kind: "media" | "workout";
+	sourceType: "browser" | "local-backfill" | "workout-archive";
+	sourceName: string;
+	status: "processing" | "completed" | "completed-with-errors" | "failed";
+	originalRelativePath: string | null;
+	createdAt: string;
+	completedAt: string | null;
+};
+
+export type ImportItemRecord = {
+	id: string;
+	importId: string;
+	sourceKey: string;
+	entityId: string | null;
+	status: "pending" | "processing" | "completed" | "failed";
+	originalFilename: string;
+	errorMessage: string | null;
+};
+
+export type StoredMediaRecord = {
+	id: string;
+	importId: string | null;
+	status: "processing" | "ready" | "failed";
+	kind: "photo" | "video" | null;
+	originalFilename: string;
+	originalRelativePath: string;
+	originalMimeType: string | null;
+	originalByteSize: number;
+	storageMode: "copy" | "move" | "hardlink" | "upload";
+	width: number | null;
+	height: number | null;
+	durationMs: number | null;
+	capturedAt: string | null;
+	capturedAtOverride: string | null;
+	latitude: number | null;
+	longitude: number | null;
+	metadataJson: string;
+	processingVersion: string;
+	failureCode: string | null;
+	failureMessage: string | null;
+};
+
+export type WorkoutListItem = {
+	id: string;
+	importId: string | null;
+	tripId: string | null;
+	title: string | null;
+	startedAt: string;
+	endedAt: string;
+	activityType: string | null;
+	distanceMeters: number | null;
+};
+
+export class LibraryRepository {
+	constructor(public readonly db: Database) {}
+
+	createTrip(title: string) {
+		const trimmed = title.trim();
+		if (!trimmed) throw new Error("Trip title is required.");
+		const id = crypto.randomUUID();
+		const now = new Date().toISOString();
+		this.db
+			.query(
+				"INSERT INTO trips (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
+			)
+			.run(id, trimmed, now, now);
+		return this.getTrip(id) as TripRecord;
+	}
+
+	getTrip(id: string): TripRecord | null {
+		const row = this.db
+			.query<
+				{ id: string; title: string; created_at: string; updated_at: string },
+				[string]
+			>("SELECT * FROM trips WHERE id = ?")
+			.get(id);
+		return row
+			? {
+					id: row.id,
+					title: row.title,
+					createdAt: row.created_at,
+					updatedAt: row.updated_at,
+				}
+			: null;
+	}
+
+	listTrips(): TripRecord[] {
+		return this.db
+			.query<
+				{ id: string; title: string; created_at: string; updated_at: string },
+				[]
+			>("SELECT * FROM trips ORDER BY updated_at DESC")
+			.all()
+			.map((row) => ({
+				id: row.id,
+				title: row.title,
+				createdAt: row.created_at,
+				updatedAt: row.updated_at,
+			}));
+	}
+
+	updateTrip(id: string, title: string) {
+		const trimmed = title.trim();
+		if (!trimmed) throw new Error("Trip title is required.");
+		this.db
+			.query("UPDATE trips SET title = ?, updated_at = ? WHERE id = ?")
+			.run(trimmed, new Date().toISOString(), id);
+		return this.getTrip(id);
+	}
+
+	createImport(input: {
+		kind: "media" | "workout";
+		sourceType: ImportRecord["sourceType"];
+		sourceName: string;
+		originalRelativePath?: string | null;
+	}) {
+		const id = crypto.randomUUID();
+		const now = new Date().toISOString();
+		this.db
+			.query(
+				"INSERT INTO imports (id, kind, source_type, source_name, status, original_relative_path, metadata_json, created_at) VALUES (?, ?, ?, ?, 'processing', ?, '{}', ?)",
+			)
+			.run(
+				id,
+				input.kind,
+				input.sourceType,
+				input.sourceName,
+				input.originalRelativePath ?? null,
+				now,
+			);
+		return this.getImport(id) as ImportRecord;
+	}
+
+	getImport(id: string): ImportRecord | null {
+		const row = this.db
+			.query<Record<string, string | null>, [string]>(
+				"SELECT * FROM imports WHERE id = ?",
+			)
+			.get(id);
+		return row ? mapImport(row) : null;
+	}
+
+	listImports(kind?: "media" | "workout") {
+		const rows = kind
+			? this.db
+					.query<Record<string, string | null>, [string]>(
+						"SELECT * FROM imports WHERE kind = ? ORDER BY created_at DESC",
+					)
+					.all(kind)
+			: this.db
+					.query<Record<string, string | null>, []>(
+						"SELECT * FROM imports ORDER BY created_at DESC",
+					)
+					.all();
+		return rows.map(mapImport);
+	}
+
+	updateImportStatus(
+		id: string,
+		status: ImportRecord["status"],
+		errorMessage: string | null = null,
+	) {
+		const completedAt =
+			status === "processing" ? null : new Date().toISOString();
+		this.db
+			.query(
+				"UPDATE imports SET status = ?, error_message = ?, completed_at = ? WHERE id = ?",
+			)
+			.run(status, errorMessage, completedAt, id);
+		return this.getImport(id);
+	}
+
+	createImportItem(input: {
+		importId: string;
+		sourceKey: string;
+		entityType: "media" | "workout";
+		originalFilename: string;
+		id?: string;
+	}) {
+		const id = input.id ?? crypto.randomUUID();
+		const now = new Date().toISOString();
+		this.db
+			.query(
+				"INSERT INTO import_items (id, import_id, source_key, entity_type, status, original_filename, metadata_json, created_at, updated_at) VALUES (?, ?, ?, ?, 'pending', ?, '{}', ?, ?)",
+			)
+			.run(
+				id,
+				input.importId,
+				input.sourceKey,
+				input.entityType,
+				input.originalFilename,
+				now,
+				now,
+			);
+		return this.getImportItem(id) as ImportItemRecord;
+	}
+
+	getImportItem(id: string): ImportItemRecord | null {
+		const row = this.db
+			.query<Record<string, string | null>, [string]>(
+				"SELECT * FROM import_items WHERE id = ?",
+			)
+			.get(id);
+		return row ? mapImportItem(row) : null;
+	}
+
+	getImportItemBySource(importId: string, sourceKey: string) {
+		const row = this.db
+			.query<Record<string, string | null>, [string, string]>(
+				"SELECT * FROM import_items WHERE import_id = ? AND source_key = ?",
+			)
+			.get(importId, sourceKey);
+		return row ? mapImportItem(row) : null;
+	}
+
+	setImportItemStatus(
+		id: string,
+		status: ImportItemRecord["status"],
+		input: { entityId?: string | null; errorMessage?: string | null } = {},
+	) {
+		this.db
+			.query(
+				"UPDATE import_items SET status = ?, entity_id = COALESCE(?, entity_id), error_message = ?, updated_at = ? WHERE id = ?",
+			)
+			.run(
+				status,
+				input.entityId ?? null,
+				input.errorMessage ?? null,
+				new Date().toISOString(),
+				id,
+			);
+		return this.getImportItem(id);
+	}
+
+	listImportItems(importId: string) {
+		return this.db
+			.query<Record<string, string | null>, [string]>(
+				"SELECT * FROM import_items WHERE import_id = ? ORDER BY source_key",
+			)
+			.all(importId)
+			.map(mapImportItem);
+	}
+
+	createProcessingMedia(input: {
+		id: string;
+		importId: string;
+		originalFilename: string;
+		originalRelativePath: string;
+		originalByteSize: number;
+		storageMode: StoredMediaRecord["storageMode"];
+		processingVersion: string;
+	}) {
+		const now = new Date().toISOString();
+		this.db
+			.query(
+				"INSERT INTO media (id, import_id, status, original_filename, original_relative_path, original_byte_size, storage_mode, metadata_json, processing_version, created_at, updated_at) VALUES (?, ?, 'processing', ?, ?, ?, ?, '{}', ?, ?, ?)",
+			)
+			.run(
+				input.id,
+				input.importId,
+				input.originalFilename,
+				input.originalRelativePath,
+				input.originalByteSize,
+				input.storageMode,
+				input.processingVersion,
+				now,
+				now,
+			);
+		return this.getMedia(input.id) as StoredMediaRecord;
+	}
+
+	getMedia(id: string): StoredMediaRecord | null {
+		const row = this.db
+			.query<Record<string, string | number | null>, [string]>(
+				"SELECT * FROM media WHERE id = ?",
+			)
+			.get(id);
+		return row ? mapStoredMedia(row) : null;
+	}
+
+	completeMedia(
+		id: string,
+		input: {
+			kind: "photo" | "video";
+			mimeType: string | null;
+			width: number | null;
+			height: number | null;
+			durationMs: number | null;
+			capturedAt: string | null;
+			latitude: number | null;
+			longitude: number | null;
+			metadataJson: string;
+			derivatives: Array<{
+				id: string;
+				kind: string;
+				relativePath: string;
+				mimeType: string;
+				width: number | null;
+				height: number | null;
+				durationMs: number | null;
+				byteSize: number;
+				processingVersion: string;
+			}>;
+		},
+	) {
+		const transaction = this.db.transaction(() => {
+			for (const derivative of input.derivatives) {
+				this.db
+					.query(
+						"INSERT INTO media_derivatives (id, media_id, kind, relative_path, mime_type, width, height, duration_ms, byte_size, processing_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+					)
+					.run(
+						derivative.id,
+						id,
+						derivative.kind,
+						derivative.relativePath,
+						derivative.mimeType,
+						derivative.width,
+						derivative.height,
+						derivative.durationMs,
+						derivative.byteSize,
+						derivative.processingVersion,
+						new Date().toISOString(),
+					);
+			}
+			this.db
+				.query(
+					"UPDATE media SET status = 'ready', kind = ?, original_mime_type = ?, width = ?, height = ?, duration_ms = ?, captured_at = ?, latitude = ?, longitude = ?, metadata_json = ?, failure_code = NULL, failure_message = NULL, updated_at = ? WHERE id = ?",
+				)
+				.run(
+					input.kind,
+					input.mimeType,
+					input.width,
+					input.height,
+					input.durationMs,
+					input.capturedAt,
+					input.latitude,
+					input.longitude,
+					input.metadataJson,
+					new Date().toISOString(),
+					id,
+				);
+		});
+		transaction();
+		return this.getMedia(id);
+	}
+
+	failMedia(id: string, code: string, message: string) {
+		this.db
+			.query(
+				"UPDATE media SET status = 'failed', failure_code = ?, failure_message = ?, updated_at = ? WHERE id = ?",
+			)
+			.run(code, message, new Date().toISOString(), id);
+		return this.getMedia(id);
+	}
+
+	getDerivative(mediaId: string, kind: string) {
+		return (
+			this.db
+				.query<
+					{ relative_path: string; mime_type: string; byte_size: number },
+					[string, string]
+				>(
+					"SELECT relative_path, mime_type, byte_size FROM media_derivatives WHERE media_id = ? AND kind = ? ORDER BY processing_version DESC LIMIT 1",
+				)
+				.get(mediaId, kind) ?? null
+		);
+	}
+
+	listMedia(tripId?: string, kind?: "photo" | "video"): MediaBrowserItem[] {
+		const rows = this.db
+			.query<
+				Record<string, string | number | null>,
+				[string | null, string | null, string | null]
+			>(`
+			SELECT m.*, d.relative_path AS preview_path,
+				CASE WHEN tm.trip_id IS NULL THEN 0 ELSE 1 END AS in_trip
+			FROM media m
+			JOIN media_derivatives d ON d.media_id = m.id AND d.processing_version = m.processing_version AND d.kind = CASE m.kind WHEN 'photo' THEN 'thumbnail' ELSE 'poster' END
+			LEFT JOIN trip_media tm ON tm.media_id = m.id AND tm.trip_id = ?
+			WHERE m.status = 'ready' AND (? IS NULL OR m.kind = ?)
+			ORDER BY COALESCE(m.captured_at_override, m.captured_at), m.created_at, m.id
+		`)
+			.all(tripId ?? null, kind ?? null, kind ?? null);
+		return rows.map((row) => ({
+			id: String(row.id),
+			kind: row.kind as "photo" | "video",
+			status: "ready",
+			effectiveCapturedAt: (row.captured_at_override ?? row.captured_at) as
+				| string
+				| null,
+			latitude: row.latitude as number | null,
+			longitude: row.longitude as number | null,
+			width: row.width as number | null,
+			height: row.height as number | null,
+			durationMs: row.duration_ms as number | null,
+			previewUrl: `/media/${row.id}/${row.kind === "photo" ? "thumbnail" : "poster"}`,
+			isInCurrentTrip: Number(row.in_trip) === 1,
+		}));
+	}
+
+	updateMediaTimestampOverride(id: string, timestamp: string | null) {
+		const normalized =
+			timestamp === null ? null : new Date(timestamp).toISOString();
+		this.db
+			.query(
+				"UPDATE media SET captured_at_override = ?, updated_at = ? WHERE id = ?",
+			)
+			.run(normalized, new Date().toISOString(), id);
+		return this.getMedia(id);
+	}
+
+	attachMediaToTrip(tripId: string, mediaIds: string[]) {
+		const insert = this.db.query(
+			"INSERT OR IGNORE INTO trip_media (trip_id, media_id, added_at) VALUES (?, ?, ?)",
+		);
+		this.db.transaction(() =>
+			mediaIds.forEach((id) => {
+				insert.run(tripId, id, new Date().toISOString());
+			}),
+		)();
+	}
+
+	detachMediaFromTrip(tripId: string, mediaId: string) {
+		this.db
+			.query("DELETE FROM trip_media WHERE trip_id = ? AND media_id = ?")
+			.run(tripId, mediaId);
+	}
+
+	createWorkout(input: {
+		id: string;
+		importId: string;
+		title: string | null;
+		startedAt: string;
+		endedAt: string;
+		activityType: string | null;
+		distanceMeters: number;
+		originalRelativePath: string;
+		points: Array<{
+			recordedAt: string;
+			latitude: number;
+			longitude: number;
+			elevationMeters: number | null;
+		}>;
+	}) {
+		const now = new Date().toISOString();
+		this.db.transaction(() => {
+			this.db
+				.query(
+					"INSERT INTO workouts (id, import_id, title, started_at, ended_at, activity_type, distance_meters, original_relative_path, metadata_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?)",
+				)
+				.run(
+					input.id,
+					input.importId,
+					input.title,
+					input.startedAt,
+					input.endedAt,
+					input.activityType,
+					input.distanceMeters,
+					input.originalRelativePath,
+					now,
+					now,
+				);
+			const insert = this.db.query(
+				"INSERT INTO workout_points (workout_id, sequence, recorded_at, latitude, longitude, elevation_meters) VALUES (?, ?, ?, ?, ?, ?)",
+			);
+			input.points.forEach((point, index) => {
+				insert.run(
+					input.id,
+					index,
+					point.recordedAt,
+					point.latitude,
+					point.longitude,
+					point.elevationMeters,
+				);
+			});
+		})();
+	}
+
+	listWorkouts(
+		input: {
+			tripId?: string;
+			unassigned?: boolean;
+			query?: string;
+			importId?: string;
+		} = {},
+	): WorkoutListItem[] {
+		const query = `%${input.query?.trim() ?? ""}%`;
+		return this.db
+			.query<
+				Record<string, string | number | null>,
+				[
+					string | null,
+					string | null,
+					number,
+					string | null,
+					string | null,
+					string,
+					string,
+				]
+			>(
+				`SELECT * FROM workouts WHERE (? IS NULL OR trip_id = ?) AND (? = 0 OR trip_id IS NULL) AND (? IS NULL OR import_id = ?) AND (COALESCE(title, '') LIKE ? OR COALESCE(activity_type, '') LIKE ?) ORDER BY started_at DESC`,
+			)
+			.all(
+				input.tripId ?? null,
+				input.tripId ?? null,
+				input.unassigned ? 1 : 0,
+				input.importId ?? null,
+				input.importId ?? null,
+				query,
+				query,
+			)
+			.map(mapWorkout);
+	}
+
+	assignWorkoutsToTrip(tripId: string, workoutIds: string[]) {
+		const update = this.db.query(
+			"UPDATE workouts SET trip_id = ?, updated_at = ? WHERE id = ? AND trip_id IS NULL",
+		);
+		this.db.transaction(() =>
+			workoutIds.forEach((id) => {
+				update.run(tripId, new Date().toISOString(), id);
+			}),
+		)();
+	}
+
+	getWorkoutWithPoints(id: string): WorkoutWithPoints | null {
+		const workout = this.db
+			.query<Record<string, string | number | null>, [string]>(
+				"SELECT * FROM workouts WHERE id = ?",
+			)
+			.get(id);
+		if (!workout) return null;
+		const points = this.db
+			.query<
+				{
+					recorded_at: string;
+					latitude: number;
+					longitude: number;
+					elevation_meters: number | null;
+				},
+				[string]
+			>(
+				"SELECT recorded_at, latitude, longitude, elevation_meters FROM workout_points WHERE workout_id = ? ORDER BY sequence",
+			)
+			.all(id);
+		return {
+			id,
+			startedAt: String(workout.started_at),
+			endedAt: String(workout.ended_at),
+			points: points.map((point) => ({
+				recordedAt: point.recorded_at,
+				latitude: point.latitude,
+				longitude: point.longitude,
+				elevationMeters: point.elevation_meters,
+			})),
+		};
+	}
+
+	getWorkoutsForTripWithPoints(tripId: string) {
+		return this.listWorkouts({ tripId })
+			.map((workout) => this.getWorkoutWithPoints(workout.id))
+			.filter((workout): workout is WorkoutWithPoints => workout !== null);
+	}
+}
+
+function mapImport(row: Record<string, string | null>): ImportRecord {
+	return {
+		id: String(row.id),
+		kind: row.kind as ImportRecord["kind"],
+		sourceType: row.source_type as ImportRecord["sourceType"],
+		sourceName: String(row.source_name),
+		status: row.status as ImportRecord["status"],
+		originalRelativePath: row.original_relative_path,
+		createdAt: String(row.created_at),
+		completedAt: row.completed_at,
+	};
+}
+
+function mapImportItem(row: Record<string, string | null>): ImportItemRecord {
+	return {
+		id: String(row.id),
+		importId: String(row.import_id),
+		sourceKey: String(row.source_key),
+		entityId: row.entity_id,
+		status: row.status as ImportItemRecord["status"],
+		originalFilename: String(row.original_filename),
+		errorMessage: row.error_message,
+	};
+}
+
+function mapStoredMedia(
+	row: Record<string, string | number | null>,
+): StoredMediaRecord {
+	return {
+		id: String(row.id),
+		importId: row.import_id as string | null,
+		status: row.status as StoredMediaRecord["status"],
+		kind: row.kind as StoredMediaRecord["kind"],
+		originalFilename: String(row.original_filename),
+		originalRelativePath: String(row.original_relative_path),
+		originalMimeType: row.original_mime_type as string | null,
+		originalByteSize: Number(row.original_byte_size),
+		storageMode: row.storage_mode as StoredMediaRecord["storageMode"],
+		width: row.width as number | null,
+		height: row.height as number | null,
+		durationMs: row.duration_ms as number | null,
+		capturedAt: row.captured_at as string | null,
+		capturedAtOverride: row.captured_at_override as string | null,
+		latitude: row.latitude as number | null,
+		longitude: row.longitude as number | null,
+		metadataJson: String(row.metadata_json),
+		processingVersion: String(row.processing_version),
+		failureCode: row.failure_code as string | null,
+		failureMessage: row.failure_message as string | null,
+	};
+}
+
+function mapWorkout(
+	row: Record<string, string | number | null>,
+): WorkoutListItem {
+	return {
+		id: String(row.id),
+		importId: row.import_id as string | null,
+		tripId: row.trip_id as string | null,
+		title: row.title as string | null,
+		startedAt: String(row.started_at),
+		endedAt: String(row.ended_at),
+		activityType: row.activity_type as string | null,
+		distanceMeters: row.distance_meters as number | null,
+	};
+}

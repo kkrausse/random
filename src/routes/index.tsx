@@ -1,255 +1,110 @@
-import { createFileRoute } from "@tanstack/react-router";
-import type JSZip from "jszip";
-import {
-	Activity,
-	Archive,
-	ChevronRight,
-	LoaderCircle,
-	MapPinned,
-	Route as RouteIcon,
-	Search,
-	Upload,
-} from "lucide-react";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { RouteMap } from "@/components/route-map";
-import { Button } from "@/components/ui/button";
-import {
-	formatDistance,
-	formatDuration,
-	listWorkoutRoutes,
-	openAppleHealthExport,
-	type RouteSummary,
-	readWorkoutRoute,
-	type WorkoutRoute,
-} from "@/lib/apple-health";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { ArrowRight, MapPinned, Plus } from "lucide-react";
+import { useEffect, useEffectEvent, useState } from "react";
+import { Button } from "../components/ui/button";
+import type { TripRecord } from "../db/library";
 
-export const Route = createFileRoute("/")({ component: Home });
+export const Route = createFileRoute("/")({ component: TripsIndex });
 
-function Home() {
-	const [routes, setRoutes] = useState<RouteSummary[]>([]);
-	const [selectedId, setSelectedId] = useState<string>();
-	const [workout, setWorkout] = useState<WorkoutRoute>();
-	const [isLoadingExport, setIsLoadingExport] = useState(true);
-	const [isLoadingRoute, setIsLoadingRoute] = useState(false);
+function TripsIndex() {
+	const [trips, setTrips] = useState<TripRecord[]>([]);
+	const [showForm, setShowForm] = useState(false);
+	const [title, setTitle] = useState("");
 	const [error, setError] = useState<string>();
-	const [query, setQuery] = useState("");
-	const [sourceName, setSourceName] = useState("Example export");
-	const archiveRef = useRef<JSZip>();
-	const routeCache = useRef(new Map<string, WorkoutRoute>());
-	const requestVersion = useRef(0);
-	const uploadRef = useRef<HTMLInputElement>(null);
-	const loadBundledExport = useEffectEvent(() => {
-		void loadExport();
-	});
+	const navigate = useNavigate();
+	const loadEvent = useEffectEvent(() => void loadTrips());
+	useEffect(() => loadEvent(), []);
 
-	useEffect(() => {
-		loadBundledExport();
-	}, []);
-
-	async function loadExport(file?: File) {
-		setIsLoadingExport(true);
-		setError(undefined);
-		setRoutes([]);
-		setWorkout(undefined);
-		setSelectedId(undefined);
-		routeCache.current.clear();
-
-		try {
-			const exportFile = file ?? (await fetch("/export.zip")).blob();
-			const archive = await openAppleHealthExport(await exportFile);
-			const availableRoutes = listWorkoutRoutes(archive);
-			if (availableRoutes.length === 0)
-				throw new Error("No GPX workout routes were found in this export.");
-
-			archiveRef.current = archive;
-			setRoutes(availableRoutes);
-			setSourceName(file?.name ?? "Example export");
-			void selectRoute(availableRoutes[0], archive);
-		} catch (loadError) {
+	async function loadTrips() {
+		const response = await fetch("/api/trips");
+		if (response.ok) setTrips(await response.json());
+		else
 			setError(
-				loadError instanceof Error
-					? loadError.message
-					: "The Apple Health export could not be opened.",
+				"Trips could not be loaded. Check local database configuration.",
 			);
-		} finally {
-			setIsLoadingExport(false);
-		}
 	}
 
-	async function selectRoute(
-		route: RouteSummary,
-		archive = archiveRef.current,
-	) {
-		if (!archive) return;
-		const version = ++requestVersion.current;
-		setSelectedId(route.id);
-		setWorkout(undefined);
-		setIsLoadingRoute(true);
-		setError(undefined);
-
-		try {
-			const cachedRoute = routeCache.current.get(route.id);
-			const parsedRoute =
-				cachedRoute ?? (await readWorkoutRoute(archive, route));
-			routeCache.current.set(route.id, parsedRoute);
-			if (version === requestVersion.current) setWorkout(parsedRoute);
-		} catch (routeError) {
-			if (version === requestVersion.current) {
-				setWorkout(undefined);
-				setError(
-					routeError instanceof Error
-						? routeError.message
-						: "This workout route could not be opened.",
-				);
-			}
-		} finally {
-			if (version === requestVersion.current) setIsLoadingRoute(false);
+	async function createTrip(event: React.FormEvent) {
+		event.preventDefault();
+		const response = await fetch("/api/trips", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ title }),
+		});
+		const result = (await response.json()) as TripRecord & { error?: string };
+		if (!response.ok) {
+			setError(result.error ?? "Trip could not be created.");
+			return;
 		}
+		await navigate({ to: "/trips/$tripId", params: { tripId: result.id } });
 	}
-
-	const visibleRoutes = routes.filter((route) =>
-		route.label.toLowerCase().includes(query.trim().toLowerCase()),
-	);
-	const selectedSummary = routes.find((route) => route.id === selectedId);
 
 	return (
-		<main className="app-shell">
-			<aside className="sidebar">
-				<header className="sidebar-header">
-					<div className="eyebrow">
-						<Activity size={14} /> Apple Health
-					</div>
-					<h1>Routes</h1>
-					<p>Every recorded path, held locally.</p>
-				</header>
-
-				<section className="source-card" aria-label="Export source">
-					<div className="source-icon">
-						<Archive size={18} />
-					</div>
-					<div>
-						<strong>{sourceName}</strong>
-						<span>
-							{isLoadingExport
-								? "Opening archive..."
-								: `${routes.length.toLocaleString()} workout routes`}
-						</span>
-					</div>
-				</section>
-
-				<input
-					ref={uploadRef}
-					className="sr-only"
-					type="file"
-					accept=".zip,application/zip,application/x-zip-compressed"
-					onChange={(event) => {
-						const file = event.target.files?.[0];
-						if (file) void loadExport(file);
-						event.target.value = "";
-					}}
-				/>
-				<Button
-					className="upload-button"
-					variant="outline"
-					onClick={() => uploadRef.current?.click()}
-				>
-					<Upload size={15} /> Open another export
+		<main className="trips-page">
+			<header className="page-header">
+				<div>
+					<p className="eyebrow">
+						<MapPinned size={14} /> Personal atlas
+					</p>
+					<h1>Trips</h1>
+					<p>Build a place from routes, photographs, and video.</p>
+				</div>
+				<Button onClick={() => setShowForm(true)}>
+					<Plus size={16} /> Add trip
 				</Button>
-
-				<div className="route-list-heading">
-					<span>Workout routes</span>
-					<b>{visibleRoutes.length}</b>
-				</div>
-				<label className="search-field">
-					<Search size={15} />
-					<input
-						value={query}
-						onChange={(event) => setQuery(event.target.value)}
-						placeholder="Search by date"
-					/>
-				</label>
-				{(isLoadingRoute || selectedSummary) && (
-					<section className="sidebar-route-detail" aria-label="Selected route">
-						<div className="sidebar-route-heading">
-							<div>
-								<p className="eyebrow">Workout route</p>
-								<h2>{workout?.label ?? selectedSummary?.label}</h2>
-							</div>
-							{isLoadingRoute && <LoaderCircle className="spin" size={18} />}
+			</header>
+			{showForm && (
+				<form className="new-trip" onSubmit={(event) => void createTrip(event)}>
+					<label>
+						Title
+						<input
+							value={title}
+							onChange={(event) => setTitle(event.target.value)}
+							placeholder="A short name is enough"
+						/>
+					</label>
+					<div>
+						<Button
+							type="button"
+							variant="ghost"
+							onClick={() => setShowForm(false)}
+						>
+							Cancel
+						</Button>
+						<Button type="submit">Create trip</Button>
+					</div>
+				</form>
+			)}
+			{error && <p className="inline-error">{error}</p>}
+			<section className="trip-list" aria-label="Trips">
+				{trips.map((trip, index) => (
+					<Link
+						className="trip-card"
+						key={trip.id}
+						to="/trips/$tripId"
+						params={{ tripId: trip.id }}
+					>
+						<span className="trip-number">
+							{String(index + 1).padStart(2, "0")}
+						</span>
+						<div>
+							<h2>{trip.title}</h2>
+							<p>Updated {new Date(trip.updatedAt).toLocaleDateString()}</p>
 						</div>
-						{workout && !isLoadingRoute && (
-							<div className="route-stats">
-								<span>
-									<b>{formatDistance(workout.distanceMeters)}</b>distance
-								</span>
-								<span>
-									<b>{formatDuration(workout.durationSeconds)}</b>duration
-								</span>
-								<span>
-									<b>{workout.points.length.toLocaleString()}</b>points
-								</span>
-							</div>
-						)}
-					</section>
-				)}
-
-				<div className="route-list">
-					{isLoadingExport && <LoadingMessage label="Reading workout routes" />}
-					{!isLoadingExport &&
-						visibleRoutes.map((route) => (
-							<button
-								className={`route-card ${route.id === selectedId ? "is-selected" : ""}`}
-								key={route.id}
-								type="button"
-								onClick={() => void selectRoute(route)}
-							>
-								<span className="route-marker">
-									<RouteIcon size={15} />
-								</span>
-								<span className="route-card-content">
-									<strong>{route.label}</strong>
-									<small>Recorded route</small>
-								</span>
-								<ChevronRight size={16} />
-							</button>
-						))}
-					{!isLoadingExport && visibleRoutes.length === 0 && (
-						<p className="empty-list">No routes match that date.</p>
-					)}
-				</div>
-			</aside>
-
-			<section className="map-panel">
-				<RouteMap route={workout} />
-				<div className="map-topbar">
-					<div className="map-brand">
-						<MapPinned size={18} />
-						<span>Personal atlas</span>
-					</div>
-					<span className="privacy-note">Processed in your browser</span>
-				</div>
-				{!isLoadingExport && !selectedSummary && !error && (
-					<div className="map-empty">
-						<MapPinned size={26} />
-						<strong>Select a route</strong>
-						<span>Choose a workout from the list to see its path.</span>
-					</div>
-				)}
-				{error && (
-					<div className="map-error">
-						<strong>Could not open export</strong>
-						<span>{error}</span>
+						<ArrowRight size={18} />
+					</Link>
+				))}
+				{trips.length === 0 && !error && (
+					<div className="empty-trips">
+						<MapPinned size={30} />
+						<h2>No trips yet</h2>
+						<p>
+							Create a trip, then add imported workouts and media from your
+							library.
+						</p>
 					</div>
 				)}
 			</section>
 		</main>
-	);
-}
-
-function LoadingMessage({ label }: { label: string }) {
-	return (
-		<div className="loading-message">
-			<LoaderCircle className="spin" size={18} /> {label}
-		</div>
 	);
 }

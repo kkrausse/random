@@ -1,36 +1,111 @@
-# Routes
+# Personal Atlas
 
-A local-first viewer for Apple Health workout routes. The app runs on TanStack Start and Bun, and renders GPX tracks with MapLibre GL JS through `react-map-gl`.
+A local-first trip library for workout routes, photos, and videos. TanStack Start provides the UI and server routes, Bun owns SQLite and filesystem access, and MapLibre renders normalized workout tracks with timestamp-positioned media.
+
+## Requirements
+
+- [Bun](https://bun.sh/)
+- ExifTool for photo metadata and Sony ARW embedded previews
+- FFmpeg and FFprobe for video inspection, posters, and browser-compatible proxies
+- LibRaw's `dcraw_emu` for Sony ARW files without a sufficiently large embedded preview
+
+On Debian or Ubuntu:
+
+```bash
+sudo apt install ffmpeg exiftool libraw-bin
+```
+
+`sharp` is installed as a Bun dependency and generates validated WebP image derivatives.
+
+## Configuration
+
+The local `.env` uses:
+
+```env
+DATABASE_PATH=./app_data/app.sqlite
+ASSET_ROOT=./app_data/assets
+ASSET_TEMP_ROOT=./app_data/assets/.tmp
+```
+
+`DATABASE_PATH` and `ASSET_ROOT` are intentionally separate. Keep SQLite on a normal local filesystem. **Do not open the SQLite database over SMB or another network filesystem.** `ASSET_ROOT` may point to a mounted SMB share or another large filesystem.
+
+Temporary assets should remain on the same filesystem as `ASSET_ROOT` so completed originals and derivatives can be moved into place atomically. SQLite stores only validated relative asset paths; server responses never expose absolute local paths.
 
 ## Run
 
 ```bash
 bun install
+bun run migrate
 bun run dev
 ```
 
-Open `http://localhost:3000`. The bundled example is served from `public/export.zip` and is decompressed in the browser. Use **Open another export** to inspect a local Apple Health ZIP without uploading it anywhere.
+Open `http://localhost:3000`. Migrations are also applied automatically when the application first opens its database.
 
-## What It Reads
+## Browser Imports
 
-- GPX files under `apple_health_export/workout-routes/`
-- Route date from each Apple Health GPX filename
-- GPS geometry, distance, duration, and point count from the selected GPX file
+The media browser accepts multiple photos and videos, creates one import batch, and sends one file per request in selection order. Each original is durably stored and recorded with `processing` before synchronous derivative work begins. A processing failure retains the immutable original, marks the media and import item as failed, and removes incomplete temporary derivatives.
 
-The large `export.xml` file remains inside the archive and is intentionally not read yet. It will be the source for activity types and richer workout metadata in the next iteration.
+Normal gallery reads include only `ready` media and load the following derivatives:
 
-## Stack
+- Photos: 384 px WebP thumbnail and 2048 px WebP viewer
+- Videos: 960 px WebP poster and maximum-1080p H.264/AAC MP4 proxy
 
-- TypeScript, Bun, TanStack Start, React 19
-- Tailwind CSS v4, shadcn/ui structure, Base UI primitives, Lucide icons
-- MapLibre GL JS with `react-map-gl/maplibre`
-- CARTO Voyager vector tiles during prototyping
+The authoritative settings, validation behavior, Sony ARW flow, and processing version are documented in [`media_impl.md`](./media_impl.md).
 
-The map style is isolated in `src/components/route-map.tsx`; switching to regional PMTiles later only requires replacing that map style/source configuration.
+Workout ZIP uploads preserve the original archive, extract supported Apple Health GPX routes, and store normalized points in SQLite. Workouts remain globally available and unassigned until selected for a trip.
+
+## Backfill
+
+Run a deterministic recursive backfill:
+
+```bash
+bun run backfill-media -- \
+  --source /path/to/media \
+  --mode hardlink \
+  --recursive
+```
+
+Preview without database or filesystem writes:
+
+```bash
+bun run backfill-media -- \
+  --source /path/to/media \
+  --mode copy \
+  --recursive \
+  --dry-run \
+  --include jpg,jpeg,arw,mp4 \
+  --limit 100
+```
+
+Resume an existing local backfill import:
+
+```bash
+bun run backfill-media -- \
+  --source /path/to/media \
+  --mode copy \
+  --recursive \
+  --continue-import <import-id>
+```
+
+Storage modes:
+
+- `copy` preserves the source and creates a managed original.
+- `move` renames on the same filesystem, or validates a cross-device copy before deleting the source.
+- `hardlink` is local-path-only and never falls back to copying. Source and asset storage must share a filesystem. Both paths reference the same inode, so modifying either path modifies the managed original; treat both as immutable.
+- Browser uploads use `upload` and stream into managed temporary storage.
+
+## Failed Media
+
+Failed media is retained in the `media` table with a sanitized `failure_code` and `failure_message`; its original remains under `media/originals/<media-id>/`. Failed records are intentionally excluded from ordinary gallery and selector queries. There is no retry or deletion UI yet. Inspect failures with SQLite and retry the source through a new browser import or a resumed backfill import.
 
 ## Checks
 
 ```bash
+bun run migrate
+bun run test
+bunx tsc --noEmit
 bun run check
 bun run build
 ```
+
+The map currently uses CARTO Voyager tiles. Map media uses explicit GPS first, then linearly interpolates between surrounding workout samples when the effective capture timestamp falls within a workout and the sample gap is no more than ten minutes.

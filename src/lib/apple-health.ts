@@ -67,21 +67,23 @@ export async function readWorkoutRoute(
 	if (document.querySelector("parsererror"))
 		throw new Error("The selected route could not be read.");
 
-	const points = Array.from(document.getElementsByTagName("trkpt"))
+	const points: RoutePoint[] = Array.from(
+		document.getElementsByTagName("trkpt"),
+	)
 		.map((element) => {
 			const latitude = Number(element.getAttribute("lat"));
 			const longitude = Number(element.getAttribute("lon"));
 			const timeText = element.getElementsByTagName("time")[0]?.textContent;
 			const time = timeText ? new Date(timeText) : undefined;
 			return Number.isFinite(latitude) && Number.isFinite(longitude)
-				? {
+				? ({
 						latitude,
 						longitude,
 						time: time && !Number.isNaN(time.getTime()) ? time : undefined,
-					}
+					} satisfies RoutePoint)
 				: undefined;
 		})
-		.filter((point): point is RoutePoint => Boolean(point));
+		.filter((point): point is NonNullable<typeof point> => point !== undefined);
 
 	const timedPoints = points.filter(
 		(point): point is RoutePoint & { time: Date } => point.time !== undefined,

@@ -1,3 +1,4 @@
+import type { Feature, LineString } from "geojson";
 import { useEffect, useRef } from "react";
 import MapView, {
 	FullscreenControl,
@@ -45,7 +46,7 @@ export function RouteMap({ route }: RouteMapProps) {
 		);
 	}, [route]);
 
-	const routeGeoJson: GeoJSON.Feature<GeoJSON.LineString> | undefined =
+	const routeGeoJson: Feature<LineString> | undefined =
 		coordinates.length > 1
 			? {
 					type: "Feature",
