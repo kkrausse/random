@@ -1,5 +1,6 @@
 import type { Feature, FeatureCollection, LineString } from "geojson";
-import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { useEffect, useRef, useState, type WheelEvent } from "react";
 import MapView, {
 	Layer,
 	type MapRef,
@@ -10,6 +11,8 @@ import MapView, {
 import { resolveMediaMapPosition } from "../media/map-position";
 import type { MediaBrowserItem, WorkoutWithPoints } from "../media/types";
 
+const DEFAULT_PHOTO_ZOOM = { scale: 1, x: 50, y: 50 };
+
 export function TripMap({
 	workouts,
 	media,
@@ -19,6 +22,8 @@ export function TripMap({
 }) {
 	const mapRef = useRef<MapRef>(null);
 	const [zoom, setZoom] = useState(3);
+	const [selectedPhoto, setSelectedPhoto] = useState<MediaBrowserItem>();
+	const [photoZoom, setPhotoZoom] = useState(DEFAULT_PHOTO_ZOOM);
 	const routes: FeatureCollection<LineString> = {
 		type: "FeatureCollection",
 		features: workouts
@@ -50,12 +55,46 @@ export function TripMap({
 				position: NonNullable<typeof value.position>;
 			} => value.position !== null,
 		);
+	const photos = positions
+		.filter(({ item }) => item.kind === "photo")
+		.map(({ item }) => item)
+		.sort((left, right) => captureTime(left) - captureTime(right));
+	const selectedPhotoIndex = selectedPhoto
+		? photos.findIndex((item) => item.id === selectedPhoto.id)
+		: -1;
 	useEffect(() => {
 		fitMap(mapRef.current, workouts, media);
 	}, [workouts, media]);
 
+	function showPhoto(photo: MediaBrowserItem | undefined) {
+		setSelectedPhoto(photo);
+		setPhotoZoom(DEFAULT_PHOTO_ZOOM);
+		const position = positions.find(
+			({ item }) => item.id === photo?.id,
+		)?.position;
+		if (position) {
+			mapRef.current?.easeTo({
+				center: [position.longitude, position.latitude],
+				duration: 500,
+			});
+		}
+	}
+
+	function zoomPhoto(event: WheelEvent<HTMLDivElement>) {
+		event.preventDefault();
+		const bounds = event.currentTarget.getBoundingClientRect();
+		setPhotoZoom((current) => ({
+			scale: Math.min(
+				6,
+				Math.max(1, current.scale * Math.exp(-event.deltaY * 0.002)),
+			),
+			x: ((event.clientX - bounds.left) / bounds.width) * 100,
+			y: ((event.clientY - bounds.top) / bounds.height) * 100,
+		}));
+	}
+
 	return (
-		<div className="trip-map">
+		<div className={`trip-map ${selectedPhoto ? "has-photo" : ""}`}>
 			<MapView
 				ref={mapRef}
 				initialViewState={{ longitude: -98.58, latitude: 39.83, zoom: 3 }}
@@ -77,21 +116,81 @@ export function TripMap({
 						/>
 					</Source>
 				)}
-				{positions.map(({ item, position }) => (
-					<Marker
-						key={item.id}
-						longitude={position.longitude}
-						latitude={position.latitude}
-						anchor="center"
-					>
-						<div className={`media-marker ${zoom >= 13 ? "close" : ""}`}>
-							{zoom >= 13 ? <img src={item.previewUrl} alt="" /> : null}
-						</div>
-					</Marker>
-				))}
+				{positions.map(({ item, position }) => {
+					const className = `media-marker ${zoom >= 13 ? "close" : ""} ${selectedPhoto?.id === item.id ? "selected" : ""}`;
+					return (
+						<Marker
+							key={item.id}
+							longitude={position.longitude}
+							latitude={position.latitude}
+							anchor="center"
+						>
+							{item.kind === "photo" ? (
+								<button
+									type="button"
+									className={className}
+									aria-label="Open photo"
+									onClick={() => showPhoto(item)}
+								>
+									{zoom >= 13 ? <img src={item.previewUrl} alt="" /> : null}
+								</button>
+							) : (
+								<div className={className}>
+									{zoom >= 13 ? <img src={item.previewUrl} alt="" /> : null}
+								</div>
+							)}
+						</Marker>
+					);
+				})}
 			</MapView>
+			{selectedPhoto ? (
+				<aside className="trip-photo-viewer">
+					<button
+						type="button"
+						className="photo-viewer-close"
+						aria-label="Close photo"
+						onClick={() => showPhoto(undefined)}
+					>
+						<X size={18} />
+					</button>
+					<button
+						type="button"
+						className="photo-viewer-previous"
+						aria-label="Previous photo"
+						disabled={selectedPhotoIndex <= 0}
+						onClick={() => showPhoto(photos[selectedPhotoIndex - 1])}
+					>
+						<ChevronLeft size={24} />
+					</button>
+					<div className="trip-photo-stage" onWheel={zoomPhoto}>
+						<img
+							src={`/media/${selectedPhoto.id}/viewer`}
+							alt="Selected"
+							draggable={false}
+							style={{
+								transform: `scale(${photoZoom.scale})`,
+								transformOrigin: `${photoZoom.x}% ${photoZoom.y}%`,
+							}}
+						/>
+					</div>
+					<button
+						type="button"
+						className="photo-viewer-next"
+						aria-label="Next photo"
+						disabled={selectedPhotoIndex >= photos.length - 1}
+						onClick={() => showPhoto(photos[selectedPhotoIndex + 1])}
+					>
+						<ChevronRight size={24} />
+					</button>
+				</aside>
+			) : null}
 		</div>
 	);
+}
+
+function captureTime(media: MediaBrowserItem) {
+	const timestamp = Date.parse(media.effectiveCapturedAt ?? "");
+	return Number.isFinite(timestamp) ? timestamp : Infinity;
 }
 
 function fitMap(

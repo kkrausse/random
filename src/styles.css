@@ -99,11 +99,23 @@ body:has(.trips-page), body:has(.trip-detail-page) { overflow: auto; background:
 .trip-time-zone input { display: block; width: 100%; margin-top: 4px; padding: 6px 0; border: 0; border-bottom: 1px solid #d4d0c9; outline: 0; color: #4e574f; background: transparent; font-size: 11px; text-transform: none; }
 .trip-detail-header p { margin: 0; color: #80857e; font-size: 11px; text-align: right; }
 .trip-map-panel { height: min(54vh, 580px); padding: 18px; background: #e8e5de; }
-.trip-map { width: 100%; height: 100%; overflow: hidden; border: 1px solid #d0ccc4; border-radius: 12px; box-shadow: 0 12px 35px #26352d16; }
+.trip-map { display: grid; width: 100%; height: 100%; overflow: hidden; border: 1px solid #d0ccc4; border-radius: 12px; box-shadow: 0 12px 35px #26352d16; }
+.trip-map.has-photo { grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); }
 .trip-map > .maplibregl-map { width: 100%; height: 100%; }
-.media-marker { width: 9px; height: 9px; border: 2px solid white; border-radius: 50%; background: #3c7454; box-shadow: 0 1px 5px #17241d66; }
+.media-marker { width: 9px; height: 9px; padding: 0; border: 2px solid white; border-radius: 50%; background: #3c7454; box-shadow: 0 1px 5px #17241d66; }
+button.media-marker { cursor: pointer; }
 .media-marker.close { width: 42px; height: 42px; overflow: hidden; border-radius: 5px; background: white; }
+.media-marker.selected { outline: 3px solid #f2b13d; outline-offset: 2px; }
 .media-marker img { width: 100%; height: 100%; object-fit: cover; }
+.trip-photo-viewer { position: relative; display: grid; min-width: 0; min-height: 0; place-items: center; border-left: 1px solid #bdb9b1; background: #171a18; }
+.trip-photo-stage { width: 100%; height: 100%; overflow: hidden; overscroll-behavior: contain; }
+.trip-photo-stage > img { display: block; width: 100%; height: 100%; object-fit: contain; user-select: none; }
+.trip-photo-viewer > button { position: absolute; z-index: 1; display: grid; width: 38px; height: 38px; padding: 0; place-items: center; border: 1px solid #ffffff38; border-radius: 50%; color: white; background: #151815c9; cursor: pointer; }
+.trip-photo-viewer > button:disabled { opacity: .25; cursor: default; }
+.trip-photo-viewer .photo-viewer-close { top: 12px; right: 12px; width: 34px; height: 34px; }
+.photo-viewer-previous { top: 50%; left: 12px; transform: translateY(-50%); }
+.photo-viewer-next { top: 50%; right: 12px; transform: translateY(-50%); }
+@media (max-width: 760px) { .trip-map.has-photo { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 .trip-content { width: min(1120px, calc(100% - 36px)); margin: 0 auto; padding: 48px 0 100px; }
 .detail-section { margin-bottom: 52px; }
 .detail-section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding-bottom: 15px; border-bottom: 1px solid #d5d1ca; }
