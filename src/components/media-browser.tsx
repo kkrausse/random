@@ -1,6 +1,6 @@
-import { ImagePlus, LoaderCircle, Upload, X } from "lucide-react";
+import { ChevronRight, ImagePlus, LoaderCircle, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { groupMediaIntoSessions, toggleMediaSelection } from "../media/browser";
+import { groupMediaByDay, toggleMediaSelection } from "../media/browser";
 import type { MediaBrowserItem, WorkoutWithPoints } from "../media/types";
 import { TripMap } from "./trip-map";
 import { Button } from "./ui/button";
@@ -23,7 +23,8 @@ export function MediaBrowser({
 	const [items, setItems] = useState<MediaBrowserItem[]>([]);
 	const [selection, setSelection] = useState<Set<string>>(new Set());
 	const [kind, setKind] = useState<"all" | "photo" | "video">("all");
-	const [groupBy, setGroupBy] = useState<"session" | "kind">("session");
+	const [groupBy, setGroupBy] = useState<"day" | "kind">("day");
+	const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 	const [uploads, setUploads] = useState<UploadState[]>([]);
 	const [error, setError] = useState<string>();
 	const fileInput = useRef<HTMLInputElement>(null);
@@ -133,9 +134,9 @@ export function MediaBrowser({
 		onChanged();
 	}
 
-	const sessions =
-		groupBy === "session"
-			? groupMediaIntoSessions(items)
+	const groups =
+		groupBy === "day"
+			? groupMediaByDay(items)
 			: (["photo", "video"] as const)
 					.map((mediaKind) => ({
 						id: `kind-${mediaKind}`,
@@ -161,7 +162,7 @@ export function MediaBrowser({
 				</fieldset>
 				<fieldset className="segmented">
 					<legend className="sr-only">Group media by</legend>
-					{(["session", "kind"] as const).map((value) => (
+					{(["day", "kind"] as const).map((value) => (
 						<button
 							className={groupBy === value ? "active" : ""}
 							key={value}
@@ -203,72 +204,95 @@ export function MediaBrowser({
 				</div>
 			)}
 			{error && <p className="inline-error">{error}</p>}
-			{sessions.length === 0 && (
+			{groups.length === 0 && (
 				<div className="empty-library">
 					<ImagePlus size={24} />
 					<span>No ready media yet. Upload files to build the library.</span>
 				</div>
 			)}
-			{sessions.map((session) => {
-				const selectable = session.items.filter(
-					(item) => !item.isInCurrentTrip,
-				);
+			{groups.map((group) => {
+				const selectable = group.items.filter((item) => !item.isInCurrentTrip);
 				const allSelected =
 					selectable.length > 0 &&
 					selectable.every((item) => selection.has(item.id));
+				const isExpanded = expandedGroups.has(group.id);
 				return (
-					<section className="media-session" key={session.id}>
+					<section className="media-session" key={group.id}>
 						<header>
-							<label>
-								<input
-									type="checkbox"
-									checked={allSelected}
-									disabled={!selectable.length}
-									onChange={() =>
-										setSelection((current) =>
-											toggleMediaSelection(
-												current,
-												selectable.map((item) => item.id),
-											),
-										)
-									}
-								/>
-								<span>{session.label}</span>
-							</label>
-							<small>
-								{session.items.length} item
-								{session.items.length === 1 ? "" : "s"}
-							</small>
-						</header>
-						<div className="media-grid">
-							{session.items.map((item) => (
-								<article
-									className={`media-tile ${selection.has(item.id) ? "selected" : ""} ${item.isInCurrentTrip ? "associated" : ""}`}
-									key={item.id}
-								>
-									<button
-										type="button"
-										disabled={item.isInCurrentTrip}
-										onClick={() =>
+							<div>
+								<label className="media-session-select">
+									<input
+										type="checkbox"
+										checked={allSelected}
+										disabled={!selectable.length}
+										onChange={() =>
 											setSelection((current) =>
-												toggleMediaSelection(current, [item.id]),
+												toggleMediaSelection(
+													current,
+													selectable.map((item) => item.id),
+												),
 											)
 										}
-									>
-										<img src={item.previewUrl} alt="" loading="lazy" />
-										<span>{item.isInCurrentTrip ? "In trip" : item.kind}</span>
-									</button>
-									<input
-										aria-label="Capture time override"
-										type="datetime-local"
-										defaultValue={toLocalInput(item.effectiveCapturedAt)}
-										onBlur={(event) =>
-											void updateTimestamp(item.id, event.target.value)
-										}
 									/>
-								</article>
-							))}
-						</div>
+									<span className="sr-only">Select all in {group.label}</span>
+								</label>
+								<button
+									className="media-session-toggle"
+									type="button"
+									aria-expanded={isExpanded}
+									onClick={() =>
+										setExpandedGroups((current) => {
+											const next = new Set(current);
+											if (next.has(group.id)) next.delete(group.id);
+											else next.add(group.id);
+											return next;
+										})
+									}
+								>
+									<ChevronRight size={14} />
+									<span>{group.label}</span>
+								</button>
+							</div>
+							<small>
+								{group.items.length} item
+								{group.items.length === 1 ? "" : "s"}
+							</small>
+						</header>
+						{isExpanded && (
+							<div className="media-grid">
+								{group.items.map((item) => (
+									<article
+										className={`media-tile ${selection.has(item.id) ? "selected" : ""} ${item.isInCurrentTrip ? "associated" : ""}`}
+										key={item.id}
+									>
+										<button
+											type="button"
+											disabled={item.isInCurrentTrip}
+											onClick={() =>
+												setSelection((current) =>
+													toggleMediaSelection(current, [item.id]),
+												)
+											}
+										>
+											<img src={item.previewUrl} alt="" loading="lazy" />
+											<span>
+												{item.isInCurrentTrip ? "In trip" : item.kind}
+											</span>
+										</button>
+										<label className="media-capture-time">
+											<span>Taken</span>
+											<input
+												type="datetime-local"
+												defaultValue={toLocalInput(item.effectiveCapturedAt)}
+												onBlur={(event) =>
+													void updateTimestamp(item.id, event.target.value)
+												}
+											/>
+										</label>
+									</article>
+								))}
+							</div>
+						)}
 					</section>
 				);
 			})}

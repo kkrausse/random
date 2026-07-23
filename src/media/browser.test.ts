@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupMediaIntoSessions, toggleMediaSelection } from "./browser";
+import { groupMediaByDay, toggleMediaSelection } from "./browser";
 import type { MediaBrowserItem } from "./types";
 
 const item = (
@@ -19,13 +19,13 @@ const item = (
 	isInCurrentTrip: false,
 });
 
-describe("groupMediaIntoSessions", () => {
-	it("uses a strict seven hour gap and groups unknown timestamps", () => {
-		const groups = groupMediaIntoSessions([
+describe("groupMediaByDay", () => {
+	it("groups media by calendar day and groups unknown timestamps", () => {
+		const groups = groupMediaByDay([
 			item("unknown", null),
-			item("c", "2025-01-01T14:00:00.001Z"),
-			item("a", "2025-01-01T00:00:00.000Z"),
-			item("b", "2025-01-01T07:00:00.000Z"),
+			item("c", "2025-01-02T16:00:00.000Z"),
+			item("a", "2025-01-01T16:00:00.000Z"),
+			item("b", "2025-01-01T16:01:00.000Z"),
 		]);
 		expect(groups.map((group) => group.items.map(({ id }) => id))).toEqual([
 			["a", "b"],

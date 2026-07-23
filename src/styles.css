@@ -153,16 +153,21 @@ body:has(.trips-page), body:has(.trip-detail-page) { overflow: auto; background:
 .status-ready { color: #39704f !important; }.status-failed { color: #9b3929 !important; }
 .empty-library { display: flex; align-items: center; gap: 10px; padding: 35px 4px; }
 .media-session { margin-top: 23px; }
-.media-session > header { display: flex; justify-content: space-between; padding-bottom: 8px; }
-.media-session > header label { display: flex; align-items: center; gap: 7px; color: #414741; font-family: Georgia, serif; font-size: 15px; }
+.media-session > header { display: flex; align-items: center; justify-content: space-between; padding-bottom: 8px; border-bottom: 1px solid #ddd9d2; }
+.media-session > header > div { display: flex; align-items: center; gap: 7px; }
+.media-session-select { display: flex; align-items: center; }
+.media-session-toggle { display: flex; align-items: center; gap: 5px; padding: 3px 0; border: 0; color: #414741; background: transparent; font-family: Georgia, serif; font-size: 15px; cursor: pointer; }
+.media-session-toggle svg { color: #7d837c; transition: transform .15s ease; }
+.media-session-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
 .media-session > header small { color: #858a83; font-size: 10px; }
-.media-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.media-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; padding-top: 8px; }
 .media-tile { overflow: hidden; border: 2px solid transparent; border-radius: 7px; background: #fbfaf7; }
 .media-tile.selected { border-color: #3d7453; }.media-tile.associated { opacity: .62; }
 .media-tile button { position: relative; display: block; width: 100%; aspect-ratio: 1; padding: 0; border: 0; background: #dedbd4; cursor: pointer; }
 .media-tile img { width: 100%; height: 100%; object-fit: cover; }
 .media-tile button span { position: absolute; right: 6px; bottom: 6px; padding: 3px 5px; border-radius: 4px; color: white; background: #1e2923c7; font-size: 8px; text-transform: uppercase; }
-.media-tile > input { width: 100%; padding: 7px 6px; border: 0; color: #626961; background: #fbfaf7; font-size: 9px; }
+.media-capture-time { display: block; padding: 6px; color: #777d76; background: #fbfaf7; font-size: 8px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.media-capture-time input { display: block; width: 100%; margin-top: 3px; padding: 0; border: 0; color: #626961; background: transparent; font-size: 9px; font-weight: 400; letter-spacing: 0; text-transform: none; }
 .selection-bar { position: sticky; bottom: 18px; display: flex; width: max-content; align-items: center; gap: 14px; margin: 18px auto 0; padding: 7px 8px 7px 14px; border: 1px solid #c5ccc5; border-radius: 9px; background: #fbfaf7ed; box-shadow: 0 8px 25px #27362d2b; backdrop-filter: blur(9px); }
 .selector-map { height: 280px; margin-top: 20px; }
 .selection-bar > button { display: flex; align-items: center; gap: 5px; border: 0; color: #6e756e; background: transparent; font-size: 11px; cursor: pointer; }
@@ -171,6 +176,6 @@ body:has(.trips-page), body:has(.trip-detail-page) { overflow: auto; background:
 	.trip-list { grid-template-columns: 1fr; }.new-trip { align-items: stretch; flex-direction: column; }.new-trip > div { justify-content: flex-end; }
 	.trip-detail-header { grid-template-columns: 1fr auto; padding: 15px; }.trip-detail-header input { grid-column: 1 / -1; grid-row: 2; text-align: left; }.trip-detail-header p { grid-column: 2; grid-row: 1; }
 	.trip-map-panel { height: 42vh; padding: 9px; }.trip-content { width: calc(100% - 24px); padding-top: 34px; }.detail-section-heading { align-items: flex-start; flex-direction: column; }
-	.assigned-workouts { grid-template-columns: 1fr; }.media-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }.section-toolbar { align-items: flex-start; }.media-tile > input { font-size: 8px; }
+	.assigned-workouts { grid-template-columns: 1fr; }.media-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }.section-toolbar { align-items: flex-start; }.media-capture-time input { font-size: 8px; }
 	.workout-import-list { grid-template-columns: 1fr; }.selector-toolbar { align-items: stretch; flex-direction: column; }.workout-browser { grid-template-columns: 1fr; grid-template-rows: minmax(160px, .8fr) minmax(220px, 1.2fr); height: 520px; }.workout-route-list { border-right: 0; border-bottom: 1px solid #ddd9d2; }
 }

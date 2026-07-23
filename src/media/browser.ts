@@ -1,16 +1,12 @@
 import type { MediaBrowserItem } from "./types";
 
-export const MEDIA_SESSION_GAP_MS = 7 * 60 * 60 * 1000;
-
-export type MediaSession = {
+export type MediaGroup = {
 	id: string;
 	label: string;
 	items: MediaBrowserItem[];
 };
 
-export function groupMediaIntoSessions(
-	items: MediaBrowserItem[],
-): MediaSession[] {
+export function groupMediaByDay(items: MediaBrowserItem[]): MediaGroup[] {
 	const timed = items
 		.filter((item) => item.effectiveCapturedAt !== null)
 		.sort(
@@ -18,24 +14,18 @@ export function groupMediaIntoSessions(
 				Date.parse(a.effectiveCapturedAt ?? "") -
 				Date.parse(b.effectiveCapturedAt ?? ""),
 		);
-	const sessions: MediaSession[] = [];
+	const groups: MediaGroup[] = [];
 
 	for (const item of timed) {
 		const timestamp = Date.parse(item.effectiveCapturedAt ?? "");
 		if (!Number.isFinite(timestamp)) continue;
-		const current = sessions.at(-1);
-		const previous = current?.items.at(-1);
-		const previousTimestamp = previous?.effectiveCapturedAt
-			? Date.parse(previous.effectiveCapturedAt)
-			: undefined;
-		if (
-			!current ||
-			previousTimestamp === undefined ||
-			timestamp - previousTimestamp > MEDIA_SESSION_GAP_MS
-		) {
-			sessions.push({
-				id: `session-${item.id}`,
-				label: formatSessionLabel(new Date(timestamp)),
+		const date = new Date(timestamp);
+		const id = formatLocalDateId(date);
+		const current = groups.at(-1);
+		if (!current || current.id !== id) {
+			groups.push({
+				id,
+				label: formatDayLabel(date),
 				items: [item],
 			});
 		} else {
@@ -49,13 +39,13 @@ export function groupMediaIntoSessions(
 			!Number.isFinite(Date.parse(item.effectiveCapturedAt)),
 	);
 	if (unknown.length) {
-		sessions.push({
+		groups.push({
 			id: "unknown-time",
 			label: "Unknown time",
 			items: unknown,
 		});
 	}
-	return sessions;
+	return groups;
 }
 
 export function toggleMediaSelection(
@@ -73,13 +63,15 @@ export function toggleMediaSelection(
 	return next;
 }
 
-function formatSessionLabel(date: Date) {
+function formatLocalDateId(date: Date) {
+	return `day-${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function formatDayLabel(date: Date) {
 	return new Intl.DateTimeFormat("en", {
-		weekday: "short",
-		month: "short",
+		weekday: "long",
+		month: "long",
 		day: "numeric",
 		year: "numeric",
-		hour: "numeric",
-		minute: "2-digit",
 	}).format(date);
 }
