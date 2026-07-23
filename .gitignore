@@ -12,3 +12,4 @@ app_data/
 .vinxi
 __unconfig*
 todos.json
+public/export.zip
