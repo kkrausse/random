@@ -10,8 +10,6 @@ import MapView, {
 } from "react-map-gl/maplibre";
 import type { WorkoutRoute } from "../lib/apple-health";
 
-import "maplibre-gl/dist/maplibre-gl.css";
-
 type RouteMapProps = {
 	route?: WorkoutRoute;
 };
