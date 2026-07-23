@@ -1,6 +1,12 @@
 import type { Feature, FeatureCollection, LineString } from "geojson";
 import { X } from "lucide-react";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import {
+	type PointerEvent as ReactPointerEvent,
+	useEffect,
+	useEffectEvent,
+	useRef,
+	useState,
+} from "react";
 import MapView, {
 	Layer,
 	type MapRef,
@@ -11,7 +17,7 @@ import MapView, {
 import { resolveMediaMapPosition } from "../media/map-position";
 import type { MediaBrowserItem, WorkoutWithPoints } from "../media/types";
 
-const DEFAULT_PHOTO_ZOOM = { scale: 1, x: 50, y: 50 };
+const DEFAULT_PHOTO_ZOOM = { scale: 1, offsetX: 0, offsetY: 0 };
 
 export function TripMap({
 	workouts,
@@ -22,9 +28,17 @@ export function TripMap({
 }) {
 	const mapRef = useRef<MapRef>(null);
 	const photoStageRef = useRef<HTMLDivElement>(null);
+	const photoDragRef = useRef<{
+		pointerId: number;
+		x: number;
+		y: number;
+		offsetX: number;
+		offsetY: number;
+	}>();
 	const [zoom, setZoom] = useState(3);
 	const [selectedPhoto, setSelectedPhoto] = useState<MediaBrowserItem>();
 	const [photoZoom, setPhotoZoom] = useState(DEFAULT_PHOTO_ZOOM);
+	const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
 	const routes: FeatureCollection<LineString> = {
 		type: "FeatureCollection",
 		features: workouts
@@ -70,6 +84,8 @@ export function TripMap({
 	function showPhoto(photo: MediaBrowserItem | undefined) {
 		setSelectedPhoto(photo);
 		setPhotoZoom(DEFAULT_PHOTO_ZOOM);
+		setIsDraggingPhoto(false);
+		photoDragRef.current = undefined;
 		const position = positions.find(
 			({ item }) => item.id === photo?.id,
 		)?.position;
@@ -85,15 +101,68 @@ export function TripMap({
 		event.preventDefault();
 		const bounds = photoStageRef.current?.getBoundingClientRect();
 		if (!bounds) return;
-		setPhotoZoom((current) => ({
-			scale: Math.min(
+		setPhotoZoom((current) => {
+			const scale = Math.min(
 				6,
 				Math.max(1, current.scale * Math.exp(-event.deltaY * 0.002)),
-			),
-			x: ((event.clientX - bounds.left) / bounds.width) * 100,
-			y: ((event.clientY - bounds.top) / bounds.height) * 100,
-		}));
+			);
+			if (scale === 1) return DEFAULT_PHOTO_ZOOM;
+			const ratio = scale / current.scale;
+			const pointerX = event.clientX - bounds.left - bounds.width / 2;
+			const pointerY = event.clientY - bounds.top - bounds.height / 2;
+			return {
+				scale,
+				offsetX: clampPhotoOffset(
+					pointerX - (pointerX - current.offsetX) * ratio,
+					bounds.width,
+					scale,
+				),
+				offsetY: clampPhotoOffset(
+					pointerY - (pointerY - current.offsetY) * ratio,
+					bounds.height,
+					scale,
+				),
+			};
+		});
 	});
+
+	function startPhotoDrag(event: ReactPointerEvent<HTMLDivElement>) {
+		if (photoZoom.scale <= 1) return;
+		event.currentTarget.setPointerCapture(event.pointerId);
+		photoDragRef.current = {
+			pointerId: event.pointerId,
+			x: event.clientX,
+			y: event.clientY,
+			offsetX: photoZoom.offsetX,
+			offsetY: photoZoom.offsetY,
+		};
+		setIsDraggingPhoto(true);
+	}
+
+	function dragPhoto(event: ReactPointerEvent<HTMLDivElement>) {
+		const drag = photoDragRef.current;
+		if (!drag || drag.pointerId !== event.pointerId) return;
+		const bounds = event.currentTarget.getBoundingClientRect();
+		setPhotoZoom((current) => ({
+			...current,
+			offsetX: clampPhotoOffset(
+				drag.offsetX + event.clientX - drag.x,
+				bounds.width,
+				current.scale,
+			),
+			offsetY: clampPhotoOffset(
+				drag.offsetY + event.clientY - drag.y,
+				bounds.height,
+				current.scale,
+			),
+		}));
+	}
+
+	function stopPhotoDrag(event: ReactPointerEvent<HTMLDivElement>) {
+		if (photoDragRef.current?.pointerId !== event.pointerId) return;
+		photoDragRef.current = undefined;
+		setIsDraggingPhoto(false);
+	}
 
 	const navigatePhoto = useEffectEvent((offset: number) => {
 		const photo = photos[selectedPhotoIndex + offset];
@@ -180,14 +249,20 @@ export function TripMap({
 					>
 						<X size={18} />
 					</button>
-					<div ref={photoStageRef} className="trip-photo-stage">
+					<div
+						ref={photoStageRef}
+						className={`trip-photo-stage ${photoZoom.scale > 1 ? "can-pan" : ""} ${isDraggingPhoto ? "dragging" : ""}`}
+						onPointerDown={startPhotoDrag}
+						onPointerMove={dragPhoto}
+						onPointerUp={stopPhotoDrag}
+						onPointerCancel={stopPhotoDrag}
+					>
 						<img
 							src={`/media/${selectedPhoto.id}/viewer`}
 							alt="Selected"
 							draggable={false}
 							style={{
-								transform: `scale(${photoZoom.scale})`,
-								transformOrigin: `${photoZoom.x}% ${photoZoom.y}%`,
+								transform: `translate(${photoZoom.offsetX}px, ${photoZoom.offsetY}px) scale(${photoZoom.scale})`,
 							}}
 						/>
 					</div>
@@ -195,6 +270,11 @@ export function TripMap({
 			) : null}
 		</div>
 	);
+}
+
+function clampPhotoOffset(offset: number, viewportSize: number, scale: number) {
+	const limit = (viewportSize * (scale - 1)) / 2;
+	return Math.min(limit, Math.max(-limit, offset));
 }
 
 function captureTime(media: MediaBrowserItem) {

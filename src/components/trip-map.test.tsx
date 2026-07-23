@@ -69,10 +69,22 @@ describe("TripMap photo navigation", () => {
 		});
 		const stage = screen.getByAltText("Selected").parentElement;
 		if (!stage) throw new Error("Photo stage was not rendered");
+		vi.spyOn(stage, "getBoundingClientRect").mockReturnValue({
+			bottom: 200,
+			height: 200,
+			left: 0,
+			right: 200,
+			top: 0,
+			width: 200,
+			x: 0,
+			y: 0,
+			toJSON: () => ({}),
+		});
 		expect(fireEvent(stage, wheel)).toBe(false);
 		expect(screen.getByAltText("Selected").style.transform).not.toBe(
 			"scale(1)",
 		);
+		expect(stage.classList.contains("can-pan")).toBe(true);
 
 		fireEvent.keyDown(window, { key: "ArrowRight" });
 		expect(screen.getByAltText("Selected").getAttribute("src")).toBe(

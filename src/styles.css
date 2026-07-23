@@ -108,7 +108,9 @@ button.media-marker { cursor: pointer; }
 .media-marker.selected { outline: 3px solid #f2b13d; outline-offset: 2px; }
 .media-marker img { width: 100%; height: 100%; object-fit: cover; }
 .trip-photo-viewer { position: relative; isolation: isolate; min-width: 0; min-height: 0; border-left: 1px solid #bdb9b1; background: #171a18; }
-.trip-photo-stage { position: absolute; z-index: 0; inset: 0; overflow: hidden; overscroll-behavior: contain; }
+.trip-photo-stage { position: absolute; z-index: 0; inset: 0; overflow: hidden; overscroll-behavior: contain; touch-action: none; }
+.trip-photo-stage.can-pan { cursor: grab; }
+.trip-photo-stage.dragging { cursor: grabbing; }
 .trip-photo-stage > img { display: block; width: 100%; height: 100%; object-fit: contain; user-select: none; }
 .trip-photo-viewer > button { position: absolute; z-index: 2; top: 12px; right: 12px; display: grid; width: 34px; height: 34px; padding: 0; place-items: center; border: 1px solid #ffffff38; border-radius: 50%; color: white; background: #151815c9; cursor: pointer; pointer-events: auto; }
 @media (max-width: 760px) { .trip-map.has-photo { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
