@@ -4,7 +4,9 @@ import { loadConfig } from "../src/config";
 import { openDatabase } from "../src/db";
 import { LibraryRepository } from "../src/db/library";
 import { SUPPORTED_MEDIA_EXTENSIONS } from "../src/media/classify-media";
+import { hashFile } from "../src/media/content-hash";
 import { ingestMediaFromPath } from "../src/media/ingest";
+import { resolveRelativePath } from "../src/storage/paths";
 
 type Arguments = {
 	source: string;
@@ -34,11 +36,13 @@ async function main() {
 
 	const database = openDatabase(config.DATABASE_PATH);
 	const repository = new LibraryRepository(database);
+	await backfillExistingContentHashes(repository, config.ASSET_ROOT);
 	const existing = args.continueImport ? repository.getImport(args.continueImport) : null;
 	if (args.continueImport && (!existing || existing.sourceType !== "local-backfill")) throw new Error("--continue-import must reference a local backfill import");
 	const importRecord = existing ?? repository.createImport({ kind: "media", sourceType: "local-backfill", sourceName: source });
 	let ready = 0;
 	let failed = 0;
+	let skipped = 0;
 	for (const [index, path] of files.entries()) {
 		const sourceKey = relative(source, path).split("\\").join("/");
 		let item = repository.getImportItemBySource(importRecord.id, sourceKey);
@@ -47,9 +51,17 @@ async function main() {
 			continue;
 		}
 		if (!item) item = repository.createImportItem({ importId: importRecord.id, sourceKey, entityType: "media", originalFilename: basename(path) });
-		console.log(`[${index + 1}/${files.length}] ${sourceKey} (ready ${ready}, failed ${failed})`);
+		console.log(`[${index + 1}/${files.length}] ${sourceKey} (ready ${ready}, skipped ${skipped}, failed ${failed})`);
 		try {
-			const media = await ingestMediaFromPath({ sourcePath: path, importId: importRecord.id, importItemId: item.id, storageMode: args.mode, context: { repository, assetRoot: config.ASSET_ROOT, tempRoot: config.ASSET_TEMP_ROOT ?? `${config.ASSET_ROOT}/.tmp` } });
+			const contentHash = await hashFile(path);
+			const duplicate = repository.getMediaByContentHash(contentHash);
+			if (duplicate) {
+				repository.setImportItemStatus(item.id, "completed", { entityId: duplicate.id });
+				skipped += 1;
+				console.log(`[${index + 1}/${files.length}] skipped duplicate ${sourceKey}`);
+				continue;
+			}
+			const media = await ingestMediaFromPath({ sourcePath: path, contentHash, importId: importRecord.id, importItemId: item.id, storageMode: args.mode, context: { repository, assetRoot: config.ASSET_ROOT, tempRoot: config.ASSET_TEMP_ROOT ?? `${config.ASSET_ROOT}/.tmp` } });
 			if (media.status === "ready") ready += 1;
 			else failed += 1;
 		} catch (error) {
@@ -59,7 +71,20 @@ async function main() {
 	}
 	repository.updateImportStatus(importRecord.id, failed ? "completed-with-errors" : "completed");
 	database.close();
-	console.log(`Backfill complete: ${ready} ready, ${failed} failed (import ${importRecord.id})`);
+	console.log(`Backfill complete: ${ready} ready, ${skipped} duplicates skipped, ${failed} failed (import ${importRecord.id})`);
+}
+
+async function backfillExistingContentHashes(repository: LibraryRepository, assetRoot: string) {
+	const media = repository.listReadyMediaWithoutContentHash();
+	if (media.length > 0) console.log(`Hashing ${media.length} existing media originals for duplicate detection`);
+	for (const item of media) {
+		try {
+			const contentHash = await hashFile(resolveRelativePath(assetRoot, item.originalRelativePath));
+			repository.setMediaContentHashIfAvailable(item.id, contentHash);
+		} catch (error) {
+			console.warn(`Could not hash existing media ${item.id}: ${error instanceof Error ? error.message : error}`);
+		}
+	}
 }
 
 async function enumerate(directory: string, recursive: boolean): Promise<string[]> {

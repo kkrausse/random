@@ -66,6 +66,8 @@ bun run backfill-media -- \
 
 Directory backfills default to `hardlink`, which does not duplicate the original file data. Use `--mode copy` or `--mode move` explicitly when linking is not appropriate.
 
+Before importing, the backfill computes a SHA-256 hash of each source and skips content already present in the media library, even when the filename or source path differs. The first run after this feature is installed also hashes existing ready media originals so they participate in duplicate detection; hashes are stored in SQLite and protected by a unique index.
+
 Preview without database or filesystem writes:
 
 ```bash

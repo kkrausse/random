@@ -12,7 +12,7 @@ describe("database migrations", () => {
 					"SELECT count(*) AS count FROM schema_migrations",
 				)
 				.get()?.count,
-		).toBe(1);
+		).toBe(2);
 		const repository = new LibraryRepository(db);
 		const trip = repository.createTrip("Test trip");
 		const importRecord = repository.createImport({
@@ -66,6 +66,30 @@ describe("database migrations", () => {
 				originalFilename: "two.jpg",
 			}),
 		).toThrow();
+		db.close();
+	});
+
+	it("keeps non-null media content hashes unique", () => {
+		const db = openDatabase(":memory:");
+		const repository = new LibraryRepository(db);
+		const record = repository.createImport({
+			kind: "media",
+			sourceType: "local-backfill",
+			sourceName: "test",
+		});
+		const create = (id: string) =>
+			repository.createProcessingMedia({
+				id,
+				importId: record.id,
+				originalFilename: `${id}.jpg`,
+				originalRelativePath: `media/originals/${id}/original.jpg`,
+				originalByteSize: 1,
+				contentHash: "same-sha256",
+				storageMode: "copy",
+				processingVersion: "media-v1",
+			});
+		create("one");
+		expect(() => create("two")).toThrow();
 		db.close();
 	});
 });

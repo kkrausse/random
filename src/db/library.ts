@@ -38,6 +38,7 @@ export type StoredMediaRecord = {
 	originalRelativePath: string;
 	originalMimeType: string | null;
 	originalByteSize: number;
+	contentHash: string | null;
 	storageMode: "copy" | "move" | "hardlink" | "upload";
 	width: number | null;
 	height: number | null;
@@ -259,13 +260,14 @@ export class LibraryRepository {
 		originalFilename: string;
 		originalRelativePath: string;
 		originalByteSize: number;
+		contentHash?: string | null;
 		storageMode: StoredMediaRecord["storageMode"];
 		processingVersion: string;
 	}) {
 		const now = new Date().toISOString();
 		this.db
 			.query(
-				"INSERT INTO media (id, import_id, status, original_filename, original_relative_path, original_byte_size, storage_mode, metadata_json, processing_version, created_at, updated_at) VALUES (?, ?, 'processing', ?, ?, ?, ?, '{}', ?, ?, ?)",
+				"INSERT INTO media (id, import_id, status, original_filename, original_relative_path, original_byte_size, content_hash, storage_mode, metadata_json, processing_version, created_at, updated_at) VALUES (?, ?, 'processing', ?, ?, ?, ?, ?, '{}', ?, ?, ?)",
 			)
 			.run(
 				input.id,
@@ -273,6 +275,7 @@ export class LibraryRepository {
 				input.originalFilename,
 				input.originalRelativePath,
 				input.originalByteSize,
+				input.contentHash ?? null,
 				input.storageMode,
 				input.processingVersion,
 				now,
@@ -288,6 +291,33 @@ export class LibraryRepository {
 			)
 			.get(id);
 		return row ? mapStoredMedia(row) : null;
+	}
+
+	getMediaByContentHash(contentHash: string): StoredMediaRecord | null {
+		const row = this.db
+			.query<Record<string, string | number | null>, [string]>(
+				"SELECT * FROM media WHERE content_hash = ? AND status = 'ready' LIMIT 1",
+			)
+			.get(contentHash);
+		return row ? mapStoredMedia(row) : null;
+	}
+
+	listReadyMediaWithoutContentHash(): StoredMediaRecord[] {
+		return this.db
+			.query<Record<string, string | number | null>, []>(
+				"SELECT * FROM media WHERE status = 'ready' AND content_hash IS NULL ORDER BY created_at",
+			)
+			.all()
+			.map(mapStoredMedia);
+	}
+
+	setMediaContentHashIfAvailable(id: string, contentHash: string): boolean {
+		const result = this.db
+			.query(
+				"UPDATE media SET content_hash = ?, updated_at = ? WHERE id = ? AND content_hash IS NULL AND NOT EXISTS (SELECT 1 FROM media AS duplicate WHERE duplicate.content_hash = ?)",
+			)
+			.run(contentHash, new Date().toISOString(), id, contentHash);
+		return result.changes > 0;
 	}
 
 	completeMedia(
@@ -360,7 +390,7 @@ export class LibraryRepository {
 	failMedia(id: string, code: string, message: string) {
 		this.db
 			.query(
-				"UPDATE media SET status = 'failed', failure_code = ?, failure_message = ?, updated_at = ? WHERE id = ?",
+				"UPDATE media SET status = 'failed', content_hash = NULL, failure_code = ?, failure_message = ?, updated_at = ? WHERE id = ?",
 			)
 			.run(code, message, new Date().toISOString(), id);
 		return this.getMedia(id);
@@ -613,6 +643,7 @@ function mapStoredMedia(
 		originalRelativePath: String(row.original_relative_path),
 		originalMimeType: row.original_mime_type as string | null,
 		originalByteSize: Number(row.original_byte_size),
+		contentHash: row.content_hash as string | null,
 		storageMode: row.storage_mode as StoredMediaRecord["storageMode"],
 		width: row.width as number | null,
 		height: row.height as number | null,

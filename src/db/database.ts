@@ -29,6 +29,18 @@ const migrations: Migration[] = [
 			"utf8",
 		),
 	},
+	{
+		version: 2,
+		name: "media_content_hash",
+		sql: readFileSync(
+			join(
+				dirname(fileURLToPath(import.meta.url)),
+				"migrations",
+				"002_media_content_hash.sql",
+			),
+			"utf8",
+		),
+	},
 ];
 
 function checksum(sql: string): string {

@@ -49,6 +49,7 @@ export async function ingestUploadedMedia(input: {
 export async function ingestMediaFromPath(input: {
 	sourcePath: string;
 	originalFilename?: string;
+	contentHash?: string;
 	importId: string;
 	importItemId: string;
 	storageMode: "copy" | "move" | "hardlink";
@@ -95,6 +96,7 @@ async function storeAndProcess(input: {
 	mediaId: string;
 	temporaryPath: string;
 	originalFilename: string;
+	contentHash?: string;
 	importId: string;
 	importItemId: string;
 	storageMode: StoredMediaRecord["storageMode"];
@@ -125,6 +127,7 @@ async function storeAndProcess(input: {
 		originalFilename: input.originalFilename,
 		originalRelativePath,
 		originalByteSize: file.size,
+		contentHash: input.contentHash,
 		storageMode: input.storageMode,
 		processingVersion: MEDIA_PROCESSING_VERSION,
 	});
