@@ -7,11 +7,12 @@ import {
 } from "./capture-time";
 import { classifyMedia } from "./classify-media";
 import { MediaPipelineError } from "./errors";
+import { applyExifOrientation } from "./image-orientation";
 import { readPhotoCaptureMetadata } from "./read-capture-metadata";
 import { runCommand } from "./run-command";
 import type { MediaDerivativeKind, MediaKind } from "./types";
 
-export const MEDIA_PROCESSING_VERSION = "media-v1";
+export const MEDIA_PROCESSING_VERSION = "media-v2";
 
 export type ProcessedMedia = {
 	kind: MediaKind;
@@ -54,7 +55,8 @@ async function processPhoto(
 	const { metadata, ...captureTime } =
 		await readPhotoCaptureMetadata(originalPath);
 	let source: string | Uint8Array = originalPath;
-	if (originalPath.toLowerCase().endsWith(".arw")) {
+	const isRaw = originalPath.toLowerCase().endsWith(".arw");
+	if (isRaw) {
 		source = await getRawSource(originalPath);
 	}
 
@@ -65,8 +67,11 @@ async function processPhoto(
 	const derivatives: ProcessedMedia["derivatives"] = [];
 	for (const output of outputs) {
 		const path = join(inputDirectory(derivedDirectory), `${output.kind}.webp`);
-		await sharp(source)
-			.rotate()
+		const image = sharp(source);
+		await (isRaw
+			? applyExifOrientation(image, metadata.Orientation)
+			: image.rotate()
+		)
 			.toColourspace("srgb")
 			.resize({
 				width: output.edge,

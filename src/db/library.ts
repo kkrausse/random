@@ -366,6 +366,38 @@ export class LibraryRepository {
 			}));
 	}
 
+	listReadyRawMediaWithOrientation(input: {
+		processingVersion: string;
+		limit?: number;
+	}) {
+		return this.db
+			.query<
+				Record<string, string | number | null> & { import_item_id: string },
+				[string, number]
+			>(`
+				SELECT m.*, i.id AS import_item_id
+				FROM media m
+				JOIN import_items i ON i.id = (
+					SELECT candidate.id
+					FROM import_items candidate
+					WHERE candidate.entity_id = m.id AND candidate.import_id = m.import_id
+					ORDER BY candidate.created_at, candidate.id
+					LIMIT 1
+				)
+				WHERE m.status = 'ready'
+					AND lower(m.original_filename) LIKE '%.arw'
+					AND CAST(json_extract(m.metadata_json, '$.Orientation') AS INTEGER) BETWEEN 2 AND 8
+					AND m.processing_version <> ?
+				ORDER BY m.created_at
+				LIMIT ?
+			`)
+			.all(input.processingVersion, input.limit ?? Number.MAX_SAFE_INTEGER)
+			.map((row) => ({
+				media: mapStoredMedia(row),
+				importItemId: row.import_item_id,
+			}));
+	}
+
 	listReadyMediaWithoutContentHash(): StoredMediaRecord[] {
 		return this.db
 			.query<Record<string, string | number | null>, []>(
@@ -448,6 +480,7 @@ export class LibraryRepository {
 	completeMedia(
 		id: string,
 		input: {
+			processingVersion: string;
 			kind: "photo" | "video";
 			mimeType: string | null;
 			width: number | null;
@@ -495,9 +528,10 @@ export class LibraryRepository {
 			}
 			this.db
 				.query(
-					"UPDATE media SET status = 'ready', kind = ?, original_mime_type = ?, width = ?, height = ?, duration_ms = ?, captured_at = ?, captured_at_local = ?, captured_time_zone = ?, captured_time_zone_source = ?, latitude = ?, longitude = ?, metadata_json = ?, failure_code = NULL, failure_message = NULL, updated_at = ? WHERE id = ?",
+					"UPDATE media SET status = 'ready', processing_version = ?, kind = ?, original_mime_type = ?, width = ?, height = ?, duration_ms = ?, captured_at = ?, captured_at_local = ?, captured_time_zone = ?, captured_time_zone_source = ?, latitude = ?, longitude = ?, metadata_json = ?, failure_code = NULL, failure_message = NULL, updated_at = ? WHERE id = ?",
 				)
 				.run(
+					input.processingVersion,
 					input.kind,
 					input.mimeType,
 					input.width,

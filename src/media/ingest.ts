@@ -173,6 +173,7 @@ export async function processStoredMediaOriginal(input: {
 		await rename(temporaryDerived, finalDerived);
 		const completed = input.context.repository.completeMedia(input.mediaId, {
 			...processed,
+			processingVersion: MEDIA_PROCESSING_VERSION,
 			metadataJson: JSON.stringify(processed.metadata),
 			derivatives: processed.derivatives.map((derivative) => ({
 				id: crypto.randomUUID(),

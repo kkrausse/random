@@ -61,8 +61,10 @@ ASSET_TEMP_ROOT=/Volumes/<share>/app_data/assets/.tmp \
 bun run process-media
 ```
 
-Use `--limit <count>` for a test batch. A stopped processor can be rerun to
-continue pending records. Do not start a second processor concurrently.
+Processing uses four concurrent workers by default. Use `--concurrency <count>`
+to tune the worker count and `--limit <count>` for a test batch. A stopped
+processor can be rerun to continue pending records. Do not start a second
+processor concurrently.
 
 ## Return the database
 
