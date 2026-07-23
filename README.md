@@ -103,6 +103,18 @@ bun run process-media
 
 `--store-only` records each original as `processing` but does not run ExifTool, FFmpeg, Sharp, or LibRaw. `process-media` processes every stored pending item; use `--import <import-id>` to limit it to one backfill, or `--limit <count>` to process a batch. A stopped processor can be rerun to continue processing remaining items.
 
+To refresh capture timestamps and timezone metadata without regenerating media
+derivatives, re-read the managed originals:
+
+```bash
+bun run backfill-media-time -- --concurrency 4
+```
+
+Use `--dry-run`, `--kind photo`, `--kind video`, or `--limit <count>` to scope a
+run. User-assigned IANA timezones are preserved by default while raw metadata is
+refreshed. Pass `--replace-user-timezones` only when embedded camera offsets
+should replace manual timezone assignments.
+
 To process server assets on another machine without opening SQLite over SMB,
 follow the [remote media processing handoff](./docs/media-processing-handoff.md).
 
@@ -169,4 +181,4 @@ bun run check
 bun run build
 ```
 
-The map currently uses CARTO Voyager tiles. Map media uses explicit GPS first, then linearly interpolates between surrounding workout samples when the effective capture timestamp falls within a workout and the sample gap is no more than ten minutes.
+The map currently uses CARTO Voyager tiles. Map media is linearly interpolated between surrounding workout samples when its effective UTC capture timestamp falls within a workout and the sample gap is no more than ten minutes; embedded media GPS is the fallback when no matching workout position is available.
