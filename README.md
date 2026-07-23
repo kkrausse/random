@@ -68,6 +68,35 @@ Directory backfills default to `hardlink`, which does not duplicate the original
 
 Before importing, the backfill computes a SHA-256 hash of each source and skips content already present in the media library, even when the filename or source path differs. The first run after this feature is installed also hashes existing ready media originals so they participate in duplicate detection; hashes are stored in SQLite and protected by a unique index.
 
+For a fast, two-stage import, store the immutable originals first and process derivatives later:
+
+```bash
+bun run backfill-media -- \
+  --source /path/to/media \
+  --recursive \
+  --store-only
+
+bun run process-media
+```
+
+`--store-only` records each original as `processing` but does not run ExifTool, FFmpeg, Sharp, or LibRaw. `process-media` processes every stored pending item; use `--import <import-id>` to limit it to one backfill, or `--limit <count>` to process a batch. A stopped processor can be rerun to continue processing remaining items.
+
+To pause a running backfill after its current file finishes, send `SIGUSR1` to the `bun run scripts/backfill-media.ts` process from another terminal. It exits with the import still resumable:
+
+```bash
+kill -USR1 <pid>
+```
+
+Resume that storage import with:
+
+```bash
+bun run backfill-media -- \
+  --source /path/to/media \
+  --recursive \
+  --store-only \
+  --continue-import <import-id>
+```
+
 Preview without database or filesystem writes:
 
 ```bash

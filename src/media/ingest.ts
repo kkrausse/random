@@ -42,6 +42,7 @@ export async function ingestUploadedMedia(input: {
 		temporaryPath: temporary,
 		originalFilename: input.file.name,
 		storageMode: "upload",
+		processImmediately: true,
 		deleteSourceAfterFinal: false,
 	});
 }
@@ -50,6 +51,7 @@ export async function ingestMediaFromPath(input: {
 	sourcePath: string;
 	originalFilename?: string;
 	contentHash?: string;
+	deferProcessing?: boolean;
 	importId: string;
 	importItemId: string;
 	storageMode: "copy" | "move" | "hardlink";
@@ -88,6 +90,7 @@ export async function ingestMediaFromPath(input: {
 		mediaId,
 		temporaryPath: temporary,
 		originalFilename,
+		processImmediately: !input.deferProcessing,
 		deleteSourceAfterFinal,
 	});
 }
@@ -102,6 +105,7 @@ async function storeAndProcess(input: {
 	storageMode: StoredMediaRecord["storageMode"];
 	context: IngestionContext;
 	sourcePath?: string;
+	processImmediately: boolean;
 	deleteSourceAfterFinal: boolean;
 }) {
 	const { repository, assetRoot } = input.context;
@@ -131,6 +135,12 @@ async function storeAndProcess(input: {
 		storageMode: input.storageMode,
 		processingVersion: MEDIA_PROCESSING_VERSION,
 	});
+	if (!input.processImmediately) {
+		repository.setImportItemStatus(input.importItemId, "completed", {
+			entityId: media.id,
+		});
+		return media;
+	}
 	return processStoredMediaOriginal({
 		mediaId: media.id,
 		originalPath: finalOriginal,

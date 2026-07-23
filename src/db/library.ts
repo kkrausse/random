@@ -296,10 +296,35 @@ export class LibraryRepository {
 	getMediaByContentHash(contentHash: string): StoredMediaRecord | null {
 		const row = this.db
 			.query<Record<string, string | number | null>, [string]>(
-				"SELECT * FROM media WHERE content_hash = ? AND status = 'ready' LIMIT 1",
+				"SELECT * FROM media WHERE content_hash = ? LIMIT 1",
 			)
 			.get(contentHash);
 		return row ? mapStoredMedia(row) : null;
+	}
+
+	listProcessingMedia(input: { importId?: string; limit?: number } = {}) {
+		return this.db
+			.query<
+				Record<string, string | number | null> & { import_item_id: string },
+				[string | null, string | null, number]
+			>(`
+				SELECT m.*, i.id AS import_item_id
+				FROM media m
+				JOIN import_items i ON i.entity_id = m.id
+				WHERE m.status = 'processing'
+					AND (? IS NULL OR m.import_id = ?)
+				ORDER BY m.created_at
+				LIMIT ?
+			`)
+			.all(
+				input.importId ?? null,
+				input.importId ?? null,
+				input.limit ?? Number.MAX_SAFE_INTEGER,
+			)
+			.map((row) => ({
+				media: mapStoredMedia(row),
+				importItemId: row.import_item_id,
+			}));
 	}
 
 	listReadyMediaWithoutContentHash(): StoredMediaRecord[] {

@@ -13,6 +13,7 @@ type Arguments = {
 	mode: "copy" | "move" | "hardlink";
 	recursive: boolean;
 	dryRun: boolean;
+	storeOnly: boolean;
 	include: Set<string>;
 	limit?: number;
 	continueImport?: string;
@@ -20,6 +21,11 @@ type Arguments = {
 
 async function main() {
 	const args = parseArguments(Bun.argv.slice(2));
+	let pauseRequested = false;
+	process.on("SIGUSR1", () => {
+		pauseRequested = true;
+		console.log("Pause requested; the current file will finish before the import stops.");
+	});
 	const config = loadConfig();
 	const source = resolve(args.source);
 	const sourceInfo = await stat(source);
@@ -40,18 +46,25 @@ async function main() {
 	const existing = args.continueImport ? repository.getImport(args.continueImport) : null;
 	if (args.continueImport && (!existing || existing.sourceType !== "local-backfill")) throw new Error("--continue-import must reference a local backfill import");
 	const importRecord = existing ?? repository.createImport({ kind: "media", sourceType: "local-backfill", sourceName: source });
-	let ready = 0;
+	const completeLabel = args.storeOnly ? "stored" : "ready";
+	let completed = 0;
 	let failed = 0;
 	let skipped = 0;
 	for (const [index, path] of files.entries()) {
+		if (pauseRequested) {
+			repository.updateImportStatus(importRecord.id, "processing");
+			database.close();
+			console.log(`Backfill paused (import ${importRecord.id})`);
+			return;
+		}
 		const sourceKey = relative(source, path).split("\\").join("/");
 		let item = repository.getImportItemBySource(importRecord.id, sourceKey);
 		if (item?.status === "completed") {
-			ready += 1;
+			completed += 1;
 			continue;
 		}
 		if (!item) item = repository.createImportItem({ importId: importRecord.id, sourceKey, entityType: "media", originalFilename: basename(path) });
-		console.log(`[${index + 1}/${files.length}] ${sourceKey} (ready ${ready}, skipped ${skipped}, failed ${failed})`);
+		console.log(`[${index + 1}/${files.length}] ${sourceKey} (${completeLabel} ${completed}, skipped ${skipped}, failed ${failed})`);
 		try {
 			const contentHash = await hashFile(path);
 			const duplicate = repository.getMediaByContentHash(contentHash);
@@ -61,8 +74,8 @@ async function main() {
 				console.log(`[${index + 1}/${files.length}] skipped duplicate ${sourceKey}`);
 				continue;
 			}
-			const media = await ingestMediaFromPath({ sourcePath: path, contentHash, importId: importRecord.id, importItemId: item.id, storageMode: args.mode, context: { repository, assetRoot: config.ASSET_ROOT, tempRoot: config.ASSET_TEMP_ROOT ?? `${config.ASSET_ROOT}/.tmp` } });
-			if (media.status === "ready") ready += 1;
+			const media = await ingestMediaFromPath({ sourcePath: path, contentHash, deferProcessing: args.storeOnly, importId: importRecord.id, importItemId: item.id, storageMode: args.mode, context: { repository, assetRoot: config.ASSET_ROOT, tempRoot: config.ASSET_TEMP_ROOT ?? `${config.ASSET_ROOT}/.tmp` } });
+			if (args.storeOnly || media.status === "ready") completed += 1;
 			else failed += 1;
 		} catch (error) {
 			failed += 1;
@@ -71,7 +84,7 @@ async function main() {
 	}
 	repository.updateImportStatus(importRecord.id, failed ? "completed-with-errors" : "completed");
 	database.close();
-	console.log(`Backfill complete: ${ready} ready, ${skipped} duplicates skipped, ${failed} failed (import ${importRecord.id})`);
+	console.log(`Backfill complete: ${completed} ${completeLabel}, ${skipped} duplicates skipped, ${failed} failed (import ${importRecord.id})`);
 }
 
 async function backfillExistingContentHashes(repository: LibraryRepository, assetRoot: string) {
@@ -91,6 +104,8 @@ async function enumerate(directory: string, recursive: boolean): Promise<string[
 	const entries = await readdir(directory, { withFileTypes: true });
 	const files: string[] = [];
 	for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+		// macOS AppleDouble sidecars have media extensions but are not media files.
+		if (entry.name.startsWith("._")) continue;
 		const path = resolve(directory, entry.name);
 		if (entry.isFile()) files.push(path);
 		else if (recursive && entry.isDirectory()) files.push(...await enumerate(path, true));
@@ -99,11 +114,12 @@ async function enumerate(directory: string, recursive: boolean): Promise<string[
 }
 
 function parseArguments(values: string[]): Arguments {
-	const result: Arguments = { source: "", mode: "hardlink", recursive: false, dryRun: false, include: new Set(SUPPORTED_MEDIA_EXTENSIONS) };
+	const result: Arguments = { source: "", mode: "hardlink", recursive: false, dryRun: false, storeOnly: false, include: new Set(SUPPORTED_MEDIA_EXTENSIONS) };
 	for (let index = 0; index < values.length; index += 1) {
 		const value = values[index];
 		if (value === "--recursive") result.recursive = true;
 		else if (value === "--dry-run") result.dryRun = true;
+		else if (value === "--store-only") result.storeOnly = true;
 		else if (value === "--source") result.source = requiredValue(values, ++index, value);
 		else if (value === "--mode") {
 			const mode = requiredValue(values, ++index, value);
