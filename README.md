@@ -115,6 +115,15 @@ run. User-assigned IANA timezones are preserved by default while raw metadata is
 refreshed. Pass `--replace-user-timezones` only when embedded camera offsets
 should replace manual timezone assignments.
 
+Sony a6700 ARWs in the current library contain `OffsetTimeOriginal=-08:00` but
+no IANA timezone, GPS timestamp, or daylight-saving flag. For captures made in
+Los Angeles during daylight-saving time, metadata reprocessing alone therefore
+produces a UTC timestamp one hour late. On July 23, 2026, all 8,493 existing
+ARWs were assigned `America/Los_Angeles` so their local EXIF times resolve with
+the correct historical DST rules. Keep these user-assigned zones when running
+future metadata backfills; `--replace-user-timezones` would restore the camera's
+incorrect fixed offset.
+
 To process server assets on another machine without opening SQLite over SMB,
 follow the [remote media processing handoff](./docs/media-processing-handoff.md).
 
