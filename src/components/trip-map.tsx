@@ -31,6 +31,7 @@ export function TripMap({
 	onSelectedPhotoChange?: (id: string | null) => void;
 }) {
 	const mapRef = useRef<MapRef>(null);
+	const mapContainerRef = useRef<HTMLDivElement>(null);
 	const photoStageRef = useRef<HTMLDivElement>(null);
 	const photoDragRef = useRef<{
 		pointerId: number;
@@ -89,22 +90,38 @@ export function TripMap({
 	useEffect(() => {
 		fitMap(mapRef.current, workouts, media);
 	}, [workouts, media]);
+	useEffect(() => {
+		if (!mapContainerRef.current || typeof ResizeObserver === "undefined")
+			return;
+		const observer = new ResizeObserver(() => mapRef.current?.resize());
+		observer.observe(mapContainerRef.current);
+		return () => observer.disconnect();
+	}, []);
 	const focusSelectedPhoto = useEffectEvent((photoId: string | undefined) => {
+		const map = mapRef.current;
+		if (!map) return;
+		map.resize();
 		const position = positions.find(
 			({ item }) => item.id === photoId,
 		)?.position;
 		if (position) {
-			mapRef.current?.easeTo({
+			map.easeTo({
 				center: [position.longitude, position.latitude],
+				zoom: Math.max(map.getZoom(), 14),
 				duration: 500,
 			});
+		} else {
+			fitMap(map, workouts, media);
 		}
 	});
 	useEffect(() => {
 		setPhotoZoom(DEFAULT_PHOTO_ZOOM);
 		setIsDraggingPhoto(false);
 		photoDragRef.current = undefined;
-		focusSelectedPhoto(selectedPhoto?.id);
+		const frame = requestAnimationFrame(() =>
+			focusSelectedPhoto(selectedPhoto?.id),
+		);
+		return () => cancelAnimationFrame(frame);
 	}, [selectedPhoto?.id]);
 
 	function showPhoto(photo: MediaBrowserItem | undefined) {
@@ -206,54 +223,6 @@ export function TripMap({
 
 	return (
 		<div className={`trip-map ${selectedPhoto ? "has-photo" : ""}`}>
-			<MapView
-				ref={mapRef}
-				initialViewState={{ longitude: -98.58, latitude: 39.83, zoom: 3 }}
-				mapStyle="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
-				onLoad={() => fitMap(mapRef.current, workouts, media)}
-				onZoom={(event) => setZoom(event.viewState.zoom)}
-			>
-				<NavigationControl position="top-right" />
-				{routes.features.length > 0 && (
-					<Source id="trip-routes" type="geojson" data={routes}>
-						<Layer
-							id="trip-routes-line"
-							type="line"
-							paint={{
-								"line-color": "#e85d36",
-								"line-width": 4,
-								"line-opacity": 0.88,
-							}}
-						/>
-					</Source>
-				)}
-				{positions.map(({ item, position }) => {
-					const className = `media-marker ${zoom >= 13 ? "close" : ""} ${selectedPhoto?.id === item.id ? "selected" : ""}`;
-					return (
-						<Marker
-							key={item.id}
-							longitude={position.longitude}
-							latitude={position.latitude}
-							anchor="center"
-						>
-							{item.kind === "photo" ? (
-								<button
-									type="button"
-									className={className}
-									aria-label="Open photo"
-									onClick={() => showPhoto(item)}
-								>
-									{zoom >= 13 ? <img src={item.previewUrl} alt="" /> : null}
-								</button>
-							) : (
-								<div className={className}>
-									{zoom >= 13 ? <img src={item.previewUrl} alt="" /> : null}
-								</div>
-							)}
-						</Marker>
-					);
-				})}
-			</MapView>
 			{selectedPhoto ? (
 				<aside className="trip-photo-viewer">
 					<button
@@ -283,6 +252,59 @@ export function TripMap({
 					</div>
 				</aside>
 			) : null}
+			<div
+				ref={mapContainerRef}
+				className={selectedPhoto ? "trip-map-overlay" : "trip-map-canvas"}
+			>
+				<MapView
+					ref={mapRef}
+					initialViewState={{ longitude: -98.58, latitude: 39.83, zoom: 3 }}
+					mapStyle="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
+					onLoad={() => fitMap(mapRef.current, workouts, media)}
+					onZoom={(event) => setZoom(event.viewState.zoom)}
+				>
+					<NavigationControl position="top-right" />
+					{routes.features.length > 0 && (
+						<Source id="trip-routes" type="geojson" data={routes}>
+							<Layer
+								id="trip-routes-line"
+								type="line"
+								paint={{
+									"line-color": "#e85d36",
+									"line-width": 4,
+									"line-opacity": 0.88,
+								}}
+							/>
+						</Source>
+					)}
+					{positions.map(({ item, position }) => {
+						const className = `media-marker ${zoom >= 13 ? "close" : ""} ${selectedPhoto?.id === item.id ? "selected" : ""}`;
+						return (
+							<Marker
+								key={item.id}
+								longitude={position.longitude}
+								latitude={position.latitude}
+								anchor="center"
+							>
+								{item.kind === "photo" ? (
+									<button
+										type="button"
+										className={className}
+										aria-label="Open photo"
+										onClick={() => showPhoto(item)}
+									>
+										{zoom >= 13 ? <img src={item.previewUrl} alt="" /> : null}
+									</button>
+								) : (
+									<div className={className}>
+										{zoom >= 13 ? <img src={item.previewUrl} alt="" /> : null}
+									</div>
+								)}
+							</Marker>
+						);
+					})}
+				</MapView>
+			</div>
 		</div>
 	);
 }
