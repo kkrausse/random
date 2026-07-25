@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MediaBrowserItem, WorkoutWithPoints } from "../media/types";
 import { TripMap } from "./trip-map";
 
@@ -13,6 +13,8 @@ vi.mock("react-map-gl/maplibre", () => ({
 	NavigationControl: () => null,
 	Source: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
+
+afterEach(cleanup);
 
 const workout: WorkoutWithPoints = {
 	id: "workout",
@@ -94,6 +96,20 @@ describe("TripMap photo navigation", () => {
 		fireEvent.keyDown(window, { key: "ArrowLeft" });
 		expect(screen.getByAltText("Selected").getAttribute("src")).toBe(
 			"/media/first/viewer",
+		);
+	});
+
+	it("opens a photo selected by an external browser", () => {
+		render(
+			<TripMap
+				workouts={[workout]}
+				media={[photo("selected", "2025-01-01T00:02:00Z")]}
+				selectedPhotoId="selected"
+			/>,
+		);
+
+		expect(screen.getByAltText("Selected").getAttribute("src")).toBe(
+			"/media/selected/viewer",
 		);
 	});
 });

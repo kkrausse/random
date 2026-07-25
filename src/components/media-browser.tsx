@@ -25,10 +25,12 @@ export function MediaBrowser({
 	tripId,
 	onChanged,
 	onSelectionChange,
+	allowTripAssociation = true,
 }: {
 	tripId: string;
 	onChanged: () => void;
-	onSelectionChange: (items: MediaBrowserItem[]) => void;
+	onSelectionChange?: (items: MediaBrowserItem[]) => void;
+	allowTripAssociation?: boolean;
 }) {
 	const [items, setItems] = useState<MediaBrowserItem[]>([]);
 	const [selection, setSelection] = useState<Set<string>>(new Set());
@@ -57,7 +59,7 @@ export function MediaBrowser({
 		});
 	}, [kind, tripId]);
 	useEffect(() => {
-		onSelectionChange(items.filter((item) => selection.has(item.id)));
+		onSelectionChange?.(items.filter((item) => selection.has(item.id)));
 	}, [items, onSelectionChange, selection]);
 
 	async function refresh() {
@@ -116,7 +118,10 @@ export function MediaBrowser({
 					state.id,
 					response.ok && result.media?.status === "ready" ? "ready" : "failed",
 				);
-				if (result.media?.status === "ready") await refresh();
+				if (result.media?.status === "ready") {
+					await refresh();
+					onChanged();
+				}
 			} catch {
 				setUploadStatus(state.id, "failed");
 			} finally {
@@ -242,9 +247,9 @@ export function MediaBrowser({
 						items: items.filter((item) => item.kind === mediaKind),
 					}))
 					.filter((group) => group.items.length > 0);
-	const attachableSelection = items.filter(
-		(item) => selection.has(item.id) && !item.isInCurrentTrip,
-	);
+	const attachableSelection = allowTripAssociation
+		? items.filter((item) => selection.has(item.id) && !item.isInCurrentTrip)
+		: [];
 	return (
 		<div className="media-browser">
 			<div className="section-toolbar">
@@ -388,7 +393,7 @@ export function MediaBrowser({
 							<div className="media-grid">
 								{group.items.map((item) => (
 									<article
-										className={`media-tile ${selection.has(item.id) ? "selected" : ""} ${item.isInCurrentTrip ? "associated" : ""}`}
+										className={`media-tile ${selection.has(item.id) ? "selected" : ""} ${allowTripAssociation && item.isInCurrentTrip ? "associated" : ""}`}
 										key={item.id}
 									>
 										<button
@@ -401,7 +406,9 @@ export function MediaBrowser({
 										>
 											<img src={item.previewUrl} alt="" loading="lazy" />
 											<span>
-												{item.isInCurrentTrip ? "In trip" : item.kind}
+												{allowTripAssociation && item.isInCurrentTrip
+													? "In trip"
+													: item.kind}
 											</span>
 										</button>
 										<label className="media-capture-time">
@@ -515,12 +522,14 @@ export function MediaBrowser({
 						>
 							<Clock3 size={14} /> Edit time
 						</Button>
-						<Button
-							disabled={!attachableSelection.length}
-							onClick={() => void attachSelected()}
-						>
-							Add {attachableSelection.length} to trip
-						</Button>
+						{allowTripAssociation && (
+							<Button
+								disabled={!attachableSelection.length}
+								onClick={() => void attachSelected()}
+							>
+								Add {attachableSelection.length} to trip
+							</Button>
+						)}
 					</div>
 				</>
 			)}

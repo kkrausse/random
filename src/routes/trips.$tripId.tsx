@@ -14,6 +14,7 @@ import { MediaBrowser } from "../components/media-browser";
 import { TripMap } from "../components/trip-map";
 import { Button } from "../components/ui/button";
 import type { ImportRecord, TripRecord, WorkoutListItem } from "../db/library";
+import { mediaInterpolatesOntoWorkout } from "../media/map-position";
 import type { MediaBrowserItem, WorkoutWithPoints } from "../media/types";
 
 export const Route = createFileRoute("/trips/$tripId")({
@@ -41,7 +42,8 @@ function TripDetail() {
 	const [previewWorkout, setPreviewWorkout] = useState<WorkoutWithPoints>();
 	const [query, setQuery] = useState("");
 	const [showWorkouts, setShowWorkouts] = useState(false);
-	const [selectedMedia, setSelectedMedia] = useState<MediaBrowserItem[]>([]);
+	const [selectedWorkoutId, setSelectedWorkoutId] = useState<string>();
+	const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
 	const workoutFile = useRef<HTMLInputElement>(null);
 	useEffect(() => {
 		void fetch(`/api/trips/${tripId}`).then(async (response) => {
@@ -50,6 +52,11 @@ function TripDetail() {
 			setDetail(value);
 			setTitle(value.trip.title);
 			setTripTimeZone(value.trip.timeZone ?? "");
+			setSelectedWorkoutId((current) =>
+				value.workoutsWithPoints.some((workout) => workout.id === current)
+					? current
+					: value.workoutsWithPoints[0]?.id,
+			);
 		});
 	}, [tripId]);
 
@@ -60,6 +67,11 @@ function TripDetail() {
 		setDetail(value);
 		setTitle(value.trip.title);
 		setTripTimeZone(value.trip.timeZone ?? "");
+		setSelectedWorkoutId((current) =>
+			value.workoutsWithPoints.some((workout) => workout.id === current)
+				? current
+				: value.workoutsWithPoints[0]?.id,
+		);
 	}
 
 	async function saveTitle() {
@@ -140,12 +152,16 @@ function TripDetail() {
 	}
 
 	if (!detail) return <main className="detail-loading">Opening trip...</main>;
-	const assignedMedia = detail.media.filter((item) => item.isInCurrentTrip);
-	const assignedMediaIds = new Set(assignedMedia.map((item) => item.id));
-	const mapMedia = [
-		...assignedMedia,
-		...selectedMedia.filter((item) => !assignedMediaIds.has(item.id)),
-	];
+	const selectedWorkout = detail.workoutsWithPoints.find(
+		(workout) => workout.id === selectedWorkoutId,
+	);
+	const workoutPhotos = selectedWorkout
+		? detail.media.filter(
+				(item) =>
+					item.kind === "photo" &&
+					mediaInterpolatesOntoWorkout(item, selectedWorkout),
+			)
+		: [];
 	return (
 		<main className="trip-detail-page">
 			<header className="trip-detail-header">
@@ -178,13 +194,17 @@ function TripDetail() {
 				</label>
 				<p>
 					{detail.workouts.length} workout
-					{detail.workouts.length === 1 ? "" : "s"} ·{" "}
-					{detail.media.filter((item) => item.isInCurrentTrip).length} media
-					items
+					{detail.workouts.length === 1 ? "" : "s"} · {workoutPhotos.length}{" "}
+					photo{workoutPhotos.length === 1 ? "" : "s"} on selected workout
 				</p>
 			</header>
 			<section className="trip-map-panel">
-				<TripMap workouts={detail.workoutsWithPoints} media={mapMedia} />
+				<TripMap
+					workouts={selectedWorkout ? [selectedWorkout] : []}
+					media={workoutPhotos}
+					selectedPhotoId={selectedPhotoId}
+					onSelectedPhotoChange={setSelectedPhotoId}
+				/>
 			</section>
 			<div className="trip-content">
 				<section className="detail-section">
@@ -226,13 +246,21 @@ function TripDetail() {
 					) : (
 						<div className="assigned-workouts">
 							{detail.workouts.map((workout) => (
-								<div key={workout.id}>
+								<button
+									type="button"
+									className={selectedWorkoutId === workout.id ? "selected" : ""}
+									key={workout.id}
+									onClick={() => {
+										setSelectedWorkoutId(workout.id);
+										setSelectedPhotoId(null);
+									}}
+								>
 									<strong>{workout.title ?? "Workout route"}</strong>
 									<span>
 										{formatDateTime(workout.startedAt, detail.trip.timeZone)} ·{" "}
 										{formatDistance(workout.distanceMeters)}
 									</span>
-								</div>
+								</button>
 							))}
 						</div>
 					)}
@@ -376,6 +404,46 @@ function TripDetail() {
 				<section className="detail-section">
 					<div className="detail-section-heading">
 						<div>
+							<p className="eyebrow">Automatically placed</p>
+							<h2>Workout photos</h2>
+						</div>
+						<span className="workout-photo-count">
+							{workoutPhotos.length} photo
+							{workoutPhotos.length === 1 ? "" : "s"}
+						</span>
+					</div>
+					{selectedWorkout ? (
+						workoutPhotos.length ? (
+							<div className="workout-photo-browser">
+								{workoutPhotos.map((photo) => (
+									<button
+										type="button"
+										className={selectedPhotoId === photo.id ? "selected" : ""}
+										key={photo.id}
+										onClick={() => setSelectedPhotoId(photo.id)}
+									>
+										<img src={photo.previewUrl} alt="" loading="lazy" />
+										<span>
+											{formatPhotoTime(
+												photo.effectiveCapturedAt,
+												detail.trip.timeZone,
+											)}
+										</span>
+									</button>
+								))}
+							</div>
+						) : (
+							<p className="section-empty">
+								No library photos fall within this workout's recorded route.
+							</p>
+						)
+					) : (
+						<p className="section-empty">Select or add a workout to begin.</p>
+					)}
+				</section>
+				<section className="detail-section">
+					<div className="detail-section-heading">
+						<div>
 							<p className="eyebrow">Library</p>
 							<h2>Media</h2>
 						</div>
@@ -383,7 +451,7 @@ function TripDetail() {
 					<MediaBrowser
 						tripId={tripId}
 						onChanged={() => void load()}
-						onSelectionChange={setSelectedMedia}
+						allowTripAssociation={false}
 					/>
 				</section>
 			</div>
@@ -400,6 +468,14 @@ function formatDistance(meters: number | null) {
 function formatDateTime(value: string, timeZone: string | null) {
 	return new Intl.DateTimeFormat(undefined, {
 		dateStyle: "medium",
+		timeStyle: "short",
+		...(timeZone ? { timeZone } : {}),
+	}).format(new Date(value));
+}
+
+function formatPhotoTime(value: string | null, timeZone: string | null) {
+	if (!value) return "Time unavailable";
+	return new Intl.DateTimeFormat(undefined, {
 		timeStyle: "short",
 		...(timeZone ? { timeZone } : {}),
 	}).format(new Date(value));

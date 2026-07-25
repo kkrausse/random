@@ -75,3 +75,11 @@ export function resolveMediaMapPosition(input: {
 	}
 	return null;
 }
+
+export function mediaInterpolatesOntoWorkout(
+	media: MediaBrowserItem,
+	workout: WorkoutWithPoints,
+) {
+	const position = resolveMediaMapPosition({ media, workouts: [workout] });
+	return position?.source === "workout" && position.workoutId === workout.id;
+}

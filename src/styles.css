@@ -122,10 +122,18 @@ button.media-marker { cursor: pointer; }
 .section-empty, .empty-library { color: #777e76; font-size: 13px; }
 .section-empty { padding: 24px 2px; }
 .assigned-workouts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding-top: 15px; }
-.assigned-workouts > div { padding: 15px; border: 1px solid #ddd9d2; border-radius: 7px; background: #fbfaf7; }
+.assigned-workouts > button { padding: 15px; border: 1px solid #ddd9d2; border-radius: 7px; color: inherit; text-align: left; background: #fbfaf7; cursor: pointer; }
+.assigned-workouts > button:hover { border-color: #aaa69e; }
+.assigned-workouts > button.selected { border-color: #e85d36; box-shadow: inset 0 0 0 1px #e85d36; background: #fff8f3; }
 .assigned-workouts strong, .assigned-workouts span { display: block; }
 .assigned-workouts strong { font-size: 12px; }
 .assigned-workouts span { margin-top: 5px; color: #7c827a; font-size: 10px; }
+.workout-photo-count { color: #7c827a; font-size: 11px; }
+.workout-photo-browser { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; padding-top: 15px; }
+.workout-photo-browser button { overflow: hidden; padding: 0; border: 2px solid transparent; border-radius: 7px; color: #f8f6f0; text-align: left; background: #242724; cursor: pointer; }
+.workout-photo-browser button.selected { border-color: #e85d36; }
+.workout-photo-browser img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; }
+.workout-photo-browser span { display: block; padding: 7px 9px; font-size: 10px; }
 .workout-selector { margin-top: 14px; padding: 18px; border: 1px solid #d8d4cd; border-radius: 9px; background: #fbfaf7; }
 .workout-selector-header, .selector-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .workout-selector-header { padding-bottom: 14px; border-bottom: 1px solid #e2ded7; }

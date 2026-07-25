@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	interpolateWorkoutPosition,
+	mediaInterpolatesOntoWorkout,
 	resolveMediaMapPosition,
 } from "./map-position";
 import type { MediaBrowserItem, WorkoutWithPoints } from "./types";
@@ -92,4 +93,11 @@ it("uses effective capture time on a matching workout before GPS", () => {
 			workouts: [workout],
 		}),
 	).toMatchObject({ source: "gps", latitude: 40, longitude: -70 });
+	expect(mediaInterpolatesOntoWorkout(media, workout)).toBe(true);
+	expect(
+		mediaInterpolatesOntoWorkout(
+			{ ...media, effectiveCapturedAt: "2025-01-02T00:05:00Z" },
+			workout,
+		),
+	).toBe(false);
 });

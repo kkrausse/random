@@ -22,9 +22,13 @@ const DEFAULT_PHOTO_ZOOM = { scale: 1, offsetX: 0, offsetY: 0 };
 export function TripMap({
 	workouts,
 	media,
+	selectedPhotoId,
+	onSelectedPhotoChange,
 }: {
 	workouts: WorkoutWithPoints[];
 	media: MediaBrowserItem[];
+	selectedPhotoId?: string | null;
+	onSelectedPhotoChange?: (id: string | null) => void;
 }) {
 	const mapRef = useRef<MapRef>(null);
 	const photoStageRef = useRef<HTMLDivElement>(null);
@@ -36,7 +40,8 @@ export function TripMap({
 		offsetY: number;
 	}>();
 	const [zoom, setZoom] = useState(3);
-	const [selectedPhoto, setSelectedPhoto] = useState<MediaBrowserItem>();
+	const [internalSelectedPhoto, setInternalSelectedPhoto] =
+		useState<MediaBrowserItem>();
 	const [photoZoom, setPhotoZoom] = useState(DEFAULT_PHOTO_ZOOM);
 	const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
 	const routes: FeatureCollection<LineString> = {
@@ -74,20 +79,19 @@ export function TripMap({
 		.filter(({ item }) => item.kind === "photo")
 		.map(({ item }) => item)
 		.sort((left, right) => captureTime(left) - captureTime(right));
+	const selectedPhoto =
+		selectedPhotoId === undefined
+			? internalSelectedPhoto
+			: photos.find((item) => item.id === selectedPhotoId);
 	const selectedPhotoIndex = selectedPhoto
 		? photos.findIndex((item) => item.id === selectedPhoto.id)
 		: -1;
 	useEffect(() => {
 		fitMap(mapRef.current, workouts, media);
 	}, [workouts, media]);
-
-	function showPhoto(photo: MediaBrowserItem | undefined) {
-		setSelectedPhoto(photo);
-		setPhotoZoom(DEFAULT_PHOTO_ZOOM);
-		setIsDraggingPhoto(false);
-		photoDragRef.current = undefined;
+	const focusSelectedPhoto = useEffectEvent((photoId: string | undefined) => {
 		const position = positions.find(
-			({ item }) => item.id === photo?.id,
+			({ item }) => item.id === photoId,
 		)?.position;
 		if (position) {
 			mapRef.current?.easeTo({
@@ -95,6 +99,17 @@ export function TripMap({
 				duration: 500,
 			});
 		}
+	});
+	useEffect(() => {
+		setPhotoZoom(DEFAULT_PHOTO_ZOOM);
+		setIsDraggingPhoto(false);
+		photoDragRef.current = undefined;
+		focusSelectedPhoto(selectedPhoto?.id);
+	}, [selectedPhoto?.id]);
+
+	function showPhoto(photo: MediaBrowserItem | undefined) {
+		if (selectedPhotoId === undefined) setInternalSelectedPhoto(photo);
+		onSelectedPhotoChange?.(photo?.id ?? null);
 	}
 
 	const zoomPhoto = useEffectEvent((event: WheelEvent) => {
