@@ -1,9 +1,12 @@
 import type { Feature, FeatureCollection, LineString } from "geojson";
 import { X } from "lucide-react";
 import {
+	memo,
 	type PointerEvent as ReactPointerEvent,
+	useCallback,
 	useEffect,
 	useEffectEvent,
+	useMemo,
 	useRef,
 	useState,
 } from "react";
@@ -15,7 +18,11 @@ import MapView, {
 	Source,
 } from "react-map-gl/maplibre";
 import { resolveMediaMapPosition } from "../media/map-position";
-import type { MediaBrowserItem, WorkoutWithPoints } from "../media/types";
+import type {
+	MediaBrowserItem,
+	ResolvedMediaPosition,
+	WorkoutWithPoints,
+} from "../media/types";
 
 const DEFAULT_PHOTO_ZOOM = { scale: 1, offsetX: 0, offsetY: 0 };
 
@@ -45,51 +52,70 @@ export function TripMap({
 		useState<MediaBrowserItem>();
 	const [photoZoom, setPhotoZoom] = useState(DEFAULT_PHOTO_ZOOM);
 	const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
-	const routes: FeatureCollection<LineString> = {
-		type: "FeatureCollection",
-		features: workouts
-			.filter((workout) => workout.points.length > 1)
-			.map(
-				(workout): Feature<LineString> => ({
-					type: "Feature",
-					properties: { id: workout.id },
-					geometry: {
-						type: "LineString",
-						coordinates: workout.points.map((point) => [
-							point.longitude,
-							point.latitude,
-						]),
-					},
-				}),
-			),
-	};
-	const positions = media
-		.map((item) => ({
-			item,
-			position: resolveMediaMapPosition({ media: item, workouts }),
-		}))
-		.filter(
-			(
-				value,
-			): value is {
-				item: MediaBrowserItem;
-				position: NonNullable<typeof value.position>;
-			} => value.position !== null,
-		);
-	const photos = positions
-		.filter(({ item }) => item.kind === "photo")
-		.map(({ item }) => item)
-		.sort((left, right) => captureTime(left) - captureTime(right));
+	const routes: FeatureCollection<LineString> = useMemo(
+		() => ({
+			type: "FeatureCollection",
+			features: workouts
+				.filter((workout) => workout.points.length > 1)
+				.map(
+					(workout): Feature<LineString> => ({
+						type: "Feature",
+						properties: { id: workout.id },
+						geometry: {
+							type: "LineString",
+							coordinates: workout.points.map((point) => [
+								point.longitude,
+								point.latitude,
+							]),
+						},
+					}),
+				),
+		}),
+		[workouts],
+	);
+	const positions = useMemo(
+		() =>
+			media
+				.map((item) => ({
+					item,
+					position: resolveMediaMapPosition({ media: item, workouts }),
+				}))
+				.filter(
+					(
+						value,
+					): value is {
+						item: MediaBrowserItem;
+						position: ResolvedMediaPosition;
+					} => value.position !== null,
+				),
+		[media, workouts],
+	);
+	const photos = useMemo(
+		() =>
+			positions
+				.filter(({ item }) => item.kind === "photo")
+				.map(({ item }) => item)
+				.sort((left, right) => captureTime(left) - captureTime(right)),
+		[positions],
+	);
+	const photoIndexById = useMemo(
+		() => new Map(photos.map((photo, index) => [photo.id, index])),
+		[photos],
+	);
+	const positionById = useMemo(
+		() => new Map(positions.map(({ item, position }) => [item.id, position])),
+		[positions],
+	);
 	const selectedPhoto =
 		selectedPhotoId === undefined
 			? internalSelectedPhoto
-			: photos.find((item) => item.id === selectedPhotoId);
+			: photos[photoIndexById.get(selectedPhotoId ?? "") ?? -1];
 	const selectedPhotoIndex = selectedPhoto
-		? photos.findIndex((item) => item.id === selectedPhoto.id)
+		? (photoIndexById.get(selectedPhoto.id) ?? -1)
 		: -1;
 	useEffect(() => {
-		fitMap(mapRef.current, workouts, media);
-	}, [workouts, media]);
+		fitMap(mapRef.current, workouts, positions);
+	}, [workouts, positions]);
 	useEffect(() => {
 		if (!mapContainerRef.current || typeof ResizeObserver === "undefined")
 			return;
@@ -101,9 +127,7 @@ export function TripMap({
 		const map = mapRef.current;
 		if (!map) return;
 		map.resize();
-		const position = positions.find(
-			({ item }) => item.id === photoId,
-		)?.position;
+		const position = photoId ? positionById.get(photoId) : undefined;
 		if (position) {
 			map.easeTo({
 				center: [position.longitude, position.latitude],
@@ -111,7 +135,7 @@ export function TripMap({
 				duration: 500,
 			});
 		} else {
-			fitMap(map, workouts, media);
+			fitMap(map, workouts, positions);
 		}
 	});
 	useEffect(() => {
@@ -124,10 +148,14 @@ export function TripMap({
 		return () => cancelAnimationFrame(frame);
 	}, [selectedPhoto?.id]);
 
-	function showPhoto(photo: MediaBrowserItem | undefined) {
-		if (selectedPhotoId === undefined) setInternalSelectedPhoto(photo);
-		onSelectedPhotoChange?.(photo?.id ?? null);
-	}
+	const isPhotoSelectionControlled = selectedPhotoId !== undefined;
+	const showPhoto = useCallback(
+		(photo: MediaBrowserItem | undefined) => {
+			if (!isPhotoSelectionControlled) setInternalSelectedPhoto(photo);
+			onSelectedPhotoChange?.(photo?.id ?? null);
+		},
+		[isPhotoSelectionControlled, onSelectedPhotoChange],
+	);
 
 	const zoomPhoto = useEffectEvent((event: WheelEvent) => {
 		event.preventDefault();
@@ -211,6 +239,12 @@ export function TripMap({
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
 	}, [selectedPhoto]);
+	useEffect(() => {
+		for (const index of [selectedPhotoIndex - 1, selectedPhotoIndex + 1]) {
+			const photo = photos[index];
+			if (photo) new Image().src = `/media/${photo.id}/viewer`;
+		}
+	}, [photos, selectedPhotoIndex]);
 
 	// The wheel target is mounted only while a photo is selected.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: selectedPhoto triggers attachment after mount.
@@ -260,7 +294,7 @@ export function TripMap({
 					ref={mapRef}
 					initialViewState={{ longitude: -98.58, latitude: 39.83, zoom: 3 }}
 					mapStyle="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
-					onLoad={() => fitMap(mapRef.current, workouts, media)}
+					onLoad={() => fitMap(mapRef.current, workouts, positions)}
 					onZoom={(event) => setZoom(event.viewState.zoom)}
 				>
 					<NavigationControl position="top-right" />
@@ -277,37 +311,59 @@ export function TripMap({
 							/>
 						</Source>
 					)}
-					{positions.map(({ item, position }) => {
-						const className = `media-marker ${zoom >= 13 ? "close" : ""} ${selectedPhoto?.id === item.id ? "selected" : ""}`;
-						return (
-							<Marker
-								key={item.id}
-								longitude={position.longitude}
-								latitude={position.latitude}
-								anchor="center"
-							>
-								{item.kind === "photo" ? (
-									<button
-										type="button"
-										className={className}
-										aria-label="Open photo"
-										onClick={() => showPhoto(item)}
-									>
-										{zoom >= 13 ? <img src={item.previewUrl} alt="" /> : null}
-									</button>
-								) : (
-									<div className={className}>
-										{zoom >= 13 ? <img src={item.previewUrl} alt="" /> : null}
-									</div>
-								)}
-							</Marker>
-						);
-					})}
+					{positions.map(({ item, position }) => (
+						<MediaMarker
+							key={item.id}
+							item={item}
+							position={position}
+							isClose={zoom >= 13}
+							isSelected={selectedPhoto?.id === item.id}
+							onSelect={showPhoto}
+						/>
+					))}
 				</MapView>
 			</div>
 		</div>
 	);
 }
+
+const MediaMarker = memo(function MediaMarker({
+	item,
+	position,
+	isClose,
+	isSelected,
+	onSelect,
+}: {
+	item: MediaBrowserItem;
+	position: ResolvedMediaPosition;
+	isClose: boolean;
+	isSelected: boolean;
+	onSelect: (item: MediaBrowserItem) => void;
+}) {
+	const className = `media-marker ${isClose ? "close" : ""} ${isSelected ? "selected" : ""}`;
+	return (
+		<Marker
+			longitude={position.longitude}
+			latitude={position.latitude}
+			anchor="center"
+		>
+			{item.kind === "photo" ? (
+				<button
+					type="button"
+					className={className}
+					aria-label="Open photo"
+					onClick={() => onSelect(item)}
+				>
+					{isClose ? <img src={item.previewUrl} alt="" /> : null}
+				</button>
+			) : (
+				<div className={className}>
+					{isClose ? <img src={item.previewUrl} alt="" /> : null}
+				</div>
+			)}
+		</Marker>
+	);
+});
 
 function clampPhotoOffset(offset: number, viewportSize: number, scale: number) {
 	const limit = (viewportSize * (scale - 1)) / 2;
@@ -322,21 +378,17 @@ function captureTime(media: MediaBrowserItem) {
 function fitMap(
 	map: MapRef | null,
 	workouts: WorkoutWithPoints[],
-	media: MediaBrowserItem[],
+	positions: { position: ResolvedMediaPosition }[],
 ) {
-	const mediaPositions = media
-		.map((item) => resolveMediaMapPosition({ media: item, workouts }))
-		.filter(
-			(position): position is NonNullable<typeof position> => position !== null,
-		);
 	const coordinates = [
 		...workouts.flatMap((workout) =>
 			workout.points.map(
 				(point) => [point.longitude, point.latitude] as [number, number],
 			),
 		),
-		...mediaPositions.map(
-			(position) => [position.longitude, position.latitude] as [number, number],
+		...positions.map(
+			({ position }) =>
+				[position.longitude, position.latitude] as [number, number],
 		),
 	];
 	if (!coordinates.length || !map) return;

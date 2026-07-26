@@ -9,7 +9,7 @@ import {
 	Search,
 	Upload,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MediaBrowser } from "../components/media-browser";
 import { TripMap } from "../components/trip-map";
 import { Button } from "../components/ui/button";
@@ -45,22 +45,29 @@ function TripDetail() {
 	const [selectedWorkoutId, setSelectedWorkoutId] = useState<string>();
 	const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
 	const workoutFile = useRef<HTMLInputElement>(null);
-	useEffect(() => {
-		void fetch(`/api/trips/${tripId}`).then(async (response) => {
-			if (!response.ok) return;
-			const value: Detail = await response.json();
-			setDetail(value);
-			setTitle(value.trip.title);
-			setTripTimeZone(value.trip.timeZone ?? "");
-			setSelectedWorkoutId((current) =>
-				value.workoutsWithPoints.some((workout) => workout.id === current)
-					? current
-					: value.workoutsWithPoints[0]?.id,
-			);
-		});
-	}, [tripId]);
-
-	async function load() {
+	const selectedWorkout = useMemo(
+		() =>
+			detail?.workoutsWithPoints.find(
+				(workout) => workout.id === selectedWorkoutId,
+			),
+		[detail, selectedWorkoutId],
+	);
+	const workoutPhotos = useMemo(
+		() =>
+			selectedWorkout
+				? (detail?.media.filter(
+						(item) =>
+							item.kind === "photo" &&
+							mediaInterpolatesOntoWorkout(item, selectedWorkout),
+					) ?? [])
+				: [],
+		[detail?.media, selectedWorkout],
+	);
+	const selectedWorkouts = useMemo(
+		() => (selectedWorkout ? [selectedWorkout] : []),
+		[selectedWorkout],
+	);
+	const load = useCallback(async () => {
 		const response = await fetch(`/api/trips/${tripId}`);
 		if (!response.ok) return;
 		const value: Detail = await response.json();
@@ -72,7 +79,10 @@ function TripDetail() {
 				? current
 				: value.workoutsWithPoints[0]?.id,
 		);
-	}
+	}, [tripId]);
+	useEffect(() => {
+		void load();
+	}, [load]);
 
 	async function saveTitle() {
 		if (!title.trim() || title === detail?.trip.title) return;
@@ -152,16 +162,6 @@ function TripDetail() {
 	}
 
 	if (!detail) return <main className="detail-loading">Opening trip...</main>;
-	const selectedWorkout = detail.workoutsWithPoints.find(
-		(workout) => workout.id === selectedWorkoutId,
-	);
-	const workoutPhotos = selectedWorkout
-		? detail.media.filter(
-				(item) =>
-					item.kind === "photo" &&
-					mediaInterpolatesOntoWorkout(item, selectedWorkout),
-			)
-		: [];
 	return (
 		<main className="trip-detail-page">
 			<header className="trip-detail-header">
@@ -200,7 +200,7 @@ function TripDetail() {
 			</header>
 			<section className="trip-map-panel">
 				<TripMap
-					workouts={selectedWorkout ? [selectedWorkout] : []}
+					workouts={selectedWorkouts}
 					media={workoutPhotos}
 					selectedPhotoId={selectedPhotoId}
 					onSelectedPhotoChange={setSelectedPhotoId}
@@ -414,24 +414,12 @@ function TripDetail() {
 					</div>
 					{selectedWorkout ? (
 						workoutPhotos.length ? (
-							<div className="workout-photo-browser">
-								{workoutPhotos.map((photo) => (
-									<button
-										type="button"
-										className={selectedPhotoId === photo.id ? "selected" : ""}
-										key={photo.id}
-										onClick={() => setSelectedPhotoId(photo.id)}
-									>
-										<img src={photo.previewUrl} alt="" loading="lazy" />
-										<span>
-											{formatPhotoTime(
-												photo.effectiveCapturedAt,
-												detail.trip.timeZone,
-											)}
-										</span>
-									</button>
-								))}
-							</div>
+							<WorkoutPhotoBrowser
+								photos={workoutPhotos}
+								selectedPhotoId={selectedPhotoId}
+								timeZone={detail.trip.timeZone}
+								onSelect={setSelectedPhotoId}
+							/>
 						) : (
 							<p className="section-empty">
 								No library photos fall within this workout's recorded route.
@@ -450,7 +438,7 @@ function TripDetail() {
 					</div>
 					<MediaBrowser
 						tripId={tripId}
-						onChanged={() => void load()}
+						onChanged={load}
 						allowTripAssociation={false}
 					/>
 				</section>
@@ -458,6 +446,55 @@ function TripDetail() {
 		</main>
 	);
 }
+
+function WorkoutPhotoBrowser({
+	photos,
+	selectedPhotoId,
+	timeZone,
+	onSelect,
+}: {
+	photos: MediaBrowserItem[];
+	selectedPhotoId: string | null;
+	timeZone: string | null;
+	onSelect: (id: string) => void;
+}) {
+	return (
+		<div className="workout-photo-browser">
+			{photos.map((photo) => (
+				<WorkoutPhoto
+					key={photo.id}
+					photo={photo}
+					isSelected={selectedPhotoId === photo.id}
+					timeZone={timeZone}
+					onSelect={onSelect}
+				/>
+			))}
+		</div>
+	);
+}
+
+const WorkoutPhoto = memo(function WorkoutPhoto({
+	photo,
+	isSelected,
+	timeZone,
+	onSelect,
+}: {
+	photo: MediaBrowserItem;
+	isSelected: boolean;
+	timeZone: string | null;
+	onSelect: (id: string) => void;
+}) {
+	return (
+		<button
+			type="button"
+			className={isSelected ? "selected" : ""}
+			onClick={() => onSelect(photo.id)}
+		>
+			<img src={photo.previewUrl} alt="" loading="lazy" />
+			<span>{formatPhotoTime(photo.effectiveCapturedAt, timeZone)}</span>
+		</button>
+	);
+});
 
 function formatDistance(meters: number | null) {
 	return meters === null

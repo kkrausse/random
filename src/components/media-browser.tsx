@@ -6,7 +6,7 @@ import {
 	Upload,
 	X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import {
 	DEFAULT_MEDIA_GROUP_GAP_HOURS,
 	groupMediaByGap,
@@ -21,7 +21,7 @@ type UploadState = {
 	status: "waiting" | "uploading" | "processing" | "ready" | "failed";
 };
 
-export function MediaBrowser({
+export const MediaBrowser = memo(function MediaBrowser({
 	tripId,
 	onChanged,
 	onSelectionChange,
@@ -535,7 +535,7 @@ export function MediaBrowser({
 			)}
 		</div>
 	);
-}
+});
 
 function labelStatus(status: UploadState["status"]) {
 	return {
