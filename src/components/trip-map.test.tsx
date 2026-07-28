@@ -62,6 +62,21 @@ describe("TripMap photo navigation", () => {
 		expect(screen.getByAltText("Selected").getAttribute("src")).toBe(
 			"/media/first/viewer",
 		);
+		expect(
+			screen
+				.getByRole("button", { name: "Previous photo" })
+				.hasAttribute("disabled"),
+		).toBe(true);
+		fireEvent.click(screen.getByRole("button", { name: "Next photo" }));
+		expect(screen.getByAltText("Selected").getAttribute("src")).toBe(
+			"/media/last/viewer",
+		);
+		expect(
+			screen
+				.getByRole("button", { name: "Next photo" })
+				.hasAttribute("disabled"),
+		).toBe(true);
+		fireEvent.click(screen.getByRole("button", { name: "Previous photo" }));
 		const wheel = new WheelEvent("wheel", {
 			bubbles: true,
 			cancelable: true,

@@ -115,8 +115,15 @@ button.media-marker { cursor: pointer; }
 .trip-photo-stage.dragging { cursor: grabbing; }
 .trip-photo-stage > img { display: block; width: 100%; height: 100%; object-fit: contain; user-select: none; }
 .trip-photo-viewer > button { position: absolute; z-index: 2; top: 12px; right: 12px; display: grid; width: 34px; height: 34px; padding: 0; place-items: center; border: 1px solid #ffffff38; border-radius: 50%; color: white; background: #151815c9; cursor: pointer; pointer-events: auto; }
+.photo-viewer-navigation { position: absolute; z-index: 3; bottom: max(12px, env(safe-area-inset-bottom)); left: 50%; display: flex; align-items: center; gap: 5px; padding: 5px; border: 1px solid #ffffff2e; border-radius: 999px; color: white; background: #151815d9; box-shadow: 0 4px 18px #0008; transform: translateX(-50%); backdrop-filter: blur(8px); }
+.photo-viewer-navigation button { display: grid; width: 36px; height: 36px; padding: 0; place-items: center; border: 0; border-radius: 50%; color: white; background: #ffffff14; cursor: pointer; }
+.photo-viewer-navigation button:disabled { opacity: .32; cursor: default; }
+.photo-viewer-navigation span { min-width: 38px; color: #ffffffb8; font-size: 10px; font-variant-numeric: tabular-nums; text-align: center; }
+.trip-map-resize-handle { display: none; }
 @media (max-width: 760px) {
-	.trip-map-overlay { bottom: 10px; left: 10px; width: 190px; height: 190px; min-width: 140px; min-height: 140px; max-width: calc(100% - 20px); max-height: calc(100% - 20px); }
+	.trip-map-overlay { bottom: calc(64px + env(safe-area-inset-bottom)); left: 10px; width: 190px; height: 190px; min-width: 140px; min-height: 140px; max-width: calc(100% - 20px); max-height: calc(100% - 84px - env(safe-area-inset-bottom)); resize: none; }
+	.trip-map-resize-handle { position: absolute; z-index: 3; top: 0; right: 0; display: grid; width: 44px; height: 44px; padding: 0; place-items: center; border: 0; border-bottom-left-radius: 9px; color: white; background: #17201bc9; cursor: nesw-resize; touch-action: none; }
+	.photo-viewer-navigation button { width: 40px; height: 40px; }
 }
 .trip-content { width: min(1120px, calc(100% - 36px)); margin: 0 auto; padding: 48px 0 100px; }
 .detail-section { margin-bottom: 52px; }

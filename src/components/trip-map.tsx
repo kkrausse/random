@@ -1,5 +1,5 @@
 import type { Feature, FeatureCollection, LineString } from "geojson";
-import { X } from "lucide-react";
+import { ChevronLeft, ChevronRight, MoveDiagonal2, X } from "lucide-react";
 import {
 	memo,
 	type PointerEvent as ReactPointerEvent,
@@ -46,6 +46,15 @@ export function TripMap({
 		y: number;
 		offsetX: number;
 		offsetY: number;
+	}>();
+	const mapResizeRef = useRef<{
+		pointerId: number;
+		x: number;
+		y: number;
+		width: number;
+		height: number;
+		maxWidth: number;
+		maxHeight: number;
 	}>();
 	const [zoom, setZoom] = useState(3);
 	const [internalSelectedPhoto, setInternalSelectedPhoto] =
@@ -224,6 +233,38 @@ export function TripMap({
 		setIsDraggingPhoto(false);
 	}
 
+	function startMapResize(event: ReactPointerEvent<HTMLButtonElement>) {
+		const container = mapContainerRef.current;
+		const parent = container?.parentElement;
+		if (!container || !parent) return;
+		const bounds = container.getBoundingClientRect();
+		const parentBounds = parent.getBoundingClientRect();
+		const style = getComputedStyle(container);
+		event.currentTarget.setPointerCapture(event.pointerId);
+		mapResizeRef.current = {
+			pointerId: event.pointerId,
+			x: event.clientX,
+			y: event.clientY,
+			width: bounds.width,
+			height: bounds.height,
+			maxWidth: parentBounds.width - Number.parseFloat(style.left) - 10,
+			maxHeight: parentBounds.height - Number.parseFloat(style.bottom) - 10,
+		};
+	}
+
+	function resizeMap(event: ReactPointerEvent<HTMLButtonElement>) {
+		const resize = mapResizeRef.current;
+		const container = mapContainerRef.current;
+		if (!resize || resize.pointerId !== event.pointerId || !container) return;
+		container.style.width = `${Math.min(resize.maxWidth, Math.max(140, resize.width + event.clientX - resize.x))}px`;
+		container.style.height = `${Math.min(resize.maxHeight, Math.max(140, resize.height - event.clientY + resize.y))}px`;
+	}
+
+	function stopMapResize(event: ReactPointerEvent<HTMLButtonElement>) {
+		if (mapResizeRef.current?.pointerId !== event.pointerId) return;
+		mapResizeRef.current = undefined;
+	}
+
 	const navigatePhoto = useEffectEvent((offset: number) => {
 		const photo = photos[selectedPhotoIndex + offset];
 		if (photo) showPhoto(photo);
@@ -284,6 +325,30 @@ export function TripMap({
 							}}
 						/>
 					</div>
+					<nav
+						className="photo-viewer-navigation"
+						aria-label="Photo navigation"
+					>
+						<button
+							type="button"
+							aria-label="Previous photo"
+							disabled={selectedPhotoIndex <= 0}
+							onClick={() => navigatePhoto(-1)}
+						>
+							<ChevronLeft size={20} />
+						</button>
+						<span>
+							{selectedPhotoIndex + 1} / {photos.length}
+						</span>
+						<button
+							type="button"
+							aria-label="Next photo"
+							disabled={selectedPhotoIndex >= photos.length - 1}
+							onClick={() => navigatePhoto(1)}
+						>
+							<ChevronRight size={20} />
+						</button>
+					</nav>
 				</aside>
 			) : null}
 			<div
@@ -322,6 +387,19 @@ export function TripMap({
 						/>
 					))}
 				</MapView>
+				{selectedPhoto ? (
+					<button
+						type="button"
+						className="trip-map-resize-handle"
+						aria-label="Resize map"
+						onPointerDown={startMapResize}
+						onPointerMove={resizeMap}
+						onPointerUp={stopMapResize}
+						onPointerCancel={stopMapResize}
+					>
+						<MoveDiagonal2 size={18} />
+					</button>
+				) : null}
 			</div>
 		</div>
 	);
