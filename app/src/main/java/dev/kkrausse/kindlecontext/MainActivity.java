@@ -124,9 +124,15 @@ public class MainActivity extends Activity {
         }
 
         addSection("ASK");
-        addPromptButton("EXPLAIN THIS PASSAGE", "Explain this passage clearly and concisely.");
-        addPromptButton("EXPLAIN TERMS", "Explain the unfamiliar terms, names, and references in this passage.");
-        addPromptButton("WHY IT MATTERS", "Explain why this passage matters in the surrounding argument or story.");
+        addPromptButton("EXPLAIN TERMS", "Identify up to five terms, names, allusions, or references "
+                + "in the highlighted passage that a reader may not recognize. Give a brief explanation "
+                + "of each in this context. Do not list ordinary words merely to fill space.");
+        addPromptButton("WHY IT MATTERS", "Explain what role the highlighted passage plays in the "
+                + "author's broader point or the surrounding discussion. Base the answer only on the "
+                + "supplied text and distinguish inference from explicit evidence.");
+        addPromptButton("HISTORICAL CONTEXT", "Give the minimum historical, cultural, scientific, or "
+                + "philosophical context needed to understand the highlighted passage. Research external "
+                + "facts when useful and distinguish them from the book's claims.");
 
         EditText custom = input("Ask your own question...");
         custom.setMinLines(2);
@@ -416,12 +422,13 @@ public class MainActivity extends Activity {
     }
 
     private String readingPrompt(String question) {
-        return "You are helping someone understand a book on a small e-ink reader. "
-                + "Answer concisely and use web research when it materially improves the answer.\n\n"
-                + "PREVIOUS PAGE CONTEXT\n" + valueOrNone(captured(KindleAccessibilityService.PREVIOUS_TEXT_KEY))
-                + "\n\nCURRENT PAGE CONTEXT\n" + valueOrNone(captured(KindleAccessibilityService.CURRENT_TEXT_KEY))
-                + "\n\nHIGHLIGHTED PASSAGE\n" + valueOrNone(captured(KindleAccessibilityService.SELECTED_TEXT_KEY))
-                + "\n\nQUESTION\n" + question;
+        return "HIGHLIGHTED PASSAGE\n"
+                + valueOrNone(captured(KindleAccessibilityService.SELECTED_TEXT_KEY))
+                + "\n\nSURROUNDING CONTEXT\n\nPREVIOUS PAGE\n"
+                + valueOrNone(captured(KindleAccessibilityService.PREVIOUS_TEXT_KEY))
+                + "\n\nCURRENT PAGE\n"
+                + valueOrNone(captured(KindleAccessibilityService.CURRENT_TEXT_KEY))
+                + "\n\nREADER'S QUESTION\n" + question;
     }
 
     private void beginScreen() {
