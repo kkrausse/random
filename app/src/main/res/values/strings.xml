@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Kindle Context POC</string>
+    <string name="process_text_label">Ask with Context</string>
+    <string name="share_target_label">Send to Kindle Context</string>
+    <string name="accessibility_description">Reads Kindle accessibility text and captures the current page on request.</string>
+    <string name="ask">ASK</string>
+    <string name="capturing">WAIT</string>
+    <string name="title">KINDLE CONTEXT / POC</string>
+    <string name="explanation">Press ASK over a Kindle page to capture a local screenshot and inspect its accessibility text. Nothing leaves this device.</string>
+    <string name="enable_service">Enable accessibility service</string>
+    <string name="open_kindle">Open Kindle</string>
+    <string name="kindle_not_found">Kindle package com.amazon.kindle was not found.</string>
+    <string name="refresh_capture">Refresh captured text</string>
+    <string name="latest_capture">LATEST CAPTURE</string>
+    <string name="screenshot_preview">SCREENSHOT PREVIEW</string>
+    <string name="no_screenshot">No screenshot captured yet.</string>
+    <string name="service_enabled">Service enabled. Open a book page in Kindle and press ASK to inspect it.</string>
+    <string name="service_disabled">Service disabled. Enable Kindle Context Capture to begin.</string>
+    <string name="no_capture">No Kindle text captured yet.</string>
+    <string name="selected_text_received">Selected text received directly from Kindle.</string>
+    <string name="shared_text_received">Shared text received from Kindle.</string>
+</resources>
