@@ -1,6 +1,9 @@
 package dev.example.kindlecontext;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -18,11 +21,13 @@ public class MainActivity extends Activity {
     private TextView selectedTextView;
     private TextView currentTextView;
     private TextView previousTextView;
+    private boolean readClipboardOnResume;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         acceptSharedText(getIntent());
+        acceptCaptureIntent(getIntent());
 
         int space = dp(20);
         LinearLayout content = new LinearLayout(this);
@@ -83,6 +88,7 @@ public class MainActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         acceptSharedText(intent);
+        acceptCaptureIntent(intent);
         refresh();
     }
 
@@ -90,6 +96,10 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         refresh();
+        if (readClipboardOnResume) {
+            readClipboardOnResume = false;
+            selectedTextView.postDelayed(this::captureClipboardText, 250);
+        }
     }
 
     private void refresh() {
@@ -136,6 +146,27 @@ public class MainActivity extends Activity {
                     .putString(KindleAccessibilityService.CURRENT_TEXT_KEY, selected.toString())
                     .apply();
         }
+    }
+
+    private void acceptCaptureIntent(Intent intent) {
+        readClipboardOnResume = intent.getBooleanExtra(
+                KindleAccessibilityService.READ_CLIPBOARD_EXTRA, false);
+    }
+
+    private void captureClipboardText() {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        ClipData clip = clipboard.getPrimaryClip();
+        CharSequence value = clip != null && clip.getItemCount() > 0
+                ? clip.getItemAt(0).coerceToText(this)
+                : null;
+        String selected = value == null ? "" : value.toString().trim();
+        if (!selected.isEmpty()) {
+            getSharedPreferences(KindleAccessibilityService.PREFS, MODE_PRIVATE)
+                    .edit()
+                    .putString(KindleAccessibilityService.SELECTED_TEXT_KEY, selected)
+                    .apply();
+        }
+        refresh();
     }
 
     private TextView label(String text, int size, boolean bold) {

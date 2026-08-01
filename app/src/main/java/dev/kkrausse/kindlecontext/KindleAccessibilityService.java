@@ -2,6 +2,8 @@ package dev.example.kindlecontext;
 
 import android.accessibilityservice.AccessibilityButtonController;
 import android.accessibilityservice.AccessibilityService;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Rect;
 import android.os.Handler;
@@ -24,12 +26,14 @@ public class KindleAccessibilityService extends AccessibilityService {
     public static final String PREVIOUS_TEXT_KEY = "previous_text_v2";
     public static final String SELECTED_TEXT_KEY = "selected_text_v1";
     public static final String EVENT_KEY = "latest_event";
+    public static final String READ_CLIPBOARD_EXTRA = "read_clipboard";
 
     private static final String TAG = "KindleContext";
     private static final String LEGACY_TEXT_KEY = "latest_text";
     private static final String TREE_DUMP_FILE = "kindle-accessibility-tree.txt";
     private static final String EVENT_DUMP_FILE = "kindle-accessibility-events.txt";
     private static final long TEXT_POLL_MS = 1500;
+    private static final long COPY_SETTLE_MS = 250;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable textPoll = new Runnable() {
@@ -55,9 +59,9 @@ public class KindleAccessibilityService extends AccessibilityService {
                 dumpCurrentTree();
                 captureSelectedText();
                 captureCurrentTree();
-                Intent intent = new Intent(KindleAccessibilityService.this, MainActivity.class);
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                startActivity(intent);
+                if (!copyKindleSelection()) {
+                    openCaptureActivity(false);
+                }
             }
 
             @Override
@@ -95,25 +99,42 @@ public class KindleAccessibilityService extends AccessibilityService {
     public void onInterrupt() {
     }
 
-    private int collectText(AccessibilityNodeInfo node, Set<String> pieces) {
+    private int collectText(AccessibilityNodeInfo node, Set<String> pieces, Rect screenBounds) {
         int count = 1;
-        CharSequence text = node.getText();
-        if (text != null && !text.toString().trim().isEmpty()) {
-            pieces.add(text.toString().trim());
-        }
-
-        CharSequence description = node.getContentDescription();
-        if (description != null && !description.toString().trim().isEmpty()) {
-            pieces.add(description.toString().trim());
+        Rect nodeBounds = new Rect();
+        node.getBoundsInScreen(nodeBounds);
+        if (!nodeBounds.isEmpty() && Rect.intersects(screenBounds, nodeBounds)) {
+            addText(node.getText(), pieces, false);
+            addText(node.getContentDescription(), pieces, true);
         }
 
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfo child = node.getChild(i);
             if (child != null) {
-                count += collectText(child, pieces);
+                count += collectText(child, pieces, screenBounds);
             }
         }
         return count;
+    }
+
+    private void addText(CharSequence value, Set<String> pieces, boolean requireProse) {
+        if (value == null) {
+            return;
+        }
+        String text = value.toString().trim();
+        if (!text.isEmpty() && (!requireProse || looksLikeProseFragment(text))) {
+            pieces.add(text);
+        }
+    }
+
+    private boolean looksLikeProseFragment(String text) {
+        int spaces = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (Character.isWhitespace(text.charAt(i))) {
+                spaces++;
+            }
+        }
+        return text.length() >= 80 && spaces >= 10;
     }
 
     private void collectSelectedText(AccessibilityNodeInfo node, Set<String> pieces) {
@@ -152,6 +173,57 @@ public class KindleAccessibilityService extends AccessibilityService {
         Log.i(TAG, selected.isEmpty()
                 ? "Kindle exposed no text selection offsets"
                 : "Captured " + selected.length() + " selected characters");
+    }
+
+    private boolean copyKindleSelection() {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null || root.getPackageName() == null
+                || !KINDLE_PACKAGE.contentEquals(root.getPackageName())) {
+            return false;
+        }
+
+        AccessibilityNodeInfo copy = findAction(root, "Copy");
+        if (copy == null) {
+            Log.i(TAG, "Kindle did not expose a Copy action");
+            return false;
+        }
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        clipboard.clearPrimaryClip();
+        if (!copy.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            Log.w(TAG, "Kindle exposed Copy but rejected ACTION_CLICK");
+            return false;
+        }
+
+        mainHandler.postDelayed(() -> openCaptureActivity(true), COPY_SETTLE_MS);
+        return true;
+    }
+
+    private AccessibilityNodeInfo findAction(AccessibilityNodeInfo node, String name) {
+        CharSequence description = node.getContentDescription();
+        CharSequence text = node.getText();
+        boolean matches = description != null && name.contentEquals(description)
+                || text != null && name.contentEquals(text);
+        if (matches && node.isClickable()) {
+            return node;
+        }
+
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child != null) {
+                AccessibilityNodeInfo result = findAction(child, name);
+                if (result != null) {
+                    return result;
+                }
+            }
+        }
+        return null;
+    }
+
+    private void openCaptureActivity(boolean readClipboard) {
+        Intent intent = new Intent(this, MainActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        intent.putExtra(READ_CLIPBOARD_EXTRA, readClipboard);
+        startActivity(intent);
     }
 
     private void dumpCurrentTree() {
@@ -274,7 +346,10 @@ public class KindleAccessibilityService extends AccessibilityService {
         }
 
         Set<String> pieces = new LinkedHashSet<>();
-        int nodeCount = collectText(root, pieces);
+        Rect screenBounds = new Rect(0, 0,
+                getResources().getDisplayMetrics().widthPixels,
+                getResources().getDisplayMetrics().heightPixels);
+        int nodeCount = collectText(root, pieces, screenBounds);
         String text = String.join("\n\n", pieces).trim();
         if (!looksLikeProse(text)) {
             Log.i(TAG, "No Kindle prose; inspected " + text.length()
