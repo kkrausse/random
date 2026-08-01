@@ -1,0 +1,28 @@
+- opencode server
+  - git-checked workspace configs (the opencode can't change its own config / permissions)
+    - permissions like web fetch
+    - only access to workdir. no bash
+    - agents.md with some meta instructions like use web fetch. stay concise bc its on a boox, etc.
+  - server deploy script
+    - the process is distinctly identifiable so we can kill it if we want
+    - run locally ssh your-pi <copy over data / restart server>
+  - server should have state and message history and stuff not checked into git
+  - workdir at /home/pi/deploys/palma2-opencode
+    - settings somewhere there and then the workdir will be at the ./workdir section
+    - history stored somewhere here too
+
+- pressing the "K" accessibility overly button:
+  - switches to app (same as now)
+  - shows highlight + (condensed) context (mostly hidden from user. lots of context sent to opencode server)
+  - show options for the prompt template like "explain these terms" or something
+    - also option to type custom prompt (this still templatized like "Reading context <ctx> {context} </ctx> Current Highlight: ... Final prompt:" or something. whatever works well for the LLM's and sending into opencode. i don't think xml is necessarily the best? maybe just newlines to delimit stuff? also don't know optimal ordering?
+  - new chat opened in opencode server, initail message sent
+  - then regular chat view on the boox, shows the opencode response (we can do streaming later).
+    - lets you reply, etc.
+    - top left can go back and see prior sessions. you can see this view in the kindle app too.
+    - top center is like an "open kindle" button to easily go back
+
+- server connection
+  - vpn setup with tailscale.
+  - raspberry pi is at raspberrypi.example.ts.net
+
