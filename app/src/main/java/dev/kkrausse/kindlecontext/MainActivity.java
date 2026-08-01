@@ -3,6 +3,7 @@ package dev.example.kindlecontext;
 import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -15,11 +16,13 @@ import android.provider.Settings;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -28,6 +31,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
+import io.noties.markwon.Markwon;
 
 public class MainActivity extends Activity {
     private static final String SETTINGS = "opencode_connection";
@@ -43,12 +48,19 @@ public class MainActivity extends Activity {
     private boolean readClipboardOnResume;
     private boolean polling;
     private LinearLayout root;
+    private LinearLayout toolbar;
     private LinearLayout transcript;
+    private ScrollView scrollView;
     private TextView statusView;
+    private TextView accessibilityStatusView;
+    private boolean followChatBottom;
+    private boolean userScrolling;
+    private Markwon markwon;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        markwon = Markwon.create(this);
         acceptSharedText(getIntent());
         acceptCaptureIntent(getIntent());
         showCapture();
@@ -66,6 +78,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        updateAccessibilityStatus();
         if (readClipboardOnResume) {
             readClipboardOnResume = false;
             handler.postDelayed(() -> {
@@ -78,7 +91,7 @@ public class MainActivity extends Activity {
     private void showCapture() {
         polling = false;
         beginScreen();
-        addTopBar("NEW QUESTION", true);
+        addTopBar("NEW QUESTION");
         addTitle("READING CONTEXT");
 
         String enabled = Settings.Secure.getString(
@@ -121,7 +134,8 @@ public class MainActivity extends Activity {
 
     private void showChat() {
         beginScreen();
-        addTopBar("CHAT", true);
+        addTopBar("CHAT");
+        followChatBottom = true;
         transcript = new LinearLayout(this);
         transcript.setOrientation(LinearLayout.VERTICAL);
         root.addView(transcript);
@@ -147,7 +161,7 @@ public class MainActivity extends Activity {
     private void showSessions() {
         polling = false;
         beginScreen();
-        addTopBar("PAST CHATS", false);
+        addTopBar("PAST CHATS");
         addTitle("READING CHATS");
         statusView = status("Loading...");
         network.execute(() -> {
@@ -175,7 +189,7 @@ public class MainActivity extends Activity {
     private void showSettings() {
         polling = false;
         beginScreen();
-        addTopBar("CONNECTION", false);
+        addTopBar("CONNECTION");
         SharedPreferences preferences = getSharedPreferences(SETTINGS, MODE_PRIVATE);
         EditText server = settingInput("SERVER URL",
                 preferences.getString(SERVER_KEY, DEFAULT_SERVER));
@@ -203,6 +217,66 @@ public class MainActivity extends Activity {
         });
         root.addView(save);
         statusView = status("");
+        addSection("CAPTURE SETUP");
+        accessibilityStatusView = label("", 16, false);
+        accessibilityStatusView.setPadding(dp(12), dp(10), dp(12), dp(10));
+        accessibilityStatusView.setBackgroundColor(0xffeeeeee);
+        root.addView(accessibilityStatusView);
+        updateAccessibilityStatus();
+        Button accessibility = button("ENABLE / UPDATE CAPTURE SETUP");
+        accessibility.setOnClickListener(v -> openAccessibilitySetup());
+        root.addView(accessibility);
+        addSection("OPENCODE");
+        TextView model = label("MODEL\nLoading...", 16, false);
+        model.setPadding(dp(12), dp(10), dp(12), dp(10));
+        model.setBackgroundColor(0xffeeeeee);
+        root.addView(model);
+        TextView usage = label("READING CHAT USAGE\nLoading...", 16, false);
+        usage.setPadding(dp(12), dp(10), dp(12), dp(10));
+        usage.setBackgroundColor(0xffeeeeee);
+        root.addView(usage);
+        network.execute(() -> {
+            try {
+                OpenCodeClient client = client();
+                OpenCodeClient.Model configuredModel = client.defaultModel();
+                List<OpenCodeClient.Session> sessions = client.listSessions();
+                long input = 0;
+                long output = 0;
+                long reasoning = 0;
+                long cacheRead = 0;
+                long cacheWrite = 0;
+                double cost = 0;
+                for (OpenCodeClient.Session session : sessions) {
+                    input += session.inputTokens;
+                    output += session.outputTokens;
+                    reasoning += session.reasoningTokens;
+                    cacheRead += session.cacheReadTokens;
+                    cacheWrite += session.cacheWriteTokens;
+                    cost += session.cost;
+                }
+                String modelText = configuredModel == null
+                        ? "MODEL\nNo default model configured"
+                        : "MODEL\n" + configuredModel.name + "\n"
+                        + configuredModel.providerId + " / " + configuredModel.modelId;
+                String usageText = "READING CHAT USAGE (LATEST " + sessions.size() + ")"
+                        + "\nTokens in: " + formatNumber(input)
+                        + "\nTokens out: " + formatNumber(output)
+                        + "\nReasoning: " + formatNumber(reasoning)
+                        + "\nCache read: " + formatNumber(cacheRead)
+                        + "\nCache write: " + formatNumber(cacheWrite)
+                        + String.format(java.util.Locale.US, "\nCost: $%.4f", cost);
+                runOnUiThread(() -> {
+                    model.setText(modelText);
+                    usage.setText(usageText);
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    model.setText("MODEL\nUnavailable");
+                    usage.setText("READING CHAT USAGE\nUnavailable: "
+                            + (error.getMessage() == null ? error.toString() : error.getMessage()));
+                });
+            }
+        });
     }
 
     private void startChat(String question) {
@@ -255,13 +329,21 @@ public class MainActivity extends Activity {
         if (transcript == null) {
             return;
         }
+        boolean scrollToBottom = followChatBottom || isNearBottom();
         transcript.removeAllViews();
         boolean waiting = messages.isEmpty();
         for (OpenCodeClient.Message message : messages) {
             addMessage(message.role, message.text.isEmpty() ? "Thinking..." : message.text);
             waiting = "YOU".equals(message.role) || !message.complete;
         }
-        statusView.setText(waiting ? "OpenCode is working..." : "");
+        if (waiting) {
+            addLoadingIndicator();
+        }
+        statusView.setText("");
+        if (scrollToBottom) {
+            followChatBottom = true;
+            scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN));
+        }
         if (polling) {
             handler.removeCallbacksAndMessages(null);
             handler.postDelayed(this::loadMessages, waiting ? 2_000 : 5_000);
@@ -279,38 +361,59 @@ public class MainActivity extends Activity {
 
     private void beginScreen() {
         handler.removeCallbacksAndMessages(null);
-        ScrollView scroll = new ScrollView(this);
+        accessibilityStatusView = null;
+        LinearLayout screen = new LinearLayout(this);
+        screen.setOrientation(LinearLayout.VERTICAL);
+        screen.setBackgroundColor(Color.WHITE);
+        toolbar = new LinearLayout(this);
+        toolbar.setOrientation(LinearLayout.VERTICAL);
+        screen.addView(toolbar, new LinearLayout.LayoutParams(-1, -2));
+        scrollView = new ScrollView(this);
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(14), dp(18), dp(28));
         root.setBackgroundColor(Color.WHITE);
-        scroll.addView(root);
-        setContentView(scroll);
+        scrollView.addView(root);
+        scrollView.setOnTouchListener((view, event) -> {
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                userScrolling = true;
+            } else if (event.getActionMasked() == MotionEvent.ACTION_UP
+                    || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
+                followChatBottom = isNearBottom();
+                userScrolling = false;
+            }
+            return false;
+        });
+        scrollView.setOnScrollChangeListener((view, x, y, oldX, oldY) -> {
+            if (userScrolling) {
+                followChatBottom = isNearBottom();
+            }
+        });
+        screen.addView(scrollView, new LinearLayout.LayoutParams(-1, 0, 1));
+        setContentView(screen);
     }
 
-    private void addTopBar(String heading, boolean sessionsButton) {
+    private void addTopBar(String heading) {
         LinearLayout bar = new LinearLayout(this);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        if (sessionsButton) {
-            Button sessions = smallButton("CHATS");
-            sessions.setOnClickListener(v -> showSessions());
-            bar.addView(sessions);
-        } else {
-            Button back = smallButton("BACK");
-            back.setOnClickListener(v -> showCapture());
-            bar.addView(back);
-        }
-        TextView title = label(heading, 15, true);
-        title.setGravity(Gravity.CENTER);
-        bar.addView(title, new LinearLayout.LayoutParams(0, dp(48), 1));
+        Button capture = smallButton("NEW");
+        capture.setOnClickListener(v -> showCapture());
+        bar.addView(capture, new LinearLayout.LayoutParams(0, dp(48), 1));
+        Button sessions = smallButton("CHATS");
+        sessions.setOnClickListener(v -> showSessions());
+        bar.addView(sessions, new LinearLayout.LayoutParams(0, dp(48), 1));
         Button kindle = smallButton("KINDLE");
         kindle.setOnClickListener(v -> openKindle());
-        bar.addView(kindle);
-        root.addView(bar);
-
+        bar.addView(kindle, new LinearLayout.LayoutParams(0, dp(48), 1));
         Button settings = smallButton("SETTINGS");
         settings.setOnClickListener(v -> showSettings());
-        root.addView(settings);
+        bar.addView(settings, new LinearLayout.LayoutParams(0, dp(48), 1));
+        toolbar.addView(bar);
+        TextView title = label(heading, 15, true);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(0, dp(5), 0, dp(7));
+        title.setBackgroundColor(0xffeeeeee);
+        toolbar.addView(title, new LinearLayout.LayoutParams(-1, -2));
     }
 
     private void addTitle(String text) {
@@ -346,9 +449,36 @@ public class MainActivity extends Activity {
         roleView.setPadding(0, dp(16), 0, dp(4));
         transcript.addView(roleView);
         TextView message = label(text, 17, false);
+        if ("OPENCODE".equals(role)) {
+            markwon.setMarkdown(message, text);
+        }
         message.setTextIsSelectable(true);
         message.setLineSpacing(0, 1.15f);
         transcript.addView(message);
+    }
+
+    private void addLoadingIndicator() {
+        LinearLayout loading = new LinearLayout(this);
+        loading.setGravity(Gravity.CENTER_VERTICAL);
+        loading.setPadding(0, dp(16), 0, dp(10));
+        ProgressBar progress = new ProgressBar(this);
+        progress.setIndeterminate(true);
+        loading.addView(progress, new LinearLayout.LayoutParams(dp(30), dp(30)));
+        TextView text = label("  OPENCODE IS WORKING...", 15, true);
+        loading.addView(text);
+        transcript.addView(loading);
+    }
+
+    private boolean isNearBottom() {
+        if (scrollView == null || scrollView.getChildCount() == 0) {
+            return true;
+        }
+        View content = scrollView.getChildAt(0);
+        return content.getBottom() - (scrollView.getHeight() + scrollView.getScrollY()) <= dp(48);
+    }
+
+    private String formatNumber(long value) {
+        return java.text.NumberFormat.getIntegerInstance().format(value);
     }
 
     private EditText settingInput(String heading, String value) {
@@ -414,6 +544,31 @@ public class MainActivity extends Activity {
         } else if (statusView != null) {
             statusView.setText("Kindle is not installed.");
         }
+    }
+
+    private void openAccessibilitySetup() {
+        startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+    }
+
+    private void updateAccessibilityStatus() {
+        if (accessibilityStatusView == null) {
+            return;
+        }
+        ComponentName service = new ComponentName(this, KindleAccessibilityService.class);
+        String component = service.flattenToString();
+        String enabledServices = Settings.Secure.getString(
+                getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+        String buttonTargets = Settings.Secure.getString(
+                getContentResolver(), "accessibility_button_targets");
+        boolean accessibilityEnabled = Settings.Secure.getInt(
+                getContentResolver(), Settings.Secure.ACCESSIBILITY_ENABLED, 0) == 1;
+        boolean serviceEnabled = enabledServices != null && enabledServices.contains(component);
+        boolean buttonAssigned = buttonTargets != null && buttonTargets.contains(component);
+        accessibilityStatusView.setText("ANDROID ACCESSIBILITY: "
+                + (accessibilityEnabled ? "ON" : "OFF")
+                + "\nCAPTURE SERVICE: " + (serviceEnabled ? "ENABLED" : "DISABLED")
+                + "\nFLOATING BUTTON: " + (buttonAssigned ? "ASSIGNED" : "NOT ASSIGNED")
+                + "\nBOOX APP FREEZE: Check manually in BOOX app settings");
     }
 
     private OpenCodeClient client() {

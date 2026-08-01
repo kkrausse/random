@@ -21,11 +21,37 @@ final class OpenCodeClient {
         final String id;
         final String title;
         final long updated;
+        final long inputTokens;
+        final long outputTokens;
+        final long reasoningTokens;
+        final long cacheReadTokens;
+        final long cacheWriteTokens;
+        final double cost;
 
-        Session(String id, String title, long updated) {
+        Session(String id, String title, long updated, JSONObject value) {
             this.id = id;
             this.title = title;
             this.updated = updated;
+            JSONObject tokens = value.optJSONObject("tokens");
+            JSONObject cache = tokens == null ? null : tokens.optJSONObject("cache");
+            inputTokens = tokens == null ? 0 : tokens.optLong("input");
+            outputTokens = tokens == null ? 0 : tokens.optLong("output");
+            reasoningTokens = tokens == null ? 0 : tokens.optLong("reasoning");
+            cacheReadTokens = cache == null ? 0 : cache.optLong("read");
+            cacheWriteTokens = cache == null ? 0 : cache.optLong("write");
+            cost = value.optDouble("cost", 0);
+        }
+    }
+
+    static final class Model {
+        final String name;
+        final String providerId;
+        final String modelId;
+
+        Model(String name, String providerId, String modelId) {
+            this.name = name;
+            this.providerId = providerId;
+            this.modelId = modelId;
         }
     }
 
@@ -55,6 +81,17 @@ final class OpenCodeClient {
         request("GET", "/api/health", null);
     }
 
+    Model defaultModel() throws IOException, JSONException {
+        String path = "/api/model/default?location%5Bdirectory%5D="
+                + java.net.URLEncoder.encode(directory, "UTF-8");
+        JSONObject data = request("GET", path, null).optJSONObject("data");
+        if (data == null) {
+            return null;
+        }
+        return new Model(data.optString("name", data.optString("modelID")),
+                data.optString("providerID"), data.optString("modelID"));
+    }
+
     String createSession() throws IOException, JSONException {
         JSONObject body = new JSONObject();
         body.put("location", new JSONObject().put("directory", directory));
@@ -77,7 +114,7 @@ final class OpenCodeClient {
             JSONObject time = value.optJSONObject("time");
             sessions.add(new Session(value.getString("id"),
                     value.optString("title", "Untitled reading chat"),
-                    time == null ? 0 : time.optLong("updated")));
+                    time == null ? 0 : time.optLong("updated"), value));
         }
         return sessions;
     }
