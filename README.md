@@ -328,8 +328,10 @@ Open `SETTINGS` in Kindle Context and configure:
 | Server URL | `http://raspberrypi.example.ts.net:41137` |
 | Workspace directory | `/home/pi/deploys/palma2-opencode/workdir` |
 | Server password | No compiled default; enter the value from `state/server.env` |
+| New chat model | `Laguna S 2.1 Free` |
+| Model variant | `medium` |
 
-Press `SAVE AND TEST`. A successful request displays `Connected to OpenCode.`
+The model list is loaded from the server's active catalog. Press `SAVE AND TEST` to persist the selected model and connection settings. Existing chats retain their original model; the selection applies to new chats.
 
 The manifest allows cleartext traffic because the endpoint is HTTP over Tailscale. Do not point the app at an untrusted cleartext network endpoint.
 

@@ -47,11 +47,13 @@ final class OpenCodeClient {
         final String name;
         final String providerId;
         final String modelId;
+        final List<String> variants;
 
-        Model(String name, String providerId, String modelId) {
+        Model(String name, String providerId, String modelId, List<String> variants) {
             this.name = name;
             this.providerId = providerId;
             this.modelId = modelId;
+            this.variants = variants;
         }
     }
 
@@ -88,13 +90,34 @@ final class OpenCodeClient {
         if (data == null) {
             return null;
         }
-        return new Model(data.optString("name", data.optString("modelID")),
-                data.optString("providerID"), data.optString("modelID"));
+        return modelFromJson(data);
     }
 
-    String createSession() throws IOException, JSONException {
+    List<Model> listModels() throws IOException, JSONException {
+        String path = "/api/model?location%5Bdirectory%5D="
+                + java.net.URLEncoder.encode(directory, "UTF-8");
+        JSONArray values = request("GET", path, null).getJSONArray("data");
+        List<Model> models = new ArrayList<>();
+        for (int i = 0; i < values.length(); i++) {
+            JSONObject value = values.getJSONObject(i);
+            if (value.optBoolean("enabled") && "active".equals(value.optString("status"))) {
+                models.add(modelFromJson(value));
+            }
+        }
+        return models;
+    }
+
+    String createSession(String providerId, String modelId, String variant)
+            throws IOException, JSONException {
         JSONObject body = new JSONObject();
         body.put("location", new JSONObject().put("directory", directory));
+        JSONObject model = new JSONObject()
+                .put("providerID", providerId)
+                .put("id", modelId);
+        if (!variant.isEmpty()) {
+            model.put("variant", variant);
+        }
+        body.put("model", model);
         JSONObject data = request("POST", "/api/session", body).getJSONObject("data");
         return data.getString("id");
     }
@@ -198,5 +221,20 @@ final class OpenCodeClient {
 
     private static String encodePath(String value) throws IOException {
         return java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20");
+    }
+
+    private static Model modelFromJson(JSONObject value) {
+        List<String> variants = new ArrayList<>();
+        JSONArray values = value.optJSONArray("variants");
+        if (values != null) {
+            for (int i = 0; i < values.length(); i++) {
+                JSONObject variant = values.optJSONObject(i);
+                if (variant != null && !variant.optString("id").isEmpty()) {
+                    variants.add(variant.optString("id"));
+                }
+            }
+        }
+        return new Model(value.optString("name", value.optString("modelID")),
+                value.optString("providerID"), value.optString("modelID"), variants);
     }
 }

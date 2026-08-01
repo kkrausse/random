@@ -24,9 +24,13 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
+import android.widget.ArrayAdapter;
+import android.widget.AdapterView;
+import android.widget.Spinner;
 import android.widget.TextView;
 
 import java.text.DateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -39,8 +43,14 @@ public class MainActivity extends Activity {
     private static final String SERVER_KEY = "server_url";
     private static final String TOKEN_KEY = "server_token";
     private static final String DIRECTORY_KEY = "workspace_directory";
+    private static final String MODEL_PROVIDER_KEY = "model_provider";
+    private static final String MODEL_ID_KEY = "model_id";
+    private static final String MODEL_VARIANT_KEY = "model_variant";
     private static final String DEFAULT_SERVER = "http://raspberrypi.example.ts.net:41137";
     private static final String DEFAULT_DIRECTORY = "/home/pi/deploys/palma2-opencode/workdir";
+    private static final String DEFAULT_MODEL_PROVIDER = "opencode";
+    private static final String DEFAULT_MODEL_ID = "laguna-s-2.1-free";
+    private static final String DEFAULT_MODEL_VARIANT = "medium";
 
     private final ExecutorService network = Executors.newSingleThreadExecutor();
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -198,18 +208,60 @@ public class MainActivity extends Activity {
         EditText token = settingInput("SERVER PASSWORD",
                 preferences.getString(TOKEN_KEY, ""));
         token.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        addSection("NEW CHAT MODEL");
+        Spinner modelSpinner = new Spinner(this);
+        root.addView(modelSpinner, new LinearLayout.LayoutParams(-1, dp(52)));
+        Spinner variantSpinner = new Spinner(this);
+        root.addView(variantSpinner, new LinearLayout.LayoutParams(-1, dp(52)));
+        List<OpenCodeClient.Model> availableModels = new ArrayList<>();
+        List<String> availableVariants = new ArrayList<>();
+        ArrayAdapter<String> loadingModels = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, List.of("Loading models..."));
+        loadingModels.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        modelSpinner.setAdapter(loadingModels);
+        setVariantChoices(variantSpinner, availableVariants, null, "");
+        modelSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (position >= availableModels.size()) {
+                    return;
+                }
+                OpenCodeClient.Model selected = availableModels.get(position);
+                String preferred = selected.providerId.equals(preferences.getString(
+                        MODEL_PROVIDER_KEY, DEFAULT_MODEL_PROVIDER))
+                        && selected.modelId.equals(preferences.getString(
+                        MODEL_ID_KEY, DEFAULT_MODEL_ID))
+                        ? preferences.getString(MODEL_VARIANT_KEY, DEFAULT_MODEL_VARIANT) : "";
+                setVariantChoices(variantSpinner, availableVariants, selected, preferred);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
         Button save = button("SAVE AND TEST");
         save.setOnClickListener(v -> {
-            preferences.edit()
+            SharedPreferences.Editor editor = preferences.edit()
                     .putString(SERVER_KEY, server.getText().toString().trim())
                     .putString(DIRECTORY_KEY, directory.getText().toString().trim())
-                    .putString(TOKEN_KEY, token.getText().toString().trim())
-                    .apply();
+                    .putString(TOKEN_KEY, token.getText().toString().trim());
+            int modelPosition = modelSpinner.getSelectedItemPosition();
+            if (modelPosition >= 0 && modelPosition < availableModels.size()) {
+                OpenCodeClient.Model selected = availableModels.get(modelPosition);
+                int variantPosition = variantSpinner.getSelectedItemPosition();
+                String variant = variantPosition >= 0 && variantPosition < availableVariants.size()
+                        ? availableVariants.get(variantPosition) : "";
+                editor.putString(MODEL_PROVIDER_KEY, selected.providerId)
+                        .putString(MODEL_ID_KEY, selected.modelId)
+                        .putString(MODEL_VARIANT_KEY, variant);
+            }
+            editor.apply();
             statusView.setText("Testing connection...");
             network.execute(() -> {
                 try {
                     client().health();
-                    runOnUiThread(() -> statusView.setText("Connected to OpenCode."));
+                    runOnUiThread(() -> statusView.setText("Connected. New chats will use "
+                            + selectedModelDescription(preferences) + "."));
                 } catch (Exception error) {
                     showError(error);
                 }
@@ -227,10 +279,6 @@ public class MainActivity extends Activity {
         accessibility.setOnClickListener(v -> openAccessibilitySetup());
         root.addView(accessibility);
         addSection("OPENCODE");
-        TextView model = label("MODEL\nLoading...", 16, false);
-        model.setPadding(dp(12), dp(10), dp(12), dp(10));
-        model.setBackgroundColor(0xffeeeeee);
-        root.addView(model);
         TextView usage = label("READING CHAT USAGE\nLoading...", 16, false);
         usage.setPadding(dp(12), dp(10), dp(12), dp(10));
         usage.setBackgroundColor(0xffeeeeee);
@@ -238,7 +286,7 @@ public class MainActivity extends Activity {
         network.execute(() -> {
             try {
                 OpenCodeClient client = client();
-                OpenCodeClient.Model configuredModel = client.defaultModel();
+                List<OpenCodeClient.Model> models = client.listModels();
                 List<OpenCodeClient.Session> sessions = client.listSessions();
                 long input = 0;
                 long output = 0;
@@ -254,10 +302,6 @@ public class MainActivity extends Activity {
                     cacheWrite += session.cacheWriteTokens;
                     cost += session.cost;
                 }
-                String modelText = configuredModel == null
-                        ? "MODEL\nNo default model configured"
-                        : "MODEL\n" + configuredModel.name + "\n"
-                        + configuredModel.providerId + " / " + configuredModel.modelId;
                 String usageText = "READING CHAT USAGE (LATEST " + sessions.size() + ")"
                         + "\nTokens in: " + formatNumber(input)
                         + "\nTokens out: " + formatNumber(output)
@@ -266,12 +310,29 @@ public class MainActivity extends Activity {
                         + "\nCache write: " + formatNumber(cacheWrite)
                         + String.format(java.util.Locale.US, "\nCost: $%.4f", cost);
                 runOnUiThread(() -> {
-                    model.setText(modelText);
+                    availableModels.clear();
+                    availableModels.addAll(models);
+                    List<String> labels = new ArrayList<>();
+                    for (OpenCodeClient.Model model : models) {
+                        labels.add(model.name + " (" + model.providerId + "/" + model.modelId + ")");
+                    }
+                    ArrayAdapter<String> modelAdapter = new ArrayAdapter<>(this,
+                            android.R.layout.simple_spinner_item, labels);
+                    modelAdapter.setDropDownViewResource(
+                            android.R.layout.simple_spinner_dropdown_item);
+                    modelSpinner.setAdapter(modelAdapter);
+                    int selected = findSelectedModel(models, preferences);
+                    if (selected >= 0) {
+                        modelSpinner.setSelection(selected);
+                    }
                     usage.setText(usageText);
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
-                    model.setText("MODEL\nUnavailable");
+                    ArrayAdapter<String> unavailable = new ArrayAdapter<>(this,
+                            android.R.layout.simple_spinner_item,
+                            List.of("Models unavailable"));
+                    modelSpinner.setAdapter(unavailable);
                     usage.setText("READING CHAT USAGE\nUnavailable: "
                             + (error.getMessage() == null ? error.toString() : error.getMessage()));
                 });
@@ -286,7 +347,11 @@ public class MainActivity extends Activity {
         network.execute(() -> {
             try {
                 OpenCodeClient client = client();
-                sessionId = client.createSession();
+                SharedPreferences preferences = getSharedPreferences(SETTINGS, MODE_PRIVATE);
+                sessionId = client.createSession(
+                        preferences.getString(MODEL_PROVIDER_KEY, DEFAULT_MODEL_PROVIDER),
+                        preferences.getString(MODEL_ID_KEY, DEFAULT_MODEL_ID),
+                        preferences.getString(MODEL_VARIANT_KEY, DEFAULT_MODEL_VARIANT));
                 client.sendMessage(sessionId, prompt);
                 runOnUiThread(this::showChat);
             } catch (Exception error) {
@@ -479,6 +544,45 @@ public class MainActivity extends Activity {
 
     private String formatNumber(long value) {
         return java.text.NumberFormat.getIntegerInstance().format(value);
+    }
+
+    private void setVariantChoices(Spinner spinner, List<String> choices,
+            OpenCodeClient.Model model, String preferred) {
+        choices.clear();
+        choices.add("");
+        if (model != null) {
+            choices.addAll(model.variants);
+        }
+        List<String> labels = new ArrayList<>();
+        labels.add("Default variant");
+        if (model != null) {
+            labels.addAll(model.variants);
+        }
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, labels);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+        int selected = choices.indexOf(preferred);
+        spinner.setSelection(Math.max(selected, 0));
+    }
+
+    private int findSelectedModel(List<OpenCodeClient.Model> models,
+            SharedPreferences preferences) {
+        String provider = preferences.getString(MODEL_PROVIDER_KEY, DEFAULT_MODEL_PROVIDER);
+        String modelId = preferences.getString(MODEL_ID_KEY, DEFAULT_MODEL_ID);
+        for (int i = 0; i < models.size(); i++) {
+            OpenCodeClient.Model model = models.get(i);
+            if (provider.equals(model.providerId) && modelId.equals(model.modelId)) {
+                return i;
+            }
+        }
+        return models.isEmpty() ? -1 : 0;
+    }
+
+    private String selectedModelDescription(SharedPreferences preferences) {
+        String model = preferences.getString(MODEL_ID_KEY, DEFAULT_MODEL_ID);
+        String variant = preferences.getString(MODEL_VARIANT_KEY, DEFAULT_MODEL_VARIANT);
+        return model + (variant.isEmpty() ? "" : " / " + variant);
     }
 
     private EditText settingInput(String heading, String value) {
