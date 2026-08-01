@@ -15,6 +15,7 @@ import android.widget.TextView;
 
 public class MainActivity extends Activity {
     private TextView statusView;
+    private TextView selectedTextView;
     private TextView currentTextView;
     private TextView previousTextView;
 
@@ -60,6 +61,10 @@ public class MainActivity extends Activity {
         refreshButton.setOnClickListener(v -> refresh());
         content.addView(refreshButton);
 
+        content.addView(sectionLabel(getString(R.string.selected_text)));
+        selectedTextView = textContent();
+        content.addView(selectedTextView);
+
         content.addView(sectionLabel(getString(R.string.current_text)));
         currentTextView = textContent();
         content.addView(currentTextView);
@@ -94,6 +99,7 @@ public class MainActivity extends Activity {
                 ? R.string.service_enabled
                 : R.string.service_disabled);
 
+        selectedTextView.setText(readSelectedText());
         currentTextView.setText(readText(KindleAccessibilityService.CURRENT_TEXT_KEY));
         previousTextView.setText(readText(KindleAccessibilityService.PREVIOUS_TEXT_KEY));
     }
@@ -102,6 +108,12 @@ public class MainActivity extends Activity {
         String text = getSharedPreferences(KindleAccessibilityService.PREFS, MODE_PRIVATE)
                 .getString(key, "");
         return TextUtils.isEmpty(text) ? getString(R.string.no_capture) : text;
+    }
+
+    private String readSelectedText() {
+        String text = getSharedPreferences(KindleAccessibilityService.PREFS, MODE_PRIVATE)
+                .getString(KindleAccessibilityService.SELECTED_TEXT_KEY, "");
+        return TextUtils.isEmpty(text) ? getString(R.string.no_selection) : text;
     }
 
     private void acceptSharedText(Intent intent) {
@@ -119,6 +131,7 @@ public class MainActivity extends Activity {
                     .getString(KindleAccessibilityService.CURRENT_TEXT_KEY, "");
             getSharedPreferences(KindleAccessibilityService.PREFS, MODE_PRIVATE)
                     .edit()
+                    .putString(KindleAccessibilityService.SELECTED_TEXT_KEY, selected.toString())
                     .putString(KindleAccessibilityService.PREVIOUS_TEXT_KEY, current)
                     .putString(KindleAccessibilityService.CURRENT_TEXT_KEY, selected.toString())
                     .apply();

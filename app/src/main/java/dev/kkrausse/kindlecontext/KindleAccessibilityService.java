@@ -3,12 +3,17 @@ package dev.example.kindlecontext;
 import android.accessibilityservice.AccessibilityButtonController;
 import android.accessibilityservice.AccessibilityService;
 import android.content.Intent;
+import android.graphics.Rect;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Spanned;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -17,10 +22,13 @@ public class KindleAccessibilityService extends AccessibilityService {
     public static final String PREFS = "capture";
     public static final String CURRENT_TEXT_KEY = "current_text_v2";
     public static final String PREVIOUS_TEXT_KEY = "previous_text_v2";
+    public static final String SELECTED_TEXT_KEY = "selected_text_v1";
     public static final String EVENT_KEY = "latest_event";
 
     private static final String TAG = "KindleContext";
     private static final String LEGACY_TEXT_KEY = "latest_text";
+    private static final String TREE_DUMP_FILE = "kindle-accessibility-tree.txt";
+    private static final String EVENT_DUMP_FILE = "kindle-accessibility-events.txt";
     private static final long TEXT_POLL_MS = 1500;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -44,6 +52,8 @@ public class KindleAccessibilityService extends AccessibilityService {
         accessibilityButtonCallback = new AccessibilityButtonController.AccessibilityButtonCallback() {
             @Override
             public void onClicked(AccessibilityButtonController controller) {
+                dumpCurrentTree();
+                captureSelectedText();
                 captureCurrentTree();
                 Intent intent = new Intent(KindleAccessibilityService.this, MainActivity.class);
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
@@ -73,6 +83,7 @@ public class KindleAccessibilityService extends AccessibilityService {
                 + " text=" + event.getText()
                 + " description=" + event.getContentDescription();
         Log.i(TAG, eventDescription);
+        appendEventDump(event);
         getSharedPreferences(PREFS, MODE_PRIVATE)
                 .edit()
                 .putString(EVENT_KEY, eventDescription)
@@ -103,6 +114,156 @@ public class KindleAccessibilityService extends AccessibilityService {
             }
         }
         return count;
+    }
+
+    private void collectSelectedText(AccessibilityNodeInfo node, Set<String> pieces) {
+        CharSequence text = node.getText();
+        int start = node.getTextSelectionStart();
+        int end = node.getTextSelectionEnd();
+        if (text != null && start >= 0 && end > start && end <= text.length()) {
+            String selected = text.subSequence(start, end).toString().trim();
+            if (!selected.isEmpty()) {
+                pieces.add(selected);
+            }
+        }
+
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child != null) {
+                collectSelectedText(child, pieces);
+            }
+        }
+    }
+
+    private void captureSelectedText() {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null || root.getPackageName() == null
+                || !KINDLE_PACKAGE.contentEquals(root.getPackageName())) {
+            return;
+        }
+
+        Set<String> pieces = new LinkedHashSet<>();
+        collectSelectedText(root, pieces);
+        String selected = String.join("\n\n", pieces).trim();
+        getSharedPreferences(PREFS, MODE_PRIVATE)
+                .edit()
+                .putString(SELECTED_TEXT_KEY, selected)
+                .apply();
+        Log.i(TAG, selected.isEmpty()
+                ? "Kindle exposed no text selection offsets"
+                : "Captured " + selected.length() + " selected characters");
+    }
+
+    private void dumpCurrentTree() {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null || root.getPackageName() == null
+                || !KINDLE_PACKAGE.contentEquals(root.getPackageName())) {
+            return;
+        }
+
+        StringBuilder dump = new StringBuilder();
+        appendNodeDump(root, 0, dump);
+        writeDiagnostic(TREE_DUMP_FILE, dump.toString(), MODE_PRIVATE);
+        Log.i(TAG, "Wrote accessibility tree diagnostics for "
+                + dumpNodeCount(root) + " nodes");
+    }
+
+    private void appendNodeDump(AccessibilityNodeInfo node, int depth, StringBuilder dump) {
+        dump.append("  ".repeat(depth));
+        appendNodeDetails(node, dump);
+        dump.append('\n');
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child != null) {
+                appendNodeDump(child, depth + 1, dump);
+            }
+        }
+    }
+
+    private void appendNodeDetails(AccessibilityNodeInfo node, StringBuilder dump) {
+        Rect bounds = new Rect();
+        node.getBoundsInScreen(bounds);
+        CharSequence text = node.getText();
+        dump.append("class=").append(node.getClassName())
+                .append(" viewId=").append(node.getViewIdResourceName())
+                .append(" bounds=").append(bounds)
+                .append(" selected=").append(node.isSelected())
+                .append(" focused=").append(node.isFocused())
+                .append(" accessibilityFocused=").append(node.isAccessibilityFocused())
+                .append(" editable=").append(node.isEditable())
+                .append(" selection=").append(node.getTextSelectionStart())
+                .append("..").append(node.getTextSelectionEnd())
+                .append(" actions=").append(node.getActionList())
+                .append(" extras=").append(node.getExtras())
+                .append(" description=").append(quoted(node.getContentDescription()))
+                .append(" text=").append(quoted(text));
+
+        if (text instanceof Spanned) {
+            Spanned spanned = (Spanned) text;
+            Object[] spans = spanned.getSpans(0, spanned.length(), Object.class);
+            dump.append(" spans=[");
+            for (int i = 0; i < spans.length; i++) {
+                if (i > 0) {
+                    dump.append(", ");
+                }
+                Object span = spans[i];
+                dump.append(span.getClass().getName())
+                        .append('@').append(spanned.getSpanStart(span))
+                        .append("..").append(spanned.getSpanEnd(span))
+                        .append(" flags=").append(spanned.getSpanFlags(span));
+            }
+            dump.append(']');
+        }
+    }
+
+    private void appendEventDump(AccessibilityEvent event) {
+        StringBuilder dump = new StringBuilder()
+                .append("\nEVENT time=").append(event.getEventTime())
+                .append(" type=").append(AccessibilityEvent.eventTypeToString(event.getEventType()))
+                .append(" action=").append(event.getAction())
+                .append(" from=").append(event.getFromIndex())
+                .append(" to=").append(event.getToIndex())
+                .append(" itemCount=").append(event.getItemCount())
+                .append(" contentChanges=").append(event.getContentChangeTypes())
+                .append(" text=").append(quoted(event.getText()))
+                .append(" description=").append(quoted(event.getContentDescription()))
+                .append('\n');
+        AccessibilityNodeInfo source = event.getSource();
+        if (source != null) {
+            dump.append("SOURCE ");
+            appendNodeDetails(source, dump);
+            dump.append('\n');
+        }
+        writeDiagnostic(EVENT_DUMP_FILE, dump.toString(), MODE_APPEND);
+    }
+
+    private int dumpNodeCount(AccessibilityNodeInfo node) {
+        int count = 1;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child != null) {
+                count += dumpNodeCount(child);
+            }
+        }
+        return count;
+    }
+
+    private String quoted(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        return '"' + value.toString()
+                .replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r") + '"';
+    }
+
+    private void writeDiagnostic(String name, String contents, int mode) {
+        try (FileOutputStream output = openFileOutput(name, mode)) {
+            output.write(contents.getBytes(StandardCharsets.UTF_8));
+        } catch (IOException error) {
+            Log.e(TAG, "Could not write " + name, error);
+        }
     }
 
     private void captureCurrentTree() {
