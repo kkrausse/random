@@ -3,24 +3,20 @@ package dev.example.kindlecontext;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Color;
-import android.graphics.BitmapFactory;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.Gravity;
-import android.view.View;
 import android.widget.Button;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
 public class MainActivity extends Activity {
     private TextView statusView;
-    private TextView captureView;
-    private ImageView screenshotView;
-    private TextView screenshotEmptyView;
+    private TextView currentTextView;
+    private TextView previousTextView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -33,22 +29,15 @@ public class MainActivity extends Activity {
         content.setPadding(space, space, space, space);
         content.setBackgroundColor(Color.WHITE);
 
-        TextView title = new TextView(this);
-        title.setText(R.string.title);
-        title.setTextColor(Color.BLACK);
-        title.setTextSize(24);
-        title.setTypeface(null, Typeface.BOLD);
+        TextView title = label(getString(R.string.title), 24, true);
         content.addView(title);
 
-        TextView explanation = new TextView(this);
-        explanation.setText(R.string.explanation);
+        TextView explanation = label(getString(R.string.explanation), 16, false);
         explanation.setTextColor(Color.DKGRAY);
-        explanation.setTextSize(16);
         explanation.setPadding(0, dp(12), 0, dp(16));
         content.addView(explanation);
 
-        statusView = new TextView(this);
-        statusView.setTextSize(16);
+        statusView = label("", 16, false);
         statusView.setPadding(0, 0, 0, dp(12));
         content.addView(statusView);
 
@@ -71,38 +60,13 @@ public class MainActivity extends Activity {
         refreshButton.setOnClickListener(v -> refresh());
         content.addView(refreshButton);
 
-        TextView screenshotLabel = new TextView(this);
-        screenshotLabel.setText(R.string.screenshot_preview);
-        screenshotLabel.setTextColor(Color.BLACK);
-        screenshotLabel.setTypeface(null, Typeface.BOLD);
-        screenshotLabel.setPadding(0, dp(20), 0, dp(8));
-        content.addView(screenshotLabel);
+        content.addView(sectionLabel(getString(R.string.current_text)));
+        currentTextView = textContent();
+        content.addView(currentTextView);
 
-        screenshotView = new ImageView(this);
-        screenshotView.setAdjustViewBounds(true);
-        screenshotView.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        screenshotView.setContentDescription(getString(R.string.screenshot_preview));
-        content.addView(screenshotView, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        screenshotEmptyView = new TextView(this);
-        screenshotEmptyView.setText(R.string.no_screenshot);
-        screenshotEmptyView.setTextColor(Color.DKGRAY);
-        content.addView(screenshotEmptyView);
-
-        TextView captureLabel = new TextView(this);
-        captureLabel.setText(R.string.latest_capture);
-        captureLabel.setTextColor(Color.BLACK);
-        captureLabel.setTypeface(null, Typeface.BOLD);
-        captureLabel.setPadding(0, dp(20), 0, dp(8));
-        content.addView(captureLabel);
-
-        captureView = new TextView(this);
-        captureView.setTextColor(Color.BLACK);
-        captureView.setTextSize(17);
-        captureView.setTextIsSelectable(true);
-        content.addView(captureView);
+        content.addView(sectionLabel(getString(R.string.previous_text)));
+        previousTextView = textContent();
+        content.addView(previousTextView);
 
         ScrollView scroll = new ScrollView(this);
         scroll.addView(content);
@@ -124,54 +88,69 @@ public class MainActivity extends Activity {
     }
 
     private void refresh() {
-        String enabled = Settings.Secure.getString(getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
-        boolean serviceEnabled = enabled != null && enabled.contains(getPackageName());
-        statusView.setText(serviceEnabled ? R.string.service_enabled : R.string.service_disabled);
+        String enabled = Settings.Secure.getString(
+                getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+        statusView.setText(enabled != null && enabled.contains(getPackageName())
+                ? R.string.service_enabled
+                : R.string.service_disabled);
 
-        String capture = getSharedPreferences(KindleAccessibilityService.PREFS, MODE_PRIVATE)
-                .getString(KindleAccessibilityService.CAPTURE_KEY, "");
-        captureView.setText(TextUtils.isEmpty(capture)
-                ? getString(R.string.no_capture)
-                : capture);
+        currentTextView.setText(readText(KindleAccessibilityService.CURRENT_TEXT_KEY));
+        previousTextView.setText(readText(KindleAccessibilityService.PREVIOUS_TEXT_KEY));
+    }
 
-        java.io.File screenshot = new java.io.File(getFilesDir(), KindleAccessibilityService.IMAGE_FILE);
-        if (screenshot.exists()) {
-            screenshotView.setImageBitmap(BitmapFactory.decodeFile(screenshot.getAbsolutePath()));
-            screenshotView.setVisibility(View.VISIBLE);
-            screenshotEmptyView.setVisibility(View.GONE);
-        } else {
-            screenshotView.setImageDrawable(null);
-            screenshotView.setVisibility(View.GONE);
-            screenshotEmptyView.setVisibility(View.VISIBLE);
-        }
+    private String readText(String key) {
+        String text = getSharedPreferences(KindleAccessibilityService.PREFS, MODE_PRIVATE)
+                .getString(key, "");
+        return TextUtils.isEmpty(text) ? getString(R.string.no_capture) : text;
     }
 
     private void acceptSharedText(Intent intent) {
         CharSequence selected;
-        int message;
         if (Intent.ACTION_PROCESS_TEXT.equals(intent.getAction())) {
             selected = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT);
-            message = R.string.selected_text_received;
         } else if (Intent.ACTION_SEND.equals(intent.getAction())
                 && "text/plain".equals(intent.getType())) {
             selected = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
-            message = R.string.shared_text_received;
         } else {
             return;
         }
         if (!TextUtils.isEmpty(selected)) {
+            String current = getSharedPreferences(KindleAccessibilityService.PREFS, MODE_PRIVATE)
+                    .getString(KindleAccessibilityService.CURRENT_TEXT_KEY, "");
             getSharedPreferences(KindleAccessibilityService.PREFS, MODE_PRIVATE)
                     .edit()
-                    .putString(
-                            KindleAccessibilityService.CAPTURE_KEY,
-                            getString(message) + "\n\n" + selected)
+                    .putString(KindleAccessibilityService.PREVIOUS_TEXT_KEY, current)
+                    .putString(KindleAccessibilityService.CURRENT_TEXT_KEY, selected.toString())
                     .apply();
         }
     }
 
-    private Button button(String label) {
+    private TextView label(String text, int size, boolean bold) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextColor(Color.BLACK);
+        view.setTextSize(size);
+        if (bold) {
+            view.setTypeface(null, Typeface.BOLD);
+        }
+        return view;
+    }
+
+    private TextView sectionLabel(String text) {
+        TextView view = label(text, 16, true);
+        view.setPadding(0, dp(20), 0, dp(8));
+        return view;
+    }
+
+    private TextView textContent() {
+        TextView view = label("", 17, false);
+        view.setTextIsSelectable(true);
+        return view;
+    }
+
+    private Button button(String text) {
         Button button = new Button(this);
-        button.setText(label);
+        button.setText(text);
         button.setTextSize(16);
         button.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(

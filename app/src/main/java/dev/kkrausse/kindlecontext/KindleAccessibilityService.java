@@ -1,76 +1,87 @@
 package dev.example.kindlecontext;
 
+import android.accessibilityservice.AccessibilityButtonController;
 import android.accessibilityservice.AccessibilityService;
 import android.content.Intent;
-import android.graphics.Bitmap;
-import android.graphics.ColorSpace;
-import android.graphics.PixelFormat;
-import android.graphics.drawable.GradientDrawable;
-import android.hardware.HardwareBuffer;
-import android.view.Display;
-import android.view.Gravity;
-import android.view.View;
-import android.view.WindowManager;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
-import android.widget.Button;
 
 import java.util.LinkedHashSet;
 import java.util.Set;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 public class KindleAccessibilityService extends AccessibilityService {
     public static final String KINDLE_PACKAGE = "com.amazon.kindle";
     public static final String PREFS = "capture";
-    public static final String CAPTURE_KEY = "latest_text";
-    public static final String IMAGE_FILE = "kindle-page.png";
+    public static final String CURRENT_TEXT_KEY = "current_text_v2";
+    public static final String PREVIOUS_TEXT_KEY = "previous_text_v2";
+    public static final String EVENT_KEY = "latest_event";
 
-    private WindowManager windowManager;
-    private Button askButton;
-    private ExecutorService screenshotExecutor;
+    private static final String TAG = "KindleContext";
+    private static final String LEGACY_TEXT_KEY = "latest_text";
+    private static final long TEXT_POLL_MS = 1500;
+
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Runnable textPoll = new Runnable() {
+        @Override
+        public void run() {
+            if (isKindleActive()) {
+                captureCurrentTree();
+            }
+            mainHandler.postDelayed(this, TEXT_POLL_MS);
+        }
+    };
+
+    private AccessibilityButtonController accessibilityButtonController;
+    private AccessibilityButtonController.AccessibilityButtonCallback accessibilityButtonCallback;
 
     @Override
     protected void onServiceConnected() {
-        windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-        screenshotExecutor = Executors.newSingleThreadExecutor();
-        askButton = new Button(this);
-        askButton.setText(R.string.ask);
-        askButton.setTextSize(15);
+        migrateCapturedProse();
+        accessibilityButtonController = getAccessibilityButtonController();
+        accessibilityButtonCallback = new AccessibilityButtonController.AccessibilityButtonCallback() {
+            @Override
+            public void onClicked(AccessibilityButtonController controller) {
+                captureCurrentTree();
+                Intent intent = new Intent(KindleAccessibilityService.this, MainActivity.class);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                startActivity(intent);
+            }
 
-        GradientDrawable background = new GradientDrawable();
-        background.setColor(0xff111111);
-        background.setCornerRadius(dp(8));
-        askButton.setTextColor(0xffffffff);
-        askButton.setBackground(background);
-        askButton.setOnClickListener(v -> {
-            captureCurrentTree();
-            captureScreenshot();
-        });
-
-        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                dp(76),
-                dp(52),
-                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                PixelFormat.TRANSLUCENT);
-        params.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
-        params.x = dp(12);
-        windowManager.addView(askButton, params);
+            @Override
+            public void onAvailabilityChanged(
+                    AccessibilityButtonController controller, boolean available) {
+                Log.i(TAG, "Accessibility button available=" + available);
+            }
+        };
+        accessibilityButtonController.registerAccessibilityButtonCallback(accessibilityButtonCallback);
+        mainHandler.post(textPoll);
+        Log.i(TAG, "Text-only service connected; use K to inspect captured prose");
     }
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         CharSequence packageName = event.getPackageName();
-        boolean isKindle = packageName != null && KINDLE_PACKAGE.contentEquals(packageName);
-        if (!isKindle) {
+        if (packageName == null || !KINDLE_PACKAGE.contentEquals(packageName)) {
             return;
         }
 
+        String eventDescription = AccessibilityEvent.eventTypeToString(event.getEventType())
+                + " class=" + event.getClassName()
+                + " text=" + event.getText()
+                + " description=" + event.getContentDescription();
+        Log.i(TAG, eventDescription);
+        getSharedPreferences(PREFS, MODE_PRIVATE)
+                .edit()
+                .putString(EVENT_KEY, eventDescription)
+                .apply();
         captureCurrentTree();
+    }
+
+    @Override
+    public void onInterrupt() {
     }
 
     private int collectText(AccessibilityNodeInfo node, Set<String> pieces) {
@@ -94,94 +105,84 @@ public class KindleAccessibilityService extends AccessibilityService {
         return count;
     }
 
-    @Override
-    public void onInterrupt() {
-    }
-
-    private void captureScreenshot() {
-        askButton.setEnabled(false);
-        askButton.setText(R.string.capturing);
-        takeScreenshot(Display.DEFAULT_DISPLAY, screenshotExecutor, new TakeScreenshotCallback() {
-            @Override
-            public void onSuccess(ScreenshotResult screenshot) {
-                HardwareBuffer buffer = screenshot.getHardwareBuffer();
-                ColorSpace colorSpace = screenshot.getColorSpace();
-                Bitmap hardwareBitmap = Bitmap.wrapHardwareBuffer(buffer, colorSpace);
-                Bitmap bitmap = hardwareBitmap == null
-                        ? null
-                        : hardwareBitmap.copy(Bitmap.Config.ARGB_8888, false);
-                buffer.close();
-
-                if (bitmap == null) {
-                    finishScreenshot("Screenshot failed: Android returned no readable image.");
-                    return;
-                }
-
-                try (FileOutputStream output = new FileOutputStream(new File(getFilesDir(), IMAGE_FILE))) {
-                    if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
-                        throw new IOException("PNG encoding failed");
-                    }
-                    finishScreenshot("Screenshot captured locally. Kindle still exposed only the accessibility text shown below.");
-                } catch (IOException error) {
-                    finishScreenshot("Screenshot save failed: " + error.getMessage());
-                } finally {
-                    bitmap.recycle();
-                }
-            }
-
-            @Override
-            public void onFailure(int errorCode) {
-                finishScreenshot("Screenshot blocked or failed (Android error " + errorCode + ").");
-            }
-        });
-    }
-
-    private void finishScreenshot(String status) {
-        String accessibilityText = getSharedPreferences(PREFS, MODE_PRIVATE)
-                .getString(CAPTURE_KEY, "");
-        getSharedPreferences(PREFS, MODE_PRIVATE)
-                .edit()
-                .putString(CAPTURE_KEY, status + "\n\nAccessibility text:\n" + accessibilityText)
-                .apply();
-
-        getMainExecutor().execute(() -> {
-            askButton.setText(R.string.ask);
-            askButton.setEnabled(true);
-            Intent intent = new Intent(this, MainActivity.class);
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            startActivity(intent);
-        });
-    }
-
     private void captureCurrentTree() {
         AccessibilityNodeInfo root = getRootInActiveWindow();
-        Set<String> pieces = new LinkedHashSet<>();
-        int nodeCount = root == null ? 0 : collectText(root, pieces);
-        String text = String.join("\n\n", pieces).trim();
-        if (text.isEmpty()) {
-            String rootClass = root == null ? "none" : String.valueOf(root.getClassName());
-            text = "No accessibility text was exposed by Kindle.\n\n"
-                    + "Nodes inspected: " + nodeCount + "\n"
-                    + "Root class: " + rootClass;
+        if (root == null || root.getPackageName() == null
+                || !KINDLE_PACKAGE.contentEquals(root.getPackageName())) {
+            return;
         }
+
+        Set<String> pieces = new LinkedHashSet<>();
+        int nodeCount = collectText(root, pieces);
+        String text = String.join("\n\n", pieces).trim();
+        if (!looksLikeProse(text)) {
+            Log.i(TAG, "No Kindle prose; inspected " + text.length()
+                    + " characters from " + nodeCount + " nodes");
+            return;
+        }
+
+        String current = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getString(CURRENT_TEXT_KEY, "");
+        if (text.equals(current)) {
+            return;
+        }
+
         getSharedPreferences(PREFS, MODE_PRIVATE)
                 .edit()
-                .putString(CAPTURE_KEY, text)
+                .putString(PREVIOUS_TEXT_KEY, current)
+                .putString(CURRENT_TEXT_KEY, text)
                 .apply();
+        Log.i(TAG, "Captured " + text.length() + " characters from " + nodeCount + " nodes");
+    }
+
+    private boolean looksLikeProse(String text) {
+        if (text.length() < 800) {
+            return false;
+        }
+        int spaces = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (Character.isWhitespace(text.charAt(i))) {
+                spaces++;
+            }
+        }
+        return spaces >= 100;
+    }
+
+    private void migrateCapturedProse() {
+        String current = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getString(CURRENT_TEXT_KEY, "");
+        if (looksLikeProse(current)) {
+            return;
+        }
+
+        String legacy = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getString(LEGACY_TEXT_KEY, "");
+        int separator = legacy.indexOf("\n\n");
+        if (separator >= 0) {
+            legacy = legacy.substring(separator + 2);
+        }
+        if (looksLikeProse(legacy)) {
+            getSharedPreferences(PREFS, MODE_PRIVATE)
+                    .edit()
+                    .putString(CURRENT_TEXT_KEY, legacy)
+                    .putString(PREVIOUS_TEXT_KEY, "")
+                    .apply();
+        }
+    }
+
+    private boolean isKindleActive() {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        return root != null
+                && root.getPackageName() != null
+                && KINDLE_PACKAGE.contentEquals(root.getPackageName());
     }
 
     @Override
     public void onDestroy() {
-        if (windowManager != null && askButton != null) {
-            windowManager.removeView(askButton);
-        }
-        if (screenshotExecutor != null) {
-            screenshotExecutor.shutdownNow();
+        mainHandler.removeCallbacksAndMessages(null);
+        if (accessibilityButtonController != null && accessibilityButtonCallback != null) {
+            accessibilityButtonController.unregisterAccessibilityButtonCallback(accessibilityButtonCallback);
         }
         super.onDestroy();
-    }
-
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 }
