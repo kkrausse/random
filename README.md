@@ -1,20 +1,281 @@
-# Kindle Context POC
+# Kindle Context
 
-Android proof of concept for capturing highlighted Kindle text and its visible-page context on a BOOX Palma 2. The app uses an accessibility service with spoken feedback so Kindle exposes its virtual prose nodes.
+Android reading assistant for a BOOX Palma 2. It captures a Kindle highlight plus visible-page context, sends that context to a dedicated OpenCode V2 server over Tailscale, and provides persistent reading chats on the device.
 
-## Current Flow
+## Architecture
 
-1. Highlight text in Kindle so its selection toolbar is visible.
+```text
+Kindle on Palma 2
+  -> Android accessibility service
+  -> Kindle Context Android app
+  -> HTTP Basic over Tailscale
+  -> OpenCode V2 on Raspberry Pi
+  -> configured model provider
+```
+
+The deployed components are intentionally isolated:
+
+| Component | Value |
+| --- | --- |
+| Android package | `dev.example.kindlecontext` |
+| Kindle package | `com.amazon.kindle` |
+| Server hostname | `raspberrypi.example.ts.net` |
+| Tailscale IPv4 | `100.64.0.10` |
+| Server port | `41137` |
+| Server URL | `http://raspberrypi.example.ts.net:41137` |
+| systemd service | `palma2-opencode-v2.service` |
+| Deployment root | `/home/pi/deploys/palma2-opencode` |
+| OpenCode location | `/home/pi/deploys/palma2-opencode/workdir` |
+
+Port `41137`, the service name, and the deployment root distinguish this instance from other OpenCode processes on the Pi. The service binds only to the Pi's Tailscale address, not its LAN address or every interface.
+
+Plain HTTP is intentional because traffic is carried inside Tailscale. OpenCode still requires HTTP Basic authentication.
+
+## Reading Flow
+
+1. Highlight text in Kindle while its selection toolbar is visible.
 2. Press the floating `K` accessibility shortcut.
-3. The service captures prose nodes that intersect the physical display.
+3. The service captures prose nodes intersecting the physical display.
 4. The service invokes Kindle's exposed `Copy` action.
-5. The POC opens, becomes the focused app, and reads the copied highlight with Android's foreground clipboard access.
+5. The app opens and reads the copied highlight with Android's foreground clipboard access.
+6. Choose a prompt template or enter a custom question.
+7. The app creates an OpenCode session and sends the previous page, current page, highlight, and question.
+8. The chat screen polls for the response and accepts follow-up messages.
+9. Use `CHATS` to reopen sessions stored by the server or `KINDLE` to return to the book.
 
-If Kindle does not expose `Copy` or readable clipboard text, the app falls back to standard accessibility selection offsets and reports when neither path supplies highlighted text.
+The initial prompt places the question last and clearly labels each context section. It also instructs the model to answer concisely for a small e-ink display.
 
-Kindle retains the copied selection as an annotation. Automatic deletion is intentionally not attempted because Copy closes and invalidates the selection toolbar before its accessible `Delete Highlight` action can run. See `progress_20260801_113544.md` for the tested alternatives and evidence.
+If Kindle does not expose `Copy` or readable clipboard text, the app falls back to standard accessibility selection offsets. The full visible-page context remains available when no highlight can be recovered.
 
-## Local Setup
+Kindle retains copied selections as annotations. Automatic deletion is intentionally not attempted because Copy closes and invalidates the selection toolbar before its accessible `Delete Highlight` action can run. See `progress_20260801_113544.md` for tested alternatives.
+
+## Repository Layout
+
+```text
+app/                                  Android application
+server/deploy.sh                      Repeatable Pi deployment
+server/palma2-opencode-v2.service     systemd unit
+server/runtime/opencode.json          Checked-in OpenCode policy
+server/runtime/AGENTS.md               Reading-assistant instructions
+```
+
+The remote deployment becomes:
+
+```text
+/home/pi/deploys/palma2-opencode/
+  .git/
+  .gitignore
+  AGENTS.md
+  opencode.json
+  workdir/
+  state/
+    server.env
+    share/opencode/
+```
+
+`opencode.json`, `AGENTS.md`, and `.gitignore` are copied from `server/runtime/` and committed into a Git repository on the Pi. `workdir/` and `state/` are excluded from that repository.
+
+## Server Policy
+
+OpenCode starts with `workdir/` as its location. It discovers the parent `opencode.json` and `AGENTS.md`, but relative mutations cannot escape the active location.
+
+The checked-in V2 permission policy denies every action first, then allows only:
+
+- `read`
+- `glob`
+- `grep`
+- `webfetch`
+- `websearch`
+
+This denies shell commands, file edits, subagents, skills, and interactive questions. The reading instructions also tell the model to treat book text as quoted context rather than instructions.
+
+Changes to `server/runtime/` do nothing until `./server/deploy.sh` is run.
+
+## Pi Prerequisites
+
+The tested host is the `pi` user on `raspberrypi.example.ts.net`. It needs:
+
+- Tailscale connected with IPv4 `100.64.0.10`
+- Passwordless `sudo` for systemd installation and control
+- `git`, `curl`, `openssl`, `rsync`, and SSH access
+- OpenCode V2's ARM64 native binary
+- An SSH alias named `your-pi`, unless `PALMA_SERVER_HOST` is supplied
+
+The current native binary is:
+
+```text
+/home/pi/.bun/install/global/node_modules/@opencode-ai/cli-linux-arm64/bin/opencode2
+```
+
+The installed version at initial deployment was `v0.0.0-next-15760`.
+
+The `~/.bun/bin/opencode2` JavaScript wrapper does not work on this Pi because `/usr/bin/env node` is unavailable. The systemd unit deliberately invokes the native ARM64 binary directly. If the package layout changes during an upgrade, update `server/palma2-opencode-v2.service`.
+
+Install or update the beta package with Bun when needed:
+
+```sh
+ssh your-pi '/home/pi/.bun/bin/bun install -g --trust @opencode-ai/cli@next'
+ssh your-pi '/home/pi/.bun/install/global/node_modules/@opencode-ai/cli-linux-arm64/bin/opencode2 --version'
+```
+
+## Server Deployment
+
+Deploy from the repository root:
+
+```sh
+./server/deploy.sh
+```
+
+Use another SSH target without editing the script:
+
+```sh
+PALMA_SERVER_HOST=pi@raspberrypi.example.ts.net ./server/deploy.sh
+```
+
+The script performs these operations:
+
+1. Creates `/home/pi/deploys/palma2-opencode`.
+2. Synchronizes checked-in runtime files while preserving `.git/`, `workdir/`, and `state/`.
+3. Creates the workdir and isolated OpenCode data directory.
+4. Generates `state/server.env` with mode `0600` on first deployment.
+5. Seeds a private `auth.json` from the Pi user's existing OpenCode data only when no isolated copy exists.
+6. Initializes the deployment root as a Git repository and commits runtime configuration.
+7. Installs and enables `palma2-opencode-v2.service`.
+8. Restarts the service.
+9. Polls the authenticated `/api/health` endpoint before returning success.
+
+The HTTP password is stable across normal deploys and restarts because it lives in `state/server.env`. It is not printed by the deploy script or committed to Git.
+
+## Service Operation
+
+Check status and the listener:
+
+```sh
+ssh your-pi 'sudo systemctl status palma2-opencode-v2.service --no-pager'
+ssh your-pi 'ss -ltn | grep 41137'
+```
+
+Restart, stop, or start the server:
+
+```sh
+ssh your-pi 'sudo systemctl restart palma2-opencode-v2.service'
+ssh your-pi 'sudo systemctl stop palma2-opencode-v2.service'
+ssh your-pi 'sudo systemctl start palma2-opencode-v2.service'
+```
+
+Follow service logs:
+
+```sh
+ssh your-pi 'sudo journalctl -u palma2-opencode-v2.service -f'
+```
+
+Inspect OpenCode's application log:
+
+```sh
+ssh your-pi 'tail -f /home/pi/deploys/palma2-opencode/state/share/opencode/log/opencode.log'
+```
+
+Run an authenticated health check from the Pi without displaying the password:
+
+```sh
+ssh your-pi '. /home/pi/deploys/palma2-opencode/state/server.env; curl --fail --user "opencode:$OPENCODE_PASSWORD" http://100.64.0.10:41137/api/health'
+```
+
+An unauthenticated request returning `401 Unauthorized` with `WWW-Authenticate: Basic` proves the server is reachable but does not prove the password works.
+
+## Authentication
+
+OpenCode V2 requires a server password. The username is always `opencode`; the generated password is stored only at:
+
+```text
+/home/pi/deploys/palma2-opencode/state/server.env
+```
+
+Read it when configuring the Android app:
+
+```sh
+ssh your-pi "sed -n 's/^OPENCODE_PASSWORD=//p' /home/pi/deploys/palma2-opencode/state/server.env"
+```
+
+The Android app stores the password in its private SharedPreferences and sends `Authorization: Basic base64(opencode:<password>)`. It is not stored in this repository.
+
+To rotate the password:
+
+```sh
+ssh your-pi 'sudo systemctl stop palma2-opencode-v2.service'
+ssh your-pi 'umask 077; printf "OPENCODE_PASSWORD=%s\n" "$(openssl rand -hex 24)" > /home/pi/deploys/palma2-opencode/state/server.env'
+ssh your-pi 'sudo systemctl start palma2-opencode-v2.service'
+```
+
+After rotation, update `SERVER PASSWORD` in the app's `SETTINGS` screen.
+
+## Model Setup
+
+Provider credentials are server-side and separate from the HTTP server password. OpenCode V2 did not import the existing V1 OpenAI OAuth connection into this isolated deployment. Until a V2 provider is connected, the server falls back to the public `Ling-3.0-flash Free` model.
+
+Connect the deployed server through a matching V2 TUI:
+
+```sh
+ssh -t your-pi 'cd /home/pi/deploys/palma2-opencode/workdir && . ../state/server.env && /home/pi/.bun/install/global/node_modules/@opencode-ai/cli-linux-arm64/bin/opencode2 --server http://100.64.0.10:41137'
+```
+
+In the TUI:
+
+1. Run `/connect`.
+2. Select OpenAI or the intended provider.
+3. Complete the offered browser or headless OAuth flow.
+4. Run `/models` and record the exact provider and model IDs.
+5. Run `/variants` and verify that `high` exists for that model.
+
+Do not guess model identifiers. The requested GPT-5.6 Luna High model has not yet been resolved against this server's catalog.
+
+Inspect enabled models and the current default after connection:
+
+```sh
+ssh your-pi '. /home/pi/deploys/palma2-opencode/state/server.env; curl --silent --user "opencode:$OPENCODE_PASSWORD" http://100.64.0.10:41137/api/model'
+ssh your-pi '. /home/pi/deploys/palma2-opencode/state/server.env; curl --silent --user "opencode:$OPENCODE_PASSWORD" http://100.64.0.10:41137/api/model/default'
+```
+
+OpenCode V2's root model configuration does not retain a variant. If the reading app must always use a specific `high` variant, pass the exact `{ providerID, id, variant }` model reference when creating the session after confirming it from the server catalog.
+
+## Server Persistence
+
+OpenCode state is redirected with `XDG_DATA_HOME` to:
+
+```text
+/home/pi/deploys/palma2-opencode/state/share/opencode/
+```
+
+This contains session history, SQLite data, logs, and provider state. The HTTP password is adjacent at `state/server.env`. Deployment preserves the entire `state/` directory.
+
+Back up the server while it is stopped:
+
+```sh
+ssh your-pi 'sudo systemctl stop palma2-opencode-v2.service'
+ssh your-pi 'tar -C /home/pi/deploys/palma2-opencode -czf /home/pi/palma2-opencode-state.tgz state'
+ssh your-pi 'sudo systemctl start palma2-opencode-v2.service'
+scp your-pi:/home/pi/palma2-opencode-state.tgz .
+```
+
+Do not edit or delete the SQLite database while the service is running. Back up `state/` before database recovery or migration work.
+
+## OpenCode API Usage
+
+The Android client currently uses these V2 endpoints:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/health` | Test settings |
+| `POST` | `/api/session` | Create a reading chat at the configured location |
+| `GET` | `/api/session` | List recent chats |
+| `POST` | `/api/session/{id}/prompt` | Send initial and follow-up messages |
+| `GET` | `/api/session/{id}/message` | Poll conversation messages |
+
+Responses are currently polled every two seconds while OpenCode is working. Streaming can replace polling later.
+
+The V2 API and client contract are beta. After upgrading OpenCode, verify `/api/health`, session creation, prompting, message parsing, and session listing before relying on the reader.
+
+## Android Prerequisites
 
 The Android SDK is installed without Android Studio:
 
@@ -23,24 +284,32 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 export ADB="$ANDROID_HOME/platform-tools/adb"
 ```
 
-The tested device serial is `BOOX_DEVICE_SERIAL`. Check the current connection before device commands:
+The tested Palma 2 serial is `BOOX_DEVICE_SERIAL`. Confirm the device before issuing commands:
 
 ```sh
 "$ADB" devices -l
 ```
 
-On the Palma 2, USB debugging is available under `Settings -> More Settings -> USB Debug Mode`.
+On the Palma 2, USB debugging is under `Settings -> More Settings -> USB Debug Mode`.
+
+The Palma and Raspberry Pi must both be connected to the same Tailscale network. A basic reachability check from the device is:
+
+```sh
+"$ADB" shell 'printf "GET /api/health HTTP/1.0\r\nHost: raspberrypi.example.ts.net\r\n\r\n" | toybox nc -w 5 raspberrypi.example.ts.net 41137 | head -1'
+```
+
+`HTTP/1.1 401 Unauthorized` is expected for this unauthenticated connectivity test.
 
 ## Build And Install
 
-Build and run Android lint:
+Build and run lint:
 
 ```sh
 export ANDROID_HOME="$HOME/Library/Android/sdk"
 ./gradlew --no-daemon clean assembleDebug lintDebug
 ```
 
-Install the debug APK and launch it:
+Install and launch:
 
 ```sh
 export ADB="$HOME/Library/Android/sdk/platform-tools/adb"
@@ -48,23 +317,40 @@ export ADB="$HOME/Library/Android/sdk/platform-tools/adb"
 "$ADB" shell am start -n dev.example.kindlecontext/.MainActivity
 ```
 
-The APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
+The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. Installing with `-r` preserves captured context and connection preferences.
+
+## App Configuration
+
+Open `SETTINGS` in Kindle Context and configure:
+
+| Setting | Default |
+| --- | --- |
+| Server URL | `http://raspberrypi.example.ts.net:41137` |
+| Workspace directory | `/home/pi/deploys/palma2-opencode/workdir` |
+| Server password | No compiled default; enter the value from `state/server.env` |
+
+Press `SAVE AND TEST`. A successful request displays `Connected to OpenCode.`
+
+The manifest allows cleartext traffic because the endpoint is HTTP over Tailscale. Do not point the app at an untrusted cleartext network endpoint.
+
+Changing app settings only changes private Android preferences. It does not modify the checked-in server policy.
 
 ## BOOX Configuration
 
-Disable freezing for `Kindle Context POC` under `Settings -> Apps & Notifications -> Freeze Settings / App Freeze`. BOOX freezing disables the package, kills the service, removes it from enabled accessibility services, and clears the accessibility-button target.
+Disable freezing for `Kindle Context POC` under `Settings -> Apps & Notifications -> Freeze Settings / App Freeze`. BOOX freezing disables the package, kills its accessibility service, removes it from enabled accessibility services, and clears the accessibility-button target.
 
 After installing an APK, verify:
 
 1. `Kindle Context POC` is not frozen.
 2. `Kindle Context Capture` is enabled in Android accessibility settings.
 3. The floating `K` button targets `Kindle Context Capture`.
+4. The app's `SETTINGS` connection test succeeds.
 
 The separate BOOX NaviBall service can remain enabled.
 
 ## Accessibility Recovery
 
-Inspect the current state:
+Inspect current state:
 
 ```sh
 "$ADB" shell dumpsys accessibility
@@ -85,7 +371,36 @@ Development-only recovery commands that preserve NaviBall:
 
 If Android still lists the service as crashed, toggle only `Kindle Context Capture` off and on in accessibility settings.
 
-## Diagnostics
+## Troubleshooting
+
+### App reports HTTP 401
+
+The server is reachable, but the app password is absent or stale. Read `state/server.env`, update `SERVER PASSWORD`, then use `SAVE AND TEST`.
+
+### App cannot connect
+
+Verify Tailscale on both devices, resolve `raspberrypi.example.ts.net`, check the `41137` listener, and run the authenticated server health check. Confirm the app URL uses `http`, not `https`.
+
+### Server repeatedly restarts
+
+Run:
+
+```sh
+ssh your-pi 'sudo systemctl status palma2-opencode-v2.service --no-pager -l'
+ssh your-pi 'sudo journalctl -u palma2-opencode-v2.service -n 100 --no-pager'
+```
+
+Common causes are a missing native binary after upgrade, a changed Tailscale IP, a missing `workdir/`, or an invalid `opencode.json`.
+
+### Server answers but no model is available
+
+Inspect `/api/model` and `/api/integration/openai`. Reconnect the provider through the V2 TUI. V1 credentials are not sufficient for this isolated V2 beta deployment.
+
+### Chats disappear
+
+Confirm systemd still sets `XDG_DATA_HOME=/home/pi/deploys/palma2-opencode/state/share` and that the service is not using the Pi user's default OpenCode database.
+
+### Accessibility capture problems
 
 Follow app logs:
 
@@ -100,7 +415,7 @@ Capture Kindle's UI Automator hierarchy:
 "$ADB" pull /sdcard/kindle-window.xml .
 ```
 
-Pull the debug app's private accessibility diagnostics:
+Pull private accessibility diagnostics:
 
 ```sh
 "$ADB" exec-out run-as dev.example.kindlecontext \
@@ -109,12 +424,47 @@ Pull the debug app's private accessibility diagnostics:
   cat files/kindle-accessibility-events.txt > kindle-accessibility-events.txt
 ```
 
-These files contain book prose. Keep them local and remove or gate this diagnostic persistence before production use.
+These files contain book prose. Keep them local and remove or gate diagnostic persistence before production use.
+
+## Upgrade Procedure
+
+1. Back up `state/`.
+2. Upgrade the V2 package on the Pi.
+3. Confirm the native binary path and version.
+4. Run `./server/deploy.sh` to reinstall and restart the service.
+5. Verify authenticated health and model catalog endpoints.
+6. Build and lint the Android app against any changed API contract.
+7. Install the APK with `adb install -r`.
+8. Test capture, a new session, a reply, and prior-session loading.
+
+OpenCode V2 is beta. Pinning a known-good CLI package version is preferable once this workflow is stable.
+
+## Security And Privacy
+
+- The server listens only on its Tailscale IPv4 address.
+- HTTP Basic protects the API; Tailscale protects transport confidentiality.
+- The HTTP password and provider credentials are never checked into Git.
+- The agent cannot run shell commands or edit files under the checked-in policy.
+- Captured book text is sent to the configured model provider and stored in OpenCode session history.
+- Android stores recent captured context and the server password in private app storage.
+- Accessibility diagnostic files may contain substantial copyrighted or sensitive text.
+- Rotating the server password does not rotate provider credentials.
+- Changing `AGENTS.md` or prompt wording is a behavior change and should be reviewed before deployment.
 
 ## Removal
+
+Remove the Android app:
 
 ```sh
 "$ADB" uninstall dev.example.kindlecontext
 ```
 
-Uninstalling removes the app's private captures and preferences. It does not affect BOOX NaviBall.
+Uninstalling removes private captures and connection preferences. It does not affect BOOX NaviBall or server-side OpenCode history.
+
+Stop and disable the Pi service without deleting history:
+
+```sh
+ssh your-pi 'sudo systemctl disable --now palma2-opencode-v2.service'
+```
+
+The deployment root and `state/` remain until deliberately archived or removed.

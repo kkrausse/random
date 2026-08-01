@@ -5,82 +5,53 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
+import android.text.InputType;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.View;
+import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.text.DateFormat;
+import java.util.Date;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 public class MainActivity extends Activity {
-    private TextView statusView;
-    private TextView selectedTextView;
-    private TextView currentTextView;
-    private TextView previousTextView;
+    private static final String SETTINGS = "opencode_connection";
+    private static final String SERVER_KEY = "server_url";
+    private static final String TOKEN_KEY = "server_token";
+    private static final String DIRECTORY_KEY = "workspace_directory";
+    private static final String DEFAULT_SERVER = "http://raspberrypi.example.ts.net:41137";
+    private static final String DEFAULT_DIRECTORY = "/home/pi/deploys/palma2-opencode/workdir";
+
+    private final ExecutorService network = Executors.newSingleThreadExecutor();
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private String sessionId;
     private boolean readClipboardOnResume;
+    private boolean polling;
+    private LinearLayout root;
+    private LinearLayout transcript;
+    private TextView statusView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         acceptSharedText(getIntent());
         acceptCaptureIntent(getIntent());
-
-        int space = dp(20);
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(space, space, space, space);
-        content.setBackgroundColor(Color.WHITE);
-
-        TextView title = label(getString(R.string.title), 24, true);
-        content.addView(title);
-
-        TextView explanation = label(getString(R.string.explanation), 16, false);
-        explanation.setTextColor(Color.DKGRAY);
-        explanation.setPadding(0, dp(12), 0, dp(16));
-        content.addView(explanation);
-
-        statusView = label("", 16, false);
-        statusView.setPadding(0, 0, 0, dp(12));
-        content.addView(statusView);
-
-        Button enableButton = button(getString(R.string.enable_service));
-        enableButton.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
-        content.addView(enableButton);
-
-        Button kindleButton = button(getString(R.string.open_kindle));
-        kindleButton.setOnClickListener(v -> {
-            Intent launch = getPackageManager().getLaunchIntentForPackage(KindleAccessibilityService.KINDLE_PACKAGE);
-            if (launch != null) {
-                startActivity(launch);
-            } else {
-                statusView.setText(R.string.kindle_not_found);
-            }
-        });
-        content.addView(kindleButton);
-
-        Button refreshButton = button(getString(R.string.refresh_capture));
-        refreshButton.setOnClickListener(v -> refresh());
-        content.addView(refreshButton);
-
-        content.addView(sectionLabel(getString(R.string.selected_text)));
-        selectedTextView = textContent();
-        content.addView(selectedTextView);
-
-        content.addView(sectionLabel(getString(R.string.current_text)));
-        currentTextView = textContent();
-        content.addView(currentTextView);
-
-        content.addView(sectionLabel(getString(R.string.previous_text)));
-        previousTextView = textContent();
-        content.addView(previousTextView);
-
-        ScrollView scroll = new ScrollView(this);
-        scroll.addView(content);
-        setContentView(scroll);
+        showCapture();
     }
 
     @Override
@@ -89,62 +60,414 @@ public class MainActivity extends Activity {
         setIntent(intent);
         acceptSharedText(intent);
         acceptCaptureIntent(intent);
-        refresh();
+        showCapture();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        refresh();
         if (readClipboardOnResume) {
             readClipboardOnResume = false;
-            selectedTextView.postDelayed(this::captureClipboardText, 250);
+            handler.postDelayed(() -> {
+                captureClipboardText();
+                showCapture();
+            }, 250);
         }
     }
 
-    private void refresh() {
+    private void showCapture() {
+        polling = false;
+        beginScreen();
+        addTopBar("NEW QUESTION", true);
+        addTitle("READING CONTEXT");
+
         String enabled = Settings.Secure.getString(
                 getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
-        statusView.setText(enabled != null && enabled.contains(getPackageName())
-                ? R.string.service_enabled
-                : R.string.service_disabled);
+        if (enabled == null || !enabled.contains(getPackageName())) {
+            status("Capture service is disabled.");
+            Button enable = button("ENABLE CAPTURE SERVICE");
+            enable.setOnClickListener(v -> startActivity(
+                    new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+            root.addView(enable);
+        }
 
-        selectedTextView.setText(readSelectedText());
-        currentTextView.setText(readText(KindleAccessibilityService.CURRENT_TEXT_KEY));
-        previousTextView.setText(readText(KindleAccessibilityService.PREVIOUS_TEXT_KEY));
+        String selected = captured(KindleAccessibilityService.SELECTED_TEXT_KEY);
+        String current = captured(KindleAccessibilityService.CURRENT_TEXT_KEY);
+        String previous = captured(KindleAccessibilityService.PREVIOUS_TEXT_KEY);
+        addContext("HIGHLIGHT", selected, "No highlight captured");
+        addContext("VISIBLE PAGE", current, "No page context captured");
+        if (!previous.isEmpty()) {
+            addContext("PREVIOUS PAGE", previous, "");
+        }
+
+        addSection("ASK");
+        addPromptButton("EXPLAIN THIS PASSAGE", "Explain this passage clearly and concisely.");
+        addPromptButton("EXPLAIN TERMS", "Explain the unfamiliar terms, names, and references in this passage.");
+        addPromptButton("WHY IT MATTERS", "Explain why this passage matters in the surrounding argument or story.");
+
+        EditText custom = input("Ask your own question...");
+        custom.setMinLines(2);
+        root.addView(custom);
+        Button send = button("START CHAT");
+        send.setOnClickListener(v -> {
+            String question = custom.getText().toString().trim();
+            if (!question.isEmpty()) {
+                startChat(question);
+            }
+        });
+        root.addView(send);
+        statusView = status("");
     }
 
-    private String readText(String key) {
-        String text = getSharedPreferences(KindleAccessibilityService.PREFS, MODE_PRIVATE)
-                .getString(key, "");
-        return TextUtils.isEmpty(text) ? getString(R.string.no_capture) : text;
+    private void showChat() {
+        beginScreen();
+        addTopBar("CHAT", true);
+        transcript = new LinearLayout(this);
+        transcript.setOrientation(LinearLayout.VERTICAL);
+        root.addView(transcript);
+        statusView = status("Loading conversation...");
+
+        EditText reply = input("Reply...");
+        reply.setSingleLine(false);
+        reply.setImeOptions(EditorInfo.IME_ACTION_SEND);
+        root.addView(reply);
+        Button send = button("SEND");
+        send.setOnClickListener(v -> {
+            String text = reply.getText().toString().trim();
+            if (!text.isEmpty()) {
+                reply.setText("");
+                sendFollowUp(text);
+            }
+        });
+        root.addView(send);
+        polling = true;
+        loadMessages();
     }
 
-    private String readSelectedText() {
-        String text = getSharedPreferences(KindleAccessibilityService.PREFS, MODE_PRIVATE)
-                .getString(KindleAccessibilityService.SELECTED_TEXT_KEY, "");
-        return TextUtils.isEmpty(text) ? getString(R.string.no_selection) : text;
+    private void showSessions() {
+        polling = false;
+        beginScreen();
+        addTopBar("PAST CHATS", false);
+        addTitle("READING CHATS");
+        statusView = status("Loading...");
+        network.execute(() -> {
+            try {
+                List<OpenCodeClient.Session> sessions = client().listSessions();
+                runOnUiThread(() -> {
+                    statusView.setText(sessions.isEmpty() ? "No chats yet." : "");
+                    DateFormat format = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT);
+                    for (OpenCodeClient.Session session : sessions) {
+                        Button item = button(session.title + "\n" + format.format(new Date(session.updated)));
+                        item.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+                        item.setOnClickListener(v -> {
+                            sessionId = session.id;
+                            showChat();
+                        });
+                        root.addView(item);
+                    }
+                });
+            } catch (Exception error) {
+                showError(error);
+            }
+        });
+    }
+
+    private void showSettings() {
+        polling = false;
+        beginScreen();
+        addTopBar("CONNECTION", false);
+        SharedPreferences preferences = getSharedPreferences(SETTINGS, MODE_PRIVATE);
+        EditText server = settingInput("SERVER URL",
+                preferences.getString(SERVER_KEY, DEFAULT_SERVER));
+        EditText directory = settingInput("WORKSPACE DIRECTORY",
+                preferences.getString(DIRECTORY_KEY, DEFAULT_DIRECTORY));
+        EditText token = settingInput("SERVER PASSWORD",
+                preferences.getString(TOKEN_KEY, ""));
+        token.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        Button save = button("SAVE AND TEST");
+        save.setOnClickListener(v -> {
+            preferences.edit()
+                    .putString(SERVER_KEY, server.getText().toString().trim())
+                    .putString(DIRECTORY_KEY, directory.getText().toString().trim())
+                    .putString(TOKEN_KEY, token.getText().toString().trim())
+                    .apply();
+            statusView.setText("Testing connection...");
+            network.execute(() -> {
+                try {
+                    client().health();
+                    runOnUiThread(() -> statusView.setText("Connected to OpenCode."));
+                } catch (Exception error) {
+                    showError(error);
+                }
+            });
+        });
+        root.addView(save);
+        statusView = status("");
+    }
+
+    private void startChat(String question) {
+        statusView.setText("Starting chat...");
+        setButtonsEnabled(false);
+        String prompt = readingPrompt(question);
+        network.execute(() -> {
+            try {
+                OpenCodeClient client = client();
+                sessionId = client.createSession();
+                client.sendMessage(sessionId, prompt);
+                runOnUiThread(this::showChat);
+            } catch (Exception error) {
+                runOnUiThread(() -> setButtonsEnabled(true));
+                showError(error);
+            }
+        });
+    }
+
+    private void sendFollowUp(String text) {
+        statusView.setText("Sending...");
+        network.execute(() -> {
+            try {
+                client().sendMessage(sessionId, text);
+                runOnUiThread(() -> {
+                    polling = true;
+                    loadMessages();
+                });
+            } catch (Exception error) {
+                showError(error);
+            }
+        });
+    }
+
+    private void loadMessages() {
+        if (!polling || sessionId == null) {
+            return;
+        }
+        network.execute(() -> {
+            try {
+                List<OpenCodeClient.Message> messages = client().listMessages(sessionId);
+                runOnUiThread(() -> renderMessages(messages));
+            } catch (Exception error) {
+                showError(error);
+            }
+        });
+    }
+
+    private void renderMessages(List<OpenCodeClient.Message> messages) {
+        if (transcript == null) {
+            return;
+        }
+        transcript.removeAllViews();
+        boolean waiting = messages.isEmpty();
+        for (OpenCodeClient.Message message : messages) {
+            addMessage(message.role, message.text.isEmpty() ? "Thinking..." : message.text);
+            waiting = "YOU".equals(message.role) || !message.complete;
+        }
+        statusView.setText(waiting ? "OpenCode is working..." : "");
+        if (polling) {
+            handler.removeCallbacksAndMessages(null);
+            handler.postDelayed(this::loadMessages, waiting ? 2_000 : 5_000);
+        }
+    }
+
+    private String readingPrompt(String question) {
+        return "You are helping someone understand a book on a small e-ink reader. "
+                + "Answer concisely and use web research when it materially improves the answer.\n\n"
+                + "PREVIOUS PAGE CONTEXT\n" + valueOrNone(captured(KindleAccessibilityService.PREVIOUS_TEXT_KEY))
+                + "\n\nCURRENT PAGE CONTEXT\n" + valueOrNone(captured(KindleAccessibilityService.CURRENT_TEXT_KEY))
+                + "\n\nHIGHLIGHTED PASSAGE\n" + valueOrNone(captured(KindleAccessibilityService.SELECTED_TEXT_KEY))
+                + "\n\nQUESTION\n" + question;
+    }
+
+    private void beginScreen() {
+        handler.removeCallbacksAndMessages(null);
+        ScrollView scroll = new ScrollView(this);
+        root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(18), dp(14), dp(18), dp(28));
+        root.setBackgroundColor(Color.WHITE);
+        scroll.addView(root);
+        setContentView(scroll);
+    }
+
+    private void addTopBar(String heading, boolean sessionsButton) {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        if (sessionsButton) {
+            Button sessions = smallButton("CHATS");
+            sessions.setOnClickListener(v -> showSessions());
+            bar.addView(sessions);
+        } else {
+            Button back = smallButton("BACK");
+            back.setOnClickListener(v -> showCapture());
+            bar.addView(back);
+        }
+        TextView title = label(heading, 15, true);
+        title.setGravity(Gravity.CENTER);
+        bar.addView(title, new LinearLayout.LayoutParams(0, dp(48), 1));
+        Button kindle = smallButton("KINDLE");
+        kindle.setOnClickListener(v -> openKindle());
+        bar.addView(kindle);
+        root.addView(bar);
+
+        Button settings = smallButton("SETTINGS");
+        settings.setOnClickListener(v -> showSettings());
+        root.addView(settings);
+    }
+
+    private void addTitle(String text) {
+        TextView title = label(text, 26, true);
+        title.setPadding(0, dp(22), 0, dp(12));
+        root.addView(title);
+    }
+
+    private void addSection(String text) {
+        TextView section = label(text, 14, true);
+        section.setPadding(0, dp(18), 0, dp(8));
+        root.addView(section);
+    }
+
+    private void addContext(String heading, String value, String empty) {
+        addSection(heading);
+        TextView text = label(value.isEmpty() ? empty : value, 16, false);
+        text.setMaxLines(6);
+        text.setTextColor(value.isEmpty() ? Color.DKGRAY : Color.BLACK);
+        text.setBackgroundColor(0xffeeeeee);
+        text.setPadding(dp(12), dp(10), dp(12), dp(10));
+        root.addView(text);
+    }
+
+    private void addPromptButton(String label, String prompt) {
+        Button button = button(label);
+        button.setOnClickListener(v -> startChat(prompt));
+        root.addView(button);
+    }
+
+    private void addMessage(String role, String text) {
+        TextView roleView = label(role, 13, true);
+        roleView.setPadding(0, dp(16), 0, dp(4));
+        transcript.addView(roleView);
+        TextView message = label(text, 17, false);
+        message.setTextIsSelectable(true);
+        message.setLineSpacing(0, 1.15f);
+        transcript.addView(message);
+    }
+
+    private EditText settingInput(String heading, String value) {
+        addSection(heading);
+        EditText input = input("");
+        input.setText(value);
+        root.addView(input);
+        return input;
+    }
+
+    private TextView status(String text) {
+        TextView view = label(text, 15, false);
+        view.setPadding(0, dp(12), 0, dp(8));
+        root.addView(view);
+        return view;
+    }
+
+    private TextView label(String text, int size, boolean bold) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextColor(Color.BLACK);
+        view.setTextSize(size);
+        if (bold) {
+            view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        }
+        return view;
+    }
+
+    private Button button(String text) {
+        Button button = new Button(this);
+        button.setText(text);
+        button.setTextSize(15);
+        button.setTextColor(Color.BLACK);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.setMargins(0, dp(4), 0, dp(4));
+        button.setLayoutParams(params);
+        return button;
+    }
+
+    private Button smallButton(String text) {
+        Button button = button(text);
+        button.setTextSize(12);
+        button.setMinWidth(dp(78));
+        button.setLayoutParams(new LinearLayout.LayoutParams(-2, dp(48)));
+        return button;
+    }
+
+    private EditText input(String hint) {
+        EditText input = new EditText(this);
+        input.setHint(hint);
+        input.setTextSize(17);
+        input.setTextColor(Color.BLACK);
+        input.setHintTextColor(Color.DKGRAY);
+        input.setPadding(dp(10), dp(10), dp(10), dp(10));
+        return input;
+    }
+
+    private void openKindle() {
+        Intent launch = getPackageManager().getLaunchIntentForPackage(
+                KindleAccessibilityService.KINDLE_PACKAGE);
+        if (launch != null) {
+            startActivity(launch);
+        } else if (statusView != null) {
+            statusView.setText("Kindle is not installed.");
+        }
+    }
+
+    private OpenCodeClient client() {
+        SharedPreferences preferences = getSharedPreferences(SETTINGS, MODE_PRIVATE);
+        return new OpenCodeClient(
+                preferences.getString(SERVER_KEY, DEFAULT_SERVER),
+                preferences.getString(TOKEN_KEY, ""),
+                preferences.getString(DIRECTORY_KEY, DEFAULT_DIRECTORY));
+    }
+
+    private void setButtonsEnabled(boolean enabled) {
+        setButtonsEnabled(root, enabled);
+    }
+
+    private void setButtonsEnabled(View view, boolean enabled) {
+        if (view instanceof Button) {
+            view.setEnabled(enabled);
+        } else if (view instanceof LinearLayout) {
+            LinearLayout layout = (LinearLayout) view;
+            for (int i = 0; i < layout.getChildCount(); i++) {
+                setButtonsEnabled(layout.getChildAt(i), enabled);
+            }
+        }
+    }
+
+    private void showError(Exception error) {
+        runOnUiThread(() -> {
+            if (statusView != null) {
+                statusView.setText(error.getMessage() == null ? error.toString() : error.getMessage());
+            }
+        });
+    }
+
+    private String captured(String key) {
+        return getSharedPreferences(KindleAccessibilityService.PREFS, MODE_PRIVATE)
+                .getString(key, "").trim();
+    }
+
+    private String valueOrNone(String value) {
+        return value.isEmpty() ? "(none captured)" : value;
     }
 
     private void acceptSharedText(Intent intent) {
         CharSequence selected;
         if (Intent.ACTION_PROCESS_TEXT.equals(intent.getAction())) {
             selected = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT);
-        } else if (Intent.ACTION_SEND.equals(intent.getAction())
-                && "text/plain".equals(intent.getType())) {
+        } else if (Intent.ACTION_SEND.equals(intent.getAction()) && "text/plain".equals(intent.getType())) {
             selected = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
         } else {
             return;
         }
         if (!TextUtils.isEmpty(selected)) {
-            String current = getSharedPreferences(KindleAccessibilityService.PREFS, MODE_PRIVATE)
-                    .getString(KindleAccessibilityService.CURRENT_TEXT_KEY, "");
             getSharedPreferences(KindleAccessibilityService.PREFS, MODE_PRIVATE)
-                    .edit()
-                    .putString(KindleAccessibilityService.SELECTED_TEXT_KEY, selected.toString())
-                    .putString(KindleAccessibilityService.PREVIOUS_TEXT_KEY, current)
-                    .putString(KindleAccessibilityService.CURRENT_TEXT_KEY, selected.toString())
-                    .apply();
+                    .edit().putString(KindleAccessibilityService.SELECTED_TEXT_KEY, selected.toString()).apply();
         }
     }
 
@@ -157,55 +480,23 @@ public class MainActivity extends Activity {
         ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         ClipData clip = clipboard.getPrimaryClip();
         CharSequence value = clip != null && clip.getItemCount() > 0
-                ? clip.getItemAt(0).coerceToText(this)
-                : null;
-        String selected = value == null ? "" : value.toString().trim();
-        if (!selected.isEmpty()) {
+                ? clip.getItemAt(0).coerceToText(this) : null;
+        if (value != null && !value.toString().trim().isEmpty()) {
             getSharedPreferences(KindleAccessibilityService.PREFS, MODE_PRIVATE)
-                    .edit()
-                    .putString(KindleAccessibilityService.SELECTED_TEXT_KEY, selected)
-                    .apply();
+                    .edit().putString(KindleAccessibilityService.SELECTED_TEXT_KEY,
+                            value.toString().trim()).apply();
         }
-        refresh();
-    }
-
-    private TextView label(String text, int size, boolean bold) {
-        TextView view = new TextView(this);
-        view.setText(text);
-        view.setTextColor(Color.BLACK);
-        view.setTextSize(size);
-        if (bold) {
-            view.setTypeface(null, Typeface.BOLD);
-        }
-        return view;
-    }
-
-    private TextView sectionLabel(String text) {
-        TextView view = label(text, 16, true);
-        view.setPadding(0, dp(20), 0, dp(8));
-        return view;
-    }
-
-    private TextView textContent() {
-        TextView view = label("", 17, false);
-        view.setTextIsSelectable(true);
-        return view;
-    }
-
-    private Button button(String text) {
-        Button button = new Button(this);
-        button.setText(text);
-        button.setTextSize(16);
-        button.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, 0, 0, dp(8));
-        button.setLayoutParams(params);
-        return button;
     }
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    @Override
+    protected void onDestroy() {
+        polling = false;
+        handler.removeCallbacksAndMessages(null);
+        network.shutdownNow();
+        super.onDestroy();
     }
 }

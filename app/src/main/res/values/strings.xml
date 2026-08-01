@@ -5,7 +5,7 @@
     <string name="share_target_label">Send to Kindle Context</string>
     <string name="accessibility_description">Collects recent Kindle prose exposed to screen-reader accessibility services.</string>
     <string name="title">KINDLE CONTEXT / POC</string>
-    <string name="explanation">Highlight text in Kindle, then press the K accessibility shortcut to capture the selection and inspect the surrounding context. Nothing leaves this device.</string>
+    <string name="explanation">Highlight text in Kindle, then press the K accessibility shortcut to ask OpenCode about the passage.</string>
     <string name="enable_service">Enable accessibility service</string>
     <string name="open_kindle">Open Kindle</string>
     <string name="kindle_not_found">Kindle package com.amazon.kindle was not found.</string>
