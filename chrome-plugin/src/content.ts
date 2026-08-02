@@ -8,13 +8,18 @@
     document.getElementById(BUTTON_ID)?.remove();
   }
 
-  function showOpenFallback() {
+  function removeOpenFallback() {
     document.getElementById(NOTICE_ID)?.remove();
+  }
+
+  function showOpenFallback() {
+    removeOpenFallback();
     const notice = document.createElement("div");
     notice.id = NOTICE_ID;
     notice.textContent = "Chrome blocked automatic opening. Click the Reading Context toolbar icon.";
     notice.addEventListener("click", () => notice.remove());
     document.documentElement.appendChild(notice);
+    setTimeout(() => notice.remove(), 8000);
   }
 
   chrome.runtime.onMessage.addListener((message) => {
@@ -70,6 +75,7 @@
     button.style.top = `${Math.max(8, Math.min(rect.bottom + 8, innerHeight - 44))}px`;
     button.addEventListener("mousedown", (event) => event.preventDefault());
     button.addEventListener("click", async () => {
+      removeOpenFallback();
       const selected = savedSelection;
       if (!selected) return;
       const element = selected.range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE

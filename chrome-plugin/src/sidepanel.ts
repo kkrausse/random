@@ -40,10 +40,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
       queuedCaptures.set(tabId, nextCapture);
       continue;
     }
-    if (tabId !== currentTabId) continue;
+    currentTabId = tabId;
     capture = nextCapture;
     chrome.storage.session.remove(key);
-    if (activeScreen === "capture") showCapture();
+    showCapture();
   }
 });
 
