@@ -85,10 +85,20 @@
         capturedAt: Date.now()
       };
       removeButton();
+      let panelAlreadyOpen = false;
+      let directOpenError = "";
+      try {
+        await chrome.sidePanel.open({ windowId: chrome.windows.WINDOW_ID_CURRENT });
+        panelAlreadyOpen = true;
+      } catch (error) {
+        directOpenError = String(error?.message || error);
+      }
       try {
         await chrome.runtime.sendMessage({
           type: "open-reading-context",
-          capture
+          capture,
+          panelAlreadyOpen,
+          directOpenError
         });
       } catch (error) {
         console.warn("Reading Context could not request the side panel:", error);

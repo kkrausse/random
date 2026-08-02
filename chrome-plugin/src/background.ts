@@ -23,13 +23,32 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   const tabId = sender.tab.id;
   void (async () => {
     try {
+      if (message.directOpenError) {
+        await recordDiagnostic("content-script-panel-open-error", {
+          tabId,
+          message: String(message.directOpenError)
+        });
+      }
+      if (message.panelAlreadyOpen) {
+        await chrome.storage.session.set({
+          [`pendingCapture:${tabId}`]: message.capture
+        });
+        await recordDiagnostic("panel-opened-from-highlight", {
+          tabId,
+          route: "content-script"
+        });
+        return;
+      }
       // This follows Chrome's sidePanel content-script sample exactly: open first,
       // then perform asynchronous work after the user-gesture-gated call succeeds.
       await chrome.sidePanel.open({ tabId });
       await chrome.storage.session.set({
         [`pendingCapture:${tabId}`]: message.capture
       });
-      await recordDiagnostic("panel-opened-from-highlight", { tabId });
+      await recordDiagnostic("panel-opened-from-highlight", {
+        tabId,
+        route: "service-worker"
+      });
     } catch (error) {
       await chrome.storage.session.set({
         [`pendingCapture:${tabId}`]: message.capture
