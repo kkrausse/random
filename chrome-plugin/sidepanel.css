@@ -193,6 +193,10 @@ textarea.template { min-height: 270px; font-family: ui-monospace, monospace; fon
 .markdown-body table { display: block; overflow-x: auto; border-collapse: collapse; font-size: 12px; }
 .markdown-body th, .markdown-body td { padding: 6px 8px; border: 1px solid #c9c0af; text-align: left; }
 .thinking { margin: 0; color: var(--muted); font-style: italic; }
+.chat-capture-card { margin: 20px 0 8px; padding: 14px; border: 1px solid var(--accent); background: #fff8ef; }
+.chat-capture-card .eyebrow { margin-top: 0; }
+.chat-capture-card blockquote { margin: 0 0 10px; font-size: 16px; line-height: 1.4; }
+.chat-capture-card .new-chat-action { margin-top: 8px; }
 .composer { position: sticky; bottom: 0; padding: 12px 0; background: var(--paper); }
 .composer textarea { min-height: 64px; }
 

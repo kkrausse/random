@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildPrompt, messageFromJson, readingPromptFromText, xmlEscape } from "./common";
+import {
+  buildHighlightPrompt,
+  buildPrompt,
+  messageFromJson,
+  readingPromptFromText,
+  xmlEscape
+} from "./common";
 
 test("buildPrompt fills and escapes structured source fields", () => {
   const prompt = buildPrompt("<reading_request>{{highlight}}|{{page_url}}|{{question}}</reading_request>", {
@@ -44,4 +50,16 @@ test("readingPromptFromText extracts display fields and decodes source text", ()
 
 test("readingPromptFromText ignores follow-up messages", () => {
   assert.equal(readingPromptFromText("Can you expand on that?"), null);
+});
+
+test("buildHighlightPrompt includes only the new highlight and question", () => {
+  const prompt = buildHighlightPrompt("A < B", "Why & how?");
+  assert.deepEqual(readingPromptFromText(prompt), {
+    question: "Why & how?",
+    highlight: "A < B",
+    surroundingContext: "",
+    pageTitle: "",
+    pageUrl: ""
+  });
+  assert.doesNotMatch(prompt, /surrounding_context|page_title|page_url/);
 });

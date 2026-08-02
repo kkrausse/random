@@ -119,6 +119,21 @@ export function buildPrompt(template: string, capture: Partial<Capture> | null, 
     (_, key: keyof typeof values) => xml ? xmlEscape(values[key]) : values[key]);
 }
 
+export function buildHighlightPrompt(highlight: string, question: string): string {
+  return `<reading_request>
+  <source_material>
+    <highlighted_passage>
+${xmlEscape(highlight)}
+    </highlighted_passage>
+  </source_material>
+  <instructions>
+    <reader_question>
+${xmlEscape(question)}
+    </reader_question>
+  </instructions>
+</reading_request>`;
+}
+
 function xmlUnescape(value: string): string {
   return value.replaceAll("&lt;", "<").replaceAll("&gt;", ">")
     .replaceAll("&quot;", "\"").replaceAll("&apos;", "'").replaceAll("&amp;", "&");

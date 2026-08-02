@@ -1,6 +1,11 @@
 import { OpenCodeClient } from "./api";
 import MarkdownIt from "markdown-it";
-import { DEFAULT_SETTINGS, buildPrompt, readingPromptFromText } from "./common";
+import {
+  DEFAULT_SETTINGS,
+  buildHighlightPrompt,
+  buildPrompt,
+  readingPromptFromText
+} from "./common";
 import type { Capture, Message, PromptPreset, Settings } from "./common";
 import { clearDiagnostics, readDiagnostics, recordDiagnostic } from "./diagnostics";
 
@@ -43,7 +48,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
     currentTabId = tabId;
     capture = nextCapture;
     chrome.storage.session.remove(key);
-    showCapture();
+    if (activeScreen === "chat" && currentSessionId) {
+      renderChatCapture();
+    } else {
+      showCapture();
+    }
   }
 });
 
@@ -97,6 +106,8 @@ function setComposerEnabled(enabled: boolean) {
   const button = document.querySelector<HTMLButtonElement>("#send-reply");
   if (input) input.disabled = !enabled;
   if (button) button.disabled = !enabled;
+  document.querySelectorAll<HTMLInputElement | HTMLButtonElement>(".append-control")
+    .forEach((control) => control.disabled = !enabled);
 }
 
 function heading(title: string, subtitle: string) {
@@ -245,6 +256,7 @@ async function showChat(sessionId: string, preparingPrompt = false) {
   currentSessionId = sessionId;
   app.innerHTML = heading("Conversation", "Reading notes, kept on your OpenCode server.") + `
     <div id="messages"></div>
+    <div id="chat-capture"></div>
     <p class="status">Loading...</p>
     <div class="composer">
       <textarea id="reply" placeholder="Continue the conversation..."></textarea>
@@ -259,6 +271,60 @@ async function showChat(sessionId: string, preparingPrompt = false) {
     setStatus("Sending page context...");
   } else {
     await refreshMessages(false);
+  }
+}
+
+function renderChatCapture() {
+  const container = document.querySelector<HTMLElement>("#chat-capture");
+  if (!container || !capture || !currentSessionId) return;
+  container.innerHTML = `<section class="chat-capture-card">
+    <div class="eyebrow">New highlight</div>
+    <blockquote>${escapeHtml(capture.highlight)}</blockquote>
+    <p class="help">Ask about only this highlight in the current conversation.</p>
+    <div class="button-grid chat-capture-presets"></div>
+    <label><span>Your question</span><textarea class="append-control" id="append-question" placeholder="What do you want to understand?"></textarea></label>
+    <button class="primary append-control" id="append-highlight">Append to this chat</button>
+    <button class="secondary new-chat-action" id="new-chat-from-capture">Start new chat with page context</button>
+  </section>`;
+  const presets = $<HTMLElement>(".chat-capture-presets", container);
+  settings.promptPresets.forEach((preset) => {
+    const button = document.createElement("button");
+    button.className = "primary append-control";
+    button.textContent = preset.label;
+    button.addEventListener("click", () => appendHighlight(preset.prompt));
+    presets.append(button);
+  });
+  $("#append-highlight", container).addEventListener("click", () => {
+    const question = $<HTMLTextAreaElement>("#append-question", container).value.trim();
+    if (question) appendHighlight(question);
+  });
+  $("#new-chat-from-capture", container).addEventListener("click", () => showCapture());
+  setComposerEnabled(!sending && !awaitingResponse);
+}
+
+async function appendHighlight(question: string) {
+  if (sending || awaitingResponse || !capture || !currentSessionId) return;
+  const sessionId = currentSessionId;
+  const selectedCapture = capture;
+  const prompt = buildHighlightPrompt(selectedCapture.highlight, question);
+  sending = true;
+  awaitingResponse = true;
+  setComposerEnabled(false);
+  setStatus("Sending new highlight...");
+  try {
+    await client().sendMessage(sessionId, prompt);
+    if (currentSessionId !== sessionId) return;
+    if (capture === selectedCapture) {
+      document.querySelector<HTMLElement>("#chat-capture")?.replaceChildren();
+    }
+    sending = false;
+    await refreshMessages(true);
+  } catch (error) {
+    if (currentSessionId !== sessionId) return;
+    sending = false;
+    awaitingResponse = false;
+    setComposerEnabled(true);
+    setStatus(error.message);
   }
 }
 
