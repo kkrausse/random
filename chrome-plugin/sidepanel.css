@@ -220,7 +220,7 @@ textarea.template { min-height: 270px; font-family: ui-monospace, monospace; fon
   text-transform: uppercase;
 }
 .quick-prompt:hover { border-color: var(--accent); color: var(--accent); }
-#context-prompts > .eyebrow { margin: 0 0 6px; color: var(--muted); }
+#context-prompts { margin-bottom: 8px; }
 .chat-usage {
   margin-top: 8px;
   padding-top: 8px;
@@ -228,7 +228,7 @@ textarea.template { min-height: 270px; font-family: ui-monospace, monospace; fon
   color: var(--muted);
   font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
-.composer { position: sticky; bottom: 0; padding: 12px 0; background: var(--paper); }
+.composer { padding: 12px 0; }
 .composer textarea { min-height: 64px; }
 .composer-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .composer-actions #send-reply { grid-column: 1 / -1; }

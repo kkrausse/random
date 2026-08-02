@@ -361,8 +361,7 @@ function renderChatCapture() {
     <div class="eyebrow">Including new highlight</div>
     <blockquote>${escapeHtml(capture.highlight)}</blockquote>
   </section>`;
-  prompts.innerHTML = `<div class="eyebrow">Quick questions for this highlight</div>
-    <div class="chat-capture-presets"></div>`;
+  prompts.innerHTML = `<div class="chat-capture-presets"></div>`;
   const presets = $<HTMLElement>(".chat-capture-presets", prompts);
   settings.promptPresets.forEach((preset) => {
     const button = document.createElement("button");
