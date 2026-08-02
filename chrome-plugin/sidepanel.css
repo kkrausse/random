@@ -204,7 +204,6 @@ textarea.template { min-height: 270px; font-family: ui-monospace, monospace; fon
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
 }
-.chat-capture-card .new-chat-action { border: 0; padding: 3px 0; color: var(--muted); }
 .chat-capture-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .quick-prompt {
   min-width: 0;
@@ -221,7 +220,7 @@ textarea.template { min-height: 270px; font-family: ui-monospace, monospace; fon
   text-transform: uppercase;
 }
 .quick-prompt:hover { border-color: var(--accent); color: var(--accent); }
-#context-prompts > .eyebrow { margin: 12px 0 6px; color: var(--muted); }
+#context-prompts > .eyebrow { margin: 0 0 6px; color: var(--muted); }
 .chat-usage {
   margin-top: 8px;
   padding-top: 8px;
@@ -231,6 +230,10 @@ textarea.template { min-height: 270px; font-family: ui-monospace, monospace; fon
 }
 .composer { position: sticky; bottom: 0; padding: 12px 0; background: var(--paper); }
 .composer textarea { min-height: 64px; }
+.composer-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.composer-actions #send-reply { grid-column: 1 / -1; }
+.composer-actions.has-capture #send-reply { grid-column: auto; }
+[hidden] { display: none !important; }
 
 .settings-section { margin: 24px 0; padding-top: 14px; border-top: 1px solid #c9c0af; }
 .preset-editor { margin: 12px 0; padding: 12px; background: var(--paper-deep); }

@@ -329,13 +329,17 @@ async function showChat(sessionId: string, preparingPrompt = false) {
     <div id="messages"></div>
     <p class="status">Loading...</p>
     <div class="composer">
-      <div id="chat-capture"></div>
-      <textarea id="reply" placeholder="Continue the conversation..."></textarea>
-      <button class="primary" id="send-reply">Send</button>
       <div id="context-prompts"></div>
+      <textarea id="reply" placeholder="Continue the conversation..."></textarea>
+      <div id="chat-capture"></div>
+      <div class="composer-actions">
+        <button class="primary" id="send-reply">Send</button>
+        <button class="secondary context-control" id="new-chat-from-capture" hidden>New chat</button>
+      </div>
       <footer class="chat-usage" id="chat-usage">Usage loading...</footer>
     </div>`;
   $("#send-reply").addEventListener("click", () => sendReply());
+  $("#new-chat-from-capture").addEventListener("click", () => showCapture());
   $<HTMLTextAreaElement>("#reply").addEventListener("keydown", (event) => {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) sendReply();
   });
@@ -356,7 +360,6 @@ function renderChatCapture() {
   container.innerHTML = `<section class="chat-capture-card">
     <div class="eyebrow">Including new highlight</div>
     <blockquote>${escapeHtml(capture.highlight)}</blockquote>
-    <button class="small context-control new-chat-action" id="new-chat-from-capture">Use full page in a new chat</button>
   </section>`;
   prompts.innerHTML = `<div class="eyebrow">Quick questions for this highlight</div>
     <div class="chat-capture-presets"></div>`;
@@ -368,7 +371,8 @@ function renderChatCapture() {
     button.addEventListener("click", () => sendReply(preset.prompt));
     presets.append(button);
   });
-  $("#new-chat-from-capture", container).addEventListener("click", () => showCapture());
+  $<HTMLButtonElement>("#new-chat-from-capture").hidden = false;
+  document.querySelector(".composer-actions")?.classList.add("has-capture");
   $<HTMLTextAreaElement>("#reply").placeholder = "Ask about this highlight or continue the conversation...";
   setComposerEnabled(!sending && !awaitingResponse);
   scrollChatToBottom();
@@ -594,6 +598,9 @@ async function sendReply(textOverride?: string) {
       capture = null;
       document.querySelector<HTMLElement>("#chat-capture")?.replaceChildren();
       document.querySelector<HTMLElement>("#context-prompts")?.replaceChildren();
+      const newChat = document.querySelector<HTMLButtonElement>("#new-chat-from-capture");
+      if (newChat) newChat.hidden = true;
+      document.querySelector(".composer-actions")?.classList.remove("has-capture");
       input.placeholder = "Continue the conversation...";
     }
     sending = false;
