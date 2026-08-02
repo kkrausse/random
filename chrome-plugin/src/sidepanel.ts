@@ -326,11 +326,11 @@ async function showChat(sessionId: string, preparingPrompt = false) {
   app.innerHTML = heading("Conversation", "Reading notes, kept on your OpenCode server.") + `
     <div id="messages"></div>
     <div id="chat-capture"></div>
-    <footer class="chat-usage" id="chat-usage">Usage loading...</footer>
     <p class="status">Loading...</p>
     <div class="composer">
       <textarea id="reply" placeholder="Continue the conversation..."></textarea>
       <button class="primary" id="send-reply">Send</button>
+      <footer class="chat-usage" id="chat-usage">Usage loading...</footer>
     </div>`;
   $("#send-reply").addEventListener("click", sendReply);
   $<HTMLTextAreaElement>("#reply").addEventListener("keydown", (event) => {
