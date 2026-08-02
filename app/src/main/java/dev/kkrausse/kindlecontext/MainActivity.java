@@ -236,13 +236,17 @@ public class MainActivity extends Activity {
         reply.setSingleLine(false);
         reply.setImeOptions(EditorInfo.IME_ACTION_SEND);
         root.addView(reply);
-        Button send = button("SEND");
+        Button send = button("RETURN TO KINDLE");
+        reply.addTextChangedListener(textWatcher(value ->
+                send.setText(value.trim().isEmpty() ? "RETURN TO KINDLE" : "SEND")));
         send.setOnClickListener(v -> {
             String text = reply.getText().toString().trim();
-            if (!text.isEmpty()) {
-                reply.setText("");
-                sendFollowUp(text);
+            if (text.isEmpty()) {
+                openKindle();
+                return;
             }
+            reply.setText("");
+            sendFollowUp(text);
         });
         root.addView(send);
         polling = true;
