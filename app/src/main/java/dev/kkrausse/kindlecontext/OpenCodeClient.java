@@ -15,15 +15,30 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 final class OpenCodeClient {
     interface EventListener {
-        void onSessionEvent();
+        void onSessionEvent(StreamEvent event);
+    }
+
+    static final class StreamEvent {
+        final String type;
+        final String messageId;
+        final String text;
+
+        StreamEvent(String type, String messageId, String text) {
+            this.type = type;
+            this.messageId = messageId;
+            this.text = text;
+        }
     }
 
     final class EventStream implements AutoCloseable {
         private final String sessionId;
         private final EventListener listener;
+        private final CountDownLatch connected = new CountDownLatch(1);
         private volatile HttpURLConnection connection;
         private volatile boolean closed;
 
@@ -43,6 +58,7 @@ final class OpenCodeClient {
                 active.disconnect();
                 throw new IOException("OpenCode returned HTTP " + status + ": " + response);
             }
+            connected.countDown();
 
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                     active.getInputStream(), StandardCharsets.UTF_8))) {
@@ -73,8 +89,16 @@ final class OpenCodeClient {
             JSONObject event = new JSONObject(data.toString());
             JSONObject eventData = event.optJSONObject("data");
             if (eventData != null && sessionId.equals(eventData.optString("sessionID"))) {
-                listener.onSessionEvent();
+                String type = event.optString("type");
+                String messageId = eventData.optString("assistantMessageID");
+                String text = "session.text.delta".equals(type)
+                        ? eventData.optString("delta") : eventData.optString("name");
+                listener.onSessionEvent(new StreamEvent(type, messageId, text));
             }
+        }
+
+        boolean awaitConnected(long timeoutMillis) throws InterruptedException {
+            return connected.await(timeoutMillis, TimeUnit.MILLISECONDS);
         }
 
         @Override
@@ -128,11 +152,13 @@ final class OpenCodeClient {
     }
 
     static final class Message {
+        final String id;
         final String role;
         final String text;
         final boolean complete;
 
-        Message(String role, String text, boolean complete) {
+        Message(String id, String role, String text, boolean complete) {
+            this.id = id;
             this.role = role;
             this.text = text;
             this.complete = complete;
@@ -224,7 +250,8 @@ final class OpenCodeClient {
             JSONObject value = values.getJSONObject(i);
             String type = value.optString("type");
             if ("user".equals(type)) {
-                messages.add(new Message("YOU", value.optString("text"), true));
+                messages.add(new Message(value.optString("id"), "YOU",
+                        value.optString("text"), true));
             } else if ("assistant".equals(type)) {
                 JSONArray content = value.optJSONArray("content");
                 StringBuilder text = new StringBuilder();
@@ -239,7 +266,8 @@ final class OpenCodeClient {
                 JSONObject time = value.optJSONObject("time");
                 boolean complete = time != null && time.has("completed");
                 if (text.length() > 0 || !complete) {
-                    messages.add(new Message("OPENCODE", text.toString(), complete));
+                    messages.add(new Message(value.optString("id"), "OPENCODE",
+                            text.toString(), complete));
                 }
             }
         }

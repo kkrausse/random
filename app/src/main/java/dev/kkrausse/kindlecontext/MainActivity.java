@@ -103,9 +103,9 @@ public class MainActivity extends Activity {
     private final ExecutorService network = Executors.newSingleThreadExecutor();
     private final ExecutorService eventNetwork = Executors.newSingleThreadExecutor();
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Runnable streamRefresh = () -> {
-        streamRefreshScheduled = false;
-        loadMessages();
+    private final Runnable streamTextRefresh = () -> {
+        streamTextRefreshScheduled = false;
+        renderStreamingText();
     };
     private String sessionId;
     private boolean readClipboardOnResume;
@@ -121,7 +121,12 @@ public class MainActivity extends Activity {
     private Markwon markwon;
     private OpenCodeClient.EventStream eventStream;
     private int eventStreamGeneration;
-    private boolean streamRefreshScheduled;
+    private boolean streamTextRefreshScheduled;
+    private String streamingMessageId;
+    private boolean streamingStartedAtBoundary;
+    private final StringBuilder streamingText = new StringBuilder();
+    private TextView streamingMessageView;
+    private View streamingLoadingView;
     private boolean messagesLoading;
     private boolean messagesDirty;
 
@@ -201,6 +206,11 @@ public class MainActivity extends Activity {
         beginScreen();
         addTopBar("CHAT");
         followChatBottom = true;
+        streamingMessageId = null;
+        streamingStartedAtBoundary = false;
+        streamingText.setLength(0);
+        streamingMessageView = null;
+        streamingLoadingView = null;
         transcript = new LinearLayout(this);
         transcript.setOrientation(LinearLayout.VERTICAL);
         root.addView(transcript);
@@ -445,8 +455,21 @@ public class MainActivity extends Activity {
                         preferences.getString(MODEL_PROVIDER_KEY, DEFAULT_MODEL_PROVIDER),
                         preferences.getString(MODEL_ID_KEY, DEFAULT_MODEL_ID),
                         preferences.getString(MODEL_VARIANT_KEY, DEFAULT_MODEL_VARIANT));
-                client.sendMessage(sessionId, prompt);
-                runOnUiThread(this::showChat);
+                runOnUiThread(() -> {
+                    showChat();
+                    network.execute(() -> {
+                        try {
+                            OpenCodeClient.EventStream stream = eventStream;
+                            if (stream != null) {
+                                stream.awaitConnected(5_000);
+                            }
+                            client.sendMessage(sessionId, prompt);
+                            runOnUiThread(this::loadMessages);
+                        } catch (Exception error) {
+                            showError(error);
+                        }
+                    });
+                });
             } catch (Exception error) {
                 runOnUiThread(() -> setButtonsEnabled(true));
                 showError(error);
@@ -515,13 +538,30 @@ public class MainActivity extends Activity {
         }
         boolean scrollToBottom = followChatBottom || isNearBottom();
         transcript.removeAllViews();
+        streamingMessageView = null;
+        streamingLoadingView = null;
         boolean waiting = messages.isEmpty();
         for (OpenCodeClient.Message message : messages) {
-            addMessage(message.role, message.text.isEmpty() ? "Thinking..." : message.text);
+            String text = message.text;
+            if (message.id.equals(streamingMessageId)) {
+                String streamed = streamingText.toString();
+                if (!streamingStartedAtBoundary) {
+                    text = message.text.endsWith(streamed) ? message.text : message.text + streamed;
+                    streamingText.setLength(0);
+                    streamingText.append(text);
+                    streamingStartedAtBoundary = true;
+                } else {
+                    text = streamed;
+                }
+            }
+            TextView view = addMessage(message.role, text.isEmpty() ? "Thinking..." : text);
+            if (message.id.equals(streamingMessageId)) {
+                streamingMessageView = view;
+            }
             waiting = "YOU".equals(message.role) || !message.complete;
         }
         if (waiting) {
-            addLoadingIndicator();
+            streamingLoadingView = addLoadingIndicator();
         }
         statusView.setText("");
         if (scrollToBottom) {
@@ -795,12 +835,12 @@ public class MainActivity extends Activity {
         root.addView(button);
     }
 
-    private void addMessage(String role, String text) {
+    private TextView addMessage(String role, String text) {
         TextView roleView = label(role, 13, true);
         roleView.setPadding(0, dp(16), 0, dp(4));
         transcript.addView(roleView);
         if ("YOU".equals(role) && addStructuredUserMessage(text)) {
-            return;
+            return null;
         }
         TextView message = label(text, 17, false);
         if ("OPENCODE".equals(role)) {
@@ -809,6 +849,7 @@ public class MainActivity extends Activity {
         message.setTextIsSelectable(true);
         message.setLineSpacing(0, 1.15f);
         transcript.addView(message);
+        return message;
     }
 
     private boolean addStructuredUserMessage(String text) {
@@ -854,7 +895,7 @@ public class MainActivity extends Activity {
         transcript.addView(value);
     }
 
-    private void addLoadingIndicator() {
+    private View addLoadingIndicator() {
         LinearLayout loading = new LinearLayout(this);
         loading.setGravity(Gravity.CENTER_VERTICAL);
         loading.setPadding(0, dp(16), 0, dp(10));
@@ -864,6 +905,7 @@ public class MainActivity extends Activity {
         TextView text = label("  OPENCODE IS WORKING...", 15, true);
         loading.addView(text);
         transcript.addView(loading);
+        return loading;
     }
 
     private boolean isNearBottom() {
@@ -1127,18 +1169,92 @@ public class MainActivity extends Activity {
         return CONTEXT_OMISSION_MARKER + "\n\n" + text.substring(cutoff.start());
     }
 
+    private void handleStreamEvent(OpenCodeClient.StreamEvent event) {
+        switch (event.type) {
+            case "session.text.started":
+                beginStreamingMessage(event.messageId, true);
+                statusView.setText("Responding...");
+                break;
+            case "session.text.delta":
+                if (!event.messageId.equals(streamingMessageId)) {
+                    beginStreamingMessage(event.messageId, false);
+                    loadMessages();
+                }
+                streamingText.append(event.text);
+                if (!streamTextRefreshScheduled) {
+                    streamTextRefreshScheduled = true;
+                    handler.postDelayed(streamTextRefresh, 40);
+                }
+                break;
+            case "session.reasoning.started":
+                statusView.setText("Thinking...");
+                break;
+            case "session.tool.input.started":
+                statusView.setText(event.text.isEmpty() ? "Using a tool..." : "Using " + event.text + "...");
+                break;
+            case "session.retry.scheduled":
+                statusView.setText("Retrying...");
+                break;
+            case "session.execution.succeeded":
+            case "session.execution.failed":
+            case "session.execution.interrupted":
+                renderStreamingText();
+                streamingMessageId = null;
+                streamingText.setLength(0);
+                loadMessages();
+                break;
+            case "session.input.promoted":
+                loadMessages();
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void beginStreamingMessage(String messageId, boolean startedAtBoundary) {
+        if (messageId.isEmpty() || messageId.equals(streamingMessageId)) {
+            return;
+        }
+        streamingMessageId = messageId;
+        streamingStartedAtBoundary = startedAtBoundary;
+        streamingText.setLength(0);
+        if (transcript == null) {
+            return;
+        }
+        if (streamingLoadingView != null) {
+            transcript.removeView(streamingLoadingView);
+        }
+        streamingMessageView = addMessage("OPENCODE", "Thinking...");
+        streamingLoadingView = addLoadingIndicator();
+        scrollChatToBottom();
+    }
+
+    private void renderStreamingText() {
+        if (streamingMessageView == null) {
+            return;
+        }
+        String text = streamingText.toString();
+        streamingMessageView.setText(text.isEmpty() ? "Thinking..." : text);
+        statusView.setText(text.isEmpty() ? "Thinking..." : "Responding...");
+        scrollChatToBottom();
+    }
+
+    private void scrollChatToBottom() {
+        if (followChatBottom && scrollView != null) {
+            scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN));
+        }
+    }
+
     private void startEventStream() {
         stopEventStream();
         if (!polling || sessionId == null) {
             return;
         }
         int generation = ++eventStreamGeneration;
-        OpenCodeClient.EventStream stream = client().eventStream(sessionId, () ->
+        OpenCodeClient.EventStream stream = client().eventStream(sessionId, event ->
                 handler.post(() -> {
-                    if (polling && generation == eventStreamGeneration
-                            && !streamRefreshScheduled) {
-                        streamRefreshScheduled = true;
-                        handler.postDelayed(streamRefresh, 100);
+                    if (polling && generation == eventStreamGeneration) {
+                        handleStreamEvent(event);
                     }
                 }));
         eventStream = stream;
@@ -1160,8 +1276,8 @@ public class MainActivity extends Activity {
 
     private void stopEventStream() {
         eventStreamGeneration++;
-        streamRefreshScheduled = false;
-        handler.removeCallbacks(streamRefresh);
+        streamTextRefreshScheduled = false;
+        handler.removeCallbacks(streamTextRefresh);
         OpenCodeClient.EventStream stream = eventStream;
         eventStream = null;
         if (stream != null) {
