@@ -61,12 +61,16 @@ public class MainActivity extends Activity {
     private static final String DEFAULT_MODEL_PROVIDER = "opencode";
     private static final String DEFAULT_MODEL_ID = "laguna-s-2.1-free";
     private static final String DEFAULT_MODEL_VARIANT = "medium";
-    private static final String DEFAULT_MESSAGE_TEMPLATE = "SURROUNDING CONTEXT\n\nPREVIOUS PAGE\n"
+    private static final String LEGACY_DEFAULT_MESSAGE_TEMPLATE = "SURROUNDING CONTEXT\n\nPREVIOUS PAGE\n"
             + "{{previous_page}}\n\nCURRENT PAGE\n{{current_page}}"
             + "\n\nHIGHLIGHTED PASSAGE\n{{highlight}}"
             + "\n\nREADER'S QUESTION\n{{question}}";
+    private static final String DEFAULT_MESSAGE_TEMPLATE = "SURROUNDING CONTEXT\n\n"
+            + "{{surrounding_context}}\n\nHIGHLIGHTED PASSAGE\n{{highlight}}"
+            + "\n\nREADER'S QUESTION\n{{question}}";
     private static final Pattern TEMPLATE_PLACEHOLDER = Pattern.compile(
-            "\\{\\{(highlight|previous_page|current_page|question)\\}\\}");
+            "\\{\\{(highlight|surrounding_context|previous_page|current_page|question)\\}\\}");
+    private static final String CONTEXT_OMISSION_MARKER = "[Earlier captured context omitted.]";
 
     private static final class PromptPreset {
         String label;
@@ -151,13 +155,9 @@ public class MainActivity extends Activity {
         }
 
         String selected = captured(KindleAccessibilityService.SELECTED_TEXT_KEY);
-        String current = captured(KindleAccessibilityService.CURRENT_TEXT_KEY);
-        String previous = capturedHistory();
+        String surroundingContext = capturedSurroundingContext();
         addContext("HIGHLIGHT", selected, "No highlight captured");
-        addContext("VISIBLE PAGE", current, "No page context captured");
-        if (!previous.isEmpty()) {
-            addContext("EARLIER PAGES", previous, "");
-        }
+        addContext("SURROUNDING CONTEXT", surroundingContext, "No surrounding context captured");
 
         addSection("ASK");
         for (PromptPreset preset : loadPromptPresets(
@@ -278,15 +278,14 @@ public class MainActivity extends Activity {
             }
         });
         addSection("MESSAGE TEMPLATE");
-        TextView templateHelp = label("Available placeholders: {{highlight}}, {{previous_page}}, "
-                + "{{current_page}}, {{question}}", 14, false);
+        TextView templateHelp = label("Available placeholders: {{highlight}}, "
+                + "{{surrounding_context}}, {{question}}", 14, false);
         templateHelp.setPadding(0, 0, 0, dp(6));
         root.addView(templateHelp);
         EditText messageTemplate = input("");
         messageTemplate.setMinLines(8);
         messageTemplate.setGravity(Gravity.TOP | Gravity.START);
-        messageTemplate.setText(preferences.getString(
-                MESSAGE_TEMPLATE_KEY, DEFAULT_MESSAGE_TEMPLATE));
+        messageTemplate.setText(messageTemplate(preferences));
         root.addView(messageTemplate);
 
         addSection("PRE-FILLED PROMPTS");
@@ -514,8 +513,7 @@ public class MainActivity extends Activity {
     }
 
     private String readingPrompt(String question) {
-        String template = getSharedPreferences(SETTINGS, MODE_PRIVATE)
-                .getString(MESSAGE_TEMPLATE_KEY, DEFAULT_MESSAGE_TEMPLATE);
+        String template = messageTemplate(getSharedPreferences(SETTINGS, MODE_PRIVATE));
         Matcher matcher = TEMPLATE_PLACEHOLDER.matcher(template);
         StringBuffer result = new StringBuffer();
         while (matcher.find()) {
@@ -523,6 +521,9 @@ public class MainActivity extends Activity {
             switch (matcher.group(1)) {
                 case "highlight":
                     value = valueOrNone(captured(KindleAccessibilityService.SELECTED_TEXT_KEY));
+                    break;
+                case "surrounding_context":
+                    value = valueOrNone(capturedSurroundingContext());
                     break;
                 case "previous_page":
                     value = valueOrNone(capturedHistory());
@@ -538,6 +539,12 @@ public class MainActivity extends Activity {
         }
         matcher.appendTail(result);
         return result.toString();
+    }
+
+    private String messageTemplate(SharedPreferences preferences) {
+        String template = preferences.getString(MESSAGE_TEMPLATE_KEY, DEFAULT_MESSAGE_TEMPLATE);
+        return LEGACY_DEFAULT_MESSAGE_TEMPLATE.equals(template)
+                ? DEFAULT_MESSAGE_TEMPLATE : template;
     }
 
     private List<PromptPreset> loadPromptPresets(SharedPreferences preferences) {
@@ -962,6 +969,66 @@ public class MainActivity extends Activity {
         } catch (JSONException ignored) {
         }
         return captured(KindleAccessibilityService.PREVIOUS_TEXT_KEY);
+    }
+
+    private String capturedSurroundingContext() {
+        SharedPreferences preferences = getSharedPreferences(
+                KindleAccessibilityService.PREFS, MODE_PRIVATE);
+        List<String> snapshots = new ArrayList<>();
+        try {
+            JSONArray history = new JSONArray(preferences.getString(
+                    KindleAccessibilityService.HISTORY_TEXT_KEY, "[]"));
+            for (int i = 0; i < history.length(); i++) {
+                addSnapshot(snapshots, history.optString(i));
+            }
+            if (snapshots.isEmpty()) {
+                addSnapshot(snapshots, preferences.getString(
+                        KindleAccessibilityService.PREVIOUS_TEXT_KEY, ""));
+            }
+        } catch (JSONException ignored) {
+            addSnapshot(snapshots, preferences.getString(
+                    KindleAccessibilityService.PREVIOUS_TEXT_KEY, ""));
+        }
+        addSnapshot(snapshots, preferences.getString(
+                KindleAccessibilityService.CURRENT_TEXT_KEY, ""));
+        return limitToLatestWords(String.join("\n\n", snapshots),
+                KindleAccessibilityService.MAX_CONTEXT_WORDS);
+    }
+
+    private void addSnapshot(List<String> snapshots, String value) {
+        String text = value.trim();
+        if (text.isEmpty()) {
+            return;
+        }
+        if (!snapshots.isEmpty()) {
+            int lastIndex = snapshots.size() - 1;
+            String previous = snapshots.get(lastIndex);
+            if (text.contains(previous) || previous.contains(text)) {
+                snapshots.set(lastIndex, text);
+                return;
+            }
+        }
+        snapshots.add(text);
+    }
+
+    private String limitToLatestWords(String text, int maxWords) {
+        Matcher counter = Pattern.compile("\\S+").matcher(text);
+        int wordCount = 0;
+        while (counter.find()) {
+            wordCount++;
+        }
+        if (wordCount <= maxWords) {
+            return text;
+        }
+
+        int markerWords = 4;
+        int wordsToRemove = wordCount - (maxWords - markerWords);
+        Matcher cutoff = Pattern.compile("\\S+").matcher(text);
+        for (int i = 0; i < wordsToRemove; i++) {
+            cutoff.find();
+        }
+        cutoff.find();
+        return CONTEXT_OMISSION_MARKER + "\n\n" + text.substring(cutoff.start());
     }
 
     private void startEventStream() {

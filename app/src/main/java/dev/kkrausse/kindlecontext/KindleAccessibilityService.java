@@ -39,7 +39,7 @@ public class KindleAccessibilityService extends AccessibilityService {
     private static final String EVENT_DUMP_FILE = "kindle-accessibility-events.txt";
     private static final long TEXT_POLL_MS = 1500;
     private static final long COPY_SETTLE_MS = 250;
-    private static final int MAX_HISTORY_PAGES = 6;
+    public static final int MAX_CONTEXT_WORDS = 5_000;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable textPoll = new Runnable() {
@@ -375,7 +375,13 @@ public class KindleAccessibilityService extends AccessibilityService {
                 || !current.equals(history.optString(history.length() - 1)))) {
             history.put(current);
         }
-        while (history.length() > MAX_HISTORY_PAGES) {
+        int retainedWords = countWords(text);
+        for (int i = 0; i < history.length(); i++) {
+            retainedWords += countWords(history.optString(i));
+        }
+        while (history.length() > 0
+                && retainedWords - countWords(history.optString(0)) >= MAX_CONTEXT_WORDS) {
+            retainedWords -= countWords(history.optString(0));
             history.remove(0);
         }
         preferences.edit()
@@ -412,6 +418,11 @@ public class KindleAccessibilityService extends AccessibilityService {
             }
         }
         return spaces >= 100;
+    }
+
+    private int countWords(String text) {
+        String trimmed = text.trim();
+        return trimmed.isEmpty() ? 0 : trimmed.split("\\s+").length;
     }
 
     private void migrateCapturedProse() {

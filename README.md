@@ -1,6 +1,6 @@
 # Kindle Context
 
-Android reading assistant for a BOOX Palma 2. It captures a Kindle highlight plus visible-page context, sends that context to a dedicated OpenCode V2 server over Tailscale, and provides persistent reading chats on the device.
+Android reading assistant for a BOOX Palma 2. It captures a Kindle highlight plus rolling surrounding context, sends that context to a dedicated OpenCode V2 server over Tailscale, and provides persistent reading chats on the device.
 
 ## Architecture
 
@@ -35,17 +35,17 @@ Plain HTTP is intentional because traffic is carried inside Tailscale. OpenCode 
 
 1. Highlight text in Kindle while its selection toolbar is visible.
 2. Press the floating `K` accessibility shortcut.
-3. The service captures prose nodes intersecting the physical display.
+3. The service captures prose nodes intersecting the physical display and builds a rolling context window.
 4. The service invokes Kindle's exposed `Copy` action.
 5. The app opens and reads the copied highlight with Android's foreground clipboard access.
 6. Choose a prompt template or enter a custom question.
-7. The app creates an OpenCode session and sends up to six earlier pages, the current page, highlight, and question.
+7. The app creates an OpenCode session and sends up to 5,000 words of the most recent surrounding context, the highlight, and the question.
 8. The chat screen streams response updates from OpenCode's event endpoint and accepts follow-up messages.
 9. Use `CHATS` to reopen sessions stored by the server or `KINDLE` to return to the book.
 
-The initial prompt places the question last and clearly labels each context section. It also instructs the model to answer concisely for a small e-ink display.
+The initial prompt combines captured snapshots into one chronological `SURROUNDING CONTEXT` section without page labels. When more than 5,000 words have been captured, it drops the oldest words first. The question remains last.
 
-If Kindle does not expose `Copy` or readable clipboard text, the app falls back to standard accessibility selection offsets. The full visible-page context remains available when no highlight can be recovered.
+If Kindle does not expose `Copy` or readable clipboard text, the app falls back to standard accessibility selection offsets. The surrounding context remains available when no highlight can be recovered.
 
 Kindle retains copied selections as annotations. Automatic deletion is intentionally not attempted because Copy closes and invalidates the selection toolbar before its accessible `Delete Highlight` action can run. See `progress_20260801_113544.md` for tested alternatives.
 
@@ -334,10 +334,10 @@ Open `SETTINGS` in Kindle Context and configure:
 | Server password | No compiled default; enter the value from `state/server.env` |
 | New chat model | `Laguna S 2.1 Free` |
 | Model variant | `medium` |
-| Message template | Previous page, current page, highlight, then question |
+| Message template | Surrounding context, highlight, then question |
 | Pre-filled prompts | Explain terms, why it matters, historical context |
 
-The model list is loaded from the server's active catalog. The message template is literal text with `{{highlight}}`, `{{previous_page}}`, `{{current_page}}`, and `{{question}}` placeholders. `{{previous_page}}` contains the retained earlier-page history (up to six pages) despite its singular name, preserving existing custom templates. Pre-filled prompt labels and text can be edited, added, removed, and reordered directly in Settings. Press `SAVE AND TEST` to persist all settings. Existing chats retain their original model and messages; these selections apply to new chats.
+The model list is loaded from the server's active catalog. The message template is literal text with `{{highlight}}`, `{{surrounding_context}}`, and `{{question}}` placeholders. The surrounding context is chronological and retains the latest 5,000 words. Existing custom templates using `{{previous_page}}` and `{{current_page}}` continue to work, while the former built-in template upgrades automatically. Pre-filled prompt labels and text can be edited, added, removed, and reordered directly in Settings. Press `SAVE AND TEST` to persist all settings. Existing chats retain their original model and messages; these selections apply to new chats.
 
 The manifest allows cleartext traffic because the endpoint is HTTP over Tailscale. Do not point the app at an untrusted cleartext network endpoint.
 
