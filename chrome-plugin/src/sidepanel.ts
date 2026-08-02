@@ -191,7 +191,7 @@ async function showCapture() {
   currentSessionId = null;
   if (!capture) {
     app.innerHTML = heading("Reading Context", "Select a passage on any page to begin.")
-      + `<div class="empty">Highlight text, then press the Explain button beside the selection.</div>`
+      + `<div class="empty">Keep this panel open and highlight text on the page. Your selection will appear here automatically.</div>`
       + `<button class="secondary" data-screen="sessions">Browse shared chats</button>`;
     bindScreenButtons();
     return;

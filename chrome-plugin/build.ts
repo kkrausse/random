@@ -25,7 +25,7 @@ if (!result.success) {
   process.exit(1);
 }
 
-for (const asset of ["manifest.json", "content.css", "sidepanel.css", "sidepanel.html"]) {
+for (const asset of ["manifest.json", "sidepanel.css", "sidepanel.html"]) {
   cpSync(join(root, asset), join(outdir, asset));
 }
 
