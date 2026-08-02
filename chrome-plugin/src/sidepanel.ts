@@ -17,6 +17,7 @@ function $<T extends Element = HTMLElement>(selector: string, root: ParentNode =
 
 const app = $<HTMLElement>("#app");
 const markdown = new MarkdownIt({ html: false, linkify: true, typographer: true });
+const AUTO_SCROLL_PAUSE_MS = 5000;
 let settings: Settings;
 let capture: Capture | null;
 let editingPresets: PromptPreset[] = [];
@@ -27,6 +28,9 @@ let awaitingResponse = false;
 let sending = false;
 let stateLoaded = false;
 let activeScreen: "capture" | "sessions" | "chat" | "settings" = "capture";
+let lastUserScrollAt = 0;
+let lastRenderedMessageState = "";
+let autoScrollFrame: number | null = null;
 const queuedCaptures = new Map<number, Capture>();
 
 markdown.renderer.rules.link_open = (tokens, index, options, env, renderer) => {
@@ -34,6 +38,38 @@ markdown.renderer.rules.link_open = (tokens, index, options, env, renderer) => {
   tokens[index].attrSet("rel", "noopener noreferrer");
   return renderer.renderToken(tokens, index, options);
 };
+
+function recordScrollInput() {
+  if (activeScreen !== "chat") return;
+  lastUserScrollAt = Date.now();
+  if (autoScrollFrame !== null) cancelAnimationFrame(autoScrollFrame);
+  autoScrollFrame = null;
+}
+
+document.addEventListener("wheel", recordScrollInput, { passive: true });
+document.addEventListener("touchmove", recordScrollInput, { passive: true });
+document.addEventListener("pointerdown", (event) => {
+  if (event.clientX >= window.innerWidth - 20) recordScrollInput();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.target instanceof HTMLInputElement
+    || event.target instanceof HTMLTextAreaElement
+    || event.target instanceof HTMLSelectElement) return;
+  if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) {
+    recordScrollInput();
+  }
+});
+
+function scrollChatToBottom() {
+  if (activeScreen !== "chat" || Date.now() - lastUserScrollAt < AUTO_SCROLL_PAUSE_MS) return;
+  if (autoScrollFrame !== null) cancelAnimationFrame(autoScrollFrame);
+  autoScrollFrame = requestAnimationFrame(() => {
+    autoScrollFrame = null;
+    if (activeScreen === "chat" && Date.now() - lastUserScrollAt >= AUTO_SCROLL_PAUSE_MS) {
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "auto" });
+    }
+  });
+}
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "session") return;
@@ -252,6 +288,8 @@ async function showSessions() {
 
 async function showChat(sessionId: string, preparingPrompt = false) {
   activeScreen = "chat";
+  lastUserScrollAt = 0;
+  lastRenderedMessageState = "";
   stopPolling();
   currentSessionId = sessionId;
   app.innerHTML = heading("Conversation", "Reading notes, kept on your OpenCode server.") + `
@@ -300,6 +338,7 @@ function renderChatCapture() {
   });
   $("#new-chat-from-capture", container).addEventListener("click", () => showCapture());
   setComposerEnabled(!sending && !awaitingResponse);
+  scrollChatToBottom();
 }
 
 async function appendHighlight(question: string) {
@@ -334,6 +373,11 @@ async function refreshMessages(continuePolling: boolean) {
   try {
     const messages = await client().messages(requestedSession);
     if (requestedSession !== currentSessionId) return;
+    const messageState = messages
+      .map((message) => `${message.id}:${message.text.length}:${message.complete}`)
+      .join("|");
+    const contentChanged = messageState !== lastRenderedMessageState;
+    lastRenderedMessageState = messageState;
     const list = $<HTMLElement>("#messages");
     list.replaceChildren();
     messages.forEach((message) => {
@@ -355,6 +399,7 @@ async function refreshMessages(continuePolling: boolean) {
     sending = false;
     setComposerEnabled(!waiting);
     setStatus(waiting ? "OpenCode is working..." : "");
+    if (contentChanged) scrollChatToBottom();
     if (continuePolling || waiting) {
       pollTimer = setTimeout(() => refreshMessages(false), 1200);
     }
