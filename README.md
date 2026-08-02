@@ -330,8 +330,10 @@ Open `SETTINGS` in Kindle Context and configure:
 | Server password | No compiled default; enter the value from `state/server.env` |
 | New chat model | `Laguna S 2.1 Free` |
 | Model variant | `medium` |
+| Message template | Previous page, current page, highlight, then question |
+| Pre-filled prompts | Explain terms, why it matters, historical context |
 
-The model list is loaded from the server's active catalog. Press `SAVE AND TEST` to persist the selected model and connection settings. Existing chats retain their original model; the selection applies to new chats.
+The model list is loaded from the server's active catalog. The message template is literal text with `{{highlight}}`, `{{previous_page}}`, `{{current_page}}`, and `{{question}}` placeholders. Pre-filled prompt labels and text can be edited, added, removed, and reordered directly in Settings. Press `SAVE AND TEST` to persist all settings. Existing chats retain their original model and messages; these selections apply to new chats.
 
 The manifest allows cleartext traffic because the endpoint is HTTP over Tailscale. Do not point the app at an untrusted cleartext network endpoint.
 

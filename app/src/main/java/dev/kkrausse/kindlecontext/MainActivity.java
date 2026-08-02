@@ -13,8 +13,10 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.text.Editable;
 import android.text.InputType;
 import android.text.TextUtils;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -29,12 +31,18 @@ import android.widget.AdapterView;
 import android.widget.Spinner;
 import android.widget.TextView;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import io.noties.markwon.Markwon;
 
@@ -46,11 +54,29 @@ public class MainActivity extends Activity {
     private static final String MODEL_PROVIDER_KEY = "model_provider";
     private static final String MODEL_ID_KEY = "model_id";
     private static final String MODEL_VARIANT_KEY = "model_variant";
+    private static final String MESSAGE_TEMPLATE_KEY = "message_template";
+    private static final String PROMPT_PRESETS_KEY = "prompt_presets";
     private static final String DEFAULT_SERVER = "http://raspberrypi.example.ts.net:41137";
     private static final String DEFAULT_DIRECTORY = "/home/pi/deploys/palma2-opencode/workdir";
     private static final String DEFAULT_MODEL_PROVIDER = "opencode";
     private static final String DEFAULT_MODEL_ID = "laguna-s-2.1-free";
     private static final String DEFAULT_MODEL_VARIANT = "medium";
+    private static final String DEFAULT_MESSAGE_TEMPLATE = "SURROUNDING CONTEXT\n\nPREVIOUS PAGE\n"
+            + "{{previous_page}}\n\nCURRENT PAGE\n{{current_page}}"
+            + "\n\nHIGHLIGHTED PASSAGE\n{{highlight}}"
+            + "\n\nREADER'S QUESTION\n{{question}}";
+    private static final Pattern TEMPLATE_PLACEHOLDER = Pattern.compile(
+            "\\{\\{(highlight|previous_page|current_page|question)\\}\\}");
+
+    private static final class PromptPreset {
+        String label;
+        String prompt;
+
+        PromptPreset(String label, String prompt) {
+            this.label = label;
+            this.prompt = prompt;
+        }
+    }
 
     private final ExecutorService network = Executors.newSingleThreadExecutor();
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -124,15 +150,10 @@ public class MainActivity extends Activity {
         }
 
         addSection("ASK");
-        addPromptButton("EXPLAIN TERMS", "Identify up to five terms, names, allusions, or references "
-                + "in the highlighted passage that a reader may not recognize. Give a brief explanation "
-                + "of each in this context. Do not list ordinary words merely to fill space.");
-        addPromptButton("WHY IT MATTERS", "Explain what role the highlighted passage plays in the "
-                + "author's broader point or the surrounding discussion. Base the answer only on the "
-                + "supplied text and distinguish inference from explicit evidence.");
-        addPromptButton("HISTORICAL CONTEXT", "Give the minimum historical, cultural, scientific, or "
-                + "philosophical context needed to understand the highlighted passage. Research external "
-                + "facts when useful and distinguish them from the book's claims.");
+        for (PromptPreset preset : loadPromptPresets(
+                getSharedPreferences(SETTINGS, MODE_PRIVATE))) {
+            addPromptButton(preset.label, preset.prompt);
+        }
 
         EditText custom = input("Ask your own question...");
         custom.setMinLines(2);
@@ -205,7 +226,7 @@ public class MainActivity extends Activity {
     private void showSettings() {
         polling = false;
         beginScreen();
-        addTopBar("CONNECTION");
+        addTopBar("SETTINGS");
         SharedPreferences preferences = getSharedPreferences(SETTINGS, MODE_PRIVATE);
         EditText server = settingInput("SERVER URL",
                 preferences.getString(SERVER_KEY, DEFAULT_SERVER));
@@ -245,12 +266,50 @@ public class MainActivity extends Activity {
             public void onNothingSelected(AdapterView<?> parent) {
             }
         });
+        addSection("MESSAGE TEMPLATE");
+        TextView templateHelp = label("Available placeholders: {{highlight}}, {{previous_page}}, "
+                + "{{current_page}}, {{question}}", 14, false);
+        templateHelp.setPadding(0, 0, 0, dp(6));
+        root.addView(templateHelp);
+        EditText messageTemplate = input("");
+        messageTemplate.setMinLines(8);
+        messageTemplate.setGravity(Gravity.TOP | Gravity.START);
+        messageTemplate.setText(preferences.getString(
+                MESSAGE_TEMPLATE_KEY, DEFAULT_MESSAGE_TEMPLATE));
+        root.addView(messageTemplate);
+
+        addSection("PRE-FILLED PROMPTS");
+        List<PromptPreset> promptPresets = loadPromptPresets(preferences);
+        LinearLayout promptEditors = new LinearLayout(this);
+        promptEditors.setOrientation(LinearLayout.VERTICAL);
+        root.addView(promptEditors);
+        renderPromptEditors(promptEditors, promptPresets);
+        Button addPrompt = button("ADD PROMPT");
+        addPrompt.setOnClickListener(v -> {
+            promptPresets.add(new PromptPreset("NEW PROMPT", ""));
+            renderPromptEditors(promptEditors, promptPresets);
+        });
+        root.addView(addPrompt);
+
         Button save = button("SAVE AND TEST");
         save.setOnClickListener(v -> {
+            String template = messageTemplate.getText().toString();
+            if (template.trim().isEmpty()) {
+                statusView.setText("Message template cannot be empty.");
+                return;
+            }
+            for (PromptPreset preset : promptPresets) {
+                if (preset.label.trim().isEmpty() || preset.prompt.trim().isEmpty()) {
+                    statusView.setText("Each pre-filled prompt needs a label and prompt text.");
+                    return;
+                }
+            }
             SharedPreferences.Editor editor = preferences.edit()
                     .putString(SERVER_KEY, server.getText().toString().trim())
                     .putString(DIRECTORY_KEY, directory.getText().toString().trim())
-                    .putString(TOKEN_KEY, token.getText().toString().trim());
+                    .putString(TOKEN_KEY, token.getText().toString().trim())
+                    .putString(MESSAGE_TEMPLATE_KEY, template)
+                    .putString(PROMPT_PRESETS_KEY, serializePromptPresets(promptPresets));
             int modelPosition = modelSpinner.getSelectedItemPosition();
             if (modelPosition >= 0 && modelPosition < availableModels.size()) {
                 OpenCodeClient.Model selected = availableModels.get(modelPosition);
@@ -422,13 +481,142 @@ public class MainActivity extends Activity {
     }
 
     private String readingPrompt(String question) {
-        return "HIGHLIGHTED PASSAGE\n"
-                + valueOrNone(captured(KindleAccessibilityService.SELECTED_TEXT_KEY))
-                + "\n\nSURROUNDING CONTEXT\n\nPREVIOUS PAGE\n"
-                + valueOrNone(captured(KindleAccessibilityService.PREVIOUS_TEXT_KEY))
-                + "\n\nCURRENT PAGE\n"
-                + valueOrNone(captured(KindleAccessibilityService.CURRENT_TEXT_KEY))
-                + "\n\nREADER'S QUESTION\n" + question;
+        String template = getSharedPreferences(SETTINGS, MODE_PRIVATE)
+                .getString(MESSAGE_TEMPLATE_KEY, DEFAULT_MESSAGE_TEMPLATE);
+        Matcher matcher = TEMPLATE_PLACEHOLDER.matcher(template);
+        StringBuffer result = new StringBuffer();
+        while (matcher.find()) {
+            String value;
+            switch (matcher.group(1)) {
+                case "highlight":
+                    value = valueOrNone(captured(KindleAccessibilityService.SELECTED_TEXT_KEY));
+                    break;
+                case "previous_page":
+                    value = valueOrNone(captured(KindleAccessibilityService.PREVIOUS_TEXT_KEY));
+                    break;
+                case "current_page":
+                    value = valueOrNone(captured(KindleAccessibilityService.CURRENT_TEXT_KEY));
+                    break;
+                default:
+                    value = question;
+                    break;
+            }
+            matcher.appendReplacement(result, Matcher.quoteReplacement(value));
+        }
+        matcher.appendTail(result);
+        return result.toString();
+    }
+
+    private List<PromptPreset> loadPromptPresets(SharedPreferences preferences) {
+        if (!preferences.contains(PROMPT_PRESETS_KEY)) {
+            return defaultPromptPresets();
+        }
+        List<PromptPreset> presets = new ArrayList<>();
+        try {
+            JSONArray values = new JSONArray(preferences.getString(PROMPT_PRESETS_KEY, "[]"));
+            for (int i = 0; i < values.length(); i++) {
+                JSONObject value = values.getJSONObject(i);
+                presets.add(new PromptPreset(value.getString("label"), value.getString("prompt")));
+            }
+            return presets;
+        } catch (JSONException error) {
+            return defaultPromptPresets();
+        }
+    }
+
+    private List<PromptPreset> defaultPromptPresets() {
+        List<PromptPreset> presets = new ArrayList<>();
+        presets.add(new PromptPreset("EXPLAIN TERMS", "Identify up to five terms, names, allusions, "
+                + "or references in the highlighted passage that a reader may not recognize. Give a "
+                + "brief explanation of each in this context. Do not list ordinary words merely to fill space."));
+        presets.add(new PromptPreset("WHY IT MATTERS", "Explain what role the highlighted passage "
+                + "plays in the author's broader point or the surrounding discussion. Base the answer "
+                + "only on the supplied text and distinguish inference from explicit evidence."));
+        presets.add(new PromptPreset("HISTORICAL CONTEXT", "Give the minimum historical, cultural, "
+                + "scientific, or philosophical context needed to understand the highlighted passage. "
+                + "Research external facts when useful and distinguish them from the book's claims."));
+        return presets;
+    }
+
+    private String serializePromptPresets(List<PromptPreset> presets) {
+        JSONArray values = new JSONArray();
+        for (PromptPreset preset : presets) {
+            JSONObject value = new JSONObject();
+            try {
+                value.put("label", preset.label.trim());
+                value.put("prompt", preset.prompt.trim());
+            } catch (JSONException error) {
+                throw new IllegalStateException(error);
+            }
+            values.put(value);
+        }
+        return values.toString();
+    }
+
+    private void renderPromptEditors(LinearLayout container, List<PromptPreset> presets) {
+        container.removeAllViews();
+        for (int i = 0; i < presets.size(); i++) {
+            int position = i;
+            PromptPreset preset = presets.get(i);
+            TextView heading = label("PROMPT " + (i + 1), 13, true);
+            heading.setPadding(0, dp(10), 0, dp(4));
+            container.addView(heading);
+
+            EditText labelInput = input("Button label");
+            labelInput.setSingleLine(true);
+            labelInput.setText(preset.label);
+            labelInput.addTextChangedListener(textWatcher(value -> preset.label = value));
+            container.addView(labelInput);
+
+            EditText promptInput = input("Prompt text");
+            promptInput.setMinLines(3);
+            promptInput.setGravity(Gravity.TOP | Gravity.START);
+            promptInput.setText(preset.prompt);
+            promptInput.addTextChangedListener(textWatcher(value -> preset.prompt = value));
+            container.addView(promptInput);
+
+            LinearLayout controls = new LinearLayout(this);
+            Button up = smallButton("UP");
+            up.setEnabled(i > 0);
+            up.setOnClickListener(v -> {
+                PromptPreset moved = presets.remove(position);
+                presets.add(position - 1, moved);
+                renderPromptEditors(container, presets);
+            });
+            controls.addView(up, new LinearLayout.LayoutParams(0, dp(48), 1));
+            Button down = smallButton("DOWN");
+            down.setEnabled(i < presets.size() - 1);
+            down.setOnClickListener(v -> {
+                PromptPreset moved = presets.remove(position);
+                presets.add(position + 1, moved);
+                renderPromptEditors(container, presets);
+            });
+            controls.addView(down, new LinearLayout.LayoutParams(0, dp(48), 1));
+            Button remove = smallButton("REMOVE");
+            remove.setOnClickListener(v -> {
+                presets.remove(position);
+                renderPromptEditors(container, presets);
+            });
+            controls.addView(remove, new LinearLayout.LayoutParams(0, dp(48), 1));
+            container.addView(controls);
+        }
+    }
+
+    private TextWatcher textWatcher(java.util.function.Consumer<String> onChange) {
+        return new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence text, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence text, int start, int before, int count) {
+                onChange.accept(text.toString());
+            }
+
+            @Override
+            public void afterTextChanged(Editable editable) {
+            }
+        };
     }
 
     private void beginScreen() {
