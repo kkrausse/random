@@ -22,6 +22,15 @@ export interface SessionEvent {
   };
 }
 
+export interface SessionUsage {
+  input: number;
+  output: number;
+  reasoning: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cost: number;
+}
+
 export class OpenCodeClient {
   private baseUrl: string;
   private directory: string;
@@ -106,6 +115,27 @@ export class OpenCodeClient {
     const response = await this.request<ApiResponse<Parameters<typeof messageFromJson>[0][]>>("GET",
       `/api/session/${encodeURIComponent(sessionId)}/message?limit=200&order=desc`);
     return response.data.reverse().map(messageFromJson).filter(Boolean);
+  }
+
+  async sessionUsage(sessionId: string): Promise<SessionUsage> {
+    const response = await this.request<ApiResponse<{
+      cost?: number;
+      tokens?: {
+        input?: number;
+        output?: number;
+        reasoning?: number;
+        cache?: { read?: number; write?: number };
+      };
+    }>>("GET", `/api/session/${encodeURIComponent(sessionId)}`);
+    const tokens = response.data.tokens || {};
+    return {
+      input: tokens.input || 0,
+      output: tokens.output || 0,
+      reasoning: tokens.reasoning || 0,
+      cacheRead: tokens.cache?.read || 0,
+      cacheWrite: tokens.cache?.write || 0,
+      cost: response.data.cost || 0
+    };
   }
 
   async streamEvents(

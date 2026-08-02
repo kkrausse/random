@@ -40,3 +40,32 @@ test("streamEvents parses chunked SSE data with authenticated fetch", async () =
     globalThis.fetch = originalFetch;
   }
 });
+
+test("sessionUsage returns OpenCode session token and cost totals", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    data: {
+      cost: 0.012345,
+      tokens: {
+        input: 1200,
+        output: 340,
+        reasoning: 56,
+        cache: { read: 900, write: 78 }
+      }
+    }
+  }), { status: 200 })) as unknown as typeof fetch;
+
+  try {
+    const usage = await new OpenCodeClient(DEFAULT_SETTINGS).sessionUsage("session-1");
+    assert.deepEqual(usage, {
+      input: 1200,
+      output: 340,
+      reasoning: 56,
+      cacheRead: 900,
+      cacheWrite: 78,
+      cost: 0.012345
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

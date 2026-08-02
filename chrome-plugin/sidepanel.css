@@ -197,6 +197,13 @@ textarea.template { min-height: 270px; font-family: ui-monospace, monospace; fon
 .chat-capture-card .eyebrow { margin-top: 0; }
 .chat-capture-card blockquote { margin: 0 0 10px; font-size: 16px; line-height: 1.4; }
 .chat-capture-card .new-chat-action { margin-top: 8px; }
+.chat-usage {
+  margin-top: 18px;
+  padding-top: 8px;
+  border-top: 1px solid #c9c0af;
+  color: var(--muted);
+  font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
 .composer { position: sticky; bottom: 0; padding: 12px 0; background: var(--paper); }
 .composer textarea { min-height: 64px; }
 

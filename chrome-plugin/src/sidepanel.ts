@@ -1,5 +1,5 @@
 import { OpenCodeClient } from "./api";
-import type { SessionEvent } from "./api";
+import type { SessionEvent, SessionUsage } from "./api";
 import MarkdownIt from "markdown-it";
 import {
   DEFAULT_SETTINGS,
@@ -326,6 +326,7 @@ async function showChat(sessionId: string, preparingPrompt = false) {
   app.innerHTML = heading("Conversation", "Reading notes, kept on your OpenCode server.") + `
     <div id="messages"></div>
     <div id="chat-capture"></div>
+    <footer class="chat-usage" id="chat-usage">Usage loading...</footer>
     <p class="status">Loading...</p>
     <div class="composer">
       <textarea id="reply" placeholder="Continue the conversation..."></textarea>
@@ -527,12 +528,43 @@ function startEventStream(sessionId: string): Promise<void> {
   return connected;
 }
 
+function renderSessionUsage(usage: SessionUsage) {
+  const footer = document.querySelector<HTMLElement>("#chat-usage");
+  if (!footer) return;
+  const compact = new Intl.NumberFormat(undefined, {
+    notation: "compact",
+    maximumFractionDigits: 1
+  });
+  const exact = new Intl.NumberFormat();
+  const fields = [
+    `${compact.format(usage.input)} input`,
+    `${compact.format(usage.cacheRead)} cached read`,
+    `${compact.format(usage.cacheWrite)} cache write`,
+    `${compact.format(usage.output)} output`
+  ];
+  if (usage.reasoning) fields.push(`${compact.format(usage.reasoning)} reasoning`);
+  fields.push(`$${usage.cost.toFixed(4)}`);
+  footer.textContent = fields.join(" · ");
+  footer.title = `Input: ${exact.format(usage.input)}\nCached read: ${exact.format(usage.cacheRead)}`
+    + `\nCache write: ${exact.format(usage.cacheWrite)}\nOutput: ${exact.format(usage.output)}`
+    + `\nReasoning: ${exact.format(usage.reasoning)}\nCost: $${usage.cost.toFixed(6)}`;
+}
+
 async function refreshMessages(expectingResponse: boolean) {
   if (!currentSessionId) return;
   const requestedSession = currentSessionId;
   try {
-    const messages = await client().messages(requestedSession);
+    const api = client();
+    const [messages, usage] = await Promise.all([
+      api.messages(requestedSession),
+      api.sessionUsage(requestedSession).catch(() => null)
+    ]);
     if (requestedSession !== currentSessionId) return;
+    if (usage) renderSessionUsage(usage);
+    else {
+      const footer = document.querySelector<HTMLElement>("#chat-usage");
+      if (footer) footer.textContent = "Usage unavailable";
+    }
     const messageState = messages
       .map((message) => `${message.id}:${message.text.length}:${message.complete}`)
       .join("|");
