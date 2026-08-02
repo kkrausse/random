@@ -1,13 +1,13 @@
-# Kindle Context
+# Reading Context
 
-Android reading assistant for a BOOX Palma 2. It captures a Kindle highlight plus rolling surrounding context, sends that context to a dedicated OpenCode V2 server over Tailscale, and provides persistent reading chats on the device.
+Android reading assistant for a BOOX Palma 2. It captures a highlight plus rolling surrounding context from supported reading apps, sends that context to a dedicated OpenCode V2 server over Tailscale, and provides persistent reading chats on the device. Kindle and Substack are currently supported.
 
 ## Architecture
 
 ```text
-Kindle on Palma 2
+Kindle or Substack on Palma 2
   -> Android accessibility service
-  -> Kindle Context Android app
+  -> Reading Context Android app
   -> HTTP Basic over Tailscale
   -> OpenCode V2 on Raspberry Pi
   -> configured model provider
@@ -19,6 +19,7 @@ The deployed components are intentionally isolated:
 | --- | --- |
 | Android package | `dev.example.kindlecontext` |
 | Kindle package | `com.amazon.kindle` |
+| Substack package | `com.substack.app` |
 | Server hostname | `raspberrypi.example.ts.net` |
 | Tailscale IPv4 | `100.64.0.10` |
 | Server port | `41137` |
@@ -33,19 +34,21 @@ Plain HTTP is intentional because traffic is carried inside Tailscale. OpenCode 
 
 ## Reading Flow
 
-1. Highlight text in Kindle while its selection toolbar is visible.
+1. Highlight text in Kindle or Substack while its selection toolbar is visible.
 2. Press the floating `K` accessibility shortcut.
 3. The service captures prose nodes intersecting the physical display and builds a rolling context window.
-4. The service invokes Kindle's exposed `Copy` action.
+4. The service invokes the reader's exposed `Copy` action. Substack's transient toolbar action is retained from its accessibility event because it is omitted from the active-window tree.
 5. The app opens and reads the copied highlight with Android's foreground clipboard access.
 6. Choose a prompt template or enter a custom question.
 7. The app creates an OpenCode session and sends up to 5,000 words of the most recent surrounding context, the highlight, and the question.
 8. The chat screen streams response updates from OpenCode's event endpoint and accepts follow-up messages.
-9. Use `CHATS` to reopen sessions stored by the server or `KINDLE` to return to the book.
+9. Use `CHATS` to reopen sessions stored by the server or the source-app button (`KINDLE` or `SUBSTACK`) to return to the reading app.
 
 The initial prompt combines captured snapshots into one chronological surrounding-context section without page labels. It uses XML-style boundaries to separate source material from the reader's instructions. Captured text is escaped so it cannot close or alter those boundaries. When more than 5,000 words have been captured, it drops the oldest words first. The question remains last.
 
-If Kindle does not expose `Copy` or readable clipboard text, the app falls back to standard accessibility selection offsets. The surrounding context remains available when no highlight can be recovered.
+If the source app does not expose `Copy` or readable clipboard text, the app falls back to standard accessibility selection offsets. The surrounding context remains available when no highlight can be recovered.
+
+Supported readers are declared as source profiles in `KindleAccessibilityService`. Each profile provides its package, display label, copy action, and whether the action must be retained from a transient accessibility event. Captured source metadata drives return navigation, and context history resets when switching readers so text from separate sources is not mixed.
 
 Kindle retains copied selections as annotations. Automatic deletion is intentionally not attempted because Copy closes and invalidates the selection toolbar before its accessible `Delete Highlight` action can run. See `progress_20260801_113544.md` for tested alternatives.
 
@@ -325,7 +328,7 @@ The script uses `ADB`, `adb` from `PATH`, or the SDK location under `ANDROID_HOM
 
 ## App Configuration
 
-Open `SETTINGS` in Kindle Context and configure:
+Open `SETTINGS` in Reading Context and configure:
 
 | Setting | Default |
 | --- | --- |
@@ -345,13 +348,13 @@ Changing app settings only changes private Android preferences. It does not modi
 
 ## BOOX Configuration
 
-Disable freezing for `Kindle Context POC` under `Settings -> Apps & Notifications -> Freeze Settings / App Freeze`. BOOX freezing disables the package, kills its accessibility service, removes it from enabled accessibility services, and clears the accessibility-button target.
+Disable freezing for `Reading Context` under `Settings -> Apps & Notifications -> Freeze Settings / App Freeze`. BOOX freezing disables the package, kills its accessibility service, removes it from enabled accessibility services, and clears the accessibility-button target.
 
 After installing an APK, verify:
 
-1. `Kindle Context POC` is not frozen.
-2. `Kindle Context Capture` is enabled in Android accessibility settings.
-3. The floating `K` button targets `Kindle Context Capture`.
+1. `Reading Context` is not frozen.
+2. `Reading Context Capture` is enabled in Android accessibility settings.
+3. The floating `K` button targets `Reading Context Capture`.
 4. The app's `SETTINGS` connection test succeeds.
 
 The separate BOOX NaviBall service can remain enabled.
@@ -377,7 +380,7 @@ Development-only recovery commands that preserve NaviBall:
   'dev.example.kindlecontext/dev.example.kindlecontext.KindleAccessibilityService'
 ```
 
-If Android still lists the service as crashed, toggle only `Kindle Context Capture` off and on in accessibility settings.
+If Android still lists the service as crashed, toggle only `Reading Context Capture` off and on in accessibility settings.
 
 ## Troubleshooting
 
@@ -427,9 +430,9 @@ Pull private accessibility diagnostics:
 
 ```sh
 "$ADB" exec-out run-as dev.example.kindlecontext \
-  cat files/kindle-accessibility-tree.txt > kindle-accessibility-tree.txt
+  cat files/reading-accessibility-tree.txt > reading-accessibility-tree.txt
 "$ADB" exec-out run-as dev.example.kindlecontext \
-  cat files/kindle-accessibility-events.txt > kindle-accessibility-events.txt
+  cat files/reading-accessibility-events.txt > reading-accessibility-events.txt
 ```
 
 These files contain book prose. Keep them local and remove or gate diagnostic persistence before production use.

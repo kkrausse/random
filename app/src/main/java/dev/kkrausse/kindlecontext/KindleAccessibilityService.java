@@ -21,31 +21,55 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 public class KindleAccessibilityService extends AccessibilityService {
     public static final String KINDLE_PACKAGE = "com.amazon.kindle";
+    public static final String SUBSTACK_PACKAGE = "com.substack.app";
     public static final String PREFS = "capture";
     public static final String CURRENT_TEXT_KEY = "current_text_v2";
     public static final String PREVIOUS_TEXT_KEY = "previous_text_v2";
     public static final String HISTORY_TEXT_KEY = "page_history_v1";
     public static final String SELECTED_TEXT_KEY = "selected_text_v1";
     public static final String EVENT_KEY = "latest_event";
+    public static final String SOURCE_PACKAGE_KEY = "source_package_v1";
+    public static final String SOURCE_LABEL_KEY = "source_label_v1";
     public static final String READ_CLIPBOARD_EXTRA = "read_clipboard";
 
     private static final String TAG = "KindleContext";
     private static final String LEGACY_TEXT_KEY = "latest_text";
-    private static final String TREE_DUMP_FILE = "kindle-accessibility-tree.txt";
-    private static final String EVENT_DUMP_FILE = "kindle-accessibility-events.txt";
+    private static final String TREE_DUMP_FILE = "reading-accessibility-tree.txt";
+    private static final String EVENT_DUMP_FILE = "reading-accessibility-events.txt";
     private static final long TEXT_POLL_MS = 1500;
     private static final long COPY_SETTLE_MS = 250;
     public static final int MAX_CONTEXT_WORDS = 5_000;
+
+    private static final class ReadingSource {
+        final String packageName;
+        final String label;
+        final String copyAction;
+        final boolean cacheTransientCopy;
+
+        ReadingSource(String packageName, String label, String copyAction,
+                boolean cacheTransientCopy) {
+            this.packageName = packageName;
+            this.label = label;
+            this.copyAction = copyAction;
+            this.cacheTransientCopy = cacheTransientCopy;
+        }
+    }
+
+    // Adding another reader should only require a source profile unless its UI needs a new strategy.
+    private static final List<ReadingSource> READING_SOURCES = List.of(
+            new ReadingSource(KINDLE_PACKAGE, "Kindle", "Copy", false),
+            new ReadingSource(SUBSTACK_PACKAGE, "Substack", "Copy", true));
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable textPoll = new Runnable() {
         @Override
         public void run() {
-            if (isKindleActive()) {
+            if (activeSource() != null) {
                 captureCurrentTree();
             }
             mainHandler.postDelayed(this, TEXT_POLL_MS);
@@ -54,6 +78,8 @@ public class KindleAccessibilityService extends AccessibilityService {
 
     private AccessibilityButtonController accessibilityButtonController;
     private AccessibilityButtonController.AccessibilityButtonCallback accessibilityButtonCallback;
+    private AccessibilityNodeInfo pendingCopyAction;
+    private String pendingCopyPackage;
 
     @Override
     protected void onServiceConnected() {
@@ -65,7 +91,7 @@ public class KindleAccessibilityService extends AccessibilityService {
                 dumpCurrentTree();
                 captureSelectedText();
                 captureCurrentTree();
-                if (!copyKindleSelection()) {
+                if (!copySelection()) {
                     openCaptureActivity(false);
                 }
             }
@@ -84,7 +110,8 @@ public class KindleAccessibilityService extends AccessibilityService {
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         CharSequence packageName = event.getPackageName();
-        if (packageName == null || !KINDLE_PACKAGE.contentEquals(packageName)) {
+        ReadingSource source = sourceFor(packageName);
+        if (source == null) {
             return;
         }
 
@@ -93,6 +120,7 @@ public class KindleAccessibilityService extends AccessibilityService {
                 + " text=" + event.getText()
                 + " description=" + event.getContentDescription();
         Log.i(TAG, eventDescription);
+        cacheCopyAction(event, source);
         appendEventDump(event);
         getSharedPreferences(PREFS, MODE_PRIVATE)
                 .edit()
@@ -164,11 +192,12 @@ public class KindleAccessibilityService extends AccessibilityService {
 
     private void captureSelectedText() {
         AccessibilityNodeInfo root = getRootInActiveWindow();
-        if (root == null || root.getPackageName() == null
-                || !KINDLE_PACKAGE.contentEquals(root.getPackageName())) {
+        ReadingSource source = sourceFor(root == null ? null : root.getPackageName());
+        if (source == null) {
             return;
         }
 
+        prepareSource(source);
         Set<String> pieces = new LinkedHashSet<>();
         collectSelectedText(root, pieces);
         String selected = String.join("\n\n", pieces).trim();
@@ -177,26 +206,37 @@ public class KindleAccessibilityService extends AccessibilityService {
                 .putString(SELECTED_TEXT_KEY, selected)
                 .apply();
         Log.i(TAG, selected.isEmpty()
-                ? "Kindle exposed no text selection offsets"
+                ? source.label + " exposed no text selection offsets"
                 : "Captured " + selected.length() + " selected characters");
     }
 
-    private boolean copyKindleSelection() {
+    private boolean copySelection() {
         AccessibilityNodeInfo root = getRootInActiveWindow();
-        if (root == null || root.getPackageName() == null
-                || !KINDLE_PACKAGE.contentEquals(root.getPackageName())) {
+        ReadingSource source = sourceFor(root == null ? null : root.getPackageName());
+        if (source == null || source.copyAction == null) {
             return false;
         }
 
-        AccessibilityNodeInfo copy = findAction(root, "Copy");
-        if (copy == null) {
-            Log.i(TAG, "Kindle did not expose a Copy action");
-            return false;
-        }
         ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         clipboard.clearPrimaryClip();
+        if (source.packageName.equals(pendingCopyPackage) && pendingCopyAction != null) {
+            boolean copied = pendingCopyAction.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+            clearPendingCopyAction();
+            if (copied) {
+                Log.i(TAG, "Invoked cached " + source.label + " Copy action");
+                mainHandler.postDelayed(() -> openCaptureActivity(true), COPY_SETTLE_MS);
+                return true;
+            }
+            Log.i(TAG, source.label + " cached Copy action was no longer valid");
+        }
+        AccessibilityNodeInfo copy = findAction(root, source.copyAction);
+        if (copy == null) {
+            Log.i(TAG, source.label + " did not expose a " + source.copyAction + " action");
+            return false;
+        }
         if (!copy.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-            Log.w(TAG, "Kindle exposed Copy but rejected ACTION_CLICK");
+            Log.w(TAG, source.label + " exposed " + source.copyAction
+                    + " but rejected ACTION_CLICK");
             return false;
         }
 
@@ -204,11 +244,33 @@ public class KindleAccessibilityService extends AccessibilityService {
         return true;
     }
 
+    private void cacheCopyAction(AccessibilityEvent event, ReadingSource source) {
+        AccessibilityNodeInfo eventSource = event.getSource();
+        if (eventSource == null || !source.cacheTransientCopy || source.copyAction == null) {
+            return;
+        }
+        AccessibilityNodeInfo copy = findAction(eventSource, source.copyAction);
+        if (copy != null) {
+            clearPendingCopyAction();
+            pendingCopyAction = AccessibilityNodeInfo.obtain(copy);
+            pendingCopyPackage = source.packageName;
+            Log.i(TAG, "Cached " + source.label + " Copy action from accessibility event");
+        }
+    }
+
+    private void clearPendingCopyAction() {
+        if (pendingCopyAction != null) {
+            pendingCopyAction.recycle();
+            pendingCopyAction = null;
+        }
+        pendingCopyPackage = null;
+    }
+
     private AccessibilityNodeInfo findAction(AccessibilityNodeInfo node, String name) {
         CharSequence description = node.getContentDescription();
         CharSequence text = node.getText();
-        boolean matches = description != null && name.contentEquals(description)
-                || text != null && name.contentEquals(text);
+        boolean matches = description != null && name.equalsIgnoreCase(description.toString())
+                || text != null && name.equalsIgnoreCase(text.toString());
         if (matches && node.isClickable()) {
             return node;
         }
@@ -234,15 +296,15 @@ public class KindleAccessibilityService extends AccessibilityService {
 
     private void dumpCurrentTree() {
         AccessibilityNodeInfo root = getRootInActiveWindow();
-        if (root == null || root.getPackageName() == null
-                || !KINDLE_PACKAGE.contentEquals(root.getPackageName())) {
+        ReadingSource source = sourceFor(root == null ? null : root.getPackageName());
+        if (source == null) {
             return;
         }
 
         StringBuilder dump = new StringBuilder();
         appendNodeDump(root, 0, dump);
         writeDiagnostic(TREE_DUMP_FILE, dump.toString(), MODE_PRIVATE);
-        Log.i(TAG, "Wrote accessibility tree diagnostics for "
+        Log.i(TAG, "Wrote " + source.label + " accessibility tree diagnostics for "
                 + dumpNodeCount(root) + " nodes");
     }
 
@@ -346,11 +408,12 @@ public class KindleAccessibilityService extends AccessibilityService {
 
     private void captureCurrentTree() {
         AccessibilityNodeInfo root = getRootInActiveWindow();
-        if (root == null || root.getPackageName() == null
-                || !KINDLE_PACKAGE.contentEquals(root.getPackageName())) {
+        ReadingSource source = sourceFor(root == null ? null : root.getPackageName());
+        if (source == null) {
             return;
         }
 
+        prepareSource(source);
         Set<String> pieces = new LinkedHashSet<>();
         Rect screenBounds = new Rect(0, 0,
                 getResources().getDisplayMetrics().widthPixels,
@@ -358,7 +421,7 @@ public class KindleAccessibilityService extends AccessibilityService {
         int nodeCount = collectText(root, pieces, screenBounds);
         String text = String.join("\n\n", pieces).trim();
         if (!looksLikeProse(text)) {
-            Log.i(TAG, "No Kindle prose; inspected " + text.length()
+            Log.i(TAG, "No " + source.label + " prose; inspected " + text.length()
                     + " characters from " + nodeCount + " nodes");
             return;
         }
@@ -408,7 +471,7 @@ public class KindleAccessibilityService extends AccessibilityService {
     }
 
     private boolean looksLikeProse(String text) {
-        if (text.length() < 800) {
+        if (text.length() < 200) {
             return false;
         }
         int spaces = 0;
@@ -417,7 +480,7 @@ public class KindleAccessibilityService extends AccessibilityService {
                 spaces++;
             }
         }
-        return spaces >= 100;
+        return spaces >= 30;
     }
 
     private int countWords(String text) {
@@ -447,16 +510,47 @@ public class KindleAccessibilityService extends AccessibilityService {
         }
     }
 
-    private boolean isKindleActive() {
+    private ReadingSource activeSource() {
         AccessibilityNodeInfo root = getRootInActiveWindow();
-        return root != null
-                && root.getPackageName() != null
-                && KINDLE_PACKAGE.contentEquals(root.getPackageName());
+        return sourceFor(root == null ? null : root.getPackageName());
+    }
+
+    private ReadingSource sourceFor(CharSequence packageName) {
+        if (packageName == null) {
+            return null;
+        }
+        for (ReadingSource source : READING_SOURCES) {
+            if (source.packageName.contentEquals(packageName)) {
+                return source;
+            }
+        }
+        return null;
+    }
+
+    private void prepareSource(ReadingSource source) {
+        SharedPreferences preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
+        String previousSource = preferences.getString(SOURCE_PACKAGE_KEY, "");
+        if (source.packageName.equals(previousSource)
+                && source.label.equals(preferences.getString(SOURCE_LABEL_KEY, ""))) {
+            return;
+        }
+        SharedPreferences.Editor editor = preferences.edit()
+                .putString(SOURCE_PACKAGE_KEY, source.packageName)
+                .putString(SOURCE_LABEL_KEY, source.label);
+        if (!source.packageName.equals(previousSource)) {
+            clearPendingCopyAction();
+            editor.putString(CURRENT_TEXT_KEY, "")
+                    .putString(PREVIOUS_TEXT_KEY, "")
+                    .putString(HISTORY_TEXT_KEY, "[]")
+                    .putString(SELECTED_TEXT_KEY, "");
+        }
+        editor.apply();
     }
 
     @Override
     public void onDestroy() {
         mainHandler.removeCallbacksAndMessages(null);
+        clearPendingCopyAction();
         if (accessibilityButtonController != null && accessibilityButtonCallback != null) {
             accessibilityButtonController.unregisterAccessibilityButtonCallback(accessibilityButtonCallback);
         }

@@ -236,13 +236,14 @@ public class MainActivity extends Activity {
         reply.setSingleLine(false);
         reply.setImeOptions(EditorInfo.IME_ACTION_SEND);
         root.addView(reply);
-        Button send = button("RETURN TO KINDLE");
+        Button send = button("RETURN TO " + sourceLabel().toUpperCase(java.util.Locale.US));
         reply.addTextChangedListener(textWatcher(value ->
-                send.setText(value.trim().isEmpty() ? "RETURN TO KINDLE" : "SEND")));
+                send.setText(value.trim().isEmpty()
+                        ? "RETURN TO " + sourceLabel().toUpperCase(java.util.Locale.US) : "SEND")));
         send.setOnClickListener(v -> {
             String text = reply.getText().toString().trim();
             if (text.isEmpty()) {
-                openKindle();
+                openReadingSource();
                 return;
             }
             reply.setText("");
@@ -827,9 +828,9 @@ public class MainActivity extends Activity {
         Button sessions = smallButton("CHATS");
         sessions.setOnClickListener(v -> showSessions());
         bar.addView(sessions, new LinearLayout.LayoutParams(0, dp(48), 1));
-        Button kindle = smallButton("KINDLE");
-        kindle.setOnClickListener(v -> openKindle());
-        bar.addView(kindle, new LinearLayout.LayoutParams(0, dp(48), 1));
+        Button reader = smallButton(sourceLabel().toUpperCase(java.util.Locale.US));
+        reader.setOnClickListener(v -> openReadingSource());
+        bar.addView(reader, new LinearLayout.LayoutParams(0, dp(48), 1));
         Button settings = smallButton("SETTINGS");
         settings.setOnClickListener(v -> showSettings());
         bar.addView(settings, new LinearLayout.LayoutParams(0, dp(48), 1));
@@ -1048,14 +1049,22 @@ public class MainActivity extends Activity {
         return input;
     }
 
-    private void openKindle() {
-        Intent launch = getPackageManager().getLaunchIntentForPackage(
-                KindleAccessibilityService.KINDLE_PACKAGE);
+    private void openReadingSource() {
+        String sourcePackage = captured(KindleAccessibilityService.SOURCE_PACKAGE_KEY);
+        if (sourcePackage.isEmpty()) {
+            sourcePackage = KindleAccessibilityService.KINDLE_PACKAGE;
+        }
+        Intent launch = getPackageManager().getLaunchIntentForPackage(sourcePackage);
         if (launch != null) {
             startActivity(launch);
         } else if (statusView != null) {
-            statusView.setText("Kindle is not installed.");
+            statusView.setText(sourceLabel() + " is not installed.");
         }
+    }
+
+    private String sourceLabel() {
+        String label = captured(KindleAccessibilityService.SOURCE_LABEL_KEY);
+        return label.isEmpty() ? "Kindle" : label;
     }
 
     private void openAccessibilitySetup() {

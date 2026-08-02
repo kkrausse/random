@@ -4,6 +4,7 @@
 
     <queries>
         <package android:name="com.amazon.kindle" />
+        <package android:name="com.substack.app" />
     </queries>
 
     <application
@@ -36,7 +37,7 @@
         <service
             android:name=".KindleAccessibilityService"
             android:exported="true"
-            android:label="Kindle Context Capture"
+            android:label="Reading Context Capture"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
