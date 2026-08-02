@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "strict": false,
+    "target": "ES2022",
+    "types": ["bun", "chrome"]
+  },
+  "include": ["build.ts", "src/**/*.ts"]
+}

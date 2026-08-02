@@ -1,0 +1,15 @@
+{
+  "name": "reading-context-chrome-extension",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun run build.ts",
+    "test": "bun test",
+    "check": "bunx tsc"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/chrome": "latest",
+    "typescript": "latest"
+  }
+}

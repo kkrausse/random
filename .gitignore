@@ -10,3 +10,5 @@ kindle-window.xml
 .cxx/
 captures/
 *.hprof
+node_modules/
+chrome-plugin/dist/

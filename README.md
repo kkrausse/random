@@ -56,6 +56,7 @@ Kindle retains copied selections as annotations. Automatic deletion is intention
 
 ```text
 app/                                  Android application
+chrome-plugin/                        Chrome extension (Manifest V3)
 server/deploy.sh                      Repeatable Pi deployment
 server/palma2-opencode-v2.service     systemd unit
 server/runtime/opencode.json          Checked-in OpenCode policy
@@ -325,6 +326,33 @@ If multiple devices are connected, pass the target serial (or set `ANDROID_SERIA
 ```
 
 The script uses `ADB`, `adb` from `PATH`, or the SDK location under `ANDROID_HOME`. It builds the APK at `app/build/outputs/apk/debug/app-debug.apk`, installs it with `-r` to preserve captured context and connection preferences, and launches the app.
+
+## Chrome Extension
+
+`chrome-plugin/` contains a Bun-built TypeScript Manifest V3 extension that connects to the same server and workspace as the Android app. Sessions are therefore shared through OpenCode, while the Chrome model, template, prompt presets, and credentials are stored separately in `chrome.storage.local`.
+
+Install it for development:
+
+1. Open `chrome://extensions`.
+2. Enable Developer mode.
+3. Run `cd chrome-plugin && bun install && bun run build` from the repository root.
+4. Choose `Load unpacked` and select this repository's `chrome-plugin/dist/` directory.
+5. Open the extension side panel, enter the server password under `Settings`, then press `Save and test`.
+
+Highlight text on a normal website and click the injected `Explain` button. The extension opens its side panel with the selection, page title and URL, and up to 5,000 words from the nearest readable `article` or `main` region. If neither exists, it falls back to body text. Choose a quick question or write a custom one to start a shared OpenCode chat.
+
+The checked-in host permission covers the default Tailscale server. If the server URL is changed, Chrome asks for access to the new origin when loading models or saving settings.
+
+The extension injects its selection button on normal websites using the manifest's `<all_urls>` content-script access. Server credentials remain restricted to trusted extension pages, and captured page text is held temporarily in tab-scoped `chrome.storage.session` only until the side panel receives it.
+
+Run the extension's local checks with:
+
+```sh
+cd chrome-plugin
+bun test
+bun run check
+bun run build
+```
 
 ## App Configuration
 
