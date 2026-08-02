@@ -536,7 +536,7 @@ public class MainActivity extends Activity {
         if (transcript == null) {
             return;
         }
-        boolean scrollToBottom = followChatBottom || isNearBottom();
+        boolean scrollToBottom = followChatBottom;
         transcript.removeAllViews();
         streamingMessageView = null;
         streamingLoadingView = null;
@@ -565,8 +565,7 @@ public class MainActivity extends Activity {
         }
         statusView.setText("");
         if (scrollToBottom) {
-            followChatBottom = true;
-            scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN));
+            scrollChatToBottom();
         }
     }
 
@@ -776,8 +775,10 @@ public class MainActivity extends Activity {
             return false;
         });
         scrollView.setOnScrollChangeListener((view, x, y, oldX, oldY) -> {
-            if (userScrolling) {
-                followChatBottom = isNearBottom();
+            if (userScrolling && y < oldY) {
+                followChatBottom = false;
+            } else if (isNearBottom()) {
+                followChatBottom = true;
             }
         });
         screen.addView(scrollView, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -1234,14 +1235,18 @@ public class MainActivity extends Activity {
             return;
         }
         String text = streamingText.toString();
-        streamingMessageView.setText(text.isEmpty() ? "Thinking..." : text);
+        markwon.setMarkdown(streamingMessageView, text.isEmpty() ? "Thinking..." : text);
         statusView.setText(text.isEmpty() ? "Thinking..." : "Responding...");
         scrollChatToBottom();
     }
 
     private void scrollChatToBottom() {
         if (followChatBottom && scrollView != null) {
-            scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN));
+            scrollView.post(() -> {
+                if (followChatBottom && !userScrolling) {
+                    scrollView.fullScroll(View.FOCUS_DOWN);
+                }
+            });
         }
     }
 
