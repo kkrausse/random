@@ -172,7 +172,7 @@ function setComposerEnabled(enabled: boolean) {
   const button = document.querySelector<HTMLButtonElement>("#send-reply");
   if (input) input.disabled = !enabled;
   if (button) button.disabled = !enabled;
-  document.querySelectorAll<HTMLInputElement | HTMLButtonElement>(".append-control")
+  document.querySelectorAll<HTMLButtonElement>(".context-control")
     .forEach((control) => control.disabled = !enabled);
 }
 
@@ -224,12 +224,14 @@ async function showCapture() {
 async function startChat(question: string) {
   setStatus("Starting chat...");
   setCaptureControlsEnabled(false);
+  const selectedCapture = capture;
   try {
     const api = client();
-    const prompt = buildPrompt(settings.messageTemplate, capture, question);
+    const prompt = buildPrompt(settings.messageTemplate, selectedCapture, question);
     const sessionId = await api.createSession(settings);
     if (activeScreen === "capture") await showChat(sessionId, true);
     await api.sendMessage(sessionId, prompt);
+    if (capture === selectedCapture) capture = null;
     if (currentSessionId === sessionId) await refreshMessages(true);
   } catch (error) {
     if (activeScreen === "capture" || activeScreen === "chat") {
@@ -325,14 +327,15 @@ async function showChat(sessionId: string, preparingPrompt = false) {
   currentSessionId = sessionId;
   app.innerHTML = heading("Conversation", "Reading notes, kept on your OpenCode server.") + `
     <div id="messages"></div>
-    <div id="chat-capture"></div>
     <p class="status">Loading...</p>
     <div class="composer">
+      <div id="chat-capture"></div>
       <textarea id="reply" placeholder="Continue the conversation..."></textarea>
       <button class="primary" id="send-reply">Send</button>
+      <div id="context-prompts"></div>
       <footer class="chat-usage" id="chat-usage">Usage loading...</footer>
     </div>`;
-  $("#send-reply").addEventListener("click", sendReply);
+  $("#send-reply").addEventListener("click", () => sendReply());
   $<HTMLTextAreaElement>("#reply").addEventListener("keydown", (event) => {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) sendReply();
   });
@@ -348,58 +351,27 @@ async function showChat(sessionId: string, preparingPrompt = false) {
 
 function renderChatCapture() {
   const container = document.querySelector<HTMLElement>("#chat-capture");
-  if (!container || !capture || !currentSessionId) return;
+  const prompts = document.querySelector<HTMLElement>("#context-prompts");
+  if (!container || !prompts || !capture || !currentSessionId) return;
   container.innerHTML = `<section class="chat-capture-card">
-    <div class="eyebrow">New highlight</div>
+    <div class="eyebrow">Including new highlight</div>
     <blockquote>${escapeHtml(capture.highlight)}</blockquote>
-    <p class="help">Ask about only this highlight in the current conversation.</p>
-    <div class="button-grid chat-capture-presets"></div>
-    <label><span>Your question</span><textarea class="append-control" id="append-question" placeholder="What do you want to understand?"></textarea></label>
-    <button class="primary append-control" id="append-highlight">Append to this chat</button>
-    <button class="secondary new-chat-action" id="new-chat-from-capture">Start new chat with page context</button>
+    <button class="small context-control new-chat-action" id="new-chat-from-capture">Use full page in a new chat</button>
   </section>`;
-  const presets = $<HTMLElement>(".chat-capture-presets", container);
+  prompts.innerHTML = `<div class="eyebrow">Quick questions for this highlight</div>
+    <div class="chat-capture-presets"></div>`;
+  const presets = $<HTMLElement>(".chat-capture-presets", prompts);
   settings.promptPresets.forEach((preset) => {
     const button = document.createElement("button");
-    button.className = "primary append-control";
+    button.className = "quick-prompt context-control";
     button.textContent = preset.label;
-    button.addEventListener("click", () => appendHighlight(preset.prompt));
+    button.addEventListener("click", () => sendReply(preset.prompt));
     presets.append(button);
   });
-  $("#append-highlight", container).addEventListener("click", () => {
-    const question = $<HTMLTextAreaElement>("#append-question", container).value.trim();
-    if (question) appendHighlight(question);
-  });
   $("#new-chat-from-capture", container).addEventListener("click", () => showCapture());
+  $<HTMLTextAreaElement>("#reply").placeholder = "Ask about this highlight or continue the conversation...";
   setComposerEnabled(!sending && !awaitingResponse);
   scrollChatToBottom();
-}
-
-async function appendHighlight(question: string) {
-  if (sending || awaitingResponse || !capture || !currentSessionId) return;
-  const sessionId = currentSessionId;
-  const selectedCapture = capture;
-  const prompt = buildHighlightPrompt(selectedCapture.highlight, question);
-  sending = true;
-  awaitingResponse = true;
-  setComposerEnabled(false);
-  setStatus("Sending new highlight...");
-  try {
-    await waitForEventStream();
-    await client().sendMessage(sessionId, prompt);
-    if (currentSessionId !== sessionId) return;
-    if (capture === selectedCapture) {
-      document.querySelector<HTMLElement>("#chat-capture")?.replaceChildren();
-    }
-    sending = false;
-    await refreshMessages(true);
-  } catch (error) {
-    if (currentSessionId !== sessionId) return;
-    sending = false;
-    awaitingResponse = false;
-    setComposerEnabled(true);
-    setStatus(error.message);
-  }
 }
 
 function messageArticle(messageId: string) {
@@ -599,21 +571,31 @@ async function refreshMessages(expectingResponse: boolean) {
   }
 }
 
-async function sendReply() {
+async function sendReply(textOverride?: string) {
   if (sending || awaitingResponse || !currentSessionId) return;
   const sessionId = currentSessionId;
   const input = $<HTMLTextAreaElement>("#reply");
-  const text = input.value.trim();
+  const text = textOverride || input.value.trim();
   if (!text) return;
+  const selectedCapture = capture;
+  const prompt = selectedCapture
+    ? buildHighlightPrompt(selectedCapture.highlight, text)
+    : text;
   sending = true;
   awaitingResponse = true;
   setComposerEnabled(false);
-  setStatus("Sending...");
+  setStatus(selectedCapture ? "Sending with highlight..." : "Sending...");
   try {
     await waitForEventStream();
-    await client().sendMessage(sessionId, text);
+    await client().sendMessage(sessionId, prompt);
     if (currentSessionId !== sessionId) return;
     input.value = "";
+    if (capture === selectedCapture) {
+      capture = null;
+      document.querySelector<HTMLElement>("#chat-capture")?.replaceChildren();
+      document.querySelector<HTMLElement>("#context-prompts")?.replaceChildren();
+      input.placeholder = "Continue the conversation...";
+    }
     sending = false;
     await refreshMessages(true);
   } catch (error) {
