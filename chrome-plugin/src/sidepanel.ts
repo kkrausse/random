@@ -96,8 +96,19 @@ function scrollChatToBottom() {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "session") return;
   for (const [key, change] of Object.entries(changes)) {
-    if (!key.startsWith("pendingCapture:") || !change.newValue) continue;
+    if (!key.startsWith("pendingCapture:") || change.newValue === undefined) continue;
     const tabId = Number(key.slice("pendingCapture:".length));
+    if (change.newValue === null) {
+      queuedCaptures.delete(tabId);
+      if (!stateLoaded || tabId !== currentTabId) continue;
+      capture = null;
+      if (activeScreen === "chat" && currentSessionId) {
+        renderChatCapture();
+      } else {
+        showCapture();
+      }
+      continue;
+    }
     const nextCapture = change.newValue as Capture;
     if (!stateLoaded) {
       queuedCaptures.set(tabId, nextCapture);
@@ -356,7 +367,17 @@ async function showChat(sessionId: string, preparingPrompt = false) {
 function renderChatCapture() {
   const container = document.querySelector<HTMLElement>("#chat-capture");
   const prompts = document.querySelector<HTMLElement>("#context-prompts");
-  if (!container || !prompts || !capture || !currentSessionId) return;
+  if (!container || !prompts || !currentSessionId) return;
+  if (!capture) {
+    container.replaceChildren();
+    prompts.replaceChildren();
+    const newChat = document.querySelector<HTMLButtonElement>("#new-chat-from-capture");
+    if (newChat) newChat.hidden = true;
+    document.querySelector(".composer-actions")?.classList.remove("has-capture");
+    const input = document.querySelector<HTMLTextAreaElement>("#reply");
+    if (input) input.placeholder = "Continue the conversation...";
+    return;
+  }
   container.innerHTML = `<section class="chat-capture-card">
     <div class="eyebrow">Including new highlight</div>
     <blockquote>${escapeHtml(capture.highlight)}</blockquote>
