@@ -12,6 +12,16 @@ interface ApiSession {
   time?: { updated?: number };
 }
 
+export interface SessionEvent {
+  type: string;
+  data?: {
+    sessionID?: string;
+    assistantMessageID?: string;
+    delta?: string;
+    name?: string;
+  };
+}
+
 export class OpenCodeClient {
   private baseUrl: string;
   private directory: string;
@@ -96,5 +106,39 @@ export class OpenCodeClient {
     const response = await this.request<ApiResponse<Parameters<typeof messageFromJson>[0][]>>("GET",
       `/api/session/${encodeURIComponent(sessionId)}/message?limit=200&order=desc`);
     return response.data.reverse().map(messageFromJson).filter(Boolean);
+  }
+
+  async streamEvents(
+    signal: AbortSignal,
+    onEvent: (event: SessionEvent) => void,
+    onOpen: () => void
+  ): Promise<void> {
+    const headers: Record<string, string> = { Accept: "text/event-stream" };
+    if (this.authorization) headers.Authorization = this.authorization;
+    const response = await fetch(`${this.baseUrl}/api/event`, { headers, signal });
+    if (!response.ok) {
+      throw new Error(`OpenCode event stream returned HTTP ${response.status}: ${await response.text()}`);
+    }
+    if (!response.body) throw new Error("OpenCode event stream returned no response body.");
+    onOpen();
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (!signal.aborted) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      const blocks = buffer.split(/\r?\n\r?\n/);
+      buffer = blocks.pop() || "";
+      for (const block of blocks) {
+        const data = block.split(/\r?\n/)
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trimStart())
+          .join("\n");
+        if (data) onEvent(JSON.parse(data) as SessionEvent);
+      }
+      if (done) break;
+    }
+    if (!signal.aborted) throw new Error("OpenCode event stream disconnected.");
   }
 }

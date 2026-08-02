@@ -1,4 +1,5 @@
 import { OpenCodeClient } from "./api";
+import type { SessionEvent } from "./api";
 import MarkdownIt from "markdown-it";
 import {
   DEFAULT_SETTINGS,
@@ -23,7 +24,13 @@ let capture: Capture | null;
 let editingPresets: PromptPreset[] = [];
 let currentSessionId: string | null = null;
 let currentTabId: number | null = null;
-let pollTimer: ReturnType<typeof setTimeout> | null = null;
+let eventStreamAbort: AbortController | null = null;
+let eventStreamGeneration = 0;
+let eventReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let eventStreamReady: Promise<void> = Promise.resolve();
+let streamingMessageId: string | null = null;
+let streamingText = "";
+let streamRenderFrame: number | null = null;
 let awaitingResponse = false;
 let sending = false;
 let stateLoaded = false;
@@ -31,6 +38,7 @@ let activeScreen: "capture" | "sessions" | "chat" | "settings" = "capture";
 let lastUserScrollAt = 0;
 let lastRenderedMessageState = "";
 let autoScrollFrame: number | null = null;
+let chatPinnedToBottom = true;
 const queuedCaptures = new Map<number, Capture>();
 
 markdown.renderer.rules.link_open = (tokens, index, options, env, renderer) => {
@@ -42,12 +50,18 @@ markdown.renderer.rules.link_open = (tokens, index, options, env, renderer) => {
 function recordScrollInput() {
   if (activeScreen !== "chat") return;
   lastUserScrollAt = Date.now();
+  chatPinnedToBottom = isChatAtBottom();
   if (autoScrollFrame !== null) cancelAnimationFrame(autoScrollFrame);
   autoScrollFrame = null;
 }
 
 document.addEventListener("wheel", recordScrollInput, { passive: true });
 document.addEventListener("touchmove", recordScrollInput, { passive: true });
+document.addEventListener("scroll", () => {
+  if (activeScreen !== "chat") return;
+  chatPinnedToBottom = isChatAtBottom();
+  if (chatPinnedToBottom) lastUserScrollAt = 0;
+}, { passive: true });
 document.addEventListener("pointerdown", (event) => {
   if (event.clientX >= window.innerWidth - 20) recordScrollInput();
 });
@@ -60,12 +74,20 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+function isChatAtBottom() {
+  const root = document.scrollingElement || document.documentElement;
+  return root.scrollHeight - root.scrollTop - root.clientHeight <= 24;
+}
+
 function scrollChatToBottom() {
-  if (activeScreen !== "chat" || Date.now() - lastUserScrollAt < AUTO_SCROLL_PAUSE_MS) return;
+  if (activeScreen !== "chat"
+    || (!chatPinnedToBottom && Date.now() - lastUserScrollAt < AUTO_SCROLL_PAUSE_MS)) return;
   if (autoScrollFrame !== null) cancelAnimationFrame(autoScrollFrame);
   autoScrollFrame = requestAnimationFrame(() => {
     autoScrollFrame = null;
-    if (activeScreen === "chat" && Date.now() - lastUserScrollAt >= AUTO_SCROLL_PAUSE_MS) {
+    if (activeScreen === "chat"
+      && (chatPinnedToBottom || Date.now() - lastUserScrollAt >= AUTO_SCROLL_PAUSE_MS)) {
+      chatPinnedToBottom = true;
       window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "auto" });
     }
   });
@@ -130,9 +152,17 @@ function setStatus(text: string) {
   if (status) status.textContent = text;
 }
 
-function stopPolling() {
-  clearTimeout(pollTimer);
-  pollTimer = null;
+function stopChatUpdates() {
+  eventStreamGeneration++;
+  eventStreamAbort?.abort();
+  eventStreamAbort = null;
+  eventStreamReady = Promise.resolve();
+  clearTimeout(eventReconnectTimer);
+  eventReconnectTimer = null;
+  if (streamRenderFrame !== null) cancelAnimationFrame(streamRenderFrame);
+  streamRenderFrame = null;
+  streamingMessageId = null;
+  streamingText = "";
   awaitingResponse = false;
   sending = false;
 }
@@ -157,7 +187,7 @@ function setCaptureControlsEnabled(enabled: boolean) {
 
 async function showCapture() {
   activeScreen = "capture";
-  stopPolling();
+  stopChatUpdates();
   currentSessionId = null;
   if (!capture) {
     app.innerHTML = heading("Reading Context", "Select a passage on any page to begin.")
@@ -262,7 +292,7 @@ function renderMessageText(message: Message, container: HTMLElement) {
 
 async function showSessions() {
   activeScreen = "sessions";
-  stopPolling();
+  stopChatUpdates();
   currentSessionId = null;
   app.innerHTML = heading("Shared chats", "Conversations from Chrome and Palma.")
     + `<p class="status">Loading...</p><div id="sessions"></div>`;
@@ -290,7 +320,8 @@ async function showChat(sessionId: string, preparingPrompt = false) {
   activeScreen = "chat";
   lastUserScrollAt = 0;
   lastRenderedMessageState = "";
-  stopPolling();
+  chatPinnedToBottom = true;
+  stopChatUpdates();
   currentSessionId = sessionId;
   app.innerHTML = heading("Conversation", "Reading notes, kept on your OpenCode server.") + `
     <div id="messages"></div>
@@ -304,9 +335,11 @@ async function showChat(sessionId: string, preparingPrompt = false) {
   $<HTMLTextAreaElement>("#reply").addEventListener("keydown", (event) => {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) sendReply();
   });
+  eventStreamReady = startEventStream(sessionId);
   if (preparingPrompt) {
     setComposerEnabled(false);
     setStatus("Sending page context...");
+    await waitForEventStream();
   } else {
     await refreshMessages(false);
   }
@@ -351,6 +384,7 @@ async function appendHighlight(question: string) {
   setComposerEnabled(false);
   setStatus("Sending new highlight...");
   try {
+    await waitForEventStream();
     await client().sendMessage(sessionId, prompt);
     if (currentSessionId !== sessionId) return;
     if (capture === selectedCapture) {
@@ -367,7 +401,133 @@ async function appendHighlight(question: string) {
   }
 }
 
-async function refreshMessages(continuePolling: boolean) {
+function messageArticle(messageId: string) {
+  return Array.from(document.querySelectorAll<HTMLElement>("#messages .message"))
+    .find((article) => article.dataset.messageId === messageId) || null;
+}
+
+function beginStreamingMessage(messageId: string) {
+  if (!messageId) return;
+  if (messageId !== streamingMessageId) {
+    streamingMessageId = messageId;
+    streamingText = "";
+  }
+  if (messageArticle(messageId)) return;
+  const list = document.querySelector<HTMLElement>("#messages");
+  if (!list) return;
+  const article = document.createElement("article");
+  article.className = "message assistant";
+  article.dataset.messageId = messageId;
+  article.innerHTML = `<div class="role eyebrow">OpenCode</div>
+    <div class="message-content markdown-body"><p class="thinking">Thinking...</p></div>`;
+  list.append(article);
+  scrollChatToBottom();
+}
+
+function renderStreamingText() {
+  streamRenderFrame = null;
+  if (!streamingMessageId) return;
+  let article = messageArticle(streamingMessageId);
+  if (!article) {
+    beginStreamingMessage(streamingMessageId);
+    article = messageArticle(streamingMessageId);
+  }
+  const content = article?.querySelector<HTMLElement>(".message-content");
+  if (!content) return;
+  content.innerHTML = streamingText
+    ? markdown.render(streamingText)
+    : `<p class="thinking">Thinking...</p>`;
+  scrollChatToBottom();
+}
+
+function scheduleStreamRender() {
+  if (streamRenderFrame === null) streamRenderFrame = requestAnimationFrame(renderStreamingText);
+}
+
+function handleSessionEvent(event: SessionEvent) {
+  const data = event.data;
+  if (!data || data.sessionID !== currentSessionId) return;
+  switch (event.type) {
+    case "session.text.started":
+      beginStreamingMessage(data.assistantMessageID || "");
+      awaitingResponse = true;
+      setComposerEnabled(false);
+      setStatus("Responding...");
+      break;
+    case "session.text.delta":
+      beginStreamingMessage(data.assistantMessageID || "");
+      streamingText += data.delta || "";
+      scheduleStreamRender();
+      break;
+    case "session.reasoning.started":
+      setStatus("Thinking...");
+      break;
+    case "session.tool.input.started":
+      setStatus(data.name ? `Using ${data.name}...` : "Using a tool...");
+      break;
+    case "session.retry.scheduled":
+      setStatus("Retrying...");
+      break;
+    case "session.input.promoted":
+      void refreshMessages(true);
+      break;
+    case "session.execution.succeeded":
+    case "session.execution.failed":
+    case "session.execution.interrupted":
+      if (streamRenderFrame !== null) cancelAnimationFrame(streamRenderFrame);
+      renderStreamingText();
+      streamingMessageId = null;
+      streamingText = "";
+      void refreshMessages(false).finally(() => {
+        if (data.sessionID !== currentSessionId) return;
+        awaitingResponse = false;
+        sending = false;
+        setComposerEnabled(true);
+        setStatus("");
+      });
+      break;
+  }
+}
+
+function waitForEventStream() {
+  return Promise.race([
+    eventStreamReady,
+    new Promise<void>((resolve) => setTimeout(resolve, 5000))
+  ]);
+}
+
+function startEventStream(sessionId: string): Promise<void> {
+  eventStreamAbort?.abort();
+  clearTimeout(eventReconnectTimer);
+  const generation = ++eventStreamGeneration;
+  const controller = new AbortController();
+  eventStreamAbort = controller;
+  let markConnected = () => {};
+  const connected = new Promise<void>((resolve) => markConnected = resolve);
+  void client().streamEvents(controller.signal, (event) => {
+    if (generation === eventStreamGeneration && currentSessionId === sessionId) {
+      handleSessionEvent(event);
+    }
+  }, markConnected).catch(async (error) => {
+    if (controller.signal.aborted || generation !== eventStreamGeneration
+      || currentSessionId !== sessionId) return;
+    await recordDiagnostic("event-stream-error", { message: String(error?.message || error) });
+    setStatus("Reconnecting to OpenCode...");
+    if (streamRenderFrame !== null) cancelAnimationFrame(streamRenderFrame);
+    streamRenderFrame = null;
+    streamingMessageId = null;
+    streamingText = "";
+    await refreshMessages(awaitingResponse);
+    if (generation !== eventStreamGeneration || currentSessionId !== sessionId) return;
+    eventReconnectTimer = setTimeout(() => {
+      eventStreamReady = startEventStream(sessionId);
+      void eventStreamReady.then(() => refreshMessages(awaitingResponse));
+    }, 1000);
+  });
+  return connected;
+}
+
+async function refreshMessages(expectingResponse: boolean) {
   if (!currentSessionId) return;
   const requestedSession = currentSessionId;
   try {
@@ -383,6 +543,7 @@ async function refreshMessages(continuePolling: boolean) {
     messages.forEach((message) => {
       const article = document.createElement("article");
       article.className = `message ${message.role === "OpenCode" ? "assistant" : "user"}`;
+      article.dataset.messageId = message.id;
       const role = document.createElement("div");
       role.className = "role eyebrow";
       role.textContent = message.role;
@@ -391,28 +552,24 @@ async function refreshMessages(continuePolling: boolean) {
       article.append(role, text);
       list.append(article);
     });
+    if (streamingMessageId) renderStreamingText();
     const lastMessage = messages.at(-1);
     const waiting = lastMessage
       ? lastMessage.role === "You" || !lastMessage.complete
-      : continuePolling;
+      : expectingResponse;
     awaitingResponse = waiting;
     sending = false;
     setComposerEnabled(!waiting);
     setStatus(waiting ? "OpenCode is working..." : "");
     if (contentChanged) scrollChatToBottom();
-    if (continuePolling || waiting) {
-      pollTimer = setTimeout(() => refreshMessages(false), 1200);
-    }
   } catch (error) {
     setStatus(error.message);
-    if ((continuePolling || awaitingResponse) && requestedSession === currentSessionId) {
-      pollTimer = setTimeout(() => refreshMessages(true), 2000);
-    }
   }
 }
 
 async function sendReply() {
-  if (sending || awaitingResponse) return;
+  if (sending || awaitingResponse || !currentSessionId) return;
+  const sessionId = currentSessionId;
   const input = $<HTMLTextAreaElement>("#reply");
   const text = input.value.trim();
   if (!text) return;
@@ -421,11 +578,14 @@ async function sendReply() {
   setComposerEnabled(false);
   setStatus("Sending...");
   try {
-    await client().sendMessage(currentSessionId, text);
+    await waitForEventStream();
+    await client().sendMessage(sessionId, text);
+    if (currentSessionId !== sessionId) return;
     input.value = "";
     sending = false;
     await refreshMessages(true);
   } catch (error) {
+    if (currentSessionId !== sessionId) return;
     sending = false;
     awaitingResponse = false;
     setComposerEnabled(true);
@@ -446,7 +606,7 @@ async function ensureServerPermission(serverUrl: string) {
 
 async function showSettings() {
   activeScreen = "settings";
-  stopPolling();
+  stopChatUpdates();
   currentSessionId = null;
   app.innerHTML = heading("Settings", "Stored only in this Chrome profile.") + `
     <section class="settings-section">
