@@ -10,6 +10,10 @@
   "devDependencies": {
     "@types/bun": "latest",
     "@types/chrome": "latest",
+    "@types/markdown-it": "^14.1.2",
     "typescript": "latest"
+  },
+  "dependencies": {
+    "markdown-it": "^15.0.0"
   }
 }

@@ -343,6 +343,8 @@ After changing extension code, rerun `bun run build`, click the extension's relo
 
 Highlight text on a normal website and click the injected `Explain` button. The extension opens its side panel with the selection, page title and URL, and up to 5,000 words from the nearest readable `article` or `main` region. If neither exists, it falls back to body text. Choose a quick question or write a custom one to start a shared OpenCode chat.
 
+In chat history, reading prompts show the question and highlighted passage in a compact card, with the full page context available from `View page context`. OpenCode responses render as Markdown. The persistent header remains available while prompts and responses are loading, so `New`, `Chats`, and `Settings` can be opened at any time without discarding the current capture.
+
 The checked-in host permission covers the default Tailscale server. If the server URL is changed, Chrome asks for access to the new origin when loading models or saving settings.
 
 The extension injects its selection button on normal websites using the manifest's `<all_urls>` content-script access. Server credentials remain restricted to trusted extension pages, and captured page text is held temporarily in tab-scoped `chrome.storage.session` only until the side panel receives it.

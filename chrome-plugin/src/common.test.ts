@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildPrompt, messageFromJson, xmlEscape } from "./common";
+import { buildPrompt, messageFromJson, readingPromptFromText, xmlEscape } from "./common";
 
 test("buildPrompt fills and escapes structured source fields", () => {
   const prompt = buildPrompt("<reading_request>{{highlight}}|{{page_url}}|{{question}}</reading_request>", {
@@ -26,4 +26,22 @@ test("messageFromJson joins assistant text parts", () => {
 
 test("xmlEscape escapes boundary-changing characters", () => {
   assert.equal(xmlEscape("</source> & text"), "&lt;/source&gt; &amp; text");
+});
+
+test("readingPromptFromText extracts display fields and decodes source text", () => {
+  assert.deepEqual(readingPromptFromText(`<reading_request><source_material>
+    <page_title>A &amp; B</page_title><page_url>https://example.com/?a=1&amp;b=2</page_url>
+    <surrounding_context>Before &lt; after</surrounding_context>
+    <highlighted_passage>The passage</highlighted_passage></source_material>
+    <instructions><reader_question>Why?</reader_question></instructions></reading_request>`), {
+    question: "Why?",
+    highlight: "The passage",
+    surroundingContext: "Before < after",
+    pageTitle: "A & B",
+    pageUrl: "https://example.com/?a=1&b=2"
+  });
+});
+
+test("readingPromptFromText ignores follow-up messages", () => {
+  assert.equal(readingPromptFromText("Can you expand on that?"), null);
 });

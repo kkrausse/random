@@ -36,6 +36,14 @@ export interface Message {
   complete: boolean;
 }
 
+export interface ReadingPrompt {
+  question: string;
+  highlight: string;
+  surroundingContext: string;
+  pageTitle: string;
+  pageUrl: string;
+}
+
 interface ApiModel {
   name?: string;
   modelID: string;
@@ -109,6 +117,28 @@ export function buildPrompt(template: string, capture: Partial<Capture> | null, 
   const xml = template.includes("<reading_request>");
   return template.replace(/\{\{(highlight|surrounding_context|page_title|page_url|question)\}\}/g,
     (_, key: keyof typeof values) => xml ? xmlEscape(values[key]) : values[key]);
+}
+
+function xmlUnescape(value: string): string {
+  return value.replaceAll("&lt;", "<").replaceAll("&gt;", ">")
+    .replaceAll("&quot;", "\"").replaceAll("&apos;", "'").replaceAll("&amp;", "&");
+}
+
+function elementText(prompt: string, tag: string): string {
+  const match = prompt.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, "i"));
+  return match ? xmlUnescape(match[1]).trim() : "";
+}
+
+export function readingPromptFromText(prompt: string): ReadingPrompt | null {
+  if (!/<reading_request(?:\s[^>]*)?>/i.test(prompt)) return null;
+  const result = {
+    question: elementText(prompt, "reader_question"),
+    highlight: elementText(prompt, "highlighted_passage"),
+    surroundingContext: elementText(prompt, "surrounding_context"),
+    pageTitle: elementText(prompt, "page_title"),
+    pageUrl: elementText(prompt, "page_url")
+  };
+  return result.question || result.highlight || result.surroundingContext ? result : null;
 }
 
 export function modelFromJson(value: ApiModel): Model {

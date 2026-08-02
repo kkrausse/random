@@ -1,6 +1,7 @@
 import { OpenCodeClient } from "./api";
-import { DEFAULT_SETTINGS, buildPrompt } from "./common";
-import type { Capture, PromptPreset, Settings } from "./common";
+import MarkdownIt from "markdown-it";
+import { DEFAULT_SETTINGS, buildPrompt, readingPromptFromText } from "./common";
+import type { Capture, Message, PromptPreset, Settings } from "./common";
 import { clearDiagnostics, readDiagnostics, recordDiagnostic } from "./diagnostics";
 
 function $<T extends Element = HTMLElement>(selector: string, root: ParentNode = document): T {
@@ -10,6 +11,7 @@ function $<T extends Element = HTMLElement>(selector: string, root: ParentNode =
 }
 
 const app = $<HTMLElement>("#app");
+const markdown = new MarkdownIt({ html: false, linkify: true, typographer: true });
 let settings: Settings;
 let capture: Capture | null;
 let editingPresets: PromptPreset[] = [];
@@ -19,7 +21,14 @@ let pollTimer: ReturnType<typeof setTimeout> | null = null;
 let awaitingResponse = false;
 let sending = false;
 let stateLoaded = false;
+let activeScreen: "capture" | "sessions" | "chat" | "settings" = "capture";
 const queuedCaptures = new Map<number, Capture>();
+
+markdown.renderer.rules.link_open = (tokens, index, options, env, renderer) => {
+  tokens[index].attrSet("target", "_blank");
+  tokens[index].attrSet("rel", "noopener noreferrer");
+  return renderer.renderToken(tokens, index, options);
+};
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "session") return;
@@ -34,7 +43,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (tabId !== currentTabId) continue;
     capture = nextCapture;
     chrome.storage.session.remove(key);
-    showCapture();
+    if (activeScreen === "capture") showCapture();
   }
 });
 
@@ -94,7 +103,13 @@ function heading(title: string, subtitle: string) {
   return `<h1>${escapeHtml(title)}</h1><p class="subtitle">${escapeHtml(subtitle)}</p>`;
 }
 
+function setCaptureControlsEnabled(enabled: boolean) {
+  app.querySelectorAll<HTMLButtonElement | HTMLTextAreaElement>("button, textarea")
+    .forEach((control) => control.disabled = !enabled);
+}
+
 async function showCapture() {
+  activeScreen = "capture";
   stopPolling();
   currentSessionId = null;
   if (!capture) {
@@ -131,28 +146,82 @@ async function showCapture() {
 
 async function startChat(question: string) {
   setStatus("Starting chat...");
-  document.querySelectorAll("button").forEach((button) => button.disabled = true);
+  setCaptureControlsEnabled(false);
   try {
     const api = client();
     const prompt = buildPrompt(settings.messageTemplate, capture, question);
-    currentSessionId = await api.createSession(settings);
-    await showChat(currentSessionId, true);
-    awaitingResponse = true;
-    await api.sendMessage(currentSessionId, prompt);
-    await refreshMessages(true);
+    const sessionId = await api.createSession(settings);
+    if (activeScreen === "capture") await showChat(sessionId, true);
+    await api.sendMessage(sessionId, prompt);
+    if (currentSessionId === sessionId) await refreshMessages(true);
   } catch (error) {
-    document.querySelectorAll("button").forEach((button) => button.disabled = false);
-    setStatus(error.message);
+    if (activeScreen === "capture" || activeScreen === "chat") {
+      setCaptureControlsEnabled(true);
+      setComposerEnabled(true);
+      setStatus(error.message);
+    }
+  }
+}
+
+function renderMessageText(message: Message, container: HTMLElement) {
+  if (message.role === "OpenCode") {
+    container.className = "message-content markdown-body";
+    container.innerHTML = message.text
+      ? markdown.render(message.text)
+      : `<p class="thinking">Thinking...</p>`;
+    return;
+  }
+
+  const prompt = readingPromptFromText(message.text);
+  if (!prompt) {
+    container.className = "message-content plain-message";
+    container.textContent = message.text;
+    return;
+  }
+
+  container.className = "message-content reading-prompt";
+  if (prompt.question) {
+    const question = document.createElement("p");
+    question.className = "prompt-question";
+    question.textContent = prompt.question;
+    container.append(question);
+  }
+  if (prompt.highlight) {
+    const highlight = document.createElement("blockquote");
+    highlight.textContent = prompt.highlight;
+    container.append(highlight);
+  }
+  if (prompt.surroundingContext || prompt.pageTitle || prompt.pageUrl) {
+    const details = document.createElement("details");
+    details.className = "prompt-context";
+    const summary = document.createElement("summary");
+    summary.textContent = "View page context";
+    details.append(summary);
+    if (prompt.pageTitle || prompt.pageUrl) {
+      const source = document.createElement("p");
+      source.className = "prompt-source";
+      source.textContent = [prompt.pageTitle, prompt.pageUrl].filter(Boolean).join("\n");
+      details.append(source);
+    }
+    if (prompt.surroundingContext) {
+      const context = document.createElement("div");
+      context.className = "prompt-context-text";
+      context.textContent = prompt.surroundingContext;
+      details.append(context);
+    }
+    container.append(details);
   }
 }
 
 async function showSessions() {
+  activeScreen = "sessions";
   stopPolling();
   currentSessionId = null;
   app.innerHTML = heading("Shared chats", "Conversations from Chrome and Palma.")
     + `<p class="status">Loading...</p><div id="sessions"></div>`;
   try {
     const sessions = await client().sessions();
+    if (activeScreen !== "sessions") return;
     setStatus(sessions.length ? "" : "No chats yet.");
     const list = $<HTMLElement>("#sessions");
     sessions.forEach((session) => {
@@ -166,11 +235,12 @@ async function showSessions() {
       list.append(button);
     });
   } catch (error) {
-    setStatus(error.message);
+    if (activeScreen === "sessions") setStatus(error.message);
   }
 }
 
 async function showChat(sessionId: string, preparingPrompt = false) {
+  activeScreen = "chat";
   stopPolling();
   currentSessionId = sessionId;
   app.innerHTML = heading("Conversation", "Reading notes, kept on your OpenCode server.") + `
@@ -207,7 +277,7 @@ async function refreshMessages(continuePolling: boolean) {
       role.className = "role eyebrow";
       role.textContent = message.role;
       const text = document.createElement("div");
-      text.textContent = message.text || "Thinking...";
+      renderMessageText(message, text);
       article.append(role, text);
       list.append(article);
     });
@@ -264,6 +334,7 @@ async function ensureServerPermission(serverUrl: string) {
 }
 
 async function showSettings() {
+  activeScreen = "settings";
   stopPolling();
   currentSessionId = null;
   app.innerHTML = heading("Settings", "Stored only in this Chrome profile.") + `
@@ -312,6 +383,7 @@ async function showSettings() {
     await renderDiagnosticLog();
   });
   await renderDiagnosticLog();
+  if (activeScreen !== "settings") return;
   loadModelsFromForm(false);
 }
 
@@ -411,6 +483,7 @@ async function loadModelsFromForm(requestPermission = true) {
       throw new Error("Server access was not granted.");
     }
     const models = await new OpenCodeClient(temporary).models();
+    if (activeScreen !== "settings") return;
     const select = $<HTMLSelectElement>("#model");
     select.replaceChildren();
     models.forEach((model) => {
@@ -426,7 +499,7 @@ async function loadModelsFromForm(requestPermission = true) {
     updateVariants();
     setStatus(models.length ? "" : "No active models found.");
   } catch (error) {
-    setStatus(error.message);
+    if (activeScreen === "settings") setStatus(error.message);
   }
 }
 
@@ -459,9 +532,9 @@ async function saveSettings() {
     await new OpenCodeClient(next).health();
     settings = next;
     await chrome.storage.local.set({ settings });
-    setStatus("Connected. Chrome settings saved locally.");
+    if (activeScreen === "settings") setStatus("Connected. Chrome settings saved locally.");
   } catch (error) {
-    setStatus(error.message);
+    if (activeScreen === "settings") setStatus(error.message);
   }
 }
 
