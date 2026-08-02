@@ -17,6 +17,76 @@ import java.util.Base64;
 import java.util.List;
 
 final class OpenCodeClient {
+    interface EventListener {
+        void onSessionEvent();
+    }
+
+    final class EventStream implements AutoCloseable {
+        private final String sessionId;
+        private final EventListener listener;
+        private volatile HttpURLConnection connection;
+        private volatile boolean closed;
+
+        EventStream(String sessionId, EventListener listener) {
+            this.sessionId = sessionId;
+            this.listener = listener;
+        }
+
+        void run() throws IOException, JSONException {
+            HttpURLConnection active = openConnection("GET", "/api/event");
+            connection = active;
+            active.setReadTimeout(0);
+            active.setRequestProperty("Accept", "text/event-stream");
+            int status = active.getResponseCode();
+            if (status < 200 || status >= 300) {
+                String response = readAll(active.getErrorStream());
+                active.disconnect();
+                throw new IOException("OpenCode returned HTTP " + status + ": " + response);
+            }
+
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                    active.getInputStream(), StandardCharsets.UTF_8))) {
+                StringBuilder data = new StringBuilder();
+                String line;
+                while (!closed && (line = reader.readLine()) != null) {
+                    if (line.isEmpty()) {
+                        dispatch(data);
+                        data.setLength(0);
+                    } else if (line.startsWith("data:")) {
+                        if (data.length() > 0) {
+                            data.append('\n');
+                        }
+                        data.append(line.substring(5).stripLeading());
+                    }
+                }
+                dispatch(data);
+            } finally {
+                active.disconnect();
+                connection = null;
+            }
+        }
+
+        private void dispatch(StringBuilder data) throws JSONException {
+            if (data.length() == 0) {
+                return;
+            }
+            JSONObject event = new JSONObject(data.toString());
+            JSONObject eventData = event.optJSONObject("data");
+            if (eventData != null && sessionId.equals(eventData.optString("sessionID"))) {
+                listener.onSessionEvent();
+            }
+        }
+
+        @Override
+        public void close() {
+            closed = true;
+            HttpURLConnection active = connection;
+            if (active != null) {
+                active.disconnect();
+            }
+        }
+    }
+
     static final class Session {
         final String id;
         final String title;
@@ -127,6 +197,10 @@ final class OpenCodeClient {
         request("POST", "/api/session/" + encodePath(sessionId) + "/prompt", body);
     }
 
+    EventStream eventStream(String sessionId, EventListener listener) {
+        return new EventStream(sessionId, listener);
+    }
+
     List<Session> listSessions() throws IOException, JSONException {
         String path = "/api/session?limit=50&order=desc&directory="
                 + java.net.URLEncoder.encode(directory, "UTF-8");
@@ -174,17 +248,7 @@ final class OpenCodeClient {
 
     private JSONObject request(String method, String path, JSONObject body)
             throws IOException, JSONException {
-        HttpURLConnection connection = (HttpURLConnection) URI.create(baseUrl + path)
-                .toURL().openConnection();
-        connection.setRequestMethod(method);
-        connection.setConnectTimeout(10_000);
-        connection.setReadTimeout(120_000);
-        connection.setRequestProperty("Accept", "application/json");
-        if (!token.isEmpty()) {
-            String credentials = Base64.getEncoder().encodeToString(
-                    ("opencode:" + token).getBytes(StandardCharsets.UTF_8));
-            connection.setRequestProperty("Authorization", "Basic " + credentials);
-        }
+        HttpURLConnection connection = openConnection(method, path);
         if (body != null) {
             connection.setDoOutput(true);
             connection.setRequestProperty("Content-Type", "application/json");
@@ -202,6 +266,21 @@ final class OpenCodeClient {
             throw new IOException("OpenCode returned HTTP " + status + ": " + response);
         }
         return new JSONObject(response);
+    }
+
+    private HttpURLConnection openConnection(String method, String path) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) URI.create(baseUrl + path)
+                .toURL().openConnection();
+        connection.setRequestMethod(method);
+        connection.setConnectTimeout(10_000);
+        connection.setReadTimeout(120_000);
+        connection.setRequestProperty("Accept", "application/json");
+        if (!token.isEmpty()) {
+            String credentials = Base64.getEncoder().encodeToString(
+                    ("opencode:" + token).getBytes(StandardCharsets.UTF_8));
+            connection.setRequestProperty("Authorization", "Basic " + credentials);
+        }
+        return connection;
     }
 
     private static String readAll(InputStream stream) throws IOException {

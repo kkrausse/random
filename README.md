@@ -39,8 +39,8 @@ Plain HTTP is intentional because traffic is carried inside Tailscale. OpenCode 
 4. The service invokes Kindle's exposed `Copy` action.
 5. The app opens and reads the copied highlight with Android's foreground clipboard access.
 6. Choose a prompt template or enter a custom question.
-7. The app creates an OpenCode session and sends the previous page, current page, highlight, and question.
-8. The chat screen polls for the response and accepts follow-up messages.
+7. The app creates an OpenCode session and sends up to six earlier pages, the current page, highlight, and question.
+8. The chat screen streams response updates from OpenCode's event endpoint and accepts follow-up messages.
 9. Use `CHATS` to reopen sessions stored by the server or `KINDLE` to return to the book.
 
 The initial prompt places the question last and clearly labels each context section. It also instructs the model to answer concisely for a small e-ink display.
@@ -271,7 +271,7 @@ The Android client currently uses these V2 endpoints:
 | `POST` | `/api/session/{id}/prompt` | Send initial and follow-up messages |
 | `GET` | `/api/session/{id}/message` | Poll conversation messages |
 
-Responses are currently polled every two seconds while OpenCode is working. Streaming can replace polling later.
+Responses update from OpenCode's authenticated server-sent event stream. The app reconnects after transient stream interruptions and reloads the session to recover any events missed while disconnected.
 
 The V2 API and client contract are beta. After upgrading OpenCode, verify `/api/health`, session creation, prompting, message parsing, and session listing before relying on the reader.
 
@@ -333,7 +333,7 @@ Open `SETTINGS` in Kindle Context and configure:
 | Message template | Previous page, current page, highlight, then question |
 | Pre-filled prompts | Explain terms, why it matters, historical context |
 
-The model list is loaded from the server's active catalog. The message template is literal text with `{{highlight}}`, `{{previous_page}}`, `{{current_page}}`, and `{{question}}` placeholders. Pre-filled prompt labels and text can be edited, added, removed, and reordered directly in Settings. Press `SAVE AND TEST` to persist all settings. Existing chats retain their original model and messages; these selections apply to new chats.
+The model list is loaded from the server's active catalog. The message template is literal text with `{{highlight}}`, `{{previous_page}}`, `{{current_page}}`, and `{{question}}` placeholders. `{{previous_page}}` contains the retained earlier-page history (up to six pages) despite its singular name, preserving existing custom templates. Pre-filled prompt labels and text can be edited, added, removed, and reordered directly in Settings. Press `SAVE AND TEST` to persist all settings. Existing chats retain their original model and messages; these selections apply to new chats.
 
 The manifest allows cleartext traffic because the endpoint is HTTP over Tailscale. Do not point the app at an untrusted cleartext network endpoint.
 

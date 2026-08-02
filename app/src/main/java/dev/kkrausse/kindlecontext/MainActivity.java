@@ -79,7 +79,12 @@ public class MainActivity extends Activity {
     }
 
     private final ExecutorService network = Executors.newSingleThreadExecutor();
+    private final ExecutorService eventNetwork = Executors.newSingleThreadExecutor();
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable streamRefresh = () -> {
+        streamRefreshScheduled = false;
+        loadMessages();
+    };
     private String sessionId;
     private boolean readClipboardOnResume;
     private boolean polling;
@@ -92,6 +97,11 @@ public class MainActivity extends Activity {
     private boolean followChatBottom;
     private boolean userScrolling;
     private Markwon markwon;
+    private OpenCodeClient.EventStream eventStream;
+    private int eventStreamGeneration;
+    private boolean streamRefreshScheduled;
+    private boolean messagesLoading;
+    private boolean messagesDirty;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -142,11 +152,11 @@ public class MainActivity extends Activity {
 
         String selected = captured(KindleAccessibilityService.SELECTED_TEXT_KEY);
         String current = captured(KindleAccessibilityService.CURRENT_TEXT_KEY);
-        String previous = captured(KindleAccessibilityService.PREVIOUS_TEXT_KEY);
+        String previous = capturedHistory();
         addContext("HIGHLIGHT", selected, "No highlight captured");
         addContext("VISIBLE PAGE", current, "No page context captured");
         if (!previous.isEmpty()) {
-            addContext("PREVIOUS PAGE", previous, "");
+            addContext("EARLIER PAGES", previous, "");
         }
 
         addSection("ASK");
@@ -192,6 +202,7 @@ public class MainActivity extends Activity {
         });
         root.addView(send);
         polling = true;
+        startEventStream();
         loadMessages();
     }
 
@@ -445,12 +456,38 @@ public class MainActivity extends Activity {
         if (!polling || sessionId == null) {
             return;
         }
+        if (messagesLoading) {
+            messagesDirty = true;
+            return;
+        }
+        messagesLoading = true;
+        messagesDirty = false;
+        String requestedSession = sessionId;
+        int requestedGeneration = eventStreamGeneration;
         network.execute(() -> {
             try {
-                List<OpenCodeClient.Message> messages = client().listMessages(sessionId);
-                runOnUiThread(() -> renderMessages(messages));
+                List<OpenCodeClient.Message> messages = client().listMessages(requestedSession);
+                runOnUiThread(() -> {
+                    messagesLoading = false;
+                    if (polling && requestedSession.equals(sessionId)
+                            && requestedGeneration == eventStreamGeneration) {
+                        renderMessages(messages);
+                    }
+                    if (messagesDirty) {
+                        loadMessages();
+                    }
+                });
             } catch (Exception error) {
-                showError(error);
+                runOnUiThread(() -> {
+                    messagesLoading = false;
+                    if (polling && requestedSession.equals(sessionId)
+                            && requestedGeneration == eventStreamGeneration) {
+                        showError(error);
+                    }
+                    if (messagesDirty) {
+                        loadMessages();
+                    }
+                });
             }
         });
     }
@@ -474,10 +511,6 @@ public class MainActivity extends Activity {
             followChatBottom = true;
             scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN));
         }
-        if (polling) {
-            handler.removeCallbacksAndMessages(null);
-            handler.postDelayed(this::loadMessages, waiting ? 2_000 : 5_000);
-        }
     }
 
     private String readingPrompt(String question) {
@@ -492,7 +525,7 @@ public class MainActivity extends Activity {
                     value = valueOrNone(captured(KindleAccessibilityService.SELECTED_TEXT_KEY));
                     break;
                 case "previous_page":
-                    value = valueOrNone(captured(KindleAccessibilityService.PREVIOUS_TEXT_KEY));
+                    value = valueOrNone(capturedHistory());
                     break;
                 case "current_page":
                     value = valueOrNone(captured(KindleAccessibilityService.CURRENT_TEXT_KEY));
@@ -620,6 +653,7 @@ public class MainActivity extends Activity {
     }
 
     private void beginScreen() {
+        stopEventStream();
         handler.removeCallbacksAndMessages(null);
         accessibilityStatusView = null;
         LinearLayout screen = new LinearLayout(this);
@@ -906,6 +940,72 @@ public class MainActivity extends Activity {
                 .getString(key, "").trim();
     }
 
+    private String capturedHistory() {
+        SharedPreferences preferences = getSharedPreferences(
+                KindleAccessibilityService.PREFS, MODE_PRIVATE);
+        try {
+            JSONArray pages = new JSONArray(preferences.getString(
+                    KindleAccessibilityService.HISTORY_TEXT_KEY, "[]"));
+            StringBuilder history = new StringBuilder();
+            for (int i = 0; i < pages.length(); i++) {
+                String page = pages.optString(i).trim();
+                if (!page.isEmpty()) {
+                    if (history.length() > 0) {
+                        history.append("\n\n");
+                    }
+                    history.append("EARLIER PAGE ").append(i + 1).append('\n').append(page);
+                }
+            }
+            if (history.length() > 0) {
+                return history.toString();
+            }
+        } catch (JSONException ignored) {
+        }
+        return captured(KindleAccessibilityService.PREVIOUS_TEXT_KEY);
+    }
+
+    private void startEventStream() {
+        stopEventStream();
+        if (!polling || sessionId == null) {
+            return;
+        }
+        int generation = ++eventStreamGeneration;
+        OpenCodeClient.EventStream stream = client().eventStream(sessionId, () ->
+                handler.post(() -> {
+                    if (polling && generation == eventStreamGeneration
+                            && !streamRefreshScheduled) {
+                        streamRefreshScheduled = true;
+                        handler.postDelayed(streamRefresh, 100);
+                    }
+                }));
+        eventStream = stream;
+        eventNetwork.execute(() -> {
+            try {
+                stream.run();
+            } catch (Exception error) {
+                if (polling && generation == eventStreamGeneration) {
+                    handler.postDelayed(() -> {
+                        if (polling && generation == eventStreamGeneration) {
+                            startEventStream();
+                            loadMessages();
+                        }
+                    }, 1_000);
+                }
+            }
+        });
+    }
+
+    private void stopEventStream() {
+        eventStreamGeneration++;
+        streamRefreshScheduled = false;
+        handler.removeCallbacks(streamRefresh);
+        OpenCodeClient.EventStream stream = eventStream;
+        eventStream = null;
+        if (stream != null) {
+            stream.close();
+        }
+    }
+
     private String valueOrNone(String value) {
         return value.isEmpty() ? "(none captured)" : value;
     }
@@ -949,8 +1049,10 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         polling = false;
+        stopEventStream();
         handler.removeCallbacksAndMessages(null);
         network.shutdownNow();
+        eventNetwork.shutdownNow();
         super.onDestroy();
     }
 }

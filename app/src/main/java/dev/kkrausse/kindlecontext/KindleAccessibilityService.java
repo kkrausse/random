@@ -5,6 +5,7 @@ import android.accessibilityservice.AccessibilityService;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Rect;
 import android.os.Handler;
 import android.os.Looper;
@@ -12,6 +13,9 @@ import android.text.Spanned;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+
+import org.json.JSONArray;
+import org.json.JSONException;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -24,6 +28,7 @@ public class KindleAccessibilityService extends AccessibilityService {
     public static final String PREFS = "capture";
     public static final String CURRENT_TEXT_KEY = "current_text_v2";
     public static final String PREVIOUS_TEXT_KEY = "previous_text_v2";
+    public static final String HISTORY_TEXT_KEY = "page_history_v1";
     public static final String SELECTED_TEXT_KEY = "selected_text_v1";
     public static final String EVENT_KEY = "latest_event";
     public static final String READ_CLIPBOARD_EXTRA = "read_clipboard";
@@ -34,6 +39,7 @@ public class KindleAccessibilityService extends AccessibilityService {
     private static final String EVENT_DUMP_FILE = "kindle-accessibility-events.txt";
     private static final long TEXT_POLL_MS = 1500;
     private static final long COPY_SETTLE_MS = 250;
+    private static final int MAX_HISTORY_PAGES = 6;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable textPoll = new Runnable() {
@@ -357,18 +363,42 @@ public class KindleAccessibilityService extends AccessibilityService {
             return;
         }
 
-        String current = getSharedPreferences(PREFS, MODE_PRIVATE)
-                .getString(CURRENT_TEXT_KEY, "");
+        SharedPreferences preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
+        String current = preferences.getString(CURRENT_TEXT_KEY, "");
         if (text.equals(current)) {
             return;
         }
 
-        getSharedPreferences(PREFS, MODE_PRIVATE)
-                .edit()
+        JSONArray history = loadPageHistory(preferences);
+        if (looksLikeProse(current)
+                && (history.length() == 0
+                || !current.equals(history.optString(history.length() - 1)))) {
+            history.put(current);
+        }
+        while (history.length() > MAX_HISTORY_PAGES) {
+            history.remove(0);
+        }
+        preferences.edit()
                 .putString(PREVIOUS_TEXT_KEY, current)
+                .putString(HISTORY_TEXT_KEY, history.toString())
                 .putString(CURRENT_TEXT_KEY, text)
                 .apply();
         Log.i(TAG, "Captured " + text.length() + " characters from " + nodeCount + " nodes");
+    }
+
+    private JSONArray loadPageHistory(SharedPreferences preferences) {
+        try {
+            JSONArray history = new JSONArray(preferences.getString(HISTORY_TEXT_KEY, "[]"));
+            if (history.length() == 0) {
+                String previous = preferences.getString(PREVIOUS_TEXT_KEY, "");
+                if (looksLikeProse(previous)) {
+                    history.put(previous);
+                }
+            }
+            return history;
+        } catch (JSONException error) {
+            return new JSONArray();
+        }
     }
 
     private boolean looksLikeProse(String text) {
