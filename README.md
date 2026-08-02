@@ -43,7 +43,7 @@ Plain HTTP is intentional because traffic is carried inside Tailscale. OpenCode 
 8. The chat screen streams response updates from OpenCode's event endpoint and accepts follow-up messages.
 9. Use `CHATS` to reopen sessions stored by the server or `KINDLE` to return to the book.
 
-The initial prompt combines captured snapshots into one chronological `SURROUNDING CONTEXT` section without page labels. When more than 5,000 words have been captured, it drops the oldest words first. The question remains last.
+The initial prompt combines captured snapshots into one chronological surrounding-context section without page labels. It uses XML-style boundaries to separate source material from the reader's instructions. Captured text is escaped so it cannot close or alter those boundaries. When more than 5,000 words have been captured, it drops the oldest words first. The question remains last.
 
 If Kindle does not expose `Copy` or readable clipboard text, the app falls back to standard accessibility selection offsets. The surrounding context remains available when no highlight can be recovered.
 
@@ -337,7 +337,7 @@ Open `SETTINGS` in Kindle Context and configure:
 | Message template | Surrounding context, highlight, then question |
 | Pre-filled prompts | Explain terms, why it matters, historical context |
 
-The model list is loaded from the server's active catalog. The message template is literal text with `{{highlight}}`, `{{surrounding_context}}`, and `{{question}}` placeholders. The surrounding context is chronological and retains the latest 5,000 words. Existing custom templates using `{{previous_page}}` and `{{current_page}}` continue to work, while the former built-in template upgrades automatically. Pre-filled prompt labels and text can be edited, added, removed, and reordered directly in Settings. Press `SAVE AND TEST` to persist all settings. Existing chats retain their original model and messages; these selections apply to new chats.
+The model list is loaded from the server's active catalog. The message template is literal text with `{{highlight}}`, `{{surrounding_context}}`, and `{{question}}` placeholders. The built-in template wraps source material and instructions in XML-style elements. The surrounding context is chronological and retains the latest 5,000 words. Existing custom templates using `{{previous_page}}` and `{{current_page}}` continue to work, while former built-in templates upgrade automatically. In chat history, structured prompts show the question and highlight immediately and keep surrounding context collapsed behind an expandable button. Pre-filled prompt labels and text can be edited, added, removed, and reordered directly in Settings. Press `SAVE AND TEST` to persist all settings. Existing chats retain their original model and messages; these selections apply to new chats.
 
 The manifest allows cleartext traffic because the endpoint is HTTP over Tailscale. Do not point the app at an untrusted cleartext network endpoint.
 

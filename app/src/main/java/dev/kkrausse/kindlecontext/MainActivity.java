@@ -65,11 +65,29 @@ public class MainActivity extends Activity {
             + "{{previous_page}}\n\nCURRENT PAGE\n{{current_page}}"
             + "\n\nHIGHLIGHTED PASSAGE\n{{highlight}}"
             + "\n\nREADER'S QUESTION\n{{question}}";
-    private static final String DEFAULT_MESSAGE_TEMPLATE = "SURROUNDING CONTEXT\n\n"
+    private static final String PLAIN_CONTEXT_MESSAGE_TEMPLATE = "SURROUNDING CONTEXT\n\n"
             + "{{surrounding_context}}\n\nHIGHLIGHTED PASSAGE\n{{highlight}}"
             + "\n\nREADER'S QUESTION\n{{question}}";
+    private static final String DEFAULT_MESSAGE_TEMPLATE = "<reading_request>\n"
+            + "  <source_material>\n"
+            + "    <surrounding_context>\n{{surrounding_context}}\n"
+            + "    </surrounding_context>\n"
+            + "    <highlighted_passage>\n{{highlight}}\n"
+            + "    </highlighted_passage>\n"
+            + "  </source_material>\n"
+            + "  <instructions>\n"
+            + "    <reader_question>\n{{question}}\n"
+            + "    </reader_question>\n"
+            + "  </instructions>\n"
+            + "</reading_request>";
     private static final Pattern TEMPLATE_PLACEHOLDER = Pattern.compile(
             "\\{\\{(highlight|surrounding_context|previous_page|current_page|question)\\}\\}");
+    private static final Pattern SURROUNDING_CONTEXT_XML = xmlElement("surrounding_context");
+    private static final Pattern HIGHLIGHT_XML = xmlElement("highlighted_passage");
+    private static final Pattern QUESTION_XML = xmlElement("reader_question");
+    private static final Pattern PLAIN_READING_MESSAGE = Pattern.compile(
+            "^SURROUNDING CONTEXT\\n\\n(.*?)\\n\\nHIGHLIGHTED PASSAGE\\n(.*?)"
+                    + "\\n\\nREADER'S QUESTION\\n(.*)$", Pattern.DOTALL);
     private static final String CONTEXT_OMISSION_MARKER = "[Earlier captured context omitted.]";
 
     private static final class PromptPreset {
@@ -514,6 +532,7 @@ public class MainActivity extends Activity {
 
     private String readingPrompt(String question) {
         String template = messageTemplate(getSharedPreferences(SETTINGS, MODE_PRIVATE));
+        boolean xmlTemplate = template.contains("<reading_request>");
         Matcher matcher = TEMPLATE_PLACEHOLDER.matcher(template);
         StringBuffer result = new StringBuffer();
         while (matcher.find()) {
@@ -535,6 +554,9 @@ public class MainActivity extends Activity {
                     value = question;
                     break;
             }
+            if (xmlTemplate) {
+                value = xmlEscape(value);
+            }
             matcher.appendReplacement(result, Matcher.quoteReplacement(value));
         }
         matcher.appendTail(result);
@@ -544,7 +566,35 @@ public class MainActivity extends Activity {
     private String messageTemplate(SharedPreferences preferences) {
         String template = preferences.getString(MESSAGE_TEMPLATE_KEY, DEFAULT_MESSAGE_TEMPLATE);
         return LEGACY_DEFAULT_MESSAGE_TEMPLATE.equals(template)
+                || PLAIN_CONTEXT_MESSAGE_TEMPLATE.equals(template)
                 ? DEFAULT_MESSAGE_TEMPLATE : template;
+    }
+
+    private static Pattern xmlElement(String name) {
+        return Pattern.compile("<" + name + ">\\s*(.*?)\\s*</" + name + ">",
+                Pattern.DOTALL);
+    }
+
+    private String xmlValue(Pattern pattern, String text) {
+        Matcher matcher = pattern.matcher(text);
+        return matcher.find() ? xmlUnescape(matcher.group(1).trim()) : null;
+    }
+
+    private String xmlEscape(String value) {
+        return value.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;");
+    }
+
+    private String xmlUnescape(String value) {
+        return value.replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&amp;", "&");
+    }
+
+    private int countWords(String value) {
+        String text = value.trim();
+        return text.isEmpty() ? 0 : text.split("\\s+").length;
     }
 
     private List<PromptPreset> loadPromptPresets(SharedPreferences preferences) {
@@ -749,6 +799,9 @@ public class MainActivity extends Activity {
         TextView roleView = label(role, 13, true);
         roleView.setPadding(0, dp(16), 0, dp(4));
         transcript.addView(roleView);
+        if ("YOU".equals(role) && addStructuredUserMessage(text)) {
+            return;
+        }
         TextView message = label(text, 17, false);
         if ("OPENCODE".equals(role)) {
             markwon.setMarkdown(message, text);
@@ -756,6 +809,49 @@ public class MainActivity extends Activity {
         message.setTextIsSelectable(true);
         message.setLineSpacing(0, 1.15f);
         transcript.addView(message);
+    }
+
+    private boolean addStructuredUserMessage(String text) {
+        String question = xmlValue(QUESTION_XML, text);
+        String highlight = xmlValue(HIGHLIGHT_XML, text);
+        String context = xmlValue(SURROUNDING_CONTEXT_XML, text);
+        if (question == null || highlight == null || context == null) {
+            Matcher plain = PLAIN_READING_MESSAGE.matcher(text);
+            if (plain.matches()) {
+                context = plain.group(1).trim();
+                highlight = plain.group(2).trim();
+                question = plain.group(3).trim();
+            }
+        }
+        if (question == null || highlight == null || context == null) {
+            return false;
+        }
+
+        addUserMessageSection("QUESTION", question);
+        addUserMessageSection("HIGHLIGHT", highlight);
+        int contextWords = countWords(context);
+        Button toggle = smallButton("SHOW CONTEXT (" + contextWords + " WORDS)");
+        TextView contextView = label(context, 16, false);
+        contextView.setTextIsSelectable(true);
+        contextView.setVisibility(View.GONE);
+        toggle.setOnClickListener(view -> {
+            boolean show = contextView.getVisibility() != View.VISIBLE;
+            contextView.setVisibility(show ? View.VISIBLE : View.GONE);
+            toggle.setText(show ? "HIDE CONTEXT"
+                    : "SHOW CONTEXT (" + contextWords + " WORDS)");
+        });
+        transcript.addView(toggle);
+        transcript.addView(contextView);
+        return true;
+    }
+
+    private void addUserMessageSection(String heading, String text) {
+        TextView headingView = label(heading, 12, true);
+        headingView.setPadding(0, dp(6), 0, dp(2));
+        transcript.addView(headingView);
+        TextView value = label(text, 17, false);
+        value.setTextIsSelectable(true);
+        transcript.addView(value);
     }
 
     private void addLoadingIndicator() {
