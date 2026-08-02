@@ -309,15 +309,19 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 ./gradlew --no-daemon clean assembleDebug lintDebug
 ```
 
-Install and launch:
+Build, install on the only connected device, and launch:
 
 ```sh
-export ADB="$HOME/Library/Android/sdk/platform-tools/adb"
-"$ADB" install -r app/build/outputs/apk/debug/app-debug.apk
-"$ADB" shell am start -n dev.example.kindlecontext/.MainActivity
+./install.sh
 ```
 
-The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. Installing with `-r` preserves captured context and connection preferences.
+If multiple devices are connected, pass the target serial (or set `ANDROID_SERIAL`):
+
+```sh
+./install.sh BOOX_DEVICE_SERIAL
+```
+
+The script uses `ADB`, `adb` from `PATH`, or the SDK location under `ANDROID_HOME`. It builds the APK at `app/build/outputs/apk/debug/app-debug.apk`, installs it with `-r` to preserve captured context and connection preferences, and launches the app.
 
 ## App Configuration
 
