@@ -18,7 +18,7 @@ function $<T extends Element = HTMLElement>(selector: string, root: ParentNode =
 
 const app = $<HTMLElement>("#app");
 const markdown = new MarkdownIt({ html: false, linkify: true, typographer: true });
-const AUTO_SCROLL_PAUSE_MS = 5000;
+const AUTO_SCROLL_PAUSE_MS = 20_000;
 let settings: Settings;
 let capture: Capture | null;
 let editingPresets: PromptPreset[] = [];
