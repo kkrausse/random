@@ -20,6 +20,7 @@ import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
@@ -100,6 +101,18 @@ public class MainActivity extends Activity {
         }
     }
 
+    private final class TrackingScrollView extends ScrollView {
+        TrackingScrollView(Context context) {
+            super(context);
+        }
+
+        @Override
+        public boolean dispatchTouchEvent(MotionEvent event) {
+            trackScrollTouch(event);
+            return super.dispatchTouchEvent(event);
+        }
+    }
+
     private final ExecutorService network = Executors.newSingleThreadExecutor();
     private final ExecutorService eventNetwork = Executors.newSingleThreadExecutor();
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -118,6 +131,8 @@ public class MainActivity extends Activity {
     private TextView accessibilityStatusView;
     private boolean followChatBottom;
     private boolean userScrolling;
+    private float scrollTouchDownY;
+    private int scrollTouchSlop;
     private Markwon markwon;
     private OpenCodeClient.EventStream eventStream;
     private int eventStreamGeneration;
@@ -134,6 +149,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         markwon = Markwon.create(this);
+        scrollTouchSlop = ViewConfiguration.get(this).getScaledTouchSlop();
         acceptSharedText(getIntent());
         acceptCaptureIntent(getIntent());
         showCapture();
@@ -758,22 +774,12 @@ public class MainActivity extends Activity {
         toolbar = new LinearLayout(this);
         toolbar.setOrientation(LinearLayout.VERTICAL);
         screen.addView(toolbar, new LinearLayout.LayoutParams(-1, -2));
-        scrollView = new ScrollView(this);
+        scrollView = new TrackingScrollView(this);
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(14), dp(18), dp(28));
         root.setBackgroundColor(Color.WHITE);
         scrollView.addView(root);
-        scrollView.setOnTouchListener((view, event) -> {
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-                userScrolling = true;
-            } else if (event.getActionMasked() == MotionEvent.ACTION_UP
-                    || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
-                followChatBottom = isNearBottom();
-                userScrolling = false;
-            }
-            return false;
-        });
         scrollView.setOnScrollChangeListener((view, x, y, oldX, oldY) -> {
             if (userScrolling && y < oldY) {
                 followChatBottom = false;
@@ -783,6 +789,29 @@ public class MainActivity extends Activity {
         });
         screen.addView(scrollView, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(screen);
+    }
+
+    private void trackScrollTouch(MotionEvent event) {
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                scrollTouchDownY = event.getY();
+                userScrolling = true;
+                break;
+            case MotionEvent.ACTION_MOVE:
+                if (event.getY() - scrollTouchDownY > scrollTouchSlop) {
+                    followChatBottom = false;
+                }
+                break;
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL:
+                userScrolling = false;
+                if (isNearBottom()) {
+                    followChatBottom = true;
+                }
+                break;
+            default:
+                break;
+        }
     }
 
     private void addTopBar(String heading) {
