@@ -11,11 +11,12 @@ const result = await Bun.build({
   entrypoints: [
     join(root, "src/background.ts"),
     join(root, "src/content.ts"),
-    join(root, "src/sidepanel.ts")
+    join(root, "src/sidepanel.tsx")
   ],
   outdir,
   target: "browser",
   format: "esm",
+  define: { "process.env.NODE_ENV": JSON.stringify("production") },
   minify: false,
   sourcemap: "external"
 });
