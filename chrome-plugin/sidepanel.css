@@ -156,6 +156,17 @@ textarea.template { min-height: 270px; font-family: ui-monospace, monospace; fon
 .preset-controls { display: flex; gap: 6px; }
 .help { color: var(--muted); font-size: 12px; line-height: 1.4; }
 
+.diagnostics {
+  overflow: auto;
+  max-height: 260px;
+  padding: 10px;
+  background: #17231d;
+  color: #f5f1e8;
+  font: 10px/1.45 ui-monospace, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 @media (max-width: 330px) {
   nav button { padding: 0 6px; font-size: 10px; }
   main { padding-inline: 12px; }

@@ -1,5 +1,6 @@
 import { modelFromJson, messageFromJson } from "./common";
 import type { Message, Model, Settings } from "./common";
+import { recordDiagnostic } from "./diagnostics";
 
 interface ApiResponse<T> {
   data: T;
@@ -31,14 +32,25 @@ export class OpenCodeClient {
     const headers: Record<string, string> = { Accept: "application/json" };
     if (this.authorization) headers.Authorization = this.authorization;
     if (body !== undefined) headers["Content-Type"] = "application/json";
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers,
-      signal: AbortSignal.timeout(120_000),
-      body: body === undefined ? undefined : JSON.stringify(body)
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}${path}`, {
+        method,
+        headers,
+        signal: AbortSignal.timeout(120_000),
+        body: body === undefined ? undefined : JSON.stringify(body)
+      });
+    } catch (error) {
+      await recordDiagnostic("api-network-error", {
+        method,
+        path,
+        message: String(error?.message || error)
+      });
+      throw error;
+    }
     const text = await response.text();
     if (!response.ok) {
+      await recordDiagnostic("api-http-error", { method, path, status: response.status });
       throw new Error(`OpenCode returned HTTP ${response.status}: ${text}`);
     }
     return text ? JSON.parse(text) as T : {} as T;

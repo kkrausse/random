@@ -1,6 +1,7 @@
 import { OpenCodeClient } from "./api";
 import { DEFAULT_SETTINGS, buildPrompt } from "./common";
 import type { Capture, PromptPreset, Settings } from "./common";
+import { clearDiagnostics, readDiagnostics, recordDiagnostic } from "./diagnostics";
 
 function $<T extends Element = HTMLElement>(selector: string, root: ParentNode = document): T {
   const element = root.querySelector<T>(selector);
@@ -288,7 +289,16 @@ async function showSettings() {
       <button class="secondary" id="add-preset">Add prompt</button>
     </section>
     <button class="primary" id="save-settings">Save and test</button>
-    <p class="status"></p>`;
+    <p class="status"></p>
+    <section class="settings-section">
+      <h2>Diagnostics</h2>
+      <p class="help">Saved locally without passwords, highlights, page text, or page URLs.</p>
+      <div class="preset-controls">
+        <button class="small" id="copy-diagnostics">Copy logs</button>
+        <button class="small" id="clear-diagnostics">Clear logs</button>
+      </div>
+      <pre class="diagnostics" id="diagnostics">Loading...</pre>
+    </section>`;
   $<HTMLInputElement>("#server-url").value = settings.serverUrl;
   $<HTMLInputElement>("#directory").value = settings.directory;
   $<HTMLInputElement>("#server-password").value = settings.serverPassword;
@@ -296,7 +306,35 @@ async function showSettings() {
   renderPresetEditors(settings.promptPresets.map((preset) => ({ ...preset })));
   $("#load-models").addEventListener("click", () => loadModelsFromForm());
   $("#save-settings").addEventListener("click", saveSettings);
+  $("#copy-diagnostics").addEventListener("click", copyDiagnosticLog);
+  $("#clear-diagnostics").addEventListener("click", async () => {
+    await clearDiagnostics();
+    await renderDiagnosticLog();
+  });
+  await renderDiagnosticLog();
   loadModelsFromForm(false);
+}
+
+async function diagnosticText(): Promise<string> {
+  const entries = await readDiagnostics();
+  return JSON.stringify({ extensionVersion: chrome.runtime.getManifest().version, entries }, null, 2);
+}
+
+async function renderDiagnosticLog() {
+  const output = document.querySelector<HTMLElement>("#diagnostics");
+  if (output) output.textContent = await diagnosticText();
+}
+
+async function copyDiagnosticLog() {
+  try {
+    await navigator.clipboard.writeText(await diagnosticText());
+    setStatus("Diagnostics copied.");
+  } catch (error) {
+    await recordDiagnostic("diagnostics-copy-error", {
+      message: String(error?.message || error)
+    });
+    setStatus("Could not copy diagnostics.");
+  }
 }
 
 function renderPresetEditors(presets: PromptPreset[]) {

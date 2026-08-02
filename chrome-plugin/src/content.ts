@@ -1,11 +1,25 @@
 (() => {
   const BUTTON_ID = "reading-context-explain-button";
+  const NOTICE_ID = "reading-context-open-notice";
   const MAX_CONTEXT_WORDS = 5000;
   let savedSelection: { highlight: string; range: Range } | null = null;
 
   function removeButton() {
     document.getElementById(BUTTON_ID)?.remove();
   }
+
+  function showOpenFallback() {
+    document.getElementById(NOTICE_ID)?.remove();
+    const notice = document.createElement("div");
+    notice.id = NOTICE_ID;
+    notice.textContent = "Chrome blocked automatic opening. Click the Reading Context toolbar icon.";
+    notice.addEventListener("click", () => notice.remove());
+    document.documentElement.appendChild(notice);
+  }
+
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === "reading-context-panel-open-error") showOpenFallback();
+  });
 
   function readableRoot(element: Element | null) {
     return element?.closest("article, main, [role='main']")
@@ -71,12 +85,13 @@
         capturedAt: Date.now()
       };
       removeButton();
-      const response = await chrome.runtime.sendMessage({
-        type: "open-reading-context",
-        capture
-      });
-      if (!response?.ok) {
-        console.warn("Reading Context could not open:", response?.error);
+      try {
+        await chrome.runtime.sendMessage({
+          type: "open-reading-context",
+          capture
+        });
+      } catch (error) {
+        console.warn("Reading Context could not request the side panel:", error);
       }
     });
     document.documentElement.appendChild(button);

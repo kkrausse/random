@@ -339,11 +339,15 @@ Install it for development:
 4. Choose `Load unpacked` and select this repository's `chrome-plugin/dist/` directory.
 5. Open the extension side panel, enter the server password under `Settings`, then press `Save and test`.
 
+After changing extension code, rerun `bun run build`, click the extension's reload button on `chrome://extensions`, and refresh any website tabs that were already open so Chrome reinjects the updated content script.
+
 Highlight text on a normal website and click the injected `Explain` button. The extension opens its side panel with the selection, page title and URL, and up to 5,000 words from the nearest readable `article` or `main` region. If neither exists, it falls back to body text. Choose a quick question or write a custom one to start a shared OpenCode chat.
 
 The checked-in host permission covers the default Tailscale server. If the server URL is changed, Chrome asks for access to the new origin when loading models or saving settings.
 
 The extension injects its selection button on normal websites using the manifest's `<all_urls>` content-script access. Server credentials remain restricted to trusted extension pages, and captured page text is held temporarily in tab-scoped `chrome.storage.session` only until the side panel receives it.
+
+Extension and API failures are retained as a bounded local diagnostics log. Open `Settings -> Diagnostics` to copy or clear it. Diagnostics omit the server password, highlighted text, surrounding page text, and page URL.
 
 Run the extension's local checks with:
 
