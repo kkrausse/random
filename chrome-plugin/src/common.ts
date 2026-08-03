@@ -29,11 +29,18 @@ export interface Model {
   variants: string[];
 }
 
+export interface ModelRef {
+  id: string;
+  providerID: string;
+  variant?: string;
+}
+
 export interface Message {
   id: string;
   role: "You" | "OpenCode";
   text: string;
   complete: boolean;
+  model?: ModelRef;
 }
 
 export interface ReadingPrompt {
@@ -59,6 +66,7 @@ interface ApiMessage {
   text?: string;
   content?: Array<{ type: string; text?: string }>;
   time?: { completed?: number };
+  model?: ModelRef;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -175,6 +183,6 @@ export function messageFromJson(value: ApiMessage): Message | null {
     .map((part) => part.text || "").join("");
   const complete = Boolean(value.time?.completed);
   return text || !complete
-    ? { id: value.id, role: "OpenCode", text, complete }
+    ? { id: value.id, role: "OpenCode", text, complete, model: value.model }
     : null;
 }

@@ -26,8 +26,15 @@ test("messageFromJson joins assistant text parts", () => {
     id: "message-1",
     type: "assistant",
     content: [{ type: "text", text: "Hello " }, { type: "tool" }, { type: "text", text: "world" }],
+    model: { providerID: "openai", id: "gpt-5", variant: "high" },
     time: { completed: 1 }
-  }), { id: "message-1", role: "OpenCode", text: "Hello world", complete: true });
+  }), {
+    id: "message-1",
+    role: "OpenCode",
+    text: "Hello world",
+    complete: true,
+    model: { providerID: "openai", id: "gpt-5", variant: "high" }
+  });
 });
 
 test("xmlEscape escapes boundary-changing characters", () => {

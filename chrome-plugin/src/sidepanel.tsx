@@ -10,7 +10,7 @@ import {
   buildPrompt,
   readingPromptFromText
 } from "./common";
-import type { Capture, Message, Model, PromptPreset, Settings } from "./common";
+import type { Capture, Message, Model, ModelRef, PromptPreset, Settings } from "./common";
 import { clearDiagnostics, readDiagnostics, recordDiagnostic } from "./diagnostics";
 
 type Screen = "capture" | "sessions" | "chat" | "settings";
@@ -63,6 +63,11 @@ function MarkdownContent({ text }: { text: string }) {
     }} />;
 }
 
+function modelLabel(model?: ModelRef) {
+  if (!model) return "";
+  return `${model.providerID}/${model.id}${model.variant ? ` (${model.variant})` : ""}`;
+}
+
 function ReadingPromptMessage({ text }: { text: string }) {
   const prompt = readingPromptFromText(text);
   if (!prompt) return <div className="message-content plain-message">{text}</div>;
@@ -82,7 +87,9 @@ function ReadingPromptMessage({ text }: { text: string }) {
 
 function MessageView({ message }: { message: Message }) {
   return <article className={`message ${message.role === "OpenCode" ? "assistant" : "user"}`}>
-    <div className="role eyebrow">{message.role}</div>
+    <div className="message-meta"><span className="role eyebrow">{message.role}</span>
+      {message.role === "OpenCode" && message.model && <span className="message-model">{modelLabel(message.model)}</span>}
+    </div>
     {message.role === "OpenCode"
       ? <MarkdownContent text={message.text} />
       : <ReadingPromptMessage text={message.text} />}
@@ -160,7 +167,8 @@ function SessionsScreen({ settings, onOpen }: { settings: Settings; onOpen: (id:
     <div>{sessions.map((session) =>
       <button className="session" key={session.id} onClick={() => onOpen(session.id)}>
         <strong>{session.title || "Untitled reading chat"}</strong>
-        <time>{session.time?.updated ? new Date(session.time.updated).toLocaleString() : "Unknown date"}</time>
+        <span className="session-meta"><time>{session.time?.updated ? new Date(session.time.updated).toLocaleString() : "Unknown date"}</time>
+          {session.model && <span>{modelLabel(session.model)}</span>}</span>
       </button>)}</div>
   </>;
 }
@@ -193,7 +201,7 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
   onNewChat: () => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [streaming, setStreaming] = useState<{ id: string; text: string } | null>(null);
+  const [streaming, setStreaming] = useState<{ id: string; text: string; model?: ModelRef } | null>(null);
   const [usage, setUsage] = useState<SessionUsage | null>(null);
   const [status, setStatus] = useState("Loading...");
   const [reply, setReply] = useState("");
@@ -203,6 +211,7 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
   const onPromptSentRef = useRef(onPromptSent);
   const messagesRef = useRef(messages);
   const waitingRef = useRef(waiting);
+  const streamingModels = useRef(new Map<string, ModelRef>());
   const pinnedToBottom = useRef(true);
   onPromptSentRef.current = onPromptSent;
   messagesRef.current = messages;
@@ -276,10 +285,18 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
       if (!data || data.sessionID !== sessionId) return;
       const messageId = data.assistantMessageID || "";
       switch (event.type) {
+        case "session.step.started":
+          if (messageId && data.model) {
+            streamingModels.current.set(messageId, data.model);
+            setStreaming((current) => current?.id === messageId ? { ...current, model: data.model } : current);
+          }
+          break;
         case "session.text.started":
           if (messageId) setStreaming((current) => current?.id === messageId ? current : {
             id: messageId,
-            text: messagesRef.current.find((message) => message.id === messageId)?.text || ""
+            text: messagesRef.current.find((message) => message.id === messageId)?.text || "",
+            model: messagesRef.current.find((message) => message.id === messageId)?.model
+              || streamingModels.current.get(messageId)
           });
           setWaiting(true);
           setStatus("Responding...");
@@ -290,7 +307,8 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
             text: (current?.id === messageId
               ? current.text
               : messagesRef.current.find((message) => message.id === messageId)?.text || "")
-              + (data.delta || "")
+              + (data.delta || ""),
+            model: current?.id === messageId ? current.model : streamingModels.current.get(messageId)
           }));
           break;
         case "session.reasoning.started": setStatus("Thinking..."); break;
@@ -371,7 +389,13 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
   const visibleMessages = [...messages];
   if (streaming) {
     const index = visibleMessages.findIndex((message) => message.id === streaming.id);
-    const streamedMessage: Message = { id: streaming.id, role: "OpenCode", text: streaming.text, complete: false };
+    const streamedMessage: Message = {
+      id: streaming.id,
+      role: "OpenCode",
+      text: streaming.text,
+      complete: false,
+      model: streaming.model
+    };
     if (index >= 0) visibleMessages[index] = streamedMessage;
     else visibleMessages.push(streamedMessage);
   }

@@ -143,11 +143,13 @@ textarea.template { min-height: 270px; font-family: ui-monospace, monospace; fon
   text-transform: none;
 }
 .session strong { display: block; font-family: Georgia, serif; font-size: 16px; letter-spacing: 0; }
-.session time { color: var(--muted); font-size: 11px; font-weight: 400; }
+.session-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 10px; color: var(--muted); font-size: 11px; font-weight: 400; }
 
 .message { border: 0; border-left: 3px solid var(--paper-deep); line-height: 1.5; }
 .message.assistant { border-color: var(--accent); background: transparent; }
-.message .role { margin-bottom: 7px; color: var(--muted); }
+.message-meta { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; margin-bottom: 7px; }
+.message .role { margin: 0; color: var(--muted); }
+.message-model { color: var(--muted); font: 10px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
 .plain-message, .prompt-context-text, .prompt-source { white-space: pre-wrap; }
 .prompt-question { margin: 0 0 10px; font-size: 17px; font-weight: 600; line-height: 1.35; }
 .reading-prompt blockquote {

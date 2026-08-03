@@ -69,3 +69,25 @@ test("sessionUsage returns OpenCode session token and cost totals", async () => 
     globalThis.fetch = originalFetch;
   }
 });
+
+test("sessions retains the current OpenCode model reference", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    data: [{
+      id: "session-1",
+      title: "A chat",
+      model: { providerID: "anthropic", id: "claude-sonnet-4", variant: "high" }
+    }]
+  }), { status: 200 })) as unknown as typeof fetch;
+
+  try {
+    const sessions = await new OpenCodeClient(DEFAULT_SETTINGS).sessions();
+    assert.deepEqual(sessions[0].model, {
+      providerID: "anthropic",
+      id: "claude-sonnet-4",
+      variant: "high"
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

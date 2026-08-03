@@ -1,5 +1,5 @@
 import { modelFromJson, messageFromJson } from "./common";
-import type { Message, Model, Settings } from "./common";
+import type { Message, Model, ModelRef, Settings } from "./common";
 import { recordDiagnostic } from "./diagnostics";
 
 interface ApiResponse<T> {
@@ -10,6 +10,7 @@ interface ApiSession {
   id: string;
   title?: string;
   time?: { updated?: number };
+  model?: ModelRef;
 }
 
 export interface SessionEvent {
@@ -19,6 +20,7 @@ export interface SessionEvent {
     assistantMessageID?: string;
     delta?: string;
     name?: string;
+    model?: ModelRef;
   };
 }
 
