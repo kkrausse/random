@@ -89,12 +89,17 @@ h2, .eyebrow, label > span {
   line-height: 1.45;
 }
 
+.highlight-card {
+  height: 132px;
+  overflow-y: auto;
+}
+
+.empty-capture { margin: 0; color: var(--muted); font-style: italic; }
+
 .context-preview {
-  display: -webkit-box;
-  overflow: hidden;
+  height: 112px;
+  overflow-y: auto;
   color: var(--muted);
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 5;
 }
 
 .button-grid { display: grid; gap: 8px; margin: 10px 0 16px; }
@@ -195,16 +200,20 @@ textarea.template { min-height: 270px; font-family: ui-monospace, monospace; fon
 .markdown-body table { display: block; overflow-x: auto; border-collapse: collapse; font-size: 12px; }
 .markdown-body th, .markdown-body td { padding: 6px 8px; border: 1px solid #c9c0af; text-align: left; }
 .thinking { margin: 0; color: var(--muted); font-style: italic; }
-.chat-capture-card { margin: 0 0 8px; padding: 10px 12px; border-left: 3px solid var(--accent); background: #fff8ef; }
+.chat-capture-card {
+  height: 104px;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  background: #fff8ef;
+}
 .chat-capture-card .eyebrow { margin-top: 0; }
 .chat-capture-card blockquote {
-  display: -webkit-box;
-  overflow: hidden;
+  height: 62px;
+  overflow-y: auto;
   margin: 0 0 8px;
   font-size: 15px;
   line-height: 1.35;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
 }
 .chat-capture-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .quick-prompt {

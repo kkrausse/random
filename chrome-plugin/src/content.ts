@@ -32,14 +32,7 @@
   async function captureSelection() {
     const selection = getSelection();
     const highlight = selection?.toString().trim() || "";
-    if (!selection || selection.rangeCount === 0 || !highlight) {
-      try {
-        await chrome.runtime.sendMessage({ type: "update-reading-context", capture: null });
-      } catch (error) {
-        console.warn("Reading Context could not clear the selection:", error);
-      }
-      return;
-    }
+    if (!selection || selection.rangeCount === 0 || !highlight) return;
 
     const range = selection.getRangeAt(0);
     const rect = range.getBoundingClientRect();

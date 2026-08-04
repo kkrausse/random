@@ -106,16 +106,10 @@ function CaptureScreen({ settings, capture, onOpenChat, onBrowse }: {
   const [status, setStatus] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  if (!capture) return <>
-    <Heading title="Reading Context" subtitle="Select a passage on any page to begin." />
-    <div className="empty">Keep this panel open and highlight text on the page. Your selection will appear here automatically.</div>
-    <button className="secondary" onClick={onBrowse}>Browse shared chats</button>
-  </>;
-
-  const contextWordCount = (capture.surroundingContext.match(/\S+/g) || []).length;
+  const contextWordCount = (capture?.surroundingContext.match(/\S+/g) || []).length;
 
   const startChat = async (nextQuestion: string) => {
-    if (!nextQuestion.trim() || submitting) return;
+    if (!capture || !nextQuestion.trim() || submitting) return;
     setSubmitting(true);
     setStatus("Starting chat...");
     try {
@@ -129,23 +123,26 @@ function CaptureScreen({ settings, capture, onOpenChat, onBrowse }: {
   };
 
   return <>
-    <Heading title="Ask the page" subtitle={capture.pageTitle || "Selected passage"} />
+    <Heading title="Ask the page" subtitle={capture?.pageTitle || "Select a passage on the page to begin."} />
     <div className="eyebrow">Highlight</div>
-    <section className="context-card"><blockquote>{capture.highlight}</blockquote></section>
+    <section className="context-card highlight-card">
+      {capture ? <blockquote>{capture.highlight}</blockquote> : <p className="empty-capture">No passage selected.</p>}
+    </section>
     <div className="eyebrow">Page context ({contextWordCount.toLocaleString()} {contextWordCount === 1 ? "word" : "words"})</div>
-    <section className="context-card context-preview">{capture.surroundingContext}</section>
+    <section className="context-card context-preview">{capture?.surroundingContext || "Page context will appear with your selection."}</section>
     <div className="eyebrow">Quick questions</div>
     <div className="button-grid">
       {settings.promptPresets.map((preset, index) =>
-        <button className="primary" disabled={submitting} key={index}
+        <button className="primary" disabled={!capture || submitting} key={index}
           onClick={() => void startChat(preset.prompt)}>{preset.label}</button>)}
     </div>
     <label><span>Your question</span>
       <textarea value={question} disabled={submitting} onChange={(event) => setQuestion(event.target.value)}
         placeholder="What do you want to understand?" />
     </label>
-    <button className="primary" disabled={submitting} onClick={() => void startChat(question)}>Start chat</button>
+    <button className="primary" disabled={!capture || submitting} onClick={() => void startChat(question)}>Start chat</button>
     <p className="status">{status}</p>
+    <button className="secondary" onClick={onBrowse}>Browse shared chats</button>
   </>;
 }
 
@@ -412,20 +409,21 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
       <MessageView key={message.id} message={message} />)}</div>
     <p className="status">{status}</p>
     <div className="composer">
-      {capture && <div id="context-prompts"><div className="chat-capture-presets">
+      <div id="context-prompts"><div className="chat-capture-presets">
         {settings.promptPresets.map((preset, index) =>
-          <button className="quick-prompt context-control" disabled={waiting} key={index}
+          <button className="quick-prompt context-control" disabled={!capture || waiting} key={index}
             onClick={() => void sendReply(preset.prompt)}>{preset.label}</button>)}
-      </div></div>}
+      </div></div>
       <textarea value={reply} disabled={waiting} onChange={(event) => setReply(event.target.value)}
         onKeyDown={composerKeyDown}
         placeholder={capture ? "Ask about this highlight or continue the conversation..." : "Continue the conversation..."} />
-      {capture && <div id="chat-capture"><section className="chat-capture-card">
-        <div className="eyebrow">Including new highlight</div><blockquote>{capture.highlight}</blockquote>
-      </section></div>}
-      <div className={`composer-actions ${capture ? "has-capture" : ""}`}>
+      <div id="chat-capture"><section className="chat-capture-card">
+        <div className="eyebrow">Including new highlight</div>
+        {capture ? <blockquote>{capture.highlight}</blockquote> : <p className="empty-capture">No new passage selected.</p>}
+      </section></div>
+      <div className="composer-actions has-capture">
         <button className="primary" disabled={waiting} onClick={() => void sendReply()}>Send</button>
-        {capture && <button className="secondary context-control" disabled={waiting} onClick={onNewChat}>New chat</button>}
+        <button className="secondary context-control" disabled={waiting} onClick={onNewChat}>New chat</button>
       </div>
       <Usage usage={usage} />
     </div>
