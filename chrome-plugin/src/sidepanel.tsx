@@ -460,8 +460,13 @@ function SettingsScreen({ settings, onSave }: { settings: Settings; onSave: (set
   const updateDiagnostics = () => void diagnosticText().then(setDiagnostics);
   useEffect(updateDiagnostics, []);
 
+  const persist = (next: Settings) => {
+    setDraft(next);
+    onSave(next);
+    void chrome.storage.local.set({ settings: next }).catch((error) => setStatus(errorMessage(error)));
+  };
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) => {
-    setDraft((current) => ({ ...current, [key]: value }));
+    persist({ ...draft, [key]: value });
   };
   const updatePreset = (index: number, patch: Partial<PromptPreset>) => {
     update("promptPresets", draft.promptPresets.map((preset, presetIndex) =>
@@ -486,37 +491,15 @@ function SettingsScreen({ settings, onSave }: { settings: Settings; onSave: (set
     }
   };
   useEffect(() => { void loadModels(false); }, []);
-  const save = async () => {
-    const next = { ...draft, serverUrl: draft.serverUrl.trim().replace(/\/+$/, ""), directory: draft.directory.trim() };
-    if (!next.serverUrl || !next.directory || !next.messageTemplate.trim()) {
-      setStatus("Server URL, workspace, and message template are required.");
-      return;
-    }
-    if (next.promptPresets.some((preset) => !preset.label.trim() || !preset.prompt.trim())) {
-      setStatus("Every quick question needs a label and prompt.");
-      return;
-    }
-    setStatus("Saving and testing...");
-    try {
-      if (!await ensureServerPermission(next.serverUrl)) throw new Error("Server access was not granted.");
-      await new OpenCodeClient(next).health();
-      await chrome.storage.local.set({ settings: next });
-      onSave(next);
-      setDraft(next);
-      setStatus("Connected. Chrome settings saved locally.");
-    } catch (error) {
-      setStatus(errorMessage(error));
-    }
-  };
   const selectedModel = `${draft.modelProvider}\0${draft.modelId}`;
   const variants = models.find((model) => `${model.providerId}\0${model.modelId}` === selectedModel)?.variants || [];
   const selectModel = (value: string) => {
     const [modelProvider, modelId] = value.split("\0");
-    setDraft((current) => ({ ...current, modelProvider, modelId, modelVariant: "" }));
+    persist({ ...draft, modelProvider, modelId, modelVariant: "" });
   };
 
   return <>
-    <Heading title="Settings" subtitle="Stored only in this Chrome profile." />
+    <Heading title="Settings" subtitle="Changes save automatically in this Chrome profile." />
     <section className="settings-section">
       <label><span>Server URL</span><input type="url" value={draft.serverUrl} onChange={(e) => update("serverUrl", e.target.value)} /></label>
       <label><span>Workspace directory</span><input value={draft.directory} onChange={(e) => update("directory", e.target.value)} /></label>
@@ -553,7 +536,6 @@ function SettingsScreen({ settings, onSave }: { settings: Settings; onSave: (set
       </div>)}
       <button className="secondary" onClick={() => update("promptPresets", [...draft.promptPresets, { label: "New prompt", prompt: "" }])}>Add prompt</button>
     </section>
-    <button className="primary" onClick={() => void save()}>Save and test</button>
     <p className="status">{status}</p>
     <section className="settings-section">
       <h2>Diagnostics</h2>
