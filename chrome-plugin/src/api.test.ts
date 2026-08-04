@@ -70,6 +70,25 @@ test("sessionUsage returns OpenCode session token and cost totals", async () => 
   }
 });
 
+test("interruptSession posts to the session interrupt endpoint", async () => {
+  const originalFetch = globalThis.fetch;
+  let request: RequestInfo | URL;
+  let requestInit: RequestInit | undefined;
+  globalThis.fetch = (async (input, init) => {
+    request = input;
+    requestInit = init;
+    return new Response(null, { status: 204 });
+  }) as typeof fetch;
+
+  try {
+    await new OpenCodeClient(DEFAULT_SETTINGS).interruptSession("session-1");
+    assert.equal(request, `${DEFAULT_SETTINGS.serverUrl}/api/session/session-1/interrupt`);
+    assert.equal(requestInit?.method, "POST");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("sessions retains the current OpenCode model reference", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () => new Response(JSON.stringify({

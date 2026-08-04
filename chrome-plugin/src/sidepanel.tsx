@@ -386,6 +386,18 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
     }
   };
 
+  const stopExecution = async () => {
+    setStatus("Stopping...");
+    try {
+      await new OpenCodeClient(settings).interruptSession(sessionId);
+      setStreaming(null);
+      setWaiting(false);
+      await refreshMessages(false);
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  };
+
   const visibleMessages = [...messages];
   if (streaming) {
     const index = visibleMessages.findIndex((message) => message.id === streaming.id);
@@ -424,7 +436,9 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
       </section></div>
       <div className="composer-actions has-capture">
         <button className="primary" disabled={waiting} onClick={() => void sendReply()}>Send</button>
-        <button className="secondary context-control" disabled={waiting} onClick={onNewChat}>New chat</button>
+        {waiting
+          ? <button className="secondary" onClick={() => void stopExecution()}>Stop</button>
+          : <button className="secondary context-control" onClick={onNewChat}>New chat</button>}
       </div>
       <Usage usage={usage} />
     </div>

@@ -113,6 +113,10 @@ export class OpenCodeClient {
     return this.request("POST", `/api/session/${encodeURIComponent(sessionId)}/prompt`, { text });
   }
 
+  interruptSession(sessionId: string): Promise<unknown> {
+    return this.request("POST", `/api/session/${encodeURIComponent(sessionId)}/interrupt`);
+  }
+
   async messages(sessionId: string): Promise<Message[]> {
     const response = await this.request<ApiResponse<Parameters<typeof messageFromJson>[0][]>>("GET",
       `/api/session/${encodeURIComponent(sessionId)}/message?limit=200&order=desc`);
