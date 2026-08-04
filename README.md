@@ -111,14 +111,14 @@ The current native binary is:
 /home/pi/.bun/install/global/node_modules/@opencode-ai/cli-linux-arm64/bin/opencode2
 ```
 
-The installed version at initial deployment was `v0.0.0-next-15760`.
+The deployment is pinned to `v0.0.0-next-16741`.
 
 The `~/.bun/bin/opencode2` JavaScript wrapper does not work on this Pi because `/usr/bin/env node` is unavailable. The systemd unit deliberately invokes the native ARM64 binary directly. If the package layout changes during an upgrade, update `server/palma2-opencode-v2.service`.
 
-Install or update the beta package with Bun when needed:
+Install the pinned package with Bun when needed:
 
 ```sh
-ssh your-pi '/home/pi/.bun/bin/bun install -g --trust @opencode-ai/cli@next'
+ssh your-pi '/home/pi/.bun/bin/bun install -g --trust @opencode-ai/cli@0.0.0-next-16741'
 ssh your-pi '/home/pi/.bun/install/global/node_modules/@opencode-ai/cli-linux-arm64/bin/opencode2 --version'
 ```
 

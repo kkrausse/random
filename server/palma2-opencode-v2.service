@@ -8,6 +8,7 @@ Type=simple
 User=pi
 WorkingDirectory=/home/pi/deploys/palma2-opencode/workdir
 Environment=XDG_DATA_HOME=/home/pi/deploys/palma2-opencode/state/share
+Environment=OPENCODE_WEBSEARCH_PROVIDER=parallel
 EnvironmentFile=/home/pi/deploys/palma2-opencode/state/server.env
 ExecStart=/home/pi/.bun/install/global/node_modules/@opencode-ai/cli-linux-arm64/bin/opencode2 serve --hostname 100.64.0.10 --port 41137
 Restart=on-failure
