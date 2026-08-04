@@ -187,6 +187,45 @@ ssh your-pi '. /home/pi/deploys/palma2-opencode/state/server.env; curl --fail --
 
 An unauthenticated request returning `401 Unauthorized` with `WWW-Authenticate: Basic` proves the server is reachable but does not prove the password works.
 
+## Debug Latest Session Usage
+
+The session endpoint reports cumulative usage, while each assistant message reports one provider step. A single reader question can produce several steps for tool calls such as web search, and automatic title generation contributes to the session total without appearing as a normal assistant message. Input usage includes the active conversation, server instructions, tool definitions, and tool results, not only the visible reader prompt.
+
+Run these commands from a Tailscale-connected development machine with `jq` and the `your-pi` SSH alias. They keep the password and message content out of the output:
+
+```sh
+PASSWORD=$(ssh your-pi "sed -n 's/^OPENCODE_PASSWORD=//p' /home/pi/deploys/palma2-opencode/state/server.env")
+BASE_URL=http://raspberrypi.example.ts.net:41137
+DIRECTORY=/home/pi/deploys/palma2-opencode/workdir
+
+SESSION_ID=$(curl --fail --silent --get --user "opencode:$PASSWORD" \
+  --data-urlencode 'limit=1' \
+  --data-urlencode 'order=desc' \
+  --data-urlencode "directory=$DIRECTORY" \
+  "$BASE_URL/api/session" | jq -r '.data[0].id')
+
+printf 'Latest session: %s\n' "$SESSION_ID"
+
+curl --fail --silent --user "opencode:$PASSWORD" \
+  "$BASE_URL/api/session/$SESSION_ID" \
+  | jq '.data | {id, title, model, cost, tokens, time}'
+
+curl --fail --silent --get --user "opencode:$PASSWORD" \
+  --data-urlencode 'limit=50' \
+  --data-urlencode 'order=asc' \
+  "$BASE_URL/api/session/$SESSION_ID/message" \
+  | jq '[.data[] | {
+      type,
+      id,
+      model,
+      cost,
+      tokens,
+      tools: [.content[]? | select(.type == "tool") | .name]
+    }]'
+```
+
+Compare the session's `tokens` object with the assistant-message entries. The difference can include title generation and other session-level work. Multiple assistant entries usually indicate an agent loop: for example, one step requests web searches and a later step receives the search results and writes the answer. `cache.read` records provider-reported reused context and is separate from the captured page-context estimate shown by the Chrome extension.
+
 ## Authentication
 
 OpenCode V2 requires a server password. The username is always `opencode`; the generated password is stored only at:
