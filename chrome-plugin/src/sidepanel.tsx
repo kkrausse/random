@@ -107,6 +107,7 @@ function CaptureScreen({ settings, capture, onOpenChat, onBrowse }: {
   const [submitting, setSubmitting] = useState(false);
 
   const contextWordCount = (capture?.surroundingContext.match(/\S+/g) || []).length;
+  const estimatedContextTokens = Math.ceil((capture?.surroundingContext.length || 0) / 4);
 
   const startChat = async (nextQuestion: string) => {
     if (!capture || !nextQuestion.trim() || submitting) return;
@@ -128,7 +129,7 @@ function CaptureScreen({ settings, capture, onOpenChat, onBrowse }: {
     <section className="context-card highlight-card">
       {capture ? <blockquote>{capture.highlight}</blockquote> : <p className="empty-capture">No passage selected.</p>}
     </section>
-    <div className="eyebrow">Page context ({contextWordCount.toLocaleString()} {contextWordCount === 1 ? "word" : "words"})</div>
+    <div className="eyebrow">Page context ({contextWordCount.toLocaleString()} {contextWordCount === 1 ? "word" : "words"}, ~{estimatedContextTokens.toLocaleString()} tokens)</div>
     <section className="context-card context-preview">{capture?.surroundingContext || "Page context will appear with your selection."}</section>
     <div className="eyebrow">Quick questions</div>
     <div className="button-grid">
