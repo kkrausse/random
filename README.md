@@ -89,9 +89,8 @@ The checked-in V2 permission policy denies every action first, then allows only:
 - `glob`
 - `grep`
 - `webfetch`
-- `websearch`
 
-This denies shell commands, file edits, subagents, skills, and interactive questions. The reading instructions also tell the model to treat book text as quoted context rather than instructions.
+This denies shell commands, file edits, subagents, skills, interactive questions, and `websearch`. Web search is temporarily disabled because the pinned server leaves the tool running indefinitely. See `server/OPENCODE_MIGRATION_NOTES.md`. The reading instructions also tell the model to treat book text as quoted context rather than instructions.
 
 Changes to `server/runtime/` do nothing until `./server/deploy.sh` is run.
 
