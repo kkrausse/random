@@ -32,6 +32,8 @@ Port `41137`, the service name, and the deployment root distinguish this instanc
 
 Plain HTTP is intentional because traffic is carried inside Tailscale. OpenCode still requires HTTP Basic authentication.
 
+The service pins OpenCode web searches to Exa because the beta's default per-session provider selection can choose Parallel, which is unreliable in this deployment.
+
 ## Reading Flow
 
 1. Highlight text in Kindle or Substack while its selection toolbar is visible.
