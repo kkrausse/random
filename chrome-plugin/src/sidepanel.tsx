@@ -112,6 +112,8 @@ function CaptureScreen({ settings, capture, onOpenChat, onBrowse }: {
     <button className="secondary" onClick={onBrowse}>Browse shared chats</button>
   </>;
 
+  const contextWordCount = (capture.surroundingContext.match(/\S+/g) || []).length;
+
   const startChat = async (nextQuestion: string) => {
     if (!nextQuestion.trim() || submitting) return;
     setSubmitting(true);
@@ -130,7 +132,7 @@ function CaptureScreen({ settings, capture, onOpenChat, onBrowse }: {
     <Heading title="Ask the page" subtitle={capture.pageTitle || "Selected passage"} />
     <div className="eyebrow">Highlight</div>
     <section className="context-card"><blockquote>{capture.highlight}</blockquote></section>
-    <div className="eyebrow">Page context</div>
+    <div className="eyebrow">Page context ({contextWordCount.toLocaleString()} {contextWordCount === 1 ? "word" : "words"})</div>
     <section className="context-card context-preview">{capture.surroundingContext}</section>
     <div className="eyebrow">Quick questions</div>
     <div className="button-grid">
