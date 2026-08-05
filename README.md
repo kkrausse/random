@@ -261,11 +261,22 @@ After rotation, update `SERVER PASSWORD` in the app's `SETTINGS` screen.
 
 Provider credentials are server-side and separate from the HTTP server password. OpenCode V2 did not import the existing V1 OpenAI OAuth connection into this isolated deployment. Until a V2 provider is connected, the server falls back to the public `Ling-3.0-flash Free` model.
 
-Connect the deployed server through a matching V2 TUI:
+Connect the canonical CLI to the running production server:
 
 ```sh
-ssh -t your-pi 'cd /home/pi/deploys/palma2-opencode/workdir && . ../state/server.env && /home/pi/.bun/install/global/node_modules/@opencode-ai/cli-linux-arm64/bin/opencode2 --server http://100.64.0.10:41137'
+ssh -t your-pi '
+  set -a
+  . /home/pi/deploys/palma2-opencode/state/server.env
+  set +a
+  /home/pi/.bun/bin/opencode attach \
+    http://100.64.0.10:41137 \
+    --dir /home/pi/deploys/palma2-opencode/workdir
+'
 ```
+
+Run `/connect` in the attached TUI to update credentials on the production
+server. Do not run bare `opencode` or `opencode auth login` for this purpose;
+those commands can use the Pi user's separate default data directory.
 
 In the TUI:
 
