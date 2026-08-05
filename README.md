@@ -1,5 +1,10 @@
 # Reading Context
 
+> Server migration note: production now runs regular OpenCode `1.18.13`, while
+> the Chrome and Android clients still require API migration. See
+> [`MIGRATION.md`](MIGRATION.md) for the current status and contract handoff;
+> V2-specific server instructions below are retained temporarily and are stale.
+
 Android reading assistant for a BOOX Palma 2. It captures a highlight plus rolling surrounding context from supported reading apps, sends that context to a dedicated OpenCode V2 server over Tailscale, and provides persistent reading chats on the device. Kindle and Substack are currently supported.
 
 ## Architecture

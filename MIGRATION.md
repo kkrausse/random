@@ -1,0 +1,117 @@
+# Stable OpenCode Migration
+
+Updated: 2026-08-04
+
+## Server Status
+
+The Raspberry Pi deployment has been migrated from the OpenCode V2 prerelease
+to regular OpenCode `1.18.13`.
+
+- Active service: `palma2-opencode.service`
+- Disabled service: `palma2-opencode-v2.service`
+- Binary: `/home/pi/.bun/install/global/node_modules/opencode-linux-arm64/bin/opencode`
+- Server: `http://100.64.0.10:41137`
+- Stable database: `/home/pi/deploys/palma2-opencode/state/share/opencode/opencode.db`
+- Preserved beta database: `/home/pi/deploys/palma2-opencode/state/share/opencode/opencode-next.db`
+- Password variable: `OPENCODE_SERVER_PASSWORD`
+- Basic auth username: `opencode`
+
+The password value did not change. `server/deploy.sh` renamed the old
+`OPENCODE_PASSWORD` variable in place.
+
+## History Migration
+
+The beta database stored messages in `session_message`; stable OpenCode reads
+the classic `message` and `part` tables. `server/migrate-v2-history.sh` performs
+a one-time conversion when the classic tables are empty.
+
+The migration preserves:
+
+- sessions and titles
+- user prompt text
+- assistant response text
+- timestamps and parent links
+- provider/model identifiers
+- token and cost metadata
+
+Beta-only encrypted reasoning state and tool execution internals are not copied.
+The original `opencode-next.db` remains available if those records are ever
+needed.
+
+Stopped-state backups were created outside the deployment root at:
+
+```text
+/home/pi/palma2-opencode-before-stable-*.tgz
+```
+
+## Validation
+
+The production deployment passed these checks:
+
+- `GET /global/health` returned OpenCode `1.18.13` healthy.
+- `GET /session` returned 100 historical reading sessions.
+- The sampled latest session returned one user and one assistant message with
+  text parts.
+- `GET /config/providers` returned two configured providers.
+- `palma2-opencode.service` is active and enabled.
+- `palma2-opencode-v2.service` is disabled.
+
+## Client Work Remaining
+
+The Chrome extension and Android app still use the beta `/api/*` contract and
+will not work until migrated. No client files were changed in this pass.
+
+Use the regular OpenCode `1.18.13` contract from the installed
+`@opencode-ai/sdk@1.18.13` generated types. The required subset is:
+
+| Purpose | Regular OpenCode API |
+| --- | --- |
+| Health | `GET /global/health` |
+| Models | `GET /config/providers?directory=...` |
+| List sessions | `GET /session?directory=...` |
+| Create session | `POST /session?directory=...` with optional title |
+| Send asynchronously | `POST /session/{id}/prompt_async?directory=...` |
+| List messages | `GET /session/{id}/message?directory=...` |
+| Stop response | `POST /session/{id}/abort?directory=...` |
+| Events | `GET /event?directory=...` |
+
+Important shape changes:
+
+- Responses are direct JSON values, not `{ "data": ... }` envelopes.
+- Session creation does not accept a model. Prompt bodies use
+  `{ "model": { "providerID", "modelID" }, "parts": [{ "type": "text", "text": "..." }] }`.
+- Variants are not part of this stable prompt contract.
+- Messages are `{ "info": Message, "parts": Part[] }`.
+- User/assistant roles are at `info.role`; visible text is in `parts` entries
+  whose type is `text`.
+- Assistant model fields are `info.providerID` and `info.modelID`.
+- Session rows do not contain cumulative usage. Sum assistant
+  `info.tokens` and `info.cost` from messages.
+- SSE events use `{ "type", "properties" }`. Streaming text arrives as
+  `message.part.updated` with `properties.part`, `properties.delta`, and the
+  session ID at `properties.part.sessionID`.
+- Completion is signaled by `session.idle`; failures use `session.error`.
+
+The cached `docs/opencode-v2-openapi.json` describes the retired beta server and
+must not be used for the client migration. The targeted stable contract was
+queried from generated SDK files without loading a full OpenAPI document.
+
+## Operations
+
+Deploy stable server changes with:
+
+```sh
+./server/deploy.sh
+```
+
+Override the pinned version only deliberately:
+
+```sh
+OPENCODE_VERSION=1.18.13 ./server/deploy.sh
+```
+
+Read the server password with:
+
+```sh
+ssh your-pi "sed -n 's/^OPENCODE_SERVER_PASSWORD=//p' /home/pi/deploys/palma2-opencode/state/server.env"
+```
