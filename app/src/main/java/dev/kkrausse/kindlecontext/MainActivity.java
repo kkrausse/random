@@ -133,6 +133,7 @@ public class MainActivity extends Activity {
     private ScrollView scrollView;
     private TextView statusView;
     private TextView accessibilityStatusView;
+    private TextView sessionUsageView;
     private boolean followChatBottom;
     private boolean userScrolling;
     private float scrollTouchDownY;
@@ -254,6 +255,9 @@ public class MainActivity extends Activity {
             sendFollowUp(text);
         });
         root.addView(send);
+        sessionUsageView = label("SESSION USAGE\nLoading...", 13, false);
+        sessionUsageView.setPadding(dp(4), dp(8), dp(4), dp(12));
+        root.addView(sessionUsageView);
         polling = true;
         startEventStream();
         loadMessages();
@@ -592,7 +596,19 @@ public class MainActivity extends Activity {
         streamingMessageView = null;
         streamingLoadingView = null;
         boolean waiting = messages.isEmpty();
+        long input = 0;
+        long output = 0;
+        long reasoning = 0;
+        long cacheRead = 0;
+        long cacheWrite = 0;
+        double cost = 0;
         for (OpenCodeClient.Message message : messages) {
+            input += message.inputTokens;
+            output += message.outputTokens;
+            reasoning += message.reasoningTokens;
+            cacheRead += message.cacheReadTokens;
+            cacheWrite += message.cacheWriteTokens;
+            cost += message.cost;
             String text = message.text;
             if (message.id.equals(streamingMessageId)) {
                 String streamed = streamingText.toString();
@@ -605,16 +621,28 @@ public class MainActivity extends Activity {
                     text = streamed;
                 }
             }
+            waiting = "YOU".equals(message.role) || !message.complete;
+            if (text.isEmpty() && message.complete) {
+                continue;
+            }
             TextView view = addMessage(message.role, text.isEmpty() ? "Thinking..." : text);
             if (message.id.equals(streamingMessageId)) {
                 streamingMessageView = view;
             }
-            waiting = "YOU".equals(message.role) || !message.complete;
         }
         if (waiting) {
             streamingLoadingView = addLoadingIndicator();
         }
         statusView.setText("");
+        if (sessionUsageView != null) {
+            sessionUsageView.setText("SESSION USAGE"
+                    + "\nInput: " + formatNumber(input)
+                    + "  Output: " + formatNumber(output)
+                    + "  Reasoning: " + formatNumber(reasoning)
+                    + "\nCache read: " + formatNumber(cacheRead)
+                    + "  Cache write: " + formatNumber(cacheWrite)
+                    + String.format(java.util.Locale.US, "  Cost: $%.4f", cost));
+        }
         if (scrollToBottom) {
             scrollChatToBottom();
         }

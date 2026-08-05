@@ -46,7 +46,7 @@ Plain HTTP is intentional because traffic is carried inside Tailscale. OpenCode 
 5. The app opens and reads the copied highlight with Android's foreground clipboard access.
 6. Choose a prompt template or enter a custom question.
 7. The app creates an OpenCode session and sends the configured surrounding-context window, the highlight, and the question. The default context limit is 2,000 words.
-8. The chat screen streams response updates from OpenCode's event endpoint and accepts follow-up messages.
+8. The chat screen streams response updates from OpenCode's event endpoint, accepts follow-up messages, and shows current-session token, cache, and cost totals below the return button.
 9. Use `CHATS` to reopen sessions stored by the server or the source-app button (`KINDLE` or `SUBSTACK`) to return to the reading app.
 
 The initial prompt combines captured snapshots into one chronological surrounding-context section without page labels. It uses XML-style boundaries to separate source material from the reader's instructions. Captured text is escaped so it cannot close or alter those boundaries. By default, the app sends at most 2,000 words and centers the highlighted passage in that window, splitting the remaining budget between earlier and later text. If the highlight cannot be matched in the captured prose, it retains the latest words instead. The limit is configurable in Android Settings. The question remains last.

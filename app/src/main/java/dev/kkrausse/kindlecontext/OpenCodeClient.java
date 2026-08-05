@@ -191,12 +191,30 @@ final class OpenCodeClient {
         final String role;
         final String text;
         final boolean complete;
+        final long inputTokens;
+        final long outputTokens;
+        final long reasoningTokens;
+        final long cacheReadTokens;
+        final long cacheWriteTokens;
+        final double cost;
 
         Message(String id, String role, String text, boolean complete) {
+            this(id, role, text, complete, 0, 0, 0, 0, 0, 0);
+        }
+
+        Message(String id, String role, String text, boolean complete,
+                long inputTokens, long outputTokens, long reasoningTokens,
+                long cacheReadTokens, long cacheWriteTokens, double cost) {
             this.id = id;
             this.role = role;
             this.text = text;
             this.complete = complete;
+            this.inputTokens = inputTokens;
+            this.outputTokens = outputTokens;
+            this.reasoningTokens = reasoningTokens;
+            this.cacheReadTokens = cacheReadTokens;
+            this.cacheWriteTokens = cacheWriteTokens;
+            this.cost = cost;
         }
     }
 
@@ -321,10 +339,16 @@ final class OpenCodeClient {
             } else if ("assistant".equals(role)) {
                 JSONObject time = info.optJSONObject("time");
                 boolean complete = time != null && time.has("completed");
-                if (text.length() > 0 || !complete) {
-                    messages.add(new Message(info.optString("id"), "OPENCODE",
-                            text.toString(), complete));
-                }
+                JSONObject tokens = info.optJSONObject("tokens");
+                JSONObject cache = tokens == null ? null : tokens.optJSONObject("cache");
+                messages.add(new Message(info.optString("id"), "OPENCODE",
+                        text.toString(), complete,
+                        tokens == null ? 0 : tokens.optLong("input"),
+                        tokens == null ? 0 : tokens.optLong("output"),
+                        tokens == null ? 0 : tokens.optLong("reasoning"),
+                        cache == null ? 0 : cache.optLong("read"),
+                        cache == null ? 0 : cache.optLong("write"),
+                        info.optDouble("cost", 0)));
             }
         }
         return messages;
