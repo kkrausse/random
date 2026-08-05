@@ -61,10 +61,10 @@ The production deployment passed these checks:
 
 ## Client Status
 
-The Chrome extension now uses the regular OpenCode contract. Its tests,
-TypeScript check, and production build pass; manually reload `chrome-plugin/dist/`
-to validate it in Chrome. The Android app still uses the beta `/api/*` contract
-and remains to be migrated.
+The Chrome extension and Android app now use the regular OpenCode contract. The
+Chrome tests, TypeScript check, and production build pass. The Android debug APK
+build and lint pass, and the migrated app was installed on the connected Palma 2;
+its settings screen loaded the active model catalog from the production server.
 
 Incremental assistant text arrives as `message.part.delta` with
 `properties.sessionID`, `messageID`, `partID`, `field`, and `delta`. The Chrome

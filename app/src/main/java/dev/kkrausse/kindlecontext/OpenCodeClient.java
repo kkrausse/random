@@ -14,6 +14,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -48,7 +49,7 @@ final class OpenCodeClient {
         }
 
         void run() throws IOException, JSONException {
-            HttpURLConnection active = openConnection("GET", "/api/event");
+            HttpURLConnection active = openConnection("GET", "/event?directory=" + encode(directory));
             connection = active;
             active.setReadTimeout(0);
             active.setRequestProperty("Accept", "text/event-stream");
@@ -87,13 +88,55 @@ final class OpenCodeClient {
                 return;
             }
             JSONObject event = new JSONObject(data.toString());
-            JSONObject eventData = event.optJSONObject("data");
-            if (eventData != null && sessionId.equals(eventData.optString("sessionID"))) {
-                String type = event.optString("type");
-                String messageId = eventData.optString("assistantMessageID");
-                String text = "session.text.delta".equals(type)
-                        ? eventData.optString("delta") : eventData.optString("name");
-                listener.onSessionEvent(new StreamEvent(type, messageId, text));
+            JSONObject properties = event.optJSONObject("properties");
+            if (properties == null) {
+                return;
+            }
+            JSONObject info = properties.optJSONObject("info");
+            JSONObject part = properties.optJSONObject("part");
+            String eventSessionId = properties.optString("sessionID");
+            if (eventSessionId.isEmpty() && info != null) {
+                eventSessionId = info.optString("sessionID");
+            }
+            if (eventSessionId.isEmpty() && part != null) {
+                eventSessionId = part.optString("sessionID");
+            }
+            if (!sessionId.equals(eventSessionId)) {
+                return;
+            }
+
+            String type = event.optString("type");
+            String messageId = properties.optString("messageID");
+            if (messageId.isEmpty() && info != null) {
+                messageId = info.optString("id");
+            }
+            if (messageId.isEmpty() && part != null) {
+                messageId = part.optString("messageID");
+            }
+            if ("message.updated".equals(type)) {
+                if (info != null && "assistant".equals(info.optString("role"))) {
+                    listener.onSessionEvent(new StreamEvent(type, messageId, ""));
+                }
+            } else if ("message.part.updated".equals(type) && part != null) {
+                String partType = part.optString("type");
+                if ("text".equals(partType)) {
+                    listener.onSessionEvent(new StreamEvent(type, messageId, part.optString("text")));
+                } else if ("reasoning".equals(partType)) {
+                    listener.onSessionEvent(new StreamEvent("message.reasoning", messageId, ""));
+                } else if ("tool".equals(partType)) {
+                    listener.onSessionEvent(new StreamEvent("message.tool", messageId,
+                            part.optString("tool")));
+                }
+            } else if ("message.part.delta".equals(type)
+                    && "text".equals(properties.optString("field"))) {
+                listener.onSessionEvent(new StreamEvent(type, messageId,
+                        properties.optString("delta")));
+            } else if ("session.status".equals(type)) {
+                JSONObject status = properties.optJSONObject("status");
+                listener.onSessionEvent(new StreamEvent(type, "",
+                        status == null ? "" : status.optString("type")));
+            } else if ("session.idle".equals(type) || "session.error".equals(type)) {
+                listener.onSessionEvent(new StreamEvent(type, "", ""));
             }
         }
 
@@ -115,25 +158,17 @@ final class OpenCodeClient {
         final String id;
         final String title;
         final long updated;
-        final long inputTokens;
-        final long outputTokens;
-        final long reasoningTokens;
-        final long cacheReadTokens;
-        final long cacheWriteTokens;
-        final double cost;
+        long inputTokens;
+        long outputTokens;
+        long reasoningTokens;
+        long cacheReadTokens;
+        long cacheWriteTokens;
+        double cost;
 
-        Session(String id, String title, long updated, JSONObject value) {
+        Session(String id, String title, long updated) {
             this.id = id;
             this.title = title;
             this.updated = updated;
-            JSONObject tokens = value.optJSONObject("tokens");
-            JSONObject cache = tokens == null ? null : tokens.optJSONObject("cache");
-            inputTokens = tokens == null ? 0 : tokens.optLong("input");
-            outputTokens = tokens == null ? 0 : tokens.optLong("output");
-            reasoningTokens = tokens == null ? 0 : tokens.optLong("reasoning");
-            cacheReadTokens = cache == null ? 0 : cache.optLong("read");
-            cacheWriteTokens = cache == null ? 0 : cache.optLong("write");
-            cost = value.optDouble("cost", 0);
         }
     }
 
@@ -176,51 +211,52 @@ final class OpenCodeClient {
     }
 
     void health() throws IOException, JSONException {
-        request("GET", "/api/health", null);
-    }
-
-    Model defaultModel() throws IOException, JSONException {
-        String path = "/api/model/default?location%5Bdirectory%5D="
-                + java.net.URLEncoder.encode(directory, "UTF-8");
-        JSONObject data = request("GET", path, null).optJSONObject("data");
-        if (data == null) {
-            return null;
-        }
-        return modelFromJson(data);
+        requestObject("GET", "/global/health", null);
     }
 
     List<Model> listModels() throws IOException, JSONException {
-        String path = "/api/model?location%5Bdirectory%5D="
-                + java.net.URLEncoder.encode(directory, "UTF-8");
-        JSONArray values = request("GET", path, null).getJSONArray("data");
+        JSONObject response = requestObject("GET", "/config/providers?directory=" + encode(directory), null);
+        JSONArray providers = response.optJSONArray("providers");
         List<Model> models = new ArrayList<>();
-        for (int i = 0; i < values.length(); i++) {
-            JSONObject value = values.getJSONObject(i);
-            if (value.optBoolean("enabled") && "active".equals(value.optString("status"))) {
-                models.add(modelFromJson(value));
+        if (providers == null) {
+            return models;
+        }
+        for (int i = 0; i < providers.length(); i++) {
+            JSONObject values = providers.getJSONObject(i).optJSONObject("models");
+            if (values == null) {
+                continue;
+            }
+            Iterator<String> keys = values.keys();
+            while (keys.hasNext()) {
+                JSONObject value = values.optJSONObject(keys.next());
+                if (value != null && "active".equals(value.optString("status"))) {
+                    models.add(modelFromJson(value));
+                }
             }
         }
         return models;
     }
 
-    String createSession(String providerId, String modelId, String variant)
-            throws IOException, JSONException {
-        JSONObject body = new JSONObject();
-        body.put("location", new JSONObject().put("directory", directory));
-        JSONObject model = new JSONObject()
-                .put("providerID", providerId)
-                .put("id", modelId);
-        if (!variant.isEmpty()) {
-            model.put("variant", variant);
-        }
-        body.put("model", model);
-        JSONObject data = request("POST", "/api/session", body).getJSONObject("data");
+    String createSession() throws IOException, JSONException {
+        JSONObject data = requestObject("POST", "/session?directory=" + encode(directory),
+                new JSONObject());
         return data.getString("id");
     }
 
-    void sendMessage(String sessionId, String text) throws IOException, JSONException {
-        JSONObject body = new JSONObject().put("text", text);
-        request("POST", "/api/session/" + encodePath(sessionId) + "/prompt", body);
+    void sendMessage(String sessionId, String text, String providerId, String modelId,
+            String variant) throws IOException, JSONException {
+        JSONObject body = new JSONObject()
+                .put("model", new JSONObject()
+                        .put("providerID", providerId)
+                        .put("modelID", modelId))
+                .put("parts", new JSONArray().put(new JSONObject()
+                        .put("type", "text")
+                        .put("text", text)));
+        if (!variant.isEmpty()) {
+            body.put("variant", variant);
+        }
+        request("POST", "/session/" + encode(sessionId) + "/prompt_async?directory="
+                + encode(directory), body);
     }
 
     EventStream eventStream(String sessionId, EventListener listener) {
@@ -228,45 +264,65 @@ final class OpenCodeClient {
     }
 
     List<Session> listSessions() throws IOException, JSONException {
-        String path = "/api/session?limit=50&order=desc&directory="
-                + java.net.URLEncoder.encode(directory, "UTF-8");
-        JSONArray values = request("GET", path, null).getJSONArray("data");
+        JSONArray values = requestArray("GET", "/session?directory=" + encode(directory), null);
         List<Session> sessions = new ArrayList<>();
-        for (int i = 0; i < values.length(); i++) {
+        for (int i = 0; i < Math.min(values.length(), 50); i++) {
             JSONObject value = values.getJSONObject(i);
             JSONObject time = value.optJSONObject("time");
             sessions.add(new Session(value.getString("id"),
                     value.optString("title", "Untitled reading chat"),
-                    time == null ? 0 : time.optLong("updated"), value));
+                    time == null ? 0 : time.optLong("updated")));
         }
         return sessions;
     }
 
+    void loadUsage(List<Session> sessions) throws IOException, JSONException {
+        for (Session session : sessions) {
+            JSONArray messages = messageValues(session.id);
+            for (int i = 0; i < messages.length(); i++) {
+                JSONObject info = messages.getJSONObject(i).optJSONObject("info");
+                if (info == null || !"assistant".equals(info.optString("role"))) {
+                    continue;
+                }
+                JSONObject tokens = info.optJSONObject("tokens");
+                JSONObject cache = tokens == null ? null : tokens.optJSONObject("cache");
+                session.inputTokens += tokens == null ? 0 : tokens.optLong("input");
+                session.outputTokens += tokens == null ? 0 : tokens.optLong("output");
+                session.reasoningTokens += tokens == null ? 0 : tokens.optLong("reasoning");
+                session.cacheReadTokens += cache == null ? 0 : cache.optLong("read");
+                session.cacheWriteTokens += cache == null ? 0 : cache.optLong("write");
+                session.cost += info.optDouble("cost", 0);
+            }
+        }
+    }
+
     List<Message> listMessages(String sessionId) throws IOException, JSONException {
-        String path = "/api/session/" + encodePath(sessionId) + "/message?limit=100&order=asc";
-        JSONArray values = request("GET", path, null).getJSONArray("data");
+        JSONArray values = messageValues(sessionId);
         List<Message> messages = new ArrayList<>();
         for (int i = 0; i < values.length(); i++) {
             JSONObject value = values.getJSONObject(i);
-            String type = value.optString("type");
-            if ("user".equals(type)) {
-                messages.add(new Message(value.optString("id"), "YOU",
-                        value.optString("text"), true));
-            } else if ("assistant".equals(type)) {
-                JSONArray content = value.optJSONArray("content");
-                StringBuilder text = new StringBuilder();
-                if (content != null) {
-                    for (int j = 0; j < content.length(); j++) {
-                        JSONObject part = content.optJSONObject(j);
-                        if (part != null && "text".equals(part.optString("type"))) {
-                            text.append(part.optString("text"));
-                        }
+            JSONObject info = value.optJSONObject("info");
+            if (info == null) {
+                continue;
+            }
+            String role = info.optString("role");
+            JSONArray parts = value.optJSONArray("parts");
+            StringBuilder text = new StringBuilder();
+            if (parts != null) {
+                for (int j = 0; j < parts.length(); j++) {
+                    JSONObject part = parts.optJSONObject(j);
+                    if (part != null && "text".equals(part.optString("type"))) {
+                        text.append(part.optString("text"));
                     }
                 }
-                JSONObject time = value.optJSONObject("time");
+            }
+            if ("user".equals(role)) {
+                messages.add(new Message(info.optString("id"), "YOU", text.toString(), true));
+            } else if ("assistant".equals(role)) {
+                JSONObject time = info.optJSONObject("time");
                 boolean complete = time != null && time.has("completed");
                 if (text.length() > 0 || !complete) {
-                    messages.add(new Message(value.optString("id"), "OPENCODE",
+                    messages.add(new Message(info.optString("id"), "OPENCODE",
                             text.toString(), complete));
                 }
             }
@@ -274,8 +330,24 @@ final class OpenCodeClient {
         return messages;
     }
 
-    private JSONObject request(String method, String path, JSONObject body)
+    private JSONArray messageValues(String sessionId) throws IOException, JSONException {
+        return requestArray("GET", "/session/" + encode(sessionId)
+                + "/message?directory=" + encode(directory) + "&limit=200", null);
+    }
+
+    private JSONObject requestObject(String method, String path, JSONObject body)
             throws IOException, JSONException {
+        String response = request(method, path, body);
+        return response.isEmpty() ? new JSONObject() : new JSONObject(response);
+    }
+
+    private JSONArray requestArray(String method, String path, JSONObject body)
+            throws IOException, JSONException {
+        String response = request(method, path, body);
+        return response.isEmpty() ? new JSONArray() : new JSONArray(response);
+    }
+
+    private String request(String method, String path, JSONObject body) throws IOException {
         HttpURLConnection connection = openConnection(method, path);
         if (body != null) {
             connection.setDoOutput(true);
@@ -293,7 +365,7 @@ final class OpenCodeClient {
         if (status < 200 || status >= 300) {
             throw new IOException("OpenCode returned HTTP " + status + ": " + response);
         }
-        return new JSONObject(response);
+        return response;
     }
 
     private HttpURLConnection openConnection(String method, String path) throws IOException {
@@ -326,22 +398,20 @@ final class OpenCodeClient {
         return result.toString();
     }
 
-    private static String encodePath(String value) throws IOException {
+    private static String encode(String value) throws IOException {
         return java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20");
     }
 
     private static Model modelFromJson(JSONObject value) {
         List<String> variants = new ArrayList<>();
-        JSONArray values = value.optJSONArray("variants");
+        JSONObject values = value.optJSONObject("variants");
         if (values != null) {
-            for (int i = 0; i < values.length(); i++) {
-                JSONObject variant = values.optJSONObject(i);
-                if (variant != null && !variant.optString("id").isEmpty()) {
-                    variants.add(variant.optString("id"));
-                }
+            Iterator<String> keys = values.keys();
+            while (keys.hasNext()) {
+                variants.add(keys.next());
             }
         }
-        return new Model(value.optString("name", value.optString("modelID")),
-                value.optString("providerID"), value.optString("modelID"), variants);
+        return new Model(value.optString("name", value.optString("id")),
+                value.optString("providerID"), value.optString("id"), variants);
     }
 }

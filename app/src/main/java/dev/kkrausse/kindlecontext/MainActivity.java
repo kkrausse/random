@@ -412,6 +412,7 @@ public class MainActivity extends Activity {
                 OpenCodeClient client = client();
                 List<OpenCodeClient.Model> models = client.listModels();
                 List<OpenCodeClient.Session> sessions = client.listSessions();
+                client.loadUsage(sessions);
                 long input = 0;
                 long output = 0;
                 long reasoning = 0;
@@ -472,10 +473,7 @@ public class MainActivity extends Activity {
             try {
                 OpenCodeClient client = client();
                 SharedPreferences preferences = getSharedPreferences(SETTINGS, MODE_PRIVATE);
-                sessionId = client.createSession(
-                        preferences.getString(MODEL_PROVIDER_KEY, DEFAULT_MODEL_PROVIDER),
-                        preferences.getString(MODEL_ID_KEY, DEFAULT_MODEL_ID),
-                        preferences.getString(MODEL_VARIANT_KEY, DEFAULT_MODEL_VARIANT));
+                sessionId = client.createSession();
                 runOnUiThread(() -> {
                     showChat();
                     network.execute(() -> {
@@ -484,7 +482,7 @@ public class MainActivity extends Activity {
                             if (stream != null) {
                                 stream.awaitConnected(5_000);
                             }
-                            client.sendMessage(sessionId, prompt);
+                            sendMessage(client, prompt);
                             runOnUiThread(this::loadMessages);
                         } catch (Exception error) {
                             showError(error);
@@ -502,7 +500,7 @@ public class MainActivity extends Activity {
         statusView.setText("Sending...");
         network.execute(() -> {
             try {
-                client().sendMessage(sessionId, text);
+                sendMessage(client(), text);
                 runOnUiThread(() -> {
                     polling = true;
                     loadMessages();
@@ -511,6 +509,14 @@ public class MainActivity extends Activity {
                 showError(error);
             }
         });
+    }
+
+    private void sendMessage(OpenCodeClient client, String text) throws Exception {
+        SharedPreferences preferences = getSharedPreferences(SETTINGS, MODE_PRIVATE);
+        client.sendMessage(sessionId, text,
+                preferences.getString(MODEL_PROVIDER_KEY, DEFAULT_MODEL_PROVIDER),
+                preferences.getString(MODEL_ID_KEY, DEFAULT_MODEL_ID),
+                preferences.getString(MODEL_VARIANT_KEY, DEFAULT_MODEL_VARIANT));
     }
 
     private void loadMessages() {
@@ -1214,11 +1220,17 @@ public class MainActivity extends Activity {
 
     private void handleStreamEvent(OpenCodeClient.StreamEvent event) {
         switch (event.type) {
-            case "session.text.started":
+            case "message.updated":
                 beginStreamingMessage(event.messageId, true);
-                statusView.setText("Responding...");
+                statusView.setText("OpenCode is working...");
                 break;
-            case "session.text.delta":
+            case "message.part.updated":
+                beginStreamingMessage(event.messageId, true);
+                streamingText.setLength(0);
+                streamingText.append(event.text);
+                renderStreamingText();
+                break;
+            case "message.part.delta":
                 if (!event.messageId.equals(streamingMessageId)) {
                     beginStreamingMessage(event.messageId, false);
                     loadMessages();
@@ -1229,24 +1241,20 @@ public class MainActivity extends Activity {
                     handler.postDelayed(streamTextRefresh, 40);
                 }
                 break;
-            case "session.reasoning.started":
+            case "message.reasoning":
                 statusView.setText("Thinking...");
                 break;
-            case "session.tool.input.started":
+            case "message.tool":
                 statusView.setText(event.text.isEmpty() ? "Using a tool..." : "Using " + event.text + "...");
                 break;
-            case "session.retry.scheduled":
-                statusView.setText("Retrying...");
+            case "session.status":
+                statusView.setText("retry".equals(event.text) ? "Retrying..." : "OpenCode is working...");
                 break;
-            case "session.execution.succeeded":
-            case "session.execution.failed":
-            case "session.execution.interrupted":
+            case "session.idle":
+            case "session.error":
                 renderStreamingText();
                 streamingMessageId = null;
                 streamingText.setLength(0);
-                loadMessages();
-                break;
-            case "session.input.promoted":
                 loadMessages();
                 break;
             default:

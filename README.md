@@ -1,8 +1,7 @@
 # Reading Context
 
-> Server migration note: production now runs regular OpenCode `1.18.13`, while
-> the Android client still requires API migration. The Chrome extension now
-> uses the regular OpenCode server contract. See
+> Migration note: production runs regular OpenCode `1.18.13`, and both the
+> Android client and Chrome extension use its regular server contract. See
 > [`MIGRATION.md`](MIGRATION.md) for the current status and contract handoff;
 > V2-specific server instructions below are retained temporarily and are stale.
 
