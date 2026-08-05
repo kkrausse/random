@@ -1,11 +1,6 @@
 # Reading Context
 
-> Migration note: production runs regular OpenCode `1.18.13`, and both the
-> Android client and Chrome extension use its regular server contract. See
-> [`MIGRATION.md`](MIGRATION.md) for the current status and contract handoff;
-> V2-specific server instructions below are retained temporarily and are stale.
-
-Android reading assistant for a BOOX Palma 2. It captures a highlight plus rolling surrounding context from supported reading apps, sends that context to a dedicated OpenCode V2 server over Tailscale, and provides persistent reading chats on the device. Kindle and Substack are currently supported.
+Android reading assistant for a BOOX Palma 2. It captures a highlight plus rolling surrounding context from supported reading apps, sends that context to a dedicated OpenCode `1.18.13` server over Tailscale, and provides persistent reading chats on the device. Kindle and Substack are currently supported.
 
 ## Architecture
 
@@ -14,7 +9,7 @@ Kindle or Substack on Palma 2
   -> Android accessibility service
   -> Reading Context Android app
   -> HTTP Basic over Tailscale
-  -> OpenCode V2 on Raspberry Pi
+  -> OpenCode 1.18.13 on Raspberry Pi
   -> configured model provider
 ```
 
@@ -29,7 +24,7 @@ The deployed components are intentionally isolated:
 | Tailscale IPv4 | `100.64.0.10` |
 | Server port | `41137` |
 | Server URL | `http://raspberrypi.example.ts.net:41137` |
-| systemd service | `palma2-opencode-v2.service` |
+| systemd service | `palma2-opencode.service` |
 | Deployment root | `/home/pi/deploys/palma2-opencode` |
 | OpenCode location | `/home/pi/deploys/palma2-opencode/workdir` |
 
@@ -63,7 +58,7 @@ Kindle retains copied selections as annotations. Automatic deletion is intention
 app/                                  Android application
 chrome-plugin/                        Chrome extension (Manifest V3)
 server/deploy.sh                      Repeatable Pi deployment
-server/palma2-opencode-v2.service     systemd unit
+server/palma2-opencode.service        systemd unit
 server/runtime/opencode.json          Checked-in OpenCode policy
 server/runtime/AGENTS.md               Reading-assistant instructions
 ```
@@ -107,24 +102,22 @@ The tested host is the `pi` user on `raspberrypi.example.ts.net`. It needs:
 - Tailscale connected with IPv4 `100.64.0.10`
 - Passwordless `sudo` for systemd installation and control
 - `git`, `curl`, `openssl`, `rsync`, and SSH access
-- OpenCode V2's ARM64 native binary
+- Bun and the regular OpenCode ARM64 package
 - An SSH alias named `your-pi`, unless `PALMA_SERVER_HOST` is supplied
 
 The current native binary is:
 
 ```text
-/home/pi/.bun/install/global/node_modules/@opencode-ai/cli-linux-arm64/bin/opencode2
+/home/pi/.bun/bin/opencode
 ```
 
-The deployment is pinned to `v0.0.0-next-16741`.
-
-The `~/.bun/bin/opencode2` JavaScript wrapper does not work on this Pi because `/usr/bin/env node` is unavailable. The systemd unit deliberately invokes the native ARM64 binary directly. If the package layout changes during an upgrade, update `server/palma2-opencode-v2.service`.
+The deployment is pinned to `1.18.13` by `server/deploy.sh`.
 
 Install the pinned package with Bun when needed:
 
 ```sh
-ssh your-pi '/home/pi/.bun/bin/bun install -g --trust @opencode-ai/cli@0.0.0-next-16741'
-ssh your-pi '/home/pi/.bun/install/global/node_modules/@opencode-ai/cli-linux-arm64/bin/opencode2 --version'
+ssh your-pi '/home/pi/.bun/bin/bun install -g --trust opencode-ai@1.18.13'
+ssh your-pi '/home/pi/.bun/bin/opencode --version'
 ```
 
 ## Server Deployment
@@ -149,9 +142,9 @@ The script performs these operations:
 4. Generates `state/server.env` with mode `0600` on first deployment.
 5. Seeds a private `auth.json` from the Pi user's existing OpenCode data only when no isolated copy exists.
 6. Initializes the deployment root as a Git repository and commits runtime configuration.
-7. Installs and enables `palma2-opencode-v2.service`.
+7. Installs and enables `palma2-opencode.service`.
 8. Restarts the service.
-9. Polls the authenticated `/api/health` endpoint before returning success.
+9. Polls the authenticated `/global/health` and `/session` endpoints before returning success.
 
 The HTTP password is stable across normal deploys and restarts because it lives in `state/server.env`. It is not printed by the deploy script or committed to Git.
 
@@ -160,22 +153,22 @@ The HTTP password is stable across normal deploys and restarts because it lives 
 Check status and the listener:
 
 ```sh
-ssh your-pi 'sudo systemctl status palma2-opencode-v2.service --no-pager'
+ssh your-pi 'sudo systemctl status palma2-opencode.service --no-pager'
 ssh your-pi 'ss -ltn | grep 41137'
 ```
 
 Restart, stop, or start the server:
 
 ```sh
-ssh your-pi 'sudo systemctl restart palma2-opencode-v2.service'
-ssh your-pi 'sudo systemctl stop palma2-opencode-v2.service'
-ssh your-pi 'sudo systemctl start palma2-opencode-v2.service'
+ssh your-pi 'sudo systemctl restart palma2-opencode.service'
+ssh your-pi 'sudo systemctl stop palma2-opencode.service'
+ssh your-pi 'sudo systemctl start palma2-opencode.service'
 ```
 
 Follow service logs:
 
 ```sh
-ssh your-pi 'sudo journalctl -u palma2-opencode-v2.service -f'
+ssh your-pi 'sudo journalctl -u palma2-opencode.service -f'
 ```
 
 Inspect OpenCode's application log:
@@ -187,19 +180,19 @@ ssh your-pi 'tail -f /home/pi/deploys/palma2-opencode/state/share/opencode/log/o
 Run an authenticated health check from the Pi without displaying the password:
 
 ```sh
-ssh your-pi '. /home/pi/deploys/palma2-opencode/state/server.env; curl --fail --user "opencode:$OPENCODE_PASSWORD" http://100.64.0.10:41137/api/health'
+ssh your-pi '. /home/pi/deploys/palma2-opencode/state/server.env; curl --fail --user "opencode:$OPENCODE_SERVER_PASSWORD" http://100.64.0.10:41137/global/health'
 ```
 
 An unauthenticated request returning `401 Unauthorized` with `WWW-Authenticate: Basic` proves the server is reachable but does not prove the password works.
 
 ## Debug Latest Session Usage
 
-The session endpoint reports cumulative usage, while each assistant message reports one provider step. A single reader question can produce several steps for tool calls such as web search, and automatic title generation contributes to the session total without appearing as a normal assistant message. Input usage includes the active conversation, server instructions, tool definitions, and tool results, not only the visible reader prompt.
+Each assistant message reports one provider step. A single reader question can produce several steps for tool calls such as web search. Input usage includes the active conversation, server instructions, tool definitions, and tool results, not only the visible reader prompt.
 
 Run these commands from a Tailscale-connected development machine with `jq` and the `your-pi` SSH alias. They keep the password and message content out of the output:
 
 ```sh
-PASSWORD=$(ssh your-pi "sed -n 's/^OPENCODE_PASSWORD=//p' /home/pi/deploys/palma2-opencode/state/server.env")
+PASSWORD=$(ssh your-pi "sed -n 's/^OPENCODE_SERVER_PASSWORD=//p' /home/pi/deploys/palma2-opencode/state/server.env")
 BASE_URL=http://raspberrypi.example.ts.net:41137
 DIRECTORY=/home/pi/deploys/palma2-opencode/workdir
 
@@ -207,33 +200,34 @@ SESSION_ID=$(curl --fail --silent --get --user "opencode:$PASSWORD" \
   --data-urlencode 'limit=1' \
   --data-urlencode 'order=desc' \
   --data-urlencode "directory=$DIRECTORY" \
-  "$BASE_URL/api/session" | jq -r '.data[0].id')
+  "$BASE_URL/session" | jq -r '.[0].id')
 
 printf 'Latest session: %s\n' "$SESSION_ID"
 
 curl --fail --silent --user "opencode:$PASSWORD" \
-  "$BASE_URL/api/session/$SESSION_ID" \
-  | jq '.data | {id, title, model, cost, tokens, time}'
+  "$BASE_URL/session/$SESSION_ID" \
+  | jq '{id, title, time}'
 
 curl --fail --silent --get --user "opencode:$PASSWORD" \
   --data-urlencode 'limit=50' \
   --data-urlencode 'order=asc' \
-  "$BASE_URL/api/session/$SESSION_ID/message" \
-  | jq '[.data[] | {
-      type,
-      id,
-      model,
-      cost,
-      tokens,
-      tools: [.content[]? | select(.type == "tool") | .name]
+  "$BASE_URL/session/$SESSION_ID/message" \
+  | jq '[.[] | {
+      role: .info.role,
+      id: .info.id,
+      provider: .info.providerID,
+      model: .info.modelID,
+      cost: .info.cost,
+      tokens: .info.tokens,
+      tools: [.parts[]? | select(.type == "tool") | .tool]
     }]'
 ```
 
-Compare the session's `tokens` object with the assistant-message entries. The difference can include title generation and other session-level work. Multiple assistant entries usually indicate an agent loop: for example, one step requests web searches and a later step receives the search results and writes the answer. `cache.read` records provider-reported reused context and is separate from the captured page-context estimate shown by the Chrome extension.
+Regular OpenCode session rows do not contain cumulative usage. Sum `info.tokens` and `info.cost` across assistant messages. Multiple assistant entries usually indicate an agent loop: for example, one step requests web searches and a later step receives the search results and writes the answer. `cache.read` records provider-reported reused context and is separate from the captured page-context estimate shown by the Chrome extension.
 
 ## Authentication
 
-OpenCode V2 requires a server password. The username is always `opencode`; the generated password is stored only at:
+OpenCode requires a server password. The username is always `opencode`; the generated password is stored only at:
 
 ```text
 /home/pi/deploys/palma2-opencode/state/server.env
@@ -242,7 +236,7 @@ OpenCode V2 requires a server password. The username is always `opencode`; the g
 Read it when configuring the Android app:
 
 ```sh
-ssh your-pi "sed -n 's/^OPENCODE_PASSWORD=//p' /home/pi/deploys/palma2-opencode/state/server.env"
+ssh your-pi "sed -n 's/^OPENCODE_SERVER_PASSWORD=//p' /home/pi/deploys/palma2-opencode/state/server.env"
 ```
 
 The Android app stores the password in its private SharedPreferences and sends `Authorization: Basic base64(opencode:<password>)`. It is not stored in this repository.
@@ -250,16 +244,16 @@ The Android app stores the password in its private SharedPreferences and sends `
 To rotate the password:
 
 ```sh
-ssh your-pi 'sudo systemctl stop palma2-opencode-v2.service'
-ssh your-pi 'umask 077; printf "OPENCODE_PASSWORD=%s\n" "$(openssl rand -hex 24)" > /home/pi/deploys/palma2-opencode/state/server.env'
-ssh your-pi 'sudo systemctl start palma2-opencode-v2.service'
+ssh your-pi 'sudo systemctl stop palma2-opencode.service'
+ssh your-pi 'umask 077; printf "OPENCODE_SERVER_PASSWORD=%s\n" "$(openssl rand -hex 24)" > /home/pi/deploys/palma2-opencode/state/server.env'
+ssh your-pi 'sudo systemctl start palma2-opencode.service'
 ```
 
 After rotation, update `SERVER PASSWORD` in the app's `SETTINGS` screen.
 
 ## Model Setup
 
-Provider credentials are server-side and separate from the HTTP server password. OpenCode V2 did not import the existing V1 OpenAI OAuth connection into this isolated deployment. Until a V2 provider is connected, the server falls back to the public `Ling-3.0-flash Free` model.
+Provider credentials are server-side and separate from the HTTP server password. The isolated deployment keeps its provider credentials under `state/share/opencode/`.
 
 Connect the canonical CLI to the running production server:
 
@@ -291,11 +285,10 @@ Do not guess model identifiers. The requested GPT-5.6 Luna High model has not ye
 Inspect enabled models and the current default after connection:
 
 ```sh
-ssh your-pi '. /home/pi/deploys/palma2-opencode/state/server.env; curl --silent --user "opencode:$OPENCODE_PASSWORD" http://100.64.0.10:41137/api/model'
-ssh your-pi '. /home/pi/deploys/palma2-opencode/state/server.env; curl --silent --user "opencode:$OPENCODE_PASSWORD" http://100.64.0.10:41137/api/model/default'
+ssh your-pi '. /home/pi/deploys/palma2-opencode/state/server.env; curl --silent --get --user "opencode:$OPENCODE_SERVER_PASSWORD" --data-urlencode "directory=/home/pi/deploys/palma2-opencode/workdir" http://100.64.0.10:41137/config/providers'
 ```
 
-OpenCode V2's root model configuration does not retain a variant. If the reading app must always use a specific `high` variant, pass the exact `{ providerID, id, variant }` model reference when creating the session after confirming it from the server catalog.
+If the reading app must always use a specific variant, pass the exact `providerID`, `modelID`, and `variant` in each prompt after confirming them from the server catalog.
 
 ## Server Persistence
 
@@ -310,9 +303,9 @@ This contains session history, SQLite data, logs, and provider state. The HTTP p
 Back up the server while it is stopped:
 
 ```sh
-ssh your-pi 'sudo systemctl stop palma2-opencode-v2.service'
+ssh your-pi 'sudo systemctl stop palma2-opencode.service'
 ssh your-pi 'tar -C /home/pi/deploys/palma2-opencode -czf /home/pi/palma2-opencode-state.tgz state'
-ssh your-pi 'sudo systemctl start palma2-opencode-v2.service'
+ssh your-pi 'sudo systemctl start palma2-opencode.service'
 scp your-pi:/home/pi/palma2-opencode-state.tgz .
 ```
 
@@ -320,19 +313,24 @@ Do not edit or delete the SQLite database while the service is running. Back up 
 
 ## OpenCode API Usage
 
-The Android client currently uses these V2 endpoints:
+The Android client currently uses these regular OpenCode endpoints:
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/health` | Test settings |
-| `POST` | `/api/session` | Create a reading chat at the configured location |
-| `GET` | `/api/session` | List recent chats |
-| `POST` | `/api/session/{id}/prompt` | Send initial and follow-up messages |
-| `GET` | `/api/session/{id}/message` | Poll conversation messages |
+| `GET` | `/global/health` | Test settings |
+| `GET` | `/config/providers` | List available models |
+| `POST` | `/session` | Create a reading chat at the configured location |
+| `GET` | `/session` | List recent chats |
+| `POST` | `/session/{id}/prompt_async` | Send initial and follow-up messages |
+| `GET` | `/session/{id}/message` | Load conversation messages |
+| `POST` | `/session/{id}/abort` | Stop a response |
+| `GET` | `/event` | Stream server events |
 
 Responses update from OpenCode's authenticated server-sent event stream. The app reconnects after transient stream interruptions and reloads the session to recover any events missed while disconnected.
 
-The V2 API and client contract are beta. After upgrading OpenCode, verify `/api/health`, session creation, prompting, message parsing, and session listing before relying on the reader.
+Responses are direct JSON values rather than `{ "data": ... }` envelopes. Messages contain `info` and `parts`; assistant provider, model, token, and cost fields are under `info`. SSE events use `{ "type", "properties" }`, incremental text arrives as `message.part.delta`, completion is signaled by `session.idle`, and failures use `session.error`.
+
+After upgrading OpenCode, verify health, model loading, session creation, prompting, message parsing, interruption, event streaming, and session listing before relying on the reader.
 
 ## Android Prerequisites
 
@@ -354,7 +352,7 @@ On the Palma 2, USB debugging is under `Settings -> More Settings -> USB Debug M
 The Palma and Raspberry Pi must both be connected to the same Tailscale network. A basic reachability check from the device is:
 
 ```sh
-"$ADB" shell 'printf "GET /api/health HTTP/1.0\r\nHost: raspberrypi.example.ts.net\r\n\r\n" | toybox nc -w 5 raspberrypi.example.ts.net 41137 | head -1'
+"$ADB" shell 'printf "GET /global/health HTTP/1.0\r\nHost: raspberrypi.example.ts.net\r\n\r\n" | toybox nc -w 5 raspberrypi.example.ts.net 41137 | head -1'
 ```
 
 `HTTP/1.1 401 Unauthorized` is expected for this unauthenticated connectivity test.
@@ -486,15 +484,15 @@ Verify Tailscale on both devices, resolve `raspberrypi.example.ts.net`, check th
 Run:
 
 ```sh
-ssh your-pi 'sudo systemctl status palma2-opencode-v2.service --no-pager -l'
-ssh your-pi 'sudo journalctl -u palma2-opencode-v2.service -n 100 --no-pager'
+ssh your-pi 'sudo systemctl status palma2-opencode.service --no-pager -l'
+ssh your-pi 'sudo journalctl -u palma2-opencode.service -n 100 --no-pager'
 ```
 
 Common causes are a missing native binary after upgrade, a changed Tailscale IP, a missing `workdir/`, or an invalid `opencode.json`.
 
 ### Server answers but no model is available
 
-Inspect `/api/model` and `/api/integration/openai`. Reconnect the provider through the V2 TUI. V1 credentials are not sufficient for this isolated V2 beta deployment.
+Inspect `/config/providers` and reconnect the provider through the TUI attached to the production server.
 
 ### Chats disappear
 
@@ -529,15 +527,15 @@ These files contain book prose. Keep them local and remove or gate diagnostic pe
 ## Upgrade Procedure
 
 1. Back up `state/`.
-2. Upgrade the V2 package on the Pi.
-3. Confirm the native binary path and version.
+2. Update the pinned regular OpenCode version in `server/deploy.sh`.
+3. Confirm `/home/pi/.bun/bin/opencode` reports that version.
 4. Run `./server/deploy.sh` to reinstall and restart the service.
 5. Verify authenticated health and model catalog endpoints.
 6. Build and lint the Android app against any changed API contract.
 7. Install the APK with `adb install -r`.
 8. Test capture, a new session, a reply, and prior-session loading.
 
-OpenCode V2 is beta. Pinning a known-good CLI package version is preferable once this workflow is stable.
+Keep production pinned to a known-good OpenCode version and validate API compatibility before upgrading.
 
 ## Security And Privacy
 
@@ -564,7 +562,7 @@ Uninstalling removes private captures and connection preferences. It does not af
 Stop and disable the Pi service without deleting history:
 
 ```sh
-ssh your-pi 'sudo systemctl disable --now palma2-opencode-v2.service'
+ssh your-pi 'sudo systemctl disable --now palma2-opencode.service'
 ```
 
 The deployment root and `state/` remain until deliberately archived or removed.
