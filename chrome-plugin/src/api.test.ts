@@ -65,7 +65,8 @@ test("models flattens active models from stable providers", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () => new Response(JSON.stringify({
     providers: [{ models: {
-      active: { id: "gpt-5", providerID: "openai", name: "GPT-5", status: "active" },
+      active: { id: "gpt-5", providerID: "openai", name: "GPT-5", status: "active",
+        variants: { low: { reasoningEffort: "low" }, high: { reasoningEffort: "high" } } },
       retired: { id: "old", providerID: "openai", name: "Old", status: "deprecated" }
     } }],
     default: { openai: "gpt-5" }
@@ -73,7 +74,7 @@ test("models flattens active models from stable providers", async () => {
 
   try {
     assert.deepEqual(await new OpenCodeClient(DEFAULT_SETTINGS).models(), [{
-      name: "GPT-5", providerId: "openai", modelId: "gpt-5"
+      name: "GPT-5", providerId: "openai", modelId: "gpt-5", variants: ["low", "high"]
     }]);
   } finally {
     globalThis.fetch = originalFetch;
@@ -119,6 +120,7 @@ test("sendMessage uses stable async prompt contract", async () => {
     assert.equal(requestInit?.method, "POST");
     assert.deepEqual(JSON.parse(String(requestInit?.body)), {
       model: { providerID: DEFAULT_SETTINGS.modelProvider, modelID: DEFAULT_SETTINGS.modelId },
+      variant: DEFAULT_SETTINGS.modelVariant,
       parts: [{ type: "text", text: "Hello" }]
     });
   } finally {

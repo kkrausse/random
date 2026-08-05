@@ -290,7 +290,11 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
         case "message.updated": {
           const info = properties.info;
           if (info?.role === "assistant" && info.providerID && info.modelID) {
-            const model = { providerID: info.providerID, id: info.modelID };
+            const model = {
+              providerID: info.providerID,
+              id: info.modelID,
+              ...(info.variant ? { variant: info.variant } : {})
+            };
             streamingModels.current.set(messageId, model);
             setStreaming((current) => current?.id === messageId ? { ...current, model } : current);
           }
@@ -509,9 +513,10 @@ function SettingsScreen({ settings, onSave }: { settings: Settings; onSave: (set
   };
   useEffect(() => { void loadModels(false); }, []);
   const selectedModel = `${draft.modelProvider}\0${draft.modelId}`;
+  const variants = models.find((model) => `${model.providerId}\0${model.modelId}` === selectedModel)?.variants || [];
   const selectModel = (value: string) => {
     const [modelProvider, modelId] = value.split("\0");
-    persist({ ...draft, modelProvider, modelId });
+    persist({ ...draft, modelProvider, modelId, modelVariant: "" });
   };
 
   return <>
@@ -527,6 +532,10 @@ function SettingsScreen({ settings, onSave }: { settings: Settings; onSave: (set
         {!models.length && <option value={selectedModel}>Load models after saving connection</option>}
         {models.map((model) => <option key={`${model.providerId}/${model.modelId}`}
           value={`${model.providerId}\0${model.modelId}`}>{model.name} ({model.providerId}/{model.modelId})</option>)}
+      </select>
+      <select value={draft.modelVariant} onChange={(e) => update("modelVariant", e.target.value)}>
+        <option value="">Default variant</option>
+        {variants.map((variant) => <option key={variant} value={variant}>{variant}</option>)}
       </select>
       <button className="secondary" onClick={() => void loadModels()}>Load models</button>
     </section>

@@ -23,7 +23,9 @@ The password value did not change. `server/deploy.sh` renamed the old
 
 The beta database stored messages in `session_message`; stable OpenCode reads
 the classic `message` and `part` tables. `server/migrate-v2-history.sh` performs
-a one-time conversion when the classic tables are empty.
+a one-time conversion when the classic tables are empty. It also removes the
+beta-only required `event.created` column, which prevents regular OpenCode from
+recording session events.
 
 The migration preserves:
 
@@ -82,7 +84,9 @@ Important shape changes:
 - Responses are direct JSON values, not `{ "data": ... }` envelopes.
 - Session creation does not accept a model. Prompt bodies use
   `{ "model": { "providerID", "modelID" }, "parts": [{ "type": "text", "text": "..." }] }`.
-- Variants are not part of this stable prompt contract.
+- The generated SDK prompt type omits variants, but the `1.18.13` server's
+  `prompt_async` schema accepts a top-level `variant`, and provider models expose
+  available variants as an object keyed by variant ID.
 - Messages are `{ "info": Message, "parts": Part[] }`.
 - User/assistant roles are at `info.role`; visible text is in `parts` entries
   whose type is `text`.

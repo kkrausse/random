@@ -19,6 +19,7 @@ export interface SessionEvent {
       role: "user" | "assistant";
       providerID?: string;
       modelID?: string;
+      variant?: string;
       time?: { completed?: number };
     };
     part?: {
@@ -43,6 +44,7 @@ interface ApiMessage {
     time: { completed?: number };
     providerID?: string;
     modelID?: string;
+    variant?: string;
     cost?: number;
     tokens?: {
       input?: number;
@@ -68,11 +70,13 @@ export class OpenCodeClient {
   private directory: string;
   private authorization: string;
   private model: { providerID: string; modelID: string };
+  private variant: string;
 
   constructor(settings: Settings) {
     this.baseUrl = settings.serverUrl.replace(/\/+$/, "");
     this.directory = settings.directory.trim();
     this.model = { providerID: settings.modelProvider, modelID: settings.modelId };
+    this.variant = settings.modelVariant.trim();
     if (settings.serverPassword) {
       const bytes = new TextEncoder().encode(`opencode:${settings.serverPassword.trim()}`);
       this.authorization = `Basic ${btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""))}`;
@@ -139,9 +143,11 @@ export class OpenCodeClient {
 
   sendMessage(sessionId: string, text: string): Promise<unknown> {
     const directory = encodeURIComponent(this.directory);
+    const variant = this.variant ? { variant: this.variant } : {};
     return this.request("POST",
       `/session/${encodeURIComponent(sessionId)}/prompt_async?directory=${directory}`, {
         model: this.model,
+        ...variant,
         parts: [{ type: "text", text }]
       });
   }

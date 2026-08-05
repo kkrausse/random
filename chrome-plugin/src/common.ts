@@ -9,6 +9,7 @@ export interface Settings {
   serverPassword: string;
   modelProvider: string;
   modelId: string;
+  modelVariant: string;
   messageTemplate: string;
   promptPresets: PromptPreset[];
 }
@@ -25,6 +26,7 @@ export interface Model {
   name: string;
   providerId: string;
   modelId: string;
+  variants: string[];
 }
 
 export interface ModelRef {
@@ -54,6 +56,7 @@ interface ApiModel {
   id: string;
   providerID: string;
   status?: string;
+  variants?: Record<string, unknown>;
 }
 
 interface ApiMessage {
@@ -63,6 +66,7 @@ interface ApiMessage {
     time: { completed?: number };
     providerID?: string;
     modelID?: string;
+    variant?: string;
   };
   parts: Array<{ type: string; text?: string }>;
 }
@@ -73,6 +77,7 @@ export const DEFAULT_SETTINGS: Settings = {
   serverPassword: "",
   modelProvider: "opencode",
   modelId: "laguna-s-2.1-free",
+  modelVariant: "medium",
   messageTemplate: `<reading_request>
   <source_material>
     <page_title>{{page_title}}</page_title>
@@ -165,7 +170,8 @@ export function modelFromJson(value: ApiModel): Model {
   return {
     name: value.name || value.id,
     providerId: value.providerID,
-    modelId: value.id
+    modelId: value.id,
+    variants: Object.keys(value.variants || {})
   };
 }
 
@@ -178,7 +184,11 @@ export function messageFromJson(value: ApiMessage): Message | null {
   }
   const complete = Boolean(value.info.time.completed);
   const model = value.info.providerID && value.info.modelID
-    ? { providerID: value.info.providerID, id: value.info.modelID }
+    ? {
+        providerID: value.info.providerID,
+        id: value.info.modelID,
+        ...(value.info.variant ? { variant: value.info.variant } : {})
+      }
     : undefined;
   return text || !complete
     ? { id: value.info.id, role: "OpenCode", text, complete, model }

@@ -28,6 +28,7 @@ test("messageFromJson joins assistant text parts", () => {
       role: "assistant",
       providerID: "openai",
       modelID: "gpt-5",
+      variant: "high",
       time: { completed: 1 }
     },
     parts: [{ type: "text", text: "Hello " }, { type: "tool" }, { type: "text", text: "world" }]
@@ -36,7 +37,7 @@ test("messageFromJson joins assistant text parts", () => {
     role: "OpenCode",
     text: "Hello world",
     complete: true,
-    model: { providerID: "openai", id: "gpt-5" }
+    model: { providerID: "openai", id: "gpt-5", variant: "high" }
   });
 });
 

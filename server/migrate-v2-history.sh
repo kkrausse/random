@@ -8,6 +8,13 @@ command -v sqlite3 >/dev/null 2>&1 || {
   exit 1
 }
 
+# The beta event table has a required created column that stable OpenCode does
+# not populate. Keep existing events while bringing the table shape in line.
+if [ "$(sqlite3 "$DB" "SELECT count(*) FROM pragma_table_info('event') WHERE name = 'created';")" -gt 0 ]; then
+  sqlite3 "$DB" "ALTER TABLE event DROP COLUMN created;"
+  printf 'Removed the beta-only event.created column.\n'
+fi
+
 session_messages=$(sqlite3 "$DB" "SELECT count(*) FROM session_message;")
 classic_messages=$(sqlite3 "$DB" "SELECT count(*) FROM message;")
 if [ "$session_messages" -eq 0 ] || [ "$classic_messages" -gt 0 ]; then
