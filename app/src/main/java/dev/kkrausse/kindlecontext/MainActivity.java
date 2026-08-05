@@ -57,11 +57,13 @@ public class MainActivity extends Activity {
     private static final String MODEL_VARIANT_KEY = "model_variant";
     private static final String MESSAGE_TEMPLATE_KEY = "message_template";
     private static final String PROMPT_PRESETS_KEY = "prompt_presets";
+    private static final String CONTEXT_WORD_LIMIT_KEY = "context_word_limit";
     private static final String DEFAULT_SERVER = "http://raspberrypi.example.ts.net:41137";
     private static final String DEFAULT_DIRECTORY = "/home/pi/deploys/palma2-opencode/workdir";
     private static final String DEFAULT_MODEL_PROVIDER = "opencode";
     private static final String DEFAULT_MODEL_ID = "laguna-s-2.1-free";
     private static final String DEFAULT_MODEL_VARIANT = "medium";
+    private static final int DEFAULT_CONTEXT_WORD_LIMIT = 2_000;
     private static final String LEGACY_DEFAULT_MESSAGE_TEMPLATE = "SURROUNDING CONTEXT\n\nPREVIOUS PAGE\n"
             + "{{previous_page}}\n\nCURRENT PAGE\n{{current_page}}"
             + "\n\nHIGHLIGHTED PASSAGE\n{{highlight}}"
@@ -90,6 +92,8 @@ public class MainActivity extends Activity {
             "^SURROUNDING CONTEXT\\n\\n(.*?)\\n\\nHIGHLIGHTED PASSAGE\\n(.*?)"
                     + "\\n\\nREADER'S QUESTION\\n(.*)$", Pattern.DOTALL);
     private static final String CONTEXT_OMISSION_MARKER = "[Earlier captured context omitted.]";
+    private static final String LATER_CONTEXT_OMISSION_MARKER = "[Later captured context omitted.]";
+    private static final Pattern WORD_PATTERN = Pattern.compile("\\S+");
 
     private static final class PromptPreset {
         String label;
@@ -295,6 +299,14 @@ public class MainActivity extends Activity {
         EditText token = settingInput("SERVER PASSWORD",
                 preferences.getString(TOKEN_KEY, ""));
         token.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        EditText contextWordLimit = settingInput("SURROUNDING CONTEXT WORD LIMIT",
+                String.valueOf(preferences.getInt(
+                        CONTEXT_WORD_LIMIT_KEY, DEFAULT_CONTEXT_WORD_LIMIT)));
+        contextWordLimit.setInputType(InputType.TYPE_CLASS_NUMBER);
+        TextView contextHelp = label("Maximum total words sent from the captured text. "
+                + "When possible, the highlighted passage is centered in this window.", 14, false);
+        contextHelp.setPadding(0, 0, 0, dp(6));
+        root.addView(contextHelp);
         addSection("NEW CHAT MODEL");
         Spinner modelSpinner = new Spinner(this);
         root.addView(modelSpinner, new LinearLayout.LayoutParams(-1, dp(52)));
@@ -363,10 +375,22 @@ public class MainActivity extends Activity {
                     return;
                 }
             }
+            int wordLimit;
+            try {
+                wordLimit = Integer.parseInt(contextWordLimit.getText().toString());
+            } catch (NumberFormatException error) {
+                statusView.setText("Context word limit must be a positive whole number.");
+                return;
+            }
+            if (wordLimit <= 0) {
+                statusView.setText("Context word limit must be a positive whole number.");
+                return;
+            }
             SharedPreferences.Editor editor = preferences.edit()
                     .putString(SERVER_KEY, server.getText().toString().trim())
                     .putString(DIRECTORY_KEY, directory.getText().toString().trim())
                     .putString(TOKEN_KEY, token.getText().toString().trim())
+                    .putInt(CONTEXT_WORD_LIMIT_KEY, wordLimit)
                     .putString(MESSAGE_TEMPLATE_KEY, template)
                     .putString(PROMPT_PRESETS_KEY, serializePromptPresets(promptPresets));
             int modelPosition = modelSpinner.getSelectedItemPosition();
@@ -1178,8 +1202,10 @@ public class MainActivity extends Activity {
         }
         addSnapshot(snapshots, preferences.getString(
                 KindleAccessibilityService.CURRENT_TEXT_KEY, ""));
-        return limitToLatestWords(String.join("\n\n", snapshots),
-                KindleAccessibilityService.MAX_CONTEXT_WORDS);
+        SharedPreferences settings = getSharedPreferences(SETTINGS, MODE_PRIVATE);
+        return contextAroundHighlight(String.join("\n\n", snapshots),
+                captured(KindleAccessibilityService.SELECTED_TEXT_KEY),
+                settings.getInt(CONTEXT_WORD_LIMIT_KEY, DEFAULT_CONTEXT_WORD_LIMIT));
     }
 
     private void addSnapshot(List<String> snapshots, String value) {
@@ -1198,24 +1224,64 @@ public class MainActivity extends Activity {
         snapshots.add(text);
     }
 
-    private String limitToLatestWords(String text, int maxWords) {
-        Matcher counter = Pattern.compile("\\S+").matcher(text);
-        int wordCount = 0;
-        while (counter.find()) {
-            wordCount++;
+    private String contextAroundHighlight(String text, String highlight, int maxWords) {
+        List<Integer> wordStarts = new ArrayList<>();
+        List<Integer> wordEnds = new ArrayList<>();
+        List<String> words = new ArrayList<>();
+        Matcher matcher = WORD_PATTERN.matcher(text);
+        while (matcher.find()) {
+            wordStarts.add(matcher.start());
+            wordEnds.add(matcher.end());
+            words.add(matcher.group());
         }
-        if (wordCount <= maxWords) {
+        if (words.size() <= maxWords) {
             return text;
         }
 
-        int markerWords = 4;
-        int wordsToRemove = wordCount - (maxWords - markerWords);
-        Matcher cutoff = Pattern.compile("\\S+").matcher(text);
-        for (int i = 0; i < wordsToRemove; i++) {
-            cutoff.find();
+        List<String> highlightWords = new ArrayList<>();
+        Matcher highlightMatcher = WORD_PATTERN.matcher(highlight);
+        while (highlightMatcher.find()) {
+            highlightWords.add(highlightMatcher.group());
         }
-        cutoff.find();
-        return CONTEXT_OMISSION_MARKER + "\n\n" + text.substring(cutoff.start());
+        int highlightStart = findLastWordSequence(words, highlightWords);
+        int start;
+        if (highlightStart < 0) {
+            start = words.size() - maxWords;
+        } else if (highlightWords.size() >= maxWords) {
+            start = highlightStart + (highlightWords.size() - maxWords) / 2;
+        } else {
+            int wordsBefore = (maxWords - highlightWords.size()) / 2;
+            start = Math.max(0, highlightStart - wordsBefore);
+            start = Math.min(start, words.size() - maxWords);
+        }
+        int end = start + maxWords;
+        String result = text.substring(wordStarts.get(start), wordEnds.get(end - 1));
+        if (start > 0) {
+            result = CONTEXT_OMISSION_MARKER + "\n\n" + result;
+        }
+        if (end < words.size()) {
+            result += "\n\n" + LATER_CONTEXT_OMISSION_MARKER;
+        }
+        return result;
+    }
+
+    private int findLastWordSequence(List<String> words, List<String> sequence) {
+        if (sequence.isEmpty() || sequence.size() > words.size()) {
+            return -1;
+        }
+        for (int start = words.size() - sequence.size(); start >= 0; start--) {
+            boolean matches = true;
+            for (int i = 0; i < sequence.size(); i++) {
+                if (!words.get(start + i).equals(sequence.get(i))) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) {
+                return start;
+            }
+        }
+        return -1;
     }
 
     private void handleStreamEvent(OpenCodeClient.StreamEvent event) {
