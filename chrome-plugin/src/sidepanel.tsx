@@ -27,6 +27,16 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function serverErrorMessage(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (!error || typeof error !== "object") return "Unknown server error";
+  const value = error as Record<string, unknown>;
+  if (typeof value.message === "string") return value.message;
+  if (value.data !== undefined) return serverErrorMessage(value.data);
+  if (value.error !== undefined) return serverErrorMessage(value.error);
+  return typeof value.name === "string" ? value.name : "Unknown server error";
+}
+
 function hasSelectionInside(element: HTMLElement | null) {
   const selection = window.getSelection();
   if (!element || !selection || selection.isCollapsed || !selection.anchorNode || !selection.focusNode) {
@@ -113,11 +123,18 @@ function CaptureScreen({ settings, capture, onOpenChat, onBrowse }: {
     if (!capture || !nextQuestion.trim() || submitting) return;
     setSubmitting(true);
     setStatus("Starting chat...");
+    void recordDiagnostic("chat-create-start", {
+      model: `${settings.modelProvider}/${settings.modelId}`,
+      variant: settings.modelVariant || null,
+      promptLength: nextQuestion.length
+    });
     try {
       const client = new OpenCodeClient(settings);
       const sessionId = await client.createSession();
+      void recordDiagnostic("chat-create-success", { sessionId });
       onOpenChat(sessionId, buildPrompt(settings.messageTemplate, capture, nextQuestion));
     } catch (error) {
+      void recordDiagnostic("chat-create-error", { message: errorMessage(error) });
       setSubmitting(false);
       setStatus(errorMessage(error));
     }
@@ -345,20 +362,32 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
           else if (properties.status?.type === "busy") setStatus("OpenCode is working...");
           break;
         case "session.idle":
-        case "session.error":
           void refreshRef.current(false).finally(() => {
             setStreaming(null);
             setWaiting(false);
             setStatus("");
           });
           break;
+        case "session.error": {
+          const message = serverErrorMessage(properties.error);
+          void recordDiagnostic("session-error", { sessionId, message });
+          void refreshRef.current(false).finally(() => {
+            setStreaming(null);
+            setWaiting(false);
+            setStatus(`OpenCode error: ${message}`);
+          });
+          break;
+        }
       }
     };
 
     const connect = () => {
       if (stopped) return;
       controller = new AbortController();
-      void new OpenCodeClient(settings).streamEvents(controller.signal, handleEvent, markReady).catch(async (error) => {
+      void new OpenCodeClient(settings).streamEvents(controller.signal, handleEvent, () => {
+        void recordDiagnostic("event-stream-open", { sessionId });
+        markReady();
+      }).catch(async (error) => {
         if (stopped || controller?.signal.aborted) return;
         await recordDiagnostic("event-stream-error", { message: errorMessage(error) });
         setStatus("Reconnecting to OpenCode...");
@@ -379,16 +408,22 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
   useEffect(() => {
     if (!initialPrompt || initialPrompt.sessionId !== sessionId) return;
     let active = true;
+    void recordDiagnostic("initial-prompt-start", {
+      sessionId,
+      promptLength: initialPrompt.text.length
+    });
     void Promise.race([
       streamReady.current,
       new Promise<void>((resolve) => setTimeout(resolve, 5000))
     ]).then(() => new OpenCodeClient(settings).sendMessage(sessionId, initialPrompt.text))
       .then(() => {
         if (!active) return;
+        void recordDiagnostic("initial-prompt-accepted", { sessionId });
         onPromptSentRef.current();
         return refreshRef.current(true);
       }).catch((error) => {
         if (!active) return;
+        void recordDiagnostic("initial-prompt-error", { sessionId, message: errorMessage(error) });
         setWaiting(false);
         setStatus(errorMessage(error));
       });
@@ -401,14 +436,21 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
     const selectedCapture = capture;
     setWaiting(true);
     setStatus(selectedCapture ? "Sending with highlight..." : "Sending...");
+    void recordDiagnostic("reply-prompt-start", {
+      sessionId,
+      promptLength: text.length,
+      includesHighlight: Boolean(selectedCapture)
+    });
     try {
       await Promise.race([streamReady.current, new Promise<void>((resolve) => setTimeout(resolve, 5000))]);
       await new OpenCodeClient(settings).sendMessage(sessionId,
         selectedCapture ? buildHighlightPrompt(selectedCapture.highlight, text) : text);
+      void recordDiagnostic("reply-prompt-accepted", { sessionId });
       setReply("");
       if (selectedCapture) onClearCapture(selectedCapture);
       await refreshMessages(true);
     } catch (error) {
+      void recordDiagnostic("reply-prompt-error", { sessionId, message: errorMessage(error) });
       setWaiting(false);
       setStatus(errorMessage(error));
     }
