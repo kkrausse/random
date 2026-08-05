@@ -5,6 +5,7 @@
     "edit": "deny",
     "bash": "deny",
     "webfetch": "allow",
+    "websearch": "allow",
     "doom_loop": "deny",
     "external_directory": "deny"
   },
@@ -13,6 +14,7 @@
     "edit": false,
     "patch": false,
     "bash": false,
-    "webfetch": true
+    "webfetch": true,
+    "websearch": true
   }
 }

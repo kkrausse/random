@@ -88,14 +88,15 @@ The remote deployment becomes:
 
 OpenCode starts with `workdir/` as its location. It discovers the parent `opencode.json` and `AGENTS.md`, but relative mutations cannot escape the active location.
 
-The checked-in V2 permission policy denies every action first, then allows only:
+The checked-in server policy allows only:
 
 - `read`
 - `glob`
 - `grep`
 - `webfetch`
+- `websearch`
 
-This denies shell commands, file edits, subagents, skills, interactive questions, and `websearch`. Web search is temporarily disabled because the pinned server leaves the tool running indefinitely. See `server/OPENCODE_MIGRATION_NOTES.md`. The reading instructions also tell the model to treat book text as quoted context rather than instructions.
+This denies shell commands, file edits, subagents, skills, and interactive questions. The reading instructions also tell the model to treat book text as quoted context rather than instructions.
 
 Changes to `server/runtime/` do nothing until `./server/deploy.sh` is run.
 
