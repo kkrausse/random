@@ -22,6 +22,9 @@ export interface SessionEvent {
       variant?: string;
       time?: { completed?: number };
     };
+    messageID?: string;
+    partID?: string;
+    field?: string;
     part?: {
       id: string;
       sessionID: string;

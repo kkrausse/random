@@ -285,7 +285,7 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
       const eventSessionId = properties?.sessionID || properties?.info?.sessionID
         || properties?.part?.sessionID;
       if (!properties || eventSessionId !== sessionId) return;
-      const messageId = properties.info?.id || properties.part?.messageID || "";
+      const messageId = properties.info?.id || properties.part?.messageID || properties.messageID || "";
       switch (event.type) {
         case "message.updated": {
           const info = properties.info;
@@ -316,6 +316,26 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
             model: streamingModels.current.get(messageId)
               || messagesRef.current.find((message) => message.id === messageId)?.model
           });
+          setWaiting(true);
+          setStatus("Responding...");
+          break;
+        }
+        case "message.part.delta": {
+          if (properties.field !== "text" || !properties.delta) break;
+          const knownAssistant = streamingModels.current.has(messageId)
+            || messagesRef.current.some((message) => message.id === messageId && message.role === "OpenCode");
+          if (!knownAssistant) break;
+          setStreaming((current) => ({
+            id: messageId,
+            text: (current?.id === messageId
+              ? current.text
+              : messagesRef.current.find((message) => message.id === messageId)?.text || "")
+              + properties.delta,
+            model: current?.id === messageId
+              ? current.model
+              : streamingModels.current.get(messageId)
+                || messagesRef.current.find((message) => message.id === messageId)?.model
+          }));
           setWaiting(true);
           setStatus("Responding...");
           break;

@@ -37,6 +37,31 @@ test("streamEvents parses stable chunked SSE data with authentication and direct
   }
 });
 
+test("streamEvents preserves incremental message part deltas", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(
+    `data: {"type":"message.part.delta","properties":{"sessionID":"s1","messageID":"m1","partID":"p1","field":"text","delta":"Hello"}}\n\n`,
+    { status: 200 }
+  )) as unknown as typeof fetch;
+
+  try {
+    const abort = new AbortController();
+    let received;
+    await new OpenCodeClient(DEFAULT_SETTINGS).streamEvents(abort.signal, (event) => {
+      received = event;
+      abort.abort();
+    }, () => {});
+    assert.deepEqual(received, {
+      type: "message.part.delta",
+      properties: {
+        sessionID: "s1", messageID: "m1", partID: "p1", field: "text", delta: "Hello"
+      }
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("sessionUsage sums stable assistant message token and cost totals", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () => new Response(JSON.stringify([

@@ -65,11 +65,10 @@ TypeScript check, and production build pass; manually reload `chrome-plugin/dist
 to validate it in Chrome. The Android app still uses the beta `/api/*` contract
 and remains to be migrated.
 
-Known Chrome issue: incremental assistant text arrives as `message.part.delta`
-with `properties.sessionID`, `messageID`, `partID`, `field`, and `delta`. The
-current handler only applies `message.part.updated`, whose full text arrives at
-the end, so responses appear all at once. Add delta handling to restore live
-token-by-token rendering; server-side response persistence is unaffected.
+Incremental assistant text arrives as `message.part.delta` with
+`properties.sessionID`, `messageID`, `partID`, `field`, and `delta`. The Chrome
+handler applies these deltas for live token-by-token rendering, then reloads the
+canonical server message on completion.
 
 Use the regular OpenCode `1.18.13` contract from the installed
 `@opencode-ai/sdk@1.18.13` generated types. The required subset is:
