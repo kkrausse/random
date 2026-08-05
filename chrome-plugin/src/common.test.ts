@@ -23,17 +23,20 @@ test("buildPrompt leaves plain templates unescaped", () => {
 
 test("messageFromJson joins assistant text parts", () => {
   assert.deepEqual(messageFromJson({
-    id: "message-1",
-    type: "assistant",
-    content: [{ type: "text", text: "Hello " }, { type: "tool" }, { type: "text", text: "world" }],
-    model: { providerID: "openai", id: "gpt-5", variant: "high" },
-    time: { completed: 1 }
+    info: {
+      id: "message-1",
+      role: "assistant",
+      providerID: "openai",
+      modelID: "gpt-5",
+      time: { completed: 1 }
+    },
+    parts: [{ type: "text", text: "Hello " }, { type: "tool" }, { type: "text", text: "world" }]
   }), {
     id: "message-1",
     role: "OpenCode",
     text: "Hello world",
     complete: true,
-    model: { providerID: "openai", id: "gpt-5", variant: "high" }
+    model: { providerID: "openai", id: "gpt-5" }
   });
 });
 

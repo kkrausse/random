@@ -115,7 +115,7 @@ function CaptureScreen({ settings, capture, onOpenChat, onBrowse }: {
     setStatus("Starting chat...");
     try {
       const client = new OpenCodeClient(settings);
-      const sessionId = await client.createSession(settings);
+      const sessionId = await client.createSession();
       onOpenChat(sessionId, buildPrompt(settings.messageTemplate, capture, nextQuestion));
     } catch (error) {
       setSubmitting(false);
@@ -281,43 +281,47 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
     streamReady.current = new Promise<void>((resolve) => { markReady = resolve; });
 
     const handleEvent = (event: SessionEvent) => {
-      const data = event.data;
-      if (!data || data.sessionID !== sessionId) return;
-      const messageId = data.assistantMessageID || "";
+      const properties = event.properties;
+      const eventSessionId = properties?.sessionID || properties?.info?.sessionID
+        || properties?.part?.sessionID;
+      if (!properties || eventSessionId !== sessionId) return;
+      const messageId = properties.info?.id || properties.part?.messageID || "";
       switch (event.type) {
-        case "session.step.started":
-          if (messageId && data.model) {
-            streamingModels.current.set(messageId, data.model);
-            setStreaming((current) => current?.id === messageId ? { ...current, model: data.model } : current);
+        case "message.updated": {
+          const info = properties.info;
+          if (info?.role === "assistant" && info.providerID && info.modelID) {
+            const model = { providerID: info.providerID, id: info.modelID };
+            streamingModels.current.set(messageId, model);
+            setStreaming((current) => current?.id === messageId ? { ...current, model } : current);
           }
           break;
-        case "session.text.started":
-          if (messageId) setStreaming((current) => current?.id === messageId ? current : {
+        }
+        case "message.part.updated": {
+          const part = properties.part;
+          if (!part) break;
+          if (part.type === "reasoning") setStatus("Thinking...");
+          if (part.type === "tool") {
+            setStatus(part.tool ? `Using ${part.tool}...` : "Using a tool...");
+          }
+          const knownAssistant = streamingModels.current.has(messageId)
+            || messagesRef.current.some((message) => message.id === messageId && message.role === "OpenCode");
+          if (part.type !== "text" || !knownAssistant) break;
+          setStreaming({
             id: messageId,
-            text: messagesRef.current.find((message) => message.id === messageId)?.text || "",
-            model: messagesRef.current.find((message) => message.id === messageId)?.model
-              || streamingModels.current.get(messageId)
+            text: part.text || "",
+            model: streamingModels.current.get(messageId)
+              || messagesRef.current.find((message) => message.id === messageId)?.model
           });
           setWaiting(true);
           setStatus("Responding...");
           break;
-        case "session.text.delta":
-          if (messageId) setStreaming((current) => ({
-            id: messageId,
-            text: (current?.id === messageId
-              ? current.text
-              : messagesRef.current.find((message) => message.id === messageId)?.text || "")
-              + (data.delta || ""),
-            model: current?.id === messageId ? current.model : streamingModels.current.get(messageId)
-          }));
+        }
+        case "session.status":
+          if (properties.status?.type === "retry") setStatus("Retrying...");
+          else if (properties.status?.type === "busy") setStatus("OpenCode is working...");
           break;
-        case "session.reasoning.started": setStatus("Thinking..."); break;
-        case "session.tool.input.started": setStatus(data.name ? `Using ${data.name}...` : "Using a tool..."); break;
-        case "session.retry.scheduled": setStatus("Retrying..."); break;
-        case "session.input.promoted": void refreshRef.current(true); break;
-        case "session.execution.succeeded":
-        case "session.execution.failed":
-        case "session.execution.interrupted":
+        case "session.idle":
+        case "session.error":
           void refreshRef.current(false).finally(() => {
             setStreaming(null);
             setWaiting(false);
@@ -505,10 +509,9 @@ function SettingsScreen({ settings, onSave }: { settings: Settings; onSave: (set
   };
   useEffect(() => { void loadModels(false); }, []);
   const selectedModel = `${draft.modelProvider}\0${draft.modelId}`;
-  const variants = models.find((model) => `${model.providerId}\0${model.modelId}` === selectedModel)?.variants || [];
   const selectModel = (value: string) => {
     const [modelProvider, modelId] = value.split("\0");
-    persist({ ...draft, modelProvider, modelId, modelVariant: "" });
+    persist({ ...draft, modelProvider, modelId });
   };
 
   return <>
@@ -524,10 +527,6 @@ function SettingsScreen({ settings, onSave }: { settings: Settings; onSave: (set
         {!models.length && <option value={selectedModel}>Load models after saving connection</option>}
         {models.map((model) => <option key={`${model.providerId}/${model.modelId}`}
           value={`${model.providerId}\0${model.modelId}`}>{model.name} ({model.providerId}/{model.modelId})</option>)}
-      </select>
-      <select value={draft.modelVariant} onChange={(e) => update("modelVariant", e.target.value)}>
-        <option value="">Default variant</option>
-        {variants.map((variant) => <option key={variant} value={variant}>{variant}</option>)}
       </select>
       <button className="secondary" onClick={() => void loadModels()}>Load models</button>
     </section>

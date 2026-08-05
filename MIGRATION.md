@@ -56,10 +56,12 @@ The production deployment passed these checks:
 - `palma2-opencode.service` is active and enabled.
 - `palma2-opencode-v2.service` is disabled.
 
-## Client Work Remaining
+## Client Status
 
-The Chrome extension and Android app still use the beta `/api/*` contract and
-will not work until migrated. No client files were changed in this pass.
+The Chrome extension now uses the regular OpenCode contract. Its tests,
+TypeScript check, and production build pass; manually reload `chrome-plugin/dist/`
+to validate it in Chrome. The Android app still uses the beta `/api/*` contract
+and remains to be migrated.
 
 Use the regular OpenCode `1.18.13` contract from the installed
 `@opencode-ai/sdk@1.18.13` generated types. The required subset is:

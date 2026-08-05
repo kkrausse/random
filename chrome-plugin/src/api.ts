@@ -2,10 +2,6 @@ import { modelFromJson, messageFromJson } from "./common";
 import type { Message, Model, ModelRef, Settings } from "./common";
 import { recordDiagnostic } from "./diagnostics";
 
-interface ApiResponse<T> {
-  data: T;
-}
-
 interface ApiSession {
   id: string;
   title?: string;
@@ -15,13 +11,47 @@ interface ApiSession {
 
 export interface SessionEvent {
   type: string;
-  data?: {
+  properties?: {
     sessionID?: string;
-    assistantMessageID?: string;
+    info?: {
+      id: string;
+      sessionID: string;
+      role: "user" | "assistant";
+      providerID?: string;
+      modelID?: string;
+      time?: { completed?: number };
+    };
+    part?: {
+      id: string;
+      sessionID: string;
+      messageID: string;
+      type: string;
+      text?: string;
+      tool?: string;
+      state?: { status?: string };
+    };
     delta?: string;
-    name?: string;
-    model?: ModelRef;
+    status?: { type: string; message?: string };
+    error?: unknown;
   };
+}
+
+interface ApiMessage {
+  info: {
+    id: string;
+    role: "user" | "assistant";
+    time: { completed?: number };
+    providerID?: string;
+    modelID?: string;
+    cost?: number;
+    tokens?: {
+      input?: number;
+      output?: number;
+      reasoning?: number;
+      cache?: { read?: number; write?: number };
+    };
+  };
+  parts: Array<{ type: string; text?: string }>;
 }
 
 export interface SessionUsage {
@@ -37,10 +67,12 @@ export class OpenCodeClient {
   private baseUrl: string;
   private directory: string;
   private authorization: string;
+  private model: { providerID: string; modelID: string };
 
   constructor(settings: Settings) {
     this.baseUrl = settings.serverUrl.replace(/\/+$/, "");
     this.directory = settings.directory.trim();
+    this.model = { providerID: settings.modelProvider, modelID: settings.modelId };
     if (settings.serverPassword) {
       const bytes = new TextEncoder().encode(`opencode:${settings.serverPassword.trim()}`);
       this.authorization = `Basic ${btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""))}`;
@@ -78,70 +110,72 @@ export class OpenCodeClient {
   }
 
   health() {
-    return this.request("GET", "/api/health");
+    return this.request("GET", "/global/health");
   }
 
   async models(): Promise<Model[]> {
-    const location = encodeURIComponent(this.directory);
-    const response = await this.request<ApiResponse<Parameters<typeof modelFromJson>[0][]>>(
-      "GET", `/api/model?location%5Bdirectory%5D=${location}`);
-    return response.data.filter((model) => model.enabled && model.status === "active")
+    const directory = encodeURIComponent(this.directory);
+    const response = await this.request<{
+      providers: Array<{
+        models: Record<string, Parameters<typeof modelFromJson>[0]>;
+      }>;
+    }>("GET", `/config/providers?directory=${directory}`);
+    return response.providers.flatMap((provider) => Object.values(provider.models))
+      .filter((model) => model.status === "active")
       .map(modelFromJson);
   }
 
   async sessions(): Promise<ApiSession[]> {
     const directory = encodeURIComponent(this.directory);
-    const response = await this.request<ApiResponse<ApiSession[]>>(
-      "GET", `/api/session?limit=50&order=desc&directory=${directory}`);
-    return response.data;
+    const response = await this.request<ApiSession[]>("GET", `/session?directory=${directory}`);
+    return response.slice(0, 50);
   }
 
-  async createSession(settings: Settings): Promise<string> {
-    const model: { providerID: string; id: string; variant?: string } = {
-      providerID: settings.modelProvider,
-      id: settings.modelId
-    };
-    if (settings.modelVariant) model.variant = settings.modelVariant;
-    const response = await this.request<ApiResponse<{ id: string }>>("POST", "/api/session", {
-      location: { directory: this.directory },
-      model
-    });
-    return response.data.id;
+  async createSession(): Promise<string> {
+    const directory = encodeURIComponent(this.directory);
+    const response = await this.request<{ id: string }>("POST", `/session?directory=${directory}`, {});
+    return response.id;
   }
 
   sendMessage(sessionId: string, text: string): Promise<unknown> {
-    return this.request("POST", `/api/session/${encodeURIComponent(sessionId)}/prompt`, { text });
+    const directory = encodeURIComponent(this.directory);
+    return this.request("POST",
+      `/session/${encodeURIComponent(sessionId)}/prompt_async?directory=${directory}`, {
+        model: this.model,
+        parts: [{ type: "text", text }]
+      });
   }
 
   interruptSession(sessionId: string): Promise<unknown> {
-    return this.request("POST", `/api/session/${encodeURIComponent(sessionId)}/interrupt`);
+    const directory = encodeURIComponent(this.directory);
+    return this.request("POST", `/session/${encodeURIComponent(sessionId)}/abort?directory=${directory}`);
   }
 
   async messages(sessionId: string): Promise<Message[]> {
-    const response = await this.request<ApiResponse<Parameters<typeof messageFromJson>[0][]>>("GET",
-      `/api/session/${encodeURIComponent(sessionId)}/message?limit=200&order=desc`);
-    return response.data.reverse().map(messageFromJson).filter(Boolean);
+    return (await this.apiMessages(sessionId)).map(messageFromJson).filter(Boolean);
+  }
+
+  private apiMessages(sessionId: string): Promise<ApiMessage[]> {
+    const directory = encodeURIComponent(this.directory);
+    return this.request("GET",
+      `/session/${encodeURIComponent(sessionId)}/message?directory=${directory}&limit=200`);
   }
 
   async sessionUsage(sessionId: string): Promise<SessionUsage> {
-    const response = await this.request<ApiResponse<{
-      cost?: number;
-      tokens?: {
-        input?: number;
-        output?: number;
-        reasoning?: number;
-        cache?: { read?: number; write?: number };
-      };
-    }>>("GET", `/api/session/${encodeURIComponent(sessionId)}`);
-    const tokens = response.data.tokens || {};
-    return {
-      input: tokens.input || 0,
-      output: tokens.output || 0,
-      reasoning: tokens.reasoning || 0,
-      cacheRead: tokens.cache?.read || 0,
-      cacheWrite: tokens.cache?.write || 0,
-      cost: response.data.cost || 0
+    const usage: SessionUsage = {
+      input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0
     };
+    for (const message of await this.apiMessages(sessionId)) {
+      if (message.info.role !== "assistant") continue;
+      const tokens = message.info.tokens || {};
+      usage.input += tokens.input || 0;
+      usage.output += tokens.output || 0;
+      usage.reasoning += tokens.reasoning || 0;
+      usage.cacheRead += tokens.cache?.read || 0;
+      usage.cacheWrite += tokens.cache?.write || 0;
+      usage.cost += message.info.cost || 0;
+    }
+    return usage;
   }
 
   async streamEvents(
@@ -151,7 +185,8 @@ export class OpenCodeClient {
   ): Promise<void> {
     const headers: Record<string, string> = { Accept: "text/event-stream" };
     if (this.authorization) headers.Authorization = this.authorization;
-    const response = await fetch(`${this.baseUrl}/api/event`, { headers, signal });
+    const directory = encodeURIComponent(this.directory);
+    const response = await fetch(`${this.baseUrl}/event?directory=${directory}`, { headers, signal });
     if (!response.ok) {
       throw new Error(`OpenCode event stream returned HTTP ${response.status}: ${await response.text()}`);
     }

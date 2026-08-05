@@ -9,7 +9,6 @@ export interface Settings {
   serverPassword: string;
   modelProvider: string;
   modelId: string;
-  modelVariant: string;
   messageTemplate: string;
   promptPresets: PromptPreset[];
 }
@@ -26,7 +25,6 @@ export interface Model {
   name: string;
   providerId: string;
   modelId: string;
-  variants: string[];
 }
 
 export interface ModelRef {
@@ -53,20 +51,20 @@ export interface ReadingPrompt {
 
 interface ApiModel {
   name?: string;
-  modelID: string;
+  id: string;
   providerID: string;
-  enabled?: boolean;
   status?: string;
-  variants?: Array<{ id?: string }>;
 }
 
 interface ApiMessage {
-  id: string;
-  type: string;
-  text?: string;
-  content?: Array<{ type: string; text?: string }>;
-  time?: { completed?: number };
-  model?: ModelRef;
+  info: {
+    id: string;
+    role: "user" | "assistant";
+    time: { completed?: number };
+    providerID?: string;
+    modelID?: string;
+  };
+  parts: Array<{ type: string; text?: string }>;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -75,7 +73,6 @@ export const DEFAULT_SETTINGS: Settings = {
   serverPassword: "",
   modelProvider: "opencode",
   modelId: "laguna-s-2.1-free",
-  modelVariant: "medium",
   messageTemplate: `<reading_request>
   <source_material>
     <page_title>{{page_title}}</page_title>
@@ -166,23 +163,24 @@ export function readingPromptFromText(prompt: string): ReadingPrompt | null {
 
 export function modelFromJson(value: ApiModel): Model {
   return {
-    name: value.name || value.modelID,
+    name: value.name || value.id,
     providerId: value.providerID,
-    modelId: value.modelID,
-    variants: (value.variants || []).map((variant) => variant.id).filter(Boolean)
+    modelId: value.id
   };
 }
 
 export function messageFromJson(value: ApiMessage): Message | null {
-  if (value.type === "user") {
-    return { id: value.id, role: "You", text: value.text || "", complete: true };
-  }
-  if (value.type !== "assistant") return null;
-  const text = (value.content || [])
+  const text = value.parts
     .filter((part) => part.type === "text")
     .map((part) => part.text || "").join("");
-  const complete = Boolean(value.time?.completed);
+  if (value.info.role === "user") {
+    return { id: value.info.id, role: "You", text, complete: true };
+  }
+  const complete = Boolean(value.info.time.completed);
+  const model = value.info.providerID && value.info.modelID
+    ? { providerID: value.info.providerID, id: value.info.modelID }
+    : undefined;
   return text || !complete
-    ? { id: value.id, role: "OpenCode", text, complete, model: value.model }
+    ? { id: value.info.id, role: "OpenCode", text, complete, model }
     : null;
 }
