@@ -8,8 +8,8 @@ The Raspberry Pi deployment has been migrated from the OpenCode V2 prerelease
 to regular OpenCode `1.18.13`.
 
 - Active service: `palma2-opencode.service`
-- Disabled service: `palma2-opencode-v2.service`
-- Binary: `/home/pi/.bun/install/global/node_modules/opencode-linux-arm64/bin/opencode`
+- Retired service: `palma2-opencode-v2.service` (removed)
+- Canonical executable: `/home/pi/.bun/bin/opencode`
 - Server: `http://100.64.0.10:41137`
 - Stable database: `/home/pi/deploys/palma2-opencode/state/share/opencode/opencode.db`
 - Preserved beta database: `/home/pi/deploys/palma2-opencode/state/share/opencode/opencode-next.db`
@@ -56,7 +56,8 @@ The production deployment passed these checks:
   text parts.
 - `GET /config/providers` returned two configured providers.
 - `palma2-opencode.service` is active and enabled.
-- `palma2-opencode-v2.service` is disabled.
+- The obsolete V2 global package and systemd unit were removed.
+- Only the production `palma2-opencode.service` process remains running.
 
 ## Client Status
 
@@ -114,6 +115,10 @@ Deploy stable server changes with:
 ```sh
 ./server/deploy.sh
 ```
+
+Deployment stops both historical systemd units, terminates any remaining
+OpenCode, OpenCode2, or local development server processes, and then starts
+only `palma2-opencode.service`. It does not reboot the Raspberry Pi.
 
 Override the pinned version only deliberately:
 

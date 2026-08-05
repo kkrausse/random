@@ -9,7 +9,7 @@ User=pi
 WorkingDirectory=/home/pi/deploys/palma2-opencode/workdir
 Environment=XDG_DATA_HOME=/home/pi/deploys/palma2-opencode/state/share
 EnvironmentFile=/home/pi/deploys/palma2-opencode/state/server.env
-ExecStart=/home/pi/.bun/install/global/node_modules/opencode-linux-arm64/bin/opencode serve --hostname 100.64.0.10 --port 41137
+ExecStart=/home/pi/.bun/bin/opencode serve --hostname 100.64.0.10 --port 41137
 Restart=on-failure
 RestartSec=3
 SyslogIdentifier=palma2-opencode
