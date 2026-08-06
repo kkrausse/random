@@ -3,6 +3,14 @@
   const CAPTURE_DELAY_MS = 100;
   let captureTimer: ReturnType<typeof setTimeout> | null = null;
 
+  type Capture = {
+    highlight: string;
+    surroundingContext: string;
+    pageTitle: string;
+    pageUrl: string;
+    capturedAt: number;
+  };
+
   function readableRoot(element: Element | null) {
     return element?.closest("article, main, [role='main']")
       || document.querySelector("article, main, [role='main']")
@@ -29,41 +37,59 @@
       + (start + MAX_CONTEXT_WORDS < words.length ? "\n\n[Later page context omitted.]" : "");
   }
 
-  async function captureSelection() {
+  function buildCapture() {
     const selection = getSelection();
     const highlight = selection?.toString().trim() || "";
-    if (!selection || selection.rangeCount === 0 || !highlight) return;
+    if (!selection || selection.rangeCount === 0 || !highlight) return null;
 
     const range = selection.getRangeAt(0);
     const rect = range.getBoundingClientRect();
-    if (!rect.width && !rect.height) return;
+    if (!rect.width && !rect.height) return null;
     const element = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
       ? range.commonAncestorContainer as Element
       : range.commonAncestorContainer.parentElement;
     const pageText = (readableRoot(element) as HTMLElement | null)?.innerText
       || document.body.innerText || "";
 
+    return {
+      highlight,
+      surroundingContext: contextAroundHighlight(pageText, highlight),
+      pageTitle: document.title,
+      pageUrl: location.href,
+      capturedAt: Date.now()
+    };
+  }
+
+  async function sendCapture(capture: Capture) {
     try {
       await chrome.runtime.sendMessage({
         type: "update-reading-context",
-        capture: {
-          highlight,
-          surroundingContext: contextAroundHighlight(pageText, highlight),
-          pageTitle: document.title,
-          pageUrl: location.href,
-          capturedAt: Date.now()
-        }
+        capture
       });
     } catch (error) {
       console.warn("Reading Context could not capture the selection:", error);
     }
   }
 
+  async function captureSelection() {
+    const capture = buildCapture();
+    if (!capture) return null;
+    await sendCapture(capture);
+    return capture;
+  }
+
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type !== "capture-selection") return false;
+    captureSelection().then(sendResponse);
+    return true;
+  });
+
   document.addEventListener("selectionchange", () => {
     if (captureTimer !== null) clearTimeout(captureTimer);
     captureTimer = setTimeout(() => {
       captureTimer = null;
-      void captureSelection();
+      const capture = buildCapture();
+      if (capture) void sendCapture(capture);
     }, CAPTURE_DELAY_MS);
   });
 })();

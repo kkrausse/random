@@ -6,7 +6,8 @@
   "description": "Ask questions about highlighted passages using the Reading Context OpenCode server.",
   "permissions": [
     "sidePanel",
-    "storage"
+    "storage",
+    "contextMenus"
   ],
   "host_permissions": [
     "http://raspberrypi.example.ts.net:41137/*"
