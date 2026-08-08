@@ -174,4 +174,36 @@ describe("TripMap photo navigation", () => {
 			"/media/selected/viewer",
 		);
 	});
+
+	it("allows touch pinch zoom beyond the desktop wheel limit", () => {
+		render(
+			<TripMap
+				workouts={[workout]}
+				media={[photo("selected", "2025-01-01T00:02:00Z")]}
+			/>,
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Open photo" }));
+		const image = screen.getByAltText("Selected");
+		const stage = image.parentElement;
+		if (!stage) throw new Error("Photo stage was not rendered");
+		stage.setPointerCapture = vi.fn();
+		vi.spyOn(stage, "getBoundingClientRect").mockReturnValue({
+			bottom: 400,
+			height: 400,
+			left: 0,
+			right: 400,
+			top: 0,
+			width: 400,
+			x: 0,
+			y: 0,
+			toJSON: () => ({}),
+		});
+
+		fireEvent.pointerDown(stage, { pointerId: 1, clientX: 0, clientY: 0 });
+		fireEvent.pointerDown(stage, { pointerId: 2, clientX: 100, clientY: 0 });
+		fireEvent.pointerMove(stage, { pointerId: 2, clientX: 900, clientY: 0 });
+
+		expect(image.style.transform).toContain("scale(9)");
+		expect(image.getAttribute("src")).toBe("/media/selected/max");
+	});
 });

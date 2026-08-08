@@ -25,6 +25,8 @@ import type {
 } from "../media/types";
 
 const DEFAULT_PHOTO_ZOOM = { scale: 1, offsetX: 0, offsetY: 0 };
+const MAX_WHEEL_PHOTO_ZOOM = 6;
+const MAX_TOUCH_PHOTO_ZOOM = 12;
 
 export function TripMap({
 	workouts,
@@ -193,7 +195,7 @@ export function TripMap({
 		if (!bounds) return;
 		setPhotoZoom((current) => {
 			const scale = Math.min(
-				6,
+				MAX_WHEEL_PHOTO_ZOOM,
 				Math.max(1, current.scale * Math.exp(-event.deltaY * 0.002)),
 			);
 			if (scale === 1) return DEFAULT_PHOTO_ZOOM;
@@ -260,7 +262,7 @@ export function TripMap({
 			const centerX = (pointers[0].x + pointers[1].x) / 2;
 			const centerY = (pointers[0].y + pointers[1].y) / 2;
 			const scale = Math.min(
-				6,
+				MAX_TOUCH_PHOTO_ZOOM,
 				Math.max(
 					1,
 					pinch.scale *
