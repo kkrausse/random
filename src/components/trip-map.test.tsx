@@ -64,6 +64,12 @@ describe("TripMap photo navigation", () => {
 		);
 		expect(
 			screen
+				.getByAltText("Selected")
+				.closest(".trip-map")
+				?.classList.contains("has-photo"),
+		).toBe(true);
+		expect(
+			screen
 				.getByRole("button", { name: "Previous photo" })
 				.hasAttribute("disabled"),
 		).toBe(true);
@@ -105,7 +111,10 @@ describe("TripMap photo navigation", () => {
 		expect(screen.getByAltText("Selected").getAttribute("src")).toBe(
 			"/media/first/max",
 		);
+		fireEvent.keyDown(window, { key: "Escape" });
+		expect(screen.queryByAltText("Selected")).toBeNull();
 
+		fireEvent.click(screen.getAllByRole("button", { name: "Open photo" })[1]);
 		fireEvent.keyDown(window, { key: "ArrowRight" });
 		expect(screen.getByAltText("Selected").getAttribute("src")).toBe(
 			"/media/last/viewer",

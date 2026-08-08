@@ -97,13 +97,21 @@ export function RouteMap({ route }: RouteMapProps) {
 					</Source>
 				)}
 				{start && (
-					<Marker longitude={start.longitude} latitude={start.latitude}>
-						<span className="route-point start" />
+					<Marker
+						longitude={start.longitude}
+						latitude={start.latitude}
+						anchor="bottom"
+					>
+						<span className="route-flag start" />
 					</Marker>
 				)}
 				{end && (
-					<Marker longitude={end.longitude} latitude={end.latitude}>
-						<span className="route-point end" />
+					<Marker
+						longitude={end.longitude}
+						latitude={end.latitude}
+						anchor="bottom"
+					>
+						<span className="route-flag end" />
 					</Marker>
 				)}
 			</MapView>

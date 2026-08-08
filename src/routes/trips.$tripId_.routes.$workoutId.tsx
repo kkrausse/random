@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, Camera, Route as RouteIcon } from "lucide-react";
+import { ArrowLeft, Camera } from "lucide-react";
 import { memo, useEffect, useMemo, useState } from "react";
 import { TripMap } from "../components/trip-map";
 import type { TripRecord, WorkoutListItem } from "../db/library";
@@ -65,12 +65,6 @@ function WorkoutDetail() {
 				<Link to="/trips/$tripId" params={{ tripId }}>
 					<ArrowLeft size={15} /> {detail.trip.title}
 				</Link>
-				<div>
-					<p className="eyebrow">
-						<RouteIcon size={13} /> Route
-					</p>
-					<h1>{summary.title ?? "Workout route"}</h1>
-				</div>
 				<p>
 					{formatDateTime(summary.startedAt, detail.trip.timeZone)} ·{" "}
 					{formatDistance(summary.distanceMeters)}

@@ -52,13 +52,21 @@ export function RoutePreviewMap({ workout }: { workout: WorkoutWithPoints }) {
 					</Source>
 				)}
 				{start && (
-					<Marker longitude={start.longitude} latitude={start.latitude}>
-						<span className="route-point start" />
+					<Marker
+						longitude={start.longitude}
+						latitude={start.latitude}
+						anchor="bottom"
+					>
+						<span className="route-flag start" />
 					</Marker>
 				)}
 				{end && (
-					<Marker longitude={end.longitude} latitude={end.latitude}>
-						<span className="route-point end" />
+					<Marker
+						longitude={end.longitude}
+						latitude={end.latitude}
+						anchor="bottom"
+					>
+						<span className="route-flag end" />
 					</Marker>
 				)}
 			</MapView>

@@ -104,7 +104,7 @@ body:has(.trips-page), body:has(.trip-detail-page) { overflow: auto; background:
 .trip-settings[open] summary { margin-bottom: 12px; }
 .trip-map-panel { height: min(78vh, 820px); padding: 18px; background: #e8e5de; }
 .trip-map { display: grid; width: 100%; height: 100%; overflow: hidden; border: 1px solid #d0ccc4; border-radius: 12px; box-shadow: 0 12px 35px #26352d16; }
-.trip-map.has-photo { position: relative; display: block; }
+.trip-map.has-photo { position: fixed; z-index: 50; inset: 0; display: block; width: 100vw; height: 100dvh; border: 0; border-radius: 0; box-shadow: none; }
 .trip-map-canvas { width: 100%; height: 100%; min-width: 0; min-height: 0; }
 .trip-map-canvas > .maplibregl-map, .trip-map-overlay > .maplibregl-map { width: 100%; height: 100%; }
 .trip-map-overlay { position: absolute; z-index: 2; bottom: 18px; left: 18px; width: clamp(210px, 22vw, 280px); height: clamp(210px, 22vw, 280px); min-width: 160px; min-height: 160px; max-width: calc(100% - 36px); max-height: calc(100% - 36px); overflow: hidden; resize: both; border: 1px solid #ebe7df; border-radius: 9px; background: #e8e5de; box-shadow: 0 10px 30px #0c110e70; }
@@ -113,9 +113,11 @@ button.media-marker { cursor: pointer; }
 .media-marker.close { width: 42px; height: 42px; overflow: hidden; border-radius: 5px; background: white; }
 .media-marker.selected { outline: 3px solid #f2b13d; outline-offset: 2px; }
 .media-marker img { width: 100%; height: 100%; object-fit: cover; }
-.route-point { display: block; width: 13px; height: 13px; border: 2px solid white; border-radius: 50%; box-shadow: 0 1px 5px #17241d66; }
-.route-point.start { background: #397454; }
-.route-point.end { background: #202a24; box-shadow: inset 0 0 0 2px #e85d36, 0 1px 5px #17241d66; }
+.route-flag { position: relative; display: block; width: 23px; height: 29px; filter: drop-shadow(0 2px 2px #17241d66); }
+.route-flag::before { position: absolute; bottom: 0; left: 3px; width: 3px; height: 28px; border-radius: 2px; background: #f8f6ef; box-shadow: 0 0 0 1px #28342d80; content: ""; }
+.route-flag::after { position: absolute; top: 1px; left: 6px; width: 17px; height: 12px; border: 1px solid #fff; content: ""; }
+.route-flag.start::after { background: #2f9a57; clip-path: polygon(0 0, 100% 14%, 87% 100%, 0 84%); }
+.route-flag.end::after { background: conic-gradient(#202522 25%, #fff 0 50%, #202522 0 75%, #fff 0) 0 0 / 8px 8px; }
 .trip-photo-viewer { position: relative; isolation: isolate; width: 100%; height: 100%; min-width: 0; min-height: 0; background: #171a18; }
 .trip-photo-stage { position: absolute; z-index: 0; inset: 0; overflow: hidden; overscroll-behavior: contain; touch-action: none; }
 .trip-photo-stage.can-pan { cursor: grab; }
@@ -152,10 +154,8 @@ button.media-marker { cursor: pointer; }
 .assigned-workouts span { margin-top: 5px; color: #7c827a; font-size: 10px; }
 .assigned-workout-copy > strong { overflow: hidden; color: #252a25; text-overflow: ellipsis; white-space: nowrap; }
 .assigned-workouts > a > svg { color: #49725b; }
-.route-detail-header { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(260px, 2fr) minmax(140px, 1fr); align-items: center; gap: 24px; padding: 20px clamp(20px, 4vw, 58px); border-bottom: 1px solid #d7d3cc; background: #fbfaf7; }
+.route-detail-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 12px clamp(20px, 4vw, 58px); border-bottom: 1px solid #d7d3cc; background: #fbfaf7; }
 .route-detail-header > a { display: flex; align-items: center; gap: 7px; color: #526258; font-size: 12px; font-weight: 700; text-decoration: none; }
-.route-detail-header h1 { margin: 0; font-family: Georgia, serif; font-size: clamp(27px, 4vw, 44px); font-weight: 400; letter-spacing: -.04em; text-align: center; }
-.route-detail-header .eyebrow { justify-content: center; margin-bottom: 5px; }
 .route-detail-header > p { margin: 0; color: #80857e; font-size: 11px; text-align: right; }
 .route-detail-content { padding-bottom: 48px; }
 .workout-photo-count { color: #7c827a; font-size: 11px; }
@@ -233,7 +233,7 @@ button.media-marker { cursor: pointer; }
 	.trips-page { width: calc(100% - 28px); padding: 38px 0; }.page-header { align-items: flex-start; }.page-header h1 { font-size: 54px; }.page-header > div > p:last-child { max-width: 210px; }
 	.trip-list { grid-template-columns: 1fr; }.new-trip { align-items: stretch; flex-direction: column; }.new-trip > div { justify-content: flex-end; }
 	.trip-detail-header { grid-template-columns: 1fr auto; padding: 15px; }.trip-detail-header > input { grid-column: 1 / -1; grid-row: 2; text-align: left; }.trip-time-zone { grid-column: 1 / -1; grid-row: 3; }.trip-detail-header p { grid-column: 2; grid-row: 1; }
-	.route-detail-header { grid-template-columns: 1fr; gap: 12px; padding: 15px; }.route-detail-header > div { grid-row: 2; }.route-detail-header h1, .route-detail-header .eyebrow, .route-detail-header > p { text-align: left; justify-content: flex-start; }.route-detail-header > p { grid-row: 3; }
+	.route-detail-header { gap: 12px; padding: 11px 15px; }.route-detail-header > p { text-align: right; }
 	.trip-map-panel { height: min(70vh, 680px); padding: 9px; }.trip-content { width: calc(100% - 24px); padding-top: 34px; }.detail-section-heading { align-items: flex-start; flex-direction: column; }
 	.assigned-workouts { grid-template-columns: 1fr; }.assigned-workouts > a { grid-template-columns: 116px minmax(0, 1fr) auto; min-height: 94px; }.route-preview-map { width: 116px; height: 94px; }.media-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }.section-toolbar { align-items: flex-start; }.media-capture-time input { font-size: 8px; }
 	.grouping-controls { align-items: flex-start; flex-direction: column; }.bulk-time-editor { align-items: stretch; flex-wrap: wrap; }.bulk-time-editor select { min-height: 34px; flex-basis: 100%; }.bulk-time-editor label { flex: 1; }.bulk-time-editor input { width: 100%; }

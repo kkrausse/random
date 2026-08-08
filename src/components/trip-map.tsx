@@ -351,13 +351,18 @@ export function TripMap({
 	useEffect(() => {
 		if (!selectedPhoto) return;
 		function handleKeyDown(event: KeyboardEvent) {
+			if (event.key === "Escape") {
+				event.preventDefault();
+				showPhoto(undefined);
+				return;
+			}
 			if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
 			event.preventDefault();
 			navigatePhoto(event.key === "ArrowLeft" ? -1 : 1);
 		}
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [selectedPhoto]);
+	}, [selectedPhoto, showPhoto]);
 	useEffect(() => {
 		for (const index of [selectedPhotoIndex - 1, selectedPhotoIndex + 1]) {
 			const photo = photos[index];
@@ -476,17 +481,17 @@ export function TripMap({
 							key={`${workoutId}-start`}
 							longitude={start.longitude}
 							latitude={start.latitude}
-							anchor="center"
+							anchor="bottom"
 						>
-							<span className="route-point start" />
+							<span className="route-flag start" />
 						</Marker>,
 						<Marker
 							key={`${workoutId}-end`}
 							longitude={end.longitude}
 							latitude={end.latitude}
-							anchor="center"
+							anchor="bottom"
 						>
-							<span className="route-point end" />
+							<span className="route-flag end" />
 						</Marker>,
 					])}
 					{positions.map(({ item, position }) => (
