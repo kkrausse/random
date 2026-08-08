@@ -156,13 +156,32 @@ button.media-marker { cursor: pointer; }
 .route-detail-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 12px clamp(20px, 4vw, 58px); border-bottom: 1px solid #d7d3cc; background: #fbfaf7; }
 .route-detail-header > a { display: flex; align-items: center; gap: 7px; color: #526258; font-size: 12px; font-weight: 700; text-decoration: none; }
 .route-detail-header > p { margin: 0; color: #80857e; font-size: 11px; text-align: right; }
-.route-detail-content { padding-bottom: 48px; }
+.route-detail-page { display: flex; height: 100dvh; min-height: 0; flex-direction: column; overflow: hidden; }
+.route-detail-header { flex: none; }
+.route-view-tabs { display: flex; flex: none; justify-content: center; gap: 4px; padding: 8px; border-bottom: 1px solid #d7d3cc; background: #fbfaf7; }
+.route-view-tabs button { display: flex; min-width: 100px; align-items: center; justify-content: center; gap: 7px; padding: 8px 15px; border: 0; border-radius: 6px; color: #747b74; background: transparent; font-size: 11px; font-weight: 700; cursor: pointer; }
+.route-view-tabs button.active { color: #284333; background: #e5eee8; }
+.route-view-stack { position: relative; min-height: 0; flex: 1; overflow: hidden; }
+.route-view { position: absolute; inset: 0; visibility: hidden; pointer-events: none; }
+.route-view.active, .route-view.is-viewing-photo { visibility: visible; pointer-events: auto; }
+.route-view.route-map-panel { height: auto; padding: 12px; }
+.route-photos-view { overflow-y: auto; overscroll-behavior: contain; background: #f1efe9; }
+.route-photos-content { width: min(1400px, 100%); min-height: 100%; margin: 0 auto; padding: 24px clamp(12px, 3vw, 36px) 60px; }
+.workout-photo-heading-tools { display: flex; align-items: center; gap: 14px; }
 .workout-photo-count { color: #7c827a; font-size: 11px; }
-.workout-photo-browser { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; padding-top: 15px; }
-.workout-photo-browser button { overflow: hidden; padding: 0; border: 2px solid transparent; border-radius: 7px; color: #f8f6f0; text-align: left; background: #242724; cursor: pointer; }
-.workout-photo-browser button.selected { border-color: #e85d36; }
+.gallery-zoom { display: flex; align-items: center; gap: 7px; padding: 0; margin: 0; border: 0; }
+.gallery-zoom button { display: grid; width: 28px; height: 28px; padding: 0; place-items: center; border: 1px solid #d4d0c9; border-radius: 50%; color: #526258; background: #fbfaf7; cursor: pointer; }
+.gallery-zoom button:disabled { opacity: .35; cursor: default; }
+.gallery-zoom input { width: 82px; accent-color: #3d7453; }
+.workout-photo-browser { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 0; padding-top: 15px; }
+.workout-photo-browser[data-zoom="1"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.workout-photo-browser[data-zoom="2"] { grid-template-columns: minmax(0, 1fr); }
+.workout-photo-browser button { position: relative; overflow: hidden; padding: 0; border: 0; border-radius: 0; color: #f8f6f0; text-align: left; background: #242724; cursor: pointer; }
+.workout-photo-browser button.selected { outline: 3px solid #e85d36; outline-offset: -3px; }
 .workout-photo-browser img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; }
-.workout-photo-browser span { display: block; padding: 7px 9px; font-size: 10px; }
+.workout-photo-browser[data-zoom="2"] img { height: auto; aspect-ratio: auto; object-fit: contain; }
+.workout-photo-browser span { position: absolute; right: 7px; bottom: 7px; display: block; padding: 4px 6px; border-radius: 4px; background: #171a18b8; font-size: 9px; opacity: 0; transition: opacity .15s; }
+.workout-photo-browser button:hover span, .workout-photo-browser button:focus-visible span { opacity: 1; }
 .workout-selector { margin-top: 14px; padding: 18px; border: 1px solid #d8d4cd; border-radius: 9px; background: #fbfaf7; }
 .workout-selector-header, .selector-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .workout-selector-header { padding-bottom: 14px; border-bottom: 1px solid #e2ded7; }
