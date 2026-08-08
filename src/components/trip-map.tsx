@@ -47,6 +47,15 @@ export function TripMap({
 		offsetX: number;
 		offsetY: number;
 	}>();
+	const photoPointersRef = useRef(new Map<number, { x: number; y: number }>());
+	const photoPinchRef = useRef<{
+		distance: number;
+		scale: number;
+		centerX: number;
+		centerY: number;
+		offsetX: number;
+		offsetY: number;
+	}>();
 	const mapResizeRef = useRef<{
 		pointerId: number;
 		x: number;
@@ -80,6 +89,15 @@ export function TripMap({
 					}),
 				),
 		}),
+		[workouts],
+	);
+	const routeEndpoints = useMemo(
+		() =>
+			workouts.flatMap((workout) => {
+				const start = workout.points[0];
+				const end = workout.points.at(-1);
+				return start && end ? [{ workoutId: workout.id, start, end }] : [];
+			}),
 		[workouts],
 	);
 	const positions = useMemo(
@@ -151,6 +169,8 @@ export function TripMap({
 		setPhotoZoom(DEFAULT_PHOTO_ZOOM);
 		setIsDraggingPhoto(false);
 		photoDragRef.current = undefined;
+		photoPointersRef.current.clear();
+		photoPinchRef.current = undefined;
 		const frame = requestAnimationFrame(() =>
 			focusSelectedPhoto(selectedPhoto?.id),
 		);
@@ -196,8 +216,25 @@ export function TripMap({
 	});
 
 	function startPhotoDrag(event: ReactPointerEvent<HTMLDivElement>) {
-		if (photoZoom.scale <= 1) return;
 		event.currentTarget.setPointerCapture(event.pointerId);
+		photoPointersRef.current.set(event.pointerId, {
+			x: event.clientX,
+			y: event.clientY,
+		});
+		const pointers = [...photoPointersRef.current.values()];
+		if (pointers.length === 2) {
+			photoPinchRef.current = {
+				distance: pointerDistance(pointers[0], pointers[1]),
+				scale: photoZoom.scale,
+				centerX: (pointers[0].x + pointers[1].x) / 2,
+				centerY: (pointers[0].y + pointers[1].y) / 2,
+				offsetX: photoZoom.offsetX,
+				offsetY: photoZoom.offsetY,
+			};
+			setIsDraggingPhoto(true);
+			return;
+		}
+		if (photoZoom.scale <= 1) return;
 		photoDragRef.current = {
 			pointerId: event.pointerId,
 			x: event.clientX,
@@ -209,6 +246,45 @@ export function TripMap({
 	}
 
 	function dragPhoto(event: ReactPointerEvent<HTMLDivElement>) {
+		if (photoPointersRef.current.has(event.pointerId)) {
+			photoPointersRef.current.set(event.pointerId, {
+				x: event.clientX,
+				y: event.clientY,
+			});
+		}
+		const pinch = photoPinchRef.current;
+		const pointers = [...photoPointersRef.current.values()];
+		if (pinch && pointers.length >= 2) {
+			const bounds = event.currentTarget.getBoundingClientRect();
+			const centerX = (pointers[0].x + pointers[1].x) / 2;
+			const centerY = (pointers[0].y + pointers[1].y) / 2;
+			const scale = Math.min(
+				6,
+				Math.max(
+					1,
+					pinch.scale *
+						(pointerDistance(pointers[0], pointers[1]) / pinch.distance),
+				),
+			);
+			setPhotoZoom(
+				scale === 1
+					? DEFAULT_PHOTO_ZOOM
+					: {
+							scale,
+							offsetX: clampPhotoOffset(
+								pinch.offsetX + centerX - pinch.centerX,
+								bounds.width,
+								scale,
+							),
+							offsetY: clampPhotoOffset(
+								pinch.offsetY + centerY - pinch.centerY,
+								bounds.height,
+								scale,
+							),
+						},
+			);
+			return;
+		}
 		const drag = photoDragRef.current;
 		if (!drag || drag.pointerId !== event.pointerId) return;
 		const bounds = event.currentTarget.getBoundingClientRect();
@@ -228,8 +304,10 @@ export function TripMap({
 	}
 
 	function stopPhotoDrag(event: ReactPointerEvent<HTMLDivElement>) {
-		if (photoDragRef.current?.pointerId !== event.pointerId) return;
-		photoDragRef.current = undefined;
+		photoPointersRef.current.delete(event.pointerId);
+		if (photoPointersRef.current.size < 2) photoPinchRef.current = undefined;
+		if (photoDragRef.current?.pointerId === event.pointerId)
+			photoDragRef.current = undefined;
 		setIsDraggingPhoto(false);
 	}
 
@@ -317,7 +395,7 @@ export function TripMap({
 						onPointerCancel={stopPhotoDrag}
 					>
 						<img
-							src={`/media/${selectedPhoto.id}/viewer`}
+							src={`/media/${selectedPhoto.id}/${photoZoom.scale > 1 ? "max" : "viewer"}`}
 							alt="Selected"
 							draggable={false}
 							style={{
@@ -374,8 +452,43 @@ export function TripMap({
 									"line-opacity": 0.88,
 								}}
 							/>
+							<Layer
+								id="trip-routes-direction"
+								type="symbol"
+								layout={{
+									"symbol-placement": "line",
+									"symbol-spacing": 90,
+									"text-field": ">",
+									"text-size": 18,
+									"text-rotation-alignment": "map",
+									"text-keep-upright": false,
+								}}
+								paint={{
+									"text-color": "#fffaf3",
+									"text-halo-color": "#c74425",
+									"text-halo-width": 1,
+								}}
+							/>
 						</Source>
 					)}
+					{routeEndpoints.flatMap(({ workoutId, start, end }) => [
+						<Marker
+							key={`${workoutId}-start`}
+							longitude={start.longitude}
+							latitude={start.latitude}
+							anchor="center"
+						>
+							<span className="route-point start" />
+						</Marker>,
+						<Marker
+							key={`${workoutId}-end`}
+							longitude={end.longitude}
+							latitude={end.latitude}
+							anchor="center"
+						>
+							<span className="route-point end" />
+						</Marker>,
+					])}
 					{positions.map(({ item, position }) => (
 						<MediaMarker
 							key={item.id}
@@ -446,6 +559,13 @@ const MediaMarker = memo(function MediaMarker({
 function clampPhotoOffset(offset: number, viewportSize: number, scale: number) {
 	const limit = (viewportSize * (scale - 1)) / 2;
 	return Math.min(limit, Math.max(-limit, offset));
+}
+
+function pointerDistance(
+	left: { x: number; y: number },
+	right: { x: number; y: number },
+) {
+	return Math.hypot(right.x - left.x, right.y - left.y) || 1;
 }
 
 function captureTime(media: MediaBrowserItem) {

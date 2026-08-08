@@ -9,12 +9,12 @@ import {
 	Search,
 	Upload,
 } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { MediaBrowser } from "../components/media-browser";
+import { RoutePreviewMap } from "../components/route-preview-map";
 import { TripMap } from "../components/trip-map";
 import { Button } from "../components/ui/button";
 import type { ImportRecord, TripRecord, WorkoutListItem } from "../db/library";
-import { mediaInterpolatesOntoWorkout } from "../media/map-position";
 import type { MediaBrowserItem, WorkoutWithPoints } from "../media/types";
 
 export const Route = createFileRoute("/trips/$tripId")({
@@ -42,31 +42,7 @@ function TripDetail() {
 	const [previewWorkout, setPreviewWorkout] = useState<WorkoutWithPoints>();
 	const [query, setQuery] = useState("");
 	const [showWorkouts, setShowWorkouts] = useState(false);
-	const [selectedWorkoutId, setSelectedWorkoutId] = useState<string>();
-	const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
 	const workoutFile = useRef<HTMLInputElement>(null);
-	const selectedWorkout = useMemo(
-		() =>
-			detail?.workoutsWithPoints.find(
-				(workout) => workout.id === selectedWorkoutId,
-			),
-		[detail, selectedWorkoutId],
-	);
-	const workoutPhotos = useMemo(
-		() =>
-			selectedWorkout
-				? (detail?.media.filter(
-						(item) =>
-							item.kind === "photo" &&
-							mediaInterpolatesOntoWorkout(item, selectedWorkout),
-					) ?? [])
-				: [],
-		[detail?.media, selectedWorkout],
-	);
-	const selectedWorkouts = useMemo(
-		() => (selectedWorkout ? [selectedWorkout] : []),
-		[selectedWorkout],
-	);
 	const load = useCallback(async () => {
 		const response = await fetch(`/api/trips/${tripId}`);
 		if (!response.ok) return;
@@ -74,11 +50,6 @@ function TripDetail() {
 		setDetail(value);
 		setTitle(value.trip.title);
 		setTripTimeZone(value.trip.timeZone ?? "");
-		setSelectedWorkoutId((current) =>
-			value.workoutsWithPoints.some((workout) => workout.id === current)
-				? current
-				: value.workoutsWithPoints[0]?.id,
-		);
 	}, [tripId]);
 	useEffect(() => {
 		void load();
@@ -174,15 +145,24 @@ function TripDetail() {
 					onChange={(event) => setTitle(event.target.value)}
 					onBlur={() => void saveTitle()}
 				/>
-				<label className="trip-time-zone">
-					Local timezone
-					<input
-						list="trip-time-zones"
-						value={tripTimeZone}
-						placeholder="Browser local time"
-						onChange={(event) => setTripTimeZone(event.target.value)}
-						onBlur={() => void saveTripTimeZone()}
-					/>
+				<p>
+					{detail.workouts.length} workout
+					{detail.workouts.length === 1 ? "" : "s"}
+				</p>
+			</header>
+			<div className="trip-content">
+				<details className="trip-settings">
+					<summary>Trip settings</summary>
+					<label className="trip-time-zone">
+						Local timezone
+						<input
+							list="trip-time-zones"
+							value={tripTimeZone}
+							placeholder="Browser local time"
+							onChange={(event) => setTripTimeZone(event.target.value)}
+							onBlur={() => void saveTripTimeZone()}
+						/>
+					</label>
 					<datalist id="trip-time-zones">
 						<option value="America/Los_Angeles" />
 						<option value="America/New_York" />
@@ -191,22 +171,7 @@ function TripDetail() {
 						<option value="Asia/Tokyo" />
 						<option value="UTC" />
 					</datalist>
-				</label>
-				<p>
-					{detail.workouts.length} workout
-					{detail.workouts.length === 1 ? "" : "s"} · {workoutPhotos.length}{" "}
-					photo{workoutPhotos.length === 1 ? "" : "s"} on selected workout
-				</p>
-			</header>
-			<section className="trip-map-panel">
-				<TripMap
-					workouts={selectedWorkouts}
-					media={workoutPhotos}
-					selectedPhotoId={selectedPhotoId}
-					onSelectedPhotoChange={setSelectedPhotoId}
-				/>
-			</section>
-			<div className="trip-content">
+				</details>
 				<section className="detail-section">
 					<div className="detail-section-heading">
 						<div>
@@ -245,23 +210,31 @@ function TripDetail() {
 						</p>
 					) : (
 						<div className="assigned-workouts">
-							{detail.workouts.map((workout) => (
-								<button
-									type="button"
-									className={selectedWorkoutId === workout.id ? "selected" : ""}
-									key={workout.id}
-									onClick={() => {
-										setSelectedWorkoutId(workout.id);
-										setSelectedPhotoId(null);
-									}}
-								>
-									<strong>{workout.title ?? "Workout route"}</strong>
-									<span>
-										{formatDateTime(workout.startedAt, detail.trip.timeZone)} ·{" "}
-										{formatDistance(workout.distanceMeters)}
-									</span>
-								</button>
-							))}
+							{detail.workouts.map((workout) => {
+								const route = detail.workoutsWithPoints.find(
+									(item) => item.id === workout.id,
+								);
+								return (
+									<Link
+										to="/trips/$tripId/routes/$workoutId"
+										params={{ tripId, workoutId: workout.id }}
+										key={workout.id}
+									>
+										{route && <RoutePreviewMap workout={route} />}
+										<span className="assigned-workout-copy">
+											<strong>{workout.title ?? "Workout route"}</strong>
+											<span>
+												{formatDateTime(
+													workout.startedAt,
+													detail.trip.timeZone,
+												)}{" "}
+												· {formatDistance(workout.distanceMeters)}
+											</span>
+										</span>
+										<ChevronRight size={18} />
+									</Link>
+								);
+							})}
 						</div>
 					)}
 					{showWorkouts && (
@@ -404,34 +377,6 @@ function TripDetail() {
 				<section className="detail-section">
 					<div className="detail-section-heading">
 						<div>
-							<p className="eyebrow">Automatically placed</p>
-							<h2>Workout photos</h2>
-						</div>
-						<span className="workout-photo-count">
-							{workoutPhotos.length} photo
-							{workoutPhotos.length === 1 ? "" : "s"}
-						</span>
-					</div>
-					{selectedWorkout ? (
-						workoutPhotos.length ? (
-							<WorkoutPhotoBrowser
-								photos={workoutPhotos}
-								selectedPhotoId={selectedPhotoId}
-								timeZone={detail.trip.timeZone}
-								onSelect={setSelectedPhotoId}
-							/>
-						) : (
-							<p className="section-empty">
-								No library photos fall within this workout's recorded route.
-							</p>
-						)
-					) : (
-						<p className="section-empty">Select or add a workout to begin.</p>
-					)}
-				</section>
-				<section className="detail-section">
-					<div className="detail-section-heading">
-						<div>
 							<p className="eyebrow">Library</p>
 							<h2>Media</h2>
 						</div>
@@ -447,55 +392,6 @@ function TripDetail() {
 	);
 }
 
-function WorkoutPhotoBrowser({
-	photos,
-	selectedPhotoId,
-	timeZone,
-	onSelect,
-}: {
-	photos: MediaBrowserItem[];
-	selectedPhotoId: string | null;
-	timeZone: string | null;
-	onSelect: (id: string) => void;
-}) {
-	return (
-		<div className="workout-photo-browser">
-			{photos.map((photo) => (
-				<WorkoutPhoto
-					key={photo.id}
-					photo={photo}
-					isSelected={selectedPhotoId === photo.id}
-					timeZone={timeZone}
-					onSelect={onSelect}
-				/>
-			))}
-		</div>
-	);
-}
-
-const WorkoutPhoto = memo(function WorkoutPhoto({
-	photo,
-	isSelected,
-	timeZone,
-	onSelect,
-}: {
-	photo: MediaBrowserItem;
-	isSelected: boolean;
-	timeZone: string | null;
-	onSelect: (id: string) => void;
-}) {
-	return (
-		<button
-			type="button"
-			className={isSelected ? "selected" : ""}
-			onClick={() => onSelect(photo.id)}
-		>
-			<img src={photo.previewUrl} alt="" loading="lazy" />
-			<span>{formatPhotoTime(photo.effectiveCapturedAt, timeZone)}</span>
-		</button>
-	);
-});
-
 function formatDistance(meters: number | null) {
 	return meters === null
 		? "Distance unavailable"
@@ -505,14 +401,6 @@ function formatDistance(meters: number | null) {
 function formatDateTime(value: string, timeZone: string | null) {
 	return new Intl.DateTimeFormat(undefined, {
 		dateStyle: "medium",
-		timeStyle: "short",
-		...(timeZone ? { timeZone } : {}),
-	}).format(new Date(value));
-}
-
-function formatPhotoTime(value: string | null, timeZone: string | null) {
-	if (!value) return "Time unavailable";
-	return new Intl.DateTimeFormat(undefined, {
 		timeStyle: "short",
 		...(timeZone ? { timeZone } : {}),
 	}).format(new Date(value));

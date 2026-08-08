@@ -4,6 +4,7 @@ import type { AppConfig } from "../config";
 export type MediaDerivative =
 	| "thumbnail.webp"
 	| "viewer.webp"
+	| "max.webp"
 	| "poster.webp"
 	| "proxy.mp4";
 

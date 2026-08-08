@@ -18,6 +18,7 @@ import { Route as ApiMediaImportsRouteImport } from './routes/api/media/imports'
 import { Route as ApiMediaUploadRouteImport } from './routes/api/media/upload'
 import { Route as ApiTripsTripIdRouteImport } from './routes/api/trips/$tripId'
 import { Route as MediaIdRepresentationRouteImport } from './routes/media/$id/$representation'
+import { Route as TripsTripIdRoutesWorkoutIdRouteImport } from './routes/trips.$tripId_.routes.$workoutId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -64,6 +65,12 @@ const MediaIdRepresentationRoute = MediaIdRepresentationRouteImport.update({
   path: '/media/$id/$representation',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TripsTripIdRoutesWorkoutIdRoute =
+  TripsTripIdRoutesWorkoutIdRouteImport.update({
+    id: '/trips/$tripId_/routes/$workoutId',
+    path: '/trips/$tripId/routes/$workoutId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -75,6 +82,7 @@ export interface FileRoutesByFullPath {
   '/api/media/upload': typeof ApiMediaUploadRoute
   '/api/trips/$tripId': typeof ApiTripsTripIdRoute
   '/media/$id/$representation': typeof MediaIdRepresentationRoute
+  '/trips/$tripId/routes/$workoutId': typeof TripsTripIdRoutesWorkoutIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -86,6 +94,7 @@ export interface FileRoutesByTo {
   '/api/media/upload': typeof ApiMediaUploadRoute
   '/api/trips/$tripId': typeof ApiTripsTripIdRoute
   '/media/$id/$representation': typeof MediaIdRepresentationRoute
+  '/trips/$tripId/routes/$workoutId': typeof TripsTripIdRoutesWorkoutIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -98,6 +107,7 @@ export interface FileRoutesById {
   '/api/media/upload': typeof ApiMediaUploadRoute
   '/api/trips/$tripId': typeof ApiTripsTripIdRoute
   '/media/$id/$representation': typeof MediaIdRepresentationRoute
+  '/trips/$tripId_/routes/$workoutId': typeof TripsTripIdRoutesWorkoutIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -111,6 +121,7 @@ export interface FileRouteTypes {
     | '/api/media/upload'
     | '/api/trips/$tripId'
     | '/media/$id/$representation'
+    | '/trips/$tripId/routes/$workoutId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -122,6 +133,7 @@ export interface FileRouteTypes {
     | '/api/media/upload'
     | '/api/trips/$tripId'
     | '/media/$id/$representation'
+    | '/trips/$tripId/routes/$workoutId'
   id:
     | '__root__'
     | '/'
@@ -133,6 +145,7 @@ export interface FileRouteTypes {
     | '/api/media/upload'
     | '/api/trips/$tripId'
     | '/media/$id/$representation'
+    | '/trips/$tripId_/routes/$workoutId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -142,6 +155,7 @@ export interface RootRouteChildren {
   ApiWorkoutsRoute: typeof ApiWorkoutsRoute
   TripsTripIdRoute: typeof TripsTripIdRoute
   MediaIdRepresentationRoute: typeof MediaIdRepresentationRoute
+  TripsTripIdRoutesWorkoutIdRoute: typeof TripsTripIdRoutesWorkoutIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -209,6 +223,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MediaIdRepresentationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/trips/$tripId_/routes/$workoutId': {
+      id: '/trips/$tripId_/routes/$workoutId'
+      path: '/trips/$tripId/routes/$workoutId'
+      fullPath: '/trips/$tripId/routes/$workoutId'
+      preLoaderRoute: typeof TripsTripIdRoutesWorkoutIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -245,6 +266,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiWorkoutsRoute: ApiWorkoutsRoute,
   TripsTripIdRoute: TripsTripIdRoute,
   MediaIdRepresentationRoute: MediaIdRepresentationRoute,
+  TripsTripIdRoutesWorkoutIdRoute: TripsTripIdRoutesWorkoutIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

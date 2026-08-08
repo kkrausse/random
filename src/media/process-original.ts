@@ -126,6 +126,23 @@ async function getRawSource(originalPath: string) {
 	}
 }
 
+export async function createMaxPhotoDerivative(
+	originalPath: string,
+	outputPath: string,
+) {
+	const { metadata } = await readPhotoCaptureMetadata(originalPath);
+	const isRaw = originalPath.toLowerCase().endsWith(".arw");
+	const source = isRaw ? await getRawSource(originalPath) : originalPath;
+	const image = sharp(source);
+	await (isRaw
+		? applyExifOrientation(image, metadata.Orientation)
+		: image.rotate()
+	)
+		.toColourspace("srgb")
+		.webp({ quality: 92, effort: 4 })
+		.toFile(outputPath);
+}
+
 async function processVideo(
 	originalPath: string,
 	derivedDirectory: string,

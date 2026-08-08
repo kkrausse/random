@@ -102,6 +102,9 @@ describe("TripMap photo navigation", () => {
 			"scale(1)",
 		);
 		expect(stage.classList.contains("can-pan")).toBe(true);
+		expect(screen.getByAltText("Selected").getAttribute("src")).toBe(
+			"/media/first/max",
+		);
 
 		fireEvent.keyDown(window, { key: "ArrowRight" });
 		expect(screen.getByAltText("Selected").getAttribute("src")).toBe(

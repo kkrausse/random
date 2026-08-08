@@ -4,6 +4,7 @@ import MapView, {
 	FullscreenControl,
 	Layer,
 	type MapRef,
+	Marker,
 	NavigationControl,
 	ScaleControl,
 	Source,
@@ -28,6 +29,8 @@ export function RouteMap({ route }: RouteMapProps) {
 	const mapRef = useRef<MapRef>(null);
 	const coordinates: [number, number][] =
 		route?.points.map((point) => [point.longitude, point.latitude]) ?? [];
+	const start = route?.points[0];
+	const end = route?.points.at(-1);
 
 	useEffect(() => {
 		const points = route?.points;
@@ -74,7 +77,34 @@ export function RouteMap({ route }: RouteMapProps) {
 				{routeGeoJson && (
 					<Source id="workout-route-source" type="geojson" data={routeGeoJson}>
 						<Layer {...lineLayer} />
+						<Layer
+							id="workout-route-direction"
+							type="symbol"
+							layout={{
+								"symbol-placement": "line",
+								"symbol-spacing": 90,
+								"text-field": ">",
+								"text-size": 18,
+								"text-rotation-alignment": "map",
+								"text-keep-upright": false,
+							}}
+							paint={{
+								"text-color": "#fff",
+								"text-halo-color": "#c74425",
+								"text-halo-width": 1,
+							}}
+						/>
 					</Source>
+				)}
+				{start && (
+					<Marker longitude={start.longitude} latitude={start.latitude}>
+						<span className="route-point start" />
+					</Marker>
+				)}
+				{end && (
+					<Marker longitude={end.longitude} latitude={end.latitude}>
+						<span className="route-point end" />
+					</Marker>
 				)}
 			</MapView>
 			<div className="map-credit">

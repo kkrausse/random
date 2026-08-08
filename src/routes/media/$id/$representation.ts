@@ -1,5 +1,6 @@
 import { stat } from "node:fs/promises";
 import { createFileRoute } from "@tanstack/react-router";
+import { createMaxPhotoDerivative } from "../../../media/process-original";
 import { getLibrary } from "../../../server/library";
 
 const derivativeRepresentations = new Set([
@@ -8,6 +9,8 @@ const derivativeRepresentations = new Set([
 	"poster",
 	"proxy",
 ]);
+
+const maxPhotoJobs = new Map<string, Promise<void>>();
 
 export const Route = createFileRoute("/media/$id/$representation")({
 	server: {
@@ -27,6 +30,28 @@ export const Route = createFileRoute("/media/$id/$representation")({
 				if (params.representation === "original") {
 					relativePath = media.originalRelativePath;
 					mimeType = media.originalMimeType ?? "application/octet-stream";
+				} else if (params.representation === "max" && media.kind === "photo") {
+					relativePath = `media/derived/${media.id}/max.webp`;
+					mimeType = "image/webp";
+					const outputPath = library.paths.asset(relativePath);
+					const outputInfo = await stat(outputPath).catch(() => null);
+					if (!outputInfo?.isFile()) {
+						let job = maxPhotoJobs.get(media.id);
+						if (!job) {
+							job = createMaxPhotoDerivative(
+								library.paths.asset(media.originalRelativePath),
+								outputPath,
+							).finally(() => maxPhotoJobs.delete(media.id));
+							maxPhotoJobs.set(media.id, job);
+						}
+						try {
+							await job;
+						} catch {
+							return new Response("Could not prepare full-resolution photo", {
+								status: 500,
+							});
+						}
+					}
 				} else if (derivativeRepresentations.has(params.representation)) {
 					const derivative = library.repository.getDerivative(
 						params.id,
