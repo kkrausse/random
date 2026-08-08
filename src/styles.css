@@ -158,15 +158,16 @@ button.media-marker { cursor: pointer; }
 .route-detail-header > p { margin: 0; color: #80857e; font-size: 11px; text-align: right; }
 .route-detail-page { display: flex; height: 100dvh; min-height: 0; flex-direction: column; overflow: hidden; }
 .route-detail-header { flex: none; }
-.route-view-tabs { display: flex; flex: none; justify-content: center; gap: 4px; padding: 8px; border-bottom: 1px solid #d7d3cc; background: #fbfaf7; }
-.route-view-tabs button { display: flex; min-width: 100px; align-items: center; justify-content: center; gap: 7px; padding: 8px 15px; border: 0; border-radius: 6px; color: #747b74; background: transparent; font-size: 11px; font-weight: 700; cursor: pointer; }
+.route-view-tabs { display: flex; flex: none; justify-content: center; gap: 2px; padding: 2px; border: 1px solid #ddd9d2; border-radius: 7px; background: #f1efe9; }
+.route-view-tabs button { display: flex; min-width: 78px; align-items: center; justify-content: center; gap: 6px; padding: 6px 10px; border: 0; border-radius: 5px; color: #747b74; background: transparent; font-size: 10px; font-weight: 700; cursor: pointer; }
 .route-view-tabs button.active { color: #284333; background: #e5eee8; }
 .route-view-stack { position: relative; min-height: 0; flex: 1; overflow: hidden; }
 .route-view { position: absolute; inset: 0; visibility: hidden; pointer-events: none; }
 .route-view.active, .route-view.is-viewing-photo { visibility: visible; pointer-events: auto; }
-.route-view.route-map-panel { height: auto; padding: 12px; }
+.route-view.route-map-panel { height: auto; padding: 0; }
 .route-photos-view { overflow-y: auto; overscroll-behavior: contain; background: #f1efe9; }
-.route-photos-content { width: min(1400px, 100%); min-height: 100%; margin: 0 auto; padding: 24px clamp(12px, 3vw, 36px) 60px; }
+.route-photos-content { width: 100%; min-height: 100%; padding: 0 0 60px; }
+.route-photos-content > .detail-section-heading { margin: 0 clamp(12px, 2vw, 24px); padding-top: 18px; }
 .workout-photo-heading-tools { display: flex; align-items: center; gap: 14px; }
 .workout-photo-count { color: #7c827a; font-size: 11px; }
 .gallery-zoom { display: flex; align-items: center; gap: 7px; padding: 0; margin: 0; border: 0; }

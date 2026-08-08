@@ -7,7 +7,14 @@ import {
 	Minus,
 	Plus,
 } from "lucide-react";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import {
+	memo,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { TripMap } from "../components/trip-map";
 import type { TripRecord, WorkoutListItem } from "../db/library";
 import { mediaInterpolatesOntoWorkout } from "../media/map-position";
@@ -31,6 +38,10 @@ function WorkoutDetail() {
 	const [galleryZoom, setGalleryZoom] = useState(0);
 	const [activeView, setActiveView] = useState<"map" | "photos">("map");
 	const photosViewRef = useRef<HTMLElement>(null);
+	const galleryZoomAnchorRef = useRef<{
+		photoId: string;
+		offsetTop: number;
+	}>();
 
 	useEffect(() => {
 		let active = true;
@@ -57,6 +68,20 @@ function WorkoutDetail() {
 				: [],
 		[detail?.media, workout],
 	);
+	useLayoutEffect(() => {
+		const view = photosViewRef.current;
+		const anchor = galleryZoomAnchorRef.current;
+		galleryZoomAnchorRef.current = undefined;
+		if (!view || !anchor) return;
+		const photo = Array.from(
+			view.querySelectorAll<HTMLElement>("[data-photo-id]"),
+		).find((item) => item.dataset.photoId === anchor.photoId);
+		if (!photo) return;
+		view.scrollTop +=
+			photo.getBoundingClientRect().top -
+			view.getBoundingClientRect().top -
+			anchor.offsetTop;
+	});
 	useEffect(() => {
 		if (!detail) return;
 		const view = photosViewRef.current;
@@ -68,9 +93,12 @@ function WorkoutDetail() {
 		let pinchResetTimer: number | undefined;
 
 		function changeZoom(direction: -1 | 1) {
-			setGalleryZoom((current) =>
-				Math.min(2, Math.max(0, current + direction)),
-			);
+			captureGalleryZoomAnchor(view, galleryZoomAnchorRef);
+			setGalleryZoom((current) => {
+				const next = Math.min(2, Math.max(0, current + direction));
+				if (next === current) galleryZoomAnchorRef.current = undefined;
+				return next;
+			});
 		}
 
 		function handleWheel(event: WheelEvent) {
@@ -141,6 +169,13 @@ function WorkoutDetail() {
 		};
 	}, [detail]);
 
+	function changeGalleryZoom(value: number) {
+		const view = photosViewRef.current;
+		if (!view || value === galleryZoom) return;
+		captureGalleryZoomAnchor(view, galleryZoomAnchorRef);
+		setGalleryZoom(value);
+	}
+
 	if (!detail) return <main className="detail-loading">Opening route...</main>;
 	if (!workout || !summary)
 		return (
@@ -158,29 +193,29 @@ function WorkoutDetail() {
 				<Link to="/trips/$tripId" params={{ tripId }}>
 					<ArrowLeft size={15} /> {detail.trip.title}
 				</Link>
+				<nav className="route-view-tabs" aria-label="Route view">
+					<button
+						type="button"
+						className={activeView === "map" ? "active" : ""}
+						aria-pressed={activeView === "map"}
+						onClick={() => setActiveView("map")}
+					>
+						<MapIcon size={14} /> Map
+					</button>
+					<button
+						type="button"
+						className={activeView === "photos" ? "active" : ""}
+						aria-pressed={activeView === "photos"}
+						onClick={() => setActiveView("photos")}
+					>
+						<Images size={14} /> Photos
+					</button>
+				</nav>
 				<p>
 					{formatDateTime(summary.startedAt, detail.trip.timeZone)} ·{" "}
 					{formatDistance(summary.distanceMeters)}
 				</p>
 			</header>
-			<nav className="route-view-tabs" aria-label="Route view">
-				<button
-					type="button"
-					className={activeView === "map" ? "active" : ""}
-					aria-pressed={activeView === "map"}
-					onClick={() => setActiveView("map")}
-				>
-					<MapIcon size={15} /> Map
-				</button>
-				<button
-					type="button"
-					className={activeView === "photos" ? "active" : ""}
-					aria-pressed={activeView === "photos"}
-					onClick={() => setActiveView("photos")}
-				>
-					<Images size={15} /> Photos
-				</button>
-			</nav>
 			<div className="route-view-stack">
 				<section
 					className={`trip-map-panel route-map-panel route-view ${activeView === "map" ? "active" : ""} ${selectedPhotoId ? "is-viewing-photo" : ""}`}
@@ -216,7 +251,7 @@ function WorkoutDetail() {
 										type="button"
 										aria-label="Zoom gallery out"
 										disabled={galleryZoom === 0}
-										onClick={() => setGalleryZoom((current) => current - 1)}
+										onClick={() => changeGalleryZoom(galleryZoom - 1)}
 									>
 										<Minus size={14} />
 									</button>
@@ -228,14 +263,14 @@ function WorkoutDetail() {
 										value={galleryZoom}
 										aria-label="Gallery size"
 										onChange={(event) =>
-											setGalleryZoom(Number(event.target.value))
+											changeGalleryZoom(Number(event.target.value))
 										}
 									/>
 									<button
 										type="button"
 										aria-label="Zoom gallery in"
 										disabled={galleryZoom === 2}
-										onClick={() => setGalleryZoom((current) => current + 1)}
+										onClick={() => changeGalleryZoom(galleryZoom + 1)}
 									>
 										<Plus size={14} />
 									</button>
@@ -283,6 +318,7 @@ const WorkoutPhoto = memo(function WorkoutPhoto({
 	return (
 		<button
 			type="button"
+			data-photo-id={photo.id}
 			className={isSelected ? "selected" : ""}
 			onClick={() => onSelect(photo.id)}
 		>
@@ -290,6 +326,8 @@ const WorkoutPhoto = memo(function WorkoutPhoto({
 				src={useViewerImage ? `/media/${photo.id}/viewer` : photo.previewUrl}
 				alt=""
 				loading="lazy"
+				width={photo.width ?? undefined}
+				height={photo.height ?? undefined}
 			/>
 			<span>{formatPhotoTime(photo.effectiveCapturedAt, timeZone)}</span>
 		</button>
@@ -325,4 +363,37 @@ function distanceBetweenTouches(touches: TouchList) {
 		second.clientX - first.clientX,
 		second.clientY - first.clientY,
 	);
+}
+
+function captureGalleryZoomAnchor(
+	view: HTMLElement,
+	anchorRef: React.RefObject<
+		{ photoId: string; offsetTop: number } | undefined
+	>,
+) {
+	const viewBounds = view.getBoundingClientRect();
+	const centerY = viewBounds.top + viewBounds.height / 2;
+	const visiblePhotos = Array.from(
+		view.querySelectorAll<HTMLElement>("[data-photo-id]"),
+	).filter((photo) => {
+		const bounds = photo.getBoundingClientRect();
+		return bounds.bottom > viewBounds.top && bounds.top < viewBounds.bottom;
+	});
+	const photo = visiblePhotos.reduce<HTMLElement | undefined>(
+		(closest, item) => {
+			if (!closest) return item;
+			const itemBounds = item.getBoundingClientRect();
+			const closestBounds = closest.getBoundingClientRect();
+			return Math.abs((itemBounds.top + itemBounds.bottom) / 2 - centerY) <
+				Math.abs((closestBounds.top + closestBounds.bottom) / 2 - centerY)
+				? item
+				: closest;
+		},
+		undefined,
+	);
+	if (!photo?.dataset.photoId) return;
+	anchorRef.current = {
+		photoId: photo.dataset.photoId,
+		offsetTop: photo.getBoundingClientRect().top - viewBounds.top,
+	};
 }
