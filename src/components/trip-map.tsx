@@ -39,6 +39,7 @@ export function TripMap({
 }) {
 	const mapRef = useRef<MapRef>(null);
 	const mapContainerRef = useRef<HTMLDivElement>(null);
+	const lastFocusedPhotoIdRef = useRef<string>();
 	const photoStageRef = useRef<HTMLDivElement>(null);
 	const photoDragRef = useRef<{
 		pointerId: number;
@@ -140,6 +141,7 @@ export function TripMap({
 	const selectedPhotoIndex = selectedPhoto
 		? (photoIndexById.get(selectedPhoto.id) ?? -1)
 		: -1;
+	const focusedPhotoId = selectedPhoto?.id;
 	useEffect(() => {
 		fitMap(mapRef.current, workouts, positions);
 	}, [workouts, positions]);
@@ -150,19 +152,17 @@ export function TripMap({
 		observer.observe(mapContainerRef.current);
 		return () => observer.disconnect();
 	}, []);
-	const focusSelectedPhoto = useEffectEvent((photoId: string | undefined) => {
+	const focusSelectedPhoto = useEffectEvent((photoId: string) => {
 		const map = mapRef.current;
 		if (!map) return;
 		map.resize();
-		const position = photoId ? positionById.get(photoId) : undefined;
+		const position = positionById.get(photoId);
 		if (position) {
 			map.easeTo({
 				center: [position.longitude, position.latitude],
 				zoom: Math.max(map.getZoom(), 14),
 				duration: 500,
 			});
-		} else {
-			fitMap(map, workouts, positions);
 		}
 	});
 	useEffect(() => {
@@ -171,11 +171,12 @@ export function TripMap({
 		photoDragRef.current = undefined;
 		photoPointersRef.current.clear();
 		photoPinchRef.current = undefined;
-		const frame = requestAnimationFrame(() =>
-			focusSelectedPhoto(selectedPhoto?.id),
-		);
+		if (focusedPhotoId) lastFocusedPhotoIdRef.current = focusedPhotoId;
+		const photoId = focusedPhotoId ?? lastFocusedPhotoIdRef.current;
+		if (!photoId) return;
+		const frame = requestAnimationFrame(() => focusSelectedPhoto(photoId));
 		return () => cancelAnimationFrame(frame);
-	}, [selectedPhoto?.id]);
+	}, [focusedPhotoId]);
 
 	const isPhotoSelectionControlled = selectedPhotoId !== undefined;
 	const showPhoto = useCallback(

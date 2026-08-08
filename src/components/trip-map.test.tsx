@@ -1,20 +1,45 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
+import {
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
+import { type ReactNode, type Ref, useImperativeHandle } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MediaBrowserItem, WorkoutWithPoints } from "../media/types";
 import { TripMap } from "./trip-map";
 
+const mapApi = vi.hoisted(() => ({
+	resize: vi.fn(),
+	easeTo: vi.fn(),
+	fitBounds: vi.fn(),
+	getZoom: vi.fn(() => 14),
+}));
+
 vi.mock("react-map-gl/maplibre", () => ({
-	default: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+	default: function MockMap({
+		children,
+		ref,
+	}: {
+		children: ReactNode;
+		ref?: Ref<typeof mapApi>;
+	}) {
+		useImperativeHandle(ref, () => mapApi);
+		return <div>{children}</div>;
+	},
 	Layer: () => null,
 	Marker: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 	NavigationControl: () => null,
 	Source: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	vi.clearAllMocks();
+});
 
 const workout: WorkoutWithPoints = {
 	id: "workout",
@@ -47,7 +72,7 @@ function photo(id: string, effectiveCapturedAt: string): MediaBrowserItem {
 }
 
 describe("TripMap photo navigation", () => {
-	it("moves between mapped photos in chronological order", () => {
+	it("moves between mapped photos and restores their map focus", async () => {
 		render(
 			<TripMap
 				workouts={[workout]}
@@ -111,8 +136,18 @@ describe("TripMap photo navigation", () => {
 		expect(screen.getByAltText("Selected").getAttribute("src")).toBe(
 			"/media/first/max",
 		);
+		await waitFor(() => expect(mapApi.easeTo).toHaveBeenCalled());
+		const focusCount = mapApi.easeTo.mock.calls.length;
 		fireEvent.keyDown(window, { key: "Escape" });
 		expect(screen.queryByAltText("Selected")).toBeNull();
+		await waitFor(() =>
+			expect(mapApi.easeTo.mock.calls.length).toBeGreaterThan(focusCount),
+		);
+		expect(mapApi.easeTo).toHaveBeenLastCalledWith({
+			center: [2.2, 1.2],
+			zoom: 14,
+			duration: 500,
+		});
 
 		fireEvent.click(screen.getAllByRole("button", { name: "Open photo" })[1]);
 		fireEvent.keyDown(window, { key: "ArrowRight" });
