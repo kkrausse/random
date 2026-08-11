@@ -411,9 +411,21 @@ actor FingerprintGate {
     func refresh() async { runs = await store.runs() }
     func saveProfile(draft: ServerProfileDraft, password: String) async throws {
         let previousProfile = profile
-        let saved = try draft.profile()
-        let credential = password.isEmpty ? try previousProfile.flatMap { try CredentialStore.password(profileID: $0.id) } : password
-        if let credential, !credential.isEmpty { try CredentialStore.save(credential, profileID: saved.id); hasSavedPassword = true }
+        var saved = try draft.profile()
+        let sameServer = previousProfile.map {
+            $0.host == saved.host && $0.port == saved.port && $0.username == saved.username && $0.domain == saved.domain
+        } ?? false
+        let sameDestinationConnection = previousProfile.map {
+            sameServer && $0.share == saved.share && $0.requiresSigning == saved.requiresSigning
+        } ?? false
+        if let previousProfile, sameDestinationConnection {
+            saved.id = previousProfile.id
+            saved.createdAt = previousProfile.createdAt
+        }
+        let credential = password.isEmpty && sameServer ? try previousProfile.flatMap { try CredentialStore.password(profileID: $0.id) } : password
+        guard let credential, !credential.isEmpty else { throw PicSyncError.passwordRequired }
+        try CredentialStore.save(credential, profileID: saved.id)
+        hasSavedPassword = true
         try await store.save(profile: saved)
         profile = saved
         profiles = await store.profiles()
@@ -451,7 +463,13 @@ actor FingerprintGate {
         let credential = password.isEmpty ? (browserPassword ?? storedCredential) : password
         guard let credential, !credential.isEmpty else { throw PicSyncError.passwordRequired }
         let remote = SMBRemoteFileService()
-        do { try await remote.connect(profile: candidate, password: credential); browserService = remote }
+        do {
+            try await remote.connect(profile: candidate, password: credential)
+            browserPassword = credential
+            connectionVerified = true
+            connectionStatus = "Connected as \(candidate.username). Choose an upload folder."
+            browserService = remote
+        }
         catch {
             #if DEBUG
             print("[PicSync SMB] failed share=\(share) error=\(String(reflecting: error))")
@@ -464,6 +482,15 @@ actor FingerprintGate {
         guard let browserService else { throw URLError(.notConnectedToInternet) }
         do { return try await browserService.listDirectory(path: path) }
         catch { throw SMBBrowseError(path: path, underlying: error) }
+    }
+    func createRemoteDirectory(parentPath: String, name: String) async throws {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != ".", name != "..", !name.contains("/"), !name.contains("\\") else {
+            throw PicSyncError.invalidFolderName
+        }
+        guard let browserService else { throw URLError(.notConnectedToInternet) }
+        let path = [parentPath, name].filter { !$0.isEmpty }.joined(separator: "/")
+        try await browserService.createDirectory(path: path)
     }
     func createRun(items: [PhotosPickerItem], parallelism: Int) async throws -> SyncRun { guard let profile else { throw PicSyncError.invalidServerAddress }; let library = PhotoLibraryService(); try await library.requestAuthorization(); let identifiers = try library.localIdentifiers(for: items); let run = try await coordinator.createRun(itemIdentifiers: identifiers, profile: profile, parallelism: parallelism); runs = await store.runs(); return run }
     func createAlbumRun(_ album: PhotoAlbum, parallelism: Int) async throws -> SyncRun { guard let profile else { throw PicSyncError.invalidServerAddress }; let identifiers = try PhotoLibraryService().assetIdentifiers(forAlbumID: album.id); guard !identifiers.isEmpty else { throw PicSyncError.sourceUnavailable }; let run = try await coordinator.createRun(itemIdentifiers: identifiers, profile: profile, parallelism: parallelism, sourceLabel: album.title); runs = await store.runs(); return run }

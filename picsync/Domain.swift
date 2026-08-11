@@ -90,6 +90,7 @@ enum PicSyncError: LocalizedError, Equatable {
     case passwordInURL
     case photosPermission
     case passwordRequired
+    case invalidFolderName
     case sourceUnavailable
     case unsupportedSMB
     case cancelled
@@ -101,6 +102,7 @@ enum PicSyncError: LocalizedError, Equatable {
         case .passwordInURL: "For security, enter the password only in the Password field."
         case .photosPermission: "PicSync needs Photos access to export originals."
         case .passwordRequired: "Enter the SMB password before testing this server. PicSync will not silently fall back to guest access."
+        case .invalidFolderName: "Enter a folder name without slashes."
         case .sourceUnavailable: "One or more selected photos are no longer available."
         case .unsupportedSMB: "The SMB transport has not been installed in this build."
         case .cancelled: "The sync was cancelled."

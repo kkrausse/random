@@ -123,6 +123,7 @@ private struct ServerProfileView: View {
     @State private var password = ""
     @State private var shares = [String]()
     @State private var isBrowsingShares = false
+    @State private var isBrowsingFolder = false
     @State private var loadedDraft = false
 
     var body: some View {
@@ -149,20 +150,31 @@ private struct ServerProfileView: View {
             Section("Destination") {
                 LabeledContent("Share", value: draft.share.isEmpty ? "Not selected" : draft.share)
                 LabeledContent("Folder", value: draft.destinationPath.isEmpty ? "/" : "/\(draft.destinationPath)")
-                Toggle("Require SMB signing", isOn: $draft.requiresSigning)
-            }
-            Section {
-                Button(model.isTestingConnection ? "Connecting..." : "Connect and Choose Destination") {
+                Button(model.isTestingConnection ? "Connecting..." : "Select Share") {
                     Task {
                         do {
                             shares = try await model.testConnection(draft: draft, password: password)
                             isBrowsingShares = true
+                        } catch {
+                            model.show(error)
                         }
-                        catch { model.show(error) }
                     }
                 }
                 .disabled(!draft.isValid || model.isTestingConnection)
-
+                Button("Select Folder") {
+                    Task {
+                        do {
+                            try await model.openShare(draft.share, draft: draft, password: password)
+                            isBrowsingFolder = true
+                        } catch {
+                            model.show(error)
+                        }
+                    }
+                }
+                .disabled(!draft.isValid || draft.share.isEmpty || model.isTestingConnection)
+                Toggle("Require SMB signing", isOn: $draft.requiresSigning)
+            }
+            Section {
                 if let status = model.connectionStatus {
                     Label(status, systemImage: model.connectionVerified ? "checkmark.circle.fill" : "xmark.circle.fill")
                         .foregroundStyle(model.connectionVerified ? .green : .red)
@@ -181,7 +193,7 @@ private struct ServerProfileView: View {
                 }
                 .disabled(!draft.isValid || !model.connectionVerified || draft.share.isEmpty)
             } footer: {
-                Text("Connect as this user, choose a share, and browse to the existing upload folder. Passwords are saved only in the iOS Keychain. URLs containing a password are rejected.")
+                Text("Select a share, then select or create its upload folder. Passwords are saved only in the iOS Keychain. URLs containing a password are rejected.")
             }
         }
         .navigationTitle("Upload Destination")
@@ -191,38 +203,30 @@ private struct ServerProfileView: View {
             loadedDraft = true
         }
         .navigationDestination(isPresented: $isBrowsingShares) {
-            ShareBrowserView(model: model, draft: $draft, password: password, shares: shares, isBrowsingShares: $isBrowsingShares)
+            ShareBrowserView(draft: $draft, shares: shares, isBrowsingShares: $isBrowsingShares)
+        }
+        .navigationDestination(isPresented: $isBrowsingFolder) {
+            FolderBrowserView(model: model, draft: $draft, path: "", isBrowsingFolder: $isBrowsingFolder)
         }
     }
 }
 
 private struct ShareBrowserView: View {
-    @Bindable var model: AppModel
     @Binding var draft: ServerProfileDraft
-    let password: String
     let shares: [String]
     @Binding var isBrowsingShares: Bool
-    @State private var selectedShare: String?
 
     var body: some View {
         List(shares, id: \.self) { share in
             Button {
-                Task {
-                    do {
-                        try await model.openShare(share, draft: draft, password: password)
-                        draft.share = share
-                        draft.destinationPath = ""
-                        selectedShare = share
-                    } catch { model.show(error) }
-                }
+                if draft.share != share { draft.destinationPath = "" }
+                draft.share = share
+                isBrowsingShares = false
             } label: {
                 Label(share, systemImage: "externaldrive")
             }
         }
         .navigationTitle("Choose Share")
-        .navigationDestination(item: $selectedShare) { _ in
-            FolderBrowserView(model: model, draft: $draft, path: "", isBrowsingShares: $isBrowsingShares)
-        }
     }
 }
 
@@ -230,24 +234,32 @@ private struct FolderBrowserView: View {
     @Bindable var model: AppModel
     @Binding var draft: ServerProfileDraft
     let path: String
-    @Binding var isBrowsingShares: Bool
+    @Binding var isBrowsingFolder: Bool
     @State private var items = [RemoteItem]()
+    @State private var newFolderName = ""
+    @State private var isNamingFolder = false
 
     var body: some View {
         List {
             Section {
                 Button("Use This Folder") {
                     draft.destinationPath = path
-                    isBrowsingShares = false
+                    isBrowsingFolder = false
                 }
                 .buttonStyle(.borderedProminent)
+                Button {
+                    newFolderName = ""
+                    isNamingFolder = true
+                } label: {
+                    Label("New Folder", systemImage: "folder.badge.plus")
+                }
             } footer: {
-                Text(path.isEmpty ? "The root of \\(draft.share)" : "/\(path)")
+                Text(path.isEmpty ? "The root of \(draft.share)" : "/\(path)")
             }
             Section("Folders") {
                 ForEach(items.filter(\.isDirectory)) { item in
                     NavigationLink {
-                        FolderBrowserView(model: model, draft: $draft, path: item.path, isBrowsingShares: $isBrowsingShares)
+                        FolderBrowserView(model: model, draft: $draft, path: item.path, isBrowsingFolder: $isBrowsingFolder)
                     } label: {
                         Label(item.name, systemImage: "folder")
                     }
@@ -256,9 +268,29 @@ private struct FolderBrowserView: View {
         }
         .navigationTitle(path.isEmpty ? draft.share : URL(fileURLWithPath: path).lastPathComponent)
         .task {
-            do { items = try await model.remoteDirectory(path: path) }
-            catch { model.show(error) }
+            await loadItems()
         }
+        .alert("New Folder", isPresented: $isNamingFolder) {
+            TextField("Folder name", text: $newFolderName)
+            Button("Cancel", role: .cancel) {}
+            Button("Create") {
+                Task {
+                    do {
+                        try await model.createRemoteDirectory(parentPath: path, name: newFolderName)
+                        await loadItems()
+                    } catch {
+                        model.show(error)
+                    }
+                }
+            }
+        } message: {
+            Text(path.isEmpty ? "Create a folder in the root of \(draft.share)." : "Create a folder in /\(path).")
+        }
+    }
+
+    private func loadItems() async {
+        do { items = try await model.remoteDirectory(path: path) }
+        catch { model.show(error) }
     }
 }
 
