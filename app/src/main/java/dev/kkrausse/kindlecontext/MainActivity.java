@@ -15,8 +15,11 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.text.Editable;
 import android.text.InputType;
+import android.text.Spannable;
+import android.text.SpannableString;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.text.style.StyleSpan;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -64,6 +67,7 @@ public class MainActivity extends Activity {
     private static final String DEFAULT_MODEL_ID = "laguna-s-2.1-free";
     private static final String DEFAULT_MODEL_VARIANT = "medium";
     private static final int DEFAULT_CONTEXT_WORD_LIMIT = 2_000;
+    private static final int PREVIEW_CONTEXT_WORD_LIMIT = 30;
     private static final String LEGACY_DEFAULT_MESSAGE_TEMPLATE = "SURROUNDING CONTEXT\n\nPREVIOUS PAGE\n"
             + "{{previous_page}}\n\nCURRENT PAGE\n{{current_page}}"
             + "\n\nHIGHLIGHTED PASSAGE\n{{highlight}}"
@@ -71,7 +75,7 @@ public class MainActivity extends Activity {
     private static final String PLAIN_CONTEXT_MESSAGE_TEMPLATE = "SURROUNDING CONTEXT\n\n"
             + "{{surrounding_context}}\n\nHIGHLIGHTED PASSAGE\n{{highlight}}"
             + "\n\nREADER'S QUESTION\n{{question}}";
-    private static final String DEFAULT_MESSAGE_TEMPLATE = "<reading_request>\n"
+    private static final String PREVIOUS_DEFAULT_MESSAGE_TEMPLATE = "<reading_request>\n"
             + "  <source_material>\n"
             + "    <surrounding_context>\n{{surrounding_context}}\n"
             + "    </surrounding_context>\n"
@@ -83,17 +87,35 @@ public class MainActivity extends Activity {
             + "    </reader_question>\n"
             + "  </instructions>\n"
             + "</reading_request>";
+    private static final String DEFAULT_MESSAGE_TEMPLATE = "<reading_request>\n"
+            + "  <source_material>\n"
+            + "    <source>\n"
+            + "      <app>{{source_app}}</app>\n"
+            + "      <title>{{source_title}}</title>\n"
+            + "      <author>{{source_author}}</author>\n"
+            + "    </source>\n"
+            + "    <surrounding_context>\n{{surrounding_context}}\n"
+            + "    </surrounding_context>\n"
+            + "    <highlighted_passage>\n{{highlight}}\n"
+            + "    </highlighted_passage>\n"
+            + "  </source_material>\n"
+            + "  <instructions>\n"
+            + "    <reader_question>\n{{question}}\n"
+            + "    </reader_question>\n"
+            + "  </instructions>\n"
+            + "</reading_request>";
     private static final Pattern TEMPLATE_PLACEHOLDER = Pattern.compile(
-            "\\{\\{(highlight|surrounding_context|previous_page|current_page|question)\\}\\}");
+            "\\{\\{(highlight|surrounding_context|previous_page|current_page|source_app|source_title|source_author|question)\\}\\}");
     private static final Pattern SURROUNDING_CONTEXT_XML = xmlElement("surrounding_context");
     private static final Pattern HIGHLIGHT_XML = xmlElement("highlighted_passage");
     private static final Pattern QUESTION_XML = xmlElement("reader_question");
+    private static final Pattern SOURCE_APP_XML = xmlElement("app");
+    private static final Pattern SOURCE_TITLE_XML = xmlElement("title");
+    private static final Pattern SOURCE_AUTHOR_XML = xmlElement("author");
     private static final Pattern PLAIN_READING_MESSAGE = Pattern.compile(
             "^SURROUNDING CONTEXT\\n\\n(.*?)\\n\\nHIGHLIGHTED PASSAGE\\n(.*?)"
                     + "\\n\\nREADER'S QUESTION\\n(.*)$", Pattern.DOTALL);
-    private static final String CONTEXT_OMISSION_MARKER = "[Earlier captured context omitted.]";
-    private static final String LATER_CONTEXT_OMISSION_MARKER = "[Later captured context omitted.]";
-    private static final Pattern WORD_PATTERN = Pattern.compile("\\S+");
+    private static final Pattern NORMALIZED_WORD_PATTERN = Pattern.compile("[\\p{L}\\p{N}]+");
 
     private static final class PromptPreset {
         String label;
@@ -186,7 +208,6 @@ public class MainActivity extends Activity {
         polling = false;
         beginScreen();
         addTopBar("NEW QUESTION");
-        addTitle("READING CONTEXT");
 
         String enabled = Settings.Secure.getString(
                 getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
@@ -199,9 +220,14 @@ public class MainActivity extends Activity {
         }
 
         String selected = captured(KindleAccessibilityService.SELECTED_TEXT_KEY);
-        String surroundingContext = capturedSurroundingContext();
-        addContext("HIGHLIGHT", selected, "No highlight captured");
-        addContext("SURROUNDING CONTEXT", surroundingContext, "No surrounding context captured");
+        String surroundingContext = capturedSurroundingContext(PREVIEW_CONTEXT_WORD_LIMIT);
+        String sourceTitle = captured(KindleAccessibilityService.SOURCE_TITLE_KEY);
+        String sourceAuthor = captured(KindleAccessibilityService.SOURCE_AUTHOR_KEY);
+        if (!sourceTitle.isEmpty() || !sourceAuthor.isEmpty()) {
+            addContext("SOURCE", String.join("\n", sourceTitle, sourceAuthor).trim(), "");
+        }
+        addContext("SURROUNDING CONTEXT", surroundingContext,
+                "No surrounding context captured", selected);
 
         addSection("ASK");
         for (PromptPreset preset : loadPromptPresets(
@@ -344,7 +370,8 @@ public class MainActivity extends Activity {
         });
         addSection("MESSAGE TEMPLATE");
         TextView templateHelp = label("Available placeholders: {{highlight}}, "
-                + "{{surrounding_context}}, {{question}}", 14, false);
+                + "{{surrounding_context}}, {{source_app}}, {{source_title}}, "
+                + "{{source_author}}, {{question}}", 14, false);
         templateHelp.setPadding(0, 0, 0, dp(6));
         root.addView(templateHelp);
         EditText messageTemplate = input("");
@@ -668,6 +695,15 @@ public class MainActivity extends Activity {
                 case "current_page":
                     value = valueOrNone(captured(KindleAccessibilityService.CURRENT_TEXT_KEY));
                     break;
+                case "source_app":
+                    value = sourceLabel();
+                    break;
+                case "source_title":
+                    value = valueOrUnknown(captured(KindleAccessibilityService.SOURCE_TITLE_KEY));
+                    break;
+                case "source_author":
+                    value = valueOrUnknown(captured(KindleAccessibilityService.SOURCE_AUTHOR_KEY));
+                    break;
                 default:
                     value = question;
                     break;
@@ -685,6 +721,7 @@ public class MainActivity extends Activity {
         String template = preferences.getString(MESSAGE_TEMPLATE_KEY, DEFAULT_MESSAGE_TEMPLATE);
         return LEGACY_DEFAULT_MESSAGE_TEMPLATE.equals(template)
                 || PLAIN_CONTEXT_MESSAGE_TEMPLATE.equals(template)
+                || PREVIOUS_DEFAULT_MESSAGE_TEMPLATE.equals(template)
                 ? DEFAULT_MESSAGE_TEMPLATE : template;
     }
 
@@ -913,9 +950,20 @@ public class MainActivity extends Activity {
     }
 
     private void addContext(String heading, String value, String empty) {
+        addContext(heading, value, empty, "");
+    }
+
+    private void addContext(String heading, String value, String empty, String boldPassage) {
         addSection(heading);
         TextView text = label(value.isEmpty() ? empty : value, 16, false);
-        text.setMaxLines(6);
+        int[] highlightRange = findNormalizedRange(value, boldPassage);
+        if (highlightRange != null) {
+            SpannableString styled = new SpannableString(value);
+            styled.setSpan(new StyleSpan(Typeface.BOLD), highlightRange[0], highlightRange[1],
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+            text.setText(styled);
+        }
+        text.setMaxLines(boldPassage.isEmpty() ? 6 : 8);
         text.setTextColor(value.isEmpty() ? Color.DKGRAY : Color.BLACK);
         text.setBackgroundColor(0xffeeeeee);
         text.setPadding(dp(12), dp(10), dp(12), dp(10));
@@ -961,6 +1009,10 @@ public class MainActivity extends Activity {
             return false;
         }
 
+        String source = sourceDescription(text);
+        if (!source.isEmpty()) {
+            addUserMessageSection("SOURCE", source);
+        }
         addUserMessageSection("QUESTION", question);
         addUserMessageSection("HIGHLIGHT", highlight);
         int contextWords = countWords(context);
@@ -977,6 +1029,18 @@ public class MainActivity extends Activity {
         transcript.addView(toggle);
         transcript.addView(contextView);
         return true;
+    }
+
+    private String sourceDescription(String message) {
+        String app = knownXmlValue(SOURCE_APP_XML, message);
+        String title = knownXmlValue(SOURCE_TITLE_XML, message);
+        String author = knownXmlValue(SOURCE_AUTHOR_XML, message);
+        return String.join("\n", app, title, author).trim();
+    }
+
+    private String knownXmlValue(Pattern pattern, String message) {
+        String value = xmlValue(pattern, message);
+        return value == null || "(unknown)".equals(value) ? "" : value;
     }
 
     private void addUserMessageSection(String heading, String text) {
@@ -1211,6 +1275,12 @@ public class MainActivity extends Activity {
     }
 
     private String capturedSurroundingContext() {
+        SharedPreferences settings = getSharedPreferences(SETTINGS, MODE_PRIVATE);
+        return capturedSurroundingContext(settings.getInt(
+                CONTEXT_WORD_LIMIT_KEY, DEFAULT_CONTEXT_WORD_LIMIT));
+    }
+
+    private String capturedSurroundingContext(int maxWords) {
         SharedPreferences preferences = getSharedPreferences(
                 KindleAccessibilityService.PREFS, MODE_PRIVATE);
         List<String> snapshots = new ArrayList<>();
@@ -1230,10 +1300,9 @@ public class MainActivity extends Activity {
         }
         addSnapshot(snapshots, preferences.getString(
                 KindleAccessibilityService.CURRENT_TEXT_KEY, ""));
-        SharedPreferences settings = getSharedPreferences(SETTINGS, MODE_PRIVATE);
         return contextAroundHighlight(String.join("\n\n", snapshots),
                 captured(KindleAccessibilityService.SELECTED_TEXT_KEY),
-                settings.getInt(CONTEXT_WORD_LIMIT_KEY, DEFAULT_CONTEXT_WORD_LIMIT));
+                maxWords);
     }
 
     private void addSnapshot(List<String> snapshots, String value) {
@@ -1259,20 +1328,20 @@ public class MainActivity extends Activity {
         List<Integer> wordStarts = new ArrayList<>();
         List<Integer> wordEnds = new ArrayList<>();
         List<String> words = new ArrayList<>();
-        Matcher matcher = WORD_PATTERN.matcher(text);
+        Matcher matcher = NORMALIZED_WORD_PATTERN.matcher(text);
         while (matcher.find()) {
             wordStarts.add(matcher.start());
             wordEnds.add(matcher.end());
-            words.add(matcher.group());
+            words.add(matcher.group().toLowerCase(java.util.Locale.ROOT));
         }
         if (words.size() <= maxWords) {
             return text;
         }
 
         List<String> highlightWords = new ArrayList<>();
-        Matcher highlightMatcher = WORD_PATTERN.matcher(highlight);
+        Matcher highlightMatcher = NORMALIZED_WORD_PATTERN.matcher(highlight);
         while (highlightMatcher.find()) {
-            highlightWords.add(highlightMatcher.group());
+            highlightWords.add(highlightMatcher.group().toLowerCase(java.util.Locale.ROOT));
         }
         int highlightStart = findLastWordSequence(words, highlightWords);
         int start;
@@ -1288,12 +1357,36 @@ public class MainActivity extends Activity {
         int end = start + maxWords;
         String result = text.substring(wordStarts.get(start), wordEnds.get(end - 1));
         if (start > 0) {
-            result = CONTEXT_OMISSION_MARKER + "\n\n" + result;
+            result = "[" + start + " earlier words omitted.]\n\n" + result;
         }
         if (end < words.size()) {
-            result += "\n\n" + LATER_CONTEXT_OMISSION_MARKER;
+            result += "\n\n[" + (words.size() - end) + " later words omitted.]";
         }
         return result;
+    }
+
+    private int[] findNormalizedRange(String text, String passage) {
+        if (text.isEmpty() || passage.isEmpty()) {
+            return null;
+        }
+        List<String> words = new ArrayList<>();
+        List<Integer> starts = new ArrayList<>();
+        List<Integer> ends = new ArrayList<>();
+        Matcher textMatcher = NORMALIZED_WORD_PATTERN.matcher(text);
+        while (textMatcher.find()) {
+            words.add(textMatcher.group().toLowerCase(java.util.Locale.ROOT));
+            starts.add(textMatcher.start());
+            ends.add(textMatcher.end());
+        }
+        List<String> passageWords = new ArrayList<>();
+        Matcher passageMatcher = NORMALIZED_WORD_PATTERN.matcher(passage);
+        while (passageMatcher.find()) {
+            passageWords.add(passageMatcher.group().toLowerCase(java.util.Locale.ROOT));
+        }
+        int start = findLastWordSequence(words, passageWords);
+        return start < 0 ? null : new int[] {
+                starts.get(start), ends.get(start + passageWords.size() - 1)
+        };
     }
 
     private int findLastWordSequence(List<String> words, List<String> sequence) {
@@ -1439,6 +1532,10 @@ public class MainActivity extends Activity {
 
     private String valueOrNone(String value) {
         return value.isEmpty() ? "(none captured)" : value;
+    }
+
+    private String valueOrUnknown(String value) {
+        return value.isEmpty() ? "(unknown)" : value;
     }
 
     private void acceptSharedText(Intent intent) {

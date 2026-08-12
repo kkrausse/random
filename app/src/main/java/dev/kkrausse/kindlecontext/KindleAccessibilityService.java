@@ -35,6 +35,8 @@ public class KindleAccessibilityService extends AccessibilityService {
     public static final String EVENT_KEY = "latest_event";
     public static final String SOURCE_PACKAGE_KEY = "source_package_v1";
     public static final String SOURCE_LABEL_KEY = "source_label_v1";
+    public static final String SOURCE_TITLE_KEY = "source_title_v1";
+    public static final String SOURCE_AUTHOR_KEY = "source_author_v1";
     public static final String READ_CLIPBOARD_EXTRA = "read_clipboard";
 
     private static final String TAG = "KindleContext";
@@ -81,6 +83,11 @@ public class KindleAccessibilityService extends AccessibilityService {
     private AccessibilityNodeInfo pendingCopyAction;
     private String pendingCopyPackage;
 
+    private static final class MetadataCandidate {
+        String title = "";
+        String author = "";
+    }
+
     @Override
     protected void onServiceConnected() {
         migrateCapturedProse();
@@ -121,6 +128,7 @@ public class KindleAccessibilityService extends AccessibilityService {
                 + " description=" + event.getContentDescription();
         Log.i(TAG, eventDescription);
         cacheCopyAction(event, source);
+        cacheSourceMetadata(event, source);
         appendEventDump(event);
         getSharedPreferences(PREFS, MODE_PRIVATE)
                 .edit()
@@ -266,6 +274,29 @@ public class KindleAccessibilityService extends AccessibilityService {
         pendingCopyPackage = null;
     }
 
+    private void cacheSourceMetadata(AccessibilityEvent event, ReadingSource source) {
+        if (!KINDLE_PACKAGE.equals(source.packageName)
+                || event.getEventType() != AccessibilityEvent.TYPE_VIEW_CLICKED) {
+            return;
+        }
+        AccessibilityNodeInfo node = event.getSource();
+        String viewId = node == null ? null : node.getViewIdResourceName();
+        if (viewId == null || !(viewId.endsWith("/badgeable_cover")
+                || viewId.endsWith("/book_in_bottom_bar"))) {
+            return;
+        }
+        SourceMetadata metadata = SourceMetadata.fromKindleDescription(
+                node.getContentDescription() == null ? null : node.getContentDescription().toString());
+        if (metadata.title.isEmpty()) {
+            return;
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putString("pending_source_title_v1", metadata.title)
+                .putString("pending_source_author_v1", metadata.author)
+                .apply();
+        Log.i(TAG, "Captured Kindle metadata for " + metadata.title);
+    }
+
     private AccessibilityNodeInfo findAction(AccessibilityNodeInfo node, String name) {
         CharSequence description = node.getContentDescription();
         CharSequence text = node.getText();
@@ -409,7 +440,8 @@ public class KindleAccessibilityService extends AccessibilityService {
     private void captureCurrentTree() {
         AccessibilityNodeInfo root = getRootInActiveWindow();
         ReadingSource source = sourceFor(root == null ? null : root.getPackageName());
-        if (source == null) {
+        if (source == null || KINDLE_PACKAGE.equals(source.packageName)
+                && !containsViewId(root, "/reader_view_bookmark_container")) {
             return;
         }
 
@@ -419,6 +451,8 @@ public class KindleAccessibilityService extends AccessibilityService {
                 getResources().getDisplayMetrics().widthPixels,
                 getResources().getDisplayMetrics().heightPixels);
         int nodeCount = collectText(root, pieces, screenBounds);
+        MetadataCandidate metadata = new MetadataCandidate();
+        collectMetadata(root, source, metadata);
         String text = String.join("\n\n", pieces).trim();
         if (!looksLikeProse(text)) {
             Log.i(TAG, "No " + source.label + " prose; inspected " + text.length()
@@ -429,12 +463,15 @@ public class KindleAccessibilityService extends AccessibilityService {
         SharedPreferences preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
         String current = preferences.getString(CURRENT_TEXT_KEY, "");
         if (text.equals(current)) {
+            saveMetadata(preferences, metadata, false);
             return;
         }
 
         JSONArray history = loadPageHistory(preferences);
+        boolean selectedNewSource = !preferences.getString(
+                "pending_source_title_v1", "").isEmpty();
         boolean continuous = !looksLikeProse(current)
-                || SnapshotContinuity.overlaps(current, text);
+                || !selectedNewSource && SnapshotContinuity.overlaps(current, text);
         if (!continuous) {
             history = new JSONArray();
             Log.i(TAG, "Started a new " + source.label
@@ -458,7 +495,81 @@ public class KindleAccessibilityService extends AccessibilityService {
                 .putString(HISTORY_TEXT_KEY, history.toString())
                 .putString(CURRENT_TEXT_KEY, text)
                 .apply();
+        saveMetadata(preferences, metadata, !continuous || !looksLikeProse(current));
         Log.i(TAG, "Captured " + text.length() + " characters from " + nodeCount + " nodes");
+    }
+
+    private boolean containsViewId(AccessibilityNodeInfo node, String suffix) {
+        String viewId = node.getViewIdResourceName();
+        if (viewId != null && viewId.endsWith(suffix)) {
+            return true;
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child != null && containsViewId(child, suffix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void collectMetadata(AccessibilityNodeInfo node, ReadingSource source,
+            MetadataCandidate candidate) {
+        CharSequence nodeText = node.getText();
+        String text = nodeText == null ? "" : nodeText.toString().trim();
+        String viewId = node.getViewIdResourceName();
+        String id = viewId == null ? "" : viewId.toLowerCase(java.util.Locale.ROOT);
+        if (candidate.title.isEmpty() && plausibleMetadata(text)
+                && (id.contains("article_title") || id.contains("post_title")
+                || id.contains("story_title"))) {
+            candidate.title = text;
+        }
+        if (candidate.author.isEmpty() && plausibleMetadata(text)
+                && (id.contains("author") || id.contains("byline"))) {
+            candidate.author = text.replaceFirst("(?i)^by\\s+", "");
+        }
+        if (SUBSTACK_PACKAGE.equals(source.packageName)) {
+            if (plausibleMetadata(text) && node.isHeading()
+                    && text.length() > candidate.title.length()) {
+                candidate.title = text;
+            }
+            if (candidate.author.isEmpty() && text.matches("(?i)^by\\s+.{2,100}$")) {
+                candidate.author = text.substring(3).trim();
+            }
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child != null) {
+                collectMetadata(child, source, candidate);
+            }
+        }
+    }
+
+    private boolean plausibleMetadata(String text) {
+        return !text.isEmpty() && text.length() <= 300 && countWords(text) <= 40;
+    }
+
+    private void saveMetadata(SharedPreferences preferences, MetadataCandidate candidate,
+            boolean newChain) {
+        String pendingTitle = preferences.getString("pending_source_title_v1", "");
+        String pendingAuthor = preferences.getString("pending_source_author_v1", "");
+        String title = !pendingTitle.isEmpty() ? pendingTitle : candidate.title;
+        String author = !pendingTitle.isEmpty() ? pendingAuthor : candidate.author;
+        SharedPreferences.Editor editor = preferences.edit();
+        if (newChain) {
+            editor.putString(SOURCE_TITLE_KEY, title)
+                    .putString(SOURCE_AUTHOR_KEY, author)
+                    .remove("pending_source_title_v1")
+                    .remove("pending_source_author_v1");
+        } else {
+            if (!candidate.title.isEmpty()) {
+                editor.putString(SOURCE_TITLE_KEY, candidate.title);
+            }
+            if (!candidate.author.isEmpty()) {
+                editor.putString(SOURCE_AUTHOR_KEY, candidate.author);
+            }
+        }
+        editor.apply();
     }
 
     private JSONArray loadPageHistory(SharedPreferences preferences) {
@@ -548,7 +659,11 @@ public class KindleAccessibilityService extends AccessibilityService {
             editor.putString(CURRENT_TEXT_KEY, "")
                     .putString(PREVIOUS_TEXT_KEY, "")
                     .putString(HISTORY_TEXT_KEY, "[]")
-                    .putString(SELECTED_TEXT_KEY, "");
+                    .putString(SELECTED_TEXT_KEY, "")
+                    .putString(SOURCE_TITLE_KEY, "")
+                    .putString(SOURCE_AUTHOR_KEY, "")
+                    .remove("pending_source_title_v1")
+                    .remove("pending_source_author_v1");
         }
         editor.apply();
     }
