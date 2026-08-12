@@ -1244,8 +1244,11 @@ public class MainActivity extends Activity {
         if (!snapshots.isEmpty()) {
             int lastIndex = snapshots.size() - 1;
             String previous = snapshots.get(lastIndex);
-            if (text.contains(previous) || previous.contains(text)) {
+            if (text.contains(previous)) {
                 snapshots.set(lastIndex, text);
+                return;
+            }
+            if (previous.contains(text)) {
                 return;
             }
         }

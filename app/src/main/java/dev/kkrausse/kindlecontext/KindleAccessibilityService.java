@@ -433,7 +433,13 @@ public class KindleAccessibilityService extends AccessibilityService {
         }
 
         JSONArray history = loadPageHistory(preferences);
-        if (looksLikeProse(current)
+        boolean continuous = !looksLikeProse(current)
+                || SnapshotContinuity.overlaps(current, text);
+        if (!continuous) {
+            history = new JSONArray();
+            Log.i(TAG, "Started a new " + source.label
+                    + " context chain because the prose did not overlap");
+        } else if (looksLikeProse(current)
                 && (history.length() == 0
                 || !current.equals(history.optString(history.length() - 1)))) {
             history.put(current);
@@ -448,7 +454,7 @@ public class KindleAccessibilityService extends AccessibilityService {
             history.remove(0);
         }
         preferences.edit()
-                .putString(PREVIOUS_TEXT_KEY, current)
+                .putString(PREVIOUS_TEXT_KEY, continuous ? current : "")
                 .putString(HISTORY_TEXT_KEY, history.toString())
                 .putString(CURRENT_TEXT_KEY, text)
                 .apply();
