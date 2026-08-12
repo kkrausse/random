@@ -35,29 +35,33 @@ public class Connection {
   }
 
   public func connect() async throws {
-    return try await withCheckedThrowingContinuation { (continuation) in
-      connection.stateUpdateHandler = { (state) in
-        switch state {
-        case .setup, .preparing:
-          break
-        case .waiting(let error):
-          continuation.resume(throwing: error)
-          self.connection.stateUpdateHandler = nil
-        case .ready:
-          continuation.resume()
-          self.connection.stateUpdateHandler = stateUpdateHandler
-        case .failed(let error):
-          continuation.resume(throwing: error)
-          self.connection.stateUpdateHandler = nil
-        case .cancelled:
-          continuation.resume(throwing: ConnectionError.cancelled)
-          self.connection.stateUpdateHandler = nil
-        @unknown default:
-          break
+    return try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { (continuation) in
+        connection.stateUpdateHandler = { (state) in
+          switch state {
+          case .setup, .preparing:
+            break
+          case .waiting(let error):
+            continuation.resume(throwing: error)
+            self.connection.stateUpdateHandler = nil
+          case .ready:
+            continuation.resume()
+            self.connection.stateUpdateHandler = stateUpdateHandler
+          case .failed(let error):
+            continuation.resume(throwing: error)
+            self.connection.stateUpdateHandler = nil
+          case .cancelled:
+            continuation.resume(throwing: ConnectionError.cancelled)
+            self.connection.stateUpdateHandler = nil
+          @unknown default:
+            break
+          }
         }
-      }
 
-      connection.start(queue: .global(qos: .userInitiated))
+        connection.start(queue: .global(qos: .userInitiated))
+      }
+    } onCancel: {
+      connection.cancel()
     }
 
     @Sendable
@@ -78,42 +82,46 @@ public class Connection {
   }
 
   public func send(_ data: Data) async throws -> Data {
-    await semaphore.wait()
-    defer { Task { await semaphore.signal() } }
+    try await withTaskCancellationHandler {
+      await semaphore.wait()
+      defer { Task { await semaphore.signal() } }
 
-    switch connection.state {
-    case .setup:
-      try await connect()
-    case .waiting(let error), .failed(let error):
-      onDisconnected(error)
-      throw error
-    case .preparing, .ready:
-      break
-    case .cancelled:
-      throw ConnectionError.cancelled
-    @unknown default:
-      throw ConnectionError.unknown
-    }
+      switch connection.state {
+      case .setup:
+        try await connect()
+      case .waiting(let error), .failed(let error):
+        onDisconnected(error)
+        throw error
+      case .preparing, .ready:
+        break
+      case .cancelled:
+        throw ConnectionError.cancelled
+      @unknown default:
+        throw ConnectionError.unknown
+      }
 
-    let transportPacket = DirectTCPPacket(smb2Message: data)
-    let content = transportPacket.encoded()
+      let transportPacket = DirectTCPPacket(smb2Message: data)
+      let content = transportPacket.encoded()
 
-    return try await withCheckedThrowingContinuation { (continuation) in
-      connection.send(content: content, completion: .contentProcessed() { (error) in
-        if let error {
-          continuation.resume(throwing: error)
-          return
-        }
-
-        self.receive() { (result) in
-          switch result {
-          case .success(let data):
-            continuation.resume(returning: data)
-          case .failure(let error):
+      return try await withCheckedThrowingContinuation { (continuation) in
+        connection.send(content: content, completion: .contentProcessed() { (error) in
+          if let error {
             continuation.resume(throwing: error)
+            return
           }
-        }
-      })
+
+          self.receive() { (result) in
+            switch result {
+            case .success(let data):
+              continuation.resume(returning: data)
+            case .failure(let error):
+              continuation.resume(throwing: error)
+            }
+          }
+        })
+      }
+    } onCancel: {
+      connection.cancel()
     }
   }
 

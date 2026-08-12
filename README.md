@@ -4,8 +4,8 @@ PicSync is an iPhone and iPad app for copying selected Photos originals to an SM
 
 ## Current workflow
 
-1. On the home screen, choose **Upload Destination**.
-2. Enter the server address, port, user, password, and optional domain/workgroup.
+1. On the home screen, choose **Upload Destination**, then select a saved destination or add one.
+2. Enter the server address, port, user, password, and optional domain/workgroup for a new destination.
 3. Select **Select Share**, then choose a server share.
 4. Select **Select Folder**, browse or create folders, and select **Use This Folder**.
 5. Select **Save Destination**. The full destination profile is persisted and the app opens photo selection.
@@ -24,7 +24,7 @@ The home screen shows the saved server, share, folder, password-storage status, 
 
 ## SMB destination behavior
 
-- Connection profiles store host, port, username, optional domain, share, and folder in the local journal.
+- Multiple connection profiles can be saved and selected. Profiles store host, port, username, optional domain, share, and folder in the local journal.
 - Passwords are stored in the iOS Keychain, not in the journal. A saved password is intentionally not rendered back into the form.
 - Destination selection is browse-first: the app lists shares, then folders. It does not require manually entering a share or destination path.
 - Share and folder selection are separate operations, and folders can be created from the folder browser.

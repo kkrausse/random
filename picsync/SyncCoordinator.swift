@@ -362,6 +362,30 @@ actor FingerprintGate {
     }
 }
 
+enum ConnectionTestError: LocalizedError {
+    case timedOut
+
+    var errorDescription: String? {
+        "The server did not respond within 10 seconds. Check the address and make sure SMB is available on this network."
+    }
+}
+
+func withConnectionTestTimeout<T: Sendable>(
+    after duration: Duration = .seconds(10),
+    _ operation: @escaping @Sendable () async throws -> T
+) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask { try await operation() }
+        group.addTask {
+            try await Task.sleep(for: duration)
+            throw ConnectionTestError.timedOut
+        }
+        defer { group.cancelAll() }
+        guard let result = try await group.next() else { throw CancellationError() }
+        return result
+    }
+}
+
 @MainActor @Observable final class AppModel {
     private let store: SyncStore
     private let coordinator: SyncCoordinator
@@ -400,7 +424,9 @@ actor FingerprintGate {
         do {
             try await store.load()
             profiles = await store.profiles()
-            profile = profiles.first
+            let activeProfileID = await store.activeProfileID()
+            profile = profiles.first { $0.id == activeProfileID } ?? profiles.first
+            if let profile, activeProfileID != profile.id { try await store.selectProfile(profile.id) }
             runs = await store.runs()
             if let profile { hasSavedPassword = (try CredentialStore.password(profileID: profile.id)) != nil }
         } catch {
@@ -409,8 +435,18 @@ actor FingerprintGate {
         }
     }
     func refresh() async { runs = await store.runs() }
-    func saveProfile(draft: ServerProfileDraft, password: String) async throws {
-        let previousProfile = profile
+    func selectProfile(_ selected: ServerProfile) async {
+        do {
+            try await store.selectProfile(selected.id)
+            profile = selected
+            hasSavedPassword = (try CredentialStore.password(profileID: selected.id)) != nil
+        } catch { show(error) }
+    }
+    func savedPasswordExists(for editedProfile: ServerProfile?) -> Bool {
+        guard let editedProfile else { return false }
+        return (try? CredentialStore.password(profileID: editedProfile.id)) != nil
+    }
+    func saveProfile(draft: ServerProfileDraft, password: String, editing previousProfile: ServerProfile?) async throws {
         var saved = try draft.profile()
         let sameServer = previousProfile.map {
             $0.host == saved.host && $0.port == saved.port && $0.username == saved.username && $0.domain == saved.domain
@@ -427,23 +463,36 @@ actor FingerprintGate {
         try CredentialStore.save(credential, profileID: saved.id)
         hasSavedPassword = true
         try await store.save(profile: saved)
+        try await store.selectProfile(saved.id)
         profile = saved
         profiles = await store.profiles()
     }
     func resetConnectionVerification() { connectionVerified = false; connectionStatus = nil }
-    func testConnection(draft: ServerProfileDraft, password: String) async throws -> [String] {
+    func resetProfileEditor() async {
+        await browserService?.disconnect()
+        browserService = nil
+        browserPassword = nil
+        resetConnectionVerification()
+    }
+    func testConnection(draft: ServerProfileDraft, password: String, editing previousProfile: ServerProfile?) async throws -> [String] {
         isTestingConnection = true
         connectionVerified = false
         connectionStatus = nil
         defer { isTestingConnection = false }
-        var candidate = try draft.profile(reusing: profile?.id)
+        var candidate = try draft.profile(reusing: previousProfile?.id)
         candidate.share = ""
-        let credential = password.isEmpty ? try CredentialStore.password(profileID: candidate.id) : password
+        let connectionProfile = candidate
+        let sameServer = previousProfile.map {
+            $0.host == candidate.host && $0.port == candidate.port && $0.username == candidate.username && $0.domain == candidate.domain
+        } ?? false
+        let credential = password.isEmpty && sameServer ? try previousProfile.flatMap { try CredentialStore.password(profileID: $0.id) } : password
         guard let credential, !credential.isEmpty else { throw PicSyncError.passwordRequired }
         let remote = SMBRemoteFileService()
         do {
-            try await remote.connect(profile: candidate, password: credential)
-            let shares = try await remote.listShares()
+            let shares = try await withConnectionTestTimeout {
+                try await remote.connect(profile: connectionProfile, password: credential)
+                return try await remote.listShares()
+            }
             await remote.disconnect()
             browserPassword = credential
             connectionVerified = true
@@ -455,11 +504,14 @@ actor FingerprintGate {
             throw error
         }
     }
-    func openShare(_ share: String, draft: ServerProfileDraft, password: String) async throws {
+    func openShare(_ share: String, draft: ServerProfileDraft, password: String, editing previousProfile: ServerProfile?) async throws {
         await browserService?.disconnect()
-        var candidate = try draft.profile(reusing: profile?.id)
+        var candidate = try draft.profile(reusing: previousProfile?.id)
         candidate.share = share
-        let storedCredential = try CredentialStore.password(profileID: candidate.id)
+        let sameServer = previousProfile.map {
+            $0.host == candidate.host && $0.port == candidate.port && $0.username == candidate.username && $0.domain == candidate.domain
+        } ?? false
+        let storedCredential = sameServer ? try previousProfile.flatMap { try CredentialStore.password(profileID: $0.id) } : nil
         let credential = password.isEmpty ? (browserPassword ?? storedCredential) : password
         guard let credential, !credential.isEmpty else { throw PicSyncError.passwordRequired }
         let remote = SMBRemoteFileService()

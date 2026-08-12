@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 actor SyncStore {
-    private struct Snapshot: Codable { var profiles: [ServerProfile] = []; var runs: [SyncRun] = []; var transfers: [AssetTransfer] = [] }
+    private struct Snapshot: Codable { var profiles: [ServerProfile] = []; var activeProfileID: UUID?; var runs: [SyncRun] = []; var transfers: [AssetTransfer] = [] }
     private let url: URL
     private var snapshot = Snapshot()
 
@@ -13,13 +13,21 @@ actor SyncStore {
         url = base.appendingPathComponent("journal.json")
     }
 
+    init(url: URL) { self.url = url }
+
     func load() throws { if FileManager.default.fileExists(atPath: url.path) { snapshot = try JSONDecoder().decode(Snapshot.self, from: Data(contentsOf: url)) }; recoverInterruptedRuns(); try save() }
     func profiles() -> [ServerProfile] { snapshot.profiles.sorted { $0.updatedAt > $1.updatedAt } }
+    func activeProfileID() -> UUID? { snapshot.activeProfileID }
     func runs() -> [SyncRun] { snapshot.runs.sorted { $0.updatedAt > $1.updatedAt } }
     func run(_ id: UUID) -> SyncRun? { snapshot.runs.first { $0.id == id } }
     func transfers(for runID: UUID) -> [AssetTransfer] { snapshot.transfers.filter { $0.runID == runID } }
 
     func save(profile: ServerProfile) throws { snapshot.profiles.removeAll { $0.id == profile.id }; snapshot.profiles.append(profile); try save() }
+    func selectProfile(_ id: UUID) throws {
+        guard snapshot.profiles.contains(where: { $0.id == id }) else { return }
+        snapshot.activeProfileID = id
+        try save()
+    }
     func save(run: SyncRun, transfers: [AssetTransfer]? = nil) throws { snapshot.runs.removeAll { $0.id == run.id }; snapshot.runs.append(run); if let transfers { snapshot.transfers.removeAll { $0.runID == run.id }; snapshot.transfers.append(contentsOf: transfers) }; try save() }
     func save(transfer: AssetTransfer) throws { snapshot.transfers.removeAll { $0.id == transfer.id }; snapshot.transfers.append(transfer); try save() }
     func deleteRun(_ runID: UUID) throws {

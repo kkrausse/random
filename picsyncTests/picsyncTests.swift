@@ -57,4 +57,42 @@ struct picsyncTests {
         #expect(Set(identifiers).count == transfers.count)
         #expect(Set(identifiers) == Set(transfers.map(\.localIdentifier)))
     }
+
+    @Test func connectionTestTimesOut() async {
+        await #expect(throws: ConnectionTestError.self) {
+            try await withConnectionTestTimeout(after: .milliseconds(10)) {
+                try await Task.sleep(for: .seconds(1))
+                return true
+            }
+        }
+    }
+
+    @Test func loadsExistingJournalAndPersistsSelectedDestination() async throws {
+        struct LegacySnapshot: Codable {
+            var profiles: [ServerProfile]
+            var runs: [SyncRun] = []
+            var transfers: [AssetTransfer] = []
+        }
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let first = profile(host: "100.64.0.1", updatedAt: Date(timeIntervalSince1970: 1))
+        let second = profile(host: "192.168.1.207", updatedAt: Date(timeIntervalSince1970: 2))
+        try JSONEncoder().encode(LegacySnapshot(profiles: [first, second])).write(to: url)
+
+        let store = SyncStore(url: url)
+        try await store.load()
+        #expect(await store.profiles().map(\.id) == [second.id, first.id])
+        #expect(await store.activeProfileID() == nil)
+
+        try await store.selectProfile(first.id)
+        let reloaded = SyncStore(url: url)
+        try await reloaded.load()
+        #expect(await reloaded.activeProfileID() == first.id)
+        #expect(await reloaded.profiles().count == 2)
+    }
+
+    private func profile(host: String, updatedAt: Date) -> ServerProfile {
+        ServerProfile(id: UUID(), displayName: host, host: host, port: 445, username: "iphone", domain: nil, share: "Photos", destinationPath: "Uploads", requiresSigning: false, createdAt: updatedAt, updatedAt: updatedAt)
+    }
 }

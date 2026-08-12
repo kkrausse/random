@@ -9,7 +9,7 @@ struct ContentView: View {
             List {
                 Section {
                     NavigationLink {
-                        ServerProfileView(model: model)
+                        DestinationsView(model: model)
                     } label: {
                         Label(model.profile == nil ? "Choose Upload Destination" : "Upload Destination", systemImage: "externaldrive.connected.to.line.below")
                     }
@@ -39,19 +39,6 @@ struct ContentView: View {
                         }
                     } else {
                         Text("No upload destination saved.").foregroundStyle(.secondary)
-                    }
-                }
-
-                if model.profiles.count > 1 {
-                    Section("Other Saved Destinations") {
-                        ForEach(model.profiles.dropFirst()) { profile in
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(profile.displayName)
-                                Text("\\\(profile.share)/\(profile.destinationPath)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
                     }
                 }
 
@@ -102,6 +89,62 @@ struct ContentView: View {
     }
 }
 
+private struct DestinationsView: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        List {
+            if model.profiles.isEmpty {
+                ContentUnavailableView("No Destinations", systemImage: "externaldrive.badge.plus", description: Text("Add an SMB server and upload folder."))
+            } else {
+                Section {
+                    ForEach(model.profiles) { profile in
+                        HStack(spacing: 12) {
+                            Button {
+                                Task { await model.selectProfile(profile) }
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(profile.displayName).foregroundStyle(.primary)
+                                        Text("\\\(profile.share)\(profile.destinationPath.isEmpty ? "" : "/\(profile.destinationPath)")")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if model.profile?.id == profile.id {
+                                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.tint)
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+
+                            NavigationLink {
+                                ServerProfileView(model: model, profile: profile)
+                            } label: {
+                                Image(systemName: "pencil").accessibilityLabel("Edit \(profile.displayName)")
+                            }
+                            .fixedSize()
+                        }
+                    }
+                } footer: {
+                    Text("Tap a destination to use it for new syncs. Existing runs keep their original destination.")
+                }
+            }
+        }
+        .navigationTitle("Destinations")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink {
+                    ServerProfileView(model: model, profile: nil)
+                } label: {
+                    Label("Add Destination", systemImage: "plus")
+                }
+            }
+        }
+    }
+}
+
 private struct RunRow: View {
     let run: SyncRun
 
@@ -119,12 +162,23 @@ private struct RunRow: View {
 private struct ServerProfileView: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var model: AppModel
-    @State private var draft = ServerProfileDraft()
+    let profile: ServerProfile?
+    @State private var draft: ServerProfileDraft
     @State private var password = ""
+    @State private var hasSavedPassword = false
     @State private var shares = [String]()
     @State private var isBrowsingShares = false
     @State private var isBrowsingFolder = false
-    @State private var loadedDraft = false
+
+    init(model: AppModel, profile: ServerProfile?) {
+        self.model = model
+        self.profile = profile
+        _draft = State(initialValue: ServerProfileDraft(profile))
+    }
+
+    private var connectionFields: String {
+        [draft.host, String(draft.port), draft.username, draft.domain, String(draft.requiresSigning)].joined(separator: "\u{0}")
+    }
 
     var body: some View {
         Form {
@@ -138,7 +192,7 @@ private struct ServerProfileView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 SecureField("Password", text: $password)
-                if model.hasSavedPassword {
+                if hasSavedPassword {
                     Text("A password is saved securely. Enter a new value only to replace it.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -153,7 +207,7 @@ private struct ServerProfileView: View {
                 Button(model.isTestingConnection ? "Connecting..." : "Select Share") {
                     Task {
                         do {
-                            shares = try await model.testConnection(draft: draft, password: password)
+                            shares = try await model.testConnection(draft: draft, password: password, editing: profile)
                             isBrowsingShares = true
                         } catch {
                             model.show(error)
@@ -164,7 +218,7 @@ private struct ServerProfileView: View {
                 Button("Select Folder") {
                     Task {
                         do {
-                            try await model.openShare(draft.share, draft: draft, password: password)
+                            try await model.openShare(draft.share, draft: draft, password: password, editing: profile)
                             isBrowsingFolder = true
                         } catch {
                             model.show(error)
@@ -183,9 +237,8 @@ private struct ServerProfileView: View {
                 Button("Save Destination") {
                     Task {
                         do {
-                            try await model.saveProfile(draft: draft, password: password)
+                            try await model.saveProfile(draft: draft, password: password, editing: profile)
                             dismiss()
-                            model.presentsPhotoSelection = true
                         } catch {
                             model.show(error)
                         }
@@ -196,12 +249,13 @@ private struct ServerProfileView: View {
                 Text("Select a share, then select or create its upload folder. Passwords are saved only in the iOS Keychain. URLs containing a password are rejected.")
             }
         }
-        .navigationTitle("Upload Destination")
-        .onAppear {
-            guard !loadedDraft else { return }
-            draft = ServerProfileDraft(model.profile)
-            loadedDraft = true
+        .navigationTitle(profile == nil ? "Add Destination" : "Edit Destination")
+        .task {
+            hasSavedPassword = model.savedPasswordExists(for: profile)
+            await model.resetProfileEditor()
         }
+        .onChange(of: connectionFields) { _, _ in model.resetConnectionVerification() }
+        .onChange(of: password) { _, _ in model.resetConnectionVerification() }
         .navigationDestination(isPresented: $isBrowsingShares) {
             ShareBrowserView(draft: $draft, shares: shares, isBrowsingShares: $isBrowsingShares)
         }

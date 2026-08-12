@@ -15,7 +15,7 @@ struct ServerProfile: Codable, Identifiable, Equatable, Sendable {
     var updatedAt: Date
 }
 
-struct ServerProfileDraft {
+struct ServerProfileDraft: Equatable {
     var host = ""
     var port = 445
     var username = ""
