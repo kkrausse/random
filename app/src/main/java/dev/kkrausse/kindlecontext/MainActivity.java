@@ -207,7 +207,7 @@ public class MainActivity extends Activity {
     private void showCapture() {
         polling = false;
         beginScreen();
-        addTopBar("NEW QUESTION");
+        addTopBar("");
 
         String enabled = Settings.Secure.getString(
                 getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
@@ -220,7 +220,8 @@ public class MainActivity extends Activity {
         }
 
         String selected = captured(KindleAccessibilityService.SELECTED_TEXT_KEY);
-        String surroundingContext = capturedSurroundingContext(PREVIEW_CONTEXT_WORD_LIMIT);
+        String surroundingContext = capturedSurroundingContext(PREVIEW_CONTEXT_WORD_LIMIT)
+                .replaceAll("\\s+", " ").trim();
         String sourceTitle = captured(KindleAccessibilityService.SOURCE_TITLE_KEY);
         String sourceAuthor = captured(KindleAccessibilityService.SOURCE_AUTHOR_KEY);
         if (!sourceTitle.isEmpty() || !sourceAuthor.isEmpty()) {
@@ -930,6 +931,9 @@ public class MainActivity extends Activity {
         settings.setOnClickListener(v -> showSettings());
         bar.addView(settings, new LinearLayout.LayoutParams(0, dp(48), 1));
         toolbar.addView(bar);
+        if (heading.isEmpty()) {
+            return;
+        }
         TextView title = label(heading, 15, true);
         title.setGravity(Gravity.CENTER);
         title.setPadding(0, dp(5), 0, dp(7));
@@ -955,10 +959,15 @@ public class MainActivity extends Activity {
 
     private void addContext(String heading, String value, String empty, String boldPassage) {
         addSection(heading);
-        TextView text = label(value.isEmpty() ? empty : value, 16, false);
+        String displayed = value.isEmpty() ? empty : value;
         int[] highlightRange = findNormalizedRange(value, boldPassage);
+        if (!value.isEmpty() && !boldPassage.isEmpty() && highlightRange == null) {
+            String warning = "[Highlight not found in captured context; showing latest captured words.]\n\n";
+            displayed = warning + value;
+        }
+        TextView text = label(displayed, 16, false);
         if (highlightRange != null) {
-            SpannableString styled = new SpannableString(value);
+            SpannableString styled = new SpannableString(displayed);
             styled.setSpan(new StyleSpan(Typeface.BOLD), highlightRange[0], highlightRange[1],
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
             text.setText(styled);
