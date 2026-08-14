@@ -11,6 +11,8 @@ class Mq24View extends WatchUi.WatchFace {
 
     private var _awake = true;
     private var _background;
+    private var _dialLogo;
+    private var _waterResist;
     private var _fullRefresh = true;
 
     public function initialize() {
@@ -22,6 +24,8 @@ class Mq24View extends WatchUi.WatchFace {
             :width => dc.getWidth(),
             :height => dc.getHeight()
         }).get();
+        _dialLogo = WatchUi.loadResource(Rez.Drawables.DialLogo);
+        _waterResist = WatchUi.loadResource(Rez.Drawables.WaterResist);
     }
 
     public function onUpdate(dc as Dc) as Void {
@@ -90,15 +94,14 @@ class Mq24View extends WatchUi.WatchFace {
         }
 
         if (_awake) {
-            dc.setColor(INK_COLOR, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(cx, cy - 91, Graphics.FONT_TINY, "CASIO", Graphics.TEXT_JUSTIFY_CENTER);
-            dc.drawText(cx, cy - 67, Graphics.FONT_XTINY, "QUARTZ", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawBitmap(cx - 35, cy - 84, _dialLogo);
+            dc.drawBitmap(cx - 31, cy + 75, _waterResist);
         }
 
         var hour = ((time.hour % 12) + time.min / 60.0) / 12.0;
         var minute = (time.min + time.sec / 60.0) / 60.0;
-        drawHand(dc, hour, radius * 0.47, radius * 0.08, 12);
-        drawPointedHand(dc, minute, radius * 0.77, radius * 0.10, 8);
+        drawHand(dc, hour, radius * 0.47, radius * 0.08, 9);
+        drawTaperedHand(dc, minute, radius * 0.84, radius * 0.09, 7);
 
         dc.setColor(_awake ? INK_COLOR : Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
         dc.fillCircle(cx, cy, 8);
@@ -120,18 +123,20 @@ class Mq24View extends WatchUi.WatchFace {
         );
     }
 
-    private function drawPointedHand(dc as Dc, fraction as Float, length as Numeric, tail as Numeric, width as Number) as Void {
+    private function drawTaperedHand(dc as Dc, fraction as Float, length as Numeric, tail as Numeric, width as Number) as Void {
         var cx = dc.getWidth() / 2;
         var cy = dc.getHeight() / 2;
         var angle = fraction * Math.PI * 2 - Math.PI / 2;
         var cos = Math.cos(angle);
         var sin = Math.sin(angle);
         var halfWidth = width / 2.0;
+        var tipWidth = 2.5;
 
         dc.fillPolygon([
             [cx - tail * cos, cy - tail * sin],
             [cx - halfWidth * sin, cy + halfWidth * cos],
-            [cx + length * cos, cy + length * sin],
+            [cx + length * cos - tipWidth * sin, cy + length * sin + tipWidth * cos],
+            [cx + length * cos + tipWidth * sin, cy + length * sin - tipWidth * cos],
             [cx + halfWidth * sin, cy - halfWidth * cos]
         ]);
     }
