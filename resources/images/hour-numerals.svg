@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="340" height="340" viewBox="0 0 340 340">
+  <g fill="#151515" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" text-anchor="middle">
+    <text x="170" y="32">12</text>
+    <text x="244" y="52">1</text>
+    <text x="298" y="106">2</text>
+    <text x="318" y="180">3</text>
+    <text x="298" y="254">4</text>
+    <text x="244" y="308">5</text>
+    <text x="170" y="328">6</text>
+    <text x="96" y="308">7</text>
+    <text x="42" y="254">8</text>
+    <text x="22" y="180">9</text>
+    <text x="42" y="106">10</text>
+    <text x="96" y="52">11</text>
+  </g>
+</svg>

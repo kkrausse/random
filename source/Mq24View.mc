@@ -5,14 +5,15 @@ import Toybox.System;
 import Toybox.WatchUi;
 
 class Mq24View extends WatchUi.WatchFace {
-    private const DIAL_COLOR = 0xfff8df;
+    private const DIAL_COLOR = 0xfbfaf5;
     private const INK_COLOR = 0x151515;
-    private const SECOND_COLOR = 0xc62026;
 
     private var _awake = true;
     private var _background;
+    private var _hourNumerals;
     private var _dialLogo;
     private var _waterResist;
+    private var _modelText;
     private var _fullRefresh = true;
 
     public function initialize() {
@@ -24,8 +25,10 @@ class Mq24View extends WatchUi.WatchFace {
             :width => dc.getWidth(),
             :height => dc.getHeight()
         }).get();
+        _hourNumerals = WatchUi.loadResource(Rez.Drawables.HourNumerals);
         _dialLogo = WatchUi.loadResource(Rez.Drawables.DialLogo);
         _waterResist = WatchUi.loadResource(Rez.Drawables.WaterResist);
+        _modelText = WatchUi.loadResource(Rez.Drawables.ModelText);
     }
 
     public function onUpdate(dc as Dc) as Void {
@@ -82,9 +85,9 @@ class Mq24View extends WatchUi.WatchFace {
         for (var minute = 0; minute < 60; minute++) {
             var major = (minute % 5) == 0;
             var angle = (minute / 60.0) * Math.PI * 2 - Math.PI / 2;
-            var outer = radius - 15;
-            var inner = outer - (major ? 18 : 8);
-            dc.setPenWidth(major ? 5 : 2);
+            var outer = radius - 14;
+            var inner = outer - (major ? 12 : 7);
+            dc.setPenWidth(major ? 4 : 2);
             dc.drawLine(
                 cx + inner * Math.cos(angle),
                 cy + inner * Math.sin(angle),
@@ -94,17 +97,19 @@ class Mq24View extends WatchUi.WatchFace {
         }
 
         if (_awake) {
-            dc.drawBitmap(cx - 35, cy - 84, _dialLogo);
-            dc.drawBitmap(cx - 31, cy + 75, _waterResist);
+            dc.drawBitmap(cx - 170, cy - 170, _hourNumerals);
+            dc.drawBitmap(cx - 34, cy - 106, _dialLogo);
+            dc.drawBitmap(cx - 30, cy + 92, _waterResist);
+            dc.drawBitmap(cx - 38, cy + 164, _modelText);
         }
 
         var hour = ((time.hour % 12) + time.min / 60.0) / 12.0;
         var minute = (time.min + time.sec / 60.0) / 60.0;
-        drawHand(dc, hour, radius * 0.47, radius * 0.08, 9);
-        drawTaperedHand(dc, minute, radius * 0.84, radius * 0.09, 7);
+        drawHand(dc, hour, radius * 0.49, radius * 0.03, 9);
+        drawTaperedHand(dc, minute, radius * 0.76, radius * 0.03, 5);
 
         dc.setColor(_awake ? INK_COLOR : Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
-        dc.fillCircle(cx, cy, 8);
+        dc.fillCircle(cx, cy, 7);
     }
 
     private function drawHand(dc as Dc, fraction as Float, length as Numeric, tail as Numeric, width as Number) as Void {
@@ -150,14 +155,16 @@ class Mq24View extends WatchUi.WatchFace {
         var cos = Math.cos(angle);
         var sin = Math.sin(angle);
 
-        dc.setColor(SECOND_COLOR, Graphics.COLOR_TRANSPARENT);
-        dc.setPenWidth(2);
+        dc.setColor(INK_COLOR, Graphics.COLOR_TRANSPARENT);
+        dc.setPenWidth(1);
         dc.drawLine(
-            cx - radius * 0.14 * cos,
-            cy - radius * 0.14 * sin,
-            cx + radius * 0.75 * cos,
-            cy + radius * 0.75 * sin
+            cx - radius * 0.13 * cos,
+            cy - radius * 0.13 * sin,
+            cx + radius * 0.76 * cos,
+            cy + radius * 0.76 * sin
         );
-        dc.fillCircle(cx, cy, 4);
+        dc.fillCircle(cx, cy, 7);
+        dc.setColor(0x686868, Graphics.COLOR_TRANSPARENT);
+        dc.fillCircle(cx, cy, 3);
     }
 }
