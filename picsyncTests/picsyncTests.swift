@@ -29,6 +29,11 @@ struct picsyncTests {
         #expect(!PhotoResourceSelector.includes(type: .adjustmentData))
     }
 
+    @Test func rejectsSharedAlbumCopiesAsOriginals() {
+        #expect(PhotoLibraryService.originalResourcesAvailable(for: .typeUserLibrary))
+        #expect(!PhotoLibraryService.originalResourcesAvailable(for: .typeCloudShared))
+    }
+
     @Test func hashesFilesInChunks() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: url) }

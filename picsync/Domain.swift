@@ -91,6 +91,7 @@ enum PicSyncError: LocalizedError, Equatable {
     case sourceUnavailable
     case pickerIdentifierUnavailable
     case photoAssetUnavailable
+    case sharedAlbumOriginalUnavailable
     case unsupportedSMB
     case cancelled
     case runActive
@@ -106,6 +107,7 @@ enum PicSyncError: LocalizedError, Equatable {
         case .sourceUnavailable: "One or more selected photos are no longer available."
         case .pickerIdentifierUnavailable: "PicSync could not access one or more selected photos. Go back, confirm Photos access in Settings, and select the photos again."
         case .photoAssetUnavailable: "A selected photo could not be found in the Photos library. It may have been deleted or excluded from limited Photos access."
+        case .sharedAlbumOriginalUnavailable: "Shared Albums contain reduced copies, not the original photos and videos. Add the full-quality source files to your personal library, then select them there."
         case .unsupportedSMB: "The SMB transport has not been installed in this build."
         case .cancelled: "The sync was cancelled."
         case .runActive: "Pause this sync and wait for its active workers to finish before deleting it."

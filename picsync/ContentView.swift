@@ -486,7 +486,9 @@ private struct AlbumPickerView: View {
                     Image(systemName: album.isSmartAlbum ? "sparkles" : "rectangle.stack")
                     VStack(alignment: .leading) {
                         Text(album.title).foregroundStyle(.primary)
-                        Text("\(album.count) items").font(.caption).foregroundStyle(.secondary)
+                        Text(album.isCloudShared ? "Shared Album - reduced copies only" : "\(album.count) items")
+                            .font(.caption)
+                            .foregroundStyle(album.isCloudShared ? .orange : .secondary)
                     }
                     Spacer()
                     Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
@@ -520,7 +522,13 @@ private struct AlbumReviewView: View {
             Section("Source") {
                 LabeledContent("Album", value: album.title)
                 LabeledContent("Snapshot", value: "\(album.count) current items")
-                Text("The album is snapshotted when you start. Later album changes do not alter this sync.").font(.footnote).foregroundStyle(.secondary)
+                if album.isCloudShared {
+                    Text("Apple Shared Albums contain reduced copies: photos are limited to about 2048 pixels and videos to 720p. PicSync cannot recover the originals from this album. Add the original files to your personal library first.")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                } else {
+                    Text("The album is snapshotted when you start. Later album changes do not alter this sync.").font(.footnote).foregroundStyle(.secondary)
+                }
             }
             destinationSection
             Section("Transfer") { LabeledContent("Parallel transfers", value: "\(model.parallelism)") }
@@ -537,7 +545,7 @@ private struct AlbumReviewView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(isStarting || !hasSelectedFolder)
+                .disabled(isStarting || !hasSelectedFolder || album.isCloudShared)
             }
         }
         .navigationTitle("Review Album")

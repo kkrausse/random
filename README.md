@@ -20,6 +20,7 @@ The home screen shows the saved server, share, password-storage status, and the 
 - Album selection lists user and smart PhotoKit albums, then snapshots the current asset identifiers when the run is created.
 - Export uses `PHAssetResourceManager` with iCloud network access enabled.
 - The original-resource policy includes `.photo`, `.video`, `.audio`, `.pairedVideo`, and `.alternatePhoto` resources. It excludes rendered/edit resources such as `.fullSizePhoto`.
+- iCloud Shared Albums are marked as reduced-copy sources and cannot be synced as originals. Apple limits their photos to about 2048 pixels and videos to 720p; full-quality files must come from a personal or shared Photos library instead.
 
 ## SMB destination behavior
 

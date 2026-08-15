@@ -14,6 +14,7 @@ struct PhotoAlbum: Identifiable, Hashable, Sendable {
     let title: String
     let count: Int
     let isSmartAlbum: Bool
+    let isCloudShared: Bool
 }
 
 enum PhotoResourceSelector {
@@ -43,6 +44,10 @@ enum PhotoResourceSelector {
 }
 
 struct PhotoLibraryService {
+    static func originalResourcesAvailable(for sourceType: PHAssetSourceType) -> Bool {
+        !sourceType.contains(.typeCloudShared)
+    }
+
     func requestAuthorization() async throws {
         let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
         guard status == .authorized || status == .limited else { throw PicSyncError.photosPermission }
@@ -54,7 +59,20 @@ struct PhotoLibraryService {
             AppLog.write("[Photos] asset identifier no longer resolves identifier=\(localIdentifier)")
             throw PicSyncError.photoAssetUnavailable
         }
+        guard Self.originalResourcesAvailable(for: asset.sourceType) else { throw PicSyncError.sharedAlbumOriginalUnavailable }
         return asset
+    }
+
+    func validateOriginalAvailability(for localIdentifiers: [String]) throws {
+        let assets = PHAsset.fetchAssets(withLocalIdentifiers: localIdentifiers, options: nil)
+        var containsCloudSharedAsset = false
+        assets.enumerateObjects { asset, _, stop in
+            if !Self.originalResourcesAvailable(for: asset.sourceType) {
+                containsCloudSharedAsset = true
+                stop.pointee = true
+            }
+        }
+        guard !containsCloudSharedAsset else { throw PicSyncError.sharedAlbumOriginalUnavailable }
     }
 
     func albums() throws -> [PhotoAlbum] {
@@ -76,7 +94,15 @@ struct PhotoLibraryService {
         var albums = [PhotoAlbum]()
         result.enumerateObjects { collection, _, _ in
             let count = PHAsset.fetchAssets(in: collection, options: nil).count
-            if count > 0 { albums.append(PhotoAlbum(id: collection.localIdentifier, title: collection.localizedTitle ?? "Untitled Album", count: count, isSmartAlbum: isSmartAlbum)) }
+            if count > 0 {
+                albums.append(PhotoAlbum(
+                    id: collection.localIdentifier,
+                    title: collection.localizedTitle ?? "Untitled Album",
+                    count: count,
+                    isSmartAlbum: isSmartAlbum,
+                    isCloudShared: collection.assetCollectionSubtype == .albumCloudShared
+                ))
+            }
         }
         return albums.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
