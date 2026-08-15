@@ -106,7 +106,7 @@ class Mq24View extends WatchUi.WatchFace {
         var hour = ((time.hour % 12) + time.min / 60.0) / 12.0;
         var minute = (time.min + time.sec / 60.0) / 60.0;
         drawHand(dc, hour, radius * 0.49, radius * 0.03, 7);
-        drawRoundedHand(dc, minute, radius * 0.82, radius * 0.03, 4);
+        drawRoundedHand(dc, minute, radius * 0.84, radius * 0.03, 4);
 
         dc.setColor(_awake ? INK_COLOR : Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
         dc.fillCircle(cx, cy, 7);
