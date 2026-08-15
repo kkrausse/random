@@ -5,7 +5,7 @@ import Toybox.System;
 import Toybox.WatchUi;
 
 class Mq24View extends WatchUi.WatchFace {
-    private const DIAL_COLOR = 0xfbfaf5;
+    private const DIAL_COLOR = 0xffffff;
     private const INK_COLOR = 0x151515;
 
     private var _awake = true;
@@ -86,8 +86,8 @@ class Mq24View extends WatchUi.WatchFace {
             var major = (minute % 5) == 0;
             var angle = (minute / 60.0) * Math.PI * 2 - Math.PI / 2;
             var outer = radius - 14;
-            var inner = outer - (major ? 12 : 7);
-            dc.setPenWidth(major ? 4 : 2);
+            var inner = outer - (major ? 11 : 7);
+            dc.setPenWidth(major ? 3 : 1);
             dc.drawLine(
                 cx + inner * Math.cos(angle),
                 cy + inner * Math.sin(angle),
@@ -98,15 +98,15 @@ class Mq24View extends WatchUi.WatchFace {
 
         if (_awake) {
             dc.drawBitmap(cx - 170, cy - 170, _hourNumerals);
-            dc.drawBitmap(cx - 34, cy - 106, _dialLogo);
-            dc.drawBitmap(cx - 30, cy + 92, _waterResist);
-            dc.drawBitmap(cx - 38, cy + 164, _modelText);
+            dc.drawBitmap(cx - 48, cy - 112, _dialLogo);
+            dc.drawBitmap(cx - 42, cy + 88, _waterResist);
+            dc.drawBitmap(cx - 41, cy + 181, _modelText);
         }
 
         var hour = ((time.hour % 12) + time.min / 60.0) / 12.0;
         var minute = (time.min + time.sec / 60.0) / 60.0;
-        drawHand(dc, hour, radius * 0.49, radius * 0.03, 9);
-        drawTaperedHand(dc, minute, radius * 0.76, radius * 0.03, 5);
+        drawHand(dc, hour, radius * 0.49, radius * 0.03, 7);
+        drawTaperedHand(dc, minute, radius * 0.82, radius * 0.03, 4);
 
         dc.setColor(_awake ? INK_COLOR : Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
         dc.fillCircle(cx, cy, 7);
@@ -135,13 +135,14 @@ class Mq24View extends WatchUi.WatchFace {
         var cos = Math.cos(angle);
         var sin = Math.sin(angle);
         var halfWidth = width / 2.0;
-        var tipWidth = 2.5;
+        var tipBase = length - 6;
 
         dc.fillPolygon([
             [cx - tail * cos, cy - tail * sin],
             [cx - halfWidth * sin, cy + halfWidth * cos],
-            [cx + length * cos - tipWidth * sin, cy + length * sin + tipWidth * cos],
-            [cx + length * cos + tipWidth * sin, cy + length * sin - tipWidth * cos],
+            [cx + tipBase * cos - halfWidth * sin, cy + tipBase * sin + halfWidth * cos],
+            [cx + length * cos, cy + length * sin],
+            [cx + tipBase * cos + halfWidth * sin, cy + tipBase * sin - halfWidth * cos],
             [cx + halfWidth * sin, cy - halfWidth * cos]
         ]);
     }
