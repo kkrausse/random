@@ -106,7 +106,7 @@ class Mq24View extends WatchUi.WatchFace {
         var hour = ((time.hour % 12) + time.min / 60.0) / 12.0;
         var minute = (time.min + time.sec / 60.0) / 60.0;
         drawHand(dc, hour, radius * 0.49, radius * 0.03, 7);
-        drawTaperedHand(dc, minute, radius * 0.82, radius * 0.03, 4);
+        drawRoundedHand(dc, minute, radius * 0.82, radius * 0.03, 4);
 
         dc.setColor(_awake ? INK_COLOR : Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
         dc.fillCircle(cx, cy, 7);
@@ -128,23 +128,23 @@ class Mq24View extends WatchUi.WatchFace {
         );
     }
 
-    private function drawTaperedHand(dc as Dc, fraction as Float, length as Numeric, tail as Numeric, width as Number) as Void {
+    private function drawRoundedHand(dc as Dc, fraction as Float, length as Numeric, tail as Numeric, width as Number) as Void {
         var cx = dc.getWidth() / 2;
         var cy = dc.getHeight() / 2;
         var angle = fraction * Math.PI * 2 - Math.PI / 2;
         var cos = Math.cos(angle);
         var sin = Math.sin(angle);
         var halfWidth = width / 2.0;
-        var tipBase = length - 6;
+        var capCenter = length - halfWidth;
 
         dc.fillPolygon([
             [cx - tail * cos, cy - tail * sin],
             [cx - halfWidth * sin, cy + halfWidth * cos],
-            [cx + tipBase * cos - halfWidth * sin, cy + tipBase * sin + halfWidth * cos],
-            [cx + length * cos, cy + length * sin],
-            [cx + tipBase * cos + halfWidth * sin, cy + tipBase * sin - halfWidth * cos],
+            [cx + capCenter * cos - halfWidth * sin, cy + capCenter * sin + halfWidth * cos],
+            [cx + capCenter * cos + halfWidth * sin, cy + capCenter * sin - halfWidth * cos],
             [cx + halfWidth * sin, cy - halfWidth * cos]
         ]);
+        dc.fillCircle(cx + capCenter * cos, cy + capCenter * sin, halfWidth);
     }
 
     private function drawSecondHand(dc as Dc) as Void {
