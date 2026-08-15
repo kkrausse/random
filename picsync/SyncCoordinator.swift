@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import PhotosUI
 import SwiftUI
 import UIKit
 
@@ -21,11 +20,12 @@ actor SyncCoordinator {
         self.makeRemote = makeRemote
     }
 
-    func createRun(itemIdentifiers: [String], profile: ServerProfile, parallelism: Int, sourceLabel: String = "Selected Photos") async throws -> SyncRun {
+    func createRun(itemIdentifiers: [String], profile: ServerProfile, destinationPath: String, parallelism: Int, sourceLabel: String = "Selected Photos") async throws -> SyncRun {
         let now = Date()
-        let run = SyncRun(id: UUID(), sourceLabel: sourceLabel, assetIdentifiers: itemIdentifiers, profileID: profile.id, share: profile.share, destinationPath: profile.destinationPath, parallelism: min(max(parallelism, 1), 20), activeWorkerCount: 0, state: .preparing, createdAt: now, updatedAt: now, completedBytes: 0, totalBytes: 0, completedCount: 0, skippedCount: 0, failedCount: 0)
+        let run = SyncRun(id: UUID(), sourceLabel: sourceLabel, assetIdentifiers: itemIdentifiers, profileID: profile.id, share: profile.share, destinationPath: RemotePath.normalize(destinationPath), parallelism: min(max(parallelism, 1), 20), activeWorkerCount: 0, state: .preparing, createdAt: now, updatedAt: now, completedBytes: 0, totalBytes: 0, completedCount: 0, skippedCount: 0, failedCount: 0)
         let transfers = itemIdentifiers.map { AssetTransfer(id: UUID(), runID: run.id, localIdentifier: $0, state: .queued, manifest: [], fingerprint: nil, attempts: 0, errorMessage: nil, updatedAt: now) }
         try await store.save(run: run, transfers: transfers)
+        AppLog.write("[Sync] created run=\(run.id.uuidString) source=\(sourceLabel) items=\(itemIdentifiers.count) destination=\(run.destinationPath)")
         return run
     }
 
@@ -38,7 +38,7 @@ actor SyncCoordinator {
         guard var run = await store.run(runID) else { return }
         run.state = activeRuns.contains(runID) ? .pausing : .paused
         #if DEBUG
-        print("[PicSync Sync] pause run=\(runID.uuidString) state=\(run.state.rawValue) activeWorkers=\(workerCounts[runID] ?? 0)")
+        AppLog.write("[Sync] pause run=\(runID.uuidString) state=\(run.state.rawValue) activeWorkers=\(workerCounts[runID] ?? 0)")
         #endif
         run.updatedAt = Date()
         try await store.save(run: run)
@@ -68,12 +68,12 @@ actor SyncCoordinator {
         guard var run = await store.run(runID) else { return }
         let requestedParallelism = min(max(parallelism, 1), 20)
         #if DEBUG
-        print("[PicSync Sync] resume run=\(runID.uuidString) state=\(run.state.rawValue)")
+        AppLog.write("[Sync] resume run=\(runID.uuidString) state=\(run.state.rawValue)")
         #endif
         // An explicit Resume is also the user's request to retry failed records in one journal transaction.
         let requeuedCount = try await store.requeueFailedTransfers(for: runID)
         #if DEBUG
-        print("[PicSync Sync] requeued run=\(runID.uuidString) transfers=\(requeuedCount)")
+        AppLog.write("[Sync] requeued run=\(runID.uuidString) transfers=\(requeuedCount)")
         #endif
         guard !pausedRuns.contains(runID) else { try await finish(runID); return }
         run = await store.run(runID) ?? run
@@ -83,7 +83,7 @@ actor SyncCoordinator {
         let setupRemote = makeRemote()
         do {
             #if DEBUG
-            print("[PicSync Sync] connecting run=\(runID.uuidString) share=\(profile.share) destination=\(run.destinationPath)")
+            AppLog.write("[Sync] connecting run=\(runID.uuidString) share=\(profile.share) destination=\(run.destinationPath)")
             #endif
             try await setupRemote.connect(profile: profile, password: password)
             try await setupRemote.createDirectory(path: run.destinationPath)
@@ -91,7 +91,7 @@ actor SyncCoordinator {
             await setupRemote.disconnect()
         } catch {
             #if DEBUG
-            print("[PicSync Sync] setup failed run=\(runID.uuidString) error=\(String(reflecting: error))")
+            AppLog.write("[Sync] setup failed run=\(runID.uuidString) error=\(String(reflecting: error))")
             #endif
             try await failPending(runID, message: error.localizedDescription)
             try await finish(runID)
@@ -102,7 +102,7 @@ actor SyncCoordinator {
         reservedPaths[runID] = Set(transfers.flatMap { $0.manifest.compactMap(\.finalPath) })
         let workerCount = min(run.parallelism, transfers.count)
         #if DEBUG
-        print("[PicSync Sync] scheduling run=\(runID.uuidString) transfers=\(transfers.count) requestedWorkers=\(requestedParallelism) workers=\(workerCount)")
+        AppLog.write("[Sync] scheduling run=\(runID.uuidString) transfers=\(transfers.count) requestedWorkers=\(requestedParallelism) workers=\(workerCount)")
         #endif
         let queue = TransferWorkQueue(transfers)
         workerCounts[runID] = workerCount
@@ -124,9 +124,10 @@ actor SyncCoordinator {
             try await remote.connect(profile: profile, password: password)
         } catch {
             #if DEBUG
-            print("[PicSync Sync] worker connection failed run=\(runID.uuidString) error=\(String(reflecting: error))")
+            AppLog.write("[Sync] worker connection failed run=\(runID.uuidString) error=\(String(reflecting: error))")
             #endif
             await remote.disconnect()
+            try? await failPending(runID, message: error.localizedDescription)
             return
         }
         while !isPaused(runID), let transfer = await queue.next() {
@@ -138,7 +139,7 @@ actor SyncCoordinator {
                     try await remote.connect(profile: profile, password: password)
                 } catch {
                     #if DEBUG
-                    print("[PicSync Sync] worker reconnect failed run=\(runID.uuidString) error=\(String(reflecting: error))")
+                    AppLog.write("[Sync] worker reconnect failed run=\(runID.uuidString) error=\(String(reflecting: error))")
                     #endif
                     break
                 }
@@ -211,7 +212,7 @@ actor SyncCoordinator {
             if let lockedFingerprint { await fingerprintGate.release(lockedFingerprint) }
             #if DEBUG
             let paths = transfer.manifest.compactMap(\.finalPath).joined(separator: ",")
-            print("[PicSync Sync] asset failed transfer=\(transfer.id.uuidString) state=\(transfer.state.rawValue) paths=\(paths) error=\(String(reflecting: error))")
+            AppLog.write("[Sync] asset failed transfer=\(transfer.id.uuidString) state=\(transfer.state.rawValue) paths=\(paths) error=\(String(reflecting: error))")
             #endif
             transfer.state = .failed; transfer.attempts += 1; transfer.errorMessage = error.localizedDescription; transfer.updatedAt = Date(); try? await store.save(transfer: transfer)
             try? await updateRunningSummary(runID)
@@ -223,7 +224,7 @@ actor SyncCoordinator {
     private func workerFinished(_ runID: UUID) async {
         workerCounts[runID] = max((workerCounts[runID] ?? 1) - 1, 0)
         #if DEBUG
-        print("[PicSync Sync] worker finished run=\(runID.uuidString) activeWorkers=\(workerCounts[runID] ?? 0)")
+        AppLog.write("[Sync] worker finished run=\(runID.uuidString) activeWorkers=\(workerCounts[runID] ?? 0)")
         #endif
         try? await updateWorkerCount(runID)
     }
@@ -296,7 +297,7 @@ actor SyncCoordinator {
             run.state = run.failedCount == 0 ? .completed : .completedWithErrors
         }
         #if DEBUG
-        print("[PicSync Sync] finish run=\(runID.uuidString) state=\(run.state.rawValue) pending=\(hasPending) activeWorkers=\(workerCounts[runID] ?? 0)")
+        AppLog.write("[Sync] finish run=\(runID.uuidString) state=\(run.state.rawValue) pending=\(hasPending) activeWorkers=\(workerCounts[runID] ?? 0)")
         #endif
         run.updatedAt = Date(); try await store.save(run: run)
     }
@@ -524,10 +525,24 @@ func withConnectionTestTimeout<T: Sendable>(
         }
         catch {
             #if DEBUG
-            print("[PicSync SMB] failed share=\(share) error=\(String(reflecting: error))")
+            AppLog.write("[SMB] failed share=\(share) error=\(String(reflecting: error))")
             #endif
             await remote.disconnect()
             throw SMBShareError(share: share, underlying: error)
+        }
+    }
+    func openShare(profile: ServerProfile) async throws {
+        let credential = try CredentialStore.password(profileID: profile.id)
+        guard let credential, !credential.isEmpty else { throw PicSyncError.passwordRequired }
+        await browserService?.disconnect()
+        let remote = SMBRemoteFileService()
+        do {
+            try await remote.connect(profile: profile, password: credential)
+            browserPassword = credential
+            browserService = remote
+        } catch {
+            await remote.disconnect()
+            throw SMBShareError(share: profile.share, underlying: error)
         }
     }
     func remoteDirectory(path: String) async throws -> [RemoteItem] {
@@ -544,8 +559,8 @@ func withConnectionTestTimeout<T: Sendable>(
         let path = [parentPath, name].filter { !$0.isEmpty }.joined(separator: "/")
         try await browserService.createDirectory(path: path)
     }
-    func createRun(items: [PhotosPickerItem], parallelism: Int) async throws -> SyncRun { guard let profile else { throw PicSyncError.invalidServerAddress }; let library = PhotoLibraryService(); try await library.requestAuthorization(); let identifiers = try library.localIdentifiers(for: items); let run = try await coordinator.createRun(itemIdentifiers: identifiers, profile: profile, parallelism: parallelism); runs = await store.runs(); return run }
-    func createAlbumRun(_ album: PhotoAlbum, parallelism: Int) async throws -> SyncRun { guard let profile else { throw PicSyncError.invalidServerAddress }; let identifiers = try PhotoLibraryService().assetIdentifiers(forAlbumID: album.id); guard !identifiers.isEmpty else { throw PicSyncError.sourceUnavailable }; let run = try await coordinator.createRun(itemIdentifiers: identifiers, profile: profile, parallelism: parallelism, sourceLabel: album.title); runs = await store.runs(); return run }
+    func createRun(identifiers: [String], destinationPath: String, parallelism: Int) async throws -> SyncRun { guard let profile else { throw PicSyncError.invalidServerAddress }; guard !identifiers.isEmpty else { throw PicSyncError.sourceUnavailable }; let run = try await coordinator.createRun(itemIdentifiers: identifiers, profile: profile, destinationPath: destinationPath, parallelism: parallelism); runs = await store.runs(); return run }
+    func createAlbumRun(_ album: PhotoAlbum, destinationPath: String, parallelism: Int) async throws -> SyncRun { guard let profile else { throw PicSyncError.invalidServerAddress }; let identifiers = try PhotoLibraryService().assetIdentifiers(forAlbumID: album.id); guard !identifiers.isEmpty else { throw PicSyncError.sourceUnavailable }; let run = try await coordinator.createRun(itemIdentifiers: identifiers, profile: profile, destinationPath: destinationPath, parallelism: parallelism, sourceLabel: album.title); runs = await store.runs(); return run }
     func pause(runID: UUID) async {
         if let index = runs.firstIndex(where: { $0.id == runID }) { runs[index].state = .pausing }
         do { try await coordinator.pause(runID); runs = await store.runs() } catch { show(error) }
@@ -565,7 +580,7 @@ func withConnectionTestTimeout<T: Sendable>(
     func loadTransfers(runID: UUID) async { transferItemsByRun[runID] = await store.transfers(for: runID) }
     func transfers(for runID: UUID) -> [AssetTransfer] { transferItemsByRun[runID] ?? [] }
     func resume(runID: UUID) async {
-        guard activeRunIDs.isEmpty else { return }
+        guard activeRunIDs.isEmpty else { show(PicSyncError.syncAlreadyRunning); return }
         guard let run = runs.first(where: { $0.id == runID }),
               let profile = profiles.first(where: { $0.id == run.profileID }) else { show(PicSyncError.invalidServerAddress); return }
         let password: String?
@@ -576,7 +591,7 @@ func withConnectionTestTimeout<T: Sendable>(
         if let index = runs.firstIndex(where: { $0.id == runID }) { runs[index].state = .running }
         defer { activeRunIDs.remove(runID) }
         #if DEBUG
-        print("[PicSync Sync] resume button run=\(runID.uuidString) profile=\(profile.id.uuidString)")
+        AppLog.write("[Sync] resume button run=\(runID.uuidString) profile=\(profile.id.uuidString)")
         #endif
         do {
             try await coordinator.run(runID, profile: profile, password: password, parallelism: parallelism)
@@ -584,12 +599,15 @@ func withConnectionTestTimeout<T: Sendable>(
             transferItemsByRun[runID] = await store.transfers(for: runID)
         } catch {
             #if DEBUG
-            print("[PicSync Sync] resume failed run=\(runID.uuidString) error=\(String(reflecting: error))")
+            AppLog.write("[Sync] resume failed run=\(runID.uuidString) error=\(String(reflecting: error))")
             #endif
             runs = await store.runs()
             transferItemsByRun[runID] = await store.transfers(for: runID)
             show(error)
         }
     }
-    func show(_ error: Error) { errorMessage = error.localizedDescription }
+    func show(_ error: Error) {
+        AppLog.write("[Error] \(String(reflecting: error))")
+        errorMessage = error.localizedDescription
+    }
 }

@@ -6,13 +6,12 @@ PicSync is an iPhone and iPad app for copying selected Photos originals to an SM
 
 1. On the home screen, choose **Upload Destination**, then select a saved destination or add one.
 2. Enter the server address, port, user, password, and optional domain/workgroup for a new destination.
-3. Select **Select Share**, then choose a server share.
-4. Select **Select Folder**, browse or create folders, and select **Use This Folder**.
-5. Select **Save Destination**. The full destination profile is persisted and the app opens photo selection.
-6. Choose individual Photos or **Sync an Entire Album**.
-7. Review the source and start the sync.
+3. Select **Select Share**, choose a server share, and save the destination.
+4. Choose individual Photos or **Sync an Entire Album**.
+5. In the sync review, browse or create folders and select **Use This Folder**.
+6. Start the sync.
 
-The home screen shows the saved server, share, folder, password-storage status, and the default worker count for new runs.
+The home screen shows the saved server, share, password-storage status, and the default worker count for new runs.
 
 ## Photos behavior
 
@@ -24,10 +23,10 @@ The home screen shows the saved server, share, folder, password-storage status, 
 
 ## SMB destination behavior
 
-- Multiple connection profiles can be saved and selected. Profiles store host, port, username, optional domain, share, and folder in the local journal.
+- Multiple connection profiles can be saved and selected. Profiles store host, port, username, optional domain, and share in the local journal.
 - Passwords are stored in the iOS Keychain, not in the journal. A saved password is intentionally not rendered back into the form.
-- Destination selection is browse-first: the app lists shares, then folders. It does not require manually entering a share or destination path.
-- Share and folder selection are separate operations, and folders can be created from the folder browser.
+- Destination selection is browse-first and does not require manually entering a share or path.
+- Shares belong to saved destinations. The upload folder is selected separately for each sync and folders can be created from the folder browser.
 - The SMB implementation is a pinned local snapshot of `kishikawakatsumi/SMBClient` 0.3.1. Vendoring details are in `vendor/SMBClient/VENDORING.md`.
 - Xcode resolves that package only from `vendor/SMBClient`; no remote package registry is needed to build.
 

@@ -93,6 +93,6 @@ struct picsyncTests {
     }
 
     private func profile(host: String, updatedAt: Date) -> ServerProfile {
-        ServerProfile(id: UUID(), displayName: host, host: host, port: 445, username: "iphone", domain: nil, share: "Photos", destinationPath: "Uploads", requiresSigning: false, createdAt: updatedAt, updatedAt: updatedAt)
+        ServerProfile(id: UUID(), displayName: host, host: host, port: 445, username: "iphone", domain: nil, share: "Photos", requiresSigning: false, createdAt: updatedAt, updatedAt: updatedAt)
     }
 }

@@ -9,7 +9,6 @@ struct ServerProfile: Codable, Identifiable, Equatable, Sendable {
     var username: String
     var domain: String?
     var share: String
-    var destinationPath: String
     var requiresSigning: Bool
     var createdAt: Date
     var updatedAt: Date
@@ -21,7 +20,6 @@ struct ServerProfileDraft: Equatable {
     var username = ""
     var domain = ""
     var share = ""
-    var destinationPath = ""
     var requiresSigning = false
 
     init(_ profile: ServerProfile? = nil) {
@@ -31,7 +29,6 @@ struct ServerProfileDraft: Equatable {
         username = profile.username
         domain = profile.domain ?? ""
         share = profile.share
-        destinationPath = profile.destinationPath
         requiresSigning = profile.requiresSigning
     }
 
@@ -40,7 +37,7 @@ struct ServerProfileDraft: Equatable {
     func profile(reusing id: UUID? = nil) throws -> ServerProfile {
         let endpoint = try SMBEndpoint.parse(host, defaultPort: port)
         let now = Date()
-        return ServerProfile(id: id ?? UUID(), displayName: endpoint.host, host: endpoint.host, port: endpoint.port, username: username, domain: domain.nilIfEmpty, share: share.nilIfEmpty ?? endpoint.share ?? "", destinationPath: RemotePath.normalize(destinationPath.isEmpty ? endpoint.path : destinationPath), requiresSigning: requiresSigning, createdAt: now, updatedAt: now)
+        return ServerProfile(id: id ?? UUID(), displayName: endpoint.host, host: endpoint.host, port: endpoint.port, username: username, domain: domain.nilIfEmpty, share: share.nilIfEmpty ?? endpoint.share ?? "", requiresSigning: requiresSigning, createdAt: now, updatedAt: now)
     }
 }
 
@@ -92,9 +89,12 @@ enum PicSyncError: LocalizedError, Equatable {
     case passwordRequired
     case invalidFolderName
     case sourceUnavailable
+    case pickerIdentifierUnavailable
+    case photoAssetUnavailable
     case unsupportedSMB
     case cancelled
     case runActive
+    case syncAlreadyRunning
 
     var errorDescription: String? {
         switch self {
@@ -104,9 +104,12 @@ enum PicSyncError: LocalizedError, Equatable {
         case .passwordRequired: "Enter the SMB password before testing this server. PicSync will not silently fall back to guest access."
         case .invalidFolderName: "Enter a folder name without slashes."
         case .sourceUnavailable: "One or more selected photos are no longer available."
+        case .pickerIdentifierUnavailable: "PicSync could not access one or more selected photos. Go back, confirm Photos access in Settings, and select the photos again."
+        case .photoAssetUnavailable: "A selected photo could not be found in the Photos library. It may have been deleted or excluded from limited Photos access."
         case .unsupportedSMB: "The SMB transport has not been installed in this build."
         case .cancelled: "The sync was cancelled."
         case .runActive: "Pause this sync and wait for its active workers to finish before deleting it."
+        case .syncAlreadyRunning: "Another sync is already running. Wait for it to finish or pause it before starting another sync."
         }
     }
 }

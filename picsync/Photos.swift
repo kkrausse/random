@@ -1,7 +1,6 @@
 import CryptoKit
 import Foundation
 import Photos
-import PhotosUI
 import SwiftUI
 
 struct PhotoResourceDescriptor: Equatable, Sendable {
@@ -49,15 +48,12 @@ struct PhotoLibraryService {
         guard status == .authorized || status == .limited else { throw PicSyncError.photosPermission }
     }
 
-    func localIdentifiers(for pickerItems: [PhotosPickerItem]) throws -> [String] {
-        let identifiers = pickerItems.compactMap(\.itemIdentifier)
-        guard identifiers.count == pickerItems.count else { throw PicSyncError.sourceUnavailable }
-        return identifiers
-    }
-
     func asset(for localIdentifier: String) throws -> PHAsset {
         let result = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
-        guard let asset = result.firstObject else { throw PicSyncError.sourceUnavailable }
+        guard let asset = result.firstObject else {
+            AppLog.write("[Photos] asset identifier no longer resolves identifier=\(localIdentifier)")
+            throw PicSyncError.photoAssetUnavailable
+        }
         return asset
     }
 

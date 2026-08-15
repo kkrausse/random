@@ -30,7 +30,7 @@ struct ContentView: View {
                     if let profile = model.profile {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(profile.host).font(.headline)
-                            Text("\\\(profile.share)\(profile.destinationPath.isEmpty ? "" : "/\(profile.destinationPath)")")
+                            Text("\\\(profile.share)")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                             Text(model.hasSavedPassword ? "Password saved securely in Keychain" : "Password needs to be entered")
@@ -47,6 +47,14 @@ struct ContentView: View {
                     Text("Applied to new syncs and the next time a paused or failed sync resumes. Running workers are unchanged until you pause.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                }
+
+                Section("Support") {
+                    NavigationLink {
+                        DiagnosticsView()
+                    } label: {
+                        Label("Diagnostics Log", systemImage: "doc.text.magnifyingglass")
+                    }
                 }
 
                 Section("Recent Runs") {
@@ -80,12 +88,39 @@ struct ContentView: View {
             .navigationDestination(isPresented: $model.presentsPhotoSelection) {
                 PhotoSelectionView(model: model)
             }
-            .alert("PicSync", isPresented: Binding(get: { model.isShowingError }, set: { if !$0 { model.errorMessage = nil } })) {
-                Button("OK") { model.errorMessage = nil }
-            } message: {
-                Text(model.errorMessage ?? "")
+        }
+        .alert("PicSync", isPresented: Binding(get: { model.isShowingError }, set: { if !$0 { model.errorMessage = nil } })) {
+            Button("OK") { model.errorMessage = nil }
+        } message: {
+            Text(model.errorMessage ?? "")
+        }
+    }
+}
+
+private struct DiagnosticsView: View {
+    @State private var contents = ""
+
+    var body: some View {
+        ScrollView {
+            Text(contents)
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+        }
+        .navigationTitle("Diagnostics")
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                ShareLink(item: AppLog.fileURL) {
+                    Label("Share Log", systemImage: "square.and.arrow.up")
+                }
+                Button("Clear", systemImage: "trash") {
+                    AppLog.clear()
+                    contents = AppLog.contents()
+                }
             }
         }
+        .task { contents = AppLog.contents() }
     }
 }
 
@@ -106,7 +141,7 @@ private struct DestinationsView: View {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(profile.displayName).foregroundStyle(.primary)
-                                        Text("\\\(profile.share)\(profile.destinationPath.isEmpty ? "" : "/\(profile.destinationPath)")")
+                                        Text("\\\(profile.share)")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
@@ -168,7 +203,7 @@ private struct ServerProfileView: View {
     @State private var hasSavedPassword = false
     @State private var shares = [String]()
     @State private var isBrowsingShares = false
-    @State private var isBrowsingFolder = false
+    @State private var didPrepareEditor = false
 
     init(model: AppModel, profile: ServerProfile?) {
         self.model = model
@@ -203,7 +238,6 @@ private struct ServerProfileView: View {
             }
             Section("Destination") {
                 LabeledContent("Share", value: draft.share.isEmpty ? "Not selected" : draft.share)
-                LabeledContent("Folder", value: draft.destinationPath.isEmpty ? "/" : "/\(draft.destinationPath)")
                 Button(model.isTestingConnection ? "Connecting..." : "Select Share") {
                     Task {
                         do {
@@ -215,17 +249,6 @@ private struct ServerProfileView: View {
                     }
                 }
                 .disabled(!draft.isValid || model.isTestingConnection)
-                Button("Select Folder") {
-                    Task {
-                        do {
-                            try await model.openShare(draft.share, draft: draft, password: password, editing: profile)
-                            isBrowsingFolder = true
-                        } catch {
-                            model.show(error)
-                        }
-                    }
-                }
-                .disabled(!draft.isValid || draft.share.isEmpty || model.isTestingConnection)
                 Toggle("Require SMB signing", isOn: $draft.requiresSigning)
             }
             Section {
@@ -246,11 +269,13 @@ private struct ServerProfileView: View {
                 }
                 .disabled(!draft.isValid || !model.connectionVerified || draft.share.isEmpty)
             } footer: {
-                Text("Select a share, then select or create its upload folder. Passwords are saved only in the iOS Keychain. URLs containing a password are rejected.")
+                Text("Folders are selected separately for each sync. Passwords are saved only in the iOS Keychain. URLs containing a password are rejected.")
             }
         }
         .navigationTitle(profile == nil ? "Add Destination" : "Edit Destination")
         .task {
+            guard !didPrepareEditor else { return }
+            didPrepareEditor = true
             hasSavedPassword = model.savedPasswordExists(for: profile)
             await model.resetProfileEditor()
         }
@@ -258,9 +283,6 @@ private struct ServerProfileView: View {
         .onChange(of: password) { _, _ in model.resetConnectionVerification() }
         .navigationDestination(isPresented: $isBrowsingShares) {
             ShareBrowserView(draft: $draft, shares: shares, isBrowsingShares: $isBrowsingShares)
-        }
-        .navigationDestination(isPresented: $isBrowsingFolder) {
-            FolderBrowserView(model: model, draft: $draft, path: "", isBrowsingFolder: $isBrowsingFolder)
         }
     }
 }
@@ -273,7 +295,6 @@ private struct ShareBrowserView: View {
     var body: some View {
         List(shares, id: \.self) { share in
             Button {
-                if draft.share != share { draft.destinationPath = "" }
                 draft.share = share
                 isBrowsingShares = false
             } label: {
@@ -286,9 +307,10 @@ private struct ShareBrowserView: View {
 
 private struct FolderBrowserView: View {
     @Bindable var model: AppModel
-    @Binding var draft: ServerProfileDraft
+    let share: String
     let path: String
     @Binding var isBrowsingFolder: Bool
+    let onSelect: (String) -> Void
     @State private var items = [RemoteItem]()
     @State private var newFolderName = ""
     @State private var isNamingFolder = false
@@ -297,7 +319,7 @@ private struct FolderBrowserView: View {
         List {
             Section {
                 Button("Use This Folder") {
-                    draft.destinationPath = path
+                    onSelect(path)
                     isBrowsingFolder = false
                 }
                 .buttonStyle(.borderedProminent)
@@ -308,19 +330,19 @@ private struct FolderBrowserView: View {
                     Label("New Folder", systemImage: "folder.badge.plus")
                 }
             } footer: {
-                Text(path.isEmpty ? "The root of \(draft.share)" : "/\(path)")
+                Text(path.isEmpty ? "The root of \(share)" : "/\(path)")
             }
             Section("Folders") {
                 ForEach(items.filter(\.isDirectory)) { item in
                     NavigationLink {
-                        FolderBrowserView(model: model, draft: $draft, path: item.path, isBrowsingFolder: $isBrowsingFolder)
+                        FolderBrowserView(model: model, share: share, path: item.path, isBrowsingFolder: $isBrowsingFolder, onSelect: onSelect)
                     } label: {
                         Label(item.name, systemImage: "folder")
                     }
                 }
             }
         }
-        .navigationTitle(path.isEmpty ? draft.share : URL(fileURLWithPath: path).lastPathComponent)
+        .navigationTitle(path.isEmpty ? share : URL(fileURLWithPath: path).lastPathComponent)
         .task {
             await loadItems()
         }
@@ -338,7 +360,7 @@ private struct FolderBrowserView: View {
                 }
             }
         } message: {
-            Text(path.isEmpty ? "Create a folder in the root of \(draft.share)." : "Create a folder in /\(path).")
+            Text(path.isEmpty ? "Create a folder in the root of \(share)." : "Create a folder in /\(path).")
         }
     }
 
@@ -350,8 +372,10 @@ private struct FolderBrowserView: View {
 
 private struct PhotoSelectionView: View {
     @Bindable var model: AppModel
-    @State private var selection: [PhotosPickerItem] = []
+    @State private var selection = [String]()
     @State private var isCreatingRun = false
+    @State private var hasPhotoAccess = false
+    @State private var isPickingPhotos = false
 
     var body: some View {
         VStack(spacing: 20) {
@@ -364,12 +388,15 @@ private struct PhotoSelectionView: View {
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal)
-            PhotosPicker(selection: $selection, maxSelectionCount: nil, matching: .any(of: [.images, .videos])) {
+            Button {
+                isPickingPhotos = true
+            } label: {
                 Label(selection.isEmpty ? "Select Photos" : "\(selection.count) Selected", systemImage: "plus.rectangle.on.rectangle")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .padding(.horizontal)
+            .disabled(!hasPhotoAccess)
 
             NavigationLink {
                 AlbumPickerView(model: model)
@@ -389,7 +416,60 @@ private struct PhotoSelectionView: View {
         .padding(.top, 36)
         .navigationTitle("Source")
         .navigationDestination(isPresented: $isCreatingRun) {
-            SyncReviewView(model: model, selectedItems: selection)
+            SyncReviewView(model: model, selectedIdentifiers: selection)
+        }
+        .sheet(isPresented: $isPickingPhotos) {
+            PhotoPickerView { result in
+                isPickingPhotos = false
+                switch result {
+                case .success(let identifiers):
+                    selection = identifiers
+                    AppLog.write("[Photos] picker returned identifiers=\(identifiers.count)")
+                case .failure(let error):
+                    model.show(error)
+                }
+            }
+        }
+        .task {
+            do {
+                try await PhotoLibraryService().requestAuthorization()
+                hasPhotoAccess = true
+                AppLog.write("[Photos] library access ready for individual selection")
+            } catch { model.show(error) }
+        }
+    }
+}
+
+private struct PhotoPickerView: UIViewControllerRepresentable {
+    let completion: (Result<[String], Error>) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(completion: completion) }
+
+    func makeUIViewController(context: Context) -> PHPickerViewController {
+        var configuration = PHPickerConfiguration(photoLibrary: .shared())
+        configuration.filter = .any(of: [.images, .videos])
+        configuration.selectionLimit = 0
+        let controller = PHPickerViewController(configuration: configuration)
+        controller.delegate = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, PHPickerViewControllerDelegate {
+        let completion: (Result<[String], Error>) -> Void
+
+        init(completion: @escaping (Result<[String], Error>) -> Void) {
+            self.completion = completion
+        }
+
+        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+            guard !results.isEmpty else {
+                picker.dismiss(animated: true)
+                return
+            }
+            let identifiers = results.compactMap(\.assetIdentifier)
+            completion(identifiers.count == results.count ? .success(identifiers) : .failure(PicSyncError.pickerIdentifierUnavailable))
         }
     }
 }
@@ -431,6 +511,9 @@ private struct AlbumReviewView: View {
     let album: PhotoAlbum
     @State private var run: SyncRun?
     @State private var isStarting = false
+    @State private var destinationPath = ""
+    @State private var hasSelectedFolder = false
+    @State private var isBrowsingFolder = false
 
     var body: some View {
         Form {
@@ -439,38 +522,68 @@ private struct AlbumReviewView: View {
                 LabeledContent("Snapshot", value: "\(album.count) current items")
                 Text("The album is snapshotted when you start. Later album changes do not alter this sync.").font(.footnote).foregroundStyle(.secondary)
             }
+            destinationSection
             Section("Transfer") { LabeledContent("Parallel transfers", value: "\(model.parallelism)") }
             Section {
-                Button("Start Album Sync") {
+                Button(isStarting ? "Starting..." : "Start Album Sync") {
                     Task {
                         isStarting = true
                         defer { isStarting = false }
                         do {
-                            let createdRun = try await model.createAlbumRun(album, parallelism: model.parallelism)
+                            let createdRun = try await model.createAlbumRun(album, destinationPath: destinationPath, parallelism: model.parallelism)
                             run = createdRun
-                            await model.resume(runID: createdRun.id)
+                            Task { await model.resume(runID: createdRun.id) }
                         } catch { model.show(error) }
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(isStarting)
+                .disabled(isStarting || !hasSelectedFolder)
             }
         }
         .navigationTitle("Review Album")
         .navigationDestination(item: $run) { RunDetailView(model: model, run: $0) }
+        .navigationDestination(isPresented: $isBrowsingFolder) {
+            FolderBrowserView(model: model, share: model.profile?.share ?? "", path: "", isBrowsingFolder: $isBrowsingFolder) {
+                destinationPath = $0
+                hasSelectedFolder = true
+            }
+        }
+    }
+
+    @ViewBuilder private var destinationSection: some View {
+        if let profile = model.profile {
+            Section("Destination") {
+                LabeledContent("Server", value: profile.host)
+                LabeledContent("Share", value: profile.share)
+                LabeledContent("Folder", value: hasSelectedFolder ? (destinationPath.isEmpty ? "/" : "/\(destinationPath)") : "Not selected")
+                Button(hasSelectedFolder ? "Change Folder" : "Select Folder") { openFolderBrowser(profile) }
+            }
+        }
+    }
+
+    private func openFolderBrowser(_ profile: ServerProfile) {
+        Task {
+            do {
+                try await model.openShare(profile: profile)
+                isBrowsingFolder = true
+            } catch { model.show(error) }
+        }
     }
 }
 
 private struct SyncReviewView: View {
     @Bindable var model: AppModel
-    let selectedItems: [PhotosPickerItem]
+    let selectedIdentifiers: [String]
     @State private var run: SyncRun?
     @State private var isStarting = false
+    @State private var destinationPath = ""
+    @State private var hasSelectedFolder = false
+    @State private var isBrowsingFolder = false
 
     var body: some View {
         Form {
             Section("Source") {
-                LabeledContent("Selected items", value: "\(selectedItems.count)")
+                LabeledContent("Selected items", value: "\(selectedIdentifiers.count)")
                 Text("Original PhotoKit resources, including Live Photo and RAW companions when available.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
@@ -478,7 +591,8 @@ private struct SyncReviewView: View {
                 Section("Destination") {
                     LabeledContent("Server", value: profile.host)
                     LabeledContent("Share", value: profile.share)
-                    LabeledContent("Folder", value: profile.destinationPath.isEmpty ? "/" : profile.destinationPath)
+                    LabeledContent("Folder", value: hasSelectedFolder ? (destinationPath.isEmpty ? "/" : "/\(destinationPath)") : "Not selected")
+                    Button(hasSelectedFolder ? "Change Folder" : "Select Folder") { openFolderBrowser(profile) }
                 }
             }
             Section("Transfer") {
@@ -487,24 +601,39 @@ private struct SyncReviewView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Section {
-                Button("Start Sync") {
+                Button(isStarting ? "Starting..." : "Start Sync") {
                     Task {
                         isStarting = true
                         defer { isStarting = false }
                         do {
-                            let createdRun = try await model.createRun(items: selectedItems, parallelism: model.parallelism)
+                            let createdRun = try await model.createRun(identifiers: selectedIdentifiers, destinationPath: destinationPath, parallelism: model.parallelism)
                             run = createdRun
-                            await model.resume(runID: createdRun.id)
+                            Task { await model.resume(runID: createdRun.id) }
                         }
                         catch { model.show(error) }
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(isStarting)
+                .disabled(isStarting || !hasSelectedFolder)
             }
         }
         .navigationTitle("Review Sync")
         .navigationDestination(item: $run) { RunDetailView(model: model, run: $0) }
+        .navigationDestination(isPresented: $isBrowsingFolder) {
+            FolderBrowserView(model: model, share: model.profile?.share ?? "", path: "", isBrowsingFolder: $isBrowsingFolder) {
+                destinationPath = $0
+                hasSelectedFolder = true
+            }
+        }
+    }
+
+    private func openFolderBrowser(_ profile: ServerProfile) {
+        Task {
+            do {
+                try await model.openShare(profile: profile)
+                isBrowsingFolder = true
+            } catch { model.show(error) }
+        }
     }
 }
 

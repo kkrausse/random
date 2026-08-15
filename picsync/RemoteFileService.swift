@@ -28,17 +28,17 @@ actor SMBRemoteFileService: RemoteFileService {
     func connect(profile: ServerProfile, password: String?) async throws {
         let client = SMBClient(host: profile.host, port: profile.port)
         #if DEBUG
-        print("[PicSync SMB] authenticating host=\(profile.host) port=\(profile.port)")
+        AppLog.write("[SMB] authenticating host=\(profile.host) port=\(profile.port)")
         #endif
         do {
             try await client.login(username: profile.username, password: password, domain: profile.domain)
             if !profile.share.isEmpty {
             #if DEBUG
-            print("[PicSync SMB] opening share=\(profile.share)")
+            AppLog.write("[SMB] opening share=\(profile.share)")
             #endif
                 try await client.connectShare(profile.share)
             #if DEBUG
-            print("[PicSync SMB] opened share=\(profile.share)")
+            AppLog.write("[SMB] opened share=\(profile.share)")
             #endif
             }
             self.client = client
