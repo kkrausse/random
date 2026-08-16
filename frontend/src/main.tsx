@@ -835,10 +835,8 @@ function App() {
     ? displayedCrop.width * selectedInfo.width / (displayedCrop.height * selectedInfo.height)
     : selectedInfo ? selectedInfo.width / selectedInfo.height : undefined;
   const croppedMediaStyle = displayedCrop ? {
-    width: `${100 / displayedCrop.width}%`,
-    height: `${100 / displayedCrop.height}%`,
-    left: `${-displayedCrop.x / displayedCrop.width * 100}%`,
-    top: `${-displayedCrop.y / displayedCrop.height * 100}%`,
+    objectPosition: `${displayedCrop.width < 1 ? displayedCrop.x / (1 - displayedCrop.width) * 100 : 50}% ${
+      displayedCrop.height < 1 ? displayedCrop.y / (1 - displayedCrop.height) * 100 : 50}%`,
   } : undefined;
   const totalTimelineDuration = projectDuration(project?.items ?? []);
   const tickInterval = timelineTickInterval();
