@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState, type KeyboardEvent } from "react";
+import { StrictMode, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { createRoot } from "react-dom/client";
 import type { MediaAsset, MediaInfo, NormalizedCrop, PlaybackSource } from "../../lib/types";
 import "./styles.css";
@@ -14,6 +14,11 @@ function formatBitrate(bitsPerSecond: number | undefined) {
 }
 
 const defaultCrop: NormalizedCrop = { x: 0.1, y: 0.1, width: 0.8, height: 0.8 };
+const minimumCropSize = 0.05;
+
+function clamp(value: number, minimum: number, maximum: number) {
+  return Math.min(Math.max(value, minimum), maximum);
+}
 
 function Thumbnail({ asset }: { asset: MediaAsset }) {
   const [failed, setFailed] = useState(false);
@@ -41,6 +46,14 @@ function App() {
   const [crop, setCrop] = useState<NormalizedCrop>();
   const [playbackError, setPlaybackError] = useState<string>();
   const [libraryError, setLibraryError] = useState<string>();
+  const videoFrame = useRef<HTMLDivElement>(null);
+  const cropInteraction = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    crop: NormalizedCrop;
+    direction?: string;
+  } | undefined>(undefined);
 
   useEffect(() => {
     fetch("/api/media")
@@ -140,8 +153,53 @@ function App() {
     buttons[nextIndex]!.click();
   }
 
-  function updateCrop(key: keyof NormalizedCrop, value: number) {
-    setCrop((current) => ({ ...(current ?? defaultCrop), [key]: value }));
+  function beginCropInteraction(event: PointerEvent<HTMLDivElement>, direction?: string) {
+    if (!crop) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    cropInteraction.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      crop,
+      direction,
+    };
+  }
+
+  function moveCrop(event: PointerEvent<HTMLDivElement>) {
+    const interaction = cropInteraction.current;
+    const frameBounds = videoFrame.current?.getBoundingClientRect();
+    if (!interaction || interaction.pointerId !== event.pointerId || !frameBounds) return;
+
+    const dx = (event.clientX - interaction.startX) / frameBounds.width;
+    const dy = (event.clientY - interaction.startY) / frameBounds.height;
+    const start = interaction.crop;
+    if (!interaction.direction) {
+      setCrop({
+        ...start,
+        x: clamp(start.x + dx, 0, 1 - start.width),
+        y: clamp(start.y + dy, 0, 1 - start.height),
+      });
+      return;
+    }
+
+    let left = start.x;
+    let top = start.y;
+    let right = start.x + start.width;
+    let bottom = start.y + start.height;
+    if (interaction.direction.includes("w")) left = clamp(start.x + dx, 0, right - minimumCropSize);
+    if (interaction.direction.includes("e")) right = clamp(right + dx, left + minimumCropSize, 1);
+    if (interaction.direction.includes("n")) top = clamp(start.y + dy, 0, bottom - minimumCropSize);
+    if (interaction.direction.includes("s")) bottom = clamp(bottom + dy, top + minimumCropSize, 1);
+    setCrop({ x: left, y: top, width: right - left, height: bottom - top });
+  }
+
+  function endCropInteraction(event: PointerEvent<HTMLDivElement>) {
+    if (cropInteraction.current?.pointerId !== event.pointerId) return;
+    cropInteraction.current = undefined;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
   }
 
   const videoUrl = stabilizedPreview?.url
@@ -204,7 +262,7 @@ function App() {
           <div className="viewer-stage">
             {!selection && <div className="viewer-placeholder"><span>Choose a clip from the library</span></div>}
             {selection && mediaInfoLoaded && (
-              <div className="video-frame" style={{ aspectRatio: `${videoInfo?.width ?? mediaInfo?.width ?? 16} / ${videoInfo?.height ?? mediaInfo?.height ?? 9}` }}>
+              <div ref={videoFrame} className="video-frame" style={{ aspectRatio: `${videoInfo?.width ?? mediaInfo?.width ?? 16} / ${videoInfo?.height ?? mediaInfo?.height ?? 9}` }}>
                 <video
                   key={`${selection.id}:${activePlaybackSource}:${stabilizedPreview?.workId ?? "direct"}`}
                   src={videoUrl}
@@ -220,12 +278,24 @@ function App() {
                   onError={() => setPlaybackError("This browser cannot play the selected video pipeline output.")}
                 />
                 {crop && (
-                  <div className="crop-rectangle" style={{
-                    left: `${crop.x * 100}%`,
-                    top: `${crop.y * 100}%`,
-                    width: `${crop.width * 100}%`,
-                    height: `${crop.height * 100}%`,
-                  }} />
+                  <div
+                    className="crop-rectangle"
+                    aria-label="Crop area. Drag to reposition and use the handles to resize."
+                    onPointerDown={(event) => beginCropInteraction(event, (event.target as HTMLElement).dataset.direction)}
+                    onPointerMove={moveCrop}
+                    onPointerUp={endCropInteraction}
+                    onPointerCancel={endCropInteraction}
+                    style={{
+                      left: `${crop.x * 100}%`,
+                      top: `${crop.y * 100}%`,
+                      width: `${crop.width * 100}%`,
+                      height: `${crop.height * 100}%`,
+                    }}
+                  >
+                    {(["n", "ne", "e", "se", "s", "sw", "w", "nw"] as const).map((direction) => (
+                      <span key={direction} className={`crop-handle crop-handle-${direction}`} data-direction={direction} />
+                    ))}
+                  </div>
                 )}
               </div>
             )}
@@ -234,10 +304,8 @@ function App() {
 
           {crop && (
             <div className="crop-controls">
-              <label>X <input type="range" min="0" max={1 - crop.width} step="0.01" value={crop.x} onChange={(event) => updateCrop("x", Number(event.target.value))} /></label>
-              <label>Y <input type="range" min="0" max={1 - crop.height} step="0.01" value={crop.y} onChange={(event) => updateCrop("y", Number(event.target.value))} /></label>
-              <label>Width <input type="range" min="0.1" max={1 - crop.x} step="0.01" value={crop.width} onChange={(event) => updateCrop("width", Number(event.target.value))} /></label>
-              <label>Height <input type="range" min="0.1" max={1 - crop.y} step="0.01" value={crop.height} onChange={(event) => updateCrop("height", Number(event.target.value))} /></label>
+              <span>Drag to move. Resize from any edge or corner.</span>
+              <output>{Math.round(crop.width * 100)}% × {Math.round(crop.height * 100)}%</output>
               <button onClick={() => setCrop(defaultCrop)}>Reset</button>
             </div>
           )}

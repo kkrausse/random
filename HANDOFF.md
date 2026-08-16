@@ -7,7 +7,7 @@
 - All 123 source clips have fresh metadata, thumbnails, and 1080p H.264 proxies.
 - The viewer can switch between Proxy and Original playback.
 - The library grid supports arrow keys, Home/End, roving focus, and selected-state semantics.
-- The current uncommitted milestone adds on-demand Gyroflow previews and normalized crop controls.
+- The viewer provides on-demand Gyroflow previews and normalized crop controls.
 
 ## Gyroflow
 
@@ -63,15 +63,14 @@ type NormalizedCrop = {
 };
 ```
 
-The current UI overlays the kept rectangle and provides X/Y/Width/Height controls. It works identically over direct Proxy, direct Original, or stabilized preview output. Crop is not yet applied to an export.
+The UI overlays the kept rectangle. Dragging moves it and eight edge/corner handles resize it, with a five-percent minimum dimension. It works identically over direct Proxy, direct Original, or stabilized preview output. Crop is not yet applied to an export.
 
 ## Next Steps
 
 1. Visually validate corrected stabilization on a representative longer Sony clip in both Proxy and Original output modes.
 2. Fix any Gyroflow default smoothing or zoom settings based on that validation.
-3. Improve crop interaction if needed, preferably direct manipulation while preserving normalized state.
-4. Implement full-resolution single-clip export from Original using the same stabilization and crop state.
-5. Keep generated output inside `derivedRoot`; never write beside Original media.
+3. Implement full-resolution single-clip export from Original using the same stabilization and crop state.
+4. Keep generated output inside `derivedRoot`; never write beside Original media.
 
 ## Verification
 
