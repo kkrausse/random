@@ -159,6 +159,7 @@ function App() {
   const mediaFrame = useRef<HTMLDivElement>(null);
   const viewerStage = useRef<HTMLDivElement>(null);
   const viewerStack = useRef<HTMLDivElement>(null);
+  const timelineRuler = useRef<HTMLDivElement>(null);
   const librarySentinel = useRef<HTMLDivElement>(null);
   const mediaRequest = useRef<AbortController | undefined>(undefined);
   const mediaGeneration = useRef(0);
@@ -388,9 +389,11 @@ function App() {
       if (event.repeat || event.defaultPrevented) return;
       const target = event.target as HTMLElement | null;
       const formControl = target?.closest("input, select, textarea, [contenteditable='true']");
-      if (formControl || (target?.closest("[role='slider']") && event.code !== "Space")) return;
-      const selectionPlaybackShortcut = event.code === "Space"
-        && ((playbackContext === "library" && target?.closest(".clip-row")) || target?.closest(".timeline-select"));
+      if (formControl || (playbackContext !== "timeline" && target?.closest("[role='slider']") && event.code !== "Space")) return;
+      const timelineSelectionShortcut = target?.closest(".timeline-select")
+        && ["Space", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.code);
+      const selectionPlaybackShortcut = timelineSelectionShortcut
+        || (event.code === "Space" && playbackContext === "library" && target?.closest(".clip-row"));
       if (target?.closest("button") && !selectionPlaybackShortcut) return;
       if (event.code === "Space") {
         event.preventDefault();
@@ -711,6 +714,7 @@ function App() {
     setPlaybackContext("timeline");
     seekTimeline(startTime);
     setPreviewMode("playing");
+    timelineRuler.current?.focus({ preventScroll: true });
   }
 
   function startClipPreview() {
@@ -728,6 +732,7 @@ function App() {
       setTimelinePlayhead(itemStartTime(projectRef.current?.items ?? [], selectedItem.id));
     }
     setPreviewMode("playing");
+    viewerStage.current?.focus({ preventScroll: true });
   }
 
   function togglePreviewPause() {
@@ -762,6 +767,8 @@ function App() {
     } else {
       startClipPreview();
     }
+    if (playbackContext === "timeline") timelineRuler.current?.focus({ preventScroll: true });
+    else if (playbackContext === "clip") viewerStage.current?.focus({ preventScroll: true });
   }
 
   function stopPreview() {
@@ -806,8 +813,15 @@ function App() {
   function navigateTimelineItem(offset: number) {
     const current = projectRef.current;
     const selection = viewerSelectionRef.current;
-    if (!current?.items.length || selection?.context !== "timeline") return;
-    const index = current.items.findIndex((item) => item.id === selection.itemId);
+    if (!current?.items.length) return;
+    let index = selection?.context === "timeline" ? current.items.findIndex((item) => item.id === selection.itemId) : -1;
+    if (index < 0) {
+      let elapsed = 0;
+      index = current.items.findIndex((item, itemIndex) => {
+        elapsed += itemDuration(item);
+        return timelinePlayhead < elapsed || itemIndex === current.items.length - 1;
+      });
+    }
     const next = current.items[index + offset];
     if (!next) return;
     const keepPlaying = previewModeRef.current === "playing";
@@ -816,6 +830,7 @@ function App() {
     setPlaybackContext("timeline");
     seekTimeline(itemStartTime(current.items, next.id));
     setPreviewMode(keepPlaying ? "playing" : "paused");
+    timelineRuler.current?.focus({ preventScroll: true });
   }
 
   function stepPlaybackFrame(direction: number) {
@@ -954,6 +969,7 @@ function App() {
     event.preventDefault();
     pausePreview();
     setPlaybackContext("timeline");
+    event.currentTarget.focus({ preventScroll: true });
     timelineSeekInteraction.current = event.pointerId;
     event.currentTarget.setPointerCapture(event.pointerId);
     moveTimelinePlayhead(event);
@@ -1170,8 +1186,8 @@ function App() {
             </div>
           </div>
 
-          <div ref={viewerStack} className="viewer-stack">
-            <div ref={viewerStage} className="viewer-stage" style={{ height: viewerFullscreen ? undefined : viewerHeight }}>
+            <div ref={viewerStack} className="viewer-stack">
+            <div ref={viewerStage} className="viewer-stage" tabIndex={-1} style={{ height: viewerFullscreen ? undefined : viewerHeight }}>
             {!selectedAsset && <div className="viewer-placeholder">Choose a source or timeline item</div>}
             {selectedAsset && selectedInfo && <div ref={mediaFrame} className={croppedMediaStyle ? "media-frame cropped" : "media-frame"}
               style={{ aspectRatio: viewerAspect }}>
@@ -1293,7 +1309,7 @@ function App() {
                     </article>;
                   })}
                 </div>
-                <div className="timeline-ruler" aria-label="Project playhead" title="Drag to seek, then press Play" onPointerDown={beginTimelineSeek} onPointerMove={moveTimelinePlayhead}
+                <div ref={timelineRuler} className="timeline-ruler" tabIndex={-1} aria-label="Project playhead" title="Drag to seek, then press Play" onPointerDown={beginTimelineSeek} onPointerMove={moveTimelinePlayhead}
                   onPointerUp={endTimelineSeek} onPointerCancel={endTimelineSeek}>
                   {timelineTicks.map((time, index) => <span key={time} className={`timeline-tick${index === 0 ? " first" : time === totalTimelineDuration ? " last" : ""}`}
                     style={{ left: `${time / totalTimelineDuration * 100}%` }}><small>{formatTimelineTime(time)}</small></span>)}
