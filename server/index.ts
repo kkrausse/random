@@ -1,4 +1,6 @@
+import { createReadStream } from "node:fs";
 import { extname, join, resolve } from "node:path";
+import { Readable } from "node:stream";
 import { loadConfig } from "../lib/config";
 import { listMedia, resolveAsset } from "./media";
 
@@ -21,28 +23,34 @@ function json(data: unknown, status = 200) {
 }
 
 async function serveOriginal(request: Request, id: string) {
-  const { sourcePath } = await resolveAsset(config, id);
-  const file = Bun.file(sourcePath);
+  const { sourcePath, sourceStat } = await resolveAsset(config, id);
+  const fileSize = sourceStat.size;
 
   const range = request.headers.get("range");
   const headers = {
     "Accept-Ranges": "bytes",
     "Content-Type": mimeTypes[extname(sourcePath).toLowerCase()] ?? "application/octet-stream",
-    "Content-Length": String(file.size),
+    "Content-Length": String(fileSize),
   };
-  if (!range) return new Response(request.method === "HEAD" ? null : file, { headers });
+  if (!range) {
+    const body = request.method === "HEAD" ? null : Readable.toWeb(createReadStream(sourcePath, { highWaterMark: 1024 * 1024 }));
+    return new Response(body as BodyInit | null, { headers });
+  }
 
   const match = /^bytes=(\d*)-(\d*)$/.exec(range);
-  if (!match) return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${file.size}` } });
+  if (!match) return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${fileSize}` } });
   const suffixLength = !match[1] && match[2] ? Number(match[2]) : undefined;
-  const start = suffixLength === undefined ? Number(match[1]) : Math.max(file.size - suffixLength, 0);
-  const end = suffixLength === undefined && match[2] ? Math.min(Number(match[2]), file.size - 1) : file.size - 1;
-  if (start > end || start >= file.size) {
-    return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${file.size}` } });
+  const start = suffixLength === undefined ? Number(match[1]) : Math.max(fileSize - suffixLength, 0);
+  const end = suffixLength === undefined && match[2] ? Math.min(Number(match[2]), fileSize - 1) : fileSize - 1;
+  if (start > end || start >= fileSize) {
+    return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${fileSize}` } });
   }
-  return new Response(request.method === "HEAD" ? null : file.slice(start, end + 1), {
+  const body = request.method === "HEAD"
+    ? null
+    : Readable.toWeb(createReadStream(sourcePath, { start, end, highWaterMark: 1024 * 1024 }));
+  return new Response(body as BodyInit | null, {
     status: 206,
-    headers: { ...headers, "Content-Range": `bytes ${start}-${end}/${file.size}`, "Content-Length": String(end - start + 1) },
+    headers: { ...headers, "Content-Range": `bytes ${start}-${end}/${fileSize}`, "Content-Length": String(end - start + 1) },
   });
 }
 
