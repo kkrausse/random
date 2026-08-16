@@ -1,15 +1,19 @@
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { loadConfig } from "../lib/config";
 import { requireFfmpegEncoder } from "../lib/ffmpeg";
 import type { AppConfig, MediaAsset, MediaInfo } from "../lib/types";
+import { runGyroflow } from "./gyroflow";
 import { listMedia, resolveAsset } from "./media";
 
 const config = await loadConfig();
 const ffmpegPath = await requireFfmpegEncoder(config.ffmpegPath, "libx264");
 const ffprobePath = process.env.FFPROBE_PATH ?? join(dirname(ffmpegPath), "ffprobe");
+const gyroflowPath = process.env.GYROFLOW_PATH
+  ?? join(homedir(), "Applications/Gyroflow CLI/Gyroflow.app/Contents/MacOS/gyroflow");
 const sipsPath = "/usr/bin/sips";
-const SCAN_VERSION = 5;
+const SCAN_VERSION = 6;
 
 function containedPath(root: string, relativePath: string) {
   const result = resolve(root, relativePath);
@@ -122,8 +126,10 @@ async function scanAsset(config: AppConfig, asset: MediaAsset) {
   const infoPath = join(assetRoot, "info.json");
   const thumbnailPath = join(assetRoot, "thumbnail.jpg");
   const proxyPath = join(assetRoot, "proxy.mp4");
+  const stabilizedProxyPath = join(assetRoot, "stabilized-proxy.mp4");
   let keepThumbnail = false;
   let keepProxy = false;
+  let keepStabilizedProxy = false;
 
   try {
     const existing = (await Bun.file(infoPath).json()) as MediaInfo;
@@ -133,7 +139,12 @@ async function scanAsset(config: AppConfig, asset: MediaAsset) {
       await Bun.file(proxyPath).exists()
       && sourceAndProxyFresh(existing, config, sourceStat.mtimeMs, sourceStat.size)
     );
-    if (keepThumbnail && keepProxy && existing.scanVersion === SCAN_VERSION) return "skipped" as const;
+    keepStabilizedProxy = asset.kind === "photo" || !config.proxy.enabled || (
+      await Bun.file(stabilizedProxyPath).exists()
+      && sourceAndProxyFresh(existing, config, sourceStat.mtimeMs, sourceStat.size)
+      && JSON.stringify(existing.stabilizedProxy) === JSON.stringify(config.proxy)
+    );
+    if (keepThumbnail && keepProxy && keepStabilizedProxy && existing.scanVersion === SCAN_VERSION) return "skipped" as const;
   } catch {
     // Missing or invalid scan data is rebuilt below.
   }
@@ -142,6 +153,7 @@ async function scanAsset(config: AppConfig, asset: MediaAsset) {
   const token = crypto.randomUUID();
   const temporaryThumbnail = join(assetRoot, `thumbnail-${token}.tmp.jpg`);
   const temporaryProxy = join(assetRoot, `proxy-${token}.tmp.mp4`);
+  const temporaryStabilizedProxy = join(assetRoot, `stabilized-proxy-${token}.tmp.mp4`);
   const temporaryInfo = join(assetRoot, `info-${token}.tmp`);
   const seekTime = Math.min(Math.max(info.duration * 0.1, 0), 5);
   await mkdir(assetRoot, { recursive: true });
@@ -179,14 +191,27 @@ async function scanAsset(config: AppConfig, asset: MediaAsset) {
       ]);
       await rename(temporaryProxy, proxyPath);
     }
+    if (asset.kind === "video" && config.proxy.enabled && !keepStabilizedProxy) {
+      const outputHeight = Math.min(info.height, config.proxy.maxHeight);
+      const outputSize = {
+        width: Math.max(2, Math.floor(info.width * outputHeight / info.height / 2) * 2),
+        height: Math.max(2, Math.floor(outputHeight / 2) * 2),
+      };
+      // Gyroflow needs the original container's lens and per-frame gyro metadata.
+      await runGyroflow(gyroflowPath, sourcePath, temporaryStabilizedProxy, "proxy", outputSize,
+        new AbortController().signal);
+      await rename(temporaryStabilizedProxy, stabilizedProxyPath);
+    }
     info.proxy = asset.kind === "video" && config.proxy.enabled ? config.proxy : undefined;
+    info.stabilizedProxy = asset.kind === "video" && config.proxy.enabled ? config.proxy : undefined;
     await writeFile(temporaryInfo, `${JSON.stringify(info, null, 2)}\n`);
     await rename(temporaryInfo, infoPath);
-    return keepThumbnail && keepProxy ? "updated" as const : "generated" as const;
+    return keepThumbnail && keepProxy && keepStabilizedProxy ? "updated" as const : "generated" as const;
   } finally {
     await Promise.all([
       rm(temporaryThumbnail, { force: true }),
       rm(temporaryProxy, { force: true }),
+      rm(temporaryStabilizedProxy, { force: true }),
       rm(temporaryInfo, { force: true }),
     ]);
   }

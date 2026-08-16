@@ -61,6 +61,7 @@ export type MediaInfo = {
   containerBitrate?: number;
   thumbnail: AppConfig["thumbnail"];
   proxy?: AppConfig["proxy"];
+  stabilizedProxy?: AppConfig["proxy"];
 };
 
 export type ProjectSettings = {

@@ -22,6 +22,7 @@ Current per-asset layout:
     info.json
     thumbnail.jpg
     proxy.mp4
+    stabilized-proxy.mp4
   .work/
     <temporary-preview>.mp4
     <project-export-job-id>/
@@ -34,7 +35,7 @@ Current per-asset layout:
       <project-id>.mp4
 ```
 
-`proxy.mp4` is the reusable playback cache. Stabilization is performed on demand from the original so Sony metadata remains available, then cached at proxy or original output quality under `.preview-cache`. Crop is applied in the browser and does not invalidate or duplicate stabilized media.
+`proxy.mp4` and `stabilized-proxy.mp4` are reusable playback variants generated during the library scan. The stabilized proxy is rendered from the original so Sony metadata remains available. Original-quality stabilization is still performed on demand and cached under `.preview-cache`. Crop is applied in the browser and does not invalidate or duplicate stabilized media.
 
 The library discovers videos and still photos. Sony `.ARW` dimensions and JPEG thumbnails are generated with macOS `sips`; RAW originals remain untouched and are converted only into disposable job-local JPEGs when rendering a project.
 

@@ -131,12 +131,32 @@ async function resolvePlaybackSource(id: string, source: string) {
     sourceMtimeMs: sourceStat.mtimeMs, sourceSize: sourceStat.size };
 }
 
+async function resolveStabilizedProxy(id: string) {
+  const { sourcePath, sourceStat, kind } = await resolveAsset(config, id);
+  if (kind !== "video") throw new MediaKindError("Media asset is not a video");
+  const infoFile = Bun.file(join(config.derivedRoot, id, "info.json"));
+  const proxyPath = join(config.derivedRoot, id, "stabilized-proxy.mp4");
+  const proxyFile = Bun.file(proxyPath);
+  if (!config.proxy.enabled || !(await infoFile.exists()) || !(await proxyFile.exists())) {
+    throw new Error("Stabilized proxy is unavailable");
+  }
+  const info = await infoFile.json() as MediaInfo;
+  const proxyIsFresh = info.sourceMtimeMs === sourceStat.mtimeMs
+    && info.sourceSize === sourceStat.size
+    && JSON.stringify(info.stabilizedProxy) === JSON.stringify(config.proxy);
+  if (!proxyIsFresh) throw new Error("Stabilized proxy is unavailable");
+  return { path: proxyPath, size: proxyFile.size, originalPath: sourcePath,
+    sourceMtimeMs: sourceStat.mtimeMs, sourceSize: sourceStat.size };
+}
+
 async function serveVideo(request: Request, id: string, source: string) {
   try {
-    const video = await resolvePlaybackSource(id, source);
+    const video = source === "stabilized-proxy"
+      ? await resolveStabilizedProxy(id)
+      : await resolvePlaybackSource(id, source);
     return serveFile(request, video.path, video.size);
   } catch (error) {
-    if (error instanceof Error && error.message === "Proxy is unavailable") {
+    if (error instanceof Error && (error.message === "Proxy is unavailable" || error.message === "Stabilized proxy is unavailable")) {
       return json({ error: error.message }, 404);
     }
     throw error;
@@ -189,6 +209,10 @@ async function createPreview(request: Request) {
   const body = await request.json() as { id?: string; source?: PlaybackSource; stabilize?: boolean };
   const id = body.id ?? "";
   const source = body.source === "original" ? "original" : "proxy";
+  if (body.stabilize && source === "proxy") {
+    await resolveStabilizedProxy(id);
+    return json({ url: `/api/media/video?id=${encodeURIComponent(id)}&source=stabilized-proxy` });
+  }
   const video = await resolvePlaybackSource(id, source);
   if (!body.stabilize) {
     return json({ url: `/api/media/video?id=${encodeURIComponent(id)}&source=${source}` });
