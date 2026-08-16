@@ -1,9 +1,18 @@
+import { mkdir, rm } from "node:fs/promises";
+import { homedir } from "node:os";
 import { extname, join, resolve } from "node:path";
 import { loadConfig } from "../lib/config";
-import type { MediaInfo } from "../lib/types";
+import type { MediaInfo, PlaybackSource } from "../lib/types";
 import { listMedia, resolveAsset } from "./media";
 
 const config = await loadConfig();
+const workRoot = join(config.derivedRoot, ".work");
+const workFiles = new Map<string, string>();
+const gyroflowPath = process.env.GYROFLOW_PATH
+  ?? join(homedir(), "Applications/Gyroflow CLI/Gyroflow.app/Contents/MacOS/gyroflow");
+
+await rm(workRoot, { recursive: true, force: true });
+await mkdir(workRoot, { recursive: true });
 
 const mimeTypes: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
@@ -48,22 +57,110 @@ async function serveFile(request: Request, path: string, fileSize: number) {
   });
 }
 
-async function serveVideo(request: Request, id: string, source: string) {
+async function resolvePlaybackSource(id: string, source: string) {
   const { sourcePath, sourceStat } = await resolveAsset(config, id);
-  if (source !== "proxy") return serveFile(request, sourcePath, sourceStat.size);
+  if (source !== "proxy") return { path: sourcePath, size: sourceStat.size, originalPath: sourcePath };
 
   const infoFile = Bun.file(join(config.derivedRoot, id, "info.json"));
   const proxyPath = join(config.derivedRoot, id, "proxy.mp4");
   const proxyFile = Bun.file(proxyPath);
   if (!config.proxy.enabled || !(await infoFile.exists()) || !(await proxyFile.exists())) {
-    return json({ error: "Proxy is unavailable" }, 404);
+    throw new Error("Proxy is unavailable");
   }
   const info = await infoFile.json() as MediaInfo;
   const proxyIsFresh = info.sourceMtimeMs === sourceStat.mtimeMs
     && info.sourceSize === sourceStat.size
     && JSON.stringify(info.proxy) === JSON.stringify(config.proxy);
-  if (!proxyIsFresh) return json({ error: "Proxy is unavailable" }, 404);
-  return serveFile(request, proxyPath, proxyFile.size);
+  if (!proxyIsFresh) throw new Error("Proxy is unavailable");
+  return { path: proxyPath, size: proxyFile.size, originalPath: sourcePath };
+}
+
+async function serveVideo(request: Request, id: string, source: string) {
+  try {
+    const video = await resolvePlaybackSource(id, source);
+    return serveFile(request, video.path, video.size);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Proxy is unavailable") {
+      return json({ error: error.message }, 404);
+    }
+    throw error;
+  }
+}
+
+async function runGyroflow(
+  input: string,
+  output: string,
+  source: PlaybackSource,
+  outputSize: { width: number; height: number } | undefined,
+  signal: AbortSignal,
+) {
+  if (!(await Bun.file(gyroflowPath).exists())) throw new Error(`Gyroflow CLI not found: ${gyroflowPath}`);
+  const outputParams = JSON.stringify({
+    codec: "H.264/AVC",
+    bitrate: source === "proxy" ? 20 : 60,
+    use_gpu: true,
+    audio: true,
+    pixel_format: "YUV420P",
+    ...(outputSize ? { output_width: outputSize.width, output_height: outputSize.height } : {}),
+    output_path: output,
+  });
+  const args = [input, "-f", "-r", "apple m", "--stdout-progress", "-p", outputParams];
+  const process = Bun.spawn([gyroflowPath, ...args], { stdout: "pipe", stderr: "pipe" });
+  const abort = () => process.kill();
+  signal.addEventListener("abort", abort, { once: true });
+  try {
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(process.stdout).text(),
+      new Response(process.stderr).text(),
+      process.exited,
+    ]);
+    if (signal.aborted) throw new Error("Stabilization cancelled");
+    const log = `${stderr}\n${stdout}`.trim();
+    if (exitCode !== 0 || log.includes("Rendering failed:")) {
+      throw new Error(`Gyroflow failed: ${log || `exit code ${exitCode}`}`);
+    }
+  } finally {
+    signal.removeEventListener("abort", abort);
+  }
+}
+
+async function stabilizeVideo(request: Request) {
+  const body = await request.json() as { id?: string; source?: PlaybackSource };
+  const source = body.source === "original" ? "original" : "proxy";
+  const video = await resolvePlaybackSource(body.id ?? "", source);
+  const info = await Bun.file(join(config.derivedRoot, body.id ?? "", "info.json")).json() as MediaInfo;
+  const outputHeight = Math.min(info.height, config.proxy.maxHeight);
+  const outputSize = source === "proxy" ? {
+    width: Math.max(2, Math.floor(info.width * outputHeight / info.height / 2) * 2),
+    height: Math.max(2, Math.floor(outputHeight / 2) * 2),
+  } : undefined;
+  const workId = crypto.randomUUID();
+  const output = join(workRoot, `${workId}.mp4`);
+  try {
+    // Sony's lens, IBIS, and per-frame gyro metadata only survives in the original container.
+    await runGyroflow(video.originalPath, output, source, outputSize, request.signal);
+    if (!(await Bun.file(output).exists())) throw new Error("Gyroflow did not create an output file");
+    workFiles.set(workId, output);
+    return json({ workId, url: `/api/media/work?id=${workId}` });
+  } catch (error) {
+    await Promise.all([rm(output, { force: true }), rm(`${output}.tmp`, { force: true })]);
+    throw error;
+  }
+}
+
+async function serveWork(request: Request, id: string) {
+  const path = workFiles.get(id);
+  if (!path) return json({ error: "Preview is unavailable" }, 404);
+  const file = Bun.file(path);
+  if (!(await file.exists())) return json({ error: "Preview is unavailable" }, 404);
+  return serveFile(request, path, file.size);
+}
+
+async function deleteWork(id: string) {
+  const path = workFiles.get(id);
+  if (path) await rm(path, { force: true });
+  workFiles.delete(id);
+  return new Response(null, { status: 204 });
 }
 
 async function serveThumbnail(id: string) {
@@ -88,6 +185,15 @@ async function handleApi(request: Request, url: URL) {
   }
   if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/api/media/video") {
     return serveVideo(request, url.searchParams.get("id") ?? "", url.searchParams.get("source") ?? "original");
+  }
+  if (request.method === "POST" && url.pathname === "/api/media/stabilize") {
+    return stabilizeVideo(request);
+  }
+  if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/api/media/work") {
+    return serveWork(request, url.searchParams.get("id") ?? "");
+  }
+  if (request.method === "DELETE" && url.pathname === "/api/media/work") {
+    return deleteWork(url.searchParams.get("id") ?? "");
   }
   if (request.method === "GET" && url.pathname === "/api/media/thumbnail") {
     return serveThumbnail(url.searchParams.get("id") ?? "");

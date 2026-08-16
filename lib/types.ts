@@ -26,6 +26,15 @@ export type MediaAsset = {
   relativePath: string;
 };
 
+export type PlaybackSource = "proxy" | "original";
+
+export type NormalizedCrop = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export type MediaInfo = {
   scanVersion: number;
   source: string;

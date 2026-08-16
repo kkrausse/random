@@ -1,6 +1,6 @@
 import { StrictMode, useEffect, useState, type KeyboardEvent } from "react";
 import { createRoot } from "react-dom/client";
-import type { MediaAsset, MediaInfo } from "../../lib/types";
+import type { MediaAsset, MediaInfo, NormalizedCrop, PlaybackSource } from "../../lib/types";
 import "./styles.css";
 
 function formatDuration(seconds: number) {
@@ -12,6 +12,8 @@ function formatDuration(seconds: number) {
 function formatBitrate(bitsPerSecond: number | undefined) {
   return bitsPerSecond ? `${(bitsPerSecond / 1_000_000).toFixed(1)} Mb/s` : undefined;
 }
+
+const defaultCrop: NormalizedCrop = { x: 0.1, y: 0.1, width: 0.8, height: 0.8 };
 
 function Thumbnail({ asset }: { asset: MediaAsset }) {
   const [failed, setFailed] = useState(false);
@@ -32,7 +34,11 @@ function App() {
   const [videoInfo, setVideoInfo] = useState<{ width: number; height: number; duration: number }>();
   const [mediaInfo, setMediaInfo] = useState<MediaInfo>();
   const [mediaInfoLoaded, setMediaInfoLoaded] = useState(false);
-  const [playbackSource, setPlaybackSource] = useState<"proxy" | "original">("proxy");
+  const [playbackSource, setPlaybackSource] = useState<PlaybackSource>("proxy");
+  const [stabilize, setStabilize] = useState(false);
+  const [stabilizedPreview, setStabilizedPreview] = useState<{ workId: string; url: string }>();
+  const [stabilizing, setStabilizing] = useState(false);
+  const [crop, setCrop] = useState<NormalizedCrop>();
   const [playbackError, setPlaybackError] = useState<string>();
   const [libraryError, setLibraryError] = useState<string>();
 
@@ -65,10 +71,50 @@ function App() {
     return () => controller.abort();
   }, [selection]);
 
+  const activePlaybackSource: PlaybackSource = playbackSource === "proxy" && mediaInfo?.proxy ? "proxy" : "original";
+
+  useEffect(() => {
+    setStabilizedPreview(undefined);
+    if (!stabilize || !selection || !mediaInfoLoaded) {
+      setStabilizing(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    let workId: string | undefined;
+    setStabilizing(true);
+    setPlaybackError(undefined);
+    fetch("/api/media/stabilize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: selection.id, source: activePlaybackSource }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error ?? "Stabilization failed");
+        workId = body.workId;
+        setStabilizedPreview(body);
+      })
+      .catch((error) => {
+        if (error.name !== "AbortError") setPlaybackError(error instanceof Error ? error.message : "Stabilization failed");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setStabilizing(false);
+      });
+
+    return () => {
+      controller.abort();
+      if (workId) void fetch(`/api/media/work?id=${encodeURIComponent(workId)}`, { method: "DELETE" });
+    };
+  }, [activePlaybackSource, mediaInfoLoaded, selection, stabilize]);
+
   function selectAsset(asset: MediaAsset) {
     setSelection(asset);
     setVideoInfo(undefined);
     setPlaybackError(undefined);
+    setStabilize(false);
+    setCrop(undefined);
   }
 
   function navigateLibrary(event: KeyboardEvent<HTMLDivElement>) {
@@ -94,7 +140,12 @@ function App() {
     buttons[nextIndex]!.click();
   }
 
-  const activePlaybackSource = playbackSource === "proxy" && mediaInfo?.proxy ? "proxy" : "original";
+  function updateCrop(key: keyof NormalizedCrop, value: number) {
+    setCrop((current) => ({ ...(current ?? defaultCrop), [key]: value }));
+  }
+
+  const videoUrl = stabilizedPreview?.url
+    ?? (selection ? `/api/media/video?id=${encodeURIComponent(selection.id)}&source=${activePlaybackSource}` : undefined);
 
   return (
     <main className="app-shell">
@@ -143,6 +194,9 @@ function App() {
                   <button className={activePlaybackSource === "original" ? "active" : ""} onClick={() => setPlaybackSource("original")}>Original</button>
                 </div>
               )}
+              {selection && <button className={stabilize ? "edit-toggle active" : "edit-toggle"} aria-pressed={stabilize} onClick={() => setStabilize((value) => !value)}>Stabilize</button>}
+              {selection && <button className={crop ? "edit-toggle active" : "edit-toggle"} aria-pressed={Boolean(crop)} onClick={() => setCrop((value) => value ? undefined : defaultCrop)}>Crop</button>}
+              {stabilizing && <span className="processing-badge">Stabilizing...</span>}
               {videoInfo && <span className="duration-badge">{formatDuration(videoInfo.duration)}</span>}
             </div>
           </div>
@@ -150,23 +204,43 @@ function App() {
           <div className="viewer-stage">
             {!selection && <div className="viewer-placeholder"><span>Choose a clip from the library</span></div>}
             {selection && mediaInfoLoaded && (
-              <video
-                key={`${selection.id}:${activePlaybackSource}`}
-                src={`/api/media/video?id=${encodeURIComponent(selection.id)}&source=${activePlaybackSource}`}
-                controls
-                autoPlay
-                playsInline
-                preload="metadata"
-                onLoadedMetadata={(event) => setVideoInfo({
-                  width: event.currentTarget.videoWidth,
-                  height: event.currentTarget.videoHeight,
-                  duration: event.currentTarget.duration,
-                })}
-                onError={() => setPlaybackError("This browser cannot play the source file's container or codec.")}
-              />
+              <div className="video-frame" style={{ aspectRatio: `${videoInfo?.width ?? mediaInfo?.width ?? 16} / ${videoInfo?.height ?? mediaInfo?.height ?? 9}` }}>
+                <video
+                  key={`${selection.id}:${activePlaybackSource}:${stabilizedPreview?.workId ?? "direct"}`}
+                  src={videoUrl}
+                  controls
+                  autoPlay
+                  playsInline
+                  preload="metadata"
+                  onLoadedMetadata={(event) => setVideoInfo({
+                    width: event.currentTarget.videoWidth,
+                    height: event.currentTarget.videoHeight,
+                    duration: event.currentTarget.duration,
+                  })}
+                  onError={() => setPlaybackError("This browser cannot play the selected video pipeline output.")}
+                />
+                {crop && (
+                  <div className="crop-rectangle" style={{
+                    left: `${crop.x * 100}%`,
+                    top: `${crop.y * 100}%`,
+                    width: `${crop.width * 100}%`,
+                    height: `${crop.height * 100}%`,
+                  }} />
+                )}
+              </div>
             )}
             {playbackError && <div className="error-message stage-error playback-error">{playbackError}</div>}
           </div>
+
+          {crop && (
+            <div className="crop-controls">
+              <label>X <input type="range" min="0" max={1 - crop.width} step="0.01" value={crop.x} onChange={(event) => updateCrop("x", Number(event.target.value))} /></label>
+              <label>Y <input type="range" min="0" max={1 - crop.height} step="0.01" value={crop.y} onChange={(event) => updateCrop("y", Number(event.target.value))} /></label>
+              <label>Width <input type="range" min="0.1" max={1 - crop.x} step="0.01" value={crop.width} onChange={(event) => updateCrop("width", Number(event.target.value))} /></label>
+              <label>Height <input type="range" min="0.1" max={1 - crop.y} step="0.01" value={crop.height} onChange={(event) => updateCrop("height", Number(event.target.value))} /></label>
+              <button onClick={() => setCrop(defaultCrop)}>Reset</button>
+            </div>
+          )}
 
           <footer className="viewer-meta">
             {mediaInfo || videoInfo ? (
@@ -177,6 +251,7 @@ function App() {
                 {mediaInfo?.videoBitrate && <span>Video {formatBitrate(mediaInfo.videoBitrate)}</span>}
                 {mediaInfo && mediaInfo.fps > 0 && <span>{mediaInfo.fps.toFixed(2)} fps</span>}
                 <span>{activePlaybackSource === "proxy" ? "1080p proxy" : "Original file"}</span>
+                {stabilizedPreview && <span>Stabilized preview</span>}
                 <span>{mediaInfo?.proxy ? "Proxy available" : "No proxy"}</span>
               </>
             ) : <span>Direct playback / no processing or copies</span>}

@@ -38,9 +38,18 @@ h1, h2, p { margin: 0; }
 .source-toggle button { padding: 3px 7px; color: #aaa; background: #222; border: 1px solid #555; cursor: pointer; font-size: 10px; }
 .source-toggle button.active { color: #fff; background: #444; border-color: #888; }
 .source-toggle button:disabled { opacity: 0.4; cursor: default; }
+.edit-toggle { padding: 3px 7px; color: #aaa; background: transparent; border: 1px solid #555; cursor: pointer; font-size: 10px; }
+.edit-toggle.active { color: #fff; background: #345; border-color: #789; }
+.processing-badge { color: #9cc8ff; font-size: 10px; }
 .duration-badge { color: #aaa; font: 11px ui-monospace, monospace; }
 .viewer-stage { position: relative; flex: 1; min-height: 300px; display: grid; place-items: center; overflow: hidden; background: #000; }
-.viewer-stage video { width: 100%; height: 100%; max-height: calc(100vh - 150px); object-fit: contain; }
+.video-frame { position: relative; width: auto; height: 100%; max-width: 100%; max-height: calc(100vh - 150px); overflow: hidden; }
+.video-frame video { width: 100%; height: 100%; display: block; object-fit: fill; }
+.crop-rectangle { position: absolute; border: 2px solid #fff; box-shadow: 0 0 0 9999px rgb(0 0 0 / 55%); pointer-events: none; }
+.crop-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 0; color: #aaa; font-size: 10px; }
+.crop-controls label { display: flex; align-items: center; gap: 5px; }
+.crop-controls input { width: 100px; }
+.crop-controls button { padding: 3px 7px; color: #ddd; background: #222; border: 1px solid #555; }
 .viewer-placeholder { color: #888; font-size: 12px; }
 .viewer-meta { min-height: 42px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; color: #aaa; font: 10px ui-monospace, monospace; }
 .error-message { padding: 10px; color: #ffb4a6; background: #4a1e18; font-size: 12px; }
