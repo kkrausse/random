@@ -28,7 +28,7 @@ const ACTIVE_PROJECT_KEY = "video-editor-active-project";
 const PHOTO_DURATION = 4;
 const MINIMUM_CROP = 0.05;
 const MINIMUM_TRIM = 0.01;
-const TIMELINE_PIXELS_PER_SECOND = 6;
+const TIMELINE_PIXELS_PER_SECOND = 30;
 const FPS_OPTIONS = [24, 25, 30, 50, 60] as const;
 const PRESETS: Array<{ label: string; settings: Pick<ProjectSettings, "width" | "height"> }> = [
   { label: "16:9", settings: { width: 1920, height: 1080 } },
