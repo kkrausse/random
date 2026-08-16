@@ -1,4 +1,5 @@
 import { mkdir, readdir, rename, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { loadConfig } from "../lib/config";
@@ -20,8 +21,10 @@ import {
 
 const config = await loadConfig();
 const workRoot = join(config.derivedRoot, ".work");
+const previewRoot = join(config.derivedRoot, ".preview-cache");
 const exportRoot = join(config.derivedRoot, "exports");
 const workFiles = new Map<string, string>();
+const previewJobs = new Map<string, Promise<void>>();
 const ffmpegPath = await requireFfmpegEncoder(config.ffmpegPath, "libx264");
 const ffprobePath = process.env.FFPROBE_PATH ?? join(dirname(ffmpegPath), "ffprobe");
 const gyroflowPath = process.env.GYROFLOW_PATH
@@ -30,6 +33,7 @@ const gyroflowPath = process.env.GYROFLOW_PATH
 const removeWork = (path: string) => rm(path, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
 
 await mkdir(workRoot, { recursive: true });
+await mkdir(previewRoot, { recursive: true });
 const staleWork = await readdir(workRoot);
 const staleCleanup = await Promise.allSettled(staleWork.map((name) => removeWork(join(workRoot, name))));
 for (const result of staleCleanup) {
@@ -101,7 +105,8 @@ async function serveFile(request: Request, path: string, fileSize: number, extra
 async function resolvePlaybackSource(id: string, source: string) {
   const { sourcePath, sourceStat, kind } = await resolveAsset(config, id);
   if (kind !== "video") throw new MediaKindError("Media asset is not a video");
-  if (source !== "proxy") return { path: sourcePath, size: sourceStat.size, originalPath: sourcePath };
+  if (source !== "proxy") return { path: sourcePath, size: sourceStat.size, originalPath: sourcePath,
+    sourceMtimeMs: sourceStat.mtimeMs, sourceSize: sourceStat.size };
 
   const infoFile = Bun.file(join(config.derivedRoot, id, "info.json"));
   const proxyPath = join(config.derivedRoot, id, "proxy.mp4");
@@ -114,7 +119,8 @@ async function resolvePlaybackSource(id: string, source: string) {
     && info.sourceSize === sourceStat.size
     && JSON.stringify(info.proxy) === JSON.stringify(config.proxy);
   if (!proxyIsFresh) throw new Error("Proxy is unavailable");
-  return { path: proxyPath, size: proxyFile.size, originalPath: sourcePath };
+  return { path: proxyPath, size: proxyFile.size, originalPath: sourcePath,
+    sourceMtimeMs: sourceStat.mtimeMs, sourceSize: sourceStat.size };
 }
 
 async function serveVideo(request: Request, id: string, source: string) {
@@ -129,7 +135,8 @@ async function serveVideo(request: Request, id: string, source: string) {
   }
 }
 
-async function runFfmpeg(input: string, output: string, crop: NormalizedCrop | undefined, signal: AbortSignal) {
+async function runFfmpeg(input: string, output: string, crop: NormalizedCrop | undefined, signal: AbortSignal,
+  options: { preset?: string; quality?: number } = {}) {
   const filters = crop ? [
     `crop=trunc(iw*${crop.width}/2)*2:trunc(ih*${crop.height}/2)*2:trunc(iw*${crop.x}/2)*2:trunc(ih*${crop.y}/2)*2`,
   ] : [];
@@ -139,7 +146,7 @@ async function runFfmpeg(input: string, output: string, crop: NormalizedCrop | u
     "-map", "0:v:0", "-map", "0:a:0?",
     "-map_metadata", "-1",
     ...(filters.length ? ["-vf", filters.join(",")] : []),
-    "-c:v", "libx264", "-preset", "slow", "-crf", String(config.export.quality),
+    "-c:v", "libx264", "-preset", options.preset ?? "slow", "-crf", String(options.quality ?? config.export.quality),
     "-pix_fmt", "yuv420p",
     "-c:a", "aac", "-b:a", "192k",
     "-movflags", "+faststart",
@@ -168,6 +175,73 @@ function validateCrop(value: unknown) {
     throw new Error("Invalid crop");
   }
   return crop;
+}
+
+async function createPreview(request: Request) {
+  const body = await request.json() as { id?: string; source?: PlaybackSource; stabilize?: boolean; crop?: unknown };
+  const id = body.id ?? "";
+  const source = body.source === "original" ? "original" : "proxy";
+  const video = await resolvePlaybackSource(id, source);
+  const crop = validateCrop(body.crop);
+  if (!body.stabilize && !crop) {
+    return json({ url: `/api/media/video?id=${encodeURIComponent(id)}&source=${source}` });
+  }
+
+  const key = createHash("sha256").update(JSON.stringify({
+    version: 1,
+    id,
+    source,
+    sourceMtimeMs: video.sourceMtimeMs,
+    sourceSize: video.sourceSize,
+    stabilize: Boolean(body.stabilize),
+    crop,
+    proxy: config.proxy,
+  })).digest("hex");
+  const output = join(previewRoot, `${key}.mp4`);
+  if (!(await Bun.file(output).exists())) {
+    let job = previewJobs.get(key);
+    if (!job) {
+      job = (async () => {
+        const token = crypto.randomUUID();
+        const temporaryOutput = join(previewRoot, `.${key}-${token}.tmp.mp4`);
+        const stabilizedInput = join(workRoot, `${token}-stabilized.mp4`);
+        const signal = new AbortController().signal;
+        try {
+          let input = video.path;
+          if (body.stabilize) {
+            const info = await Bun.file(join(config.derivedRoot, id, "info.json")).json() as MediaInfo;
+            const outputHeight = Math.min(info.height, config.proxy.maxHeight);
+            const outputSize = source === "proxy" ? {
+              width: Math.max(2, Math.floor(info.width * outputHeight / info.height / 2) * 2),
+              height: Math.max(2, Math.floor(outputHeight / 2) * 2),
+            } : undefined;
+            await runGyroflow(gyroflowPath, video.originalPath, stabilizedInput, source, outputSize, signal);
+            input = stabilizedInput;
+          }
+          if (crop) {
+            await runFfmpeg(input, temporaryOutput, crop, signal, { preset: "veryfast", quality: config.proxy.crf });
+          } else {
+            await rename(input, temporaryOutput);
+          }
+          await rename(temporaryOutput, output);
+        } finally {
+          await Promise.allSettled([rm(temporaryOutput, { force: true }), rm(stabilizedInput, { force: true })]);
+        }
+      })();
+      previewJobs.set(key, job);
+      void job.then(() => previewJobs.delete(key), () => previewJobs.delete(key));
+    }
+    await job;
+  }
+  return json({ url: `/api/media/preview?key=${key}` });
+}
+
+async function servePreview(request: Request, key: string) {
+  if (!/^[a-f0-9]{64}$/.test(key)) throw new MediaNotFoundError("Unknown preview");
+  const path = join(previewRoot, `${key}.mp4`);
+  const file = Bun.file(path);
+  if (!(await file.exists())) return json({ error: "Preview is unavailable" }, 404);
+  return serveFile(request, path, file.size, { "Cache-Control": "private, max-age=31536000, immutable" });
 }
 
 function exportPath(id: string) {
@@ -345,6 +419,12 @@ async function handleApi(request: Request, url: URL) {
   }
   if (request.method === "POST" && url.pathname === "/api/media/stabilize") {
     return stabilizeVideo(request);
+  }
+  if (request.method === "POST" && url.pathname === "/api/media/preview") {
+    return createPreview(request);
+  }
+  if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/api/media/preview") {
+    return servePreview(request, url.searchParams.get("key") ?? "");
   }
   if (request.method === "POST" && url.pathname === "/api/media/export") {
     return exportVideo(request);

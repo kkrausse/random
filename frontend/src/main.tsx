@@ -114,8 +114,8 @@ function App() {
   const [exportError, setExportError] = useState<string>();
   const [previewMode, setPreviewMode] = useState<"off" | "playing" | "paused">("off");
   const [cropMode, setCropMode] = useState(false);
-  const [stabilizedPreview, setStabilizedPreview] = useState<{ workId: string; url: string; itemId: string; source: PlaybackSource }>();
-  const [stabilizing, setStabilizing] = useState(false);
+  const [clipPreview, setClipPreview] = useState<{ key: string; url: string }>();
+  const [preparingPreview, setPreparingPreview] = useState(false);
   const [playbackError, setPlaybackError] = useState<string>();
   const [playheadTime, setPlayheadTime] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -157,9 +157,10 @@ function App() {
   } : undefined);
   const selectedInfo = selectedAsset ? metadata[selectedAsset.id] : undefined;
   const activePlaybackSource: PlaybackSource = playbackSource === "proxy" && selectedInfo?.proxy ? "proxy" : "original";
-  const readyStabilizedPreview = selectedItem?.kind === "video"
-    && stabilizedPreview?.itemId === selectedItem.id && stabilizedPreview.source === activePlaybackSource
-    ? stabilizedPreview : undefined;
+  const previewKey = selectedItem?.kind === "video"
+    ? `${selectedItem.id}:${activePlaybackSource}:${selectedItem.stabilize}:${cropMode ? "uncropped" : JSON.stringify(selectedItem.crop)}`
+    : undefined;
+  const readyClipPreview = clipPreview?.key === previewKey ? clipPreview : undefined;
   viewerSelectionRef.current = viewerSelection;
   previewModeRef.current = previewMode;
 
@@ -226,34 +227,30 @@ function App() {
   }, [viewerSelection?.context, viewerSelection?.context === "timeline" ? viewerSelection.itemId : viewerSelection?.mediaId]);
 
   useEffect(() => {
-    if (selectedItem?.kind !== "video" || !selectedItem.stabilize || !selectedInfo) {
-      setStabilizedPreview(undefined);
-      setStabilizing(false);
+    if (selectedItem?.kind !== "video" || !previewKey) {
+      setClipPreview(undefined);
+      setPreparingPreview(false);
       return;
     }
     const controller = new AbortController();
-    let workId: string | undefined;
-    setStabilizedPreview(undefined);
-    setStabilizing(true);
+    setClipPreview(undefined);
+    setPreparingPreview(true);
     setPlaybackError(undefined);
-    fetch("/api/media/stabilize", {
+    fetch("/api/media/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: selectedItem.mediaId, source: activePlaybackSource }),
+      body: JSON.stringify({ id: selectedItem.mediaId, source: activePlaybackSource, stabilize: selectedItem.stabilize,
+        crop: cropMode ? undefined : selectedItem.crop }),
       signal: controller.signal,
-    }).then((response) => responseJson<{ workId: string; url: string }>(response)).then((result) => {
-      workId = result.workId;
-      setStabilizedPreview({ ...result, itemId: selectedItem.id, source: activePlaybackSource });
+    }).then((response) => responseJson<{ url: string }>(response)).then((result) => {
+      setClipPreview({ ...result, key: previewKey });
     }).catch((error) => {
-      if (error.name !== "AbortError") setPlaybackError(error instanceof Error ? error.message : "Stabilization failed");
+      if (error.name !== "AbortError") setPlaybackError(error instanceof Error ? error.message : "Preview failed");
     }).finally(() => {
-      if (!controller.signal.aborted) setStabilizing(false);
+      if (!controller.signal.aborted) setPreparingPreview(false);
     });
-    return () => {
-      controller.abort();
-      if (workId) void fetch(`/api/media/work?id=${encodeURIComponent(workId)}`, { method: "DELETE" });
-    };
-  }, [activePlaybackSource, selectedInfo?.source, selectedItem?.id, selectedItem?.kind === "video" && selectedItem.stabilize]);
+    return () => controller.abort();
+  }, [previewKey]);
 
   useEffect(() => {
     clearTimeout(photoTimer.current);
@@ -269,14 +266,14 @@ function App() {
   useEffect(() => {
     const video = videoRef.current;
     if (previewMode !== "playing" || selectedItem?.kind !== "video" || !video) return;
-    if (selectedItem.stabilize && !readyStabilizedPreview) return;
+    if (!readyClipPreview) return;
     if (video.currentTime < selectedItem.sourceIn || video.currentTime >= selectedItem.sourceOut) {
       video.currentTime = selectedItem.sourceIn;
     }
     void video.play().catch(() => {
       // A newly-mounted video will retry from onLoadedMetadata.
     });
-  }, [previewMode, selectedItem?.id, readyStabilizedPreview?.workId]);
+  }, [previewMode, selectedItem?.id, readyClipPreview?.url]);
 
   async function loadMediaInfo(assets: MediaAsset[], signal?: AbortSignal) {
     const entries = await Promise.all(assets.map(async (asset) => {
@@ -559,7 +556,7 @@ function App() {
       setPreviewMode("paused");
     } else if (previewMode === "paused") {
       setPreviewMode("playing");
-      if (selectedItem?.kind === "video" && (!selectedItem.stabilize || readyStabilizedPreview)) void videoRef.current?.play();
+      if (selectedItem?.kind === "video" && readyClipPreview) void videoRef.current?.play();
     }
   }
 
@@ -585,7 +582,7 @@ function App() {
     if (selectedItem?.kind === "video") {
       video.currentTime = selectedItem.sourceIn;
       setPlayheadTime(selectedItem.sourceIn);
-      if (previewMode === "playing" && (!selectedItem.stabilize || readyStabilizedPreview)) void video.play();
+      if (previewMode === "playing" && readyClipPreview) void video.play();
     }
   }
 
@@ -692,15 +689,15 @@ function App() {
   }
 
   const viewerMediaUrl = selectedAsset?.kind === "video"
-    ? selectedItem?.kind === "video" && selectedItem.stabilize
-      ? readyStabilizedPreview?.url
+    ? selectedItem?.kind === "video"
+      ? readyClipPreview?.url
       : videoUrl(selectedAsset.id, activePlaybackSource)
     : selectedAsset ? thumbnailUrl(selectedAsset.id) : undefined;
   const displayedCrop = selectedItem?.crop && !cropMode ? selectedItem.crop : undefined;
   const viewerAspect = selectedInfo && displayedCrop
     ? displayedCrop.width * selectedInfo.width / (displayedCrop.height * selectedInfo.height)
     : selectedInfo ? selectedInfo.width / selectedInfo.height : undefined;
-  const croppedMediaStyle = displayedCrop ? {
+  const croppedMediaStyle = displayedCrop && selectedAsset?.kind === "photo" ? {
     width: `${100 / displayedCrop.width}%`,
     height: `${100 / displayedCrop.height}%`,
     left: `${-displayedCrop.x / displayedCrop.width * 100}%`,
@@ -763,22 +760,22 @@ function App() {
               {selectedItem?.kind === "video" && <button className={selectedItem.stabilize ? "edit-toggle active" : "edit-toggle"}
                 aria-pressed={selectedItem.stabilize} onClick={() => updateItem(selectedItem.id, (item) => ({ ...item, stabilize: !item.stabilize }))}>Stabilize</button>}
               {selectedAsset && viewerSelection?.context === "source" && <button onClick={() => addToTimeline(selectedAsset)}>Add to Timeline</button>}
-              {stabilizing && <span className="processing-badge">Stabilizing...</span>}
+              {preparingPreview && <span className="processing-badge">Preparing preview...</span>}
             </div>
           </div>
 
           <div className="viewer-stack">
             <div className="viewer-stage">
             {!selectedAsset && <div className="viewer-placeholder">Choose a source or timeline item</div>}
-            {selectedAsset && selectedInfo && <div ref={mediaFrame} className={displayedCrop ? "media-frame cropped" : "media-frame"}
+            {selectedAsset && selectedInfo && <div ref={mediaFrame} className={croppedMediaStyle ? "media-frame cropped" : "media-frame"}
               style={{ aspectRatio: viewerAspect }}>
-              {selectedAsset.kind === "video" ? viewerMediaUrl ? <video ref={videoRef} key={`${selectedItem?.id ?? "source"}:${activePlaybackSource}:${readyStabilizedPreview?.workId ?? "direct"}`}
+              {selectedAsset.kind === "video" ? viewerMediaUrl ? <video ref={videoRef} key={`${selectedItem?.id ?? "source"}:${activePlaybackSource}:${readyClipPreview?.url ?? "direct"}`}
                 src={viewerMediaUrl} controls autoPlay={viewerSelection?.context === "source"} playsInline preload="metadata" onLoadedMetadata={(event) => videoReady(event.currentTarget)}
                 onTimeUpdate={(event) => { setPlayheadTime(event.currentTarget.currentTime); if (selectedItem?.kind === "video" && event.currentTarget.currentTime >= selectedItem.sourceOut) {
                   if (previewModeRef.current === "playing") advancePreview(); else event.currentTarget.pause();
                 } }} onEnded={() => { if (previewModeRef.current === "playing") advancePreview(); }}
-                onError={() => setPlaybackError("This browser cannot play the selected video.")} style={croppedMediaStyle} />
-                : <div className="viewer-placeholder">Preparing stabilized preview...</div>
+                onError={() => setPlaybackError("This browser cannot play the selected video.")} />
+                : <div className="viewer-placeholder">Preparing preview...</div>
                 : <img src={viewerMediaUrl} alt={selectedAsset.filename} style={croppedMediaStyle} />}
               {viewerMediaUrl && cropMode && selectedItem?.crop && <div className="crop-rectangle" aria-label="Crop area. Drag to reposition; use corner handles to resize."
                 onPointerDown={(event) => beginCrop(event, (event.target as HTMLElement).dataset.direction)} onPointerMove={moveCrop}
