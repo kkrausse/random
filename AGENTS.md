@@ -1,0 +1,2 @@
+- by default, commit after any change
+- for new components, super simple UI / styling by default. but still functional. we'll add complexity / niceness later.
