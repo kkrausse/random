@@ -7,6 +7,7 @@ export async function runGyroflow(
   source: PlaybackSource,
   outputSize: { width: number; height: number } | undefined,
   signal: AbortSignal,
+  trim?: { sourceIn: number; sourceOut: number },
 ) {
   if (!(await Bun.file(executable).exists())) throw new Error(`Gyroflow CLI not found: ${executable}`);
   const outputParams = JSON.stringify({
@@ -19,6 +20,12 @@ export async function runGyroflow(
     output_path: output,
   });
   const args = [input, "-f", "-r", "apple m", "--stdout-progress", "-p", outputParams];
+  if (trim) {
+    args.push("--preset", JSON.stringify({
+      version: 2,
+      trim_ranges_ms: [[Math.round(trim.sourceIn * 1000), Math.round(trim.sourceOut * 1000)]],
+    }));
+  }
   const process = Bun.spawn([executable, ...args], { stdout: "pipe", stderr: "pipe" });
   const abort = () => process.kill();
   signal.addEventListener("abort", abort, { once: true });

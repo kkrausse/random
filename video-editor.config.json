@@ -16,6 +16,7 @@
   },
   "export": {
     "codec": "h264",
-    "quality": 18
+    "quality": 18,
+    "concurrency": 2
   }
 }

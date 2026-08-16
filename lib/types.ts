@@ -19,6 +19,7 @@ export type AppConfig = {
   export: {
     codec: "h264";
     quality: number;
+    concurrency?: number;
   };
 };
 

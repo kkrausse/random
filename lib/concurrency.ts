@@ -9,14 +9,20 @@ export async function concurrentMap<T, R>(
 
   const results = new Array<R>(items.length);
   let nextIndex = 0;
+  let failure: unknown;
 
   async function worker() {
-    while (nextIndex < items.length) {
+    while (failure === undefined && nextIndex < items.length) {
       const index = nextIndex++;
-      results[index] = await mapper(items[index]!, index);
+      try {
+        results[index] = await mapper(items[index]!, index);
+      } catch (error) {
+        failure = error;
+      }
     }
   }
 
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  if (failure !== undefined) throw failure;
   return results;
 }

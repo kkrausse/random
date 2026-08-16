@@ -43,6 +43,10 @@ export async function loadConfig(): Promise<AppConfig> {
   if (config.export.quality < 0 || config.export.quality > 51) {
     throw new Error("Invalid export configuration");
   }
+  if (config.export.concurrency !== undefined
+    && (!Number.isInteger(config.export.concurrency) || config.export.concurrency < 1 || config.export.concurrency > 8)) {
+    throw new Error("Export concurrency must be an integer between 1 and 8");
+  }
 
   return config;
 }

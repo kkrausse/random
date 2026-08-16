@@ -25,4 +25,17 @@ describe("concurrentMap", () => {
   test("rejects invalid concurrency", async () => {
     await expect(concurrentMap([1], 0, async (value) => value)).rejects.toThrow("positive integer");
   });
+
+  test("waits for in-flight work and stops scheduling after a failure", async () => {
+    const completed: number[] = [];
+    const task = concurrentMap([0, 1, 2], 2, async (value) => {
+      if (value === 0) throw new Error("failed");
+      await Bun.sleep(5);
+      completed.push(value);
+      return value;
+    });
+
+    await expect(task).rejects.toThrow("failed");
+    expect(completed).toEqual([1]);
+  });
 });
