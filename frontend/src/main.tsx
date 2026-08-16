@@ -18,6 +18,7 @@ import type {
   ProjectSettings,
   TimelineItem,
 } from "../../lib/types";
+import { Slider } from "./components/ui/slider";
 import "./styles.css";
 
 type SaveState = "saved" | "saving" | "error";
@@ -121,6 +122,7 @@ function App() {
   const [stabilizedPreview, setStabilizedPreview] = useState<{ workId: string; url: string; itemId: string; source: PlaybackSource }>();
   const [stabilizing, setStabilizing] = useState(false);
   const [playbackError, setPlaybackError] = useState<string>();
+  const [playheadTime, setPlayheadTime] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaFrame = useRef<HTMLDivElement>(null);
   const librarySentinel = useRef<HTMLDivElement>(null);
@@ -139,6 +141,7 @@ function App() {
   const dragItemId = useRef<string | undefined>(undefined);
   const viewerSelectionRef = useRef<ViewerSelection | undefined>(undefined);
   const previewModeRef = useRef(previewMode);
+  const seekInteraction = useRef<number | undefined>(undefined);
   const cropInteraction = useRef<{
     pointerId: number;
     startX: number;
@@ -224,6 +227,7 @@ function App() {
 
   useEffect(() => {
     setPlaybackError(undefined);
+    setPlayheadTime(selectedItem?.kind === "video" ? selectedItem.sourceIn : 0);
   }, [viewerSelection?.context, viewerSelection?.context === "timeline" ? viewerSelection.itemId : viewerSelection?.mediaId]);
 
   useEffect(() => {
@@ -582,19 +586,46 @@ function App() {
   function videoReady(video: HTMLVideoElement) {
     if (selectedItem?.kind === "video") {
       video.currentTime = selectedItem.sourceIn;
+      setPlayheadTime(selectedItem.sourceIn);
       if (previewMode === "playing" && (!selectedItem.stabilize || readyStabilizedPreview)) void video.play();
     }
   }
 
-  function updateTrim(action: "in" | "out", value: number) {
+  function updateTrim(values: number[]) {
     if (!selectedItem || selectedItem.kind !== "video" || !selectedInfo) return;
-    const time = action === "in"
-      ? clamp(value, 0, selectedItem.sourceOut - MINIMUM_TRIM)
-      : clamp(value, selectedItem.sourceIn + MINIMUM_TRIM, selectedInfo.duration);
+    const sourceIn = clamp(values[0] ?? selectedItem.sourceIn, 0, selectedInfo.duration - MINIMUM_TRIM);
+    const sourceOut = clamp(values[1] ?? selectedItem.sourceOut, sourceIn + MINIMUM_TRIM, selectedInfo.duration);
     updateItem(selectedItem.id, (item) => item.kind === "video"
-      ? { ...item, [action === "in" ? "sourceIn" : "sourceOut"]: time }
+      ? { ...item, sourceIn, sourceOut }
       : item);
+    if (videoRef.current) {
+      const time = sourceIn !== selectedItem.sourceIn ? sourceIn : sourceOut;
+      videoRef.current.currentTime = time;
+      setPlayheadTime(time);
+    }
+  }
+
+  function moveTrimPlayhead(event: PointerEvent<HTMLDivElement>) {
+    if (seekInteraction.current !== event.pointerId || !selectedInfo?.duration) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const time = clamp((event.clientX - bounds.left) / bounds.width, 0, 1) * selectedInfo.duration;
     if (videoRef.current) videoRef.current.currentTime = time;
+    setPlayheadTime(time);
+  }
+
+  function beginTrimSeek(event: PointerEvent<HTMLDivElement>) {
+    if ((event.target as HTMLElement).closest(".ui-slider-thumb")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    seekInteraction.current = event.pointerId;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    moveTrimPlayhead(event);
+  }
+
+  function endTrimSeek(event: PointerEvent<HTMLDivElement>) {
+    if (seekInteraction.current !== event.pointerId) return;
+    seekInteraction.current = undefined;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   }
 
   function beginCrop(event: PointerEvent<HTMLDivElement>, direction?: string) {
@@ -728,12 +759,13 @@ function App() {
             </div>
           </div>
 
-          <div className="viewer-stage">
+          <div className="viewer-stack">
+            <div className="viewer-stage">
             {!selectedAsset && <div className="viewer-placeholder">Choose a source or timeline item</div>}
             {selectedAsset && selectedInfo && <div ref={mediaFrame} className="media-frame" style={{ aspectRatio: `${selectedInfo.width} / ${selectedInfo.height}` }}>
               {selectedAsset.kind === "video" ? viewerMediaUrl ? <video ref={videoRef} key={`${selectedItem?.id ?? "source"}:${activePlaybackSource}:${readyStabilizedPreview?.workId ?? "direct"}`}
                 src={viewerMediaUrl} controls autoPlay={viewerSelection?.context === "source"} playsInline preload="metadata" onLoadedMetadata={(event) => videoReady(event.currentTarget)}
-                onTimeUpdate={(event) => { if (selectedItem?.kind === "video" && event.currentTarget.currentTime >= selectedItem.sourceOut) {
+                onTimeUpdate={(event) => { setPlayheadTime(event.currentTarget.currentTime); if (selectedItem?.kind === "video" && event.currentTarget.currentTime >= selectedItem.sourceOut) {
                   if (previewModeRef.current === "playing") advancePreview(); else event.currentTarget.pause();
                 } }} onEnded={() => { if (previewModeRef.current === "playing") advancePreview(); }}
                 onError={() => setPlaybackError("This browser cannot play the selected video.")} />
@@ -747,20 +779,20 @@ function App() {
               </div>}
             </div>}
             {playbackError && <div className="error-message playback-error">{playbackError}</div>}
-          </div>
-
-          {selectedItem?.kind === "video" && selectedInfo && selectedInfo.duration > 0 && <section className="trim-editor" aria-label="Trim clip">
-            <div className="trim-heading"><strong>In {formatTime(selectedItem.sourceIn)}</strong>
-              <span>{formatTime(selectedItem.sourceOut - selectedItem.sourceIn)} selected</span>
-              <strong>Out {formatTime(selectedItem.sourceOut)}</strong></div>
-            <div className="trim-range" style={{ "--trim-in": `${selectedItem.sourceIn / selectedInfo.duration * 100}%`,
-              "--trim-out": `${selectedItem.sourceOut / selectedInfo.duration * 100}%` } as React.CSSProperties}>
-              <input aria-label="Trim in" type="range" min="0" max={selectedInfo.duration}
-                step="0.01" value={selectedItem.sourceIn} onChange={(event) => updateTrim("in", Number(event.target.value))} />
-              <input aria-label="Trim out" type="range" min="0" max={selectedInfo.duration}
-                step="0.01" value={selectedItem.sourceOut} onChange={(event) => updateTrim("out", Number(event.target.value))} />
             </div>
-          </section>}
+
+            {selectedItem?.kind === "video" && selectedInfo && selectedInfo.duration > 0 && <section className="trim-editor" aria-label="Trim clip">
+              <div className="trim-heading"><strong>In {formatTime(selectedItem.sourceIn)}</strong>
+                <span>{formatTime(selectedItem.sourceOut - selectedItem.sourceIn)} selected</span>
+                <strong>Out {formatTime(selectedItem.sourceOut)}</strong></div>
+              <div className="trim-control" onPointerDownCapture={beginTrimSeek} onPointerMove={moveTrimPlayhead}
+                onPointerUp={endTrimSeek} onPointerCancel={endTrimSeek}>
+                <Slider className="trim-slider" min={0} max={selectedInfo.duration} step={MINIMUM_TRIM} minStepsBetweenThumbs={1}
+                  value={[selectedItem.sourceIn, selectedItem.sourceOut]} onValueChange={updateTrim} />
+                <span className="trim-playhead" style={{ left: `${clamp(playheadTime / selectedInfo.duration, 0, 1) * 100}%` }} />
+              </div>
+            </section>}
+          </div>
 
           <div className="edit-strip">
             {selectedItem && selectedInfo ? <>

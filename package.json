@@ -14,14 +14,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "typescript": "latest",
-    "react": "latest",
-    "react-dom": "latest",
+    "@radix-ui/react-slider": "^1.4.7",
+    "@types/bun": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "@types/bun": "latest"
+    "@vitejs/plugin-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "typescript": "latest",
+    "vite": "latest"
   },
   "devDependencies": {}
 }
