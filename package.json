@@ -7,6 +7,7 @@
     "dev:server": "PORT=3001 bun --watch server/index.ts",
     "dev:client": "vite",
     "scan": "bun server/scan.ts",
+    "perf:stream": "bun scripts/perf-stream.ts",
     "build": "vite build",
     "start": "bun server/index.ts",
     "typecheck": "tsc --noEmit"
