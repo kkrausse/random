@@ -23,6 +23,8 @@ import "./styles.css";
 
 type SaveState = "saved" | "saving" | "error";
 type ViewerSelection = { context: "source"; mediaId: string } | { context: "timeline"; itemId: string };
+type PlaybackContext = "library" | "timeline" | "clip";
+type PreviewMode = "off" | "playing" | "paused" | "ended";
 
 const ACTIVE_PROJECT_KEY = "video-editor-active-project";
 const PHOTO_DURATION = 4;
@@ -142,7 +144,8 @@ function App() {
   const [exportProgress, setExportProgress] = useState<{ message: string; percent: number }>();
   const [exportResult, setExportResult] = useState<{ filename: string; url: string }>();
   const [exportError, setExportError] = useState<string>();
-  const [previewMode, setPreviewMode] = useState<"off" | "playing" | "paused">("off");
+  const [playbackContext, setPlaybackContext] = useState<PlaybackContext>("library");
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("off");
   const [cropMode, setCropMode] = useState(false);
   const [clipPreview, setClipPreview] = useState<{ key: string; url: string }>();
   const [preparingPreview, setPreparingPreview] = useState(false);
@@ -174,6 +177,7 @@ function App() {
   const dragMediaId = useRef<string | undefined>(undefined);
   const autoplayNextSource = useRef(false);
   const viewerSelectionRef = useRef<ViewerSelection | undefined>(undefined);
+  const playbackContextRef = useRef<PlaybackContext>(playbackContext);
   const previewModeRef = useRef(previewMode);
   const seekInteraction = useRef<number | undefined>(undefined);
   const timelineSeekInteraction = useRef<number | undefined>(undefined);
@@ -203,6 +207,7 @@ function App() {
     : undefined;
   const readyClipPreview = clipPreview?.key === previewKey ? clipPreview : undefined;
   viewerSelectionRef.current = viewerSelection;
+  playbackContextRef.current = playbackContext;
   previewModeRef.current = previewMode;
 
   useEffect(() => {
@@ -316,7 +321,7 @@ function App() {
     photoProgressTimer.current = setInterval(() => {
       setTimelinePlayhead(timelineStart + Math.min(selectedItem.photoDuration, (elapsedBeforeStart + Date.now() - startedAt) / 1000));
     }, 50);
-    photoTimer.current = setTimeout(advancePreview, milliseconds);
+    photoTimer.current = setTimeout(completePreviewItem, milliseconds);
     return () => {
       clearTimeout(photoTimer.current);
       clearInterval(photoProgressTimer.current);
@@ -338,17 +343,35 @@ function App() {
 
   useEffect(() => {
     function handlePlaybackShortcut(event: globalThis.KeyboardEvent) {
-      if (event.code !== "Space" || event.repeat || event.defaultPrevented) return;
+      if (event.repeat || event.defaultPrevented) return;
       const target = event.target as HTMLElement | null;
-      if (target?.closest("button, input, select, textarea, [contenteditable='true']")) return;
-      if (!projectRef.current?.items.length) return;
-      event.preventDefault();
-      if (previewMode === "off") startPreview();
-      else togglePreviewPause();
+      const formControl = target?.closest("input, select, textarea, [contenteditable='true'], [role='slider']");
+      if (formControl) return;
+      if (target?.closest("button") && !(playbackContext === "library" && target.closest(".clip-row") && event.code === "Space")) return;
+      if (event.code === "Space") {
+        event.preventDefault();
+        toggleActivePlayback();
+        return;
+      }
+      if (playbackContext === "library" || !projectRef.current?.items.length) return;
+      if (event.shiftKey && (event.code === "ArrowLeft" || event.code === "ArrowRight")) {
+        event.preventDefault();
+        stepPlaybackFrame(event.code === "ArrowLeft" ? -1 : 1);
+        return;
+      }
+      const navigation = { ArrowLeft: -1, ArrowRight: 1 }[event.code];
+      if (navigation !== undefined) {
+        event.preventDefault();
+        navigateTimelineItem(navigation);
+      } else if (playbackContext === "timeline" && (event.code === "Home" || event.code === "End")) {
+        event.preventDefault();
+        pausePreview();
+        seekTimeline(event.code === "Home" ? 0 : projectDuration(projectRef.current.items));
+      }
     }
     window.addEventListener("keydown", handlePlaybackShortcut);
     return () => window.removeEventListener("keydown", handlePlaybackShortcut);
-  }, [previewMode, timelinePlayhead]);
+  }, [playbackContext, previewMode, timelinePlayhead, selectedItem?.id, readyClipPreview?.url]);
 
   async function loadMediaInfo(assets: MediaAsset[], signal?: AbortSignal) {
     const entries = await Promise.all(assets.map(async (asset) => {
@@ -412,6 +435,7 @@ function App() {
     setSaveState("saved");
     setSaveError(undefined);
     setViewerSelection(loaded.items[0] ? { context: "timeline", itemId: loaded.items[0].id } : undefined);
+    setPlaybackContext(loaded.items[0] ? "clip" : "library");
     setPreviewMode("off");
     setCropMode(false);
     localStorage.setItem(ACTIVE_PROJECT_KEY, loaded.id);
@@ -533,6 +557,7 @@ function App() {
     autoplayNextSource.current = viewerSelectionRef.current?.context === "source"
       && Boolean(videoRef.current && !videoRef.current.paused && !videoRef.current.ended);
     setPreviewMode("off");
+    setPlaybackContext("library");
     setCropMode(false);
     setViewerSelection({ context: "source", mediaId: asset.id });
     setPlaybackError(undefined);
@@ -548,11 +573,14 @@ function App() {
     const item: TimelineItem = asset.kind === "video"
       ? { ...common, kind: "video", sourceIn: 0, sourceOut: info.duration }
       : { ...common, kind: "photo", photoDuration: PHOTO_DURATION };
+    pauseForTimelineChange();
     editProject((current) => ({ ...current, items: [...current.items, item] }));
+    setPlaybackContext("clip");
     setViewerSelection({ context: "timeline", itemId: item.id });
   }
 
   function updateItem(id: string, update: (item: TimelineItem) => TimelineItem) {
+    enterClipEditMode();
     editProject((current) => ({ ...current, items: current.items.map((item) => {
       if (item.id !== id) return item;
       return update(item);
@@ -561,15 +589,18 @@ function App() {
 
   function removeItem(id: string) {
     const index = project?.items.findIndex((item) => item.id === id) ?? -1;
+    pauseForTimelineChange();
     editProject((current) => ({ ...current, items: current.items.filter((item) => item.id !== id) }));
     if (viewerSelection?.context === "timeline" && viewerSelection.itemId === id) {
       const next = project?.items[index + 1] ?? project?.items[index - 1];
+      stopPreview();
       setViewerSelection(next ? { context: "timeline", itemId: next.id } : undefined);
+      setPlaybackContext(next ? "clip" : "library");
     }
-    setPreviewMode("off");
   }
 
   function moveItem(id: string, offset: number) {
+    pauseForTimelineChange();
     editProject((current) => {
       const from = current.items.findIndex((item) => item.id === id);
       const to = clamp(from + offset, 0, current.items.length - 1);
@@ -585,6 +616,7 @@ function App() {
     event.preventDefault();
     const sourceId = dragItemId.current;
     if (!sourceId || sourceId === targetId) return;
+    pauseForTimelineChange();
     editProject((current) => {
       const items = [...current.items];
       const from = items.findIndex((item) => item.id === sourceId);
@@ -632,7 +664,25 @@ function App() {
     const startTime = timelinePlayhead >= duration ? 0 : timelinePlayhead;
     photoRemaining.current = 0;
     setCropMode(false);
+    setPlaybackContext("timeline");
     seekTimeline(startTime);
+    setPreviewMode("playing");
+  }
+
+  function startClipPreview() {
+    if (!selectedItem) return;
+    setPlaybackContext("clip");
+    setCropMode(false);
+    if (selectedItem.kind === "video") {
+      const video = videoRef.current;
+      if (video && (previewMode === "ended" || video.currentTime < selectedItem.sourceIn || video.currentTime >= selectedItem.sourceOut)) {
+        video.currentTime = selectedItem.sourceIn;
+        setPlayheadTime(selectedItem.sourceIn);
+      }
+    } else if (previewMode === "ended" || previewMode === "off") {
+      photoRemaining.current = selectedItem.photoDuration * 1000;
+      setTimelinePlayhead(itemStartTime(projectRef.current?.items ?? [], selectedItem.id));
+    }
     setPreviewMode("playing");
   }
 
@@ -644,6 +694,29 @@ function App() {
     } else if (previewMode === "paused") {
       setPreviewMode("playing");
       if (selectedItem?.kind === "video" && readyClipPreview) void videoRef.current?.play();
+    }
+  }
+
+  function pausePreview() {
+    if (previewModeRef.current !== "playing") return;
+    const selection = viewerSelectionRef.current;
+    const item = selection?.context === "timeline"
+      ? projectRef.current?.items.find((candidate) => candidate.id === selection.itemId)
+      : undefined;
+    if (item?.kind === "photo") photoRemaining.current = Math.max(0, photoDeadline.current - Date.now());
+    videoRef.current?.pause();
+    setPreviewMode("paused");
+  }
+
+  function toggleActivePlayback() {
+    if (playbackContext === "library") {
+      toggleViewerPlayback();
+    } else if (previewMode === "playing" || previewMode === "paused") {
+      togglePreviewPause();
+    } else if (playbackContext === "timeline") {
+      startPreview();
+    } else {
+      startClipPreview();
     }
   }
 
@@ -664,10 +737,66 @@ function App() {
     photoRemaining.current = 0;
     if (!next) {
       setTimelinePlayhead(projectDuration(current.items));
-      return stopPreview();
+      videoRef.current?.pause();
+      setPreviewMode("ended");
+      return;
     }
     setTimelinePlayhead(itemStartTime(current.items, next.id));
     setViewerSelection({ context: "timeline", itemId: next.id });
+  }
+
+  function completePreviewItem() {
+    const current = projectRef.current;
+    const selection = viewerSelectionRef.current;
+    if (!current || selection?.context !== "timeline") return stopPreview();
+    if (playbackContextRef.current === "timeline") {
+      advancePreview();
+      return;
+    }
+    const item = current.items.find((candidate) => candidate.id === selection.itemId);
+    if (item) setTimelinePlayhead(itemStartTime(current.items, item.id) + itemDuration(item));
+    videoRef.current?.pause();
+    setPreviewMode("ended");
+  }
+
+  function navigateTimelineItem(offset: number) {
+    const current = projectRef.current;
+    const selection = viewerSelectionRef.current;
+    if (!current?.items.length || selection?.context !== "timeline") return;
+    const index = current.items.findIndex((item) => item.id === selection.itemId);
+    const next = current.items[index + offset];
+    if (!next) return;
+    const keepPlaying = previewModeRef.current === "playing";
+    photoRemaining.current = 0;
+    videoRef.current?.pause();
+    setPlaybackContext("timeline");
+    seekTimeline(itemStartTime(current.items, next.id));
+    setPreviewMode(keepPlaying ? "playing" : "paused");
+  }
+
+  function stepPlaybackFrame(direction: number) {
+    const current = projectRef.current;
+    if (!current || playbackContext === "library") return;
+    pausePreview();
+    const frame = 1 / current.settings.fps;
+    if (playbackContext === "timeline") {
+      seekTimeline(timelinePlayhead + direction * frame);
+    } else if (selectedItem?.kind === "video") {
+      const time = clamp((videoRef.current?.currentTime ?? playheadTime) + direction * frame, selectedItem.sourceIn, selectedItem.sourceOut);
+      if (videoRef.current) videoRef.current.currentTime = time;
+      setPlayheadTime(time);
+      setTimelinePlayhead(itemStartTime(current.items, selectedItem.id) + time - selectedItem.sourceIn);
+      setPreviewMode(time >= selectedItem.sourceOut ? "ended" : "paused");
+    }
+  }
+
+  function enterClipEditMode() {
+    setPlaybackContext("clip");
+    pausePreview();
+  }
+
+  function pauseForTimelineChange() {
+    if (playbackContextRef.current === "timeline") pausePreview();
   }
 
   function videoReady(video: HTMLVideoElement) {
@@ -687,8 +816,8 @@ function App() {
   function toggleViewerPlayback() {
     const video = videoRef.current;
     if (!video) return;
-    if (selectedItem?.kind === "video" && previewMode !== "off") {
-      togglePreviewPause();
+    if (selectedItem && playbackContext !== "library") {
+      toggleActivePlayback();
       return;
     }
     if (!video.paused) {
@@ -779,7 +908,8 @@ function App() {
   function beginTimelineSeek(event: PointerEvent<HTMLDivElement>) {
     if (!project?.items.length) return;
     event.preventDefault();
-    stopPreview();
+    pausePreview();
+    setPlaybackContext("timeline");
     timelineSeekInteraction.current = event.pointerId;
     event.currentTarget.setPointerCapture(event.pointerId);
     moveTimelinePlayhead(event);
@@ -817,6 +947,7 @@ function App() {
     if ((event.target as HTMLElement).closest(".ui-slider-thumb")) return;
     event.preventDefault();
     event.stopPropagation();
+    enterClipEditMode();
     seekInteraction.current = event.pointerId;
     event.currentTarget.setPointerCapture(event.pointerId);
     moveTrimPlayhead(event);
@@ -1005,8 +1136,8 @@ function App() {
                 onTimeUpdate={(event) => { setPlayheadTime(event.currentTarget.currentTime); if (selectedItem?.kind === "video") {
                   setTimelinePlayhead(itemStartTime(projectRef.current?.items ?? [], selectedItem.id) + clamp(event.currentTarget.currentTime - selectedItem.sourceIn, 0, itemDuration(selectedItem)));
                 } if (selectedItem?.kind === "video" && event.currentTarget.currentTime >= selectedItem.sourceOut) {
-                  if (previewModeRef.current === "playing") advancePreview(); else event.currentTarget.pause();
-                } }} onEnded={() => { if (previewModeRef.current === "playing") advancePreview(); }}
+                  if (previewModeRef.current === "playing") completePreviewItem(); else event.currentTarget.pause();
+                } }} onEnded={() => { if (previewModeRef.current === "playing") completePreviewItem(); }}
                 onError={() => setPlaybackError("This browser cannot play the selected video.")} />
                 : <div className="viewer-placeholder">Preparing preview...</div>
                 : <img src={viewerMediaUrl} alt={selectedAsset.filename} style={croppedMediaStyle} />}
@@ -1021,7 +1152,9 @@ function App() {
             </div>
 
             {selectedAsset?.kind === "video" && selectedInfo && selectedInfo.duration > 0 && <section className="viewer-controls" aria-label="Video controls">
-              <button onClick={toggleViewerPlayback} disabled={!viewerMediaUrl || preparingPreview}>{videoPlaying ? "Pause" : "Play"}</button>
+              <button onClick={toggleActivePlayback} disabled={!viewerMediaUrl || preparingPreview}>
+                {playbackContext === "library" ? videoPlaying ? "Pause" : "Play" : previewMode === "playing" ? "Pause" : "Play"}
+              </button>
               {selectedItem?.kind === "video" ? <div className="trim-control" aria-label="Trim clip" onPointerDownCapture={beginTrimSeek}
                 onPointerMove={moveTrimPlayhead} onPointerUp={endTrimSeek} onPointerCancel={endTrimSeek}>
                 <Slider className="trim-slider" min={0} max={selectedInfo.duration} step={MINIMUM_TRIM} minStepsBetweenThumbs={1}
@@ -1041,7 +1174,7 @@ function App() {
               {!cropMatchesProject(selectedItem.crop, selectedInfo, project?.settings)
                 && <span className="invalid-crop-message">Crop does not match the project aspect ratio</span>}
               <button className={cropMode ? "active" : ""} aria-pressed={cropMode} onClick={() => {
-                if (!cropMode) stopPreview();
+                if (!cropMode) enterClipEditMode();
                 setCropMode(!cropMode);
               }}>{cropMode ? "Done cropping" : "Crop"}</button>
               {cropMode && <button onClick={() => updateItem(selectedItem.id, (item) => ({ ...item, crop: centeredCrop(selectedInfo, project!.settings) }))}>Reset crop</button>}
@@ -1066,9 +1199,12 @@ function App() {
           <section className="timeline-section">
             <div className="timeline-heading"><div><h2>Timeline</h2><span>{project?.items.length ?? 0} items</span></div>
               <div className="timeline-actions">
-                <button onClick={startPreview} disabled={!project?.items.length}>Play</button>
-                <button onClick={togglePreviewPause} disabled={previewMode === "off"}>{previewMode === "paused" ? "Resume" : "Pause"}</button>
+                <span className={`playback-context playback-context-${playbackContext}`}>{playbackContext}</span>
+                <button onClick={toggleActivePlayback} disabled={playbackContext === "library" ? selectedAsset?.kind !== "video" || !viewerMediaUrl : !project?.items.length}>
+                  {playbackContext === "library" ? videoPlaying ? "Pause" : "Play" : previewMode === "playing" ? "Pause" : "Play"}
+                </button>
                 <button onClick={stopPreview} disabled={previewMode === "off"}>Stop</button>
+                <button onClick={startPreview} disabled={!project?.items.length}>Play Timeline</button>
                 <button className="export-button" onClick={() => void exportProject()} disabled={!project?.items.length || exporting}>{exporting ? `Exporting ${exportProgress?.percent ?? 0}%` : "Export Project"}</button>
               </div></div>
             {exporting && exportProgress && <div className="export-progress" role="status">
@@ -1086,7 +1222,8 @@ function App() {
                     const selected = viewerSelection?.context === "timeline" && viewerSelection.itemId === item.id;
                     const invalidCrop = !cropMatchesProject(item.crop, metadata[item.mediaId], project.settings);
                     const label = asset?.filename ?? item.mediaId;
-                    return <article key={item.id} className={`timeline-card${selected ? " selected" : ""}${invalidCrop ? " invalid-crop" : ""}`}
+                    const playing = selected && playbackContext === "timeline" && previewMode === "playing";
+                    return <article key={item.id} className={`timeline-card${selected ? " selected" : ""}${playing ? " playing" : ""}${invalidCrop ? " invalid-crop" : ""}`}
                       aria-invalid={invalidCrop || undefined} title={`${label}${invalidCrop ? " - Crop does not match the project aspect ratio" : ""}`} draggable
                       style={{ width: `${itemDuration(item) / totalTimelineDuration * 100}%` }} onDragStart={(event) => {
                         dragMediaId.current = undefined;
@@ -1096,7 +1233,7 @@ function App() {
                       }}
                       onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropItem(event, item.id)}>
                       <button className="timeline-select" aria-label={`Select ${label}`} aria-pressed={selected}
-                        onClick={() => { stopPreview(); setViewerSelection({ context: "timeline", itemId: item.id }); }}>
+                        onClick={() => { stopPreview(); setPlaybackContext("clip"); setViewerSelection({ context: "timeline", itemId: item.id }); }}>
                         <img src={thumbnailUrl(item.mediaId)} alt="" />
                         <span className="timeline-duration">{formatDuration(itemDuration(item))}</span>
                       </button>
