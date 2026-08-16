@@ -1176,7 +1176,7 @@ function App() {
             {selectedAsset && selectedInfo && <div ref={mediaFrame} className={croppedMediaStyle ? "media-frame cropped" : "media-frame"}
               style={{ aspectRatio: viewerAspect }}>
               {selectedAsset.kind === "video" ? viewerMediaUrl ? <video ref={videoRef} key={`${selectedItem?.id ?? "source"}:${activePlaybackSource}:${readyClipPreview?.url ?? "direct"}`}
-                src={viewerMediaUrl} style={croppedMediaStyle} playsInline preload="metadata" onLoadedMetadata={(event) => videoReady(event.currentTarget)}
+                src={viewerMediaUrl} style={croppedMediaStyle} playsInline muted={false} preload="metadata" onLoadedMetadata={(event) => videoReady(event.currentTarget)}
                 onPlay={() => setVideoPlaying(true)} onPause={() => setVideoPlaying(false)}
                 onTimeUpdate={(event) => { setPlayheadTime(event.currentTarget.currentTime); if (selectedItem?.kind === "video") {
                   setTimelinePlayhead(itemStartTime(projectRef.current?.items ?? [], selectedItem.id) + clamp(event.currentTarget.currentTime - selectedItem.sourceIn, 0, itemDuration(selectedItem)));
