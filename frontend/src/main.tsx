@@ -147,7 +147,7 @@ function App() {
   const [playbackContext, setPlaybackContext] = useState<PlaybackContext>("library");
   const [previewMode, setPreviewMode] = useState<PreviewMode>("off");
   const [cropMode, setCropMode] = useState(false);
-  const [clipPreview, setClipPreview] = useState<{ key: string; url: string }>();
+  const [clipPreviews, setClipPreviews] = useState<Record<string, string>>({});
   const [preparingPreview, setPreparingPreview] = useState(false);
   const [playbackError, setPlaybackError] = useState<string>();
   const [videoPlaying, setVideoPlaying] = useState(false);
@@ -205,7 +205,9 @@ function App() {
   const previewKey = selectedItem?.kind === "video"
     ? `${selectedItem.id}:${activePlaybackSource}:${selectedItem.stabilize}`
     : undefined;
-  const readyClipPreview = clipPreview?.key === previewKey ? clipPreview : undefined;
+  const readyClipPreview = previewKey && clipPreviews[previewKey]
+    ? { key: previewKey, url: clipPreviews[previewKey] }
+    : undefined;
   viewerSelectionRef.current = viewerSelection;
   playbackContextRef.current = playbackContext;
   previewModeRef.current = previewMode;
@@ -284,12 +286,14 @@ function App() {
 
   useEffect(() => {
     if (selectedItem?.kind !== "video" || !previewKey) {
-      setClipPreview(undefined);
+      setPreparingPreview(false);
+      return;
+    }
+    if (clipPreviews[previewKey]) {
       setPreparingPreview(false);
       return;
     }
     const controller = new AbortController();
-    setClipPreview(undefined);
     setPreparingPreview(true);
     setPlaybackError(undefined);
     fetch("/api/media/preview", {
@@ -298,14 +302,52 @@ function App() {
       body: JSON.stringify({ id: selectedItem.mediaId, source: activePlaybackSource, stabilize: selectedItem.stabilize }),
       signal: controller.signal,
     }).then((response) => responseJson<{ url: string }>(response)).then((result) => {
-      setClipPreview({ ...result, key: previewKey });
+      setClipPreviews((current) => ({ ...current, [previewKey]: result.url }));
     }).catch((error) => {
       if (error.name !== "AbortError") setPlaybackError(error instanceof Error ? error.message : "Preview failed");
     }).finally(() => {
       if (!controller.signal.aborted) setPreparingPreview(false);
     });
     return () => controller.abort();
-  }, [previewKey]);
+  }, [previewKey, clipPreviews[previewKey ?? ""]]);
+
+  const selectedTimelineIndex = selectedItem ? project?.items.findIndex((item) => item.id === selectedItem.id) ?? -1 : -1;
+  const nextVideoItem = selectedTimelineIndex >= 0
+    ? project?.items.slice(selectedTimelineIndex + 1).find((item) => item.kind === "video")
+    : undefined;
+  const nextVideoSource: PlaybackSource | undefined = nextVideoItem
+    ? playbackSource === "proxy" && metadata[nextVideoItem.mediaId]?.proxy ? "proxy" : "original"
+    : undefined;
+  const nextPreviewKey = nextVideoItem && nextVideoSource
+    ? `${nextVideoItem.id}:${nextVideoSource}:${nextVideoItem.stabilize}`
+    : undefined;
+  const nextPreviewUrl = nextPreviewKey ? clipPreviews[nextPreviewKey] : undefined;
+
+  useEffect(() => {
+    if (!nextVideoItem || !nextVideoSource || !nextPreviewKey || nextPreviewUrl) return;
+    const controller = new AbortController();
+    fetch("/api/media/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: nextVideoItem.mediaId, source: nextVideoSource, stabilize: nextVideoItem.stabilize }),
+      signal: controller.signal,
+    }).then((response) => responseJson<{ url: string }>(response)).then((result) => {
+      setClipPreviews((current) => ({ ...current, [nextPreviewKey]: result.url }));
+    }).catch((error) => {
+      if (error.name !== "AbortError") console.warn(`Could not preload ${nextVideoItem.mediaId}:`, error);
+    });
+    return () => controller.abort();
+  }, [nextPreviewKey, nextPreviewUrl]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (selectedItem?.kind !== "video" || !readyClipPreview || !video || video.readyState < 1) return;
+    const pending = pendingTimelineSeek.current?.itemId === selectedItem.id ? pendingTimelineSeek.current : undefined;
+    if (!pending) return;
+    video.currentTime = pending.sourceTime;
+    setPlayheadTime(pending.sourceTime);
+    pendingTimelineSeek.current = undefined;
+  }, [selectedItem?.id, readyClipPreview?.url]);
 
   useEffect(() => {
     clearTimeout(photoTimer.current);
@@ -345,9 +387,11 @@ function App() {
     function handlePlaybackShortcut(event: globalThis.KeyboardEvent) {
       if (event.repeat || event.defaultPrevented) return;
       const target = event.target as HTMLElement | null;
-      const formControl = target?.closest("input, select, textarea, [contenteditable='true'], [role='slider']");
-      if (formControl) return;
-      if (target?.closest("button") && !(playbackContext === "library" && target.closest(".clip-row") && event.code === "Space")) return;
+      const formControl = target?.closest("input, select, textarea, [contenteditable='true']");
+      if (formControl || (target?.closest("[role='slider']") && event.code !== "Space")) return;
+      const selectionPlaybackShortcut = event.code === "Space"
+        && ((playbackContext === "library" && target?.closest(".clip-row")) || target?.closest(".timeline-select"));
+      if (target?.closest("button") && !selectionPlaybackShortcut) return;
       if (event.code === "Space") {
         event.preventDefault();
         toggleActivePlayback();
@@ -369,8 +413,8 @@ function App() {
         seekTimeline(event.code === "Home" ? 0 : projectDuration(projectRef.current.items));
       }
     }
-    window.addEventListener("keydown", handlePlaybackShortcut);
-    return () => window.removeEventListener("keydown", handlePlaybackShortcut);
+    window.addEventListener("keydown", handlePlaybackShortcut, { capture: true });
+    return () => window.removeEventListener("keydown", handlePlaybackShortcut, { capture: true });
   }, [playbackContext, previewMode, timelinePlayhead, selectedItem?.id, readyClipPreview?.url]);
 
   async function loadMediaInfo(assets: MediaAsset[], signal?: AbortSignal) {
@@ -947,6 +991,7 @@ function App() {
     if ((event.target as HTMLElement).closest(".ui-slider-thumb")) return;
     event.preventDefault();
     event.stopPropagation();
+    event.currentTarget.focus();
     enterClipEditMode();
     seekInteraction.current = event.pointerId;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -1141,6 +1186,9 @@ function App() {
                 onError={() => setPlaybackError("This browser cannot play the selected video.")} />
                 : <div className="viewer-placeholder">Preparing preview...</div>
                 : <img src={viewerMediaUrl} alt={selectedAsset.filename} style={croppedMediaStyle} />}
+              {nextVideoItem?.kind === "video" && nextPreviewUrl && <video className="preload-video"
+                key={`${nextVideoItem.id}:${nextVideoSource}:${nextPreviewUrl}`} src={nextPreviewUrl} preload="auto" muted playsInline
+                onLoadedMetadata={(event) => { event.currentTarget.currentTime = nextVideoItem.sourceIn; }} />}
               {viewerMediaUrl && cropMode && selectedItem?.crop && <div className="crop-rectangle" aria-label="Crop area. Drag to reposition; use corner handles to resize."
                 onPointerDown={(event) => beginCrop(event, (event.target as HTMLElement).dataset.direction)} onPointerMove={moveCrop}
                 onPointerUp={endCrop} onPointerCancel={endCrop} style={{ left: `${selectedItem.crop.x * 100}%`, top: `${selectedItem.crop.y * 100}%`,
@@ -1155,7 +1203,7 @@ function App() {
               <button onClick={toggleActivePlayback} disabled={!viewerMediaUrl || preparingPreview}>
                 {playbackContext === "library" ? videoPlaying ? "Pause" : "Play" : previewMode === "playing" ? "Pause" : "Play"}
               </button>
-              {selectedItem?.kind === "video" ? <div className="trim-control" aria-label="Trim clip" onPointerDownCapture={beginTrimSeek}
+              {selectedItem?.kind === "video" ? <div className="trim-control" aria-label="Trim clip" tabIndex={-1} onPointerDownCapture={beginTrimSeek}
                 onPointerMove={moveTrimPlayhead} onPointerUp={endTrimSeek} onPointerCancel={endTrimSeek}>
                 <Slider className="trim-slider" min={0} max={selectedInfo.duration} step={MINIMUM_TRIM} minStepsBetweenThumbs={1}
                   value={[selectedItem.sourceIn, selectedItem.sourceOut]} onValueChange={updateTrim} />
