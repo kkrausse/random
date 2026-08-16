@@ -46,12 +46,6 @@ function formatDuration(seconds: number) {
   return `${minutes}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
 }
 
-function formatTime(seconds: number) {
-  if (!Number.isFinite(seconds)) return "--:--.--";
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}:${(seconds % 60).toFixed(2).padStart(5, "0")}`;
-}
-
 function normalizeDimension(value: number) {
   if (!Number.isFinite(value)) return 2;
   return clamp(Math.round(value / 2) * 2, 2, 8192);
@@ -782,9 +776,6 @@ function App() {
             </div>
 
             {selectedItem?.kind === "video" && selectedInfo && selectedInfo.duration > 0 && <section className="trim-editor" aria-label="Trim clip">
-              <div className="trim-heading"><strong>In {formatTime(selectedItem.sourceIn)}</strong>
-                <span>{formatTime(selectedItem.sourceOut - selectedItem.sourceIn)} selected</span>
-                <strong>Out {formatTime(selectedItem.sourceOut)}</strong></div>
               <div className="trim-control" onPointerDownCapture={beginTrimSeek} onPointerMove={moveTrimPlayhead}
                 onPointerUp={endTrimSeek} onPointerCancel={endTrimSeek}>
                 <Slider className="trim-slider" min={0} max={selectedInfo.duration} step={MINIMUM_TRIM} minStepsBetweenThumbs={1}

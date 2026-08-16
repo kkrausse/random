@@ -55,9 +55,7 @@ h1, h2, p { margin: 0; }
 .crop-handle-se { right: -8px; bottom: -8px; cursor: nwse-resize; }
 .crop-handle-sw { bottom: -8px; left: -8px; cursor: nesw-resize; }
 .crop-handle-nw { top: -8px; left: -8px; cursor: nwse-resize; }
-.trim-editor { width: 100%; display: grid; gap: 5px; padding: 5px 28px 9px; border-bottom: 1px solid #333; }
-.trim-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #aaa; font: 10px ui-monospace, monospace; }
-.trim-heading strong { color: #eee; font-weight: 500; }
+.trim-editor { width: 100%; padding: 3px 28px 7px; border-bottom: 1px solid #333; }
 .trim-control { position: relative; cursor: pointer; touch-action: none; }
 .ui-slider { position: relative; display: flex; width: 100%; height: 18px; align-items: center; touch-action: none; user-select: none; }
 .ui-slider-track { position: relative; height: 4px; flex: 1; overflow: hidden; background: #555; border-radius: 999px; }
