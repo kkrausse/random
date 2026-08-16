@@ -147,10 +147,13 @@ function App() {
   const [clipPreview, setClipPreview] = useState<{ key: string; url: string }>();
   const [preparingPreview, setPreparingPreview] = useState(false);
   const [playbackError, setPlaybackError] = useState<string>();
+  const [videoPlaying, setVideoPlaying] = useState(false);
+  const [viewerFullscreen, setViewerFullscreen] = useState(false);
   const [playheadTime, setPlayheadTime] = useState(0);
   const [timelinePlayhead, setTimelinePlayhead] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaFrame = useRef<HTMLDivElement>(null);
+  const viewerStack = useRef<HTMLDivElement>(null);
   const librarySentinel = useRef<HTMLDivElement>(null);
   const mediaRequest = useRef<AbortController | undefined>(undefined);
   const mediaGeneration = useRef(0);
@@ -256,11 +259,18 @@ function App() {
 
   useEffect(() => {
     setPlaybackError(undefined);
+    setVideoPlaying(false);
     const pending = selectedItem && pendingTimelineSeek.current?.itemId === selectedItem.id ? pendingTimelineSeek.current : undefined;
     setPlayheadTime(pending?.sourceTime ?? (selectedItem?.kind === "video" ? selectedItem.sourceIn : 0));
     if (selectedItem && !pending) setTimelinePlayhead(itemStartTime(projectRef.current?.items ?? [], selectedItem.id));
     if (selectedItem?.kind === "photo" && pending) pendingTimelineSeek.current = undefined;
   }, [viewerSelection?.context, viewerSelection?.context === "timeline" ? viewerSelection.itemId : viewerSelection?.mediaId]);
+
+  useEffect(() => {
+    const handleFullscreen = () => setViewerFullscreen(document.fullscreenElement === viewerStack.current);
+    document.addEventListener("fullscreenchange", handleFullscreen);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreen);
+  }, []);
 
   useEffect(() => {
     if (selectedItem?.kind !== "video" || !previewKey) {
@@ -655,6 +665,41 @@ function App() {
     }
   }
 
+  function toggleViewerPlayback() {
+    const video = videoRef.current;
+    if (!video) return;
+    if (selectedItem?.kind === "video" && previewMode !== "off") {
+      togglePreviewPause();
+      return;
+    }
+    if (!video.paused) {
+      video.pause();
+      return;
+    }
+    const start = selectedItem?.kind === "video" ? selectedItem.sourceIn : 0;
+    const end = selectedItem?.kind === "video" ? selectedItem.sourceOut : selectedInfo?.duration ?? video.duration;
+    if (video.currentTime < start || video.currentTime >= end) {
+      video.currentTime = start;
+      setPlayheadTime(start);
+    }
+    void video.play().catch(() => setPlaybackError("This browser could not start video playback."));
+  }
+
+  function seekSource(values: number[]) {
+    const time = clamp(values[0] ?? 0, 0, selectedInfo?.duration ?? 0);
+    if (videoRef.current) videoRef.current.currentTime = time;
+    setPlayheadTime(time);
+  }
+
+  async function toggleViewerFullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await viewerStack.current?.requestFullscreen();
+    } catch {
+      setPlaybackError("Fullscreen is unavailable.");
+    }
+  }
+
   function seekTimeline(time: number) {
     const current = projectRef.current;
     if (!current?.items.length) return;
@@ -905,13 +950,14 @@ function App() {
             </div>
           </div>
 
-          <div className="viewer-stack">
+          <div ref={viewerStack} className="viewer-stack">
             <div className="viewer-stage">
             {!selectedAsset && <div className="viewer-placeholder">Choose a source or timeline item</div>}
             {selectedAsset && selectedInfo && <div ref={mediaFrame} className={croppedMediaStyle ? "media-frame cropped" : "media-frame"}
               style={{ aspectRatio: viewerAspect }}>
               {selectedAsset.kind === "video" ? viewerMediaUrl ? <video ref={videoRef} key={`${selectedItem?.id ?? "source"}:${activePlaybackSource}:${readyClipPreview?.url ?? "direct"}`}
-                src={viewerMediaUrl} style={croppedMediaStyle} controls autoPlay={viewerSelection?.context === "source"} playsInline preload="metadata" onLoadedMetadata={(event) => videoReady(event.currentTarget)}
+                src={viewerMediaUrl} style={croppedMediaStyle} playsInline preload="metadata" onLoadedMetadata={(event) => videoReady(event.currentTarget)}
+                onPlay={() => setVideoPlaying(true)} onPause={() => setVideoPlaying(false)}
                 onTimeUpdate={(event) => { setPlayheadTime(event.currentTarget.currentTime); if (selectedItem?.kind === "video") {
                   setTimelinePlayhead(itemStartTime(projectRef.current?.items ?? [], selectedItem.id) + clamp(event.currentTarget.currentTime - selectedItem.sourceIn, 0, itemDuration(selectedItem)));
                 } if (selectedItem?.kind === "video" && event.currentTarget.currentTime >= selectedItem.sourceOut) {
@@ -930,13 +976,16 @@ function App() {
             {playbackError && <div className="error-message playback-error">{playbackError}</div>}
             </div>
 
-            {selectedItem?.kind === "video" && selectedInfo && selectedInfo.duration > 0 && <section className="trim-editor" aria-label="Trim clip">
-              <div className="trim-control" onPointerDownCapture={beginTrimSeek} onPointerMove={moveTrimPlayhead}
-                onPointerUp={endTrimSeek} onPointerCancel={endTrimSeek}>
+            {selectedAsset?.kind === "video" && selectedInfo && selectedInfo.duration > 0 && <section className="viewer-controls" aria-label="Video controls">
+              <button onClick={toggleViewerPlayback} disabled={!viewerMediaUrl || preparingPreview}>{videoPlaying ? "Pause" : "Play"}</button>
+              {selectedItem?.kind === "video" ? <div className="trim-control" aria-label="Trim clip" onPointerDownCapture={beginTrimSeek}
+                onPointerMove={moveTrimPlayhead} onPointerUp={endTrimSeek} onPointerCancel={endTrimSeek}>
                 <Slider className="trim-slider" min={0} max={selectedInfo.duration} step={MINIMUM_TRIM} minStepsBetweenThumbs={1}
                   value={[selectedItem.sourceIn, selectedItem.sourceOut]} onValueChange={updateTrim} />
                 <span className="trim-playhead" style={{ left: `${clamp(playheadTime / selectedInfo.duration, 0, 1) * 100}%` }} />
-              </div>
+              </div> : <Slider aria-label="Seek video" min={0} max={selectedInfo.duration} step={MINIMUM_TRIM}
+                value={[clamp(playheadTime, 0, selectedInfo.duration)]} onValueChange={seekSource} />}
+              <button onClick={() => void toggleViewerFullscreen()}>{viewerFullscreen ? "Exit Fullscreen" : "Fullscreen"}</button>
             </section>}
           </div>
 

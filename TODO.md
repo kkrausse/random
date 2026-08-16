@@ -25,3 +25,4 @@
 - Stabilized previews are cached independently of crop state.
 - Existing item crops survive project output dimension changes; incompatible crops are marked in red.
 - Items without a stored crop use the same centered framing in preview and export.
+- Video playback uses consistent in-app play, seek/trim, and fullscreen controls instead of native browser controls.
