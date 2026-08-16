@@ -4,6 +4,7 @@ import {
   buildSegmentFilters,
   projectExportPath,
   ProjectExportValidationError,
+  segmentFrameCount,
   segmentDuration,
   validateExportSettings,
   validateCropAspect,
@@ -13,7 +14,7 @@ import {
 describe("project export planning", () => {
   test("center-fills uncropped media and normalizes output", () => {
     expect(buildSegmentFilters({ width: 1920, height: 1080, fps: 30 })).toBe(
-      "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,fps=30,format=yuv420p",
+      "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,setpts=PTS-STARTPTS,fps=30,format=yuv420p",
     );
   });
 
@@ -23,7 +24,7 @@ describe("project export planning", () => {
       { x: 0.1, y: 0.2, width: 0.5, height: 0.5 },
     );
     expect(filters.startsWith("crop=")).toBe(true);
-    expect(filters).toContain(",scale=1280:720,setsar=1,fps=29.97,format=yuv420p");
+    expect(filters).toContain(",scale=1280:720,setsar=1,setpts=PTS-STARTPTS,fps=29.97,format=yuv420p");
   });
 
   test("rejects unsafe output settings and trims", () => {
@@ -61,6 +62,7 @@ describe("project export planning", () => {
   });
 
   test("rounds segment audio to the project frame boundary", () => {
+    expect(segmentFrameCount(1.01, 30)).toBe(31);
     expect(segmentDuration(1, 30)).toBe(1);
     expect(segmentDuration(1.01, 30)).toBeCloseTo(31 / 30);
     expect(segmentDuration(1.5, 29.97)).toBeCloseTo(45 / 29.97);

@@ -7,14 +7,14 @@ export async function runGyroflow(
   source: PlaybackSource,
   outputSize: { width: number; height: number } | undefined,
   signal: AbortSignal,
-  trim?: { sourceIn: number; sourceOut: number },
+  trim?: { sourceIn: number; sourceOut: number; includeAudio?: boolean },
 ) {
   if (!(await Bun.file(executable).exists())) throw new Error(`Gyroflow CLI not found: ${executable}`);
   const outputParams = JSON.stringify({
     codec: "H.264/AVC",
     bitrate: source === "proxy" ? 20 : 60,
     use_gpu: true,
-    audio: true,
+    audio: trim?.includeAudio ?? true,
     pixel_format: "YUV420P",
     ...(outputSize ? { output_width: outputSize.width, output_height: outputSize.height } : {}),
     output_path: output,

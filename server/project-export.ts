@@ -63,7 +63,7 @@ export function buildSegmentFilters(settings: ProjectSettings, crop?: Normalized
         `scale=${settings.width}:${settings.height}:force_original_aspect_ratio=increase`,
         `crop=${settings.width}:${settings.height}`,
       ];
-  return [...filters, "setsar=1", `fps=${settings.fps}`, "format=yuv420p"].join(",");
+  return [...filters, "setsar=1", "setpts=PTS-STARTPTS", `fps=${settings.fps}`, "format=yuv420p"].join(",");
 }
 
 export function validateVideoTrim(sourceIn: number, sourceOut: number, duration: number) {
@@ -131,18 +131,27 @@ async function probeVideo(path: string, tools: ExportTools, signal: AbortSignal)
   }
 }
 
-function encoderArgs(config: AppConfig, audioInput: number, duration: number) {
+function encoderArgs(config: AppConfig, audioInput: number, audioSamples: number) {
   return [
     "-map", "0:v:0", "-map", `${audioInput}:a:0`, "-map_metadata", "-1",
     "-c:v", "libx264", "-preset", "slow", "-crf", String(config.export.quality),
     "-pix_fmt", "yuv420p",
-    "-af", `aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,apad,atrim=duration=${duration},asetpts=PTS-STARTPTS`,
-    "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+    "-af", `aresample=48000,aformat=sample_fmts=s16:channel_layouts=stereo,apad,atrim=end_sample=${audioSamples},asetpts=PTS-STARTPTS`,
+    "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2",
   ];
 }
 
+export function segmentFrameCount(duration: number, fps: number) {
+  return Math.ceil(duration * fps - 1e-9);
+}
+
 export function segmentDuration(duration: number, fps: number) {
-  return Math.ceil(duration * fps - 1e-9) / fps;
+  return segmentFrameCount(duration, fps) / fps;
+}
+
+function timedSegmentFilters(settings: ProjectSettings, crop: NormalizedCrop | undefined, frames: number) {
+  return `${buildSegmentFilters(settings, crop)},tpad=stop_mode=clone:stop_duration=${1 / settings.fps},`
+    + `trim=end_frame=${frames},setpts=PTS-STARTPTS`;
 }
 
 async function renderSegment(
@@ -161,8 +170,7 @@ async function renderSegment(
 ) {
   const asset = await resolveAsset(config, item.mediaId);
   if (asset.kind !== item.kind) fail(`Timeline item ${item.id} is ${item.kind}, but media is ${asset.kind}`);
-  const output = join(jobDir, `segment-${String(index).padStart(5, "0")}.mp4`);
-  const filters = buildSegmentFilters(settings, item.crop);
+  const output = join(jobDir, `segment-${String(index).padStart(5, "0")}.mov`);
 
   if (item.kind === "photo") {
     let input = asset.sourcePath;
@@ -181,14 +189,16 @@ async function renderSegment(
     stats.probes++;
     stats.probeMs += performance.now() - probeStarted;
     validateCropAspect(item.crop, metadata.width, metadata.height, settings, `Item ${index + 1} (${item.mediaId})`);
-    const duration = segmentDuration(item.photoDuration, settings.fps);
+    const frames = segmentFrameCount(item.photoDuration, settings.fps);
+    const duration = frames / settings.fps;
+    const filters = timedSegmentFilters(settings, item.crop, frames);
     reportProgress(`Rendering item ${index + 1} (${item.mediaId})`, progress);
     const renderStarted = performance.now();
     await runProcess([
       tools.ffmpegPath, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-      "-loop", "1", "-framerate", String(settings.fps), "-t", String(item.photoDuration),
+      "-loop", "1", "-framerate", String(settings.fps), "-t", String(duration),
       "-i", input, "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
-      "-vf", filters, ...encoderArgs(config, 1, duration), output,
+      "-vf", filters, ...encoderArgs(config, 1, Math.round(duration * 48000)), output,
     ], signal, "FFmpeg photo render");
     stats.renderMs += performance.now() - renderStarted;
     return output;
@@ -221,6 +231,7 @@ async function renderSegment(
       const stabilization = runGyroflow(tools.gyroflowPath, asset.sourcePath, stabilized, "original", undefined, signal, {
         sourceIn: item.sourceIn,
         sourceOut: item.sourceOut,
+        includeAudio: false,
       })
         .then(() => stabilized)
         .finally(() => { stats.stabilizationMs += performance.now() - stabilizationStarted; });
@@ -230,14 +241,20 @@ async function renderSegment(
     inputStart = 0;
   }
   reportProgress(`Rendering item ${index + 1} (${item.mediaId})`, progress);
-  const duration = segmentDuration(item.sourceOut - item.sourceIn, settings.fps);
-  const audioInput = metadata.hasAudio ? 0 : 1;
+  const frames = segmentFrameCount(item.sourceOut - item.sourceIn, settings.fps);
+  const duration = frames / settings.fps;
+  const filters = timedSegmentFilters(settings, item.crop, frames);
+  const inputs = item.stabilize
+    ? ["-i", input, ...metadata.hasAudio
+        ? ["-ss", String(item.sourceIn), "-t", String(duration), "-i", asset.sourcePath]
+        : ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]]
+    : ["-ss", String(inputStart), "-t", String(duration), "-i", input,
+        ...metadata.hasAudio ? [] : ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]];
+  const audioInput = item.stabilize || !metadata.hasAudio ? 1 : 0;
   const renderStarted = performance.now();
   await runProcess([
     tools.ffmpegPath, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-    "-ss", String(inputStart), "-t", String(item.sourceOut - item.sourceIn), "-i", input,
-    ...metadata.hasAudio ? [] : ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"],
-    "-vf", filters, ...encoderArgs(config, audioInput, duration), output,
+    ...inputs, "-vf", filters, ...encoderArgs(config, audioInput, Math.round(duration * 48000)), output,
   ], signal, "FFmpeg video render");
   stats.renderMs += performance.now() - renderStarted;
   return output;
@@ -285,7 +302,8 @@ export async function exportProject(
     await runProcess([
       tools.ffmpegPath, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
       "-f", "concat", "-safe", "0", "-i", concatFile, "-map", "0:v:0", "-map", "0:a:0",
-      "-c", "copy", "-movflags", "+faststart", temporaryFinal,
+      "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+      "-movflags", "+faststart", temporaryFinal,
     ], signal, "FFmpeg project concat");
     const concatMs = performance.now() - concatStarted;
     if (signal.aborted) throw new Error("Export cancelled");
