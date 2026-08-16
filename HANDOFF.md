@@ -6,7 +6,7 @@
 - Reproducible generated media goes under `derivedRoot`; durable project state goes under the separate `savedProjectsRoot`.
 - `derivedRoot` is explicitly disposable and must be safe to wipe at any time; see `README.md`.
 - All 123 source clips have fresh metadata, thumbnails, and 1080p H.264 proxies.
-- The library also discovers 849 Sony `.ARW` photos and generates metadata/JPEG thumbnails without modifying the RAW originals.
+- The library also discovers 849 Sony `.ARW` photos and has fresh metadata/JPEG thumbnails for them without modifying the RAW originals.
 - The viewer can switch between Proxy and Original playback.
 - The library grid supports arrow keys, Home/End, roving focus, and selected-state semantics.
 - The viewer provides on-demand Gyroflow previews and normalized crop controls.
@@ -136,6 +136,8 @@ Project state stores source references and user intent, not copied source media 
 A separate `Milestone Validation` project (`909ef024-d12a-4ef1-a027-42497a48070c`) was created without modifying the existing user project. It contains trimmed `C0339.MP4`, `KEV05154.ARW` at 1.5 seconds, and trimmed `C0337.MP4` in reordered sequence. Reading revision 2 back through the API exactly matched the saved project.
 
 Project export completed from Original media. FFprobe reported one H.264 video stream at 1920x1080, 30 fps, yuv420p, with duration 4.033333 seconds and size 4,348,402 bytes. There is intentionally no audio stream. A byte-range request returned HTTP 206, and the validation export's job directory was removed after atomic publication.
+
+The scan-version-5 library backfill completed across all 972 assets: 972 generated, 0 metadata-only updates, 0 already fresh, and 0 failures.
 
 Browser interaction still needs a final human visual pass for the yellow trim handles, crop manipulation, photo timing, sequence preview, and responsive layout.
 
