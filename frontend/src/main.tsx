@@ -1137,21 +1137,6 @@ function App() {
 
   return (
     <main className="app-shell">
-      <header className="masthead">
-        <div className="project-controls">
-          <h1>Video Editor</h1>
-          <select aria-label="Open project" value={project?.id ?? ""} onChange={(event) => void switchProject(event.target.value)}>
-            {!project && <option value="">No project</option>}
-            {projects.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
-          </select>
-          <button onClick={() => void createNewProject()}>New</button>
-          <button onClick={() => void deleteActiveProject()} disabled={!project}>Delete</button>
-        </div>
-        <div className={`save-status ${saveState === "error" ? "error-text" : ""}`} title={saveError}>
-          {saveState === "saving" ? "Saving..." : saveState === "error" ? `Error: ${saveError}` : "Saved"}
-        </div>
-      </header>
-
       <section className="workspace">
         <aside className="library-panel">
           <div className="panel-heading"><h2>Library</h2>
@@ -1186,6 +1171,21 @@ function App() {
         </aside>
 
         <section className="editor-panel">
+          <header className="masthead">
+            <div className="project-controls">
+              <h1>Video Editor</h1>
+              <select aria-label="Open project" value={project?.id ?? ""} onChange={(event) => void switchProject(event.target.value)}>
+                {!project && <option value="">No project</option>}
+                {projects.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
+              </select>
+              <button onClick={() => void createNewProject()}>New</button>
+              <button onClick={() => void deleteActiveProject()} disabled={!project}>Delete</button>
+            </div>
+            <div className={`save-status ${saveState === "error" ? "error-text" : ""}`} title={saveError}>
+              {saveState === "saving" ? "Saving..." : saveState === "error" ? `Error: ${saveError}` : "Saved"}
+            </div>
+          </header>
+
           <div className="viewer-heading">
             <div><p className="eyebrow">{viewerSelection?.context === "timeline" ? "Timeline item" : "Source"}</p>
               <h2>{selectedAsset?.filename ?? "Select media"}</h2></div>
@@ -1248,33 +1248,35 @@ function App() {
               onPointerDown={beginViewerResize} onPointerMove={resizeViewer} onPointerUp={endViewerResize} onPointerCancel={endViewerResize} />
           </div>
 
-          <div className="edit-strip">
-            {selectedItem && selectedInfo ? <>
-              <span>Crop {Math.round((selectedItem.crop?.width ?? 1) * selectedInfo.width)} × {Math.round((selectedItem.crop?.height ?? 1) * selectedInfo.height)} px</span>
-              {!cropMatchesProject(selectedItem.crop, selectedInfo, project?.settings)
-                && <span className="invalid-crop-message">Crop does not match the project aspect ratio</span>}
-              <button className={cropMode ? "active" : ""} aria-pressed={cropMode} onClick={() => {
-                if (!cropMode) enterClipEditMode();
-                setCropMode(!cropMode);
-              }}>{cropMode ? "Done cropping" : "Crop"}</button>
-              {cropMode && <button onClick={() => updateItem(selectedItem.id, (item) => ({ ...item, crop: centeredCrop(selectedInfo, project!.settings) }))}>Reset crop</button>}
-              {selectedItem.kind === "photo" && <label>Photo duration <input type="number" min="0.1" step="0.1" value={selectedItem.photoDuration}
-                onChange={(event) => updateItem(selectedItem.id, (item) => item.kind === "photo" ? { ...item, photoDuration: Math.max(0.1, Number(event.target.value)) } : item)} /> sec</label>}
-            </> : <span>{viewerSelection?.context === "source" ? "Source preview. Add it to edit crop, trim, or duration." : "Select a timeline item to edit."}</span>}
-          </div>
+          <div className="edit-output-strip">
+            <div className="edit-strip">
+              {selectedItem && selectedInfo ? <>
+                <span>Crop {Math.round((selectedItem.crop?.width ?? 1) * selectedInfo.width)} × {Math.round((selectedItem.crop?.height ?? 1) * selectedInfo.height)} px</span>
+                {!cropMatchesProject(selectedItem.crop, selectedInfo, project?.settings)
+                  && <span className="invalid-crop-message">Crop does not match the project aspect ratio</span>}
+                <button className={cropMode ? "active" : ""} aria-pressed={cropMode} onClick={() => {
+                  if (!cropMode) enterClipEditMode();
+                  setCropMode(!cropMode);
+                }}>{cropMode ? "Done cropping" : "Crop"}</button>
+                {cropMode && <button onClick={() => updateItem(selectedItem.id, (item) => ({ ...item, crop: centeredCrop(selectedInfo, project!.settings) }))}>Reset crop</button>}
+                {selectedItem.kind === "photo" && <label>Photo duration <input type="number" min="0.1" step="0.1" value={selectedItem.photoDuration}
+                  onChange={(event) => updateItem(selectedItem.id, (item) => item.kind === "photo" ? { ...item, photoDuration: Math.max(0.1, Number(event.target.value)) } : item)} /> sec</label>}
+              </> : <span>{viewerSelection?.context === "source" ? "Source preview. Add it to edit crop, trim, or duration." : "Select a timeline item to edit."}</span>}
+            </div>
 
-          {project && <section className="project-settings" aria-label="Project settings">
-            <strong>Output</strong>
-            <input aria-label="Project name" value={project.name} onChange={(event) => editProject((current) => ({ ...current, name: event.target.value || "Untitled Project" }))} />
-            <div className="preset-buttons">{PRESETS.map((preset) => <button key={preset.label}
-              className={project.settings.width === preset.settings.width && project.settings.height === preset.settings.height ? "active" : ""}
-              onClick={() => changeSettings({ ...project.settings, ...preset.settings })}>{preset.label}</button>)}</div>
-            <label>W <input type="number" min="2" max="8192" step="2" value={project.settings.width} onChange={(event) => changeSettings({ ...project.settings, width: normalizeDimension(Number(event.target.value)) })} /></label>
-            <label>H <input type="number" min="2" max="8192" step="2" value={project.settings.height} onChange={(event) => changeSettings({ ...project.settings, height: normalizeDimension(Number(event.target.value)) })} /></label>
-            <label>FPS <select value={FPS_OPTIONS.includes(project.settings.fps as typeof FPS_OPTIONS[number]) ? project.settings.fps : 30}
-              onChange={(event) => changeSettings({ ...project.settings, fps: Number(event.target.value) })}>
-              {FPS_OPTIONS.map((fps) => <option key={fps}>{fps}</option>)}</select></label>
-          </section>}
+            {project && <section className="project-settings" aria-label="Project settings">
+              <strong>Output</strong>
+              <input aria-label="Project name" value={project.name} onChange={(event) => editProject((current) => ({ ...current, name: event.target.value || "Untitled Project" }))} />
+              <div className="preset-buttons">{PRESETS.map((preset) => <button key={preset.label}
+                className={project.settings.width === preset.settings.width && project.settings.height === preset.settings.height ? "active" : ""}
+                onClick={() => changeSettings({ ...project.settings, ...preset.settings })}>{preset.label}</button>)}</div>
+              <label>W <input type="number" min="2" max="8192" step="2" value={project.settings.width} onChange={(event) => changeSettings({ ...project.settings, width: normalizeDimension(Number(event.target.value)) })} /></label>
+              <label>H <input type="number" min="2" max="8192" step="2" value={project.settings.height} onChange={(event) => changeSettings({ ...project.settings, height: normalizeDimension(Number(event.target.value)) })} /></label>
+              <label>FPS <select value={FPS_OPTIONS.includes(project.settings.fps as typeof FPS_OPTIONS[number]) ? project.settings.fps : 30}
+                onChange={(event) => changeSettings({ ...project.settings, fps: Number(event.target.value) })}>
+                {FPS_OPTIONS.map((fps) => <option key={fps}>{fps}</option>)}</select></label>
+            </section>}
+          </div>
 
           <section className="timeline-section">
             <div className="timeline-heading"><div><h2>Timeline</h2><span>{project?.items.length ?? 0} items</span></div>
