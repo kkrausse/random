@@ -616,19 +616,12 @@ function App() {
   }
 
   function startPreview() {
-    if (!project?.items[0]) return;
-    const first = project.items[0];
+    if (!project?.items.length) return;
+    const duration = projectDuration(project.items);
+    const startTime = timelinePlayhead >= duration ? 0 : timelinePlayhead;
     photoRemaining.current = 0;
     setCropMode(false);
-    if (first.kind === "video") {
-      pendingTimelineSeek.current = { itemId: first.id, sourceTime: first.sourceIn };
-      if (viewerSelectionRef.current?.context === "timeline" && viewerSelectionRef.current.itemId === first.id && videoRef.current) {
-        videoRef.current.currentTime = first.sourceIn;
-        pendingTimelineSeek.current = undefined;
-      }
-    }
-    setViewerSelection({ context: "timeline", itemId: first.id });
-    setTimelinePlayhead(0);
+    seekTimeline(startTime);
     setPreviewMode("playing");
   }
 
@@ -712,7 +705,7 @@ function App() {
   function moveTimelinePlayhead(event: PointerEvent<HTMLDivElement>) {
     if (timelineSeekInteraction.current !== event.pointerId || !project) return;
     const bounds = event.currentTarget.getBoundingClientRect();
-    seekTimeline((event.clientX - bounds.left) / TIMELINE_PIXELS_PER_SECOND);
+    seekTimeline(clamp((event.clientX - bounds.left) / bounds.width, 0, 1) * projectDuration(project.items));
   }
 
   function beginTimelineSeek(event: PointerEvent<HTMLDivElement>) {
@@ -992,7 +985,7 @@ function App() {
           <section className="timeline-section">
             <div className="timeline-heading"><div><h2>Timeline</h2><span>{project?.items.length ?? 0} items</span></div>
               <div className="timeline-actions">
-                <button onClick={startPreview} disabled={!project?.items.length}>Play all</button>
+                <button onClick={startPreview} disabled={!project?.items.length}>Play</button>
                 <button onClick={togglePreviewPause} disabled={previewMode === "off"}>{previewMode === "paused" ? "Resume" : "Pause"}</button>
                 <button onClick={stopPreview} disabled={previewMode === "off"}>Stop</button>
                 <button className="export-button" onClick={() => void exportProject()} disabled={!project?.items.length || exporting}>{exporting ? `Exporting ${exportProgress?.percent ?? 0}%` : "Export Project"}</button>
@@ -1003,7 +996,8 @@ function App() {
             </div>}
             {exportError && <div className="error-message export-error-message" role="alert">Export failed: {exportError}</div>}
             <div className="timeline-scroll" aria-label="Project timeline">
-              {project?.items.length ? <div className="timeline-content" style={{ width: `${totalTimelineDuration * TIMELINE_PIXELS_PER_SECOND}px` }}>
+              {project?.items.length ? <div className="timeline-content"
+                style={{ width: `max(100%, ${totalTimelineDuration * TIMELINE_PIXELS_PER_SECOND}px)` }}>
                 <div className="timeline">
                   {project.items.map((item, index) => {
                     const asset = media.find((candidate) => candidate.id === item.mediaId);
@@ -1012,7 +1006,7 @@ function App() {
                     const label = asset?.filename ?? item.mediaId;
                     return <article key={item.id} className={`timeline-card${selected ? " selected" : ""}${invalidCrop ? " invalid-crop" : ""}`}
                       aria-invalid={invalidCrop || undefined} title={`${label}${invalidCrop ? " - Crop does not match the project aspect ratio" : ""}`} draggable
-                      style={{ width: `${itemDuration(item) * TIMELINE_PIXELS_PER_SECOND}px` }} onDragStart={() => { dragItemId.current = item.id; }}
+                      style={{ width: `${itemDuration(item) / totalTimelineDuration * 100}%` }} onDragStart={() => { dragItemId.current = item.id; }}
                       onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropItem(event, item.id)}>
                       <button className="timeline-select" aria-label={`Select ${label}`} aria-pressed={selected}
                         onClick={() => { stopPreview(); setViewerSelection({ context: "timeline", itemId: item.id }); }}>
@@ -1027,11 +1021,11 @@ function App() {
                     </article>;
                   })}
                 </div>
-                <div className="timeline-ruler" aria-label="Project playhead" onPointerDown={beginTimelineSeek} onPointerMove={moveTimelinePlayhead}
+                <div className="timeline-ruler" aria-label="Project playhead" title="Drag to seek, then press Play" onPointerDown={beginTimelineSeek} onPointerMove={moveTimelinePlayhead}
                   onPointerUp={endTimelineSeek} onPointerCancel={endTimelineSeek}>
                   {timelineTicks.map((time, index) => <span key={time} className={`timeline-tick${index === 0 ? " first" : time === totalTimelineDuration ? " last" : ""}`}
-                    style={{ left: `${time * TIMELINE_PIXELS_PER_SECOND}px` }}><small>{formatTimelineTime(time)}</small></span>)}
-                  <span className="timeline-playhead" style={{ left: `${clamp(timelinePlayhead, 0, totalTimelineDuration) * TIMELINE_PIXELS_PER_SECOND}px` }} />
+                    style={{ left: `${time / totalTimelineDuration * 100}%` }}><small>{formatTimelineTime(time)}</small></span>)}
+                  <span className="timeline-playhead" style={{ left: `${clamp(timelinePlayhead / totalTimelineDuration, 0, 1) * 100}%` }} />
                 </div>
               </div> : <p className="empty-message">Add media from the library.</p>}
             </div>
