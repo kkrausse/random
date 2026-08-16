@@ -694,7 +694,7 @@ function App() {
             {!selectedAsset && <div className="viewer-placeholder">Choose a source or timeline item</div>}
             {selectedAsset && selectedInfo && <div ref={mediaFrame} className="media-frame" style={{ aspectRatio: `${selectedInfo.width} / ${selectedInfo.height}` }}>
               {selectedAsset.kind === "video" ? viewerMediaUrl ? <video ref={videoRef} key={`${selectedItem?.id ?? "source"}:${activePlaybackSource}:${readyStabilizedPreview?.workId ?? "direct"}`}
-                src={viewerMediaUrl} controls playsInline preload="metadata" onLoadedMetadata={(event) => videoReady(event.currentTarget)}
+                src={viewerMediaUrl} controls autoPlay={viewerSelection?.context === "source"} playsInline preload="metadata" onLoadedMetadata={(event) => videoReady(event.currentTarget)}
                 onProgress={(event) => updateVideoProgress(event.currentTarget)} onDurationChange={(event) => updateVideoProgress(event.currentTarget)}
                 onTimeUpdate={(event) => { updateVideoProgress(event.currentTarget); if (selectedItem?.kind === "video" && event.currentTarget.currentTime >= selectedItem.sourceOut) {
                   if (previewModeRef.current === "playing") advancePreview(); else event.currentTarget.pause();
