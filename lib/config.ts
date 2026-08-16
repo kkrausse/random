@@ -19,13 +19,20 @@ export async function loadConfig(): Promise<AppConfig> {
     ...raw,
     mediaRoot: resolve(process.env.MEDIA_ROOT ?? raw.mediaRoot),
     derivedRoot: resolve(process.env.DERIVED_ROOT ?? raw.derivedRoot),
+    savedProjectsRoot: resolve(process.env.SAVED_PROJECTS_ROOT ?? raw.savedProjectsRoot),
   };
 
-  if (!config.mediaRoot || !config.derivedRoot || !config.ffmpegPath) {
-    throw new Error("mediaRoot, derivedRoot, and ffmpegPath are required");
+  if (!config.mediaRoot || !config.derivedRoot || !config.savedProjectsRoot || !config.ffmpegPath) {
+    throw new Error("mediaRoot, derivedRoot, savedProjectsRoot, and ffmpegPath are required");
   }
-  if (isWithin(config.mediaRoot, config.derivedRoot)) {
-    throw new Error("derivedRoot must be outside mediaRoot to keep originals read-only");
+  if (isWithin(config.mediaRoot, config.derivedRoot) || isWithin(config.derivedRoot, config.mediaRoot)) {
+    throw new Error("derivedRoot and mediaRoot must not overlap");
+  }
+  if (isWithin(config.mediaRoot, config.savedProjectsRoot) || isWithin(config.savedProjectsRoot, config.mediaRoot)) {
+    throw new Error("savedProjectsRoot and mediaRoot must not overlap");
+  }
+  if (isWithin(config.derivedRoot, config.savedProjectsRoot) || isWithin(config.savedProjectsRoot, config.derivedRoot)) {
+    throw new Error("savedProjectsRoot and derivedRoot must not overlap");
   }
   if (config.proxy.maxHeight <= 0 || config.proxy.crf < 0 || config.proxy.crf > 51) {
     throw new Error("Invalid proxy configuration");

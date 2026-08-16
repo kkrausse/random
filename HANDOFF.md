@@ -3,7 +3,8 @@
 ## Current State
 
 - The read-only source library is configured by `mediaRoot`.
-- Every created file goes under the configured `derivedRoot`; see `README.md`.
+- Reproducible generated media goes under `derivedRoot`; durable project state goes under the separate `savedProjectsRoot`.
+- `derivedRoot` is explicitly disposable and must be safe to wipe at any time; see `README.md`.
 - All 123 source clips have fresh metadata, thumbnails, and 1080p H.264 proxies.
 - The viewer can switch between Proxy and Original playback.
 - The library grid supports arrow keys, Home/End, roving focus, and selected-state semantics.
@@ -70,14 +71,76 @@ The UI overlays the kept rectangle. Dragging moves it and eight edge/corner hand
 
 `POST /api/media/export` accepts `{ id, stabilize, crop }`, always reads Original media, and writes a persistent H.264 file under `<derivedRoot>/exports`. If stabilization is active, its full-resolution Gyroflow output is temporary and removed after the final FFmpeg crop/encode. Re-exporting the same source atomically replaces its previous export.
 
-Technical export validation passed on two clips: an unstabilized 50% crop of 3840x2160 `C0356.MP4` produced 1920x1080 H.264/AAC, and a stabilized 80% crop of `C0345.MP4` produced 3072x1728 H.264/AAC with no temporary work file left behind. Visual comparison against the preview remains outstanding.
+Technical export validation passed on two clips: an unstabilized 50% crop of 3840x2160 `C0356.MP4` produced 1920x1080 H.264/AAC, and a stabilized 80% crop of `C0345.MP4` produced 3072x1728 H.264/AAC with no temporary work file left behind. The current export milestone is accepted.
 
-## Next Steps
+## Next Milestone: Projects And Timeline
 
-1. Visually validate corrected stabilization on a representative longer Sony clip in both Proxy and Original output modes.
-2. Fix any Gyroflow default smoothing or zoom settings based on that validation.
-3. Validate one exported clip with stabilization and a visible crop against its preview.
-4. Move on to project state and timeline splicing after export validation.
+Implement this milestone end-to-end in one run. Do not stop after adding only project CRUD or a static timeline.
+
+### Storage
+
+- Persist project JSON atomically under `savedProjectsRoot`, never under `derivedRoot`.
+- Add list/create/read/update/delete project APIs with path containment and input validation.
+- Autosave edits and restore them after a server/browser restart.
+- Treat everything under `derivedRoot`, including project movie exports, as reproducible and disposable.
+
+### Project Model
+
+Start with a versioned model along these lines and adjust only where implementation requires it:
+
+```ts
+type Project = {
+  version: 1;
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  items: TimelineItem[];
+};
+
+type TimelineItem = {
+  id: string;
+  mediaId: string;
+  kind: "video" | "photo";
+  sourceIn?: number;
+  sourceOut?: number;
+  photoDuration?: number;
+  stabilize: boolean;
+  crop?: NormalizedCrop;
+  transitionAfter?: "none" | "crossfade";
+};
+```
+
+Project state stores source references and user intent, not copied source media or generated files.
+
+### Media And Editing
+
+- Extend the read-only library to discover supported photos as well as videos, with generated thumbnails/metadata under `derivedRoot`.
+- Add selected videos or photos from the library to the active project timeline.
+- Snapshot or edit crop/stabilization state per timeline item rather than keeping it only as viewer-global state.
+- Support ordered timeline items, drag reordering, selection, removal, and duplicate use of the same source.
+- Support video in/out trimming with bounded handles and a useful time readout.
+- Support configurable still-photo duration.
+- Support hard cuts and a simple optional crossfade between adjacent items. Avoid a generalized effects system.
+
+### UI
+
+- Build a functional iMovie-style workspace using the existing visual language: source library, central viewer, and horizontal timeline along the bottom.
+- Add new/open/rename/delete project controls without turning the page into a dashboard.
+- Keep desktop and mobile usable. Basic styling is sufficient; interaction correctness matters more.
+- Timeline selection should drive the viewer. Playback should advance through timeline items in order, respecting trims and photo durations closely enough for editing preview.
+
+### Project Export
+
+- Export the assembled timeline from Original source media, never proxies.
+- Apply each item's stabilization, crop, trim, photo duration, ordering, and transition.
+- Use temporary intermediates only under `derivedRoot/.work` and clean them on success, failure, or cancellation.
+- Write the final movie under `derivedRoot/exports/projects`; saved project JSON must remain valid if all of `derivedRoot` is deleted.
+- Reuse the configured Homebrew FFmpeg path and existing Gyroflow constraints.
+
+### Acceptance
+
+Create a project containing at least two trimmed videos and one photo, reorder the items, set a photo duration and one crossfade, reload to prove persistence, preview the sequence, and export a playable H.264/AAC movie. Then run `bun run typecheck` and `bun run build`, update this handoff with exact validation results, and commit the completed milestone.
 
 ## Verification
 

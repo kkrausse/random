@@ -1,6 +1,7 @@
 {
   "mediaRoot": "/Volumes/Photos/iphone-uploads/lassen_full",
   "derivedRoot": "/Volumes/Photos/iphone-uploads/video-editor-project/derived",
+  "savedProjectsRoot": "/Volumes/Photos/iphone-uploads/video-editor-project/projects",
   "ffmpegPath": "/opt/homebrew/bin/ffmpeg",
   "thumbnail": {
     "maxWidth": 480,
