@@ -9,6 +9,7 @@ export type AppConfig = {
   };
 
   proxy: {
+    enabled: boolean;
     maxHeight: number;
     codec: "h264";
     crf: number;
@@ -41,4 +42,5 @@ export type MediaInfo = {
   videoBitrate?: number;
   containerBitrate?: number;
   thumbnail: AppConfig["thumbnail"];
+  proxy?: AppConfig["proxy"];
 };

@@ -34,6 +34,10 @@ h1, h2, p { margin: 0; }
 
 .viewer-panel { min-width: 0; padding: 12px; display: flex; flex-direction: column; }
 .viewer-heading { min-height: 32px; display: flex; justify-content: space-between; }
+.viewer-actions, .source-toggle { display: flex; align-items: center; gap: 6px; }
+.source-toggle button { padding: 3px 7px; color: #aaa; background: #222; border: 1px solid #555; cursor: pointer; font-size: 10px; }
+.source-toggle button.active { color: #fff; background: #444; border-color: #888; }
+.source-toggle button:disabled { opacity: 0.4; cursor: default; }
 .duration-badge { color: #aaa; font: 11px ui-monospace, monospace; }
 .viewer-stage { position: relative; flex: 1; min-height: 300px; display: grid; place-items: center; overflow: hidden; background: #000; }
 .viewer-stage video { width: 100%; height: 100%; max-height: calc(100vh - 150px); object-fit: contain; }

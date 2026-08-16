@@ -7,6 +7,7 @@
     "quality": 3
   },
   "proxy": {
+    "enabled": true,
     "maxHeight": 1080,
     "codec": "h264",
     "crf": 22,

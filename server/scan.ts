@@ -6,7 +6,7 @@ import { listMedia, resolveAsset } from "./media";
 
 const ffmpegPath = process.env.FFMPEG_PATH ?? "ffmpeg";
 const ffprobePath = process.env.FFPROBE_PATH ?? "ffprobe";
-const SCAN_VERSION = 2;
+const SCAN_VERSION = 3;
 
 function containedPath(root: string, relativePath: string) {
   const result = resolve(root, relativePath);
@@ -74,7 +74,7 @@ async function probe(config: AppConfig, asset: MediaAsset) {
       videoBitrate: stream.bit_rate ? Number(stream.bit_rate) : undefined,
       containerBitrate: data.format?.bit_rate ? Number(data.format.bit_rate) : undefined,
       thumbnail: config.thumbnail,
-    } satisfies MediaInfo,
+    } as MediaInfo,
   };
 }
 
@@ -84,19 +84,30 @@ function sourceAndThumbnailFresh(info: MediaInfo, config: AppConfig, mtimeMs: nu
     && JSON.stringify(info.thumbnail) === JSON.stringify(config.thumbnail);
 }
 
+function sourceAndProxyFresh(info: MediaInfo, config: AppConfig, mtimeMs: number, size: number) {
+  return info.sourceMtimeMs === mtimeMs
+    && info.sourceSize === size
+    && JSON.stringify(info.proxy) === JSON.stringify(config.proxy);
+}
+
 async function scanAsset(config: AppConfig, asset: MediaAsset) {
   const { sourceStat } = await resolveAsset(config, asset.id);
   const assetRoot = containedPath(config.derivedRoot, asset.id);
   const infoPath = join(assetRoot, "info.json");
   const thumbnailPath = join(assetRoot, "thumbnail.jpg");
+  const proxyPath = join(assetRoot, "proxy.mp4");
   let keepThumbnail = false;
+  let keepProxy = false;
 
   try {
     const existing = (await Bun.file(infoPath).json()) as MediaInfo;
-    if (await Bun.file(thumbnailPath).exists() && sourceAndThumbnailFresh(existing, config, sourceStat.mtimeMs, sourceStat.size)) {
-      if (existing.scanVersion === SCAN_VERSION) return "skipped" as const;
-      keepThumbnail = true;
-    }
+    keepThumbnail = await Bun.file(thumbnailPath).exists()
+      && sourceAndThumbnailFresh(existing, config, sourceStat.mtimeMs, sourceStat.size);
+    keepProxy = !config.proxy.enabled || (
+      await Bun.file(proxyPath).exists()
+      && sourceAndProxyFresh(existing, config, sourceStat.mtimeMs, sourceStat.size)
+    );
+    if (keepThumbnail && keepProxy && existing.scanVersion === SCAN_VERSION) return "skipped" as const;
   } catch {
     // Missing or invalid scan data is rebuilt below.
   }
@@ -104,30 +115,47 @@ async function scanAsset(config: AppConfig, asset: MediaAsset) {
   const { sourcePath, info } = await probe(config, asset);
   const token = crypto.randomUUID();
   const temporaryThumbnail = join(assetRoot, `thumbnail-${token}.tmp.jpg`);
+  const temporaryProxy = join(assetRoot, `proxy-${token}.tmp.mp4`);
   const temporaryInfo = join(assetRoot, `info-${token}.tmp`);
   const seekTime = Math.min(Math.max(info.duration * 0.1, 0), 5);
   await mkdir(assetRoot, { recursive: true });
 
   try {
-    if (keepThumbnail) {
-      await writeFile(temporaryInfo, `${JSON.stringify(info, null, 2)}\n`);
-      await rename(temporaryInfo, infoPath);
-      return "updated" as const;
+    if (!keepThumbnail) {
+      await run(ffmpegPath, [
+        "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+        "-ss", String(seekTime), "-i", sourcePath,
+        "-frames:v", "1",
+        "-vf", `scale=${config.thumbnail.maxWidth}:-2:force_original_aspect_ratio=decrease`,
+        "-q:v", String(config.thumbnail.quality),
+        temporaryThumbnail,
+      ]);
+      await rename(temporaryThumbnail, thumbnailPath);
     }
-    await run(ffmpegPath, [
-      "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-      "-ss", String(seekTime), "-i", sourcePath,
-      "-frames:v", "1",
-      "-vf", `scale=${config.thumbnail.maxWidth}:-2:force_original_aspect_ratio=decrease`,
-      "-q:v", String(config.thumbnail.quality),
-      temporaryThumbnail,
-    ]);
+    if (!keepProxy) {
+      await run(ffmpegPath, [
+        "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+        "-i", sourcePath,
+        "-map", "0:v:0", "-map", "0:a:0?",
+        "-vf", `scale=-2:min(${config.proxy.maxHeight}\\,ih)`,
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", String(config.proxy.crf),
+        "-pix_fmt", "yuv420p",
+        "-c:a", config.proxy.audioCodec,
+        "-movflags", "+faststart",
+        temporaryProxy,
+      ]);
+      await rename(temporaryProxy, proxyPath);
+    }
+    info.proxy = config.proxy.enabled ? config.proxy : undefined;
     await writeFile(temporaryInfo, `${JSON.stringify(info, null, 2)}\n`);
-    await rename(temporaryThumbnail, thumbnailPath);
     await rename(temporaryInfo, infoPath);
-    return "generated" as const;
+    return keepThumbnail && keepProxy ? "updated" as const : "generated" as const;
   } finally {
-    await Promise.all([rm(temporaryThumbnail, { force: true }), rm(temporaryInfo, { force: true })]);
+    await Promise.all([
+      rm(temporaryThumbnail, { force: true }),
+      rm(temporaryProxy, { force: true }),
+      rm(temporaryInfo, { force: true }),
+    ]);
   }
 }
 
@@ -164,7 +192,7 @@ export async function scanLibrary(config: AppConfig, concurrency = 3) {
 if (import.meta.main) {
   const config = await loadConfig();
   console.log(`Scanning read-only library: ${config.mediaRoot}`);
-  console.log(`Writing thumbnails to: ${config.derivedRoot}`);
+  console.log(`Writing derived media to: ${config.derivedRoot}`);
   const result = await scanLibrary(config);
   console.log(`Scan complete: ${result.generated} generated, ${result.updated} metadata updated, ${result.skipped} fresh, ${result.errors.length} failed`);
   if (result.errors.length) process.exitCode = 1;

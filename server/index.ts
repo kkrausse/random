@@ -1,5 +1,6 @@
 import { extname, join, resolve } from "node:path";
 import { loadConfig } from "../lib/config";
+import type { MediaInfo } from "../lib/types";
 import { listMedia, resolveAsset } from "./media";
 
 const config = await loadConfig();
@@ -20,15 +21,13 @@ function json(data: unknown, status = 200) {
   return Response.json(data, { status });
 }
 
-async function serveOriginal(request: Request, id: string) {
-  const { sourcePath, sourceStat } = await resolveAsset(config, id);
-  const file = Bun.file(sourcePath);
-  const fileSize = sourceStat.size;
+async function serveFile(request: Request, path: string, fileSize: number) {
+  const file = Bun.file(path);
 
   const range = request.headers.get("range");
   const headers = {
     "Accept-Ranges": "bytes",
-    "Content-Type": mimeTypes[extname(sourcePath).toLowerCase()] ?? "application/octet-stream",
+    "Content-Type": mimeTypes[extname(path).toLowerCase()] ?? "application/octet-stream",
     "Content-Length": String(fileSize),
   };
   if (!range) {
@@ -47,6 +46,24 @@ async function serveOriginal(request: Request, id: string) {
     status: 206,
     headers: { ...headers, "Content-Range": `bytes ${start}-${end}/${fileSize}`, "Content-Length": String(end - start + 1) },
   });
+}
+
+async function serveVideo(request: Request, id: string, source: string) {
+  const { sourcePath, sourceStat } = await resolveAsset(config, id);
+  if (source !== "proxy") return serveFile(request, sourcePath, sourceStat.size);
+
+  const infoFile = Bun.file(join(config.derivedRoot, id, "info.json"));
+  const proxyPath = join(config.derivedRoot, id, "proxy.mp4");
+  const proxyFile = Bun.file(proxyPath);
+  if (!config.proxy.enabled || !(await infoFile.exists()) || !(await proxyFile.exists())) {
+    return json({ error: "Proxy is unavailable" }, 404);
+  }
+  const info = await infoFile.json() as MediaInfo;
+  const proxyIsFresh = info.sourceMtimeMs === sourceStat.mtimeMs
+    && info.sourceSize === sourceStat.size
+    && JSON.stringify(info.proxy) === JSON.stringify(config.proxy);
+  if (!proxyIsFresh) return json({ error: "Proxy is unavailable" }, 404);
+  return serveFile(request, proxyPath, proxyFile.size);
 }
 
 async function serveThumbnail(id: string) {
@@ -70,7 +87,7 @@ async function handleApi(request: Request, url: URL) {
     return json({ media: await listMedia(config) });
   }
   if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/api/media/video") {
-    return serveOriginal(request, url.searchParams.get("id") ?? "");
+    return serveVideo(request, url.searchParams.get("id") ?? "", url.searchParams.get("source") ?? "original");
   }
   if (request.method === "GET" && url.pathname === "/api/media/thumbnail") {
     return serveThumbnail(url.searchParams.get("id") ?? "");
