@@ -23,7 +23,7 @@ const chunkSize = Math.max(1, Number(process.env.PERF_CHUNK_MB ?? 16)) * 1024 * 
 async function loadScannedMedia() {
   const config = await loadConfig();
   const media = await listMedia(config);
-  const scanned = await Promise.all(media.map(async (asset): Promise<ScannedAsset | undefined> => {
+  const scanned = await Promise.all(media.filter((asset) => asset.kind === "video").map(async (asset): Promise<ScannedAsset | undefined> => {
     try {
       const info = (await Bun.file(join(config.derivedRoot, asset.id, "info.json")).json()) as MediaInfo;
       return { asset, info };

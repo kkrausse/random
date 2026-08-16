@@ -10,6 +10,7 @@
     "perf:stream": "bun scripts/perf-stream.ts",
     "build": "vite build",
     "start": "bun server/index.ts",
+    "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -26,6 +26,7 @@ export type MediaAsset = {
   id: string;
   filename: string;
   relativePath: string;
+  kind: "video" | "photo";
 };
 
 export type PlaybackSource = "proxy" | "original";
@@ -38,6 +39,7 @@ export type NormalizedCrop = {
 };
 
 export type MediaInfo = {
+  kind: MediaAsset["kind"];
   scanVersion: number;
   source: string;
   sourceMtimeMs: number;
@@ -53,4 +55,39 @@ export type MediaInfo = {
   containerBitrate?: number;
   thumbnail: AppConfig["thumbnail"];
   proxy?: AppConfig["proxy"];
+};
+
+export type ProjectSettings = {
+  width: number;
+  height: number;
+  fps: number;
+};
+
+type TimelineItemBase = {
+  id: string;
+  mediaId: string;
+  stabilize: boolean;
+  crop?: NormalizedCrop;
+};
+
+export type TimelineItem =
+  | TimelineItemBase & {
+    kind: "video";
+    sourceIn: number;
+    sourceOut: number;
+  }
+  | TimelineItemBase & {
+    kind: "photo";
+    photoDuration: number;
+  };
+
+export type Project = {
+  version: 1;
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  revision: number;
+  settings: ProjectSettings;
+  items: TimelineItem[];
 };

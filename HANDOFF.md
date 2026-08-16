@@ -6,10 +6,17 @@
 - Reproducible generated media goes under `derivedRoot`; durable project state goes under the separate `savedProjectsRoot`.
 - `derivedRoot` is explicitly disposable and must be safe to wipe at any time; see `README.md`.
 - All 123 source clips have fresh metadata, thumbnails, and 1080p H.264 proxies.
+- The library also discovers 849 Sony `.ARW` photos and generates metadata/JPEG thumbnails without modifying the RAW originals.
 - The viewer can switch between Proxy and Original playback.
 - The library grid supports arrow keys, Home/End, roving focus, and selected-state semantics.
 - The viewer provides on-demand Gyroflow previews and normalized crop controls.
 - Single clips can be exported from Original media with the active stabilization and crop state.
+- Versioned projects persist atomically under `savedProjectsRoot` with revision-safe autosave.
+- Projects have durable output width, height, and FPS settings; item crops are locked to the project frame aspect ratio.
+- The timeline supports duplicate source use, selection, removal, drag/button reordering, per-item crop/stabilization, video trim, and photo duration.
+- Selected videos show a yellow source-duration trim window over the viewer with draggable in/out handles, buffered extent, and a live playhead.
+- Whole-timeline preview sequences trimmed videos and timed photos with hard cuts.
+- Project export renders Original videos and photos to normalized H.264/yuv420p output under `derivedRoot/exports/projects`.
 
 ## Gyroflow
 
@@ -65,7 +72,7 @@ type NormalizedCrop = {
 };
 ```
 
-The UI overlays the kept rectangle. Dragging moves it and eight edge/corner handles resize it, with a five-percent minimum dimension. It works identically over direct Proxy, direct Original, or stabilized preview output. Crop is applied during export.
+The UI overlays the kept rectangle. Timeline-item crops drag to move and use four corner handles to resize while staying locked to the project frame aspect ratio, with a five-percent minimum dimension. It works identically over direct Proxy, direct Original, or stabilized preview output. Crop is applied during export.
 
 ## Export
 
@@ -73,20 +80,9 @@ The UI overlays the kept rectangle. Dragging moves it and eight edge/corner hand
 
 Technical export validation passed on two clips: an unstabilized 50% crop of 3840x2160 `C0356.MP4` produced 1920x1080 H.264/AAC, and a stabilized 80% crop of `C0345.MP4` produced 3072x1728 H.264/AAC with no temporary work file left behind. The current export milestone is accepted.
 
-## Next Milestone: Projects And Timeline
+## Projects And Timeline
 
-Implement this milestone end-to-end in one run. Do not stop after adding only project CRUD or a static timeline.
-
-### Storage
-
-- Persist project JSON atomically under `savedProjectsRoot`, never under `derivedRoot`.
-- Add list/create/read/update/delete project APIs with path containment and input validation.
-- Autosave edits and restore them after a server/browser restart.
-- Treat everything under `derivedRoot`, including project movie exports, as reproducible and disposable.
-
-### Project Model
-
-Start with a versioned model along these lines and adjust only where implementation requires it:
+The implemented project model is:
 
 ```ts
 type Project = {
@@ -95,58 +91,66 @@ type Project = {
   name: string;
   createdAt: string;
   updatedAt: string;
+  revision: number;
+  settings: {
+    width: number;
+    height: number;
+    fps: number;
+  };
   items: TimelineItem[];
 };
 
-type TimelineItem = {
+type VideoTimelineItem = {
   id: string;
   mediaId: string;
-  kind: "video" | "photo";
-  sourceIn?: number;
-  sourceOut?: number;
-  photoDuration?: number;
+  kind: "video";
+  sourceIn: number;
+  sourceOut: number;
   stabilize: boolean;
   crop?: NormalizedCrop;
-  transitionAfter?: "none" | "crossfade";
 };
+
+type PhotoTimelineItem = {
+  id: string;
+  mediaId: string;
+  kind: "photo";
+  photoDuration: number;
+  stabilize: boolean; // Currently ignored for photos; the UI stores false.
+  crop?: NormalizedCrop;
+};
+
+type TimelineItem = VideoTimelineItem | PhotoTimelineItem;
 ```
 
 Project state stores source references and user intent, not copied source media or generated files.
 
-### Media And Editing
+### Current Scope
 
-- Extend the read-only library to discover supported photos as well as videos, with generated thumbnails/metadata under `derivedRoot`.
-- Add selected videos or photos from the library to the active project timeline.
-- Snapshot or edit crop/stabilization state per timeline item rather than keeping it only as viewer-global state.
-- Support ordered timeline items, drag reordering, selection, removal, and duplicate use of the same source.
-- Support video in/out trimming with bounded handles and a useful time readout.
-- Support configurable still-photo duration.
-- Support hard cuts and a simple optional crossfade between adjacent items. Avoid a generalized effects system.
+- Timeline playback and export use hard cuts only. Crossfades are deliberately deferred.
+- Project movie exports are intentionally video-only and muted. Source-audio normalization and synthetic silence for photos are deliberately deferred together rather than producing an inconsistent partial soundtrack.
+- Stabilized timeline previews wait for their temporary Gyroflow result instead of first playing and restarting the direct source.
+- Startup retains `.work` itself and retries removal of stale children because removing the open SMB directory can fail with `EBUSY`.
 
-### UI
+### Validation
 
-- Build a functional iMovie-style workspace using the existing visual language: source library, central viewer, and horizontal timeline along the bottom.
-- Add new/open/rename/delete project controls without turning the page into a dashboard.
-- Keep desktop and mobile usable. Basic styling is sufficient; interaction correctness matters more.
-- Timeline selection should drive the viewer. Playback should advance through timeline items in order, respecting trims and photo durations closely enough for editing preview.
+A separate `Milestone Validation` project (`909ef024-d12a-4ef1-a027-42497a48070c`) was created without modifying the existing user project. It contains trimmed `C0339.MP4`, `KEV05154.ARW` at 1.5 seconds, and trimmed `C0337.MP4` in reordered sequence. Reading revision 2 back through the API exactly matched the saved project.
 
-### Project Export
+Project export completed from Original media. FFprobe reported one H.264 video stream at 1920x1080, 30 fps, yuv420p, with duration 4.033333 seconds and size 4,348,402 bytes. There is intentionally no audio stream. A byte-range request returned HTTP 206, and the validation export's job directory was removed after atomic publication.
 
-- Export the assembled timeline from Original source media, never proxies.
-- Apply each item's stabilization, crop, trim, photo duration, ordering, and transition.
-- Use temporary intermediates only under `derivedRoot/.work` and clean them on success, failure, or cancellation.
-- Write the final movie under `derivedRoot/exports/projects`; saved project JSON must remain valid if all of `derivedRoot` is deleted.
-- Reuse the configured Homebrew FFmpeg path and existing Gyroflow constraints.
+Browser interaction still needs a final human visual pass for the yellow trim handles, crop manipulation, photo timing, sequence preview, and responsive layout.
 
-### Acceptance
+## Next Steps
 
-Create a project containing at least two trimmed videos and one photo, reorder the items, set a photo duration and one crossfade, reload to prove persistence, preview the sequence, and export a playable H.264/AAC movie. Then run `bun run typecheck` and `bun run build`, update this handoff with exact validation results, and commit the completed milestone.
+1. Perform that browser interaction pass and fix any interaction-specific issues found.
+2. Add project audio coherently, including normalized source audio and generated silence for photos.
+3. Add optional crossfades only after hard-cut editing and audio behavior are accepted.
 
 ## Verification
 
 These currently pass:
 
 ```text
+bun test (9 tests)
 bun run typecheck
 bun run build
 ```

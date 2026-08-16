@@ -1,21 +1,42 @@
-import { mkdir, rename, rm } from "node:fs/promises";
+import { mkdir, readdir, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { loadConfig } from "../lib/config";
 import { requireFfmpegEncoder } from "../lib/ffmpeg";
 import type { MediaInfo, NormalizedCrop, PlaybackSource } from "../lib/types";
-import { listMedia, resolveAsset } from "./media";
+import { runGyroflow } from "./gyroflow";
+import { listMedia, MediaNotFoundError, resolveAsset } from "./media";
+import { exportProject, projectExportPath, ProjectExportValidationError } from "./project-export";
+import {
+  createProject,
+  deleteProject,
+  listProjects,
+  ProjectConflictError,
+  ProjectNotFoundError,
+  ProjectValidationError,
+  readProject,
+  updateProject,
+} from "./projects";
 
 const config = await loadConfig();
 const workRoot = join(config.derivedRoot, ".work");
 const exportRoot = join(config.derivedRoot, "exports");
 const workFiles = new Map<string, string>();
 const ffmpegPath = await requireFfmpegEncoder(config.ffmpegPath, "libx264");
+const ffprobePath = process.env.FFPROBE_PATH ?? join(dirname(ffmpegPath), "ffprobe");
 const gyroflowPath = process.env.GYROFLOW_PATH
   ?? join(homedir(), "Applications/Gyroflow CLI/Gyroflow.app/Contents/MacOS/gyroflow");
 
-await rm(workRoot, { recursive: true, force: true });
+const removeWork = (path: string) => rm(path, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
+
 await mkdir(workRoot, { recursive: true });
+const staleWork = await readdir(workRoot);
+const staleCleanup = await Promise.allSettled(staleWork.map((name) => removeWork(join(workRoot, name))));
+for (const result of staleCleanup) {
+  if (result.status === "rejected") console.warn(`Could not remove stale work output: ${result.reason}`);
+}
+
+class MediaKindError extends Error {}
 
 function containedPath(root: string, relativePath: string) {
   const result = resolve(root, relativePath);
@@ -26,14 +47,23 @@ function containedPath(root: string, relativePath: string) {
 
 const mimeTypes: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
+  ".avi": "video/x-msvideo",
   ".html": "text/html; charset=utf-8",
+  ".heic": "image/heic",
+  ".heif": "image/heif",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
   ".js": "text/javascript; charset=utf-8",
   ".m4v": "video/x-m4v",
   ".mkv": "video/x-matroska",
   ".mov": "video/quicktime",
   ".mp4": "video/mp4",
+  ".png": "image/png",
   ".svg": "image/svg+xml",
+  ".tif": "image/tiff",
+  ".tiff": "image/tiff",
   ".webm": "video/webm",
+  ".webp": "image/webp",
 };
 
 function json(data: unknown, status = 200) {
@@ -69,7 +99,8 @@ async function serveFile(request: Request, path: string, fileSize: number, extra
 }
 
 async function resolvePlaybackSource(id: string, source: string) {
-  const { sourcePath, sourceStat } = await resolveAsset(config, id);
+  const { sourcePath, sourceStat, kind } = await resolveAsset(config, id);
+  if (kind !== "video") throw new MediaKindError("Media asset is not a video");
   if (source !== "proxy") return { path: sourcePath, size: sourceStat.size, originalPath: sourcePath };
 
   const infoFile = Bun.file(join(config.derivedRoot, id, "info.json"));
@@ -95,43 +126,6 @@ async function serveVideo(request: Request, id: string, source: string) {
       return json({ error: error.message }, 404);
     }
     throw error;
-  }
-}
-
-async function runGyroflow(
-  input: string,
-  output: string,
-  source: PlaybackSource,
-  outputSize: { width: number; height: number } | undefined,
-  signal: AbortSignal,
-) {
-  if (!(await Bun.file(gyroflowPath).exists())) throw new Error(`Gyroflow CLI not found: ${gyroflowPath}`);
-  const outputParams = JSON.stringify({
-    codec: "H.264/AVC",
-    bitrate: source === "proxy" ? 20 : 60,
-    use_gpu: true,
-    audio: true,
-    pixel_format: "YUV420P",
-    ...(outputSize ? { output_width: outputSize.width, output_height: outputSize.height } : {}),
-    output_path: output,
-  });
-  const args = [input, "-f", "-r", "apple m", "--stdout-progress", "-p", outputParams];
-  const process = Bun.spawn([gyroflowPath, ...args], { stdout: "pipe", stderr: "pipe" });
-  const abort = () => process.kill();
-  signal.addEventListener("abort", abort, { once: true });
-  try {
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(process.stdout).text(),
-      new Response(process.stderr).text(),
-      process.exited,
-    ]);
-    if (signal.aborted) throw new Error("Stabilization cancelled");
-    const log = `${stderr}\n${stdout}`.trim();
-    if (exitCode !== 0 || log.includes("Rendering failed:")) {
-      throw new Error(`Gyroflow failed: ${log || `exit code ${exitCode}`}`);
-    }
-  } finally {
-    signal.removeEventListener("abort", abort);
   }
 }
 
@@ -184,7 +178,8 @@ function exportPath(id: string) {
 async function exportVideo(request: Request) {
   const body = await request.json() as { id?: string; stabilize?: boolean; crop?: unknown };
   const id = body.id ?? "";
-  const { sourcePath } = await resolveAsset(config, id);
+  const { sourcePath, kind } = await resolveAsset(config, id);
+  if (kind !== "video") throw new MediaKindError("Media asset is not a video");
   const crop = validateCrop(body.crop);
   const output = exportPath(id);
   const token = crypto.randomUUID();
@@ -194,7 +189,7 @@ async function exportVideo(request: Request) {
 
   try {
     if (body.stabilize) {
-      await runGyroflow(sourcePath, stabilizedInput, "original", undefined, request.signal);
+      await runGyroflow(gyroflowPath, sourcePath, stabilizedInput, "original", undefined, request.signal);
     }
     await runFfmpeg(body.stabilize ? stabilizedInput : sourcePath, temporaryOutput, crop, request.signal);
     await rename(temporaryOutput, output);
@@ -208,7 +203,8 @@ async function exportVideo(request: Request) {
 }
 
 async function serveExport(request: Request, id: string) {
-  await resolveAsset(config, id);
+  const { kind } = await resolveAsset(config, id);
+  if (kind !== "video") throw new MediaKindError("Media asset is not a video");
   const output = exportPath(id);
   const file = Bun.file(output);
   if (!(await file.exists())) return json({ error: "Export is unavailable" }, 404);
@@ -231,12 +227,12 @@ async function stabilizeVideo(request: Request) {
   const output = join(workRoot, `${workId}.mp4`);
   try {
     // Sony's lens, IBIS, and per-frame gyro metadata only survives in the original container.
-    await runGyroflow(video.originalPath, output, source, outputSize, request.signal);
+    await runGyroflow(gyroflowPath, video.originalPath, output, source, outputSize, request.signal);
     if (!(await Bun.file(output).exists())) throw new Error("Gyroflow did not create an output file");
     workFiles.set(workId, output);
     return json({ workId, url: `/api/media/work?id=${workId}` });
   } catch (error) {
-    await Promise.all([rm(output, { force: true }), rm(`${output}.tmp`, { force: true })]);
+    await Promise.allSettled([removeWork(output), removeWork(`${output}.tmp`)]);
     throw error;
   }
 }
@@ -251,7 +247,7 @@ async function serveWork(request: Request, id: string) {
 
 async function deleteWork(id: string) {
   const path = workFiles.get(id);
-  if (path) await rm(path, { force: true });
+  if (path) await removeWork(path);
   workFiles.delete(id);
   return new Response(null, { status: 204 });
 }
@@ -265,6 +261,12 @@ async function serveThumbnail(id: string) {
   });
 }
 
+async function servePhoto(request: Request, id: string) {
+  const asset = await resolveAsset(config, id);
+  if (asset.kind !== "photo") throw new MediaKindError("Media asset is not a photo");
+  return serveFile(request, asset.sourcePath, asset.sourceStat.size, { "Cache-Control": "private, max-age=3600" });
+}
+
 async function serveMediaInfo(id: string) {
   await resolveAsset(config, id);
   const file = Bun.file(join(config.derivedRoot, id, "info.json"));
@@ -272,12 +274,71 @@ async function serveMediaInfo(id: string) {
   return new Response(file, { headers: { "Content-Type": "application/json; charset=utf-8" } });
 }
 
+async function exportSavedProject(request: Request, id: string) {
+  const text = await request.text();
+  const body = (text ? JSON.parse(text) : {}) as { revision?: unknown };
+  if (!body || typeof body !== "object" || Array.isArray(body)
+    || Object.keys(body).some((key) => key !== "revision")) {
+    throw new ProjectExportValidationError("Invalid project export request");
+  }
+  if (body.revision !== undefined
+    && (typeof body.revision !== "number" || !Number.isInteger(body.revision) || body.revision < 1)) {
+    throw new ProjectExportValidationError("Invalid project revision");
+  }
+  const result = await exportProject(config, { ffmpegPath, ffprobePath, gyroflowPath }, id, body.revision, request.signal);
+  return json({
+    filename: result.filename,
+    url: `/api/projects/${encodeURIComponent(id)}/export`,
+    revision: result.revision,
+    audio: result.audio,
+  });
+}
+
+async function serveProjectExport(request: Request, id: string) {
+  const project = await readProject(config.savedProjectsRoot, id);
+  const path = projectExportPath(config, id);
+  const file = Bun.file(path);
+  if (!(await file.exists())) return json({ error: "Project export is unavailable" }, 404);
+  const filename = `${project.name.replaceAll(/[\\/\"\r\n]/g, "_")}.mp4`;
+  const asciiFilename = filename.replaceAll(/[^\x20-\x7e]/g, "_");
+  return serveFile(request, path, file.size, {
+    "Content-Disposition": `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    "X-Video-Editor-Audio": "none",
+  });
+}
+
 async function handleApi(request: Request, url: URL) {
+  if (request.method === "GET" && url.pathname === "/api/projects") {
+    return json({ projects: await listProjects(config.savedProjectsRoot) });
+  }
+  if (request.method === "POST" && url.pathname === "/api/projects") {
+    return json(await createProject(config.savedProjectsRoot, await request.json()), 201);
+  }
+  const projectExportMatch = /^\/api\/projects\/([^/]+)\/export$/.exec(url.pathname);
+  if (projectExportMatch) {
+    const id = decodeURIComponent(projectExportMatch[1] ?? "");
+    if (request.method === "POST") return exportSavedProject(request, id);
+    if (request.method === "GET" || request.method === "HEAD") return serveProjectExport(request, id);
+  }
+  const projectMatch = /^\/api\/projects\/([^/]+)$/.exec(url.pathname);
+  if (projectMatch) {
+    const id = decodeURIComponent(projectMatch[1] ?? "");
+    if (request.method === "GET") return json(await readProject(config.savedProjectsRoot, id));
+    if (request.method === "PUT") return json(await updateProject(config.savedProjectsRoot, id, await request.json()));
+    if (request.method === "DELETE") {
+      await deleteProject(config.savedProjectsRoot, id, Number(url.searchParams.get("revision")));
+      await rm(projectExportPath(config, id), { force: true, maxRetries: 8, retryDelay: 250 });
+      return new Response(null, { status: 204 });
+    }
+  }
   if (request.method === "GET" && url.pathname === "/api/media") {
     return json({ media: await listMedia(config) });
   }
   if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/api/media/video") {
     return serveVideo(request, url.searchParams.get("id") ?? "", url.searchParams.get("source") ?? "original");
+  }
+  if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/api/media/photo") {
+    return servePhoto(request, url.searchParams.get("id") ?? "");
   }
   if (request.method === "POST" && url.pathname === "/api/media/stabilize") {
     return stabilizeVideo(request);
@@ -320,6 +381,15 @@ const server = Bun.serve({
       if (await index.exists()) return new Response(index, { headers: { "Content-Type": mimeTypes[".html"] } });
       return new Response("Frontend is not built. Run `bun run dev` or `bun run build`.", { status: 404 });
     } catch (error) {
+      if (request.signal.aborted) return new Response(null, { status: 499 });
+      if (error instanceof ProjectValidationError || error instanceof ProjectExportValidationError
+        || error instanceof SyntaxError || error instanceof URIError) {
+        return json({ error: error.message }, 400);
+      }
+      if (error instanceof ProjectNotFoundError) return json({ error: error.message }, 404);
+      if (error instanceof ProjectConflictError) return json({ error: error.message }, 409);
+      if (error instanceof MediaNotFoundError) return json({ error: error.message }, 404);
+      if (error instanceof MediaKindError) return json({ error: error.message }, 400);
       console.error(error);
       return json({ error: error instanceof Error ? error.message : "Unexpected error" }, 500);
     }

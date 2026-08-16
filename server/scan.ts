@@ -8,7 +8,8 @@ import { listMedia, resolveAsset } from "./media";
 const config = await loadConfig();
 const ffmpegPath = await requireFfmpegEncoder(config.ffmpegPath, "libx264");
 const ffprobePath = process.env.FFPROBE_PATH ?? join(dirname(ffmpegPath), "ffprobe");
-const SCAN_VERSION = 3;
+const sipsPath = "/usr/bin/sips";
+const SCAN_VERSION = 5;
 
 function containedPath(root: string, relativePath: string) {
   const result = resolve(root, relativePath);
@@ -37,6 +38,28 @@ function parseRate(rate: string | undefined) {
 
 async function probe(config: AppConfig, asset: MediaAsset) {
   const { sourcePath, sourceStat } = await resolveAsset(config, asset.id);
+  if (asset.kind === "photo") {
+    const output = await run(sipsPath, ["-g", "pixelWidth", "-g", "pixelHeight", sourcePath]);
+    const width = Number(/pixelWidth:\s*(\d+)/.exec(output)?.[1]);
+    const height = Number(/pixelHeight:\s*(\d+)/.exec(output)?.[1]);
+    if (!width || !height) throw new Error("No photo dimensions found");
+    return {
+      sourcePath,
+      info: {
+        scanVersion: SCAN_VERSION,
+        kind: asset.kind,
+        source: asset.id,
+        sourceMtimeMs: sourceStat.mtimeMs,
+        sourceSize: sourceStat.size,
+        width,
+        height,
+        fps: 0,
+        duration: 0,
+        codec: asset.id.split(".").pop()?.toLowerCase(),
+        thumbnail: config.thumbnail,
+      } as MediaInfo,
+    };
+  }
   const output = await run(ffprobePath, [
     "-v", "error",
     "-select_streams", "v:0",
@@ -63,6 +86,7 @@ async function probe(config: AppConfig, asset: MediaAsset) {
     sourcePath,
     info: {
       scanVersion: SCAN_VERSION,
+      kind: asset.kind,
       source: asset.id,
       sourceMtimeMs: sourceStat.mtimeMs,
       sourceSize: sourceStat.size,
@@ -103,9 +127,9 @@ async function scanAsset(config: AppConfig, asset: MediaAsset) {
 
   try {
     const existing = (await Bun.file(infoPath).json()) as MediaInfo;
-    keepThumbnail = await Bun.file(thumbnailPath).exists()
+    keepThumbnail = existing.kind === asset.kind && await Bun.file(thumbnailPath).exists()
       && sourceAndThumbnailFresh(existing, config, sourceStat.mtimeMs, sourceStat.size);
-    keepProxy = !config.proxy.enabled || (
+    keepProxy = asset.kind === "photo" || !config.proxy.enabled || (
       await Bun.file(proxyPath).exists()
       && sourceAndProxyFresh(existing, config, sourceStat.mtimeMs, sourceStat.size)
     );
@@ -124,17 +148,24 @@ async function scanAsset(config: AppConfig, asset: MediaAsset) {
 
   try {
     if (!keepThumbnail) {
-      await run(ffmpegPath, [
-        "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-        "-ss", String(seekTime), "-i", sourcePath,
-        "-frames:v", "1",
-        "-vf", `scale=${config.thumbnail.maxWidth}:-2:force_original_aspect_ratio=decrease`,
-        "-q:v", String(config.thumbnail.quality),
-        temporaryThumbnail,
-      ]);
+      if (asset.kind === "photo") {
+        await run(sipsPath, [
+          "-s", "format", "jpeg", "-s", "formatOptions", "85",
+          "-Z", String(config.thumbnail.maxWidth), sourcePath, "--out", temporaryThumbnail,
+        ]);
+      } else {
+        await run(ffmpegPath, [
+          "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+          "-ss", String(seekTime), "-i", sourcePath,
+          "-frames:v", "1",
+          "-vf", `scale=${config.thumbnail.maxWidth}:-2:force_original_aspect_ratio=decrease`,
+          "-q:v", String(config.thumbnail.quality),
+          temporaryThumbnail,
+        ]);
+      }
       await rename(temporaryThumbnail, thumbnailPath);
     }
-    if (!keepProxy) {
+    if (asset.kind === "video" && !keepProxy) {
       await run(ffmpegPath, [
         "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
         "-i", sourcePath,
@@ -148,7 +179,7 @@ async function scanAsset(config: AppConfig, asset: MediaAsset) {
       ]);
       await rename(temporaryProxy, proxyPath);
     }
-    info.proxy = config.proxy.enabled ? config.proxy : undefined;
+    info.proxy = asset.kind === "video" && config.proxy.enabled ? config.proxy : undefined;
     await writeFile(temporaryInfo, `${JSON.stringify(info, null, 2)}\n`);
     await rename(temporaryInfo, infoPath);
     return keepThumbnail && keepProxy ? "updated" as const : "generated" as const;

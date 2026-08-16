@@ -23,14 +23,24 @@ Current per-asset layout:
     thumbnail.jpg
     proxy.mp4
   .work/
-    <temporary-job>.mp4
+    <temporary-preview>.mp4
+    <project-export-job-id>/
+      <temporary segments and final>
   exports/
     <media-id-without-extension>-export.mp4
+    projects/
+      <project-id>.mp4
 ```
 
 `proxy.mp4` is the reusable playback cache. Stabilization is performed on demand from either the proxy or original and its `.work` output is deleted after use; stabilized media is not a persistent cache.
 
+The library discovers videos and still photos. Sony `.ARW` dimensions and JPEG thumbnails are generated with macOS `sips`; RAW originals remain untouched and are converted only into disposable job-local JPEGs when rendering a project.
+
 Single-clip exports are reusable full-resolution H.264 renders created from Original media, but they remain disposable. Any stabilization is rendered to `.work` first, then the selected normalized crop is applied during the final encode.
+
+Project exports are created with `POST /api/projects/:id/export` and served with `GET` or `HEAD` on the same URL. They use Original media, hard cuts, project dimensions/fps, H.264/yuv420p, and are intentionally video-only for this milestone (`audio: "none"` in the export response); source audio is not partially preserved and silence is not synthesized. Export job directories are always removed, and only the atomically published `exports/projects/<project-id>.mp4` remains.
+
+Project JSON is versioned and stores ordered timeline items plus project-wide output width, height, and FPS. Each item owns its trim or photo duration, stabilization choice, and normalized crop. The editor locks item crops to the project frame aspect ratio and autosaves project revisions under `savedProjectsRoot`.
 
 The current configured destinations are:
 
