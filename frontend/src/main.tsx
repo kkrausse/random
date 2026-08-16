@@ -178,8 +178,6 @@ function App() {
     crop: NormalizedCrop;
     direction?: string;
   } | undefined>(undefined);
-  const previewPreparationTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-
   const selectedItem = viewerSelection?.context === "timeline"
     ? project?.items.find((item) => item.id === viewerSelection.itemId)
     : undefined;
@@ -193,7 +191,7 @@ function App() {
   const selectedInfo = selectedAsset ? metadata[selectedAsset.id] : undefined;
   const activePlaybackSource: PlaybackSource = playbackSource === "proxy" && selectedInfo?.proxy ? "proxy" : "original";
   const previewKey = selectedItem?.kind === "video"
-    ? `${selectedItem.id}:${activePlaybackSource}:${selectedItem.stabilize}:${cropMode ? "uncropped" : JSON.stringify(selectedItem.crop)}`
+    ? `${selectedItem.id}:${activePlaybackSource}:${selectedItem.stabilize}`
     : undefined;
   const readyClipPreview = clipPreview?.key === previewKey ? clipPreview : undefined;
   viewerSelectionRef.current = viewerSelection;
@@ -211,10 +209,6 @@ function App() {
       if (error.name !== "AbortError") setLibraryError(error instanceof Error ? error.message : "Could not load projects");
     });
     return () => controller.abort();
-  }, []);
-
-  useEffect(() => () => {
-    for (const timer of previewPreparationTimers.current.values()) clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -281,8 +275,7 @@ function App() {
     fetch("/api/media/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: selectedItem.mediaId, source: activePlaybackSource, stabilize: selectedItem.stabilize,
-        crop: cropMode ? undefined : selectedItem.crop }),
+      body: JSON.stringify({ id: selectedItem.mediaId, source: activePlaybackSource, stabilize: selectedItem.stabilize }),
       signal: controller.signal,
     }).then((response) => responseJson<{ url: string }>(response)).then((result) => {
       setClipPreview({ ...result, key: previewKey });
@@ -543,28 +536,10 @@ function App() {
   }
 
   function updateItem(id: string, update: (item: TimelineItem) => TimelineItem) {
-    let updatedItem: TimelineItem | undefined;
     editProject((current) => ({ ...current, items: current.items.map((item) => {
       if (item.id !== id) return item;
-      updatedItem = update(item);
-      return updatedItem;
+      return update(item);
     }) }));
-    if (updatedItem?.kind === "video") prepareClipPreview(updatedItem);
-  }
-
-  function prepareClipPreview(item: Extract<TimelineItem, { kind: "video" }>) {
-    clearTimeout(previewPreparationTimers.current.get(item.id));
-    const source: PlaybackSource = playbackSource === "proxy" && metadata[item.mediaId]?.proxy ? "proxy" : "original";
-    previewPreparationTimers.current.set(item.id, setTimeout(() => {
-      previewPreparationTimers.current.delete(item.id);
-      void fetch("/api/media/preview", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: item.mediaId, source, stabilize: item.stabilize, crop: item.crop }),
-      }).catch(() => {
-        // The visible preview request reports failures when this clip is opened.
-      });
-    }, 300));
   }
 
   function removeItem(id: string) {
@@ -606,11 +581,7 @@ function App() {
 
   function changeSettings(settings: ProjectSettings) {
     const normalized = normalizeSettings(settings);
-    editProject((current) => ({
-      ...current,
-      settings: normalized,
-      items: current.items.map((item) => ({ ...item, crop: centeredCrop(metadata[item.mediaId], normalized) ?? item.crop })),
-    }));
+    editProject((current) => ({ ...current, settings: normalized }));
   }
 
   function navigateLibrary(event: KeyboardEvent<HTMLDivElement>) {
@@ -857,11 +828,13 @@ function App() {
       ? readyClipPreview?.url
       : videoUrl(selectedAsset.id, activePlaybackSource)
     : selectedAsset ? thumbnailUrl(selectedAsset.id) : undefined;
-  const displayedCrop = selectedItem?.crop && !cropMode ? selectedItem.crop : undefined;
+  const displayedCrop = selectedItem && selectedInfo && project && !cropMode
+    ? selectedItem.crop ?? centeredCrop(selectedInfo, project.settings)
+    : undefined;
   const viewerAspect = selectedInfo && displayedCrop
     ? displayedCrop.width * selectedInfo.width / (displayedCrop.height * selectedInfo.height)
     : selectedInfo ? selectedInfo.width / selectedInfo.height : undefined;
-  const croppedMediaStyle = displayedCrop && selectedAsset?.kind === "photo" ? {
+  const croppedMediaStyle = displayedCrop ? {
     width: `${100 / displayedCrop.width}%`,
     height: `${100 / displayedCrop.height}%`,
     left: `${-displayedCrop.x / displayedCrop.width * 100}%`,
@@ -938,7 +911,7 @@ function App() {
             {selectedAsset && selectedInfo && <div ref={mediaFrame} className={croppedMediaStyle ? "media-frame cropped" : "media-frame"}
               style={{ aspectRatio: viewerAspect }}>
               {selectedAsset.kind === "video" ? viewerMediaUrl ? <video ref={videoRef} key={`${selectedItem?.id ?? "source"}:${activePlaybackSource}:${readyClipPreview?.url ?? "direct"}`}
-                src={viewerMediaUrl} controls autoPlay={viewerSelection?.context === "source"} playsInline preload="metadata" onLoadedMetadata={(event) => videoReady(event.currentTarget)}
+                src={viewerMediaUrl} style={croppedMediaStyle} controls autoPlay={viewerSelection?.context === "source"} playsInline preload="metadata" onLoadedMetadata={(event) => videoReady(event.currentTarget)}
                 onTimeUpdate={(event) => { setPlayheadTime(event.currentTarget.currentTime); if (selectedItem?.kind === "video") {
                   setTimelinePlayhead(itemStartTime(projectRef.current?.items ?? [], selectedItem.id) + clamp(event.currentTarget.currentTime - selectedItem.sourceIn, 0, itemDuration(selectedItem)));
                 } if (selectedItem?.kind === "video" && event.currentTarget.currentTime >= selectedItem.sourceOut) {

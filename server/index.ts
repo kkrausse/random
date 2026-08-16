@@ -186,12 +186,11 @@ function validateCrop(value: unknown) {
 }
 
 async function createPreview(request: Request) {
-  const body = await request.json() as { id?: string; source?: PlaybackSource; stabilize?: boolean; crop?: unknown };
+  const body = await request.json() as { id?: string; source?: PlaybackSource; stabilize?: boolean };
   const id = body.id ?? "";
   const source = body.source === "original" ? "original" : "proxy";
   const video = await resolvePlaybackSource(id, source);
-  const crop = validateCrop(body.crop);
-  if (!body.stabilize && !crop) {
+  if (!body.stabilize) {
     return json({ url: `/api/media/video?id=${encodeURIComponent(id)}&source=${source}` });
   }
 
@@ -201,8 +200,7 @@ async function createPreview(request: Request) {
     source,
     sourceMtimeMs: video.sourceMtimeMs,
     sourceSize: video.sourceSize,
-    stabilize: Boolean(body.stabilize),
-    crop,
+    stabilize: true,
     proxy: config.proxy,
   })).digest("hex");
   const output = join(previewRoot, `${key}.mp4`);
@@ -215,22 +213,14 @@ async function createPreview(request: Request) {
         const stabilizedInput = join(workRoot, `${token}-stabilized.mp4`);
         const signal = new AbortController().signal;
         try {
-          let input = video.path;
-          if (body.stabilize) {
-            const info = await Bun.file(join(config.derivedRoot, id, "info.json")).json() as MediaInfo;
-            const outputHeight = Math.min(info.height, config.proxy.maxHeight);
-            const outputSize = source === "proxy" ? {
-              width: Math.max(2, Math.floor(info.width * outputHeight / info.height / 2) * 2),
-              height: Math.max(2, Math.floor(outputHeight / 2) * 2),
-            } : undefined;
-            await runGyroflow(gyroflowPath, video.originalPath, stabilizedInput, source, outputSize, signal);
-            input = stabilizedInput;
-          }
-          if (crop) {
-            await runFfmpeg(input, temporaryOutput, crop, signal, { preset: "veryfast", quality: config.proxy.crf });
-          } else {
-            await rename(input, temporaryOutput);
-          }
+          const info = await Bun.file(join(config.derivedRoot, id, "info.json")).json() as MediaInfo;
+          const outputHeight = Math.min(info.height, config.proxy.maxHeight);
+          const outputSize = source === "proxy" ? {
+            width: Math.max(2, Math.floor(info.width * outputHeight / info.height / 2) * 2),
+            height: Math.max(2, Math.floor(outputHeight / 2) * 2),
+          } : undefined;
+          await runGyroflow(gyroflowPath, video.originalPath, stabilizedInput, source, outputSize, signal);
+          await rename(stabilizedInput, temporaryOutput);
           await rename(temporaryOutput, output);
         } finally {
           await Promise.allSettled([rm(temporaryOutput, { force: true }), rm(stabilizedInput, { force: true })]);
