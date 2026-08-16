@@ -169,6 +169,8 @@ function App() {
   const photoDeadline = useRef(0);
   const photoRemaining = useRef(0);
   const dragItemId = useRef<string | undefined>(undefined);
+  const dragMediaId = useRef<string | undefined>(undefined);
+  const autoplayNextSource = useRef(false);
   const viewerSelectionRef = useRef<ViewerSelection | undefined>(undefined);
   const previewModeRef = useRef(previewMode);
   const seekInteraction = useRef<number | undefined>(undefined);
@@ -525,6 +527,8 @@ function App() {
   }
 
   function selectSource(asset: MediaAsset) {
+    autoplayNextSource.current = viewerSelectionRef.current?.context === "source"
+      && Boolean(videoRef.current && !videoRef.current.paused && !videoRef.current.ended);
     setPreviewMode("off");
     setCropMode(false);
     setViewerSelection({ context: "source", mediaId: asset.id });
@@ -587,6 +591,15 @@ function App() {
       items.splice(to, 0, moved!);
       return { ...current, items };
     });
+  }
+
+  function dropMedia(event: DragEvent<HTMLElement>) {
+    const mediaId = dragMediaId.current;
+    if (!mediaId) return;
+    event.preventDefault();
+    const asset = media.find((candidate) => candidate.id === mediaId);
+    dragMediaId.current = undefined;
+    if (asset) addToTimeline(asset);
   }
 
   function changeSettings(settings: ProjectSettings) {
@@ -662,6 +675,9 @@ function App() {
       setPlayheadTime(sourceTime);
       pendingTimelineSeek.current = undefined;
       if (previewMode === "playing" && readyClipPreview) void video.play();
+    } else if (viewerSelection?.context === "source" && autoplayNextSource.current) {
+      autoplayNextSource.current = false;
+      void video.play().catch(() => setPlaybackError("This browser could not continue video playback."));
     }
   }
 
@@ -918,7 +934,13 @@ function App() {
             {media.map((asset, index) => {
               const selected = viewerSelection?.context === "source" && viewerSelection.mediaId === asset.id;
               return (
-                <div className="library-item" key={asset.id}>
+                <div className="library-item" key={asset.id} draggable={Boolean(project && metadata[asset.id])}
+                  onDragStart={(event) => {
+                    dragItemId.current = undefined;
+                    dragMediaId.current = asset.id;
+                    event.dataTransfer.effectAllowed = "copy";
+                    event.dataTransfer.setData("text/plain", asset.id);
+                  }} onDragEnd={() => { dragMediaId.current = undefined; }}>
                   <button className={selected ? "clip-row selected" : "clip-row"} aria-pressed={selected}
                     tabIndex={selected || (!viewerSelection && index === 0) ? 0 : -1}
                     onClick={() => selectSource(asset)} onDoubleClick={() => addToTimeline(asset)}>
@@ -1030,7 +1052,8 @@ function App() {
               <span>{exportProgress.message}</span>
             </div>}
             {exportError && <div className="error-message export-error-message" role="alert">Export failed: {exportError}</div>}
-            <div className="timeline-scroll" aria-label="Project timeline">
+            <div className="timeline-scroll" aria-label="Project timeline"
+              onDragOver={(event) => { if (dragMediaId.current) event.preventDefault(); }} onDrop={dropMedia}>
               {project?.items.length ? <div className="timeline-content"
                 style={{ width: `max(100%, ${totalTimelineDuration * TIMELINE_PIXELS_PER_SECOND}px)` }}>
                 <div className="timeline">
@@ -1041,7 +1064,12 @@ function App() {
                     const label = asset?.filename ?? item.mediaId;
                     return <article key={item.id} className={`timeline-card${selected ? " selected" : ""}${invalidCrop ? " invalid-crop" : ""}`}
                       aria-invalid={invalidCrop || undefined} title={`${label}${invalidCrop ? " - Crop does not match the project aspect ratio" : ""}`} draggable
-                      style={{ width: `${itemDuration(item) / totalTimelineDuration * 100}%` }} onDragStart={() => { dragItemId.current = item.id; }}
+                      style={{ width: `${itemDuration(item) / totalTimelineDuration * 100}%` }} onDragStart={(event) => {
+                        dragMediaId.current = undefined;
+                        dragItemId.current = item.id;
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", item.id);
+                      }}
                       onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropItem(event, item.id)}>
                       <button className="timeline-select" aria-label={`Select ${label}`} aria-pressed={selected}
                         onClick={() => { stopPreview(); setViewerSelection({ context: "timeline", itemId: item.id }); }}>
