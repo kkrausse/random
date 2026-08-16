@@ -33,6 +33,19 @@ function run(command: string, args: string[]) {
   });
 }
 
+async function runStage<T>(asset: MediaAsset, stage: string, work: () => Promise<T>) {
+  const startedAt = performance.now();
+  console.log(`[start] ${stage}: ${asset.relativePath}`);
+  try {
+    const result = await work();
+    console.log(`[done ${((performance.now() - startedAt) / 1000).toFixed(1)}s] ${stage}: ${asset.relativePath}`);
+    return result;
+  } catch (error) {
+    console.error(`[failed ${((performance.now() - startedAt) / 1000).toFixed(1)}s] ${stage}: ${asset.relativePath}`);
+    throw error;
+  }
+}
+
 function parseRate(rate: string | undefined) {
   if (!rate) return 0;
   const [numeratorText, denominatorText = "1"] = rate.split("/");
@@ -149,7 +162,7 @@ async function scanAsset(config: AppConfig, asset: MediaAsset) {
     // Missing or invalid scan data is rebuilt below.
   }
 
-  const { sourcePath, info } = await probe(config, asset);
+  const { sourcePath, info } = await runStage(asset, "metadata", () => probe(config, asset));
   const token = crypto.randomUUID();
   const temporaryThumbnail = join(assetRoot, `thumbnail-${token}.tmp.jpg`);
   const temporaryProxy = join(assetRoot, `proxy-${token}.tmp.mp4`);
@@ -159,37 +172,42 @@ async function scanAsset(config: AppConfig, asset: MediaAsset) {
   await mkdir(assetRoot, { recursive: true });
 
   try {
+    const generation: Array<Promise<void>> = [];
     if (!keepThumbnail) {
-      if (asset.kind === "photo") {
-        await run(sipsPath, [
-          "-s", "format", "jpeg", "-s", "formatOptions", "85",
-          "-Z", String(config.thumbnail.maxWidth), sourcePath, "--out", temporaryThumbnail,
-        ]);
-      } else {
-        await run(ffmpegPath, [
-          "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-          "-ss", String(seekTime), "-i", sourcePath,
-          "-frames:v", "1",
-          "-vf", `scale=${config.thumbnail.maxWidth}:-2:force_original_aspect_ratio=decrease`,
-          "-q:v", String(config.thumbnail.quality),
-          temporaryThumbnail,
-        ]);
-      }
-      await rename(temporaryThumbnail, thumbnailPath);
+      generation.push(runStage(asset, "thumbnail", async () => {
+        if (asset.kind === "photo") {
+          await run(sipsPath, [
+            "-s", "format", "jpeg", "-s", "formatOptions", "85",
+            "-Z", String(config.thumbnail.maxWidth), sourcePath, "--out", temporaryThumbnail,
+          ]);
+        } else {
+          await run(ffmpegPath, [
+            "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+            "-ss", String(seekTime), "-i", sourcePath,
+            "-frames:v", "1",
+            "-vf", `scale=${config.thumbnail.maxWidth}:-2:force_original_aspect_ratio=decrease`,
+            "-q:v", String(config.thumbnail.quality),
+            temporaryThumbnail,
+          ]);
+        }
+        await rename(temporaryThumbnail, thumbnailPath);
+      }));
     }
     if (asset.kind === "video" && !keepProxy) {
-      await run(ffmpegPath, [
-        "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-        "-i", sourcePath,
-        "-map", "0:v:0", "-map", "0:a:0?",
-        "-vf", `scale=-2:min(${config.proxy.maxHeight}\\,ih)`,
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", String(config.proxy.crf),
-        "-pix_fmt", "yuv420p",
-        "-c:a", config.proxy.audioCodec,
-        "-movflags", "+faststart",
-        temporaryProxy,
-      ]);
-      await rename(temporaryProxy, proxyPath);
+      generation.push(runStage(asset, "proxy", async () => {
+        await run(ffmpegPath, [
+          "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+          "-i", sourcePath,
+          "-map", "0:v:0", "-map", "0:a:0?",
+          "-vf", `scale=-2:min(${config.proxy.maxHeight}\\,ih)`,
+          "-c:v", "libx264", "-preset", "veryfast", "-crf", String(config.proxy.crf),
+          "-pix_fmt", "yuv420p",
+          "-c:a", config.proxy.audioCodec,
+          "-movflags", "+faststart",
+          temporaryProxy,
+        ]);
+        await rename(temporaryProxy, proxyPath);
+      }));
     }
     if (asset.kind === "video" && config.proxy.enabled && !keepStabilizedProxy) {
       const outputHeight = Math.min(info.height, config.proxy.maxHeight);
@@ -198,10 +216,15 @@ async function scanAsset(config: AppConfig, asset: MediaAsset) {
         height: Math.max(2, Math.floor(outputHeight / 2) * 2),
       };
       // Gyroflow needs the original container's lens and per-frame gyro metadata.
-      await runGyroflow(gyroflowPath, sourcePath, temporaryStabilizedProxy, "proxy", outputSize,
-        new AbortController().signal);
-      await rename(temporaryStabilizedProxy, stabilizedProxyPath);
+      generation.push(runStage(asset, `stabilized proxy (${outputSize.width}x${outputSize.height})`, async () => {
+        await runGyroflow(gyroflowPath, sourcePath, temporaryStabilizedProxy, "proxy", outputSize,
+          new AbortController().signal);
+        await rename(temporaryStabilizedProxy, stabilizedProxyPath);
+      }));
     }
+    const generationResults = await Promise.allSettled(generation);
+    const failedGeneration = generationResults.find((result) => result.status === "rejected");
+    if (failedGeneration?.status === "rejected") throw failedGeneration.reason;
     info.proxy = asset.kind === "video" && config.proxy.enabled ? config.proxy : undefined;
     info.stabilizedProxy = asset.kind === "video" && config.proxy.enabled ? config.proxy : undefined;
     await writeFile(temporaryInfo, `${JSON.stringify(info, null, 2)}\n`);
@@ -248,9 +271,12 @@ export async function scanLibrary(config: AppConfig, concurrency = 3) {
 }
 
 if (import.meta.main) {
+  const concurrency = Number(process.env.SCAN_CONCURRENCY ?? 3);
+  if (!Number.isInteger(concurrency) || concurrency < 1) throw new Error("SCAN_CONCURRENCY must be a positive integer");
   console.log(`Scanning read-only library: ${config.mediaRoot}`);
   console.log(`Writing derived media to: ${config.derivedRoot}`);
-  const result = await scanLibrary(config);
+  console.log(`Asset concurrency: ${concurrency} (proxy stages within each asset also run in parallel)`);
+  const result = await scanLibrary(config, concurrency);
   console.log(`Scan complete: ${result.generated} generated, ${result.updated} metadata updated, ${result.skipped} fresh, ${result.errors.length} failed`);
   if (result.errors.length) process.exitCode = 1;
 }
