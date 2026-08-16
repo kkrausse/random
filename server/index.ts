@@ -1,6 +1,4 @@
-import { createReadStream } from "node:fs";
 import { extname, join, resolve } from "node:path";
-import { Readable } from "node:stream";
 import { loadConfig } from "../lib/config";
 import { listMedia, resolveAsset } from "./media";
 
@@ -24,6 +22,7 @@ function json(data: unknown, status = 200) {
 
 async function serveOriginal(request: Request, id: string) {
   const { sourcePath, sourceStat } = await resolveAsset(config, id);
+  const file = Bun.file(sourcePath);
   const fileSize = sourceStat.size;
 
   const range = request.headers.get("range");
@@ -33,8 +32,7 @@ async function serveOriginal(request: Request, id: string) {
     "Content-Length": String(fileSize),
   };
   if (!range) {
-    const body = request.method === "HEAD" ? null : Readable.toWeb(createReadStream(sourcePath, { highWaterMark: 1024 * 1024 }));
-    return new Response(body as BodyInit | null, { headers });
+    return new Response(request.method === "HEAD" ? null : file, { headers });
   }
 
   const match = /^bytes=(\d*)-(\d*)$/.exec(range);
@@ -45,10 +43,7 @@ async function serveOriginal(request: Request, id: string) {
   if (start > end || start >= fileSize) {
     return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${fileSize}` } });
   }
-  const body = request.method === "HEAD"
-    ? null
-    : Readable.toWeb(createReadStream(sourcePath, { start, end, highWaterMark: 1024 * 1024 }));
-  return new Response(body as BodyInit | null, {
+  return new Response(request.method === "HEAD" ? null : file.slice(start, end + 1), {
     status: 206,
     headers: { ...headers, "Content-Range": `bytes ${start}-${end}/${fileSize}`, "Content-Length": String(end - start + 1) },
   });

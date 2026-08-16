@@ -11,11 +11,12 @@ type ScannedAsset = {
 type Measurement = {
   bytes: number;
   firstByteMs: number;
+  transferMs: number;
   totalMs: number;
   megabytesPerSecond: number;
 };
 
-const baseUrl = (process.env.PERF_BASE_URL ?? "http://localhost:3001").replace(/\/$/, "");
+const baseUrl = (process.env.PERF_BASE_URL ?? "http://localhost:5173").replace(/\/$/, "");
 const sampleCount = Math.max(1, Number(process.env.PERF_SAMPLES ?? 3));
 const chunkSize = Math.max(1, Number(process.env.PERF_CHUNK_MB ?? 16)) * 1024 * 1024;
 
@@ -37,10 +38,12 @@ async function loadScannedMedia() {
 }
 
 async function measureRange(asset: ScannedAsset, start: number): Promise<Measurement> {
-  const end = Math.min(start + chunkSize - 1, asset.info.sourceSize - 1);
+  const targetBytes = Math.min(chunkSize, asset.info.sourceSize - start);
+  const controller = new AbortController();
   const requestStarted = performance.now();
   const response = await fetch(`${baseUrl}/api/media/video?id=${encodeURIComponent(asset.asset.id)}`, {
-    headers: { Range: `bytes=${start}-${end}` },
+    headers: { Range: `bytes=${start}-` },
+    signal: controller.signal,
   });
   if (response.status !== 206) {
     throw new Error(`${asset.asset.filename}: expected HTTP 206, received ${response.status}`);
@@ -50,22 +53,25 @@ async function measureRange(asset: ScannedAsset, start: number): Promise<Measure
   const firstChunk = await reader.read();
   const firstByteReceived = performance.now();
   let receivedBytes = firstChunk.value?.byteLength ?? 0;
-  while (!firstChunk.done) {
+  let done = firstChunk.done;
+  while (!done && receivedBytes < targetBytes) {
     const chunk = await reader.read();
-    if (chunk.done) break;
-    receivedBytes += chunk.value.byteLength;
+    done = chunk.done;
+    receivedBytes += chunk.value?.byteLength ?? 0;
   }
   const finished = performance.now();
-  const expectedBytes = end - start + 1;
-  if (receivedBytes !== expectedBytes) {
-    throw new Error(`${asset.asset.filename}: expected ${expectedBytes} bytes, received ${receivedBytes}`);
+  if (receivedBytes < targetBytes) {
+    throw new Error(`${asset.asset.filename}: expected at least ${targetBytes} bytes, received ${receivedBytes}`);
   }
+  if (!done) controller.abort();
   const totalMs = finished - requestStarted;
+  const transferMs = finished - firstByteReceived;
   return {
     bytes: receivedBytes,
     firstByteMs: firstByteReceived - requestStarted,
+    transferMs,
     totalMs,
-    megabytesPerSecond: receivedBytes / 1_000_000 / (totalMs / 1000),
+    megabytesPerSecond: receivedBytes / 1_000_000 / (transferMs / 1000),
   };
 }
 
@@ -73,6 +79,7 @@ function printMeasurement(label: string, measurement: Measurement, requiredMegab
   const headroom = measurement.megabytesPerSecond / requiredMegabytesPerSecond;
   console.log(
     `  ${label.padEnd(12)} TTFB ${measurement.firstByteMs.toFixed(1).padStart(7)} ms  `
+    + `transfer ${measurement.transferMs.toFixed(1).padStart(8)} ms  `
     + `total ${measurement.totalMs.toFixed(1).padStart(8)} ms  `
     + `${measurement.megabytesPerSecond.toFixed(1).padStart(6)} MB/s  `
     + `${headroom.toFixed(1)}x realtime`,
@@ -84,6 +91,8 @@ if (!assets.length) throw new Error("No scanned media found. Run `bun run scan` 
 
 console.log(`Server: ${baseUrl}`);
 console.log(`Testing ${assets.length} longest clips with ${Math.round(chunkSize / 1024 / 1024)} MiB ranges`);
+console.log("Requests use an open-ended browser-style range and cancel after the sample is received.");
+console.log("Repeat runs may measure macOS's file cache rather than the SMB drive.");
 console.log("The middle test approximates a browser seek using the file's byte midpoint.\n");
 
 for (const asset of assets) {
