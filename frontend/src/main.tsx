@@ -11,6 +11,7 @@ import { createRoot } from "react-dom/client";
 import type {
   MediaAsset,
   MediaInfo,
+  MediaPage,
   NormalizedCrop,
   PlaybackSource,
   Project,
@@ -101,6 +102,10 @@ function Thumbnail({ asset }: { asset: MediaAsset }) {
 
 function App() {
   const [media, setMedia] = useState<MediaAsset[]>([]);
+  const [mediaTotal, setMediaTotal] = useState(0);
+  const [nextMediaCursor, setNextMediaCursor] = useState<string | null>(null);
+  const [includePhotos, setIncludePhotos] = useState(false);
+  const [loadingMedia, setLoadingMedia] = useState(false);
   const [metadata, setMetadata] = useState<Record<string, MediaInfo>>({});
   const [projects, setProjects] = useState<Project[]>([]);
   const [project, setProject] = useState<Project>();
@@ -116,10 +121,11 @@ function App() {
   const [stabilizedPreview, setStabilizedPreview] = useState<{ workId: string; url: string; itemId: string; source: PlaybackSource }>();
   const [stabilizing, setStabilizing] = useState(false);
   const [playbackError, setPlaybackError] = useState<string>();
-  const [playheadTime, setPlayheadTime] = useState(0);
-  const [bufferedTime, setBufferedTime] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaFrame = useRef<HTMLDivElement>(null);
+  const librarySentinel = useRef<HTMLDivElement>(null);
+  const mediaRequest = useRef<AbortController | undefined>(undefined);
+  const mediaGeneration = useRef(0);
   const projectRef = useRef<Project | undefined>(undefined);
   const serverRevision = useRef(0);
   const changeVersion = useRef(0);
@@ -133,12 +139,6 @@ function App() {
   const dragItemId = useRef<string | undefined>(undefined);
   const viewerSelectionRef = useRef<ViewerSelection | undefined>(undefined);
   const previewModeRef = useRef(previewMode);
-  const trimInteraction = useRef<{
-    pointerId: number;
-    itemId: string;
-    duration: number;
-    action: "in" | "out" | "playhead";
-  } | undefined>(undefined);
   const cropInteraction = useRef<{
     pointerId: number;
     startX: number;
@@ -150,8 +150,13 @@ function App() {
   const selectedItem = viewerSelection?.context === "timeline"
     ? project?.items.find((item) => item.id === viewerSelection.itemId)
     : undefined;
-  const selectedAsset = media.find((asset) => asset.id === (selectedItem?.mediaId
-    ?? (viewerSelection?.context === "source" ? viewerSelection.mediaId : undefined)));
+  const selectedMediaId = selectedItem?.mediaId ?? (viewerSelection?.context === "source" ? viewerSelection.mediaId : undefined);
+  const selectedAsset = media.find((asset) => asset.id === selectedMediaId) ?? (selectedItem ? {
+    id: selectedItem.mediaId,
+    relativePath: selectedItem.mediaId,
+    filename: selectedItem.mediaId.split(/[\\/]/).at(-1) ?? selectedItem.mediaId,
+    kind: selectedItem.kind,
+  } : undefined);
   const selectedInfo = selectedAsset ? metadata[selectedAsset.id] : undefined;
   const activePlaybackSource: PlaybackSource = playbackSource === "proxy" && selectedInfo?.proxy ? "proxy" : "original";
   const readyStabilizedPreview = selectedItem?.kind === "video"
@@ -162,36 +167,63 @@ function App() {
 
   useEffect(() => {
     const controller = new AbortController();
-    Promise.all([
-      fetch("/api/media", { signal: controller.signal }).then((response) => responseJson<{ media: MediaAsset[] }>(response)),
-      fetch("/api/projects", { signal: controller.signal }).then((response) => responseJson<{ projects: Project[] }>(response)),
-    ]).then(async ([mediaBody, projectBody]) => {
+    fetch("/api/projects", { signal: controller.signal }).then((response) => responseJson<{ projects: Project[] }>(response)).then(async (projectBody) => {
       if (controller.signal.aborted) return;
-      setMedia(mediaBody.media);
       setProjects(projectBody.projects);
       const storedId = localStorage.getItem(ACTIVE_PROJECT_KEY);
       const initial = projectBody.projects.find((candidate) => candidate.id === storedId) ?? projectBody.projects[0];
-      const initialLoad = initial ? loadProject(initial.id, controller.signal) : Promise.resolve(false);
-      const infoEntries = await Promise.all(mediaBody.media.map(async (asset) => {
-        try {
-          const info = await fetch(`/api/media/info?id=${encodeURIComponent(asset.id)}`, { signal: controller.signal });
-          return [asset.id, await responseJson<MediaInfo>(info)] as const;
-        } catch {
-          return undefined;
-        }
-      }));
-      if (!controller.signal.aborted) setMetadata(Object.fromEntries(infoEntries.filter((entry) => entry !== undefined)));
-      await initialLoad;
+      if (initial) await loadProject(initial.id, controller.signal);
     }).catch((error) => {
-      if (error.name !== "AbortError") setLibraryError(error instanceof Error ? error.message : "Could not load editor data");
+      if (error.name !== "AbortError") setLibraryError(error instanceof Error ? error.message : "Could not load projects");
     });
     return () => controller.abort();
   }, []);
 
   useEffect(() => {
+    const generation = ++mediaGeneration.current;
+    mediaRequest.current?.abort();
+    const controller = new AbortController();
+    mediaRequest.current = controller;
+    setMedia([]);
+    setMediaTotal(0);
+    setNextMediaCursor(null);
+    setLibraryError(undefined);
+    setLoadingMedia(true);
+    fetch(`/api/media?limit=48&includePhotos=${includePhotos}`, { signal: controller.signal })
+      .then((response) => responseJson<MediaPage>(response))
+      .then((page) => {
+        if (generation !== mediaGeneration.current) return;
+        setMedia(page.media);
+        setMediaTotal(page.total);
+        setNextMediaCursor(page.nextCursor);
+        void loadMediaInfo(page.media, controller.signal);
+      }).catch((error) => {
+        if (error.name !== "AbortError") setLibraryError(error instanceof Error ? error.message : "Could not load media");
+      }).finally(() => {
+        if (generation === mediaGeneration.current) setLoadingMedia(false);
+      });
+    return () => controller.abort();
+  }, [includePhotos]);
+
+  useEffect(() => {
+    const sentinel = librarySentinel.current;
+    if (!sentinel || loadingMedia || !nextMediaCursor || libraryError) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) void loadNextMediaPage();
+    }, { root: sentinel.closest(".clip-list"), rootMargin: "300px" });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [libraryError, loadingMedia, nextMediaCursor]);
+
+  useEffect(() => {
+    if (!selectedAsset || metadata[selectedAsset.id]) return;
+    const controller = new AbortController();
+    void loadMediaInfo([selectedAsset], controller.signal);
+    return () => controller.abort();
+  }, [selectedAsset?.id, metadata[selectedAsset?.id ?? ""]]);
+
+  useEffect(() => {
     setPlaybackError(undefined);
-    setPlayheadTime(selectedItem?.kind === "video" ? selectedItem.sourceIn : 0);
-    setBufferedTime(0);
   }, [viewerSelection?.context, viewerSelection?.context === "timeline" ? viewerSelection.itemId : viewerSelection?.mediaId]);
 
   useEffect(() => {
@@ -246,6 +278,45 @@ function App() {
       // A newly-mounted video will retry from onLoadedMetadata.
     });
   }, [previewMode, selectedItem?.id, readyStabilizedPreview?.workId]);
+
+  async function loadMediaInfo(assets: MediaAsset[], signal?: AbortSignal) {
+    const entries = await Promise.all(assets.map(async (asset) => {
+      try {
+        const response = await fetch(`/api/media/info?id=${encodeURIComponent(asset.id)}`, { signal });
+        return [asset.id, await responseJson<MediaInfo>(response)] as const;
+      } catch (error) {
+        if ((error as Error).name === "AbortError") return undefined;
+        return undefined;
+      }
+    }));
+    if (signal?.aborted) return;
+    setMetadata((current) => ({ ...current, ...Object.fromEntries(entries.filter((entry) => entry !== undefined)) }));
+  }
+
+  async function loadNextMediaPage() {
+    if (loadingMedia || !nextMediaCursor) return;
+    const generation = mediaGeneration.current;
+    const controller = new AbortController();
+    mediaRequest.current = controller;
+    setLoadingMedia(true);
+    setLibraryError(undefined);
+    try {
+      const query = new URLSearchParams({ limit: "48", cursor: nextMediaCursor, includePhotos: String(includePhotos) });
+      const page = await fetch(`/api/media?${query}`, { signal: controller.signal }).then((response) => responseJson<MediaPage>(response));
+      if (generation !== mediaGeneration.current) return;
+      setMedia((current) => {
+        const ids = new Set(current.map((asset) => asset.id));
+        return [...current, ...page.media.filter((asset) => !ids.has(asset.id))];
+      });
+      setMediaTotal(page.total);
+      setNextMediaCursor(page.nextCursor);
+      void loadMediaInfo(page.media, controller.signal);
+    } catch (error) {
+      if ((error as Error).name !== "AbortError") setLibraryError(error instanceof Error ? error.message : "Could not load more media");
+    } finally {
+      if (generation === mediaGeneration.current) setLoadingMedia(false);
+    }
+  }
 
   async function loadProject(id: string, signal?: AbortSignal) {
     const generation = ++projectLoadGeneration.current;
@@ -511,55 +582,19 @@ function App() {
   function videoReady(video: HTMLVideoElement) {
     if (selectedItem?.kind === "video") {
       video.currentTime = selectedItem.sourceIn;
-      setPlayheadTime(selectedItem.sourceIn);
       if (previewMode === "playing" && (!selectedItem.stabilize || readyStabilizedPreview)) void video.play();
     }
   }
 
-  function updateVideoProgress(video: HTMLVideoElement) {
-    setPlayheadTime(video.currentTime);
-    let buffered = 0;
-    for (let index = 0; index < video.buffered.length; index += 1) buffered = Math.max(buffered, video.buffered.end(index));
-    setBufferedTime(buffered);
-  }
-
-  function moveTrim(event: PointerEvent<HTMLDivElement>) {
-    const interaction = trimInteraction.current;
-    const bounds = event.currentTarget.getBoundingClientRect();
-    if (!interaction || interaction.pointerId !== event.pointerId || bounds.width <= 0) return;
-    const time = clamp(((event.clientX - bounds.left) / bounds.width) * interaction.duration, 0, interaction.duration);
-    const current = projectRef.current?.items.find((item) => item.id === interaction.itemId);
-    if (!current || current.kind !== "video") return;
-    let seekTime = time;
-    if (interaction.action === "in") {
-      seekTime = clamp(time, 0, current.sourceOut - MINIMUM_TRIM);
-      updateItem(current.id, (item) => item.kind === "video" ? { ...item, sourceIn: seekTime } : item);
-    } else if (interaction.action === "out") {
-      seekTime = clamp(time, current.sourceIn + MINIMUM_TRIM, interaction.duration);
-      updateItem(current.id, (item) => item.kind === "video" ? { ...item, sourceOut: seekTime } : item);
-    }
-    if (videoRef.current) videoRef.current.currentTime = seekTime;
-    setPlayheadTime(seekTime);
-  }
-
-  function beginTrim(event: PointerEvent<HTMLDivElement>) {
-    if (!selectedItem || selectedItem.kind !== "video" || !selectedInfo?.duration) return;
-    event.preventDefault();
-    const action = (event.target as HTMLElement).closest<HTMLElement>("[data-trim-action]")?.dataset.trimAction;
-    trimInteraction.current = {
-      pointerId: event.pointerId,
-      itemId: selectedItem.id,
-      duration: selectedInfo.duration,
-      action: action === "in" || action === "out" ? action : "playhead",
-    };
-    event.currentTarget.setPointerCapture(event.pointerId);
-    moveTrim(event);
-  }
-
-  function endTrim(event: PointerEvent<HTMLDivElement>) {
-    if (trimInteraction.current?.pointerId !== event.pointerId) return;
-    trimInteraction.current = undefined;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  function updateTrim(action: "in" | "out", value: number) {
+    if (!selectedItem || selectedItem.kind !== "video" || !selectedInfo) return;
+    const time = action === "in"
+      ? clamp(value, 0, selectedItem.sourceOut - MINIMUM_TRIM)
+      : clamp(value, selectedItem.sourceIn + MINIMUM_TRIM, selectedInfo.duration);
+    updateItem(selectedItem.id, (item) => item.kind === "video"
+      ? { ...item, [action === "in" ? "sourceIn" : "sourceOut"]: time }
+      : item);
+    if (videoRef.current) videoRef.current.currentTime = time;
   }
 
   function beginCrop(event: PointerEvent<HTMLDivElement>, direction?: string) {
@@ -652,9 +687,11 @@ function App() {
 
       <section className="workspace">
         <aside className="library-panel">
-          <div className="panel-heading"><h2>Library</h2><span>{media.length} sources</span></div>
+          <div className="panel-heading"><h2>Library</h2>
+            <label className="library-filter"><input type="checkbox" checked={includePhotos} onChange={(event) => setIncludePhotos(event.target.checked)} /> Include photos</label>
+            <span>{media.length} / {mediaTotal}</span></div>
           {libraryError && <p className="error-message">{libraryError}</p>}
-          {!libraryError && media.length === 0 && <p className="empty-message">Scanning library...</p>}
+          {!libraryError && loadingMedia && media.length === 0 && <p className="empty-message">Loading library...</p>}
           <div className="clip-list" role="group" aria-label="Source media" onKeyDown={navigateLibrary}>
             {media.map((asset, index) => {
               const selected = viewerSelection?.context === "source" && viewerSelection.mediaId === asset.id;
@@ -671,6 +708,7 @@ function App() {
                 </div>
               );
             })}
+            <div ref={librarySentinel} className="library-sentinel">{loadingMedia && media.length > 0 ? "Loading more..." : ""}</div>
           </div>
         </aside>
 
@@ -695,8 +733,7 @@ function App() {
             {selectedAsset && selectedInfo && <div ref={mediaFrame} className="media-frame" style={{ aspectRatio: `${selectedInfo.width} / ${selectedInfo.height}` }}>
               {selectedAsset.kind === "video" ? viewerMediaUrl ? <video ref={videoRef} key={`${selectedItem?.id ?? "source"}:${activePlaybackSource}:${readyStabilizedPreview?.workId ?? "direct"}`}
                 src={viewerMediaUrl} controls autoPlay={viewerSelection?.context === "source"} playsInline preload="metadata" onLoadedMetadata={(event) => videoReady(event.currentTarget)}
-                onProgress={(event) => updateVideoProgress(event.currentTarget)} onDurationChange={(event) => updateVideoProgress(event.currentTarget)}
-                onTimeUpdate={(event) => { updateVideoProgress(event.currentTarget); if (selectedItem?.kind === "video" && event.currentTarget.currentTime >= selectedItem.sourceOut) {
+                onTimeUpdate={(event) => { if (selectedItem?.kind === "video" && event.currentTarget.currentTime >= selectedItem.sourceOut) {
                   if (previewModeRef.current === "playing") advancePreview(); else event.currentTarget.pause();
                 } }} onEnded={() => { if (previewModeRef.current === "playing") advancePreview(); }}
                 onError={() => setPlaybackError("This browser cannot play the selected video.")} />
@@ -708,45 +745,28 @@ function App() {
                   width: `${selectedItem.crop.width * 100}%`, height: `${selectedItem.crop.height * 100}%` }}>
                 {(["nw", "ne", "se", "sw"] as const).map((direction) => <span key={direction} className={`crop-handle crop-handle-${direction}`} data-direction={direction} />)}
               </div>}
-              {viewerMediaUrl && selectedItem?.kind === "video" && selectedInfo.duration > 0 && <div className="trim-overlay">
-                <div className="trim-readout">
-                  <span>In {formatTime(selectedItem.sourceIn)}</span>
-                  <span>Current {formatTime(playheadTime)}</span>
-                  <span>Out {formatTime(selectedItem.sourceOut)}</span>
-                </div>
-                <div className="trim-track" aria-label="Source trim and playhead" onPointerDown={beginTrim} onPointerMove={moveTrim}
-                  onPointerUp={endTrim} onPointerCancel={endTrim}>
-                  <span className="trim-buffered" style={{ width: `${clamp(bufferedTime / selectedInfo.duration, 0, 1) * 100}%` }} />
-                  <span className="trim-selection" style={{ left: `${selectedItem.sourceIn / selectedInfo.duration * 100}%`,
-                    width: `${(selectedItem.sourceOut - selectedItem.sourceIn) / selectedInfo.duration * 100}%` }} />
-                  <span className="trim-playhead" data-trim-action="playhead" style={{ left: `${clamp(playheadTime / selectedInfo.duration, 0, 1) * 100}%` }} />
-                  <span className="trim-handle trim-handle-in" data-trim-action="in" role="slider" aria-label="Trim in"
-                    aria-valuemin={0} aria-valuemax={selectedItem.sourceOut - MINIMUM_TRIM} aria-valuenow={selectedItem.sourceIn}
-                    style={{ left: `${selectedItem.sourceIn / selectedInfo.duration * 100}%` }} />
-                  <span className="trim-handle trim-handle-out" data-trim-action="out" role="slider" aria-label="Trim out"
-                    aria-valuemin={selectedItem.sourceIn + MINIMUM_TRIM} aria-valuemax={selectedInfo.duration} aria-valuenow={selectedItem.sourceOut}
-                    style={{ left: `${selectedItem.sourceOut / selectedInfo.duration * 100}%` }} />
-                </div>
-              </div>}
             </div>}
             {playbackError && <div className="error-message playback-error">{playbackError}</div>}
           </div>
+
+          {selectedItem?.kind === "video" && selectedInfo && selectedInfo.duration > 0 && <section className="trim-editor" aria-label="Trim clip">
+            <div className="trim-heading"><strong>In {formatTime(selectedItem.sourceIn)}</strong>
+              <span>{formatTime(selectedItem.sourceOut - selectedItem.sourceIn)} selected</span>
+              <strong>Out {formatTime(selectedItem.sourceOut)}</strong></div>
+            <div className="trim-range" style={{ "--trim-in": `${selectedItem.sourceIn / selectedInfo.duration * 100}%`,
+              "--trim-out": `${selectedItem.sourceOut / selectedInfo.duration * 100}%` } as React.CSSProperties}>
+              <input aria-label="Trim in" type="range" min="0" max={selectedInfo.duration}
+                step="0.01" value={selectedItem.sourceIn} onChange={(event) => updateTrim("in", Number(event.target.value))} />
+              <input aria-label="Trim out" type="range" min="0" max={selectedInfo.duration}
+                step="0.01" value={selectedItem.sourceOut} onChange={(event) => updateTrim("out", Number(event.target.value))} />
+            </div>
+          </section>}
 
           <div className="edit-strip">
             {selectedItem && selectedInfo ? <>
               <span>Crop {Math.round((selectedItem.crop?.width ?? 1) * selectedInfo.width)} × {Math.round((selectedItem.crop?.height ?? 1) * selectedInfo.height)} px</span>
               <button onClick={() => updateItem(selectedItem.id, (item) => ({ ...item, crop: centeredCrop(selectedInfo, project!.settings) }))}>Reset crop</button>
-              {selectedItem.kind === "video" ? <>
-                <label>In <input type="number" min="0" max={selectedItem.sourceOut - MINIMUM_TRIM} step="0.01" value={selectedItem.sourceIn}
-                  onChange={(event) => { const value = clamp(Number(event.target.value), 0, selectedItem.sourceOut - MINIMUM_TRIM);
-                    updateItem(selectedItem.id, (item) => item.kind === "video" ? { ...item, sourceIn: value } : item);
-                    if (videoRef.current) videoRef.current.currentTime = value; setPlayheadTime(value); }} /></label>
-                <label>Out <input type="number" min={selectedItem.sourceIn + MINIMUM_TRIM} max={selectedInfo.duration} step="0.01" value={selectedItem.sourceOut}
-                  onChange={(event) => { const value = clamp(Number(event.target.value), selectedItem.sourceIn + MINIMUM_TRIM, selectedInfo.duration);
-                    updateItem(selectedItem.id, (item) => item.kind === "video" ? { ...item, sourceOut: value } : item);
-                    if (videoRef.current) videoRef.current.currentTime = value; setPlayheadTime(value); }} /></label>
-                <output>{formatDuration(selectedItem.sourceOut - selectedItem.sourceIn)} of {formatDuration(selectedInfo.duration)}</output>
-              </> : <label>Photo duration <input type="number" min="0.1" step="0.1" value={selectedItem.photoDuration}
+              {selectedItem.kind === "photo" && <label>Photo duration <input type="number" min="0.1" step="0.1" value={selectedItem.photoDuration}
                 onChange={(event) => updateItem(selectedItem.id, (item) => item.kind === "photo" ? { ...item, photoDuration: Math.max(0.1, Number(event.target.value)) } : item)} /> sec</label>}
             </> : <span>{viewerSelection?.context === "source" ? "Source preview. Add it to edit crop, trim, or duration." : "Select a timeline item to edit."}</span>}
           </div>

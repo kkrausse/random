@@ -1,6 +1,6 @@
 import { lstat, readdir, realpath, stat } from "node:fs/promises";
 import { extname, isAbsolute, join, relative, resolve } from "node:path";
-import type { AppConfig, MediaAsset } from "../lib/types";
+import type { AppConfig, MediaAsset, MediaPage } from "../lib/types";
 
 const VIDEO_EXTENSIONS = new Set([".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"]);
 const PHOTO_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".heic", ".heif", ".tif", ".tiff", ".webp", ".arw"]);
@@ -37,6 +37,21 @@ export async function listMedia(config: AppConfig) {
   return (await walk(config.mediaRoot)).sort((a, b) =>
     a.relativePath.localeCompare(b.relativePath, undefined, { numeric: true }),
   );
+}
+
+export function paginateMedia(media: MediaAsset[], limit: number, cursor: string | null, includePhotos: boolean): MediaPage {
+  const filtered = includePhotos ? media : media.filter((asset) => asset.kind === "video");
+  const start = cursor
+    ? filtered.findIndex((asset) => asset.relativePath.localeCompare(cursor, undefined, { numeric: true }) > 0)
+    : 0;
+  const pageStart = start < 0 ? filtered.length : start;
+  const page = filtered.slice(pageStart, pageStart + limit);
+  const hasMore = pageStart + page.length < filtered.length;
+  return {
+    media: page,
+    total: filtered.length,
+    nextCursor: hasMore ? page.at(-1)!.relativePath : null,
+  };
 }
 
 export async function resolveAsset(config: AppConfig, id: string) {

@@ -5,7 +5,7 @@ import { loadConfig } from "../lib/config";
 import { requireFfmpegEncoder } from "../lib/ffmpeg";
 import type { MediaInfo, NormalizedCrop, PlaybackSource } from "../lib/types";
 import { runGyroflow } from "./gyroflow";
-import { listMedia, MediaNotFoundError, resolveAsset } from "./media";
+import { listMedia, MediaNotFoundError, paginateMedia, resolveAsset } from "./media";
 import { exportProject, projectExportPath, ProjectExportValidationError } from "./project-export";
 import {
   createProject,
@@ -332,7 +332,10 @@ async function handleApi(request: Request, url: URL) {
     }
   }
   if (request.method === "GET" && url.pathname === "/api/media") {
-    return json({ media: await listMedia(config) });
+    const rawLimit = url.searchParams.get("limit");
+    const limit = rawLimit === null ? 48 : Number(rawLimit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new SyntaxError("Media page limit must be between 1 and 100");
+    return json(paginateMedia(await listMedia(config), limit, url.searchParams.get("cursor"), url.searchParams.get("includePhotos") === "true"));
   }
   if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/api/media/video") {
     return serveVideo(request, url.searchParams.get("id") ?? "", url.searchParams.get("source") ?? "original");

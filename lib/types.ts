@@ -29,6 +29,12 @@ export type MediaAsset = {
   kind: "video" | "photo";
 };
 
+export type MediaPage = {
+  media: MediaAsset[];
+  total: number;
+  nextCursor: string | null;
+};
+
 export type PlaybackSource = "proxy" | "original";
 
 export type NormalizedCrop = {
