@@ -8,6 +8,7 @@
 - The viewer can switch between Proxy and Original playback.
 - The library grid supports arrow keys, Home/End, roving focus, and selected-state semantics.
 - The viewer provides on-demand Gyroflow previews and normalized crop controls.
+- Single clips can be exported from Original media with the active stabilization and crop state.
 
 ## Gyroflow
 
@@ -63,14 +64,20 @@ type NormalizedCrop = {
 };
 ```
 
-The UI overlays the kept rectangle. Dragging moves it and eight edge/corner handles resize it, with a five-percent minimum dimension. It works identically over direct Proxy, direct Original, or stabilized preview output. Crop is not yet applied to an export.
+The UI overlays the kept rectangle. Dragging moves it and eight edge/corner handles resize it, with a five-percent minimum dimension. It works identically over direct Proxy, direct Original, or stabilized preview output. Crop is applied during export.
+
+## Export
+
+`POST /api/media/export` accepts `{ id, stabilize, crop }`, always reads Original media, and writes a persistent H.264 file under `<derivedRoot>/exports`. If stabilization is active, its full-resolution Gyroflow output is temporary and removed after the final FFmpeg crop/encode. Re-exporting the same source atomically replaces its previous export.
+
+Technical export validation passed on two clips: an unstabilized 50% crop of 3840x2160 `C0356.MP4` produced 1920x1080 H.264/AAC, and a stabilized 80% crop of `C0345.MP4` produced 3072x1728 H.264/AAC with no temporary work file left behind. Visual comparison against the preview remains outstanding.
 
 ## Next Steps
 
 1. Visually validate corrected stabilization on a representative longer Sony clip in both Proxy and Original output modes.
 2. Fix any Gyroflow default smoothing or zoom settings based on that validation.
-3. Implement full-resolution single-clip export from Original using the same stabilization and crop state.
-4. Keep generated output inside `derivedRoot`; never write beside Original media.
+3. Validate one exported clip with stabilization and a visible crop against its preview.
+4. Move on to project state and timeline splicing after export validation.
 
 ## Verification
 

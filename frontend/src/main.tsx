@@ -44,6 +44,9 @@ function App() {
   const [stabilizedPreview, setStabilizedPreview] = useState<{ workId: string; url: string }>();
   const [stabilizing, setStabilizing] = useState(false);
   const [crop, setCrop] = useState<NormalizedCrop>();
+  const [exporting, setExporting] = useState(false);
+  const [exportResult, setExportResult] = useState<{ filename: string; url: string }>();
+  const [exportError, setExportError] = useState<string>();
   const [playbackError, setPlaybackError] = useState<string>();
   const [libraryError, setLibraryError] = useState<string>();
   const videoFrame = useRef<HTMLDivElement>(null);
@@ -54,6 +57,7 @@ function App() {
     crop: NormalizedCrop;
     direction?: string;
   } | undefined>(undefined);
+  const exportController = useRef<AbortController>(undefined);
 
   useEffect(() => {
     fetch("/api/media")
@@ -122,12 +126,45 @@ function App() {
     };
   }, [activePlaybackSource, mediaInfoLoaded, selection, stabilize]);
 
+  useEffect(() => {
+    exportController.current?.abort();
+    setExportResult(undefined);
+    setExportError(undefined);
+  }, [crop, selection, stabilize]);
+
   function selectAsset(asset: MediaAsset) {
     setSelection(asset);
     setVideoInfo(undefined);
     setPlaybackError(undefined);
     setStabilize(false);
     setCrop(undefined);
+  }
+
+  async function exportClip() {
+    if (!selection) return;
+    setExporting(true);
+    setExportError(undefined);
+    setExportResult(undefined);
+    const controller = new AbortController();
+    exportController.current = controller;
+    try {
+      const response = await fetch("/api/media/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: selection.id, stabilize, crop }),
+        signal: controller.signal,
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Export failed");
+      setExportResult(body);
+    } catch (error) {
+      if (!controller.signal.aborted) setExportError(error instanceof Error ? error.message : "Export failed");
+    } finally {
+      if (exportController.current === controller) {
+        exportController.current = undefined;
+        setExporting(false);
+      }
+    }
   }
 
   function navigateLibrary(event: KeyboardEvent<HTMLDivElement>) {
@@ -252,8 +289,9 @@ function App() {
                   <button className={activePlaybackSource === "original" ? "active" : ""} onClick={() => setPlaybackSource("original")}>Original</button>
                 </div>
               )}
-              {selection && <button className={stabilize ? "edit-toggle active" : "edit-toggle"} aria-pressed={stabilize} onClick={() => setStabilize((value) => !value)}>Stabilize</button>}
-              {selection && <button className={crop ? "edit-toggle active" : "edit-toggle"} aria-pressed={Boolean(crop)} onClick={() => setCrop((value) => value ? undefined : defaultCrop)}>Crop</button>}
+              {selection && <button className={stabilize ? "edit-toggle active" : "edit-toggle"} aria-pressed={stabilize} onClick={() => setStabilize((value) => !value)} disabled={exporting}>Stabilize</button>}
+              {selection && <button className={crop ? "edit-toggle active" : "edit-toggle"} aria-pressed={Boolean(crop)} onClick={() => setCrop((value) => value ? undefined : defaultCrop)} disabled={exporting}>Crop</button>}
+              {selection && <button className="export-button" onClick={exportClip} disabled={exporting}>{exporting ? "Exporting..." : "Export"}</button>}
               {stabilizing && <span className="processing-badge">Stabilizing...</span>}
               {videoInfo && <span className="duration-badge">{formatDuration(videoInfo.duration)}</span>}
             </div>
@@ -307,6 +345,13 @@ function App() {
               <span>Drag to move. Resize from any edge or corner.</span>
               <output>{Math.round(crop.width * 100)}% × {Math.round(crop.height * 100)}%</output>
               <button onClick={() => setCrop(defaultCrop)}>Reset</button>
+            </div>
+          )}
+
+          {(exportResult || exportError) && (
+            <div className={exportError ? "export-status export-error" : "export-status"}>
+              {exportError ?? "Full-resolution export ready."}
+              {exportResult && <a href={exportResult.url}>{exportResult.filename}</a>}
             </div>
           )}
 

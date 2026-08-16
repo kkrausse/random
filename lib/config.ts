@@ -21,8 +21,8 @@ export async function loadConfig(): Promise<AppConfig> {
     derivedRoot: resolve(process.env.DERIVED_ROOT ?? raw.derivedRoot),
   };
 
-  if (!config.mediaRoot || !config.derivedRoot) {
-    throw new Error("mediaRoot and derivedRoot are required");
+  if (!config.mediaRoot || !config.derivedRoot || !config.ffmpegPath) {
+    throw new Error("mediaRoot, derivedRoot, and ffmpegPath are required");
   }
   if (isWithin(config.mediaRoot, config.derivedRoot)) {
     throw new Error("derivedRoot must be outside mediaRoot to keep originals read-only");
@@ -32,6 +32,9 @@ export async function loadConfig(): Promise<AppConfig> {
   }
   if (config.thumbnail.maxWidth <= 0 || config.thumbnail.quality < 1 || config.thumbnail.quality > 31) {
     throw new Error("Invalid thumbnail configuration");
+  }
+  if (config.export.quality < 0 || config.export.quality > 51) {
+    throw new Error("Invalid export configuration");
   }
 
   return config;

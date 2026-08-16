@@ -1,11 +1,13 @@
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { loadConfig } from "../lib/config";
+import { requireFfmpegEncoder } from "../lib/ffmpeg";
 import type { AppConfig, MediaAsset, MediaInfo } from "../lib/types";
 import { listMedia, resolveAsset } from "./media";
 
-const ffmpegPath = process.env.FFMPEG_PATH ?? "ffmpeg";
-const ffprobePath = process.env.FFPROBE_PATH ?? "ffprobe";
+const config = await loadConfig();
+const ffmpegPath = await requireFfmpegEncoder(config.ffmpegPath, "libx264");
+const ffprobePath = process.env.FFPROBE_PATH ?? join(dirname(ffmpegPath), "ffprobe");
 const SCAN_VERSION = 3;
 
 function containedPath(root: string, relativePath: string) {
@@ -190,7 +192,6 @@ export async function scanLibrary(config: AppConfig, concurrency = 3) {
 }
 
 if (import.meta.main) {
-  const config = await loadConfig();
   console.log(`Scanning read-only library: ${config.mediaRoot}`);
   console.log(`Writing derived media to: ${config.derivedRoot}`);
   const result = await scanLibrary(config);

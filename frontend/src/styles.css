@@ -40,6 +40,9 @@ h1, h2, p { margin: 0; }
 .source-toggle button:disabled { opacity: 0.4; cursor: default; }
 .edit-toggle { padding: 3px 7px; color: #aaa; background: transparent; border: 1px solid #555; cursor: pointer; font-size: 10px; }
 .edit-toggle.active { color: #fff; background: #345; border-color: #789; }
+.edit-toggle:disabled { opacity: 0.55; cursor: wait; }
+.export-button { padding: 3px 8px; color: #111; background: #ddd; border: 1px solid #fff; cursor: pointer; font-size: 10px; }
+.export-button:disabled { opacity: 0.55; cursor: wait; }
 .processing-badge { color: #9cc8ff; font-size: 10px; }
 .duration-badge { color: #aaa; font: 11px ui-monospace, monospace; }
 .viewer-stage { position: relative; flex: 1; min-height: 300px; display: grid; place-items: center; overflow: hidden; background: #000; }
@@ -61,6 +64,9 @@ h1, h2, p { margin: 0; }
 .crop-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-height: 36px; color: #aaa; font-size: 10px; }
 .crop-controls output { color: #eee; font: 10px ui-monospace, monospace; }
 .crop-controls button { padding: 3px 7px; color: #ddd; background: #222; border: 1px solid #555; cursor: pointer; }
+.export-status { display: flex; align-items: center; gap: 12px; min-height: 32px; padding: 6px 8px; color: #b9d9b1; background: #1d321f; font-size: 11px; }
+.export-status a { color: #d9f5d3; }
+.export-error { color: #ffb4a6; background: #4a1e18; }
 .viewer-placeholder { color: #888; font-size: 12px; }
 .viewer-meta { min-height: 42px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; color: #aaa; font: 10px ui-monospace, monospace; }
 .error-message { padding: 10px; color: #ffb4a6; background: #4a1e18; font-size: 12px; }

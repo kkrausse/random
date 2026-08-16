@@ -1,6 +1,7 @@
 export type AppConfig = {
   mediaRoot: string;
   derivedRoot: string;
+  ffmpegPath: string;
 
   thumbnail: {
     maxWidth: number;

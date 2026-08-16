@@ -1,18 +1,28 @@
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
-import { extname, join, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { loadConfig } from "../lib/config";
-import type { MediaInfo, PlaybackSource } from "../lib/types";
+import { requireFfmpegEncoder } from "../lib/ffmpeg";
+import type { MediaInfo, NormalizedCrop, PlaybackSource } from "../lib/types";
 import { listMedia, resolveAsset } from "./media";
 
 const config = await loadConfig();
 const workRoot = join(config.derivedRoot, ".work");
+const exportRoot = join(config.derivedRoot, "exports");
 const workFiles = new Map<string, string>();
+const ffmpegPath = await requireFfmpegEncoder(config.ffmpegPath, "libx264");
 const gyroflowPath = process.env.GYROFLOW_PATH
   ?? join(homedir(), "Applications/Gyroflow CLI/Gyroflow.app/Contents/MacOS/gyroflow");
 
 await rm(workRoot, { recursive: true, force: true });
 await mkdir(workRoot, { recursive: true });
+
+function containedPath(root: string, relativePath: string) {
+  const result = resolve(root, relativePath);
+  const fromRoot = relative(root, result);
+  if (fromRoot.startsWith("..") || isAbsolute(fromRoot)) throw new Error("Invalid output path");
+  return result;
+}
 
 const mimeTypes: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
@@ -30,7 +40,7 @@ function json(data: unknown, status = 200) {
   return Response.json(data, { status });
 }
 
-async function serveFile(request: Request, path: string, fileSize: number) {
+async function serveFile(request: Request, path: string, fileSize: number, extraHeaders: Record<string, string> = {}) {
   const file = Bun.file(path);
 
   const range = request.headers.get("range");
@@ -38,6 +48,7 @@ async function serveFile(request: Request, path: string, fileSize: number) {
     "Accept-Ranges": "bytes",
     "Content-Type": mimeTypes[extname(path).toLowerCase()] ?? "application/octet-stream",
     "Content-Length": String(fileSize),
+    ...extraHeaders,
   };
   if (!range) {
     return new Response(request.method === "HEAD" ? null : file, { headers });
@@ -124,6 +135,88 @@ async function runGyroflow(
   }
 }
 
+async function runFfmpeg(input: string, output: string, crop: NormalizedCrop | undefined, signal: AbortSignal) {
+  const filters = crop ? [
+    `crop=trunc(iw*${crop.width}/2)*2:trunc(ih*${crop.height}/2)*2:trunc(iw*${crop.x}/2)*2:trunc(ih*${crop.y}/2)*2`,
+  ] : [];
+  const args = [
+    "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+    "-i", input,
+    "-map", "0:v:0", "-map", "0:a:0?",
+    "-map_metadata", "-1",
+    ...(filters.length ? ["-vf", filters.join(",")] : []),
+    "-c:v", "libx264", "-preset", "slow", "-crf", String(config.export.quality),
+    "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-b:a", "192k",
+    "-movflags", "+faststart",
+    output,
+  ];
+  const process = Bun.spawn([ffmpegPath, ...args], { stdout: "ignore", stderr: "pipe" });
+  const abort = () => process.kill();
+  signal.addEventListener("abort", abort, { once: true });
+  try {
+    const [stderr, exitCode] = await Promise.all([new Response(process.stderr).text(), process.exited]);
+    if (signal.aborted) throw new Error("Export cancelled");
+    if (exitCode !== 0) throw new Error(`FFmpeg failed: ${stderr.trim() || `exit code ${exitCode}`}`);
+  } finally {
+    signal.removeEventListener("abort", abort);
+  }
+}
+
+function validateCrop(value: unknown) {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object") throw new Error("Invalid crop");
+  const crop = value as NormalizedCrop;
+  const values = [crop.x, crop.y, crop.width, crop.height];
+  if (values.some((part) => !Number.isFinite(part))
+    || crop.x < 0 || crop.y < 0 || crop.width <= 0 || crop.height <= 0
+    || crop.x + crop.width > 1 || crop.y + crop.height > 1) {
+    throw new Error("Invalid crop");
+  }
+  return crop;
+}
+
+function exportPath(id: string) {
+  const extension = extname(id);
+  return containedPath(exportRoot, `${id.slice(0, -extension.length)}-export.mp4`);
+}
+
+async function exportVideo(request: Request) {
+  const body = await request.json() as { id?: string; stabilize?: boolean; crop?: unknown };
+  const id = body.id ?? "";
+  const { sourcePath } = await resolveAsset(config, id);
+  const crop = validateCrop(body.crop);
+  const output = exportPath(id);
+  const token = crypto.randomUUID();
+  const temporaryOutput = join(dirname(output), `.${basename(output)}-${token}.tmp.mp4`);
+  const stabilizedInput = join(workRoot, `${token}-stabilized.mp4`);
+  await mkdir(dirname(output), { recursive: true });
+
+  try {
+    if (body.stabilize) {
+      await runGyroflow(sourcePath, stabilizedInput, "original", undefined, request.signal);
+    }
+    await runFfmpeg(body.stabilize ? stabilizedInput : sourcePath, temporaryOutput, crop, request.signal);
+    await rename(temporaryOutput, output);
+    return json({
+      filename: basename(output),
+      url: `/api/media/export?id=${encodeURIComponent(id)}`,
+    });
+  } finally {
+    await Promise.all([rm(temporaryOutput, { force: true }), rm(stabilizedInput, { force: true })]);
+  }
+}
+
+async function serveExport(request: Request, id: string) {
+  await resolveAsset(config, id);
+  const output = exportPath(id);
+  const file = Bun.file(output);
+  if (!(await file.exists())) return json({ error: "Export is unavailable" }, 404);
+  return serveFile(request, output, file.size, {
+    "Content-Disposition": `attachment; filename="${basename(output).replaceAll('"', "")}"`,
+  });
+}
+
 async function stabilizeVideo(request: Request) {
   const body = await request.json() as { id?: string; source?: PlaybackSource };
   const source = body.source === "original" ? "original" : "proxy";
@@ -188,6 +281,12 @@ async function handleApi(request: Request, url: URL) {
   }
   if (request.method === "POST" && url.pathname === "/api/media/stabilize") {
     return stabilizeVideo(request);
+  }
+  if (request.method === "POST" && url.pathname === "/api/media/export") {
+    return exportVideo(request);
+  }
+  if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/api/media/export") {
+    return serveExport(request, url.searchParams.get("id") ?? "");
   }
   if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/api/media/work") {
     return serveWork(request, url.searchParams.get("id") ?? "");
