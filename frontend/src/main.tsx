@@ -110,6 +110,7 @@ function App() {
   const [saveError, setSaveError] = useState<string>();
   const [libraryError, setLibraryError] = useState<string>();
   const [exporting, setExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState<{ message: string; percent: number }>();
   const [exportResult, setExportResult] = useState<{ filename: string; url: string }>();
   const [exportError, setExportError] = useState<string>();
   const [previewMode, setPreviewMode] = useState<"off" | "playing" | "paused">("off");
@@ -674,17 +675,30 @@ function App() {
     setExporting(true);
     setExportError(undefined);
     setExportResult(undefined);
+    setExportProgress({ message: "Starting export", percent: 0 });
     try {
-      const result = await fetch(`/api/projects/${encodeURIComponent(project.id)}/export`, {
+      const { jobId } = await fetch(`/api/projects/${encodeURIComponent(project.id)}/export`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ revision: serverRevision.current }),
-      }).then((response) => responseJson<{ filename: string; url: string }>(response));
-      setExportResult(result);
+      }).then((response) => responseJson<{ jobId: string }>(response));
+      while (true) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const status = await fetch(`/api/projects/${encodeURIComponent(project.id)}/export?jobId=${encodeURIComponent(jobId)}`)
+          .then((response) => responseJson<{ state: "running" | "complete" | "error"; message: string; percent: number;
+            result?: { filename: string; url: string }; error?: string }>(response));
+        setExportProgress({ message: status.message, percent: status.percent });
+        if (status.state === "complete" && status.result) {
+          setExportResult(status.result);
+          break;
+        }
+        if (status.state === "error") throw new Error(status.error ?? "Export failed");
+      }
     } catch (error) {
       setExportError(error instanceof Error ? error.message : "Export failed");
     } finally {
       setExporting(false);
+      setExportProgress(undefined);
     }
   }
 
@@ -829,8 +843,12 @@ function App() {
                 <button onClick={startPreview} disabled={!project?.items.length}>Play all</button>
                 <button onClick={togglePreviewPause} disabled={previewMode === "off"}>{previewMode === "paused" ? "Resume" : "Pause"}</button>
                 <button onClick={stopPreview} disabled={previewMode === "off"}>Stop</button>
-                <button className="export-button" onClick={() => void exportProject()} disabled={!project?.items.length || exporting}>{exporting ? "Exporting..." : "Export Project"}</button>
+                <button className="export-button" onClick={() => void exportProject()} disabled={!project?.items.length || exporting}>{exporting ? `Exporting ${exportProgress?.percent ?? 0}%` : "Export Project"}</button>
               </div></div>
+            {exporting && exportProgress && <div className="export-progress" role="status">
+              <progress max="100" value={exportProgress.percent} />
+              <span>{exportProgress.message}</span>
+            </div>}
             {exportError && <div className="error-message export-error-message" role="alert">Export failed: {exportError}</div>}
             <div className="timeline" aria-label="Project timeline">
               {project?.items.map((item, index) => {

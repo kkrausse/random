@@ -85,6 +85,8 @@ input, select { min-width: 0; padding: 3px 5px; color: #eee; background: #222; b
 .card-actions button { min-height: 28px; padding: 3px 7px; border-width: 1px 1px 0 0; font-size: 9px; }
 .card-actions button:last-child { flex: 1; border-right: 0; }
 .export-button { color: #111; background: #ddd; border-color: #fff; }
+.export-progress { display: grid; grid-template-columns: minmax(120px, 240px) minmax(0, 1fr); align-items: center; gap: 10px; margin-bottom: 8px; color: #bbb; font-size: 10px; }
+.export-progress progress { width: 100%; accent-color: #9cc8ff; }
 .export-status { min-height: 28px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: #aaa; font-size: 10px; }
 .export-status a { color: #d9f5d3; }
 .export-error-message { margin-bottom: 8px; }

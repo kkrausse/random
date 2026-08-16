@@ -25,6 +25,14 @@ const previewRoot = join(config.derivedRoot, ".preview-cache");
 const exportRoot = join(config.derivedRoot, "exports");
 const workFiles = new Map<string, string>();
 const previewJobs = new Map<string, Promise<void>>();
+const exportJobs = new Map<string, {
+  projectId: string;
+  state: "running" | "complete" | "error";
+  message: string;
+  percent: number;
+  result?: { filename: string; url: string; revision: number; audio: "none" };
+  error?: string;
+}>();
 const ffmpegPath = await requireFfmpegEncoder(config.ffmpegPath, "libx264");
 const ffprobePath = process.env.FFPROBE_PATH ?? join(dirname(ffmpegPath), "ffprobe");
 const gyroflowPath = process.env.GYROFLOW_PATH
@@ -348,7 +356,7 @@ async function serveMediaInfo(id: string) {
   return new Response(file, { headers: { "Content-Type": "application/json; charset=utf-8" } });
 }
 
-async function exportSavedProject(request: Request, id: string) {
+async function startProjectExport(request: Request, id: string) {
   const text = await request.text();
   const body = (text ? JSON.parse(text) : {}) as { revision?: unknown };
   if (!body || typeof body !== "object" || Array.isArray(body)
@@ -359,13 +367,31 @@ async function exportSavedProject(request: Request, id: string) {
     && (typeof body.revision !== "number" || !Number.isInteger(body.revision) || body.revision < 1)) {
     throw new ProjectExportValidationError("Invalid project revision");
   }
-  const result = await exportProject(config, { ffmpegPath, ffprobePath, gyroflowPath }, id, body.revision, request.signal);
-  return json({
-    filename: result.filename,
-    url: `/api/projects/${encodeURIComponent(id)}/export`,
-    revision: result.revision,
-    audio: result.audio,
+  const jobId = crypto.randomUUID();
+  const job = { projectId: id, state: "running" as const, message: "Starting export", percent: 0 };
+  exportJobs.set(jobId, job);
+  const signal = new AbortController().signal;
+  void exportProject(config, { ffmpegPath, ffprobePath, gyroflowPath }, id, body.revision, signal, (message, percent) => {
+    Object.assign(job, { message, percent });
+  }).then((result) => {
+    Object.assign(job, { state: "complete", message: "Export complete", percent: 100, result: {
+      filename: result.filename,
+      url: `/api/projects/${encodeURIComponent(id)}/export`,
+      revision: result.revision,
+      audio: result.audio,
+    } });
+    setTimeout(() => exportJobs.delete(jobId), 60 * 60 * 1000);
+  }).catch((error) => {
+    Object.assign(job, { state: "error", message: "Export failed", error: error instanceof Error ? error.message : "Unexpected error" });
+    setTimeout(() => exportJobs.delete(jobId), 60 * 60 * 1000);
   });
+  return json({ jobId }, 202);
+}
+
+function projectExportStatus(id: string, jobId: string) {
+  const job = exportJobs.get(jobId);
+  if (!job || job.projectId !== id) return json({ error: "Export job not found" }, 404);
+  return json(job);
 }
 
 async function serveProjectExport(request: Request, id: string) {
@@ -391,7 +417,10 @@ async function handleApi(request: Request, url: URL) {
   const projectExportMatch = /^\/api\/projects\/([^/]+)\/export$/.exec(url.pathname);
   if (projectExportMatch) {
     const id = decodeURIComponent(projectExportMatch[1] ?? "");
-    if (request.method === "POST") return exportSavedProject(request, id);
+    if (request.method === "POST") return startProjectExport(request, id);
+    if (request.method === "GET" && url.searchParams.has("jobId")) {
+      return projectExportStatus(id, url.searchParams.get("jobId") ?? "");
+    }
     if (request.method === "GET" || request.method === "HEAD") return serveProjectExport(request, id);
   }
   const projectMatch = /^\/api\/projects\/([^/]+)$/.exec(url.pathname);

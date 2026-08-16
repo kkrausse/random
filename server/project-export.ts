@@ -13,6 +13,8 @@ type ExportTools = {
   gyroflowPath: string;
 };
 
+export type ExportProgress = (message: string, percent: number) => void;
+
 type ProbeResult = {
   streams?: Array<{ codec_type?: string; width?: number; height?: number; duration?: string }>;
   format?: { duration?: string };
@@ -130,6 +132,8 @@ async function renderSegment(
   jobDir: string,
   stabilizedSources: Map<string, string>,
   signal: AbortSignal,
+  reportProgress: ExportProgress,
+  progress: number,
 ) {
   const asset = await resolveAsset(config, item.mediaId);
   if (asset.kind !== item.kind) fail(`Timeline item ${item.id} is ${item.kind}, but media is ${asset.kind}`);
@@ -139,6 +143,7 @@ async function renderSegment(
   if (item.kind === "photo") {
     let input = asset.sourcePath;
     if (extname(input).toLowerCase() === ".arw") {
+      reportProgress(`Converting item ${index + 1} (${item.mediaId})`, progress);
       input = join(jobDir, `photo-${String(index).padStart(5, "0")}.jpg`);
       await runProcess([
         "/usr/bin/sips", "-s", "format", "jpeg", "-s", "formatOptions", "95",
@@ -147,6 +152,7 @@ async function renderSegment(
     }
     const metadata = await probeVideo(input, tools, signal);
     validateCropAspect(item.crop, metadata.width, metadata.height, settings, `Item ${index + 1} (${item.mediaId})`);
+    reportProgress(`Rendering item ${index + 1} (${item.mediaId})`, progress);
     await runProcess([
       tools.ffmpegPath, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
       "-loop", "1", "-framerate", String(settings.fps), "-t", String(item.photoDuration),
@@ -164,12 +170,14 @@ async function renderSegment(
     if (cached) {
       input = cached;
     } else {
+      reportProgress(`Stabilizing item ${index + 1} (${item.mediaId})`, progress);
       input = join(jobDir, `stabilized-${stabilizedSources.size}.mp4`);
       // Gyroflow needs the complete Original Sony container before any trim removes gyro metadata.
       await runGyroflow(tools.gyroflowPath, asset.sourcePath, input, "original", undefined, signal);
       stabilizedSources.set(asset.sourcePath, input);
     }
   }
+  reportProgress(`Rendering item ${index + 1} (${item.mediaId})`, progress);
   await runProcess([
     tools.ffmpegPath, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
     "-ss", String(item.sourceIn), "-t", String(item.sourceOut - item.sourceIn), "-i", input,
@@ -184,6 +192,7 @@ export async function exportProject(
   projectId: string,
   expectedRevision: number | undefined,
   signal: AbortSignal,
+  reportProgress: ExportProgress = () => {},
 ) {
   const project = await readProject(config.savedProjectsRoot, projectId);
   if (expectedRevision !== undefined && expectedRevision !== project.revision) {
@@ -200,8 +209,13 @@ export async function exportProject(
     const stabilizedSources = new Map<string, string>();
     const segments: string[] = [];
     for (const [index, item] of project.items.entries()) {
-      segments.push(await renderSegment(config, tools, item, settings, index, jobDir, stabilizedSources, signal));
+      const progress = Math.round(index / project.items.length * 90);
+      reportProgress(`Rendering item ${index + 1} of ${project.items.length} (${item.mediaId})`, progress);
+      segments.push(await renderSegment(config, tools, item, settings, index, jobDir, stabilizedSources, signal,
+        reportProgress, progress));
+      reportProgress(`Rendered item ${index + 1} of ${project.items.length}`, Math.round((index + 1) / project.items.length * 90));
     }
+    reportProgress("Joining rendered clips", 95);
     const concatFile = join(jobDir, "segments.txt");
     await writeFile(concatFile, segments.map((path) => `file '${path.replaceAll("'", "'\\''")}'`).join("\n") + "\n");
     await runProcess([
@@ -214,6 +228,7 @@ export async function exportProject(
     if (current.revision !== project.revision) throw new ProjectConflictError("Project changed during export");
     await mkdir(dirname(final), { recursive: true });
     await rename(temporaryFinal, final);
+    reportProgress("Export complete", 100);
     return {
       path: final,
       filename: `${project.name.replaceAll(/[\\/\"\r\n]/g, "_") || basename(final)}.mp4`,
