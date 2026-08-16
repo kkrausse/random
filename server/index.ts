@@ -63,6 +63,13 @@ async function serveThumbnail(id: string) {
   });
 }
 
+async function serveMediaInfo(id: string) {
+  await resolveAsset(config, id);
+  const file = Bun.file(join(config.derivedRoot, id, "info.json"));
+  if (!(await file.exists())) return json({ error: "Media has not been scanned" }, 404);
+  return new Response(file, { headers: { "Content-Type": "application/json; charset=utf-8" } });
+}
+
 async function handleApi(request: Request, url: URL) {
   if (request.method === "GET" && url.pathname === "/api/media") {
     return json({ media: await listMedia(config) });
@@ -72,6 +79,9 @@ async function handleApi(request: Request, url: URL) {
   }
   if (request.method === "GET" && url.pathname === "/api/media/thumbnail") {
     return serveThumbnail(url.searchParams.get("id") ?? "");
+  }
+  if (request.method === "GET" && url.pathname === "/api/media/info") {
+    return serveMediaInfo(url.searchParams.get("id") ?? "");
   }
   return json({ error: "Not found" }, 404);
 }

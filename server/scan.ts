@@ -6,6 +6,7 @@ import { listMedia, resolveAsset } from "./media";
 
 const ffmpegPath = process.env.FFMPEG_PATH ?? "ffmpeg";
 const ffprobePath = process.env.FFPROBE_PATH ?? "ffprobe";
+const SCAN_VERSION = 2;
 
 function containedPath(root: string, relativePath: string) {
   const result = resolve(root, relativePath);
@@ -37,13 +38,21 @@ async function probe(config: AppConfig, asset: MediaAsset) {
   const output = await run(ffprobePath, [
     "-v", "error",
     "-select_streams", "v:0",
-    "-show_entries", "stream=width,height,codec_name,avg_frame_rate:format=duration",
+    "-show_entries", "stream=width,height,codec_name,profile,pix_fmt,avg_frame_rate,bit_rate:format=duration,bit_rate",
     "-of", "json",
     sourcePath,
   ]);
   const data = JSON.parse(output) as {
-    streams?: Array<{ width?: number; height?: number; codec_name?: string; avg_frame_rate?: string }>;
-    format?: { duration?: string };
+    streams?: Array<{
+      width?: number;
+      height?: number;
+      codec_name?: string;
+      profile?: string;
+      pix_fmt?: string;
+      avg_frame_rate?: string;
+      bit_rate?: string;
+    }>;
+    format?: { duration?: string; bit_rate?: string };
   };
   const stream = data.streams?.[0];
   if (!stream?.width || !stream.height) throw new Error("No video stream found");
@@ -51,6 +60,7 @@ async function probe(config: AppConfig, asset: MediaAsset) {
   return {
     sourcePath,
     info: {
+      scanVersion: SCAN_VERSION,
       source: asset.id,
       sourceMtimeMs: sourceStat.mtimeMs,
       sourceSize: sourceStat.size,
@@ -59,12 +69,16 @@ async function probe(config: AppConfig, asset: MediaAsset) {
       fps: parseRate(stream.avg_frame_rate),
       duration: Number(data.format?.duration ?? 0),
       codec: stream.codec_name,
+      profile: stream.profile,
+      pixelFormat: stream.pix_fmt,
+      videoBitrate: stream.bit_rate ? Number(stream.bit_rate) : undefined,
+      containerBitrate: data.format?.bit_rate ? Number(data.format.bit_rate) : undefined,
       thumbnail: config.thumbnail,
     } satisfies MediaInfo,
   };
 }
 
-function fresh(info: MediaInfo, config: AppConfig, mtimeMs: number, size: number) {
+function sourceAndThumbnailFresh(info: MediaInfo, config: AppConfig, mtimeMs: number, size: number) {
   return info.sourceMtimeMs === mtimeMs
     && info.sourceSize === size
     && JSON.stringify(info.thumbnail) === JSON.stringify(config.thumbnail);
@@ -75,11 +89,13 @@ async function scanAsset(config: AppConfig, asset: MediaAsset) {
   const assetRoot = containedPath(config.derivedRoot, asset.id);
   const infoPath = join(assetRoot, "info.json");
   const thumbnailPath = join(assetRoot, "thumbnail.jpg");
+  let keepThumbnail = false;
 
   try {
     const existing = (await Bun.file(infoPath).json()) as MediaInfo;
-    if (await Bun.file(thumbnailPath).exists() && fresh(existing, config, sourceStat.mtimeMs, sourceStat.size)) {
-      return "skipped" as const;
+    if (await Bun.file(thumbnailPath).exists() && sourceAndThumbnailFresh(existing, config, sourceStat.mtimeMs, sourceStat.size)) {
+      if (existing.scanVersion === SCAN_VERSION) return "skipped" as const;
+      keepThumbnail = true;
     }
   } catch {
     // Missing or invalid scan data is rebuilt below.
@@ -93,6 +109,11 @@ async function scanAsset(config: AppConfig, asset: MediaAsset) {
   await mkdir(assetRoot, { recursive: true });
 
   try {
+    if (keepThumbnail) {
+      await writeFile(temporaryInfo, `${JSON.stringify(info, null, 2)}\n`);
+      await rename(temporaryInfo, infoPath);
+      return "updated" as const;
+    }
     await run(ffmpegPath, [
       "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
       "-ss", String(seekTime), "-i", sourcePath,
@@ -114,6 +135,7 @@ export async function scanLibrary(config: AppConfig, concurrency = 3) {
   const media = await listMedia(config);
   let nextIndex = 0;
   let generated = 0;
+  let updated = 0;
   let skipped = 0;
   const errors: Array<{ asset: string; error: string }> = [];
 
@@ -124,18 +146,19 @@ export async function scanLibrary(config: AppConfig, concurrency = 3) {
       try {
         const result = await scanAsset(config, asset);
         if (result === "generated") generated++;
+        else if (result === "updated") updated++;
         else skipped++;
-        console.log(`[${generated + skipped + errors.length}/${media.length}] ${result}: ${asset.relativePath}`);
+        console.log(`[${generated + updated + skipped + errors.length}/${media.length}] ${result}: ${asset.relativePath}`);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown scan error";
         errors.push({ asset: asset.relativePath, error: message });
-        console.error(`[${generated + skipped + errors.length}/${media.length}] failed: ${asset.relativePath}: ${message}`);
+        console.error(`[${generated + updated + skipped + errors.length}/${media.length}] failed: ${asset.relativePath}: ${message}`);
       }
     }
   }
 
   await Promise.all(Array.from({ length: Math.min(concurrency, media.length) }, () => worker()));
-  return { total: media.length, generated, skipped, errors };
+  return { total: media.length, generated, updated, skipped, errors };
 }
 
 if (import.meta.main) {
@@ -143,6 +166,6 @@ if (import.meta.main) {
   console.log(`Scanning read-only library: ${config.mediaRoot}`);
   console.log(`Writing thumbnails to: ${config.derivedRoot}`);
   const result = await scanLibrary(config);
-  console.log(`Scan complete: ${result.generated} generated, ${result.skipped} fresh, ${result.errors.length} failed`);
+  console.log(`Scan complete: ${result.generated} generated, ${result.updated} metadata updated, ${result.skipped} fresh, ${result.errors.length} failed`);
   if (result.errors.length) process.exitCode = 1;
 }

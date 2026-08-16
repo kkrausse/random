@@ -1,12 +1,16 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { MediaAsset } from "../../lib/types";
+import type { MediaAsset, MediaInfo } from "../../lib/types";
 import "./styles.css";
 
 function formatDuration(seconds: number) {
   if (!Number.isFinite(seconds)) return "--:--";
   const minutes = Math.floor(seconds / 60);
   return `${minutes}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+}
+
+function formatBitrate(bitsPerSecond: number | undefined) {
+  return bitsPerSecond ? `${(bitsPerSecond / 1_000_000).toFixed(1)} Mb/s` : undefined;
 }
 
 function Thumbnail({ asset }: { asset: MediaAsset }) {
@@ -26,6 +30,7 @@ function App() {
   const [media, setMedia] = useState<MediaAsset[]>([]);
   const [selection, setSelection] = useState<MediaAsset>();
   const [videoInfo, setVideoInfo] = useState<{ width: number; height: number; duration: number }>();
+  const [mediaInfo, setMediaInfo] = useState<MediaInfo>();
   const [playbackError, setPlaybackError] = useState<string>();
   const [libraryError, setLibraryError] = useState<string>();
 
@@ -39,6 +44,21 @@ function App() {
       .catch((error) => setLibraryError(error instanceof Error ? error.message : "Could not load library"));
   }, []);
 
+  useEffect(() => {
+    setMediaInfo(undefined);
+    if (!selection) return;
+    const controller = new AbortController();
+    fetch(`/api/media/info?id=${encodeURIComponent(selection.id)}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Metadata unavailable");
+        setMediaInfo(await response.json());
+      })
+      .catch((error) => {
+        if (error.name !== "AbortError") console.error(error);
+      });
+    return () => controller.abort();
+  }, [selection]);
+
   function selectAsset(asset: MediaAsset) {
     setSelection(asset);
     setVideoInfo(undefined);
@@ -48,10 +68,7 @@ function App() {
   return (
     <main className="app-shell">
       <header className="masthead">
-        <div>
-          <p className="eyebrow">Local media desk</p>
-          <h1>Field Cut</h1>
-        </div>
+        <h1>Video Library</h1>
         <div className="library-count"><strong>{media.length}</strong><span>source clips</span></div>
       </header>
 
@@ -111,9 +128,13 @@ function App() {
           </div>
 
           <footer className="viewer-meta">
-            {videoInfo ? (
+            {mediaInfo || videoInfo ? (
               <>
-                <span>{videoInfo.width} × {videoInfo.height}</span>
+                <span>{mediaInfo?.width ?? videoInfo?.width} × {mediaInfo?.height ?? videoInfo?.height}</span>
+                {mediaInfo?.codec && <span>{mediaInfo.codec.toUpperCase()} {mediaInfo.profile}</span>}
+                {mediaInfo?.pixelFormat && <span>{mediaInfo.pixelFormat}</span>}
+                {mediaInfo?.videoBitrate && <span>Video {formatBitrate(mediaInfo.videoBitrate)}</span>}
+                {mediaInfo && mediaInfo.fps > 0 && <span>{mediaInfo.fps.toFixed(2)} fps</span>}
                 <span>Original file</span>
                 <span>No proxy</span>
               </>

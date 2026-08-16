@@ -27,6 +27,7 @@ export type MediaAsset = {
 };
 
 export type MediaInfo = {
+  scanVersion: number;
   source: string;
   sourceMtimeMs: number;
   sourceSize: number;
@@ -35,5 +36,9 @@ export type MediaInfo = {
   fps: number;
   duration: number;
   codec?: string;
+  profile?: string;
+  pixelFormat?: string;
+  videoBitrate?: number;
+  containerBitrate?: number;
   thumbnail: AppConfig["thumbnail"];
 };
