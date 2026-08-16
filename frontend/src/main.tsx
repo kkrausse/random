@@ -328,6 +328,20 @@ function App() {
     });
   }, [previewMode, selectedItem?.id, readyClipPreview?.url]);
 
+  useEffect(() => {
+    function handlePlaybackShortcut(event: globalThis.KeyboardEvent) {
+      if (event.code !== "Space" || event.repeat || event.defaultPrevented) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("button, input, select, textarea, [contenteditable='true']")) return;
+      if (!projectRef.current?.items.length) return;
+      event.preventDefault();
+      if (previewMode === "off") startPreview();
+      else togglePreviewPause();
+    }
+    window.addEventListener("keydown", handlePlaybackShortcut);
+    return () => window.removeEventListener("keydown", handlePlaybackShortcut);
+  }, [previewMode, timelinePlayhead]);
+
   async function loadMediaInfo(assets: MediaAsset[], signal?: AbortSignal) {
     const entries = await Promise.all(assets.map(async (asset) => {
       try {
