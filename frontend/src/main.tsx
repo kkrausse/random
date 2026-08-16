@@ -92,7 +92,7 @@ function thumbnailUrl(id: string) {
   return `/api/media/thumbnail?id=${encodeURIComponent(id)}`;
 }
 
-function videoUrl(id: string, source: PlaybackSource) {
+function videoUrl(id: string, source: PlaybackSource | "stabilized-proxy") {
   return `/api/media/video?id=${encodeURIComponent(id)}&source=${source}`;
 }
 
@@ -202,12 +202,18 @@ function App() {
     kind: selectedItem.kind,
   } : undefined);
   const selectedInfo = selectedAsset ? metadata[selectedAsset.id] : undefined;
-  const activePlaybackSource: PlaybackSource = playbackSource === "proxy" && selectedInfo?.proxy ? "proxy" : "original";
-  const previewKey = selectedItem?.kind === "video"
+  const activePlaybackSource: PlaybackSource | undefined = playbackSource === "original"
+    ? "original"
+    : selectedInfo ? selectedInfo.proxy ? "proxy" : "original" : undefined;
+  const previewKey = selectedItem?.kind === "video" && activePlaybackSource
     ? `${selectedItem.id}:${activePlaybackSource}:${selectedItem.stabilize}`
     : undefined;
-  const readyClipPreview = previewKey && clipPreviews[previewKey]
-    ? { key: previewKey, url: clipPreviews[previewKey] }
+  const directClipPreview = selectedItem?.kind === "video" && activePlaybackSource
+    && (!selectedItem.stabilize || activePlaybackSource === "proxy")
+    ? videoUrl(selectedItem.mediaId, selectedItem.stabilize ? "stabilized-proxy" : activePlaybackSource)
+    : undefined;
+  const readyClipPreview = previewKey && (directClipPreview || clipPreviews[previewKey])
+    ? { key: previewKey, url: directClipPreview ?? clipPreviews[previewKey]! }
     : undefined;
   viewerSelectionRef.current = viewerSelection;
   playbackContextRef.current = playbackContext;
@@ -286,7 +292,11 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (selectedItem?.kind !== "video" || !previewKey) {
+    if (selectedItem?.kind !== "video" || !previewKey || !activePlaybackSource) {
+      setPreparingPreview(false);
+      return;
+    }
+    if (directClipPreview) {
       setPreparingPreview(false);
       return;
     }
@@ -310,19 +320,23 @@ function App() {
       if (!controller.signal.aborted) setPreparingPreview(false);
     });
     return () => controller.abort();
-  }, [previewKey, clipPreviews[previewKey ?? ""]]);
+  }, [previewKey, directClipPreview, clipPreviews[previewKey ?? ""]]);
 
   const selectedTimelineIndex = selectedItem ? project?.items.findIndex((item) => item.id === selectedItem.id) ?? -1 : -1;
   const nextVideoItem = selectedTimelineIndex >= 0
     ? project?.items.slice(selectedTimelineIndex + 1).find((item) => item.kind === "video")
     : undefined;
+  const nextVideoInfo = nextVideoItem ? metadata[nextVideoItem.mediaId] : undefined;
   const nextVideoSource: PlaybackSource | undefined = nextVideoItem
-    ? playbackSource === "proxy" && metadata[nextVideoItem.mediaId]?.proxy ? "proxy" : "original"
+    ? playbackSource === "original" ? "original" : nextVideoInfo ? nextVideoInfo.proxy ? "proxy" : "original" : undefined
     : undefined;
   const nextPreviewKey = nextVideoItem && nextVideoSource
     ? `${nextVideoItem.id}:${nextVideoSource}:${nextVideoItem.stabilize}`
     : undefined;
-  const nextPreviewUrl = nextPreviewKey ? clipPreviews[nextPreviewKey] : undefined;
+  const directNextPreview = nextVideoItem && nextVideoSource && (!nextVideoItem.stabilize || nextVideoSource === "proxy")
+    ? videoUrl(nextVideoItem.mediaId, nextVideoItem.stabilize ? "stabilized-proxy" : nextVideoSource)
+    : undefined;
+  const nextPreviewUrl = directNextPreview ?? (nextPreviewKey ? clipPreviews[nextPreviewKey] : undefined);
 
   useEffect(() => {
     if (!nextVideoItem || !nextVideoSource || !nextPreviewKey || nextPreviewUrl) return;
@@ -1102,7 +1116,7 @@ function App() {
   const viewerMediaUrl = selectedAsset?.kind === "video"
     ? selectedItem?.kind === "video"
       ? readyClipPreview?.url
-      : videoUrl(selectedAsset.id, activePlaybackSource)
+      : activePlaybackSource ? videoUrl(selectedAsset.id, activePlaybackSource) : undefined
     : selectedAsset ? thumbnailUrl(selectedAsset.id) : undefined;
   const displayedCrop = selectedItem && selectedInfo && project && !cropMode
     ? selectedItem.crop ?? centeredCrop(selectedInfo, project.settings)
