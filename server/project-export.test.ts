@@ -4,6 +4,7 @@ import {
   buildSegmentFilters,
   projectExportPath,
   ProjectExportValidationError,
+  segmentDuration,
   validateExportSettings,
   validateCropAspect,
   validateVideoTrim,
@@ -57,5 +58,11 @@ describe("project export planning", () => {
     const config = { derivedRoot: "/tmp/derived" } as AppConfig;
     expect(projectExportPath(config, "project_1")).toBe("/tmp/derived/exports/projects/project_1.mp4");
     expect(() => projectExportPath(config, "../outside")).toThrow(ProjectExportValidationError);
+  });
+
+  test("rounds segment audio to the project frame boundary", () => {
+    expect(segmentDuration(1, 30)).toBe(1);
+    expect(segmentDuration(1.01, 30)).toBeCloseTo(31 / 30);
+    expect(segmentDuration(1.5, 29.97)).toBeCloseTo(45 / 29.97);
   });
 });

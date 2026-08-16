@@ -109,18 +109,29 @@ async function probeVideo(path: string, tools: ExportTools, signal: AbortSignal)
     const stream = result.streams?.find((candidate) => candidate.codec_type === "video");
     const duration = Number(stream?.duration ?? result.format?.duration);
     if (!stream || !stream.width || !stream.height) fail("Source has no valid video stream");
-    return { width: stream.width, height: stream.height, duration };
+    return {
+      width: stream.width,
+      height: stream.height,
+      duration,
+      hasAudio: result.streams?.some((candidate) => candidate.codec_type === "audio") ?? false,
+    };
   } finally {
     signal.removeEventListener("abort", abort);
   }
 }
 
-function encoderArgs(config: AppConfig) {
+function encoderArgs(config: AppConfig, audioInput: number, duration: number) {
   return [
-    "-map", "0:v:0", "-an", "-map_metadata", "-1",
+    "-map", "0:v:0", "-map", `${audioInput}:a:0`, "-map_metadata", "-1",
     "-c:v", "libx264", "-preset", "slow", "-crf", String(config.export.quality),
     "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+    "-af", `aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,apad,atrim=duration=${duration},asetpts=PTS-STARTPTS`,
+    "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
   ];
+}
+
+export function segmentDuration(duration: number, fps: number) {
+  return Math.ceil(duration * fps - 1e-9) / fps;
 }
 
 async function renderSegment(
@@ -152,11 +163,13 @@ async function renderSegment(
     }
     const metadata = await probeVideo(input, tools, signal);
     validateCropAspect(item.crop, metadata.width, metadata.height, settings, `Item ${index + 1} (${item.mediaId})`);
+    const duration = segmentDuration(item.photoDuration, settings.fps);
     reportProgress(`Rendering item ${index + 1} (${item.mediaId})`, progress);
     await runProcess([
       tools.ffmpegPath, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
       "-loop", "1", "-framerate", String(settings.fps), "-t", String(item.photoDuration),
-      "-i", input, "-vf", filters, ...encoderArgs(config), output,
+      "-i", input, "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+      "-vf", filters, ...encoderArgs(config, 1, duration), output,
     ], signal, "FFmpeg photo render");
     return output;
   }
@@ -178,10 +191,13 @@ async function renderSegment(
     }
   }
   reportProgress(`Rendering item ${index + 1} (${item.mediaId})`, progress);
+  const duration = segmentDuration(item.sourceOut - item.sourceIn, settings.fps);
+  const audioInput = metadata.hasAudio ? 0 : 1;
   await runProcess([
     tools.ffmpegPath, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
     "-ss", String(item.sourceIn), "-t", String(item.sourceOut - item.sourceIn), "-i", input,
-    "-vf", filters, ...encoderArgs(config), output,
+    ...metadata.hasAudio ? [] : ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"],
+    "-vf", filters, ...encoderArgs(config, audioInput, duration), output,
   ], signal, "FFmpeg video render");
   return output;
 }
@@ -220,7 +236,7 @@ export async function exportProject(
     await writeFile(concatFile, segments.map((path) => `file '${path.replaceAll("'", "'\\''")}'`).join("\n") + "\n");
     await runProcess([
       tools.ffmpegPath, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-      "-f", "concat", "-safe", "0", "-i", concatFile, "-map", "0:v:0", "-an",
+      "-f", "concat", "-safe", "0", "-i", concatFile, "-map", "0:v:0", "-map", "0:a:0",
       "-c", "copy", "-movflags", "+faststart", temporaryFinal,
     ], signal, "FFmpeg project concat");
     if (signal.aborted) throw new Error("Export cancelled");
@@ -233,7 +249,7 @@ export async function exportProject(
       path: final,
       filename: `${project.name.replaceAll(/[\\/\"\r\n]/g, "_") || basename(final)}.mp4`,
       revision: project.revision,
-      audio: "none" as const,
+      audio: "aac" as const,
     };
   } finally {
     await rm(jobDir, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });

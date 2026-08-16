@@ -127,7 +127,7 @@ Project state stores source references and user intent, not copied source media 
 ### Current Scope
 
 - Timeline playback and export use hard cuts only. Crossfades are deliberately deferred.
-- Project movie exports are intentionally video-only and muted. Source-audio normalization and synthetic silence for photos are deliberately deferred together rather than producing an inconsistent partial soundtrack.
+- Project movie exports preserve trimmed source audio as stereo 48 kHz AAC. Photos and source videos without audio receive frame-aligned silence so all normalized segments concatenate coherently.
 - Stabilized timeline previews wait for their temporary Gyroflow result instead of first playing and restarting the direct source.
 - Startup retains `.work` itself and retries removal of stale children because removing the open SMB directory can fail with `EBUSY`.
 
@@ -135,7 +135,7 @@ Project state stores source references and user intent, not copied source media 
 
 A separate `Milestone Validation` project (`909ef024-d12a-4ef1-a027-42497a48070c`) was created without modifying the existing user project. It contains trimmed `C0339.MP4`, `KEV05154.ARW` at 1.5 seconds, and trimmed `C0337.MP4` in reordered sequence. Reading revision 2 back through the API exactly matched the saved project.
 
-Project export completed from Original media. FFprobe reported one H.264 video stream at 1920x1080, 30 fps, yuv420p, with duration 4.033333 seconds and size 4,348,402 bytes. There is intentionally no audio stream. A byte-range request returned HTTP 206, and the validation export's job directory was removed after atomic publication.
+Project export completed from Original media with coherent audio. FFprobe reported H.264 at 1920x1080, 30 fps, with duration 4.033333 seconds, plus stereo AAC at 48 kHz with duration 4.054667 seconds (the AAC frame boundary accounts for the small overrun). FFmpeg detected 1.565896 seconds of silence across the 1.5-second photo interval and non-silent source audio on both sides. The 4,412,820-byte export was served with `X-Video-Editor-Audio: aac`, and its job directory was removed after atomic publication.
 
 The scan-version-5 library backfill completed across all 972 assets: 972 generated, 0 metadata-only updates, 0 already fresh, and 0 failures.
 
@@ -144,7 +144,7 @@ Browser interaction still needs a final human visual pass for the yellow trim ha
 ## Next Steps
 
 1. Perform that browser interaction pass and fix any interaction-specific issues found.
-2. Add project audio coherently, including normalized source audio and generated silence for photos.
+2. Include audio in the final human playback pass and confirm cut synchronization by ear.
 3. Add optional crossfades only after hard-cut editing and audio behavior are accepted.
 
 ## Verification
@@ -152,7 +152,7 @@ Browser interaction still needs a final human visual pass for the yellow trim ha
 These currently pass:
 
 ```text
-bun test (9 tests)
+bun test (12 tests)
 bun run typecheck
 bun run build
 ```

@@ -30,7 +30,7 @@ const exportJobs = new Map<string, {
   state: "running" | "complete" | "error";
   message: string;
   percent: number;
-  result?: { filename: string; url: string; revision: number; audio: "none" };
+  result?: { filename: string; url: string; revision: number; audio: "aac" };
   error?: string;
 }>();
 const ffmpegPath = await requireFfmpegEncoder(config.ffmpegPath, "libx264");
@@ -403,7 +403,7 @@ async function serveProjectExport(request: Request, id: string) {
   const asciiFilename = filename.replaceAll(/[^\x20-\x7e]/g, "_");
   return serveFile(request, path, file.size, {
     "Content-Disposition": `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
-    "X-Video-Editor-Audio": "none",
+    "X-Video-Editor-Audio": "aac",
   });
 }
 

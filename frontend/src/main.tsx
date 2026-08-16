@@ -904,7 +904,7 @@ function App() {
               {!project?.items.length && <p className="empty-message">Add media from the library.</p>}
             </div>
             <div className="export-status">
-              <span>Project exports use muted hard cuts; audio is not included yet.</span>
+              <span>Project exports preserve source audio and use silence for photos.</span>
               {exportResult && <a href={exportResult.url}>{exportResult.filename}</a>}
             </div>
           </section>
