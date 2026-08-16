@@ -1,7 +1,6 @@
 export type AppConfig = {
   mediaRoot: string;
   derivedRoot: string;
-  projectRoot: string;
 
   thumbnail: {
     maxWidth: number;

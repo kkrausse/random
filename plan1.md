@@ -249,7 +249,6 @@ Initially hardcoded or a simple config file.
 type AppConfig = {
   mediaRoot: string
   derivedRoot: string
-  projectRoot: string
 
   proxy: {
     maxHeight: number
@@ -271,7 +270,6 @@ Example:
 {
   mediaRoot: "/Volumes/Videos",
   derivedRoot: "/Volumes/VideoDerived",
-  projectRoot: "./projects",
 
   proxy: {
     maxHeight: 1080,
@@ -322,9 +320,7 @@ Derived:
     thumbnail.jpg
 ```
 
-Everything under `derivedRoot` is disposable.
-
-Deleting it should be equivalent to regenerating cache, not losing project data.
+Every application-created file lives under `derivedRoot`. Rendered media caches are disposable, but future project state under this root is not.
 
 ---
 
@@ -984,9 +980,9 @@ Regenerates nothing at asset level.
 
 It may invalidate `project-preview.mp4` if we use a rendered project preview.
 
-### Deleting derivedRoot
+### Deleting rendered caches
 
-Should be safe.
+Should be safe as long as persistent project state under `derivedRoot` is preserved.
 
 The app should simply regenerate proxies, thumbnails, stabilized previews, and later waveforms.
 
@@ -1155,7 +1151,7 @@ These should remain true throughout development:
 7. Filesystem paths are the media library.
 8. Project JSON describes edits semantically.
 9. FFmpeg and Gyroflow are implementation details beneath the project model.
-10. Deleting the entire derived cache should not lose anything important.
+10. Deleting rendered cache files should not lose anything important.
 
 ---
 

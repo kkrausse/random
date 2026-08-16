@@ -1,7 +1,6 @@
 {
   "mediaRoot": "/Volumes/Photos/iphone-uploads/lassen_full",
   "derivedRoot": "/Volumes/Photos/iphone-uploads/video-editor-project/derived",
-  "projectRoot": "./data/projects",
   "thumbnail": {
     "maxWidth": 480,
     "quality": 3

@@ -19,14 +19,13 @@ export async function loadConfig(): Promise<AppConfig> {
     ...raw,
     mediaRoot: resolve(process.env.MEDIA_ROOT ?? raw.mediaRoot),
     derivedRoot: resolve(process.env.DERIVED_ROOT ?? raw.derivedRoot),
-    projectRoot: resolve(process.env.PROJECT_ROOT ?? raw.projectRoot),
   };
 
-  if (!config.mediaRoot || !config.derivedRoot || !config.projectRoot) {
-    throw new Error("mediaRoot, derivedRoot, and projectRoot are required");
+  if (!config.mediaRoot || !config.derivedRoot) {
+    throw new Error("mediaRoot and derivedRoot are required");
   }
-  if (isWithin(config.mediaRoot, config.derivedRoot) || isWithin(config.mediaRoot, config.projectRoot)) {
-    throw new Error("derivedRoot and projectRoot must be outside mediaRoot to keep originals read-only");
+  if (isWithin(config.mediaRoot, config.derivedRoot)) {
+    throw new Error("derivedRoot must be outside mediaRoot to keep originals read-only");
   }
   if (config.proxy.maxHeight <= 0 || config.proxy.crf < 0 || config.proxy.crf > 51) {
     throw new Error("Invalid proxy configuration");
