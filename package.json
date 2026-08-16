@@ -6,6 +6,7 @@
     "dev": "bun run --parallel dev:server dev:client",
     "dev:server": "PORT=3001 bun --watch server/index.ts",
     "dev:client": "vite",
+    "scan": "bun server/scan.ts",
     "build": "vite build",
     "start": "bun server/index.ts",
     "typecheck": "tsc --noEmit"

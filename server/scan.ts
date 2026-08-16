@@ -1,0 +1,148 @@
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve } from "node:path";
+import { loadConfig } from "../lib/config";
+import type { AppConfig, MediaAsset, MediaInfo } from "../lib/types";
+import { listMedia, resolveAsset } from "./media";
+
+const ffmpegPath = process.env.FFMPEG_PATH ?? "ffmpeg";
+const ffprobePath = process.env.FFPROBE_PATH ?? "ffprobe";
+
+function containedPath(root: string, relativePath: string) {
+  const result = resolve(root, relativePath);
+  const fromRoot = relative(root, result);
+  if (fromRoot.startsWith("..") || isAbsolute(fromRoot)) throw new Error("Invalid media path");
+  return result;
+}
+
+function run(command: string, args: string[]) {
+  return new Promise<string>((resolvePromise, reject) => {
+    const process = Bun.spawn([command, ...args], { stdout: "pipe", stderr: "pipe" });
+    Promise.all([new Response(process.stdout).text(), new Response(process.stderr).text(), process.exited])
+      .then(([stdout, stderr, exitCode]) => {
+        if (exitCode === 0) resolvePromise(stdout);
+        else reject(new Error(`${command} failed: ${stderr.trim() || `exit code ${exitCode}`}`));
+      }, reject);
+  });
+}
+
+function parseRate(rate: string | undefined) {
+  if (!rate) return 0;
+  const [numeratorText, denominatorText = "1"] = rate.split("/");
+  const denominator = Number(denominatorText);
+  return denominator ? Number(numeratorText) / denominator : 0;
+}
+
+async function probe(config: AppConfig, asset: MediaAsset) {
+  const { sourcePath, sourceStat } = await resolveAsset(config, asset.id);
+  const output = await run(ffprobePath, [
+    "-v", "error",
+    "-select_streams", "v:0",
+    "-show_entries", "stream=width,height,codec_name,avg_frame_rate:format=duration",
+    "-of", "json",
+    sourcePath,
+  ]);
+  const data = JSON.parse(output) as {
+    streams?: Array<{ width?: number; height?: number; codec_name?: string; avg_frame_rate?: string }>;
+    format?: { duration?: string };
+  };
+  const stream = data.streams?.[0];
+  if (!stream?.width || !stream.height) throw new Error("No video stream found");
+
+  return {
+    sourcePath,
+    info: {
+      source: asset.id,
+      sourceMtimeMs: sourceStat.mtimeMs,
+      sourceSize: sourceStat.size,
+      width: stream.width,
+      height: stream.height,
+      fps: parseRate(stream.avg_frame_rate),
+      duration: Number(data.format?.duration ?? 0),
+      codec: stream.codec_name,
+      thumbnail: config.thumbnail,
+    } satisfies MediaInfo,
+  };
+}
+
+function fresh(info: MediaInfo, config: AppConfig, mtimeMs: number, size: number) {
+  return info.sourceMtimeMs === mtimeMs
+    && info.sourceSize === size
+    && JSON.stringify(info.thumbnail) === JSON.stringify(config.thumbnail);
+}
+
+async function scanAsset(config: AppConfig, asset: MediaAsset) {
+  const { sourceStat } = await resolveAsset(config, asset.id);
+  const assetRoot = containedPath(config.derivedRoot, asset.id);
+  const infoPath = join(assetRoot, "info.json");
+  const thumbnailPath = join(assetRoot, "thumbnail.jpg");
+
+  try {
+    const existing = (await Bun.file(infoPath).json()) as MediaInfo;
+    if (await Bun.file(thumbnailPath).exists() && fresh(existing, config, sourceStat.mtimeMs, sourceStat.size)) {
+      return "skipped" as const;
+    }
+  } catch {
+    // Missing or invalid scan data is rebuilt below.
+  }
+
+  const { sourcePath, info } = await probe(config, asset);
+  const token = crypto.randomUUID();
+  const temporaryThumbnail = join(assetRoot, `thumbnail-${token}.tmp.jpg`);
+  const temporaryInfo = join(assetRoot, `info-${token}.tmp`);
+  const seekTime = Math.min(Math.max(info.duration * 0.1, 0), 5);
+  await mkdir(assetRoot, { recursive: true });
+
+  try {
+    await run(ffmpegPath, [
+      "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+      "-ss", String(seekTime), "-i", sourcePath,
+      "-frames:v", "1",
+      "-vf", `scale=${config.thumbnail.maxWidth}:-2:force_original_aspect_ratio=decrease`,
+      "-q:v", String(config.thumbnail.quality),
+      temporaryThumbnail,
+    ]);
+    await writeFile(temporaryInfo, `${JSON.stringify(info, null, 2)}\n`);
+    await rename(temporaryThumbnail, thumbnailPath);
+    await rename(temporaryInfo, infoPath);
+    return "generated" as const;
+  } finally {
+    await Promise.all([rm(temporaryThumbnail, { force: true }), rm(temporaryInfo, { force: true })]);
+  }
+}
+
+export async function scanLibrary(config: AppConfig, concurrency = 3) {
+  const media = await listMedia(config);
+  let nextIndex = 0;
+  let generated = 0;
+  let skipped = 0;
+  const errors: Array<{ asset: string; error: string }> = [];
+
+  async function worker() {
+    while (nextIndex < media.length) {
+      const asset = media[nextIndex++];
+      if (!asset) return;
+      try {
+        const result = await scanAsset(config, asset);
+        if (result === "generated") generated++;
+        else skipped++;
+        console.log(`[${generated + skipped + errors.length}/${media.length}] ${result}: ${asset.relativePath}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown scan error";
+        errors.push({ asset: asset.relativePath, error: message });
+        console.error(`[${generated + skipped + errors.length}/${media.length}] failed: ${asset.relativePath}: ${message}`);
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, media.length) }, () => worker()));
+  return { total: media.length, generated, skipped, errors };
+}
+
+if (import.meta.main) {
+  const config = await loadConfig();
+  console.log(`Scanning read-only library: ${config.mediaRoot}`);
+  console.log(`Writing thumbnails to: ${config.derivedRoot}`);
+  const result = await scanLibrary(config);
+  console.log(`Scan complete: ${result.generated} generated, ${result.skipped} fresh, ${result.errors.length} failed`);
+  if (result.errors.length) process.exitCode = 1;
+}

@@ -31,6 +31,9 @@ export async function loadConfig(): Promise<AppConfig> {
   if (config.proxy.maxHeight <= 0 || config.proxy.crf < 0 || config.proxy.crf > 51) {
     throw new Error("Invalid proxy configuration");
   }
+  if (config.thumbnail.maxWidth <= 0 || config.thumbnail.quality < 1 || config.thumbnail.quality > 31) {
+    throw new Error("Invalid thumbnail configuration");
+  }
 
   return config;
 }

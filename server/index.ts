@@ -46,12 +46,24 @@ async function serveOriginal(request: Request, id: string) {
   });
 }
 
+async function serveThumbnail(id: string) {
+  await resolveAsset(config, id);
+  const file = Bun.file(join(config.derivedRoot, id, "thumbnail.jpg"));
+  if (!(await file.exists())) return json({ error: "Thumbnail has not been scanned" }, 404);
+  return new Response(file, {
+    headers: { "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=3600" },
+  });
+}
+
 async function handleApi(request: Request, url: URL) {
   if (request.method === "GET" && url.pathname === "/api/media") {
     return json({ media: await listMedia(config) });
   }
   if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/api/media/video") {
     return serveOriginal(request, url.searchParams.get("id") ?? "");
+  }
+  if (request.method === "GET" && url.pathname === "/api/media/thumbnail") {
+    return serveThumbnail(url.searchParams.get("id") ?? "");
   }
   return json({ error: "Not found" }, 404);
 }

@@ -2,6 +2,10 @@
   "mediaRoot": "/Volumes/Photos/iphone-uploads/lassen_full",
   "derivedRoot": "./data/derived",
   "projectRoot": "./data/projects",
+  "thumbnail": {
+    "maxWidth": 480,
+    "quality": 3
+  },
   "proxy": {
     "maxHeight": 1080,
     "codec": "h264",

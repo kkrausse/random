@@ -9,6 +9,19 @@ function formatDuration(seconds: number) {
   return `${minutes}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
 }
 
+function Thumbnail({ asset }: { asset: MediaAsset }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <span className="thumbnail-missing">No thumbnail</span>;
+  return (
+    <img
+      src={`/api/media/thumbnail?id=${encodeURIComponent(asset.id)}`}
+      alt=""
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function App() {
   const [media, setMedia] = useState<MediaAsset[]>([]);
   const [selection, setSelection] = useState<MediaAsset>();
@@ -57,9 +70,11 @@ function App() {
                 key={asset.id}
                 onClick={() => selectAsset(asset)}
               >
-                <span className="clip-index">{String(index + 1).padStart(3, "0")}</span>
-                <span className="clip-name" title={asset.relativePath}>{asset.filename}</span>
-                <span className="clip-arrow">›</span>
+                <span className="clip-thumbnail"><Thumbnail asset={asset} /></span>
+                <span className="clip-caption">
+                  <span className="clip-name" title={asset.relativePath}>{asset.filename}</span>
+                  <span className="clip-index">Clip {String(index + 1).padStart(3, "0")}</span>
+                </span>
               </button>
             ))}
           </div>
