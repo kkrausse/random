@@ -364,7 +364,7 @@ function App() {
     photoProgressTimer.current = setInterval(() => {
       setTimelinePlayhead(timelineStart + Math.min(selectedItem.photoDuration, (elapsedBeforeStart + Date.now() - startedAt) / 1000));
     }, 50);
-    photoTimer.current = setTimeout(completePreviewItem, milliseconds);
+    photoTimer.current = setTimeout(() => completePreviewItem(selectedItem.id), milliseconds);
     return () => {
       clearTimeout(photoTimer.current);
       clearInterval(photoProgressTimer.current);
@@ -796,10 +796,11 @@ function App() {
     setViewerSelection({ context: "timeline", itemId: next.id });
   }
 
-  function completePreviewItem() {
+  function completePreviewItem(itemId: string) {
     const current = projectRef.current;
     const selection = viewerSelectionRef.current;
     if (!current || selection?.context !== "timeline") return stopPreview();
+    if (selection.itemId !== itemId) return;
     if (playbackContextRef.current === "timeline") {
       advancePreview();
       return;
@@ -1197,8 +1198,9 @@ function App() {
                 onTimeUpdate={(event) => { setPlayheadTime(event.currentTarget.currentTime); if (selectedItem?.kind === "video") {
                   setTimelinePlayhead(itemStartTime(projectRef.current?.items ?? [], selectedItem.id) + clamp(event.currentTarget.currentTime - selectedItem.sourceIn, 0, itemDuration(selectedItem)));
                 } if (selectedItem?.kind === "video" && event.currentTarget.currentTime >= selectedItem.sourceOut) {
-                  if (previewModeRef.current === "playing") completePreviewItem(); else event.currentTarget.pause();
-                } }} onEnded={() => { if (previewModeRef.current === "playing") completePreviewItem(); }}
+                  event.currentTarget.pause();
+                  if (previewModeRef.current === "playing") completePreviewItem(selectedItem.id);
+                } }} onEnded={() => { if (previewModeRef.current === "playing" && selectedItem?.kind === "video") completePreviewItem(selectedItem.id); }}
                 onError={() => setPlaybackError("This browser cannot play the selected video.")} />
                 : <div className="viewer-placeholder">Preparing preview...</div>
                 : <img src={viewerMediaUrl} alt={selectedAsset.filename} style={croppedMediaStyle} />}
