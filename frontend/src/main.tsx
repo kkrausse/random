@@ -89,6 +89,12 @@ function centeredCrop(info: MediaInfo | undefined, settings: ProjectSettings): N
   return { x: 0, y: (1 - height) / 2, width: 1, height };
 }
 
+function cropMatchesProject(crop: NormalizedCrop | undefined, info: MediaInfo | undefined, settings: ProjectSettings | undefined) {
+  if (!crop || !info || !settings) return true;
+  const cropAspect = crop.width * info.width / (crop.height * info.height);
+  return Math.abs(cropAspect / (settings.width / settings.height) - 1) <= 0.01;
+}
+
 function Thumbnail({ asset }: { asset: MediaAsset }) {
   const [failed, setFailed] = useState(false);
   if (failed) return <span className="thumbnail-missing">No thumbnail</span>;
@@ -145,6 +151,7 @@ function App() {
     crop: NormalizedCrop;
     direction?: string;
   } | undefined>(undefined);
+  const previewPreparationTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
   const selectedItem = viewerSelection?.context === "timeline"
     ? project?.items.find((item) => item.id === viewerSelection.itemId)
@@ -177,6 +184,10 @@ function App() {
       if (error.name !== "AbortError") setLibraryError(error instanceof Error ? error.message : "Could not load projects");
     });
     return () => controller.abort();
+  }, []);
+
+  useEffect(() => () => {
+    for (const timer of previewPreparationTimers.current.values()) clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -477,7 +488,28 @@ function App() {
   }
 
   function updateItem(id: string, update: (item: TimelineItem) => TimelineItem) {
-    editProject((current) => ({ ...current, items: current.items.map((item) => item.id === id ? update(item) : item) }));
+    let updatedItem: TimelineItem | undefined;
+    editProject((current) => ({ ...current, items: current.items.map((item) => {
+      if (item.id !== id) return item;
+      updatedItem = update(item);
+      return updatedItem;
+    }) }));
+    if (updatedItem?.kind === "video") prepareClipPreview(updatedItem);
+  }
+
+  function prepareClipPreview(item: Extract<TimelineItem, { kind: "video" }>) {
+    clearTimeout(previewPreparationTimers.current.get(item.id));
+    const source: PlaybackSource = playbackSource === "proxy" && metadata[item.mediaId]?.proxy ? "proxy" : "original";
+    previewPreparationTimers.current.set(item.id, setTimeout(() => {
+      previewPreparationTimers.current.delete(item.id);
+      void fetch("/api/media/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: item.mediaId, source, stabilize: item.stabilize, crop: item.crop }),
+      }).catch(() => {
+        // The visible preview request reports failures when this clip is opened.
+      });
+    }, 300));
   }
 
   function removeItem(id: string) {
@@ -814,6 +846,8 @@ function App() {
           <div className="edit-strip">
             {selectedItem && selectedInfo ? <>
               <span>Crop {Math.round((selectedItem.crop?.width ?? 1) * selectedInfo.width)} × {Math.round((selectedItem.crop?.height ?? 1) * selectedInfo.height)} px</span>
+              {!cropMatchesProject(selectedItem.crop, selectedInfo, project?.settings)
+                && <span className="invalid-crop-message">Crop does not match the project aspect ratio</span>}
               <button className={cropMode ? "active" : ""} aria-pressed={cropMode} onClick={() => {
                 if (!cropMode) stopPreview();
                 setCropMode(!cropMode);
@@ -854,11 +888,13 @@ function App() {
               {project?.items.map((item, index) => {
                 const asset = media.find((candidate) => candidate.id === item.mediaId);
                 const selected = viewerSelection?.context === "timeline" && viewerSelection.itemId === item.id;
-                return <article key={item.id} className={selected ? "timeline-card selected" : "timeline-card"} draggable
+                const invalidCrop = !cropMatchesProject(item.crop, metadata[item.mediaId], project.settings);
+                return <article key={item.id} className={`timeline-card${selected ? " selected" : ""}${invalidCrop ? " invalid-crop" : ""}`}
+                  aria-invalid={invalidCrop || undefined} title={invalidCrop ? "Crop does not match the project aspect ratio" : undefined} draggable
                   style={{ width: `${clamp(110 + itemDuration(item) * 5, 130, 300)}px` }} onDragStart={() => { dragItemId.current = item.id; }}
                   onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropItem(event, item.id)}>
                   <button className="timeline-select" aria-pressed={selected} onClick={() => { stopPreview(); setViewerSelection({ context: "timeline", itemId: item.id }); }}>
-                    <img src={thumbnailUrl(item.mediaId)} alt="" /><span>{index + 1}. {asset?.filename ?? item.mediaId}</span><small>{formatDuration(itemDuration(item))} · {item.kind}</small>
+                    <img src={thumbnailUrl(item.mediaId)} alt="" /><span>{index + 1}. {asset?.filename ?? item.mediaId}</span><small>{formatDuration(itemDuration(item))} · {item.kind}{invalidCrop ? " · Invalid crop" : ""}</small>
                   </button>
                   <div className="card-actions"><button aria-label={`Move ${asset?.filename ?? "item"} left`} disabled={index === 0} onClick={() => moveItem(item.id, -1)}>←</button>
                     <button aria-label={`Move ${asset?.filename ?? "item"} right`} disabled={index === project.items.length - 1} onClick={() => moveItem(item.id, 1)}>→</button>
