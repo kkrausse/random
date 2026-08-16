@@ -37,7 +37,7 @@ Current per-asset layout:
 
 `proxy.mp4` and `stabilized-proxy.mp4` are reusable playback variants generated during the library scan. The stabilized proxy is rendered from the original so Sony metadata remains available. Original-quality stabilization is still performed on demand and cached under `.preview-cache`. Crop is applied in the browser and does not invalidate or duplicate stabilized media.
 
-The scan logs each processing stage and its elapsed time. It processes three assets concurrently by default while also generating each asset's independent derivatives in parallel. Set `SCAN_CONCURRENCY` to tune asset-level parallelism, for example `SCAN_CONCURRENCY=4 bun run scan`. Completed derivatives are reused while their source identity and generation settings remain fresh.
+The scan logs each processing stage and its elapsed time. It uses a dynamic worker queue for three assets concurrently by default, so each available worker immediately takes the next asset rather than waiting for a fixed chunk. Each asset's independent derivatives also generate in parallel. Set `SCAN_CONCURRENCY` to tune asset-level parallelism, for example `SCAN_CONCURRENCY=4 bun run scan`. Completed derivatives are reused while their source identity and generation settings remain fresh.
 
 The library discovers videos and still photos. Sony `.ARW` dimensions and JPEG thumbnails are generated with macOS `sips`; RAW originals remain untouched and are converted only into disposable job-local JPEGs when rendering a project.
 

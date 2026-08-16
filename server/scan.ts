@@ -1,6 +1,7 @@
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { concurrentMap } from "../lib/concurrency";
 import { loadConfig } from "../lib/config";
 import { requireFfmpegEncoder } from "../lib/ffmpeg";
 import type { AppConfig, MediaAsset, MediaInfo } from "../lib/types";
@@ -242,31 +243,29 @@ async function scanAsset(config: AppConfig, asset: MediaAsset) {
 
 export async function scanLibrary(config: AppConfig, concurrency = 3) {
   const media = await listMedia(config);
-  let nextIndex = 0;
+  let completed = 0;
+  const results = await concurrentMap(media, concurrency, async (asset) => {
+    try {
+      const result = await scanAsset(config, asset);
+      console.log(`[${++completed}/${media.length}] ${result}: ${asset.relativePath}`);
+      return { status: "complete", result } as const;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown scan error";
+      console.error(`[${++completed}/${media.length}] failed: ${asset.relativePath}: ${message}`);
+      return { status: "error", error: { asset: asset.relativePath, error: message } } as const;
+    }
+  });
+
   let generated = 0;
   let updated = 0;
   let skipped = 0;
   const errors: Array<{ asset: string; error: string }> = [];
-
-  async function worker() {
-    while (nextIndex < media.length) {
-      const asset = media[nextIndex++];
-      if (!asset) return;
-      try {
-        const result = await scanAsset(config, asset);
-        if (result === "generated") generated++;
-        else if (result === "updated") updated++;
-        else skipped++;
-        console.log(`[${generated + updated + skipped + errors.length}/${media.length}] ${result}: ${asset.relativePath}`);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown scan error";
-        errors.push({ asset: asset.relativePath, error: message });
-        console.error(`[${generated + updated + skipped + errors.length}/${media.length}] failed: ${asset.relativePath}: ${message}`);
-      }
-    }
+  for (const result of results) {
+    if (result.status === "error") errors.push(result.error);
+    else if (result.result === "generated") generated++;
+    else if (result.result === "updated") updated++;
+    else skipped++;
   }
-
-  await Promise.all(Array.from({ length: Math.min(concurrency, media.length) }, () => worker()));
   return { total: media.length, generated, updated, skipped, errors };
 }
 
