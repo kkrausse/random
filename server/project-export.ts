@@ -65,12 +65,13 @@ export function validateCropAspect(
   sourceWidth: number,
   sourceHeight: number,
   settings: ProjectSettings,
+  label?: string,
 ) {
   if (!crop) return;
   const cropAspect = crop.width * sourceWidth / (crop.height * sourceHeight);
   const projectAspect = settings.width / settings.height;
   if (Math.abs(cropAspect / projectAspect - 1) > 0.01) {
-    fail("Crop aspect ratio does not match the project frame");
+    fail(`${label ? `${label}: ` : ""}Crop aspect ratio does not match the project frame`);
   }
 }
 
@@ -145,7 +146,7 @@ async function renderSegment(
       ], signal, "RAW photo conversion");
     }
     const metadata = await probeVideo(input, tools, signal);
-    validateCropAspect(item.crop, metadata.width, metadata.height, settings);
+    validateCropAspect(item.crop, metadata.width, metadata.height, settings, `Item ${index + 1} (${item.mediaId})`);
     await runProcess([
       tools.ffmpegPath, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
       "-loop", "1", "-framerate", String(settings.fps), "-t", String(item.photoDuration),
@@ -156,7 +157,7 @@ async function renderSegment(
 
   const metadata = await probeVideo(asset.sourcePath, tools, signal);
   validateVideoTrim(item.sourceIn, item.sourceOut, metadata.duration);
-  validateCropAspect(item.crop, metadata.width, metadata.height, settings);
+  validateCropAspect(item.crop, metadata.width, metadata.height, settings, `Item ${index + 1} (${item.mediaId})`);
   let input = asset.sourcePath;
   if (item.stabilize) {
     const cached = stabilizedSources.get(asset.sourcePath);

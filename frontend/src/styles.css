@@ -87,7 +87,7 @@ input, select { min-width: 0; padding: 3px 5px; color: #eee; background: #222; b
 .export-button { color: #111; background: #ddd; border-color: #fff; }
 .export-status { min-height: 28px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: #aaa; font-size: 10px; }
 .export-status a { color: #d9f5d3; }
-.export-error { color: #ffb4a6; }
+.export-error-message { margin-bottom: 8px; }
 .error-message { padding: 10px; color: #ffb4a6; background: #4a1e18; font-size: 12px; }
 
 @media (max-width: 760px) {

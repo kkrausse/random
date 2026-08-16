@@ -831,6 +831,7 @@ function App() {
                 <button onClick={stopPreview} disabled={previewMode === "off"}>Stop</button>
                 <button className="export-button" onClick={() => void exportProject()} disabled={!project?.items.length || exporting}>{exporting ? "Exporting..." : "Export Project"}</button>
               </div></div>
+            {exportError && <div className="error-message export-error-message" role="alert">Export failed: {exportError}</div>}
             <div className="timeline" aria-label="Project timeline">
               {project?.items.map((item, index) => {
                 const asset = media.find((candidate) => candidate.id === item.mediaId);
@@ -848,9 +849,8 @@ function App() {
               })}
               {!project?.items.length && <p className="empty-message">Add media from the library.</p>}
             </div>
-            <div className={exportError ? "export-status export-error" : "export-status"}>
+            <div className="export-status">
               <span>Project exports use muted hard cuts; audio is not included yet.</span>
-              {exportError && <span>{exportError}</span>}
               {exportResult && <a href={exportResult.url}>{exportResult.filename}</a>}
             </div>
           </section>
