@@ -28,6 +28,7 @@ const ACTIVE_PROJECT_KEY = "video-editor-active-project";
 const PHOTO_DURATION = 4;
 const MINIMUM_CROP = 0.05;
 const MINIMUM_TRIM = 0.01;
+const TIMELINE_PIXELS_PER_SECOND = 6;
 const FPS_OPTIONS = [24, 25, 30, 50, 60] as const;
 const PRESETS: Array<{ label: string; settings: Pick<ProjectSettings, "width" | "height"> }> = [
   { label: "16:9", settings: { width: 1920, height: 1080 } },
@@ -46,6 +47,15 @@ function formatDuration(seconds: number) {
   return `${minutes}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
 }
 
+function formatTimelineTime(seconds: number) {
+  if (!Number.isFinite(seconds)) return "--:--";
+  const totalSeconds = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor(totalSeconds % 3600 / 60);
+  const remainder = String(totalSeconds % 60).padStart(2, "0");
+  return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${remainder}` : `${minutes}:${remainder}`;
+}
+
 function normalizeDimension(value: number) {
   if (!Number.isFinite(value)) return 2;
   return clamp(Math.round(value / 2) * 2, 2, 8192);
@@ -61,6 +71,19 @@ function normalizeSettings(settings: ProjectSettings): ProjectSettings {
 
 function itemDuration(item: TimelineItem) {
   return item.kind === "video" ? item.sourceOut - item.sourceIn : item.photoDuration;
+}
+
+function projectDuration(items: TimelineItem[]) {
+  return items.reduce((total, item) => total + itemDuration(item), 0);
+}
+
+function itemStartTime(items: TimelineItem[], itemId: string) {
+  const index = items.findIndex((item) => item.id === itemId);
+  return index < 0 ? 0 : projectDuration(items.slice(0, index));
+}
+
+function timelineTickInterval() {
+  return [1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find((seconds) => seconds * TIMELINE_PIXELS_PER_SECOND >= 64) ?? 600;
 }
 
 function thumbnailUrl(id: string) {
@@ -125,6 +148,7 @@ function App() {
   const [preparingPreview, setPreparingPreview] = useState(false);
   const [playbackError, setPlaybackError] = useState<string>();
   const [playheadTime, setPlayheadTime] = useState(0);
+  const [timelinePlayhead, setTimelinePlayhead] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaFrame = useRef<HTMLDivElement>(null);
   const librarySentinel = useRef<HTMLDivElement>(null);
@@ -138,12 +162,15 @@ function App() {
   const projectLoadGeneration = useRef(0);
   const projectLoadController = useRef<AbortController | undefined>(undefined);
   const photoTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const photoProgressTimer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const photoDeadline = useRef(0);
   const photoRemaining = useRef(0);
   const dragItemId = useRef<string | undefined>(undefined);
   const viewerSelectionRef = useRef<ViewerSelection | undefined>(undefined);
   const previewModeRef = useRef(previewMode);
   const seekInteraction = useRef<number | undefined>(undefined);
+  const timelineSeekInteraction = useRef<number | undefined>(undefined);
+  const pendingTimelineSeek = useRef<{ itemId: string; sourceTime: number } | undefined>(undefined);
   const cropInteraction = useRef<{
     pointerId: number;
     startX: number;
@@ -235,7 +262,10 @@ function App() {
 
   useEffect(() => {
     setPlaybackError(undefined);
-    setPlayheadTime(selectedItem?.kind === "video" ? selectedItem.sourceIn : 0);
+    const pending = selectedItem && pendingTimelineSeek.current?.itemId === selectedItem.id ? pendingTimelineSeek.current : undefined;
+    setPlayheadTime(pending?.sourceTime ?? (selectedItem?.kind === "video" ? selectedItem.sourceIn : 0));
+    if (selectedItem && !pending) setTimelinePlayhead(itemStartTime(projectRef.current?.items ?? [], selectedItem.id));
+    if (selectedItem?.kind === "photo" && pending) pendingTimelineSeek.current = undefined;
   }, [viewerSelection?.context, viewerSelection?.context === "timeline" ? viewerSelection.itemId : viewerSelection?.mediaId]);
 
   useEffect(() => {
@@ -266,12 +296,23 @@ function App() {
 
   useEffect(() => {
     clearTimeout(photoTimer.current);
+    clearInterval(photoProgressTimer.current);
     if (previewMode !== "playing" || selectedItem?.kind !== "photo") return;
     const milliseconds = photoRemaining.current || selectedItem.photoDuration * 1000;
+    const elapsedBeforeStart = selectedItem.photoDuration * 1000 - milliseconds;
+    const timelineStart = itemStartTime(projectRef.current?.items ?? [], selectedItem.id);
+    const startedAt = Date.now();
     photoRemaining.current = 0;
     photoDeadline.current = Date.now() + milliseconds;
+    setTimelinePlayhead(timelineStart + elapsedBeforeStart / 1000);
+    photoProgressTimer.current = setInterval(() => {
+      setTimelinePlayhead(timelineStart + Math.min(selectedItem.photoDuration, (elapsedBeforeStart + Date.now() - startedAt) / 1000));
+    }, 50);
     photoTimer.current = setTimeout(advancePreview, milliseconds);
-    return () => clearTimeout(photoTimer.current);
+    return () => {
+      clearTimeout(photoTimer.current);
+      clearInterval(photoProgressTimer.current);
+    };
   }, [previewMode, selectedItem?.id, selectedItem?.kind === "photo" ? selectedItem.photoDuration : undefined,
     project?.items.map((item) => item.id).join(":")]);
 
@@ -576,9 +617,18 @@ function App() {
 
   function startPreview() {
     if (!project?.items[0]) return;
+    const first = project.items[0];
     photoRemaining.current = 0;
     setCropMode(false);
-    setViewerSelection({ context: "timeline", itemId: project.items[0].id });
+    if (first.kind === "video") {
+      pendingTimelineSeek.current = { itemId: first.id, sourceTime: first.sourceIn };
+      if (viewerSelectionRef.current?.context === "timeline" && viewerSelectionRef.current.itemId === first.id && videoRef.current) {
+        videoRef.current.currentTime = first.sourceIn;
+        pendingTimelineSeek.current = undefined;
+      }
+    }
+    setViewerSelection({ context: "timeline", itemId: first.id });
+    setTimelinePlayhead(0);
     setPreviewMode("playing");
   }
 
@@ -595,6 +645,7 @@ function App() {
 
   function stopPreview() {
     clearTimeout(photoTimer.current);
+    clearInterval(photoProgressTimer.current);
     photoRemaining.current = 0;
     videoRef.current?.pause();
     setPreviewMode("off");
@@ -607,16 +658,76 @@ function App() {
     const index = current.items.findIndex((item) => item.id === selection.itemId);
     const next = current.items[index + 1];
     photoRemaining.current = 0;
-    if (!next) return stopPreview();
+    if (!next) {
+      setTimelinePlayhead(projectDuration(current.items));
+      return stopPreview();
+    }
+    setTimelinePlayhead(itemStartTime(current.items, next.id));
     setViewerSelection({ context: "timeline", itemId: next.id });
   }
 
   function videoReady(video: HTMLVideoElement) {
     if (selectedItem?.kind === "video") {
-      video.currentTime = selectedItem.sourceIn;
-      setPlayheadTime(selectedItem.sourceIn);
+      const pending = pendingTimelineSeek.current?.itemId === selectedItem.id ? pendingTimelineSeek.current : undefined;
+      const sourceTime = pending?.sourceTime ?? selectedItem.sourceIn;
+      video.currentTime = sourceTime;
+      setPlayheadTime(sourceTime);
+      pendingTimelineSeek.current = undefined;
       if (previewMode === "playing" && readyClipPreview) void video.play();
     }
+  }
+
+  function seekTimeline(time: number) {
+    const current = projectRef.current;
+    if (!current?.items.length) return;
+    const total = projectDuration(current.items);
+    const target = clamp(time, 0, total);
+    let elapsed = 0;
+    let item = current.items.at(-1)!;
+    for (const candidate of current.items) {
+      const end = elapsed + itemDuration(candidate);
+      item = candidate;
+      if (target < end || candidate === current.items.at(-1)) break;
+      elapsed = end;
+    }
+    const localTime = clamp(target - elapsed, 0, itemDuration(item));
+    setTimelinePlayhead(target);
+    setViewerSelection({ context: "timeline", itemId: item.id });
+    if (item.kind === "video") {
+      const sourceTime = item.sourceIn + localTime;
+      pendingTimelineSeek.current = { itemId: item.id, sourceTime };
+      setPlayheadTime(sourceTime);
+      if (viewerSelectionRef.current?.context === "timeline" && viewerSelectionRef.current.itemId === item.id && videoRef.current) {
+        videoRef.current.currentTime = sourceTime;
+        pendingTimelineSeek.current = undefined;
+      }
+    } else {
+      pendingTimelineSeek.current = viewerSelectionRef.current?.context === "timeline" && viewerSelectionRef.current.itemId === item.id
+        ? undefined
+        : { itemId: item.id, sourceTime: 0 };
+      photoRemaining.current = Math.max(0, item.photoDuration - localTime) * 1000;
+    }
+  }
+
+  function moveTimelinePlayhead(event: PointerEvent<HTMLDivElement>) {
+    if (timelineSeekInteraction.current !== event.pointerId || !project) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    seekTimeline((event.clientX - bounds.left) / TIMELINE_PIXELS_PER_SECOND);
+  }
+
+  function beginTimelineSeek(event: PointerEvent<HTMLDivElement>) {
+    if (!project?.items.length) return;
+    event.preventDefault();
+    stopPreview();
+    timelineSeekInteraction.current = event.pointerId;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    moveTimelinePlayhead(event);
+  }
+
+  function endTimelineSeek(event: PointerEvent<HTMLDivElement>) {
+    if (timelineSeekInteraction.current !== event.pointerId) return;
+    timelineSeekInteraction.current = undefined;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   }
 
   function updateTrim(values: number[]) {
@@ -749,6 +860,10 @@ function App() {
     left: `${-displayedCrop.x / displayedCrop.width * 100}%`,
     top: `${-displayedCrop.y / displayedCrop.height * 100}%`,
   } : undefined;
+  const totalTimelineDuration = projectDuration(project?.items ?? []);
+  const tickInterval = timelineTickInterval();
+  const timelineTicks = Array.from({ length: Math.floor(totalTimelineDuration / tickInterval) + 1 }, (_, index) => index * tickInterval);
+  if (totalTimelineDuration > 0 && timelineTicks.at(-1) !== totalTimelineDuration) timelineTicks.push(totalTimelineDuration);
 
   return (
     <main className="app-shell">
@@ -817,7 +932,10 @@ function App() {
               style={{ aspectRatio: viewerAspect }}>
               {selectedAsset.kind === "video" ? viewerMediaUrl ? <video ref={videoRef} key={`${selectedItem?.id ?? "source"}:${activePlaybackSource}:${readyClipPreview?.url ?? "direct"}`}
                 src={viewerMediaUrl} controls autoPlay={viewerSelection?.context === "source"} playsInline preload="metadata" onLoadedMetadata={(event) => videoReady(event.currentTarget)}
-                onTimeUpdate={(event) => { setPlayheadTime(event.currentTarget.currentTime); if (selectedItem?.kind === "video" && event.currentTarget.currentTime >= selectedItem.sourceOut) {
+                onPlay={() => { if (viewerSelection?.context === "timeline") setPreviewMode("playing"); }}
+                onTimeUpdate={(event) => { setPlayheadTime(event.currentTarget.currentTime); if (selectedItem?.kind === "video") {
+                  setTimelinePlayhead(itemStartTime(projectRef.current?.items ?? [], selectedItem.id) + clamp(event.currentTarget.currentTime - selectedItem.sourceIn, 0, itemDuration(selectedItem)));
+                } if (selectedItem?.kind === "video" && event.currentTarget.currentTime >= selectedItem.sourceOut) {
                   if (previewModeRef.current === "playing") advancePreview(); else event.currentTarget.pause();
                 } }} onEnded={() => { if (previewModeRef.current === "playing") advancePreview(); }}
                 onError={() => setPlaybackError("This browser cannot play the selected video.")} />
@@ -884,24 +1002,38 @@ function App() {
               <span>{exportProgress.message}</span>
             </div>}
             {exportError && <div className="error-message export-error-message" role="alert">Export failed: {exportError}</div>}
-            <div className="timeline" aria-label="Project timeline">
-              {project?.items.map((item, index) => {
-                const asset = media.find((candidate) => candidate.id === item.mediaId);
-                const selected = viewerSelection?.context === "timeline" && viewerSelection.itemId === item.id;
-                const invalidCrop = !cropMatchesProject(item.crop, metadata[item.mediaId], project.settings);
-                return <article key={item.id} className={`timeline-card${selected ? " selected" : ""}${invalidCrop ? " invalid-crop" : ""}`}
-                  aria-invalid={invalidCrop || undefined} title={invalidCrop ? "Crop does not match the project aspect ratio" : undefined} draggable
-                  style={{ width: `${clamp(110 + itemDuration(item) * 5, 130, 300)}px` }} onDragStart={() => { dragItemId.current = item.id; }}
-                  onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropItem(event, item.id)}>
-                  <button className="timeline-select" aria-pressed={selected} onClick={() => { stopPreview(); setViewerSelection({ context: "timeline", itemId: item.id }); }}>
-                    <img src={thumbnailUrl(item.mediaId)} alt="" /><span>{index + 1}. {asset?.filename ?? item.mediaId}</span><small>{formatDuration(itemDuration(item))} · {item.kind}{invalidCrop ? " · Invalid crop" : ""}</small>
-                  </button>
-                  <div className="card-actions"><button aria-label={`Move ${asset?.filename ?? "item"} left`} disabled={index === 0} onClick={() => moveItem(item.id, -1)}>←</button>
-                    <button aria-label={`Move ${asset?.filename ?? "item"} right`} disabled={index === project.items.length - 1} onClick={() => moveItem(item.id, 1)}>→</button>
-                    <button aria-label={`Remove ${asset?.filename ?? "item"}`} onClick={() => removeItem(item.id)}>Remove</button></div>
-                </article>;
-              })}
-              {!project?.items.length && <p className="empty-message">Add media from the library.</p>}
+            <div className="timeline-scroll" aria-label="Project timeline">
+              {project?.items.length ? <div className="timeline-content" style={{ width: `${totalTimelineDuration * TIMELINE_PIXELS_PER_SECOND}px` }}>
+                <div className="timeline">
+                  {project.items.map((item, index) => {
+                    const asset = media.find((candidate) => candidate.id === item.mediaId);
+                    const selected = viewerSelection?.context === "timeline" && viewerSelection.itemId === item.id;
+                    const invalidCrop = !cropMatchesProject(item.crop, metadata[item.mediaId], project.settings);
+                    const label = asset?.filename ?? item.mediaId;
+                    return <article key={item.id} className={`timeline-card${selected ? " selected" : ""}${invalidCrop ? " invalid-crop" : ""}`}
+                      aria-invalid={invalidCrop || undefined} title={`${label}${invalidCrop ? " - Crop does not match the project aspect ratio" : ""}`} draggable
+                      style={{ width: `${itemDuration(item) * TIMELINE_PIXELS_PER_SECOND}px` }} onDragStart={() => { dragItemId.current = item.id; }}
+                      onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropItem(event, item.id)}>
+                      <button className="timeline-select" aria-label={`Select ${label}`} aria-pressed={selected}
+                        onClick={() => { stopPreview(); setViewerSelection({ context: "timeline", itemId: item.id }); }}>
+                        <img src={thumbnailUrl(item.mediaId)} alt="" />
+                        <span className="timeline-duration">{formatDuration(itemDuration(item))}</span>
+                      </button>
+                      <div className="card-actions">
+                        <div><button aria-label={`Move ${label} left`} disabled={index === 0} onClick={() => moveItem(item.id, -1)}>←</button>
+                          <button aria-label={`Move ${label} right`} disabled={index === project.items.length - 1} onClick={() => moveItem(item.id, 1)}>→</button></div>
+                        <button className="remove-button" aria-label={`Remove ${label}`} onClick={() => removeItem(item.id)}>Remove</button>
+                      </div>
+                    </article>;
+                  })}
+                </div>
+                <div className="timeline-ruler" aria-label="Project playhead" onPointerDown={beginTimelineSeek} onPointerMove={moveTimelinePlayhead}
+                  onPointerUp={endTimelineSeek} onPointerCancel={endTimelineSeek}>
+                  {timelineTicks.map((time, index) => <span key={time} className={`timeline-tick${index === 0 ? " first" : time === totalTimelineDuration ? " last" : ""}`}
+                    style={{ left: `${time * TIMELINE_PIXELS_PER_SECOND}px` }}><small>{formatTimelineTime(time)}</small></span>)}
+                  <span className="timeline-playhead" style={{ left: `${clamp(timelinePlayhead, 0, totalTimelineDuration) * TIMELINE_PIXELS_PER_SECOND}px` }} />
+                </div>
+              </div> : <p className="empty-message">Add media from the library.</p>}
             </div>
             <div className="export-status">
               <span>Project exports preserve source audio and use silence for photos.</span>
