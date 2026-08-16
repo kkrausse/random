@@ -149,10 +149,12 @@ function App() {
   const [playbackError, setPlaybackError] = useState<string>();
   const [videoPlaying, setVideoPlaying] = useState(false);
   const [viewerFullscreen, setViewerFullscreen] = useState(false);
+  const [viewerHeight, setViewerHeight] = useState<number>();
   const [playheadTime, setPlayheadTime] = useState(0);
   const [timelinePlayhead, setTimelinePlayhead] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaFrame = useRef<HTMLDivElement>(null);
+  const viewerStage = useRef<HTMLDivElement>(null);
   const viewerStack = useRef<HTMLDivElement>(null);
   const librarySentinel = useRef<HTMLDivElement>(null);
   const mediaRequest = useRef<AbortController | undefined>(undefined);
@@ -183,6 +185,7 @@ function App() {
     crop: NormalizedCrop;
     direction?: string;
   } | undefined>(undefined);
+  const viewerResize = useRef<{ pointerId: number; startY: number; startHeight: number } | undefined>(undefined);
   const selectedItem = viewerSelection?.context === "timeline"
     ? project?.items.find((item) => item.id === viewerSelection.itemId)
     : undefined;
@@ -716,6 +719,25 @@ function App() {
     }
   }
 
+  function resizeViewer(event: PointerEvent<HTMLDivElement>) {
+    const resize = viewerResize.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    setViewerHeight(clamp(resize.startHeight + event.clientY - resize.startY, 220, Math.max(220, window.innerHeight - 120)));
+  }
+
+  function beginViewerResize(event: PointerEvent<HTMLDivElement>) {
+    if (!viewerStage.current || viewerFullscreen) return;
+    event.preventDefault();
+    viewerResize.current = { pointerId: event.pointerId, startY: event.clientY, startHeight: viewerStage.current.getBoundingClientRect().height };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function endViewerResize(event: PointerEvent<HTMLDivElement>) {
+    if (viewerResize.current?.pointerId !== event.pointerId) return;
+    viewerResize.current = undefined;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
   function seekTimeline(time: number) {
     const current = projectRef.current;
     if (!current?.items.length) return;
@@ -973,7 +995,7 @@ function App() {
           </div>
 
           <div ref={viewerStack} className="viewer-stack">
-            <div className="viewer-stage">
+            <div ref={viewerStage} className="viewer-stage" style={{ height: viewerFullscreen ? undefined : viewerHeight }}>
             {!selectedAsset && <div className="viewer-placeholder">Choose a source or timeline item</div>}
             {selectedAsset && selectedInfo && <div ref={mediaFrame} className={croppedMediaStyle ? "media-frame cropped" : "media-frame"}
               style={{ aspectRatio: viewerAspect }}>
@@ -1009,6 +1031,8 @@ function App() {
                 value={[clamp(playheadTime, 0, selectedInfo.duration)]} onValueChange={seekSource} />}
               <button onClick={() => void toggleViewerFullscreen()}>{viewerFullscreen ? "Exit Fullscreen" : "Fullscreen"}</button>
             </section>}
+            <div className="viewer-resize-handle" role="separator" aria-label="Resize video viewer" aria-orientation="horizontal"
+              onPointerDown={beginViewerResize} onPointerMove={resizeViewer} onPointerUp={endViewerResize} onPointerCancel={endViewerResize} />
           </div>
 
           <div className="edit-strip">
