@@ -113,6 +113,7 @@ function App() {
   const [exportResult, setExportResult] = useState<{ filename: string; url: string }>();
   const [exportError, setExportError] = useState<string>();
   const [previewMode, setPreviewMode] = useState<"off" | "playing" | "paused">("off");
+  const [cropMode, setCropMode] = useState(false);
   const [stabilizedPreview, setStabilizedPreview] = useState<{ workId: string; url: string; itemId: string; source: PlaybackSource }>();
   const [stabilizing, setStabilizing] = useState(false);
   const [playbackError, setPlaybackError] = useState<string>();
@@ -340,6 +341,7 @@ function App() {
     setSaveError(undefined);
     setViewerSelection(loaded.items[0] ? { context: "timeline", itemId: loaded.items[0].id } : undefined);
     setPreviewMode("off");
+    setCropMode(false);
     localStorage.setItem(ACTIVE_PROJECT_KEY, loaded.id);
     return true;
   }
@@ -457,6 +459,7 @@ function App() {
 
   function selectSource(asset: MediaAsset) {
     setPreviewMode("off");
+    setCropMode(false);
     setViewerSelection({ context: "source", mediaId: asset.id });
     setPlaybackError(undefined);
   }
@@ -544,6 +547,7 @@ function App() {
   function startPreview() {
     if (!project?.items[0]) return;
     photoRemaining.current = 0;
+    setCropMode(false);
     setViewerSelection({ context: "timeline", itemId: project.items[0].id });
     setPreviewMode("playing");
   }
@@ -692,6 +696,16 @@ function App() {
       ? readyStabilizedPreview?.url
       : videoUrl(selectedAsset.id, activePlaybackSource)
     : selectedAsset ? thumbnailUrl(selectedAsset.id) : undefined;
+  const displayedCrop = selectedItem?.crop && !cropMode ? selectedItem.crop : undefined;
+  const viewerAspect = selectedInfo && displayedCrop
+    ? displayedCrop.width * selectedInfo.width / (displayedCrop.height * selectedInfo.height)
+    : selectedInfo ? selectedInfo.width / selectedInfo.height : undefined;
+  const croppedMediaStyle = displayedCrop ? {
+    width: `${100 / displayedCrop.width}%`,
+    height: `${100 / displayedCrop.height}%`,
+    left: `${-displayedCrop.x / displayedCrop.width * 100}%`,
+    top: `${-displayedCrop.y / displayedCrop.height * 100}%`,
+  } : undefined;
 
   return (
     <main className="app-shell">
@@ -756,16 +770,17 @@ function App() {
           <div className="viewer-stack">
             <div className="viewer-stage">
             {!selectedAsset && <div className="viewer-placeholder">Choose a source or timeline item</div>}
-            {selectedAsset && selectedInfo && <div ref={mediaFrame} className="media-frame" style={{ aspectRatio: `${selectedInfo.width} / ${selectedInfo.height}` }}>
+            {selectedAsset && selectedInfo && <div ref={mediaFrame} className={displayedCrop ? "media-frame cropped" : "media-frame"}
+              style={{ aspectRatio: viewerAspect }}>
               {selectedAsset.kind === "video" ? viewerMediaUrl ? <video ref={videoRef} key={`${selectedItem?.id ?? "source"}:${activePlaybackSource}:${readyStabilizedPreview?.workId ?? "direct"}`}
                 src={viewerMediaUrl} controls autoPlay={viewerSelection?.context === "source"} playsInline preload="metadata" onLoadedMetadata={(event) => videoReady(event.currentTarget)}
                 onTimeUpdate={(event) => { setPlayheadTime(event.currentTarget.currentTime); if (selectedItem?.kind === "video" && event.currentTarget.currentTime >= selectedItem.sourceOut) {
                   if (previewModeRef.current === "playing") advancePreview(); else event.currentTarget.pause();
                 } }} onEnded={() => { if (previewModeRef.current === "playing") advancePreview(); }}
-                onError={() => setPlaybackError("This browser cannot play the selected video.")} />
+                onError={() => setPlaybackError("This browser cannot play the selected video.")} style={croppedMediaStyle} />
                 : <div className="viewer-placeholder">Preparing stabilized preview...</div>
-                : <img src={viewerMediaUrl} alt={selectedAsset.filename} />}
-              {viewerMediaUrl && selectedItem?.crop && <div className="crop-rectangle" aria-label="Crop area. Drag to reposition; use corner handles to resize."
+                : <img src={viewerMediaUrl} alt={selectedAsset.filename} style={croppedMediaStyle} />}
+              {viewerMediaUrl && cropMode && selectedItem?.crop && <div className="crop-rectangle" aria-label="Crop area. Drag to reposition; use corner handles to resize."
                 onPointerDown={(event) => beginCrop(event, (event.target as HTMLElement).dataset.direction)} onPointerMove={moveCrop}
                 onPointerUp={endCrop} onPointerCancel={endCrop} style={{ left: `${selectedItem.crop.x * 100}%`, top: `${selectedItem.crop.y * 100}%`,
                   width: `${selectedItem.crop.width * 100}%`, height: `${selectedItem.crop.height * 100}%` }}>
@@ -788,7 +803,11 @@ function App() {
           <div className="edit-strip">
             {selectedItem && selectedInfo ? <>
               <span>Crop {Math.round((selectedItem.crop?.width ?? 1) * selectedInfo.width)} × {Math.round((selectedItem.crop?.height ?? 1) * selectedInfo.height)} px</span>
-              <button onClick={() => updateItem(selectedItem.id, (item) => ({ ...item, crop: centeredCrop(selectedInfo, project!.settings) }))}>Reset crop</button>
+              <button className={cropMode ? "active" : ""} aria-pressed={cropMode} onClick={() => {
+                if (!cropMode) stopPreview();
+                setCropMode(!cropMode);
+              }}>{cropMode ? "Done cropping" : "Crop"}</button>
+              {cropMode && <button onClick={() => updateItem(selectedItem.id, (item) => ({ ...item, crop: centeredCrop(selectedInfo, project!.settings) }))}>Reset crop</button>}
               {selectedItem.kind === "photo" && <label>Photo duration <input type="number" min="0.1" step="0.1" value={selectedItem.photoDuration}
                 onChange={(event) => updateItem(selectedItem.id, (item) => item.kind === "photo" ? { ...item, photoDuration: Math.max(0.1, Number(event.target.value)) } : item)} /> sec</label>}
             </> : <span>{viewerSelection?.context === "source" ? "Source preview. Add it to edit crop, trim, or duration." : "Select a timeline item to edit."}</span>}
