@@ -4,7 +4,6 @@ import {
   useRef,
   useState,
   type DragEvent,
-  type KeyboardEvent,
   type PointerEvent,
 } from "react";
 import { createRoot } from "react-dom/client";
@@ -161,6 +160,7 @@ function App() {
   const viewerStage = useRef<HTMLDivElement>(null);
   const viewerStack = useRef<HTMLDivElement>(null);
   const timelineRuler = useRef<HTMLDivElement>(null);
+  const libraryList = useRef<HTMLDivElement>(null);
   const librarySentinel = useRef<HTMLDivElement>(null);
   const mediaRequest = useRef<AbortController | undefined>(undefined);
   const mediaGeneration = useRef(0);
@@ -206,15 +206,17 @@ function App() {
   const activePlaybackSource: PlaybackSource | undefined = playbackSource === "original"
     ? "original"
     : selectedInfo ? selectedInfo.proxy ? "proxy" : "original" : undefined;
-  const activeLibrarySource: PlaybackVariant | undefined = playbackSource === "stabilized-proxy"
+  const activePlaybackVariant: PlaybackVariant | undefined = playbackSource === "stabilized-proxy"
     ? selectedInfo ? selectedInfo.stabilizedProxy ? "stabilized-proxy" : "original" : undefined
     : activePlaybackSource;
+  const previewStabilized = selectedItem?.kind === "video"
+    && (selectedItem.stabilize || activePlaybackVariant === "stabilized-proxy");
   const previewKey = selectedItem?.kind === "video" && activePlaybackSource
-    ? `${selectedItem.id}:${activePlaybackSource}:${selectedItem.stabilize}`
+    ? `${selectedItem.id}:${activePlaybackSource}:${previewStabilized}`
     : undefined;
   const directClipPreview = selectedItem?.kind === "video" && activePlaybackSource
-    && (!selectedItem.stabilize || activePlaybackSource === "proxy")
-    ? videoUrl(selectedItem.mediaId, selectedItem.stabilize ? "stabilized-proxy" : activePlaybackSource)
+    && (!previewStabilized || activePlaybackSource === "proxy")
+    ? videoUrl(selectedItem.mediaId, previewStabilized ? "stabilized-proxy" : activePlaybackSource)
     : undefined;
   const readyClipPreview = previewKey && (directClipPreview || clipPreviews[previewKey])
     ? { key: previewKey, url: directClipPreview ?? clipPreviews[previewKey]! }
@@ -314,7 +316,7 @@ function App() {
     fetch("/api/media/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: selectedItem.mediaId, source: activePlaybackSource, stabilize: selectedItem.stabilize }),
+      body: JSON.stringify({ id: selectedItem.mediaId, source: activePlaybackSource, stabilize: previewStabilized }),
       signal: controller.signal,
     }).then((response) => responseJson<{ url: string }>(response)).then((result) => {
       setClipPreviews((current) => ({ ...current, [previewKey]: result.url }));
@@ -334,11 +336,13 @@ function App() {
   const nextVideoSource: PlaybackSource | undefined = nextVideoItem
     ? playbackSource === "original" ? "original" : nextVideoInfo ? nextVideoInfo.proxy ? "proxy" : "original" : undefined
     : undefined;
+  const nextPreviewStabilized = nextVideoItem?.kind === "video"
+    && (nextVideoItem.stabilize || (playbackSource === "stabilized-proxy" && Boolean(nextVideoInfo?.stabilizedProxy)));
   const nextPreviewKey = nextVideoItem && nextVideoSource
-    ? `${nextVideoItem.id}:${nextVideoSource}:${nextVideoItem.stabilize}`
+    ? `${nextVideoItem.id}:${nextVideoSource}:${nextPreviewStabilized}`
     : undefined;
-  const directNextPreview = nextVideoItem && nextVideoSource && (!nextVideoItem.stabilize || nextVideoSource === "proxy")
-    ? videoUrl(nextVideoItem.mediaId, nextVideoItem.stabilize ? "stabilized-proxy" : nextVideoSource)
+  const directNextPreview = nextVideoItem && nextVideoSource && (!nextPreviewStabilized || nextVideoSource === "proxy")
+    ? videoUrl(nextVideoItem.mediaId, nextPreviewStabilized ? "stabilized-proxy" : nextVideoSource)
     : undefined;
   const nextPreviewUrl = directNextPreview ?? (nextPreviewKey ? clipPreviews[nextPreviewKey] : undefined);
 
@@ -348,7 +352,7 @@ function App() {
     fetch("/api/media/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: nextVideoItem.mediaId, source: nextVideoSource, stabilize: nextVideoItem.stabilize }),
+      body: JSON.stringify({ id: nextVideoItem.mediaId, source: nextVideoSource, stabilize: nextPreviewStabilized }),
       signal: controller.signal,
     }).then((response) => responseJson<{ url: string }>(response)).then((result) => {
       setClipPreviews((current) => ({ ...current, [nextPreviewKey]: result.url }));
@@ -404,21 +408,30 @@ function App() {
 
   useEffect(() => {
     function handlePlaybackShortcut(event: globalThis.KeyboardEvent) {
-      if (event.repeat || event.defaultPrevented) return;
+      if (event.defaultPrevented) return;
       const target = event.target as HTMLElement | null;
-      const formControl = target?.closest("input, select, textarea, [contenteditable='true']");
+      if (event.repeat) {
+        if (target?.closest("button, .source-select")
+          && ["Space", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.code)) {
+          event.preventDefault();
+        }
+        return;
+      }
+      const formControl = target?.closest("input, select:not(.source-select), textarea, [contenteditable='true']");
       if (formControl || (playbackContext !== "timeline" && target?.closest("[role='slider']") && event.code !== "Space")) return;
-      const timelineSelectionShortcut = target?.closest(".timeline-select")
-        && ["Space", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.code);
-      const selectionPlaybackShortcut = timelineSelectionShortcut
-        || (event.code === "Space" && playbackContext === "library" && target?.closest(".clip-row"));
-      if (target?.closest("button") && !selectionPlaybackShortcut) return;
       if (event.code === "Space") {
         event.preventDefault();
         toggleActivePlayback();
         return;
       }
-      if (playbackContext === "library" || !projectRef.current?.items.length) return;
+      if (playbackContext === "library") {
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.code)) {
+          event.preventDefault();
+          navigateLibrary(event.code);
+        }
+        return;
+      }
+      if (!projectRef.current?.items.length) return;
       if (event.shiftKey && (event.code === "ArrowLeft" || event.code === "ArrowRight")) {
         event.preventDefault();
         stepPlaybackFrame(event.code === "ArrowLeft" ? -1 : 1);
@@ -432,6 +445,9 @@ function App() {
         event.preventDefault();
         pausePreview();
         seekTimeline(event.code === "Home" ? 0 : projectDuration(projectRef.current.items));
+      } else if (target?.closest(".source-select")
+        && ["ArrowUp", "ArrowDown", "Home", "End"].includes(event.code)) {
+        event.preventDefault();
       }
     }
     window.addEventListener("keydown", handlePlaybackShortcut, { capture: true });
@@ -707,18 +723,15 @@ function App() {
     editProject((current) => ({ ...current, settings: normalized }));
   }
 
-  function navigateLibrary(event: KeyboardEvent<HTMLDivElement>) {
-    if (!event.key.startsWith("Arrow") && event.key !== "Home" && event.key !== "End") return;
-    const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>(".clip-row"));
-    const current = (event.target as Element).closest<HTMLButtonElement>(".clip-row");
-    const currentIndex = current ? buttons.indexOf(current) : -1;
+  function navigateLibrary(key: string) {
+    const buttons = Array.from(libraryList.current?.querySelectorAll<HTMLButtonElement>(".clip-row") ?? []);
+    const currentIndex = buttons.findIndex((button) => button.classList.contains("selected"));
     if (currentIndex < 0 || !buttons[0]) return;
     const firstNextRow = buttons.findIndex((button) => button.offsetTop !== buttons[0]!.offsetTop);
     const columns = firstNextRow === -1 ? buttons.length : firstNextRow;
     const next = { ArrowLeft: currentIndex - 1, ArrowRight: currentIndex + 1, ArrowUp: currentIndex - columns,
-      ArrowDown: currentIndex + columns, Home: 0, End: buttons.length - 1 }[event.key];
+      ArrowDown: currentIndex + columns, Home: 0, End: buttons.length - 1 }[key];
     if (next === undefined || next < 0 || next >= buttons.length) return;
-    event.preventDefault();
     buttons[next]!.focus();
     buttons[next]!.click();
   }
@@ -1120,7 +1133,7 @@ function App() {
   const viewerMediaUrl = selectedAsset?.kind === "video"
     ? selectedItem?.kind === "video"
       ? readyClipPreview?.url
-      : activeLibrarySource ? videoUrl(selectedAsset.id, activeLibrarySource) : undefined
+      : activePlaybackVariant ? videoUrl(selectedAsset.id, activePlaybackVariant) : undefined
     : selectedAsset ? thumbnailUrl(selectedAsset.id) : undefined;
   const displayedCrop = selectedItem && selectedInfo && project && !cropMode
     ? selectedItem.crop ?? centeredCrop(selectedInfo, project.settings)
@@ -1148,7 +1161,7 @@ function App() {
             <span>{media.length} / {mediaTotal}</span></div>
           {libraryError && <p className="error-message">{libraryError}</p>}
           {!libraryError && loadingMedia && media.length === 0 && <p className="empty-message">Loading library...</p>}
-          <div className="clip-list" role="group" aria-label="Source media" onKeyDown={navigateLibrary}>
+          <div ref={libraryList} className="clip-list" role="group" aria-label="Source media">
             {media.map((asset, index) => {
               const selected = viewerSelection?.context === "source" && viewerSelection.mediaId === asset.id;
               return (
@@ -1195,13 +1208,13 @@ function App() {
               <h2>{selectedAsset?.filename ?? "Select media"}</h2></div>
             <div className="viewer-actions">
               {selectedAsset?.kind === "video" && <select className="source-select" aria-label="Playback source"
-                value={(viewerSelection?.context === "source" ? activeLibrarySource : activePlaybackSource) ?? ""}
+                value={activePlaybackVariant ?? ""}
                 disabled={!selectedInfo}
                 onChange={(event) => setPlaybackSource(event.target.value as PlaybackVariant)}>
                 {!selectedInfo && <option value="">Loading...</option>}
                 <option value="proxy" disabled={!selectedInfo?.proxy}>Proxy</option>
                 <option value="original">Original</option>
-                {viewerSelection?.context === "source" && <option value="stabilized-proxy" disabled={!selectedInfo?.stabilizedProxy}>Stabilized</option>}
+                <option value="stabilized-proxy" disabled={!selectedInfo?.stabilizedProxy}>Stabilized</option>
               </select>}
               {selectedItem?.kind === "video" && <button className={selectedItem.stabilize ? "edit-toggle active" : "edit-toggle"}
                 aria-pressed={selectedItem.stabilize} onClick={() => updateItem(selectedItem.id, (item) => ({ ...item, stabilize: !item.stabilize }))}>Stabilize</button>}
@@ -1215,7 +1228,7 @@ function App() {
             {!selectedAsset && <div className="viewer-placeholder">Choose a source or timeline item</div>}
             {selectedAsset && selectedInfo && <div ref={mediaFrame} className={croppedMediaStyle ? "media-frame cropped" : "media-frame"}
               style={{ aspectRatio: viewerAspect }}>
-              {selectedAsset.kind === "video" ? viewerMediaUrl ? <video ref={videoRef} key={`${selectedItem?.id ?? "source"}:${selectedItem ? activePlaybackSource : activeLibrarySource}:${readyClipPreview?.url ?? "direct"}`}
+              {selectedAsset.kind === "video" ? viewerMediaUrl ? <video ref={videoRef} key={`${selectedItem?.id ?? "source"}:${activePlaybackVariant}:${readyClipPreview?.url ?? "direct"}`}
                 src={viewerMediaUrl} style={croppedMediaStyle} playsInline muted={false} preload="metadata" onLoadedMetadata={(event) => videoReady(event.currentTarget)}
                 onPlay={() => setVideoPlaying(true)} onPause={() => setVideoPlaying(false)}
                 onTimeUpdate={(event) => { setPlayheadTime(event.currentTarget.currentTime); if (selectedItem?.kind === "video") {
