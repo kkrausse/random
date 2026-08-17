@@ -209,14 +209,12 @@ function App() {
   const activePlaybackVariant: PlaybackVariant | undefined = playbackSource === "stabilized-proxy"
     ? selectedInfo ? selectedInfo.stabilizedProxy ? "stabilized-proxy" : "original" : undefined
     : activePlaybackSource;
-  const previewStabilized = selectedItem?.kind === "video"
-    && (selectedItem.stabilize || activePlaybackVariant === "stabilized-proxy");
   const previewKey = selectedItem?.kind === "video" && activePlaybackSource
-    ? `${selectedItem.id}:${activePlaybackSource}:${previewStabilized}`
+    ? `${selectedItem.id}:${activePlaybackSource}:${selectedItem.stabilize}`
     : undefined;
   const directClipPreview = selectedItem?.kind === "video" && activePlaybackSource
-    && (!previewStabilized || activePlaybackSource === "proxy")
-    ? videoUrl(selectedItem.mediaId, previewStabilized ? "stabilized-proxy" : activePlaybackSource)
+    && (!selectedItem.stabilize || activePlaybackSource === "proxy")
+    ? videoUrl(selectedItem.mediaId, selectedItem.stabilize ? "stabilized-proxy" : activePlaybackSource)
     : undefined;
   const readyClipPreview = previewKey && (directClipPreview || clipPreviews[previewKey])
     ? { key: previewKey, url: directClipPreview ?? clipPreviews[previewKey]! }
@@ -316,7 +314,7 @@ function App() {
     fetch("/api/media/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: selectedItem.mediaId, source: activePlaybackSource, stabilize: previewStabilized }),
+      body: JSON.stringify({ id: selectedItem.mediaId, source: activePlaybackSource, stabilize: selectedItem.stabilize }),
       signal: controller.signal,
     }).then((response) => responseJson<{ url: string }>(response)).then((result) => {
       setClipPreviews((current) => ({ ...current, [previewKey]: result.url }));
@@ -336,13 +334,11 @@ function App() {
   const nextVideoSource: PlaybackSource | undefined = nextVideoItem
     ? playbackSource === "original" ? "original" : nextVideoInfo ? nextVideoInfo.proxy ? "proxy" : "original" : undefined
     : undefined;
-  const nextPreviewStabilized = nextVideoItem?.kind === "video"
-    && (nextVideoItem.stabilize || (playbackSource === "stabilized-proxy" && Boolean(nextVideoInfo?.stabilizedProxy)));
   const nextPreviewKey = nextVideoItem && nextVideoSource
-    ? `${nextVideoItem.id}:${nextVideoSource}:${nextPreviewStabilized}`
+    ? `${nextVideoItem.id}:${nextVideoSource}:${nextVideoItem.stabilize}`
     : undefined;
-  const directNextPreview = nextVideoItem && nextVideoSource && (!nextPreviewStabilized || nextVideoSource === "proxy")
-    ? videoUrl(nextVideoItem.mediaId, nextPreviewStabilized ? "stabilized-proxy" : nextVideoSource)
+  const directNextPreview = nextVideoItem && nextVideoSource && (!nextVideoItem.stabilize || nextVideoSource === "proxy")
+    ? videoUrl(nextVideoItem.mediaId, nextVideoItem.stabilize ? "stabilized-proxy" : nextVideoSource)
     : undefined;
   const nextPreviewUrl = directNextPreview ?? (nextPreviewKey ? clipPreviews[nextPreviewKey] : undefined);
 
@@ -352,7 +348,7 @@ function App() {
     fetch("/api/media/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: nextVideoItem.mediaId, source: nextVideoSource, stabilize: nextPreviewStabilized }),
+      body: JSON.stringify({ id: nextVideoItem.mediaId, source: nextVideoSource, stabilize: nextVideoItem.stabilize }),
       signal: controller.signal,
     }).then((response) => responseJson<{ url: string }>(response)).then((result) => {
       setClipPreviews((current) => ({ ...current, [nextPreviewKey]: result.url }));
@@ -666,6 +662,15 @@ function App() {
       if (item.id !== id) return item;
       return update(item);
     }) }));
+  }
+
+  function changePlaybackVariant(variant: PlaybackVariant) {
+    setPlaybackSource(variant);
+    if (selectedItem?.kind !== "video") return;
+    const stabilize = variant === "stabilized-proxy";
+    if (selectedItem.stabilize !== stabilize) {
+      updateItem(selectedItem.id, (item) => ({ ...item, stabilize }));
+    }
   }
 
   function removeItem(id: string) {
@@ -1208,16 +1213,16 @@ function App() {
               <h2>{selectedAsset?.filename ?? "Select media"}</h2></div>
             <div className="viewer-actions">
               {selectedAsset?.kind === "video" && <select className="source-select" aria-label="Playback source"
-                value={activePlaybackVariant ?? ""}
+                value={(selectedItem?.kind === "video"
+                  ? selectedItem.stabilize ? "stabilized-proxy" : activePlaybackSource
+                  : activePlaybackVariant) ?? ""}
                 disabled={!selectedInfo}
-                onChange={(event) => setPlaybackSource(event.target.value as PlaybackVariant)}>
+                onChange={(event) => changePlaybackVariant(event.target.value as PlaybackVariant)}>
                 {!selectedInfo && <option value="">Loading...</option>}
                 <option value="proxy" disabled={!selectedInfo?.proxy}>Proxy</option>
                 <option value="original">Original</option>
                 <option value="stabilized-proxy" disabled={!selectedInfo?.stabilizedProxy}>Stabilized</option>
               </select>}
-              {selectedItem?.kind === "video" && <button className={selectedItem.stabilize ? "edit-toggle active" : "edit-toggle"}
-                aria-pressed={selectedItem.stabilize} onClick={() => updateItem(selectedItem.id, (item) => ({ ...item, stabilize: !item.stabilize }))}>Stabilize</button>}
               {selectedAsset && viewerSelection?.context === "source" && <button onClick={() => addToTimeline(selectedAsset)}>Add to Timeline</button>}
               {preparingPreview && <span className="processing-badge">Preparing preview...</span>}
             </div>

@@ -40,7 +40,6 @@ h1, h2, p { margin: 0; }
 .viewer-actions { flex-wrap: wrap; justify-content: flex-end; }
 .viewer-actions button, .timeline-actions button { padding: 4px 8px; font-size: 10px; }
 .source-select { padding: 4px 8px; font-size: 10px; }
-.edit-toggle.active { color: #fff; background: #3b4650; border-color: #8999a8; }
 .processing-badge { color: #9cc8ff; font-size: 10px; }
 .viewer-stack { min-width: 0; }
 .viewer-stage { position: relative; width: 100%; height: clamp(260px, 48vh, 560px); min-width: 0; display: grid; place-items: center; overflow: hidden; background: #000; }
