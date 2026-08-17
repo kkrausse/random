@@ -25,6 +25,7 @@ type SaveState = "saved" | "saving" | "error";
 type ViewerSelection = { context: "source"; mediaId: string } | { context: "timeline"; itemId: string };
 type PlaybackContext = "library" | "timeline" | "clip";
 type PreviewMode = "off" | "playing" | "paused" | "ended";
+type PlaybackVariant = PlaybackSource | "stabilized-proxy";
 
 const ACTIVE_PROJECT_KEY = "video-editor-active-project";
 const PHOTO_DURATION = 4;
@@ -136,7 +137,7 @@ function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [project, setProject] = useState<Project>();
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>();
-  const [playbackSource, setPlaybackSource] = useState<PlaybackSource>("proxy");
+  const [playbackSource, setPlaybackSource] = useState<PlaybackVariant>("proxy");
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [saveError, setSaveError] = useState<string>();
   const [libraryError, setLibraryError] = useState<string>();
@@ -205,6 +206,9 @@ function App() {
   const activePlaybackSource: PlaybackSource | undefined = playbackSource === "original"
     ? "original"
     : selectedInfo ? selectedInfo.proxy ? "proxy" : "original" : undefined;
+  const activeLibrarySource: PlaybackVariant | undefined = playbackSource === "stabilized-proxy"
+    ? selectedInfo ? selectedInfo.stabilizedProxy ? "stabilized-proxy" : "original" : undefined
+    : activePlaybackSource;
   const previewKey = selectedItem?.kind === "video" && activePlaybackSource
     ? `${selectedItem.id}:${activePlaybackSource}:${selectedItem.stabilize}`
     : undefined;
@@ -1116,7 +1120,7 @@ function App() {
   const viewerMediaUrl = selectedAsset?.kind === "video"
     ? selectedItem?.kind === "video"
       ? readyClipPreview?.url
-      : activePlaybackSource ? videoUrl(selectedAsset.id, activePlaybackSource) : undefined
+      : activeLibrarySource ? videoUrl(selectedAsset.id, activeLibrarySource) : undefined
     : selectedAsset ? thumbnailUrl(selectedAsset.id) : undefined;
   const displayedCrop = selectedItem && selectedInfo && project && !cropMode
     ? selectedItem.crop ?? centeredCrop(selectedInfo, project.settings)
@@ -1190,10 +1194,15 @@ function App() {
             <div><p className="eyebrow">{viewerSelection?.context === "timeline" ? "Timeline item" : "Source"}</p>
               <h2>{selectedAsset?.filename ?? "Select media"}</h2></div>
             <div className="viewer-actions">
-              {selectedAsset?.kind === "video" && <div className="source-toggle" aria-label="Playback source">
-                <button className={activePlaybackSource === "proxy" ? "active" : ""} onClick={() => setPlaybackSource("proxy")} disabled={!selectedInfo?.proxy}>Proxy</button>
-                <button className={activePlaybackSource === "original" ? "active" : ""} onClick={() => setPlaybackSource("original")}>Original</button>
-              </div>}
+              {selectedAsset?.kind === "video" && <select className="source-select" aria-label="Playback source"
+                value={(viewerSelection?.context === "source" ? activeLibrarySource : activePlaybackSource) ?? ""}
+                disabled={!selectedInfo}
+                onChange={(event) => setPlaybackSource(event.target.value as PlaybackVariant)}>
+                {!selectedInfo && <option value="">Loading...</option>}
+                <option value="proxy" disabled={!selectedInfo?.proxy}>Proxy</option>
+                <option value="original">Original</option>
+                {viewerSelection?.context === "source" && <option value="stabilized-proxy" disabled={!selectedInfo?.stabilizedProxy}>Stabilized</option>}
+              </select>}
               {selectedItem?.kind === "video" && <button className={selectedItem.stabilize ? "edit-toggle active" : "edit-toggle"}
                 aria-pressed={selectedItem.stabilize} onClick={() => updateItem(selectedItem.id, (item) => ({ ...item, stabilize: !item.stabilize }))}>Stabilize</button>}
               {selectedAsset && viewerSelection?.context === "source" && <button onClick={() => addToTimeline(selectedAsset)}>Add to Timeline</button>}
@@ -1206,7 +1215,7 @@ function App() {
             {!selectedAsset && <div className="viewer-placeholder">Choose a source or timeline item</div>}
             {selectedAsset && selectedInfo && <div ref={mediaFrame} className={croppedMediaStyle ? "media-frame cropped" : "media-frame"}
               style={{ aspectRatio: viewerAspect }}>
-              {selectedAsset.kind === "video" ? viewerMediaUrl ? <video ref={videoRef} key={`${selectedItem?.id ?? "source"}:${activePlaybackSource}:${readyClipPreview?.url ?? "direct"}`}
+              {selectedAsset.kind === "video" ? viewerMediaUrl ? <video ref={videoRef} key={`${selectedItem?.id ?? "source"}:${selectedItem ? activePlaybackSource : activeLibrarySource}:${readyClipPreview?.url ?? "direct"}`}
                 src={viewerMediaUrl} style={croppedMediaStyle} playsInline muted={false} preload="metadata" onLoadedMetadata={(event) => videoReady(event.currentTarget)}
                 onPlay={() => setVideoPlaying(true)} onPause={() => setVideoPlaying(false)}
                 onTimeUpdate={(event) => { setPlayheadTime(event.currentTarget.currentTime); if (selectedItem?.kind === "video") {

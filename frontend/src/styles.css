@@ -9,7 +9,7 @@ h1, h2, p { margin: 0; }
 .app-shell { min-height: 100vh; }
 .masthead { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid #444; }
 .masthead h1 { font-size: 18px; white-space: nowrap; }
-.project-controls, .viewer-actions, .source-toggle, .timeline-actions, .preset-buttons { display: flex; align-items: center; gap: 6px; }
+.project-controls, .viewer-actions, .timeline-actions, .preset-buttons { display: flex; align-items: center; gap: 6px; }
 .project-controls select { max-width: 240px; }
 .project-controls button, .project-controls select { padding: 5px 8px; }
 .save-status { max-width: 360px; color: #aaa; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -38,8 +38,9 @@ h1, h2, p { margin: 0; }
 .viewer-heading { min-height: 38px; display: flex; justify-content: space-between; gap: 10px; }
 .eyebrow { color: #888; font-size: 9px; text-transform: uppercase; }
 .viewer-actions { flex-wrap: wrap; justify-content: flex-end; }
-.viewer-actions button, .source-toggle button, .timeline-actions button { padding: 4px 8px; font-size: 10px; }
-.source-toggle button.active, .edit-toggle.active { color: #fff; background: #3b4650; border-color: #8999a8; }
+.viewer-actions button, .timeline-actions button { padding: 4px 8px; font-size: 10px; }
+.source-select { padding: 4px 8px; font-size: 10px; }
+.edit-toggle.active { color: #fff; background: #3b4650; border-color: #8999a8; }
 .processing-badge { color: #9cc8ff; font-size: 10px; }
 .viewer-stack { min-width: 0; }
 .viewer-stage { position: relative; width: 100%; height: clamp(260px, 48vh, 560px); min-width: 0; display: grid; place-items: center; overflow: hidden; background: #000; }
