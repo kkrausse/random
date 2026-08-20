@@ -5,7 +5,6 @@ import type { DetectedRoute, RouteTraversal, RouteType } from '../domain/analysi
 import type { ImportedActivity } from './Database'
 
 export interface DetectionConfig {
-  readonly sampleSpacingM: number
   readonly maxRouteDeviationM: number
   readonly candidateCellM: number
   readonly minSegmentDistanceM: number
@@ -17,7 +16,6 @@ export interface DetectionConfig {
 }
 
 export const DETECTION_DEFAULTS: DetectionConfig = {
-  sampleSpacingM: 40,
   maxRouteDeviationM: 30,
   candidateCellM: 120,
   minSegmentDistanceM: 500,
@@ -29,10 +27,9 @@ export const DETECTION_DEFAULTS: DetectionConfig = {
 }
 
 export const resolveDetectionConfig = (overrides: Partial<DetectionConfig> = {}): DetectionConfig => {
-  // Older settings allowed impractically dense alignment points. Preserve those saved configs by normalizing them.
-  const config = { ...DETECTION_DEFAULTS, ...overrides, sampleSpacingM: Math.max(40, overrides.sampleSpacingM ?? DETECTION_DEFAULTS.sampleSpacingM) }
+  const { sampleSpacingM: _legacySampleSpacing, ...supportedOverrides } = overrides as Partial<DetectionConfig> & { sampleSpacingM?: unknown }
+  const config = { ...DETECTION_DEFAULTS, ...supportedOverrides }
   const ranges: Record<keyof DetectionConfig, readonly [number, number]> = {
-    sampleSpacingM: [40, 200],
     maxRouteDeviationM: [5, 200],
     candidateCellM: [20, 1_000],
     minSegmentDistanceM: [100, 20_000],
@@ -55,6 +52,8 @@ export const resolveDetectionConfig = (overrides: Partial<DetectionConfig> = {})
 }
 
 const EARTH_RADIUS_M = 6_371_000
+// Dense enough for the matching tolerance while keeping dynamic alignment tractable on the full archive.
+const SAMPLE_SPACING_M = 40
 
 interface Point extends RoutePoint {
   readonly sample: ActivitySample
@@ -134,7 +133,7 @@ const interpolateSample = (a: Point, b: Point, fraction: number): Point => {
   }
 }
 
-const samplePaths = (activity: ImportedActivity, config: DetectionConfig): Path[] => {
+const samplePaths = (activity: ImportedActivity): Path[] => {
   const gps = activity.samples.flatMap((sample, sourcePosition) => sample.lat === null || sample.lon === null ? [] : [{
     lat: sample.lat, lon: sample.lon, sample, sourcePosition,
   }])
@@ -148,7 +147,7 @@ const samplePaths = (activity: ImportedActivity, config: DetectionConfig): Path[
       const elapsedSec = previous.sample.timestamp && point.sample.timestamp
         ? (point.sample.timestamp.getTime() - previous.sample.timestamp.getTime()) / 1000
         : null
-      const discontinuity = distance > Math.max(500, config.sampleSpacingM * 12)
+      const discontinuity = distance > Math.max(500, SAMPLE_SPACING_M * 12)
         || elapsedSec !== null && (elapsedSec <= 0 || elapsedSec > 300 || distance / elapsedSec > 55)
       if (discontinuity) chunks.push([])
     }
@@ -158,7 +157,7 @@ const samplePaths = (activity: ImportedActivity, config: DetectionConfig): Path[
   return chunks.flatMap((chunk, chunkIndex) => {
     if (chunk.length < 2) return []
     const sampled: Point[] = [chunk[0]!]
-    let target = config.sampleSpacingM
+    let target = SAMPLE_SPACING_M
     let cumulative = 0
     for (let index = 1; index < chunk.length; index += 1) {
       const from = chunk[index - 1]!
@@ -167,7 +166,7 @@ const samplePaths = (activity: ImportedActivity, config: DetectionConfig): Path[
       if (edge === 0) continue
       while (target <= cumulative + edge) {
         sampled.push(interpolateSample(from, to, (target - cumulative) / edge))
-        target += config.sampleSpacingM
+        target += SAMPLE_SPACING_M
       }
       cumulative += edge
     }
@@ -266,7 +265,8 @@ const findMatches = (geometry: ReadonlyArray<RoutePoint>, path: Path, type: Rout
       }
       if (best) {
         found.push(best)
-        pathStart = best.endIndex + 1
+        // Consecutive laps share their finish/start sample.
+        pathStart = best.endIndex
       } else pathStart += 1
     }
     return found
@@ -377,6 +377,13 @@ const directedSimilarity = (a: Candidate, b: Candidate, config: DetectionConfig)
     alignFrom(rotateLoop(ring, phase), fakePath, 0, { ...config, maxRouteDeviationM: Math.max(config.maxRouteDeviationM, 50) }) !== null)
 }
 
+const segmentContains = (container: Candidate, contained: Candidate, config: DetectionConfig) => {
+  if (container.type !== 'segment' || contained.type !== 'segment' || container.sport !== contained.sport) return false
+  if (container.distanceM + SAMPLE_SPACING_M < contained.distanceM) return false
+  const path: Path = { activity: null as unknown as ImportedActivity, id: '', points: container.geometry as ReadonlyArray<Point> }
+  return findMatches(contained.geometry, path, 'segment', { ...config, maxRouteDeviationM: Math.max(config.maxRouteDeviationM, 50) }).length > 0
+}
+
 const consolidationAnchor = (candidate: Candidate): RoutePoint => {
   if (candidate.type === 'segment') return candidate.geometry[0]!
   const ring = candidate.geometry.slice(0, -1)
@@ -389,7 +396,7 @@ const consolidationAnchor = (candidate: Candidate): RoutePoint => {
 const strictSameCandidate = (a: Candidate, b: Candidate, config: DetectionConfig) => {
   if (a.type !== b.type || a.sport !== b.sport) return false
   if (Math.min(a.distanceM, b.distanceM) / Math.max(a.distanceM, b.distanceM) < 0.95) return false
-  if (Math.abs(a.distanceM - b.distanceM) > config.sampleSpacingM * 2) return false
+  if (Math.abs(a.distanceM - b.distanceM) > SAMPLE_SPACING_M * 2) return false
   if (Math.abs(a.geometry.length - b.geometry.length) > 2) return false
   const tolerance = Math.min(25, Math.max(8, config.maxRouteDeviationM * 0.75))
   const checks = Math.min(12, a.geometry.length, b.geometry.length)
@@ -486,7 +493,7 @@ export interface DetectionResult {
 
 export function detectRoutes(activities: ReadonlyArray<ImportedActivity>, overrides: Partial<DetectionConfig> = {}): DetectionResult {
   const config = resolveDetectionConfig(overrides)
-  const paths = activities.flatMap((activity) => samplePaths(activity, config))
+  const paths = activities.flatMap(samplePaths)
   const pathSpatialIndexes = paths.map((path) => spatialIndex(path.points, config.maxRouteDeviationM))
   const bySportCell = new Map<string, number[]>()
   paths.forEach((path, pathIndex) => {
@@ -536,7 +543,8 @@ export function detectRoutes(activities: ReadonlyArray<ImportedActivity>, overri
           closureEvents[closureEvents.length - 1] = end
         }
       }
-      for (const end of closureEvents) {
+      // A later return to the same point is another lap, not a larger loop.
+      for (const end of closureEvents.slice(0, 1)) {
         const distanceM = cumulative[end]! - cumulative[start]!
         const geometry = [...path.points.slice(start, end), path.points[start]!]
         candidates.push({ type: 'loop', sport: path.activity.sport, geometry, distanceM: Math.min(distanceM, pathDistanceM(geometry)) })
@@ -577,10 +585,16 @@ export function detectRoutes(activities: ReadonlyArray<ImportedActivity>, overri
     if (new Set(matches.map(({ path }) => path.activity.sourceActivityId)).size >= config.minWorkoutCount) qualified.push({ ...candidate, matches })
   }
 
-  qualified.sort((a, b) => b.matches.length - a.matches.length || b.distanceM - a.distanceM)
+  qualified.sort((a, b) => {
+    if (a.type === 'segment' && b.type === 'segment') return b.distanceM - a.distanceM || b.matches.length - a.matches.length
+    return b.matches.length - a.matches.length || b.distanceM - a.distanceM
+  })
   const representatives: QualifiedCandidate[] = []
   for (const candidate of qualified) {
-    if (!representatives.some((representative) => directedSimilarity(candidate, representative, config))) representatives.push(candidate)
+    const duplicate = representatives.some((representative) => candidate.type === 'segment'
+      ? segmentContains(representative, candidate, config)
+      : directedSimilarity(candidate, representative, config))
+    if (!duplicate) representatives.push(candidate)
   }
 
   const routes: DetectedRoute[] = []

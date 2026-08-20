@@ -105,6 +105,20 @@ describe('segment detection', () => {
     expect(loops[0]?.workoutCount).toBe(3)
   })
 
+  test('detects repeated laps as traversals of one primitive loop', () => {
+    const twoLaps = [...circle(0), ...circle(0).slice(1)]
+    const result = detectRoutes([
+      routeActivity('laps-1', twoLaps),
+      routeActivity('laps-2', twoLaps),
+      routeActivity('laps-3', twoLaps),
+    ], { minSegmentDistanceM: 2_000 })
+    const loops = result.routes.filter((route) => route.type === 'loop')
+
+    expect(loops).toHaveLength(1)
+    expect(loops[0]?.distanceM).toBeLessThan(1_000)
+    expect(loops[0]?.traversalCount).toBe(6)
+  })
+
   test('finds a configured 100m segment across neighboring candidate grid cells', () => {
     const tracks = [0, 0.00001, -0.00001].map((offset, index) => routeActivity(`boundary-${index}`, [
       [0.00089 + offset, -0.00001],
@@ -112,7 +126,7 @@ describe('segment detection', () => {
       [0.00089 + offset, 0.00089],
       [0.00089 + offset, 0.00134],
     ]))
-    const result = detectRoutes(tracks, { minSegmentDistanceM: 100, candidateCellM: 100, sampleSpacingM: 20 })
+    const result = detectRoutes(tracks, { minSegmentDistanceM: 100, candidateCellM: 100 })
     expect(result.routes.some((route) => route.type === 'segment' && route.workoutCount === 3)).toBe(true)
   })
 
@@ -156,6 +170,21 @@ describe('segment detection', () => {
     expect(segments.every((route) => route.workoutCount === 3)).toBe(true)
   })
 
+  test('keeps the longest qualifying segment and removes its sub-segments', () => {
+    const full = eastbound(37)
+    const activities = [0, 0.00001, -0.00001].map((offset, index) => routeActivity(
+      `full-${index}`,
+      full.map(([lat, lon]) => [lat + offset, lon] as const),
+    ))
+    activities.push(routeActivity('middle-only', full.slice(2, 9)))
+
+    const segments = detectRoutes(activities, { minSegmentDistanceM: 100 }).routes.filter((route) => route.type === 'segment')
+
+    expect(segments).toHaveLength(1)
+    expect(segments[0]?.workoutCount).toBe(3)
+    expect(segments[0]?.distanceM).toBeGreaterThan(350)
+  })
+
   test('keeps distinct same-length loops with the same endpoint cells', () => {
     const tangentCircle = (side: 1 | -1) => Array.from({ length: 33 }, (_, index) => {
       const angle = index / 32 * Math.PI * 2
@@ -194,7 +223,6 @@ describe('segment detection', () => {
   test('validates count settings as integers while allowing fractional distance settings', () => {
     expect(() => resolveDetectionConfig({ minWorkoutCount: 2.5 })).toThrow('minWorkoutCount must be an integer')
     expect(() => resolveDetectionConfig({ maxRoutesPerSport: 3.5 })).toThrow('maxRoutesPerSport must be an integer')
-    expect(resolveDetectionConfig({ sampleSpacingM: 40.5 }).sampleSpacingM).toBe(40.5)
-    expect(resolveDetectionConfig({ sampleSpacingM: 5 }).sampleSpacingM).toBe(40)
+    expect(resolveDetectionConfig({ maxRouteDeviationM: 40.5 }).maxRouteDeviationM).toBe(40.5)
   })
 })

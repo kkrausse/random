@@ -14,7 +14,6 @@ const fields: ReadonlyArray<{
   max: number
   step: number
 }> = [
-  { key: 'sampleSpacingM', label: 'GPS sample spacing', unit: 'm', min: 40, max: 200, step: 5 },
   { key: 'maxRouteDeviationM', label: 'Maximum deviation', unit: 'm', min: 5, max: 200, step: 5 },
   { key: 'candidateCellM', label: 'Candidate cell size', unit: 'm', min: 20, max: 1_000, step: 10 },
   { key: 'minSegmentDistanceM', label: 'Minimum segment', unit: 'm', min: 100, max: 20_000, step: 100 },

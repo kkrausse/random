@@ -77,7 +77,7 @@ export function RouteDetail({ route }: { route: RouteDetailValue }) {
     <>
       <Link className="back-link" to="/analysis"><ArrowLeft />All detected routes</Link>
       <section className="detail-hero">
-        <div className="detail-map"><RouteThumbnail points={route.geometry} /><span className="map-marker map-marker-start">S</span>{route.type === 'segment' && <span className="map-marker map-marker-end">E</span>}</div>
+        <div className="detail-map"><RouteThumbnail points={route.geometry} /></div>
         <div className="detail-summary"><p className="eyebrow">{route.sport} / {route.type}</p><h1>{route.name}</h1><dl className="hero-stats"><div><dt>Distance</dt><dd>{distance(route.distanceM)}</dd></div><div><dt>Workouts</dt><dd>{route.workoutCount}</dd></div><div><dt>Match strength</dt><dd>{Math.round(route.matchScore * 100)}%</dd></div><div><dt>Date range</dt><dd>{new Date(route.firstTraversalAt).toLocaleDateString()} - {new Date(route.lastTraversalAt).toLocaleDateString()}</dd></div></dl></div>
       </section>
       <section className="analysis-controls">

@@ -15,6 +15,8 @@ interface MapTile {
 interface RouteMap {
   readonly path: string
   readonly tiles: ReadonlyArray<MapTile>
+  readonly start: { readonly x: number, readonly y: number }
+  readonly end: { readonly x: number, readonly y: number }
 }
 
 const project = (point: RoutePoint) => {
@@ -61,11 +63,12 @@ function routeMap(points: ReadonlyArray<RoutePoint>): RouteMap | null {
     }
   }
 
+  const screenPoints = projected.map((point) => ({ x: point.x * worldSize - originX, y: point.y * worldSize - originY }))
   return {
-    path: projected
-      .map((point, index) => `${index === 0 ? 'M' : 'L'}${(point.x * worldSize - originX).toFixed(1)},${(point.y * worldSize - originY).toFixed(1)}`)
-      .join(' '),
+    path: screenPoints.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' '),
     tiles,
+    start: screenPoints[0]!,
+    end: screenPoints.at(-1)!,
   }
 }
 
@@ -84,6 +87,10 @@ export function RouteThumbnail({ points }: { points: ReadonlyArray<RoutePoint> }
           <image key={tile.href} href={tile.href} x={tile.x} y={tile.y} width={TILE_SIZE} height={TILE_SIZE} />
         ))}
         {map ? <path d={map.path} /> : <line x1="54" y1="32" x2="78" y2="32" />}
+        {map && <g className="route-endpoints">
+          <circle className="route-endpoint-end" cx={map.end.x} cy={map.end.y} r="3.2" />
+          <circle className="route-endpoint-start" cx={map.start.x} cy={map.start.y} r="2.2" />
+        </g>}
       </svg>
       {map && <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap</a>}
     </div>

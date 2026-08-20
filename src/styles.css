@@ -102,9 +102,9 @@ input[type='number'] { width: 120px; padding-right: 8px; }
 .back-link svg { width: 15px; }
 .detail-hero { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, .65fr); min-height: 410px; border-block: 2px solid #29302b; }
 .detail-map { position: relative; min-height: 360px; border-right: 1px solid #9da097; background: #d9ddd0; }
-.map-marker { position: absolute; display: grid; place-items: center; width: 25px; height: 25px; border: 2px solid #f7f4e9; border-radius: 50%; color: white; background: #1e5b3a; font: 500 .62rem DM Mono, monospace; box-shadow: 0 1px 4px #343b35; }
-.map-marker-start { left: 8%; bottom: 15%; }
-.map-marker-end { right: 8%; top: 15%; background: #9a3f35; }
+.route-thumbnail .route-endpoints circle { stroke: #f7f4e9; stroke-width: .8; vector-effect: non-scaling-stroke; }
+.route-thumbnail .route-endpoint-start { fill: #1e6b43; }
+.route-thumbnail .route-endpoint-end { fill: #b43f35; }
 .detail-summary { display: flex; flex-direction: column; justify-content: center; padding: clamp(24px, 4vw, 54px); background: rgba(247,244,233,.48); }
 .detail-summary h1 { margin: 10px 0 45px; font-size: clamp(2rem, 4vw, 3.7rem); }
 .hero-stats { gap: 20px 14px; }
