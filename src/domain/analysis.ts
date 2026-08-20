@@ -32,6 +32,7 @@ export interface RouteTraversal {
   readonly qualityScore: number
   readonly lapCount: number
   readonly lapTimesSec: ReadonlyArray<number>
+  readonly activityRoute: ReadonlyArray<RoutePoint>
 }
 
 export interface RouteDetail extends DetectedRoute {

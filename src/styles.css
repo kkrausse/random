@@ -122,8 +122,10 @@ input[type='range'] { width: 100%; accent-color: #1e5b3a; }
 .section-heading { display: flex; align-items: end; justify-content: space-between; margin-bottom: 13px; }
 .section-heading > span { color: #6b716b; font: .68rem DM Mono, monospace; }
 .effort-table { border-bottom: 2px solid #29302b; }
-.effort-table table { border-top: 2px solid #29302b; min-width: 760px; }
+.effort-table table { border-top: 2px solid #29302b; min-width: 950px; }
 .effort-table th svg, .effort-table td svg { width: 13px; height: 13px; vertical-align: -2px; }
+.effort-table .effort-trace { width: 112px; padding-block: 7px; }
+.effort-table .effort-trace .route-thumbnail { width: 96px; height: 48px; }
 .quality { padding: 4px 6px; border: 1px solid #91b29d; color: #19553a; background: #d9e7dc; font: .68rem DM Mono, monospace; }
 
 @media (max-width: 1000px) {

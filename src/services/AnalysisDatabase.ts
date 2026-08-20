@@ -175,12 +175,37 @@ export const getDetectedRoute = (id: string) => Effect.tryPromise({
     if (!row) return null
     const result = await connection.runAndReadAll(`SELECT *, started_at::VARCHAR started_at, ended_at::VARCHAR ended_at
       FROM route_traversals WHERE route_id = '${escapedId}' ORDER BY started_at DESC`)
+    const activityRouteResult = await connection.runAndReadAll(`
+      WITH route_activities AS (
+        SELECT DISTINCT activity_id FROM route_traversals WHERE route_id = '${escapedId}'
+      ), gps AS (
+        SELECT samples.activity_id, samples.timestamp, samples.lat, samples.lon,
+          row_number() OVER (PARTITION BY samples.activity_id ORDER BY samples.timestamp) AS point_number,
+          count(*) OVER (PARTITION BY samples.activity_id) AS point_count
+        FROM activity_samples samples
+        JOIN route_activities ON route_activities.activity_id = samples.activity_id
+        WHERE samples.lat IS NOT NULL AND samples.lon IS NOT NULL
+      )
+      SELECT activity_id, lat, lon FROM gps
+      WHERE point_number = 1
+        OR point_number = point_count
+        OR point_number % greatest(ceil(point_count / 200.0)::BIGINT, 1) = 0
+      ORDER BY activity_id, timestamp
+    `)
+    const activityRoutes = new Map<string, RoutePoint[]>()
+    for (const item of activityRouteResult.getRowObjectsJS()) {
+      const activityId = String(item.activity_id)
+      const points = activityRoutes.get(activityId) ?? []
+      points.push({ lat: Number(item.lat), lon: Number(item.lon) })
+      activityRoutes.set(activityId, points)
+    }
     const traversals: RouteTraversal[] = result.getRowObjectsJS().map((item) => ({
       id: String(item.id), routeId: String(item.route_id), activityId: String(item.activity_id),
       startedAt: String(item.started_at), endedAt: String(item.ended_at), durationSec: Number(item.duration_sec),
       distanceM: Number(item.distance_m), avgHeartRate: nullableNumber(item.avg_heart_rate), avgSpeed: nullableNumber(item.avg_speed),
       matchErrorM: Number(item.match_error_m), qualityScore: Number(item.quality_score), lapCount: Number(item.lap_count),
       lapTimesSec: JSON.parse(String(item.lap_times_json)) as number[],
+      activityRoute: activityRoutes.get(String(item.activity_id)) ?? [],
     }))
     return { ...routeFromRow(row), traversals }
   }),

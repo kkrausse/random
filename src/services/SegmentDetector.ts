@@ -507,6 +507,12 @@ const timeWeightedHeartRate = (samples: ReadonlyArray<ActivitySample>, startedAt
   return duration > 0 ? weighted / duration : null
 }
 
+const activityRoute = (samples: ReadonlyArray<ActivitySample>): ReadonlyArray<RoutePoint> => {
+  const points = samples.flatMap((sample) => sample.lat === null || sample.lon === null ? [] : [{ lat: sample.lat, lon: sample.lon }])
+  const interval = Math.max(1, Math.ceil(points.length / 200))
+  return points.filter((_, index) => index === 0 || index === points.length - 1 || index % interval === 0)
+}
+
 const traversal = (id: string, path: Path, match: Match, type: RouteType, config: DetectionConfig, occurrence: number): RouteTraversal | null => {
   const start = path.points[match.startIndex]!
   const end = path.points[match.endIndex]!
@@ -535,6 +541,7 @@ const traversal = (id: string, path: Path, match: Match, type: RouteType, config
     qualityScore,
     lapCount: type === 'loop' ? 1 : 0,
     lapTimesSec: type === 'loop' ? [durationSec] : [],
+    activityRoute: activityRoute(path.activity.samples),
   }
 }
 
