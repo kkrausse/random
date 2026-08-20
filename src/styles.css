@@ -126,6 +126,7 @@ input[type='range'] { width: 100%; accent-color: #1e5b3a; }
 .effort-table th svg, .effort-table td svg { width: 13px; height: 13px; vertical-align: -2px; }
 .effort-table .effort-trace { width: 112px; padding-block: 7px; }
 .effort-table .effort-trace .route-thumbnail { width: 96px; height: 48px; }
+.effort-table .effort-trace .route-thumbnail svg { width: 100%; height: 100%; }
 .quality { padding: 4px 6px; border: 1px solid #91b29d; color: #19553a; background: #d9e7dc; font: .68rem DM Mono, monospace; }
 
 @media (max-width: 1000px) {
