@@ -3,38 +3,89 @@ import type { RoutePoint } from '../domain/activity'
 const WIDTH = 132
 const HEIGHT = 64
 const PADDING = 7
+const TILE_SIZE = 256
+const MAX_LATITUDE = 85.051129
 
-export function routePath(points: ReadonlyArray<RoutePoint>): string | null {
+interface MapTile {
+  readonly href: string
+  readonly x: number
+  readonly y: number
+}
+
+interface RouteMap {
+  readonly path: string
+  readonly tiles: ReadonlyArray<MapTile>
+}
+
+const project = (point: RoutePoint) => {
+  const latitude = Math.max(-MAX_LATITUDE, Math.min(MAX_LATITUDE, point.lat))
+  const sin = Math.sin((latitude * Math.PI) / 180)
+  return {
+    x: (point.lon + 180) / 360,
+    y: 0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI),
+  }
+}
+
+function routeMap(points: ReadonlyArray<RoutePoint>): RouteMap | null {
   if (points.length < 2) return null
-  const minLat = Math.min(...points.map((point) => point.lat))
-  const maxLat = Math.max(...points.map((point) => point.lat))
-  const centerLat = (minLat + maxLat) / 2
-  const lonScale = Math.max(Math.cos((centerLat * Math.PI) / 180), 0.01)
-  const projected = points.map((point) => ({ x: point.lon * lonScale, y: -point.lat }))
+
+  const projected = points.map(project)
   const minX = Math.min(...projected.map((point) => point.x))
   const maxX = Math.max(...projected.map((point) => point.x))
   const minY = Math.min(...projected.map((point) => point.y))
   const maxY = Math.max(...projected.map((point) => point.y))
-  const scale = Math.min(
-    (WIDTH - PADDING * 2) / Math.max(maxX - minX, 0.000001),
-    (HEIGHT - PADDING * 2) / Math.max(maxY - minY, 0.000001),
+  const availableWidth = WIDTH - PADDING * 2
+  const availableHeight = HEIGHT - PADDING * 2
+  const fitScale = Math.min(
+    availableWidth / Math.max((maxX - minX) * TILE_SIZE, 0.000001),
+    availableHeight / Math.max((maxY - minY) * TILE_SIZE, 0.000001),
   )
-  const offsetX = (WIDTH - (maxX - minX) * scale) / 2
-  const offsetY = (HEIGHT - (maxY - minY) * scale) / 2
+  const zoom = Math.max(1, Math.min(18, Math.floor(Math.log2(fitScale))))
+  const worldSize = TILE_SIZE * 2 ** zoom
+  const centerX = ((minX + maxX) / 2) * worldSize
+  const centerY = ((minY + maxY) / 2) * worldSize
+  const originX = centerX - WIDTH / 2
+  const originY = centerY - HEIGHT / 2
+  const tileCount = 2 ** zoom
+  const tiles: MapTile[] = []
 
-  return projected
-    .map((point, index) =>
-      `${index === 0 ? 'M' : 'L'}${((point.x - minX) * scale + offsetX).toFixed(1)},${((point.y - minY) * scale + offsetY).toFixed(1)}`,
-    )
-    .join(' ')
+  for (let tileY = Math.floor(originY / TILE_SIZE); tileY <= Math.floor((originY + HEIGHT) / TILE_SIZE); tileY += 1) {
+    if (tileY < 0 || tileY >= tileCount) continue
+    for (let tileX = Math.floor(originX / TILE_SIZE); tileX <= Math.floor((originX + WIDTH) / TILE_SIZE); tileX += 1) {
+      const wrappedX = ((tileX % tileCount) + tileCount) % tileCount
+      tiles.push({
+        href: `https://tile.openstreetmap.org/${zoom}/${wrappedX}/${tileY}.png`,
+        x: tileX * TILE_SIZE - originX,
+        y: tileY * TILE_SIZE - originY,
+      })
+    }
+  }
+
+  return {
+    path: projected
+      .map((point, index) => `${index === 0 ? 'M' : 'L'}${(point.x * worldSize - originX).toFixed(1)},${(point.y * worldSize - originY).toFixed(1)}`)
+      .join(' '),
+    tiles,
+  }
+}
+
+export function routePath(points: ReadonlyArray<RoutePoint>): string | null {
+  return routeMap(points)?.path ?? null
 }
 
 export function RouteThumbnail({ points }: { points: ReadonlyArray<RoutePoint> }) {
-  const path = routePath(points)
+  const map = routeMap(points)
+
   return (
-    <svg className="route-thumbnail" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={path ? 'Workout route' : 'No GPS route'}>
-      <rect width={WIDTH} height={HEIGHT} rx="3" />
-      {path ? <path d={path} /> : <line x1="54" y1="32" x2="78" y2="32" />}
-    </svg>
+    <div className="route-thumbnail" role="img" aria-label={map ? 'Workout route on a map' : 'No GPS route'}>
+      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} aria-hidden="true">
+        <rect className="route-background" width={WIDTH} height={HEIGHT} rx="3" />
+        {map?.tiles.map((tile) => (
+          <image key={tile.href} href={tile.href} x={tile.x} y={tile.y} width={TILE_SIZE} height={TILE_SIZE} />
+        ))}
+        {map ? <path d={map.path} /> : <line x1="54" y1="32" x2="78" y2="32" />}
+      </svg>
+      {map && <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap</a>}
+    </div>
   )
 }

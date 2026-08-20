@@ -30,7 +30,7 @@ function Home() {
     <main>
       <header>
         <div><p className="eyebrow">Personal archive</p><h1>Workout Ledger</h1></div>
-        <div className="header-actions"><span>{activities.length} activities</span><button type="button" onClick={sync} disabled={isPending}>{isPending ? 'Syncing…' : 'Sync Garmin'}</button></div>
+        <div className="header-actions"><span>{activities.length} activities</span><button className="sync-button" type="button" onClick={sync} disabled={isPending}>{isPending ? 'Syncing…' : 'Sync Garmin'}</button></div>
       </header>
       {status && <p className="sync-status" role="status">{status}</p>}
       <WorkoutTable activities={activities} />
