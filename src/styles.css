@@ -1,0 +1,36 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;600;700&display=swap');
+
+:root { color-scheme: light; font-family: Manrope, sans-serif; color: #18201b; background: #eeeade; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+body::before { content: ''; position: fixed; inset: 0; pointer-events: none; opacity: .2; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.18'/%3E%3C/svg%3E"); }
+main { width: min(1500px, calc(100% - 48px)); margin: 0 auto; padding: 48px 0 72px; }
+header { display: flex; align-items: end; justify-content: space-between; gap: 32px; margin-bottom: 28px; border-bottom: 1px solid #a9aa9f; padding-bottom: 22px; }
+h1 { margin: 3px 0 0; font-size: clamp(2rem, 5vw, 4.25rem); letter-spacing: -.065em; line-height: .95; }
+.eyebrow { margin: 0; color: #6b716b; font: 500 .72rem DM Mono, monospace; letter-spacing: .16em; text-transform: uppercase; }
+.header-actions { display: flex; align-items: center; gap: 20px; font: .75rem DM Mono, monospace; color: #6b716b; }
+button { border: 0; border-radius: 3px; padding: 12px 16px; color: #f7f4e9; background: #1e5b3a; font: 500 .78rem DM Mono, monospace; cursor: pointer; box-shadow: 3px 3px 0 #abc2a9; }
+button:hover { background: #16452c; transform: translate(1px, 1px); box-shadow: 2px 2px 0 #abc2a9; }
+button:disabled { cursor: wait; opacity: .65; }
+.sync-status { padding: 12px 14px; border-left: 3px solid #1e5b3a; background: #f6f2e7; font: .75rem/1.5 DM Mono, monospace; white-space: pre-wrap; }
+.table-scroll { overflow-x: auto; border-top: 2px solid #29302b; border-bottom: 2px solid #29302b; }
+table { width: 100%; border-collapse: collapse; min-width: 1000px; }
+th { padding: 11px 12px; text-align: left; color: #666d67; font: 500 .68rem DM Mono, monospace; text-transform: uppercase; letter-spacing: .08em; border-bottom: 1px solid #9da097; }
+td { padding: 10px 12px; border-bottom: 1px solid #c6c3b8; font-size: .86rem; vertical-align: middle; }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: rgba(255,255,255,.36); }
+.numeric { font-family: DM Mono, monospace; font-size: .8rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.date-cell strong, .date-cell span { display: block; white-space: nowrap; }
+.date-cell span { margin-top: 3px; color: #747871; font: .7rem DM Mono, monospace; }
+.route-thumbnail { display: block; width: 132px; height: 64px; }
+.route-thumbnail rect { fill: #d9ddd0; }
+.route-thumbnail path { fill: none; stroke: #1e5b3a; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.route-thumbnail line { stroke: #9ca197; stroke-width: 2; }
+.sport { display: inline-block; max-width: 150px; padding: 5px 7px; border: 1px solid #a9aea4; border-radius: 2px; text-transform: capitalize; font: 500 .68rem DM Mono, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sport-running { color: #98472d; border-color: #c99c8c; background: #f0ded4; }
+.sport-cycling { color: #19553a; border-color: #91b29d; background: #d9e7dc; }
+.hr { color: #9a3f35; }
+.empty-state { display: grid; place-items: center; gap: 9px; min-height: 360px; border-block: 2px solid #29302b; background: rgba(255,255,255,.18); }
+.empty-state p { margin: 0 0 10px; font-weight: 700; }
+.empty-state code { color: #59605a; font: .76rem DM Mono, monospace; }
+@media (max-width: 700px) { main { width: calc(100% - 24px); padding-top: 28px; } header { align-items: flex-start; flex-direction: column; gap: 20px; } .header-actions { width: 100%; justify-content: space-between; } }

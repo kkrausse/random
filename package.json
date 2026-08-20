@@ -1,0 +1,46 @@
+{
+  "name": "garmin-analyze",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#/*": "./src/*"
+  },
+  "scripts": {
+    "dev": "bun --bun vite dev --port 3000",
+    "generate-routes": "tsr generate",
+    "build": "bun run build:data && bun --bun vite build",
+    "build:app": "bun --bun vite build",
+    "build:data": "bun run src/scripts/build-data.ts",
+    "garmin:login": "scripts/garmin/run auth login",
+    "garmin:sync": "bun run scripts/garmin/sync.ts",
+    "preview": "bun --bun vite preview",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@duckdb/node-api": "^1.5.5-r.4",
+    "@garmin/fitsdk": "^21.213.0",
+    "@tanstack/react-router": "latest",
+    "@tanstack/react-start": "latest",
+    "effect": "^3.22.1",
+    "fflate": "^0.8.3",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@tanstack/router-cli": "^1.132.0",
+    "@types/bun": "^1.3.14",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "lightningcss"
+    ]
+  }
+}
