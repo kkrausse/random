@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useState, useTransition } from 'react'
 
 import { WorkoutTable } from '../components/WorkoutTable'
+import { AppNav } from '../components/AppNav'
 import { getWorkouts, syncGarmin } from '../server/workouts.functions'
 
 export const Route = createFileRoute('/')({
@@ -28,6 +29,7 @@ function Home() {
 
   return (
     <main>
+      <AppNav />
       <header>
         <div><p className="eyebrow">Personal archive</p><h1>Workout Ledger</h1></div>
         <div className="header-actions"><span>{activities.length} activities</span><button className="sync-button" type="button" onClick={sync} disabled={isPending}>{isPending ? 'Syncing…' : 'Sync Garmin'}</button></div>

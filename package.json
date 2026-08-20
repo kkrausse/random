@@ -8,9 +8,10 @@
   "scripts": {
     "dev": "bun --bun vite dev --port 3000",
     "generate-routes": "tsr generate",
-    "build": "bun run build:data && bun --bun vite build",
+    "build": "bun run build:data && bun run build:analysis && bun --bun vite build",
     "build:app": "bun --bun vite build",
     "build:data": "bun run src/scripts/build-data.ts",
+    "build:analysis": "bun run src/scripts/build-analysis.ts",
     "garmin:login": "scripts/garmin/run auth login",
     "garmin:sync": "bun run scripts/garmin/sync.ts",
     "preview": "bun --bun vite preview",
