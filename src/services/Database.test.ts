@@ -5,6 +5,7 @@ import path from 'node:path'
 import { Effect } from 'effect'
 
 import { listActivities, rebuildDatabase } from './Database'
+import { getAnalysisSettings, rebuildRouteAnalysis } from './AnalysisDatabase'
 
 let temporaryDirectory: string | undefined
 
@@ -41,5 +42,12 @@ describe('Database', () => {
       { lat: 40.7, lon: -74 },
       { lat: 40.701, lon: -74.001 },
     ])
+
+    const result = await Effect.runPromise(rebuildRouteAnalysis({ minWorkoutCount: 2, maxRoutesPerSport: 5 }))
+    const settings = await Effect.runPromise(getAnalysisSettings)
+    expect(result.routes).toBe(0)
+    expect(settings.config.minWorkoutCount).toBe(2)
+    expect(settings.config.maxRoutesPerSport).toBe(5)
+    expect(settings.analyzedAt).not.toBeNull()
   })
 })

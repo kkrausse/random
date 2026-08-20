@@ -4,7 +4,19 @@ import type { ActivitySample, RoutePoint } from '../domain/activity'
 import type { DetectedRoute, RouteTraversal, RouteType } from '../domain/analysis'
 import type { ImportedActivity } from './Database'
 
-export const DETECTION_DEFAULTS = {
+export interface DetectionConfig {
+  readonly sampleSpacingM: number
+  readonly maxRouteDeviationM: number
+  readonly candidateCellM: number
+  readonly minSegmentDistanceM: number
+  readonly minLoopDistanceM: number
+  readonly maxLoopDistanceM: number
+  readonly loopClosureM: number
+  readonly minWorkoutCount: number
+  readonly maxRoutesPerSport: number
+}
+
+export const DETECTION_DEFAULTS: DetectionConfig = {
   sampleSpacingM: 40,
   maxRouteDeviationM: 30,
   candidateCellM: 120,
@@ -14,12 +26,29 @@ export const DETECTION_DEFAULTS = {
   loopClosureM: 40,
   minWorkoutCount: 3,
   maxRoutesPerSport: 12,
-} as const
+}
 
-const SAMPLE_SPACING_M = DETECTION_DEFAULTS.sampleSpacingM
-const MATCH_DISTANCE_M = DETECTION_DEFAULTS.maxRouteDeviationM
-const MIN_SEGMENT_M = DETECTION_DEFAULTS.minSegmentDistanceM
-const MIN_WORKOUTS = DETECTION_DEFAULTS.minWorkoutCount
+export const resolveDetectionConfig = (overrides: Partial<DetectionConfig> = {}): DetectionConfig => {
+  const config = { ...DETECTION_DEFAULTS, ...overrides }
+  const ranges: Record<keyof DetectionConfig, readonly [number, number]> = {
+    sampleSpacingM: [5, 200],
+    maxRouteDeviationM: [5, 200],
+    candidateCellM: [20, 1_000],
+    minSegmentDistanceM: [100, 20_000],
+    minLoopDistanceM: [100, 10_000],
+    maxLoopDistanceM: [200, 50_000],
+    loopClosureM: [5, 500],
+    minWorkoutCount: [2, 100],
+    maxRoutesPerSport: [1, 100],
+  }
+  for (const [key, [minimum, maximum]] of Object.entries(ranges) as Array<[keyof DetectionConfig, readonly [number, number]]>) {
+    if (!Number.isFinite(config[key]) || config[key] < minimum || config[key] > maximum) {
+      throw new Error(`${key} must be between ${minimum} and ${maximum}`)
+    }
+  }
+  if (config.maxLoopDistanceM < config.minLoopDistanceM) throw new Error('Maximum loop distance must be at least the minimum loop distance')
+  return config
+}
 const EARTH_RADIUS_M = 6_371_000
 
 interface Point extends RoutePoint {
@@ -70,7 +99,7 @@ const cell = (point: RoutePoint, sizeM: number) => {
   return `${x}:${y}`
 }
 
-const samplePath = (activity: ImportedActivity): Path | null => {
+const samplePath = (activity: ImportedActivity, config: DetectionConfig): Path | null => {
   const gps = activity.samples
     .map((sample, sourceIndex) => sample.lat === null || sample.lon === null ? null : ({
       lat: sample.lat,
@@ -83,13 +112,13 @@ const samplePath = (activity: ImportedActivity): Path | null => {
 
   const points: Point[] = [gps[0]!]
   for (const point of gps.slice(1, -1)) {
-    if (pointDistanceM(points.at(-1)!, point) >= SAMPLE_SPACING_M) points.push(point)
+    if (pointDistanceM(points.at(-1)!, point) >= config.sampleSpacingM) points.push(point)
   }
   if (pointDistanceM(points.at(-1)!, gps.at(-1)!) > 1) points.push(gps.at(-1)!)
   return { activity, id: `garmin:${activity.sourceActivityId}`, points }
 }
 
-const spatialIndex = (points: ReadonlyArray<RoutePoint>, sizeM: number = MATCH_DISTANCE_M) => {
+const spatialIndex = (points: ReadonlyArray<RoutePoint>, sizeM: number) => {
   const index = new Map<string, number[]>()
   points.forEach((point, pointIndex) => {
     const key = cell(point, sizeM)
@@ -98,7 +127,7 @@ const spatialIndex = (points: ReadonlyArray<RoutePoint>, sizeM: number = MATCH_D
   return index
 }
 
-const nearbyIndices = (point: RoutePoint, index: Map<string, number[]>, sizeM: number = MATCH_DISTANCE_M) => {
+const nearbyIndices = (point: RoutePoint, index: Map<string, number[]>, sizeM: number) => {
   const [x, y] = cell(point, sizeM).split(':').map(Number) as [number, number]
   const result: number[] = []
   for (let dx = -1; dx <= 1; dx += 1) {
@@ -107,8 +136,8 @@ const nearbyIndices = (point: RoutePoint, index: Map<string, number[]>, sizeM: n
   return result
 }
 
-const matchGeometry = (geometry: ReadonlyArray<RoutePoint>, path: Path): Match | null => {
-  const index = spatialIndex(path.points)
+const matchGeometry = (geometry: ReadonlyArray<RoutePoint>, path: Path, config: DetectionConfig): Match | null => {
+  const index = spatialIndex(path.points, config.maxRouteDeviationM)
   let previous = -1
   let first = -1
   let last = -1
@@ -117,8 +146,8 @@ const matchGeometry = (geometry: ReadonlyArray<RoutePoint>, path: Path): Match |
 
   for (const routePoint of geometry) {
     let bestIndex = -1
-    let bestDistance: number = MATCH_DISTANCE_M
-    for (const pathIndex of nearbyIndices(routePoint, index)) {
+    let bestDistance = config.maxRouteDeviationM
+    for (const pathIndex of nearbyIndices(routePoint, index, config.maxRouteDeviationM)) {
       if (pathIndex <= previous || pathIndex > previous + 5 && previous >= 0) continue
       const distance = pointDistanceM(routePoint, path.points[pathIndex]!)
       if (distance < bestDistance) {
@@ -141,12 +170,12 @@ const matchGeometry = (geometry: ReadonlyArray<RoutePoint>, path: Path): Match |
     : null
 }
 
-const pairCandidates = (a: Path, b: Path): Candidate[] => {
-  const index = spatialIndex(b.points)
+const pairCandidates = (a: Path, b: Path, config: DetectionConfig): Candidate[] => {
+  const index = spatialIndex(b.points, config.maxRouteDeviationM)
   const matches = a.points.map((point) => {
     let nearest = -1
-    let nearestDistance: number = MATCH_DISTANCE_M
-    for (const candidate of nearbyIndices(point, index)) {
+    let nearestDistance = config.maxRouteDeviationM
+    for (const candidate of nearbyIndices(point, index, config.maxRouteDeviationM)) {
       const distance = pointDistanceM(point, b.points[candidate]!)
       if (distance < nearestDistance) {
         nearest = candidate
@@ -175,7 +204,7 @@ const pairCandidates = (a: Path, b: Path): Candidate[] => {
   return runs.flatMap(([from, to]) => {
     const geometry = a.points.slice(from, to + 1)
     const distanceM = pathDistanceM(geometry)
-    return distanceM >= MIN_SEGMENT_M ? [{ type: 'segment' as const, sport: a.activity.sport, geometry, distanceM }] : []
+    return distanceM >= config.minSegmentDistanceM ? [{ type: 'segment' as const, sport: a.activity.sport, geometry, distanceM }] : []
   })
 }
 
@@ -190,7 +219,7 @@ const sameRoute = (a: Candidate, b: Candidate) => {
   return overlap >= 0.75
 }
 
-const traversal = (routeId: string, distanceM: number, path: Path, match: Match, type: RouteType, occurrence = 0): RouteTraversal | null => {
+const traversal = (routeId: string, distanceM: number, path: Path, match: Match, type: RouteType, config: DetectionConfig, occurrence = 0): RouteTraversal | null => {
   const start = path.points[match.startIndex]!
   const end = path.points[match.endIndex]!
   const startedAt = start.sample.timestamp
@@ -201,7 +230,7 @@ const traversal = (routeId: string, distanceM: number, path: Path, match: Match,
   const sourceSamples = path.activity.samples.slice(start.sourceIndex, end.sourceIndex + 1)
   const heartRates = sourceSamples.flatMap((sample) => sample.heartRateBpm === null ? [] : [sample.heartRateBpm])
   const avgHeartRate = heartRates.length === 0 ? null : heartRates.reduce((sum, value) => sum + value, 0) / heartRates.length
-  const qualityScore = Math.max(0, Math.min(1, match.coverage * (1 - match.errorM / (MATCH_DISTANCE_M * 2))))
+  const qualityScore = Math.max(0, Math.min(1, match.coverage * (1 - match.errorM / (config.maxRouteDeviationM * 2))))
 
   return {
     id: `${routeId}:${path.id}:${occurrence}`,
@@ -225,9 +254,10 @@ export interface DetectionResult {
   readonly traversals: ReadonlyArray<RouteTraversal>
 }
 
-export function detectRoutes(activities: ReadonlyArray<ImportedActivity>): DetectionResult {
-  const paths = activities.map(samplePath).filter((path): path is Path => path !== null)
-  const activityCells = paths.map((path) => new Set(path.points.map((point) => cell(point, DETECTION_DEFAULTS.candidateCellM))))
+export function detectRoutes(activities: ReadonlyArray<ImportedActivity>, overrides: Partial<DetectionConfig> = {}): DetectionResult {
+  const config = resolveDetectionConfig(overrides)
+  const paths = activities.map((activity) => samplePath(activity, config)).filter((path): path is Path => path !== null)
+  const activityCells = paths.map((path) => new Set(path.points.map((point) => cell(point, config.candidateCellM))))
   const candidates: Candidate[] = []
 
   for (let a = 0; a < paths.length; a += 1) {
@@ -235,13 +265,13 @@ export function detectRoutes(activities: ReadonlyArray<ImportedActivity>): Detec
       if (paths[a]!.activity.sport !== paths[b]!.activity.sport) continue
       let shared = 0
       for (const key of activityCells[a]!) if (activityCells[b]!.has(key)) shared += 1
-      if (shared >= 4) candidates.push(...pairCandidates(paths[a]!, paths[b]!))
+      if (shared >= 4) candidates.push(...pairCandidates(paths[a]!, paths[b]!, config))
     }
   }
 
   for (const path of paths) {
     const distanceM = pathDistanceM(path.points)
-    if (distanceM >= DETECTION_DEFAULTS.minLoopDistanceM && pointDistanceM(path.points[0]!, path.points.at(-1)!) <= DETECTION_DEFAULTS.loopClosureM) {
+    if (distanceM >= config.minLoopDistanceM && pointDistanceM(path.points[0]!, path.points.at(-1)!) <= config.loopClosureM) {
       candidates.push({ type: 'loop', sport: path.activity.sport, geometry: path.points, distanceM })
     }
 
@@ -249,13 +279,13 @@ export function detectRoutes(activities: ReadonlyArray<ImportedActivity>): Detec
     for (let index = 1; index < path.points.length; index += 1) {
       cumulative.push(cumulative[index - 1]! + pointDistanceM(path.points[index - 1]!, path.points[index]!))
     }
-    const index = spatialIndex(path.points, DETECTION_DEFAULTS.loopClosureM)
+    const index = spatialIndex(path.points, config.loopClosureM)
     for (let start = 0; start < path.points.length - 6; start += 3) {
-      const closures = nearbyIndices(path.points[start]!, index, DETECTION_DEFAULTS.loopClosureM)
-        .filter((end) => end > start + 5 && cumulative[end]! - cumulative[start]! >= DETECTION_DEFAULTS.minLoopDistanceM && cumulative[end]! - cumulative[start]! <= DETECTION_DEFAULTS.maxLoopDistanceM)
+      const closures = nearbyIndices(path.points[start]!, index, config.loopClosureM)
+        .filter((end) => end > start + 5 && cumulative[end]! - cumulative[start]! >= config.minLoopDistanceM && cumulative[end]! - cumulative[start]! <= config.maxLoopDistanceM)
         .sort((a, b) => a - b)
       const end = closures[0]
-      if (end !== undefined && pointDistanceM(path.points[start]!, path.points[end]!) <= DETECTION_DEFAULTS.loopClosureM) {
+      if (end !== undefined && pointDistanceM(path.points[start]!, path.points[end]!) <= config.loopClosureM) {
         const geometry = path.points.slice(start, end + 1)
         candidates.push({ type: 'loop', sport: path.activity.sport, geometry, distanceM: cumulative[end]! - cumulative[start]! })
       }
@@ -287,8 +317,8 @@ export function detectRoutes(activities: ReadonlyArray<ImportedActivity>): Detec
       .filter((path) => path.activity.sport === candidate.sport)
       .flatMap((path) => {
         if (type === 'segment') {
-          const match = matchGeometry(geometry, path)
-          const value = match && traversal(id, candidate.distanceM, path, match, type)
+          const match = matchGeometry(geometry, path, config)
+          const value = match && traversal(id, candidate.distanceM, path, match, type, config)
           return value ? [value] : []
         }
 
@@ -296,16 +326,16 @@ export function detectRoutes(activities: ReadonlyArray<ImportedActivity>): Detec
         let offset = 0
         while (offset < path.points.length - geometry.length * 0.7) {
           const remainder: Path = { ...path, points: path.points.slice(offset) }
-          const match = matchGeometry(geometry, remainder)
+          const match = matchGeometry(geometry, remainder, config)
           if (!match) break
           const translated = { ...match, startIndex: match.startIndex + offset, endIndex: match.endIndex + offset }
-          const value = traversal(id, candidate.distanceM, path, translated, type, values.length)
+          const value = traversal(id, candidate.distanceM, path, translated, type, config, values.length)
           if (value) values.push(value)
           offset = translated.endIndex + 1
         }
         return values
       })
-    if (new Set(matches.map((match) => match.activityId)).size < MIN_WORKOUTS) continue
+    if (new Set(matches.map((match) => match.activityId)).size < config.minWorkoutCount) continue
 
     const matchScore = matches.reduce((sum, match) => sum + match.qualityScore, 0) / matches.length
     const workoutCount = new Set(matches.map((match) => match.activityId)).size
@@ -333,7 +363,7 @@ export function detectRoutes(activities: ReadonlyArray<ImportedActivity>): Detec
   const sportCounts = new Map<string, number>()
   const selected = routes.filter((route) => {
     const count = sportCounts.get(route.sport) ?? 0
-    if (count >= DETECTION_DEFAULTS.maxRoutesPerSport) return false
+    if (count >= config.maxRoutesPerSport) return false
     sportCounts.set(route.sport, count + 1)
     return true
   }).slice(0, 50)

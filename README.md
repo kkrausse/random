@@ -21,4 +21,4 @@ Garmin Connect is accessed through an unofficial client and may occasionally req
 
 ## Analysis defaults
 
-Route detection currently resamples GPS tracks at 40 m, accepts up to 30 m route deviation, requires a 500 m segment or a 200-3000 m closed loop, treats endpoints within 40 m as closed, and requires matches in at least three distinct workouts. Candidate lookup uses 120 m spatial cells. The complete named tuning surface is exported as `DETECTION_DEFAULTS` in `src/services/SegmentDetector.ts`.
+Route detection currently resamples GPS tracks at 40 m, accepts up to 30 m route deviation, requires a 500 m segment or a 200-3000 m closed loop, treats endpoints within 40 m as closed, and requires matches in at least three distinct workouts. Candidate lookup uses 120 m spatial cells. The complete named tuning surface is exported as `DETECTION_DEFAULTS` in `src/services/SegmentDetector.ts` and can be adjusted from the Detection settings section on `/analysis`.

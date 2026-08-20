@@ -27,11 +27,13 @@ const activity = (id: string, offset: number): ImportedActivity => ({
 
 describe('segment detection', () => {
   test('finds a same-direction route repeated across three workouts', () => {
-    const result = detectRoutes([activity('1', 0), activity('2', 0.00001), activity('3', -0.00001)])
+    const activities = [activity('1', 0), activity('2', 0.00001), activity('3', -0.00001)]
+    const result = detectRoutes(activities)
     expect(result.routes.length).toBeGreaterThan(0)
     expect(result.routes[0]?.workoutCount).toBe(3)
     expect(result.routes[0]?.type).toBe('segment')
     expect(result.traversals).toHaveLength(3)
+    expect(detectRoutes(activities, { minWorkoutCount: 4 }).routes).toHaveLength(0)
   })
 
   test('calculates geographic distance', () => {

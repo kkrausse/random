@@ -7,7 +7,8 @@ import type { ActivitySample, RoutePoint } from '../domain/activity'
 import type { DetectedRoute, RouteDetail, RouteTraversal } from '../domain/analysis'
 import { FitnessDataError } from './errors'
 import type { ImportedActivity } from './Database'
-import { detectRoutes } from './SegmentDetector'
+import { DETECTION_DEFAULTS, detectRoutes, resolveDetectionConfig } from './SegmentDetector'
+import type { DetectionConfig } from './SegmentDetector'
 
 const databasePath = () => path.resolve(process.env.FITNESS_DATABASE_PATH ?? 'data/fitness.duckdb')
 const timestamp = (value: Date) => new DuckDBTimestampTZValue(BigInt(value.getTime()) * 1_000n)
@@ -84,13 +85,17 @@ const createAnalysisTables = (connection: Awaited<ReturnType<DuckDBInstance['con
     distance_m DOUBLE NOT NULL, avg_heart_rate DOUBLE, avg_speed DOUBLE, match_error_m DOUBLE NOT NULL,
     quality_score DOUBLE NOT NULL, lap_count INTEGER NOT NULL, lap_times_json VARCHAR NOT NULL
   );
+  CREATE TABLE analysis_settings (
+    config_json VARCHAR NOT NULL, analyzed_at TIMESTAMPTZ NOT NULL
+  );
 `)
 
-export const rebuildRouteAnalysis = Effect.tryPromise({
+export const rebuildRouteAnalysis = (overrides: Partial<DetectionConfig> = {}) => Effect.tryPromise({
   try: () => withDatabase(async (connection) => {
+    const config = resolveDetectionConfig(overrides)
     const activities = await readNormalizedActivities(connection)
-    const analysis = detectRoutes(activities)
-    await connection.run('BEGIN TRANSACTION; DROP TABLE IF EXISTS route_traversals; DROP TABLE IF EXISTS detected_routes;')
+    const analysis = detectRoutes(activities, config)
+    await connection.run('BEGIN TRANSACTION; DROP TABLE IF EXISTS route_traversals; DROP TABLE IF EXISTS detected_routes; DROP TABLE IF EXISTS analysis_settings;')
     try {
       await createAnalysisTables(connection)
       const routeAppender = await connection.createAppender('detected_routes')
@@ -109,14 +114,35 @@ export const rebuildRouteAnalysis = Effect.tryPromise({
         traversalAppender.endRow()
       }
       traversalAppender.closeSync()
+      const settingsAppender = await connection.createAppender('analysis_settings')
+      append(settingsAppender, JSON.stringify(config))
+      append(settingsAppender, timestamp(new Date()))
+      settingsAppender.endRow()
+      settingsAppender.closeSync()
       await connection.run('CREATE INDEX traversals_route_date ON route_traversals(route_id, started_at); COMMIT;')
     } catch (error) {
       await connection.run('ROLLBACK')
       throw error
     }
-    return { activities: activities.length, routes: analysis.routes.length, traversals: analysis.traversals.length }
+    return { activities: activities.length, routes: analysis.routes.length, traversals: analysis.traversals.length, config }
   }),
   catch: (cause) => new FitnessDataError({ operation: 'rebuild route analysis', cause }),
+})
+
+export interface AnalysisSettings {
+  readonly config: DetectionConfig
+  readonly analyzedAt: string | null
+}
+
+export const getAnalysisSettings = Effect.tryPromise({
+  try: () => withDatabase(async (connection): Promise<AnalysisSettings> => {
+    if (!await tableExists(connection, 'analysis_settings')) return { config: DETECTION_DEFAULTS, analyzedAt: null }
+    const result = await connection.runAndReadAll('SELECT config_json, analyzed_at::VARCHAR analyzed_at FROM analysis_settings LIMIT 1')
+    const row = result.getRowObjectsJS()[0]
+    if (!row) return { config: DETECTION_DEFAULTS, analyzedAt: null }
+    return { config: resolveDetectionConfig(JSON.parse(String(row.config_json))), analyzedAt: String(row.analyzed_at) }
+  }),
+  catch: (cause) => new FitnessDataError({ operation: 'query analysis settings', cause }),
 })
 
 const routeFromRow = (row: Record<string, unknown>): DetectedRoute => ({
