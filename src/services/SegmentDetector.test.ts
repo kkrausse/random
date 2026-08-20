@@ -105,6 +105,15 @@ describe('segment detection', () => {
     expect(loops[0]?.workoutCount).toBe(3)
   })
 
+  test('merges GPS variants of the same loop shape', () => {
+    const result = detectRoutes([
+      ...[1, 2, 3].map((id) => routeActivity(`inner-${id}`, circle(0, 0.0012))),
+      ...[1, 2, 3].map((id) => routeActivity(`outer-${id}`, circle(0, 0.00135))),
+    ], { minSegmentDistanceM: 2_000 })
+
+    expect(result.routes.filter((route) => route.type === 'loop')).toHaveLength(1)
+  })
+
   test('detects repeated laps as traversals of one primitive loop', () => {
     const twoLaps = [...circle(0), ...circle(0).slice(1)]
     const result = detectRoutes([
@@ -117,6 +126,35 @@ describe('segment detection', () => {
     expect(loops).toHaveLength(1)
     expect(loops[0]?.distanceM).toBeLessThan(1_000)
     expect(loops[0]?.traversalCount).toBe(6)
+  })
+
+  test('removes a supported multi-lap loop when its primitive loop is also supported', () => {
+    const oneLap = circle(0)
+    const twoLaps = [...oneLap, ...oneLap.slice(1)]
+    const result = detectRoutes([
+      routeActivity('one-1', oneLap),
+      routeActivity('one-2', oneLap),
+      routeActivity('one-3', oneLap),
+      routeActivity('two-1', twoLaps),
+      routeActivity('two-2', twoLaps),
+      routeActivity('two-3', twoLaps),
+    ], { minSegmentDistanceM: 2_000, routeSeparationM: 5 })
+    const loops = result.routes.filter((route) => route.type === 'loop')
+
+    expect(loops).toHaveLength(1)
+    expect(loops[0]?.distanceM).toBeLessThan(1_000)
+    expect(loops[0]?.traversalCount).toBeGreaterThanOrEqual(3)
+  })
+
+  test('keeps a closed route as a loop instead of a duplicate segment', () => {
+    const result = detectRoutes([
+      routeActivity('closed-1', circle(0)),
+      routeActivity('closed-2', circle(0)),
+      routeActivity('closed-3', circle(0)),
+    ], { minSegmentDistanceM: 100 })
+
+    expect(result.routes.filter((route) => route.type === 'loop')).toHaveLength(1)
+    expect(result.routes.filter((route) => route.type === 'segment')).toHaveLength(0)
   })
 
   test('finds a configured 100m segment across neighboring candidate grid cells', () => {
@@ -183,6 +221,25 @@ describe('segment detection', () => {
     expect(segments).toHaveLength(1)
     expect(segments[0]?.workoutCount).toBe(3)
     expect(segments[0]?.distanceM).toBeGreaterThan(350)
+  })
+
+  test('rejects a segment that doubles back within the separation radius', () => {
+    const outAndBack = [
+      [37, -122],
+      [37, -121.9995],
+      [37, -121.999],
+      [37, -121.9985],
+      [37, -121.999],
+      [37, -121.9995],
+      [37, -122],
+    ] as const
+    const result = detectRoutes([
+      routeActivity('out-back-1', outAndBack),
+      routeActivity('out-back-2', outAndBack),
+      routeActivity('out-back-3', outAndBack),
+    ], { minSegmentDistanceM: 100, minLoopDistanceM: 10_000, maxLoopDistanceM: 10_000 })
+
+    expect(result.routes).toHaveLength(0)
   })
 
   test('keeps distinct same-length loops with the same endpoint cells', () => {

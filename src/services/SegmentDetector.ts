@@ -6,6 +6,7 @@ import type { ImportedActivity } from './Database'
 
 export interface DetectionConfig {
   readonly maxRouteDeviationM: number
+  readonly routeSeparationM: number
   readonly candidateCellM: number
   readonly minSegmentDistanceM: number
   readonly minLoopDistanceM: number
@@ -17,6 +18,7 @@ export interface DetectionConfig {
 
 export const DETECTION_DEFAULTS: DetectionConfig = {
   maxRouteDeviationM: 30,
+  routeSeparationM: 30,
   candidateCellM: 120,
   minSegmentDistanceM: 500,
   minLoopDistanceM: 200,
@@ -31,6 +33,7 @@ export const resolveDetectionConfig = (overrides: Partial<DetectionConfig> = {})
   const config = { ...DETECTION_DEFAULTS, ...supportedOverrides }
   const ranges: Record<keyof DetectionConfig, readonly [number, number]> = {
     maxRouteDeviationM: [5, 200],
+    routeSeparationM: [5, 200],
     candidateCellM: [20, 1_000],
     minSegmentDistanceM: [100, 20_000],
     minLoopDistanceM: [100, 10_000],
@@ -102,7 +105,7 @@ const pathDistanceM = (points: ReadonlyArray<RoutePoint>) => {
 
 const cellCoordinates = (point: RoutePoint, sizeM: number): readonly [number, number] => {
   const y = Math.floor(point.lat * 111_320 / sizeM)
-  const x = Math.floor(point.lon * 111_320 * Math.cos(radians(point.lat)) / sizeM)
+  const x = Math.floor(point.lon * 111_320 / sizeM)
   return [x, y]
 }
 
@@ -188,10 +191,11 @@ const spatialIndex = (points: ReadonlyArray<RoutePoint>, sizeM: number) => {
 
 const nearbyIndices = (point: RoutePoint, index: Map<string, number[]>, sizeM: number, radiusM = sizeM) => {
   const [x, y] = cellCoordinates(point, sizeM)
-  const reach = Math.max(1, Math.ceil(radiusM / sizeM))
+  const xReach = Math.max(1, Math.ceil(radiusM / (sizeM * Math.cos(radians(point.lat)))))
+  const yReach = Math.max(1, Math.ceil(radiusM / sizeM))
   const result: number[] = []
-  for (let dx = -reach; dx <= reach; dx += 1) {
-    for (let dy = -reach; dy <= reach; dy += 1) result.push(...(index.get(`${x + dx}:${y + dy}`) ?? []))
+  for (let dx = -xReach; dx <= xReach; dx += 1) {
+    for (let dy = -yReach; dy <= yReach; dy += 1) result.push(...(index.get(`${x + dx}:${y + dy}`) ?? []))
   }
   return result
 }
@@ -384,6 +388,53 @@ const segmentContains = (container: Candidate, contained: Candidate, config: Det
   return findMatches(contained.geometry, path, 'segment', { ...config, maxRouteDeviationM: Math.max(config.maxRouteDeviationM, 50) }).length > 0
 }
 
+const sameClosedRoute = (loop: Candidate, segment: Candidate, config: DetectionConfig) => {
+  if (loop.type !== 'loop' || segment.type !== 'segment' || loop.sport !== segment.sport) return false
+  if (Math.min(loop.distanceM, segment.distanceM) / Math.max(loop.distanceM, segment.distanceM) < 0.8) return false
+  const path: Path = { activity: null as unknown as ImportedActivity, id: '', points: segment.geometry as ReadonlyArray<Point> }
+  return findMatches(loop.geometry, path, 'loop', { ...config, maxRouteDeviationM: Math.max(config.maxRouteDeviationM, 50) }).length > 0
+}
+
+const repeatedLoop = (primitive: Candidate, candidate: Candidate, config: DetectionConfig) => {
+  if (primitive.type !== 'loop' || candidate.type !== 'loop' || primitive.sport !== candidate.sport) return false
+  if (candidate.distanceM < primitive.distanceM * 1.5) return false
+  const path: Path = { activity: null as unknown as ImportedActivity, id: '', points: candidate.geometry as ReadonlyArray<Point> }
+  const matches = findMatches(primitive.geometry, path, 'loop', { ...config, maxRouteDeviationM: Math.max(config.maxRouteDeviationM, 50) })
+  const coveredEdges = matches.reduce((sum, match) => sum + match.endIndex - match.startIndex, 0)
+  return matches.length >= 2 && coveredEdges / Math.max(1, candidate.geometry.length - 1) >= 0.75
+}
+
+type RouteGeometry = Pick<Candidate, 'type' | 'sport' | 'distanceM'> & { readonly geometry: ReadonlyArray<RoutePoint> }
+
+const sameLoopShape = (a: RouteGeometry, b: RouteGeometry, config: DetectionConfig) => {
+  if (a.type !== 'loop' || b.type !== 'loop' || a.sport !== b.sport) return false
+  if (Math.min(a.distanceM, b.distanceM) / Math.max(a.distanceM, b.distanceM) < 0.8) return false
+  const tolerance = Math.max(config.maxRouteDeviationM, 50)
+  const aRing = a.geometry.slice(0, -1)
+  const bRing = b.geometry.slice(0, -1)
+  const aIndex = spatialIndex(aRing, tolerance)
+  const bIndex = spatialIndex(bRing, tolerance)
+  const within = (points: ReadonlyArray<RoutePoint>, other: ReadonlyArray<RoutePoint>, index: Map<string, number[]>) => points.every((point) =>
+    nearbyIndices(point, index, tolerance).some((otherIndex) => pointDistanceM(point, other[otherIndex]!) <= tolerance))
+  return within(aRing, bRing, bIndex) && within(bRing, aRing, aIndex)
+}
+
+const hasSelfOverlap = (candidate: Candidate, radiusM: number) => {
+  const points = candidate.type === 'loop' ? candidate.geometry.slice(0, -1) : candidate.geometry
+  if (points.length < 4) return false
+  const index = spatialIndex(points, radiusM)
+  for (let pointIndex = 0; pointIndex < points.length; pointIndex += 1) {
+    for (const otherIndex of nearbyIndices(points[pointIndex]!, index, radiusM)) {
+      if (otherIndex <= pointIndex) continue
+      const indexDistance = otherIndex - pointIndex
+      const neighborDistance = candidate.type === 'loop' ? Math.min(indexDistance, points.length - indexDistance) : indexDistance
+      if (neighborDistance <= 1) continue
+      if (pointDistanceM(points[pointIndex]!, points[otherIndex]!) < radiusM) return true
+    }
+  }
+  return false
+}
+
 const consolidationAnchor = (candidate: Candidate): RoutePoint => {
   if (candidate.type === 'segment') return candidate.geometry[0]!
   const ring = candidate.geometry.slice(0, -1)
@@ -413,6 +464,7 @@ const consolidateCandidates = (candidates: ReadonlyArray<Candidate>, config: Det
   const buckets = new Map<string, number[]>()
   for (const raw of candidates) {
     if (raw.type === 'loop' && raw.distanceM > config.maxLoopDistanceM) continue
+    if (hasSelfOverlap(raw, config.routeSeparationM)) continue
     const candidate = canonicalLoop(raw)
     const anchor = consolidationAnchor(candidate)
     const [x, y] = cellCoordinates(anchor, 200)
@@ -586,14 +638,24 @@ export function detectRoutes(activities: ReadonlyArray<ImportedActivity>, overri
   }
 
   qualified.sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'loop' ? -1 : 1
     if (a.type === 'segment' && b.type === 'segment') return b.distanceM - a.distanceM || b.matches.length - a.matches.length
-    return b.matches.length - a.matches.length || b.distanceM - a.distanceM
+    return b.matches.length - a.matches.length || a.distanceM - b.distanceM
   })
   const representatives: QualifiedCandidate[] = []
   for (const candidate of qualified) {
-    const duplicate = representatives.some((representative) => candidate.type === 'segment'
-      ? segmentContains(representative, candidate, config)
-      : directedSimilarity(candidate, representative, config))
+    if (candidate.type === 'loop') {
+      for (let index = representatives.length - 1; index >= 0; index -= 1) {
+        if (repeatedLoop(candidate, representatives[index]!, config)) representatives.splice(index, 1)
+      }
+    }
+    const duplicate = representatives.some((representative) => {
+      if (candidate.type === 'segment' && representative.type === 'loop') return sameClosedRoute(representative, candidate, config)
+      if (candidate.type === 'segment') return segmentContains(representative, candidate, config)
+      return sameLoopShape(candidate, representative, config)
+        || directedSimilarity(candidate, representative, config)
+        || repeatedLoop(representative, candidate, config)
+    })
     if (!duplicate) representatives.push(candidate)
   }
 
@@ -640,15 +702,17 @@ export function detectRoutes(activities: ReadonlyArray<ImportedActivity>, overri
   }
 
   routes.sort((a, b) => b.overallScore - a.overallScore)
+  const uniqueRoutes = routes.filter((route, routeIndex) => route.type !== 'loop' || !routes.slice(0, routeIndex).some((existing) =>
+    existing.type === 'loop' && sameLoopShape(route, existing, config)))
   const selectedIds = new Set<string>()
-  for (const sport of new Set(routes.map((route) => route.sport))) {
+  for (const sport of new Set(uniqueRoutes.map((route) => route.sport))) {
     for (const type of ['segment', 'loop'] as const) {
-      for (const route of routes.filter((item) => item.sport === sport && item.type === type).slice(0, config.maxRoutesPerSport)) {
+      for (const route of uniqueRoutes.filter((item) => item.sport === sport && item.type === type).slice(0, config.maxRoutesPerSport)) {
         selectedIds.add(route.id)
       }
     }
   }
-  const selected = routes.filter((route) => selectedIds.has(route.id)).slice(0, 50)
+  const selected = uniqueRoutes.filter((route) => selectedIds.has(route.id)).slice(0, 50)
   const kept = new Set(selected.map((route) => route.id))
   const nameCounts = new Map<string, number>()
   const finalRoutes = selected.map((route) => {

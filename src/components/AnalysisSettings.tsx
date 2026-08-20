@@ -15,6 +15,7 @@ const fields: ReadonlyArray<{
   step: number
 }> = [
   { key: 'maxRouteDeviationM', label: 'Maximum deviation', unit: 'm', min: 5, max: 200, step: 5 },
+  { key: 'routeSeparationM', label: 'Minimum route separation', unit: 'm', min: 5, max: 200, step: 5 },
   { key: 'candidateCellM', label: 'Candidate cell size', unit: 'm', min: 20, max: 1_000, step: 10 },
   { key: 'minSegmentDistanceM', label: 'Minimum segment', unit: 'm', min: 100, max: 20_000, step: 100 },
   { key: 'minLoopDistanceM', label: 'Minimum loop', unit: 'm', min: 100, max: 10_000, step: 100 },
