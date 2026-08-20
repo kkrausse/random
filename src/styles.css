@@ -38,12 +38,7 @@ tbody tr:hover { background: rgba(255,255,255,.36); }
 .sport-cycling { color: #19553a; border-color: #91b29d; background: #d9e7dc; }
 .hr { color: #9a3f35; }
 .table-footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 58px; border-top: 1px solid #9da097; padding: 9px 12px; color: #666d67; font: .7rem DM Mono, monospace; }
-.pagination { display: flex; align-items: center; gap: 8px; }
-.pagination button { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid #a9aea4; border-radius: 3px; padding: 0; color: #29302b; background: #f6f2e7; cursor: pointer; }
-.pagination button:hover:not(:disabled) { border-color: #1e5b3a; background: #e1e8dc; }
-.pagination button:disabled { cursor: default; opacity: .38; }
-.pagination button svg { width: 15px; height: 15px; }
 .empty-state { display: grid; place-items: center; gap: 9px; min-height: 360px; border-block: 2px solid #29302b; background: rgba(255,255,255,.18); }
 .empty-state p { margin: 0 0 10px; font-weight: 700; }
 .empty-state code { color: #59605a; font: .76rem DM Mono, monospace; }
-@media (max-width: 700px) { main { width: calc(100% - 24px); padding-top: 28px; } header { align-items: flex-start; flex-direction: column; gap: 20px; } .header-actions { width: 100%; justify-content: space-between; } .table-footer { align-items: flex-start; flex-direction: column; gap: 8px; } .pagination { width: 100%; justify-content: flex-end; } }
+@media (max-width: 700px) { main { width: calc(100% - 24px); padding-top: 28px; } header { align-items: flex-start; flex-direction: column; gap: 20px; } .header-actions { width: 100%; justify-content: space-between; } }

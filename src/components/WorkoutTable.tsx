@@ -8,13 +8,14 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table'
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { Activity } from '../domain/activity'
 import { RouteThumbnail } from './RouteThumbnail'
 
 const miles = (meters: number) => meters / 1609.344
+const LOAD_SIZE = 10
 
 const duration = (seconds: number | null) => {
   if (seconds === null) return '—'
@@ -113,6 +114,7 @@ const columns: ColumnDef<Activity>[] = [
 
 export function WorkoutTable({ activities }: { activities: ReadonlyArray<Activity> }) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'startedAt', desc: true }])
+  const loadMoreRef = useRef<HTMLDivElement>(null)
   const data = useMemo(() => [...activities], [activities])
   const table = useReactTable({
     data,
@@ -122,8 +124,24 @@ export function WorkoutTable({ activities }: { activities: ReadonlyArray<Activit
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize: 10 } },
+    initialState: { pagination: { pageSize: LOAD_SIZE } },
   })
+  const visibleCount = table.getRowModel().rows.length
+  const hasMore = visibleCount < activities.length
+
+  useEffect(() => {
+    const target = loadMoreRef.current
+    if (!target || !hasMore) return
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry?.isIntersecting) {
+        table.setPageSize((size) => Math.min(size + LOAD_SIZE, activities.length))
+      }
+    }, { rootMargin: '300px 0px' })
+
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [activities.length, hasMore, table, visibleCount])
 
   if (activities.length === 0) {
     return (
@@ -160,13 +178,9 @@ export function WorkoutTable({ activities }: { activities: ReadonlyArray<Activit
           </tbody>
         </table>
       </div>
-      <div className="table-footer">
-        <span>Showing {table.getRowModel().rows.length} of {activities.length} activities</span>
-        <div className="pagination">
-          <span>Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}</span>
-          <button type="button" aria-label="Previous page" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}><ChevronLeft /></button>
-          <button type="button" aria-label="Next page" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}><ChevronRight /></button>
-        </div>
+      <div ref={loadMoreRef} className="table-footer" aria-live="polite">
+        <span>Showing {visibleCount} of {activities.length} activities</span>
+        <span>{hasMore ? 'Scroll to load more' : 'All activities loaded'}</span>
       </div>
     </section>
   )
