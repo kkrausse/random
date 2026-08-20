@@ -29,12 +29,9 @@ function Trend({ label, values, format }: { label: string; values: ReadonlyArray
 }
 
 export function RouteDetail({ route }: { route: RouteDetailValue }) {
-  const [trimStart, setTrimStart] = useState(0)
-  const [trimEnd, setTrimEnd] = useState(0)
   const [minimumQuality, setMinimumQuality] = useState(65)
   const [windowLength, setWindowLength] = useState(1)
   const [mode, setMode] = useState<'representative' | 'best' | 'all'>('representative')
-  const trimRatio = Math.max(0.1, (route.distanceM - trimStart - trimEnd) / route.distanceM)
   let efforts = [...route.traversals]
   if (route.type === 'loop' && windowLength > 1) {
     const byActivity = groupByActivity(efforts)
@@ -43,18 +40,20 @@ export function RouteDetail({ route }: { route: RouteDetailValue }) {
       return laps.flatMap((first, index) => {
         const window = laps.slice(index, index + windowLength)
         if (window.length !== windowLength) return []
-        const continuous = window.slice(1).every((lap, lapIndex) =>
-          new Date(lap.startedAt).getTime() - new Date(window[lapIndex]!.endedAt).getTime() < 120_000)
+        const continuous = window.slice(1).every((lap, lapIndex) => {
+          const gap = new Date(lap.startedAt).getTime() - new Date(window[lapIndex]!.endedAt).getTime()
+          return gap >= 0 && gap < 120_000
+        })
         if (!continuous) return []
-        const durationSec = window.reduce((sum, lap) => sum + lap.durationSec, 0)
-        const heartRates = window.flatMap((lap) => lap.avgHeartRate === null ? [] : [lap.avgHeartRate])
+        const durationSec = (new Date(window.at(-1)!.endedAt).getTime() - new Date(first.startedAt).getTime()) / 1000
+        const heartRateDuration = window.reduce((sum, lap) => sum + (lap.avgHeartRate === null ? 0 : lap.durationSec), 0)
         return [{
           ...first,
           id: `${first.id}:window-${windowLength}`,
           endedAt: window.at(-1)!.endedAt,
           durationSec,
           distanceM: window.reduce((sum, lap) => sum + lap.distanceM, 0),
-          avgHeartRate: heartRates.length === 0 ? null : heartRates.reduce((sum, value) => sum + value, 0) / heartRates.length,
+          avgHeartRate: heartRateDuration === 0 ? null : window.reduce((sum, lap) => sum + (lap.avgHeartRate ?? 0) * lap.durationSec, 0) / heartRateDuration,
           avgSpeed: window.reduce((sum, lap) => sum + lap.distanceM, 0) / durationSec,
           qualityScore: Math.min(...window.map((lap) => lap.qualityScore)),
           lapCount: windowLength,
@@ -73,7 +72,6 @@ export function RouteDetail({ route }: { route: RouteDetailValue }) {
   }
   const filtered = efforts.filter((item) => item.qualityScore * 100 >= minimumQuality)
   const chronological = [...filtered].sort((a, b) => a.startedAt.localeCompare(b.startedAt))
-  const adjustedDuration = (item: RouteTraversal) => item.durationSec * (route.type === 'segment' ? trimRatio : 1)
 
   return (
     <>
@@ -83,18 +81,18 @@ export function RouteDetail({ route }: { route: RouteDetailValue }) {
         <div className="detail-summary"><p className="eyebrow">{route.sport} / {route.type}</p><h1>{route.name}</h1><dl className="hero-stats"><div><dt>Distance</dt><dd>{distance(route.distanceM)}</dd></div><div><dt>Workouts</dt><dd>{route.workoutCount}</dd></div><div><dt>Match strength</dt><dd>{Math.round(route.matchScore * 100)}%</dd></div><div><dt>Date range</dt><dd>{new Date(route.firstTraversalAt).toLocaleDateString()} - {new Date(route.lastTraversalAt).toLocaleDateString()}</dd></div></dl></div>
       </section>
       <section className="analysis-controls">
-        <div><p className="eyebrow">Analysis controls</p><h2>{route.type === 'loop' ? 'Build a comparable effort' : 'Adjust comparison edges'}</h2></div>
-        {route.type === 'segment' ? <><label>Trim start <span>{trimStart} m</span><input type="range" min="0" max={Math.min(250, route.distanceM / 3)} step="5" value={trimStart} onChange={(event) => setTrimStart(Number(event.target.value))} /></label><label>Trim end <span>{trimEnd} m</span><input type="range" min="0" max={Math.min(250, route.distanceM / 3)} step="5" value={trimEnd} onChange={(event) => setTrimEnd(Number(event.target.value))} /></label></> : <><label>Window length<select value={windowLength} onChange={(event) => setWindowLength(Number(event.target.value))}><option value="1">1 lap</option><option value="3">3 laps</option><option value="5">5 laps</option><option value="10">10 laps</option></select></label><label>Mode<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="representative">Representative</option><option value="best">Best</option><option value="all">All windows</option></select></label></>}
+        <div><p className="eyebrow">Analysis controls</p><h2>{route.type === 'loop' ? 'Build a comparable effort' : 'Filter comparable efforts'}</h2></div>
+        {route.type === 'loop' && <><label>Window length<select value={windowLength} onChange={(event) => setWindowLength(Number(event.target.value))}><option value="1">1 lap</option><option value="3">3 laps</option><option value="5">5 laps</option><option value="10">10 laps</option></select></label><label>Mode<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="representative">Representative</option><option value="best">Best</option><option value="all">All windows</option></select></label></>}
         <label>Minimum quality <span>{minimumQuality}%</span><input type="range" min="50" max="100" step="1" value={minimumQuality} onChange={(event) => setMinimumQuality(Number(event.target.value))} /></label>
       </section>
       <section className="trend-grid">
-        <Trend label="Elapsed time" values={chronological.map(adjustedDuration)} format={duration} />
+        <Trend label="Elapsed time" values={chronological.map((item) => item.durationSec)} format={duration} />
         <Trend label="Average speed" values={chronological.flatMap((item) => item.avgSpeed === null ? [] : [item.avgSpeed])} format={speed} />
         <Trend label="Average heart rate" values={chronological.flatMap((item) => item.avgHeartRate === null ? [] : [item.avgHeartRate])} format={(value) => `${Math.round(value)} bpm`} />
       </section>
       <section className="effort-table">
         <div className="section-heading"><div><p className="eyebrow">History</p><h2>{route.type === 'loop' ? 'Comparable efforts' : 'Traversals'}</h2></div><span>{filtered.length} qualifying</span></div>
-        <div className="table-scroll"><table><thead><tr><th>Date</th><th>Time</th><th><HeartPulse /> Avg HR</th><th><Gauge /> Avg speed</th><th>Quality</th><th>Workout</th></tr></thead><tbody>{filtered.map((item) => <tr key={item.id}><td>{new Date(item.startedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</td><td className="numeric"><Timer /> {duration(adjustedDuration(item))}</td><td className="numeric hr">{item.avgHeartRate === null ? '-' : Math.round(item.avgHeartRate)}</td><td className="numeric">{speed(item.avgSpeed)}</td><td><span className="quality">{Math.round(item.qualityScore * 100)}%</span></td><td className="numeric">{item.activityId.replace('garmin:', '#')}</td></tr>)}</tbody></table></div>
+        <div className="table-scroll"><table><thead><tr><th>Date</th><th>Time</th><th><HeartPulse /> Avg HR</th><th><Gauge /> Avg speed</th><th>Quality</th><th>Workout</th></tr></thead><tbody>{filtered.map((item) => <tr key={item.id}><td>{new Date(item.startedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</td><td className="numeric"><Timer /> {duration(item.durationSec)}</td><td className="numeric hr">{item.avgHeartRate === null ? '-' : Math.round(item.avgHeartRate)}</td><td className="numeric">{speed(item.avgSpeed)}</td><td><span className="quality">{Math.round(item.qualityScore * 100)}%</span></td><td className="numeric">{item.activityId.replace('garmin:', '#')}</td></tr>)}</tbody></table></div>
       </section>
     </>
   )
