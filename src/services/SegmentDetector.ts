@@ -29,9 +29,10 @@ export const DETECTION_DEFAULTS: DetectionConfig = {
 }
 
 export const resolveDetectionConfig = (overrides: Partial<DetectionConfig> = {}): DetectionConfig => {
-  const config = { ...DETECTION_DEFAULTS, ...overrides }
+  // Older settings allowed impractically dense alignment points. Preserve those saved configs by normalizing them.
+  const config = { ...DETECTION_DEFAULTS, ...overrides, sampleSpacingM: Math.max(40, overrides.sampleSpacingM ?? DETECTION_DEFAULTS.sampleSpacingM) }
   const ranges: Record<keyof DetectionConfig, readonly [number, number]> = {
-    sampleSpacingM: [5, 200],
+    sampleSpacingM: [40, 200],
     maxRouteDeviationM: [5, 200],
     candidateCellM: [20, 1_000],
     minSegmentDistanceM: [100, 20_000],
@@ -625,13 +626,15 @@ export function detectRoutes(activities: ReadonlyArray<ImportedActivity>, overri
   }
 
   routes.sort((a, b) => b.overallScore - a.overallScore)
-  const sportCounts = new Map<string, number>()
-  const selected = routes.filter((route) => {
-    const count = sportCounts.get(route.sport) ?? 0
-    if (count >= config.maxRoutesPerSport) return false
-    sportCounts.set(route.sport, count + 1)
-    return true
-  }).slice(0, 50)
+  const selectedIds = new Set<string>()
+  for (const sport of new Set(routes.map((route) => route.sport))) {
+    for (const type of ['segment', 'loop'] as const) {
+      for (const route of routes.filter((item) => item.sport === sport && item.type === type).slice(0, config.maxRoutesPerSport)) {
+        selectedIds.add(route.id)
+      }
+    }
+  }
+  const selected = routes.filter((route) => selectedIds.has(route.id)).slice(0, 50)
   const kept = new Set(selected.map((route) => route.id))
   const nameCounts = new Map<string, number>()
   const finalRoutes = selected.map((route) => {

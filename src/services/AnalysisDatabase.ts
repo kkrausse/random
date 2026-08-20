@@ -91,41 +91,43 @@ const createAnalysisTables = (connection: Awaited<ReturnType<DuckDBInstance['con
 `)
 
 export const rebuildRouteAnalysis = (overrides: Partial<DetectionConfig> = {}) => Effect.tryPromise({
-  try: () => withDatabase(async (connection) => {
+  try: async () => {
     const config = resolveDetectionConfig(overrides)
-    const activities = await readNormalizedActivities(connection)
+    const activities = await withDatabase(readNormalizedActivities)
     const analysis = detectRoutes(activities, config)
-    await connection.run('BEGIN TRANSACTION; DROP TABLE IF EXISTS route_traversals; DROP TABLE IF EXISTS detected_routes; DROP TABLE IF EXISTS analysis_settings;')
-    try {
-      await createAnalysisTables(connection)
-      const routeAppender = await connection.createAppender('detected_routes')
-      for (const route of analysis.routes) {
-        for (const value of [route.id, route.name, route.type, route.sport, JSON.stringify(route.geometry), route.distanceM,
-          route.workoutCount, route.traversalCount, route.matchScore, route.popularityScore, route.overallScore,
-          timestamp(new Date(route.firstTraversalAt)), timestamp(new Date(route.lastTraversalAt))]) append(routeAppender, value)
-        routeAppender.endRow()
+    await withDatabase(async (connection) => {
+      await connection.run('BEGIN TRANSACTION; DROP TABLE IF EXISTS route_traversals; DROP TABLE IF EXISTS detected_routes; DROP TABLE IF EXISTS analysis_settings;')
+      try {
+        await createAnalysisTables(connection)
+        const routeAppender = await connection.createAppender('detected_routes')
+        for (const route of analysis.routes) {
+          for (const value of [route.id, route.name, route.type, route.sport, JSON.stringify(route.geometry), route.distanceM,
+            route.workoutCount, route.traversalCount, route.matchScore, route.popularityScore, route.overallScore,
+            timestamp(new Date(route.firstTraversalAt)), timestamp(new Date(route.lastTraversalAt))]) append(routeAppender, value)
+          routeAppender.endRow()
+        }
+        routeAppender.closeSync()
+        const traversalAppender = await connection.createAppender('route_traversals')
+        for (const item of analysis.traversals) {
+          for (const value of [item.id, item.routeId, item.activityId, timestamp(new Date(item.startedAt)), timestamp(new Date(item.endedAt)),
+            item.durationSec, item.distanceM, item.avgHeartRate, item.avgSpeed, item.matchErrorM, item.qualityScore, item.lapCount,
+            JSON.stringify(item.lapTimesSec)]) append(traversalAppender, value)
+          traversalAppender.endRow()
+        }
+        traversalAppender.closeSync()
+        const settingsAppender = await connection.createAppender('analysis_settings')
+        append(settingsAppender, JSON.stringify(config))
+        append(settingsAppender, timestamp(new Date()))
+        settingsAppender.endRow()
+        settingsAppender.closeSync()
+        await connection.run('CREATE INDEX traversals_route_date ON route_traversals(route_id, started_at); COMMIT;')
+      } catch (error) {
+        await connection.run('ROLLBACK')
+        throw error
       }
-      routeAppender.closeSync()
-      const traversalAppender = await connection.createAppender('route_traversals')
-      for (const item of analysis.traversals) {
-        for (const value of [item.id, item.routeId, item.activityId, timestamp(new Date(item.startedAt)), timestamp(new Date(item.endedAt)),
-          item.durationSec, item.distanceM, item.avgHeartRate, item.avgSpeed, item.matchErrorM, item.qualityScore, item.lapCount,
-          JSON.stringify(item.lapTimesSec)]) append(traversalAppender, value)
-        traversalAppender.endRow()
-      }
-      traversalAppender.closeSync()
-      const settingsAppender = await connection.createAppender('analysis_settings')
-      append(settingsAppender, JSON.stringify(config))
-      append(settingsAppender, timestamp(new Date()))
-      settingsAppender.endRow()
-      settingsAppender.closeSync()
-      await connection.run('CREATE INDEX traversals_route_date ON route_traversals(route_id, started_at); COMMIT;')
-    } catch (error) {
-      await connection.run('ROLLBACK')
-      throw error
-    }
+    })
     return { activities: activities.length, routes: analysis.routes.length, traversals: analysis.traversals.length, config }
-  }),
+  },
   catch: (cause) => new FitnessDataError({ operation: 'rebuild route analysis', cause }),
 })
 

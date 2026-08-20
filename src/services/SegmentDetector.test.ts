@@ -182,9 +182,19 @@ describe('segment detection', () => {
     expect(result.routes.filter((route) => route.type === 'segment')).toHaveLength(0)
   })
 
+  test('applies the route limit independently to segments and loops', () => {
+    const segments = [0, 0.00001, -0.00001].map((offset, index) => routeActivity(`segment-${index}`, eastbound(37 + offset)))
+    const loops = [0, 0.00001, -0.00001].map((offset, index) => routeActivity(`loop-${index}`,
+      circle(0).map(([lat, lon]) => [lat + 1 + offset, lon] as const)))
+    const result = detectRoutes([...segments, ...loops], { minSegmentDistanceM: 300, maxRoutesPerSport: 1 })
+    expect(result.routes.filter((route) => route.type === 'segment')).toHaveLength(1)
+    expect(result.routes.filter((route) => route.type === 'loop')).toHaveLength(1)
+  })
+
   test('validates count settings as integers while allowing fractional distance settings', () => {
     expect(() => resolveDetectionConfig({ minWorkoutCount: 2.5 })).toThrow('minWorkoutCount must be an integer')
     expect(() => resolveDetectionConfig({ maxRoutesPerSport: 3.5 })).toThrow('maxRoutesPerSport must be an integer')
-    expect(resolveDetectionConfig({ sampleSpacingM: 20.5 }).sampleSpacingM).toBe(20.5)
+    expect(resolveDetectionConfig({ sampleSpacingM: 40.5 }).sampleSpacingM).toBe(40.5)
+    expect(resolveDetectionConfig({ sampleSpacingM: 5 }).sampleSpacingM).toBe(40)
   })
 })
