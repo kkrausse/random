@@ -2,6 +2,7 @@ import { ChevronDown, Gauge, HeartPulse, Timer } from 'lucide-react'
 import { Fragment, useState } from 'react'
 
 import type { RouteDetail, RouteTraversal } from '../domain/analysis'
+import type { DetailControls } from './RouteDetail'
 import { DetailHero, DetailTrends, duration, QualityControl, speed } from './RouteDetailShared'
 import { RouteThumbnail } from './RouteThumbnail'
 
@@ -11,10 +12,12 @@ const groupByActivity = (items: ReadonlyArray<RouteTraversal>) => {
   return groups
 }
 
-export function LoopRouteDetail({ route }: { route: RouteDetail }) {
-  const [minimumQuality, setMinimumQuality] = useState(65)
-  const [windowLength, setWindowLength] = useState(1)
-  const [mode, setMode] = useState<'representative' | 'best' | 'all'>('representative')
+export function LoopRouteDetail({ route, controls, onControlsChange }: {
+  route: RouteDetail
+  controls: DetailControls
+  onControlsChange: (controls: Partial<DetailControls>) => void
+}) {
+  const { minimumQuality, windowLength, mode } = controls
   const [expandedEffortIds, setExpandedEffortIds] = useState<Set<string>>(() => new Set())
   const workoutLaps = groupByActivity(route.traversals)
   for (const laps of workoutLaps.values()) laps.sort((a, b) => a.startedAt.localeCompare(b.startedAt))
@@ -65,9 +68,9 @@ export function LoopRouteDetail({ route }: { route: RouteDetail }) {
       <DetailHero route={route} />
       <section className="analysis-controls">
         <div><p className="eyebrow">Analysis controls</p><h2>Build a comparable effort</h2></div>
-        <label>Window length<select value={windowLength} onChange={(event) => { setWindowLength(Number(event.target.value)); setExpandedEffortIds(new Set()) }}><option value="1">1 lap</option><option value="3">3 laps</option><option value="5">5 laps</option><option value="10">10 laps</option></select></label>
-        <label>Mode<select value={mode} onChange={(event) => { setMode(event.target.value as typeof mode); setExpandedEffortIds(new Set()) }}><option value="representative">Representative</option><option value="best">Best</option><option value="all">All windows</option></select></label>
-        <QualityControl value={minimumQuality} onChange={setMinimumQuality} />
+        <label>Window length<select value={windowLength} onChange={(event) => { onControlsChange({ windowLength: Number(event.target.value) as DetailControls['windowLength'] }); setExpandedEffortIds(new Set()) }}><option value="1">1 lap</option><option value="3">3 laps</option><option value="5">5 laps</option><option value="10">10 laps</option></select></label>
+        <label>Mode<select value={mode} onChange={(event) => { onControlsChange({ mode: event.target.value as DetailControls['mode'] }); setExpandedEffortIds(new Set()) }}><option value="representative">Representative</option><option value="best">Best</option><option value="all">All windows</option></select></label>
+        <QualityControl value={minimumQuality} onChange={(value) => onControlsChange({ minimumQuality: value })} />
       </section>
       <DetailTrends efforts={filtered} />
       <section className="effort-table loop-effort-table">

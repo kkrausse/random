@@ -32,7 +32,7 @@ function NotFoundPage() {
     <main>
       <div className="empty-state">
         <p>That page could not be found.</p>
-        <Link to="/">Return to workouts</Link>
+        <Link to="/" search={{ sort: 'startedAt', direction: 'desc' }}>Return to workouts</Link>
       </div>
     </main>
   )

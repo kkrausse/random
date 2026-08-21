@@ -9,7 +9,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 
 import type { Activity } from '../domain/activity'
 import { RouteThumbnail } from './RouteThumbnail'
@@ -112,15 +112,19 @@ const columns: ColumnDef<Activity>[] = [
   },
 ]
 
-export function WorkoutTable({ activities }: { activities: ReadonlyArray<Activity> }) {
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'startedAt', desc: true }])
+export function WorkoutTable({ activities, sorting, onSortingChange }: {
+  activities: ReadonlyArray<Activity>
+  sorting: SortingState
+  onSortingChange: (sorting: SortingState) => void
+}) {
   const loadMoreRef = useRef<HTMLDivElement>(null)
   const data = useMemo(() => [...activities], [activities])
   const table = useReactTable({
     data,
     columns,
     state: { sorting },
-    onSortingChange: setSorting,
+    onSortingChange: (updater) => onSortingChange(typeof updater === 'function' ? updater(sorting) : updater),
+    enableSortingRemoval: false,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),

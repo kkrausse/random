@@ -1,5 +1,4 @@
 import { Gauge, HeartPulse, Timer } from 'lucide-react'
-import { useState } from 'react'
 
 import type { RouteDetail } from '../domain/analysis'
 import { DetailHero, DetailTrends, duration, QualityControl, speed } from './RouteDetailShared'
@@ -23,8 +22,11 @@ function SupportProfile({ route }: { route: RouteDetail }) {
   )
 }
 
-export function SegmentRouteDetail({ route }: { route: RouteDetail }) {
-  const [minimumQuality, setMinimumQuality] = useState(65)
+export function SegmentRouteDetail({ route, minimumQuality, onMinimumQualityChange }: {
+  route: RouteDetail
+  minimumQuality: number
+  onMinimumQualityChange: (minimumQuality: number) => void
+}) {
   const efforts = route.traversals.filter((item) => item.qualityScore * 100 >= minimumQuality)
   const workoutTraversalCounts = new Map<string, number>()
   for (const traversal of route.traversals) {
@@ -37,7 +39,7 @@ export function SegmentRouteDetail({ route }: { route: RouteDetail }) {
       <SupportProfile route={route} />
       <section className="analysis-controls">
         <div><p className="eyebrow">Analysis controls</p><h2>Filter comparable efforts</h2></div>
-        <QualityControl value={minimumQuality} onChange={setMinimumQuality} />
+        <QualityControl value={minimumQuality} onChange={onMinimumQualityChange} />
       </section>
       <DetailTrends efforts={efforts} />
       <section className="effort-table">

@@ -8,5 +8,7 @@ export const Route = createFileRoute('/analysis/')({ loader: () => getDetectedRo
 
 function AnalysisIndex() {
   const { routes, settings } = Route.useLoaderData()
-  return <><header className="analysis-header"><div><p className="eyebrow">Repeated path index</p><h1>Segment analysis</h1></div><p>Recurring roads, trails, and loops extracted from your workout history.</p></header><AnalysisSettings settings={settings} /><AnalysisRouteList routes={routes} /></>
+  const search = Route.useSearch()
+  const navigate = Route.useNavigate()
+  return <><header className="analysis-header"><div><p className="eyebrow">Repeated path index</p><h1>Segment analysis</h1></div><p>Recurring roads, trails, and loops extracted from your workout history.</p></header><AnalysisSettings settings={settings} /><AnalysisRouteList routes={routes} filters={search} onFiltersChange={(filters) => navigate({ search: (current) => ({ ...current, ...filters }) })} /></>
 }
