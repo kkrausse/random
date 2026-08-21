@@ -196,6 +196,7 @@ describe('segment detection', () => {
     const segment = result.routes.filter((route) => route.type === 'segment').sort((a, b) => b.traversalCount - a.traversalCount)[0]
     expect(segment?.workoutCount).toBe(4)
     expect(segment?.traversalCount).toBe(5)
+    expect(Math.max(...(segment?.supportProfile.map((point) => point.workoutCount) ?? []))).toBe(4)
   })
 
   test('keeps reverse direction as a distinct geometry-derived segment', () => {
@@ -208,7 +209,7 @@ describe('segment detection', () => {
     expect(segments.every((route) => route.workoutCount === 3)).toBe(true)
   })
 
-  test('keeps the longest qualifying segment and removes its sub-segments', () => {
+  test('keeps a popular contained segment and adds its support to the longer route profile', () => {
     const full = eastbound(37)
     const activities = [0, 0.00001, -0.00001].map((offset, index) => routeActivity(
       `full-${index}`,
@@ -216,11 +217,52 @@ describe('segment detection', () => {
     ))
     activities.push(routeActivity('middle-only', full.slice(2, 9)))
 
-    const segments = detectRoutes(activities, { minSegmentDistanceM: 100 }).routes.filter((route) => route.type === 'segment')
+    const result = detectRoutes(activities, { minSegmentDistanceM: 100, minSegmentSupportJaccard: 0.8 })
+    const segments = result.routes.filter((route) => route.type === 'segment')
 
+    expect(segments).toHaveLength(2)
+    const longest = [...segments].sort((a, b) => b.distanceM - a.distanceM)[0]!
+    expect(longest.workoutCount).toBe(3)
+    expect(longest.distanceM).toBeGreaterThan(350)
+    expect(Math.max(...longest.supportProfile.map((point) => point.workoutCount))).toBe(4)
+    expect(result.coverages.some((item) => item.routeId === longest.id && item.endDistanceM - item.startDistanceM < longest.distanceM * 0.9)).toBe(true)
+  })
+
+  test('suppresses a contained segment with essentially the same workout support', () => {
+    const full = eastbound(37)
+    const activities = [0, 0.00001, -0.00001, 0.00002, -0.00002].map((offset, index) => routeActivity(
+      `full-${index}`,
+      full.map(([lat, lon]) => [lat + offset, lon] as const),
+    ))
+    activities.push(routeActivity('middle-only', full.slice(2, 9)))
+
+    const segments = detectRoutes(activities, { minSegmentDistanceM: 100 }).routes.filter((route) => route.type === 'segment')
     expect(segments).toHaveLength(1)
-    expect(segments[0]?.workoutCount).toBe(3)
-    expect(segments[0]?.distanceM).toBeGreaterThan(350)
+    expect(Math.max(...segments[0]!.supportProfile.map((point) => point.workoutCount))).toBe(6)
+  })
+
+  test('keeps loosely nearby contained routes with different workout populations', () => {
+    const full = [0, 0.00001, -0.00001].map((offset, index) => routeActivity(`full-${index}`, eastbound(37 + offset)))
+    const parallel = [0, 0.00001, -0.00001].map((offset, index) => routeActivity(
+      `parallel-${index}`,
+      eastbound(37.00036 + offset).slice(2, 9),
+    ))
+
+    const segments = detectRoutes([...full, ...parallel], {
+      minSegmentDistanceM: 100,
+      minSegmentSupportJaccard: 0.8,
+    }).routes.filter((route) => route.type === 'segment')
+    expect(segments).toHaveLength(2)
+  })
+
+  test('uses median supporting geometry instead of the first workout trace', () => {
+    const activities = [activity('outlier', 0.00015), activity('center', 0), activity('near-center', -0.00001)]
+    const forward = detectRoutes(activities).routes.find((route) => route.type === 'segment')!
+    const reverse = detectRoutes([...activities].reverse()).routes.find((route) => route.type === 'segment')!
+
+    expect(forward.geometry[0]!.lat).toBeCloseTo(37, 5)
+    expect(reverse.geometry).toEqual(forward.geometry)
+    expect(reverse.id).toBe(forward.id)
   })
 
   test('rejects a segment that doubles back within the separation radius', () => {
@@ -281,5 +323,6 @@ describe('segment detection', () => {
     expect(() => resolveDetectionConfig({ minWorkoutCount: 2.5 })).toThrow('minWorkoutCount must be an integer')
     expect(() => resolveDetectionConfig({ maxRoutesPerSport: 3.5 })).toThrow('maxRoutesPerSport must be an integer')
     expect(resolveDetectionConfig({ maxRouteDeviationM: 40.5 }).maxRouteDeviationM).toBe(40.5)
+    expect(() => resolveDetectionConfig({ minSegmentSupportJaccard: 1.1 })).toThrow('minSegmentSupportJaccard must be between 0 and 1')
   })
 })

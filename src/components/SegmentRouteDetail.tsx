@@ -5,6 +5,24 @@ import type { RouteDetail } from '../domain/analysis'
 import { DetailHero, DetailTrends, duration, QualityControl, speed } from './RouteDetailShared'
 import { RouteThumbnail } from './RouteThumbnail'
 
+function SupportProfile({ route }: { route: RouteDetail }) {
+  if (route.supportProfile.length === 0) return null
+  const peak = Math.max(...route.supportProfile.map((point) => point.workoutCount))
+  const distanceM = Math.max(route.distanceM, 1)
+  const points = route.supportProfile.map((point) =>
+    `${point.distanceM / distanceM * 100},${46 - point.workoutCount / Math.max(1, peak) * 38}`).join(' ')
+  return (
+    <section className="support-profile">
+      <div className="section-heading"><div><p className="eyebrow">Route coverage</p><h2>Workout support by distance</h2></div><span>{route.workoutCount} full / {peak} peak workouts</span></div>
+      <svg viewBox="0 0 100 50" preserveAspectRatio="none" role="img" aria-label={`Support rises from ${route.workoutCount} full-route workouts to a peak of ${peak}`}>
+        <polygon points={`0,46 ${points} 100,46`} />
+        <polyline points={points} />
+      </svg>
+      <div className="support-axis"><span>Start</span><span>{Math.round(route.distanceM)} m</span></div>
+    </section>
+  )
+}
+
 export function SegmentRouteDetail({ route }: { route: RouteDetail }) {
   const [minimumQuality, setMinimumQuality] = useState(65)
   const efforts = route.traversals.filter((item) => item.qualityScore * 100 >= minimumQuality)
@@ -16,6 +34,7 @@ export function SegmentRouteDetail({ route }: { route: RouteDetail }) {
   return (
     <>
       <DetailHero route={route} />
+      <SupportProfile route={route} />
       <section className="analysis-controls">
         <div><p className="eyebrow">Analysis controls</p><h2>Filter comparable efforts</h2></div>
         <QualityControl value={minimumQuality} onChange={setMinimumQuality} />

@@ -5,7 +5,7 @@ import path from 'node:path'
 import { Effect } from 'effect'
 
 import { listActivities, rebuildDatabase } from './Database'
-import { getAnalysisSettings, rebuildRouteAnalysis } from './AnalysisDatabase'
+import { getAnalysisSettings, getDetectedRoute, listDetectedRoutes, rebuildRouteAnalysis } from './AnalysisDatabase'
 
 let temporaryDirectory: string | undefined
 
@@ -49,5 +49,40 @@ describe('Database', () => {
     expect(settings.config.minWorkoutCount).toBe(2)
     expect(settings.config.maxRoutesPerSport).toBe(5)
     expect(settings.analyzedAt).not.toBeNull()
+  })
+
+  test('persists consensus support profiles and partial coverage observations', async () => {
+    temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'fitness-analysis-db-'))
+    process.env.FITNESS_DATABASE_PATH = path.join(temporaryDirectory, 'fitness.duckdb')
+    const points = Array.from({ length: 11 }, (_, index) => [37, -122 + index * 0.00045] as const)
+    const activities = [0, 0.00001, -0.00001].map((offset, activityIndex) => ({
+      sourceActivityId: `full-${activityIndex}`,
+      sport: 'running',
+      startedAt: new Date('2026-08-19T12:00:00Z'),
+      durationSeconds: 100,
+      distanceM: 500,
+      ascentM: 0,
+      avgHrBpm: 150,
+      maxHrBpm: 160,
+      samples: points.map(([lat, lon], index) => ({
+        timestamp: new Date(Date.UTC(2026, 7, 19, 12, 0, index * 10)), lat: lat + offset, lon,
+        distanceM: index * 50, altitudeM: 0, speedMps: 5, heartRateBpm: 140, cadence: 80, powerW: null,
+      })),
+    }))
+    activities.push({
+      ...activities[0]!,
+      sourceActivityId: 'middle',
+      samples: activities[0]!.samples.slice(2, 9),
+    })
+    await Effect.runPromise(rebuildDatabase(activities))
+    await Effect.runPromise(rebuildRouteAnalysis({ minSegmentDistanceM: 100 }))
+
+    const routes = await Effect.runPromise(listDetectedRoutes)
+    const segment = routes.find((route) => route.type === 'segment')!
+    const detail = await Effect.runPromise(getDetectedRoute(segment.id))
+    expect(detail?.workoutCount).toBe(3)
+    expect(Math.max(...(detail?.supportProfile.map((point) => point.workoutCount) ?? []))).toBe(4)
+    expect(detail?.coverages.some((item) => item.endDistanceM - item.startDistanceM < segment.distanceM * 0.9)).toBe(true)
+    expect(detail?.traversals).toHaveLength(3)
   })
 })

@@ -2,12 +2,18 @@ import type { RoutePoint } from './activity'
 
 export type RouteType = 'segment' | 'loop'
 
+export interface RouteSupportPoint {
+  readonly distanceM: number
+  readonly workoutCount: number
+}
+
 export interface DetectedRoute {
   readonly id: string
   readonly name: string
   readonly type: RouteType
   readonly sport: string
   readonly geometry: ReadonlyArray<RoutePoint>
+  readonly supportProfile: ReadonlyArray<RouteSupportPoint>
   readonly distanceM: number
   readonly workoutCount: number
   readonly traversalCount: number
@@ -35,6 +41,18 @@ export interface RouteTraversal {
   readonly activityRoute: ReadonlyArray<RoutePoint>
 }
 
+export interface RouteCoverage {
+  readonly id: string
+  readonly routeId: string
+  readonly activityId: string
+  readonly startedAt: string
+  readonly endedAt: string
+  readonly startDistanceM: number
+  readonly endDistanceM: number
+  readonly qualityScore: number
+}
+
 export interface RouteDetail extends DetectedRoute {
   readonly traversals: ReadonlyArray<RouteTraversal>
+  readonly coverages: ReadonlyArray<RouteCoverage>
 }

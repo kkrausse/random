@@ -15,6 +15,7 @@ todos.json
 __pycache__/
 *.pyc
 data/fitness.duckdb*
+data/analysis-experiments/
 data/raw/garmin/manifest.json
 data/raw/garmin/activities/*
 !data/raw/garmin/activities/.gitkeep

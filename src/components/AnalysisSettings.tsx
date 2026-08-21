@@ -22,6 +22,7 @@ const fields: ReadonlyArray<{
   { key: 'maxLoopDistanceM', label: 'Maximum loop', unit: 'm', min: 200, max: 50_000, step: 100 },
   { key: 'loopClosureM', label: 'Loop closure', unit: 'm', min: 5, max: 500, step: 5 },
   { key: 'minWorkoutCount', label: 'Minimum workouts', unit: '', min: 2, max: 100, step: 1 },
+  { key: 'minSegmentSupportJaccard', label: 'Nested segment Jaccard', unit: '', min: 0, max: 1, step: 0.05 },
   { key: 'maxRoutesPerSport', label: 'Routes per sport/type', unit: '', min: 1, max: 100, step: 1 },
 ]
 
@@ -52,7 +53,7 @@ export function AnalysisSettings({ settings }: { settings: AnalysisSettingsValue
         <span>{expanded ? 'Hide settings' : 'Adjust and rerun'}</span>
       </button>
       {expanded && <div className="settings-body">
-        <div className="settings-intro"><p>These settings rebuild only derived routes and traversals. Imported workouts and GPS samples are not modified.</p><button type="button" onClick={() => setConfig(settings.config)} disabled={isPending}><RotateCcw />Restore last run</button></div>
+        <div className="settings-intro"><p>These settings rebuild only derived routes and traversals. Imported workouts and GPS samples are not modified. A nested segment Jaccard of 0 folds popular cores into the longest route's support profile; raising it can list cores with different workout populations separately.</p><button type="button" onClick={() => setConfig(settings.config)} disabled={isPending}><RotateCcw />Restore last run</button></div>
         <div className="settings-grid">
           {fields.map((field) => <label key={field.key}>{field.label}<span><input type="number" min={field.min} max={field.max} step={field.step} value={config[field.key]} disabled={isPending} onChange={(event) => setConfig({ ...config, [field.key]: Number(event.target.value) })} />{field.unit && <small>{field.unit}</small>}</span></label>)}
         </div>

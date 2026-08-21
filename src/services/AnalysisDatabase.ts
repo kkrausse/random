@@ -4,7 +4,7 @@ import type { DuckDBAppender, DuckDBValue } from '@duckdb/node-api'
 import { Effect } from 'effect'
 
 import type { ActivitySample, RoutePoint } from '../domain/activity'
-import type { DetectedRoute, RouteDetail, RouteTraversal } from '../domain/analysis'
+import type { DetectedRoute, RouteCoverage, RouteDetail, RouteTraversal } from '../domain/analysis'
 import { FitnessDataError } from './errors'
 import type { ImportedActivity } from './Database'
 import { DETECTION_DEFAULTS, detectRoutes, resolveDetectionConfig } from './SegmentDetector'
@@ -75,7 +75,7 @@ const readNormalizedActivities = async (connection: Awaited<ReturnType<DuckDBIns
 const createAnalysisTables = (connection: Awaited<ReturnType<DuckDBInstance['connect']>>) => connection.run(`
   CREATE TABLE detected_routes (
     id VARCHAR PRIMARY KEY, name VARCHAR NOT NULL, type VARCHAR NOT NULL, sport VARCHAR NOT NULL,
-    geometry_json VARCHAR NOT NULL, distance_m DOUBLE NOT NULL, workout_count INTEGER NOT NULL,
+    geometry_json VARCHAR NOT NULL, support_profile_json VARCHAR NOT NULL, distance_m DOUBLE NOT NULL, workout_count INTEGER NOT NULL,
     traversal_count INTEGER NOT NULL, match_score DOUBLE NOT NULL, popularity_score DOUBLE NOT NULL,
     overall_score DOUBLE NOT NULL, first_traversal_at TIMESTAMPTZ NOT NULL, last_traversal_at TIMESTAMPTZ NOT NULL
   );
@@ -84,6 +84,11 @@ const createAnalysisTables = (connection: Awaited<ReturnType<DuckDBInstance['con
     started_at TIMESTAMPTZ NOT NULL, ended_at TIMESTAMPTZ NOT NULL, duration_sec DOUBLE NOT NULL,
     distance_m DOUBLE NOT NULL, avg_heart_rate DOUBLE, avg_speed DOUBLE, match_error_m DOUBLE NOT NULL,
     quality_score DOUBLE NOT NULL, lap_count INTEGER NOT NULL, lap_times_json VARCHAR NOT NULL
+  );
+  CREATE TABLE route_coverages (
+    id VARCHAR PRIMARY KEY, route_id VARCHAR NOT NULL, activity_id VARCHAR NOT NULL,
+    started_at TIMESTAMPTZ NOT NULL, ended_at TIMESTAMPTZ NOT NULL,
+    start_distance_m DOUBLE NOT NULL, end_distance_m DOUBLE NOT NULL, quality_score DOUBLE NOT NULL
   );
   CREATE TABLE analysis_settings (
     config_json VARCHAR NOT NULL, analyzed_at TIMESTAMPTZ NOT NULL
@@ -96,12 +101,12 @@ export const rebuildRouteAnalysis = (overrides: Partial<DetectionConfig> = {}) =
     const activities = await withDatabase(readNormalizedActivities)
     const analysis = detectRoutes(activities, config)
     await withDatabase(async (connection) => {
-      await connection.run('BEGIN TRANSACTION; DROP TABLE IF EXISTS route_traversals; DROP TABLE IF EXISTS detected_routes; DROP TABLE IF EXISTS analysis_settings;')
+      await connection.run('BEGIN TRANSACTION; DROP TABLE IF EXISTS route_coverages; DROP TABLE IF EXISTS route_traversals; DROP TABLE IF EXISTS detected_routes; DROP TABLE IF EXISTS analysis_settings;')
       try {
         await createAnalysisTables(connection)
         const routeAppender = await connection.createAppender('detected_routes')
         for (const route of analysis.routes) {
-          for (const value of [route.id, route.name, route.type, route.sport, JSON.stringify(route.geometry), route.distanceM,
+          for (const value of [route.id, route.name, route.type, route.sport, JSON.stringify(route.geometry), JSON.stringify(route.supportProfile), route.distanceM,
             route.workoutCount, route.traversalCount, route.matchScore, route.popularityScore, route.overallScore,
             timestamp(new Date(route.firstTraversalAt)), timestamp(new Date(route.lastTraversalAt))]) append(routeAppender, value)
           routeAppender.endRow()
@@ -115,12 +120,20 @@ export const rebuildRouteAnalysis = (overrides: Partial<DetectionConfig> = {}) =
           traversalAppender.endRow()
         }
         traversalAppender.closeSync()
+        const coverageAppender = await connection.createAppender('route_coverages')
+        for (const item of analysis.coverages) {
+          for (const value of [item.id, item.routeId, item.activityId, timestamp(new Date(item.startedAt)), timestamp(new Date(item.endedAt)),
+            item.startDistanceM, item.endDistanceM, item.qualityScore]) append(coverageAppender, value)
+          coverageAppender.endRow()
+        }
+        coverageAppender.closeSync()
         const settingsAppender = await connection.createAppender('analysis_settings')
         append(settingsAppender, JSON.stringify(config))
         append(settingsAppender, timestamp(new Date()))
         settingsAppender.endRow()
         settingsAppender.closeSync()
-        await connection.run('CREATE INDEX traversals_route_date ON route_traversals(route_id, started_at); COMMIT;')
+        await connection.run(`CREATE INDEX traversals_route_date ON route_traversals(route_id, started_at);
+          CREATE INDEX coverages_route_date ON route_coverages(route_id, started_at); COMMIT;`)
       } catch (error) {
         await connection.run('ROLLBACK')
         throw error
@@ -158,7 +171,9 @@ export const getAnalysisSettings = Effect.tryPromise({
 
 const routeFromRow = (row: Record<string, unknown>): DetectedRoute => ({
   id: String(row.id), name: String(row.name), type: String(row.type) as DetectedRoute['type'], sport: String(row.sport),
-  geometry: JSON.parse(String(row.geometry_json)) as RoutePoint[], distanceM: Number(row.distance_m),
+  geometry: JSON.parse(String(row.geometry_json)) as RoutePoint[],
+  supportProfile: row.support_profile_json === undefined ? [] : JSON.parse(String(row.support_profile_json)),
+  distanceM: Number(row.distance_m),
   workoutCount: Number(row.workout_count), traversalCount: Number(row.traversal_count), matchScore: Number(row.match_score),
   popularityScore: Number(row.popularity_score), overallScore: Number(row.overall_score),
   firstTraversalAt: String(row.first_traversal_at), lastTraversalAt: String(row.last_traversal_at),
@@ -216,7 +231,15 @@ export const getDetectedRoute = (id: string) => Effect.tryPromise({
       lapTimesSec: JSON.parse(String(item.lap_times_json)) as number[],
       activityRoute: activityRoutes.get(String(item.activity_id)) ?? [],
     }))
-    return { ...routeFromRow(row), traversals }
+    const coverages: RouteCoverage[] = await tableExists(connection, 'route_coverages')
+      ? (await connection.runAndReadAll(`SELECT *, started_at::VARCHAR started_at, ended_at::VARCHAR ended_at
+          FROM route_coverages WHERE route_id = '${escapedId}' ORDER BY started_at DESC`)).getRowObjectsJS().map((item) => ({
+            id: String(item.id), routeId: String(item.route_id), activityId: String(item.activity_id),
+            startedAt: String(item.started_at), endedAt: String(item.ended_at),
+            startDistanceM: Number(item.start_distance_m), endDistanceM: Number(item.end_distance_m), qualityScore: Number(item.quality_score),
+          }))
+      : []
+    return { ...routeFromRow(row), traversals, coverages }
   }),
   catch: (cause) => new FitnessDataError({ operation: 'query detected route', cause }),
 })

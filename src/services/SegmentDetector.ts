@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 
 import type { ActivitySample, RoutePoint } from '../domain/activity'
-import type { DetectedRoute, RouteTraversal, RouteType } from '../domain/analysis'
+import type { DetectedRoute, RouteCoverage, RouteTraversal, RouteType } from '../domain/analysis'
 import type { ImportedActivity } from './Database'
 
 export interface DetectionConfig {
@@ -13,6 +13,7 @@ export interface DetectionConfig {
   readonly maxLoopDistanceM: number
   readonly loopClosureM: number
   readonly minWorkoutCount: number
+  readonly minSegmentSupportJaccard: number
   readonly maxRoutesPerSport: number
 }
 
@@ -25,6 +26,7 @@ export const DETECTION_DEFAULTS: DetectionConfig = {
   maxLoopDistanceM: 3_000,
   loopClosureM: 40,
   minWorkoutCount: 3,
+  minSegmentSupportJaccard: 0,
   maxRoutesPerSport: 12,
 }
 
@@ -40,6 +42,7 @@ export const resolveDetectionConfig = (overrides: Partial<DetectionConfig> = {})
     maxLoopDistanceM: [200, 50_000],
     loopClosureM: [5, 500],
     minWorkoutCount: [2, 100],
+    minSegmentSupportJaccard: [0, 1],
     maxRoutesPerSport: [1, 100],
   }
   for (const [key, [minimum, maximum]] of Object.entries(ranges) as Array<[keyof DetectionConfig, readonly [number, number]]>) {
@@ -72,7 +75,7 @@ interface Path {
 interface Candidate {
   readonly type: RouteType
   readonly sport: string
-  readonly geometry: ReadonlyArray<Point>
+  readonly geometry: ReadonlyArray<RoutePoint>
   readonly distanceM: number
 }
 
@@ -86,6 +89,15 @@ interface Match {
 
 interface QualifiedCandidate extends Candidate {
   readonly matches: ReadonlyArray<{ path: Path, match: Match }>
+  readonly workoutIds: ReadonlySet<string>
+}
+
+interface CandidateObservation {
+  readonly path: Path
+  readonly match: Match
+  readonly startIndex: number
+  readonly endIndex: number
+  readonly fullRoute: boolean
 }
 
 const radians = (degrees: number) => degrees * Math.PI / 180
@@ -381,11 +393,137 @@ const directedSimilarity = (a: Candidate, b: Candidate, config: DetectionConfig)
     alignFrom(rotateLoop(ring, phase), fakePath, 0, { ...config, maxRouteDeviationM: Math.max(config.maxRouteDeviationM, 50) }) !== null)
 }
 
-const segmentContains = (container: Candidate, contained: Candidate, config: DetectionConfig) => {
+const workoutJaccard = (a: ReadonlySet<string>, b: ReadonlySet<string>) => {
+  let intersection = 0
+  for (const id of a) if (b.has(id)) intersection += 1
+  return intersection / Math.max(1, new Set([...a, ...b]).size)
+}
+
+const containedInterval = (container: Candidate, contained: Candidate, config: DetectionConfig): Match | null => {
+  if (container === contained) return {
+    startIndex: 0,
+    endIndex: container.geometry.length - 1,
+    coverage: 1,
+    errorM: 0,
+    endpointErrorM: 0,
+  }
+  if (container.type !== 'segment' || contained.type !== 'segment' || container.sport !== contained.sport) return null
+  if (container.distanceM + SAMPLE_SPACING_M < contained.distanceM) return null
+  const path: Path = { activity: null as unknown as ImportedActivity, id: '', points: container.geometry as ReadonlyArray<Point> }
+  return findMatches(contained.geometry, path, 'segment', config)[0] ?? null
+}
+
+const looselyContains = (container: Candidate, contained: Candidate, config: DetectionConfig) => {
   if (container.type !== 'segment' || contained.type !== 'segment' || container.sport !== contained.sport) return false
   if (container.distanceM + SAMPLE_SPACING_M < contained.distanceM) return false
   const path: Path = { activity: null as unknown as ImportedActivity, id: '', points: container.geometry as ReadonlyArray<Point> }
   return findMatches(contained.geometry, path, 'segment', { ...config, maxRouteDeviationM: Math.max(config.maxRouteDeviationM, 50) }).length > 0
+}
+
+const cumulativeDistances = (points: ReadonlyArray<RoutePoint>) => {
+  const values = [0]
+  for (let index = 1; index < points.length; index += 1) values.push(values[index - 1]! + pointDistanceM(points[index - 1]!, points[index]!))
+  return values
+}
+
+const pointAtDistance = (points: ReadonlyArray<Point>, cumulative: ReadonlyArray<number>, target: number): RoutePoint => {
+  let index = 1
+  while (index < cumulative.length - 1 && cumulative[index]! < target) index += 1
+  const fromDistance = cumulative[index - 1]!
+  const edgeDistance = cumulative[index]! - fromDistance
+  const edgeFraction = edgeDistance === 0 ? 0 : (target - fromDistance) / edgeDistance
+  const from = points[index - 1]!
+  const to = points[index]!
+  return { lat: from.lat + (to.lat - from.lat) * edgeFraction, lon: from.lon + (to.lon - from.lon) * edgeFraction }
+}
+
+const median = (values: ReadonlyArray<number>) => {
+  const sorted = [...values].sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!
+}
+
+const segmentFamily = (representative: QualifiedCandidate, qualified: ReadonlyArray<QualifiedCandidate>, config: DetectionConfig) => {
+  const observations: CandidateObservation[] = []
+  for (const member of qualified) {
+    const interval = containedInterval(representative, member, config)
+    if (!interval) continue
+    for (const { path, match } of member.matches) {
+      if (!path.points[match.startIndex]!.sample.timestamp || !path.points[match.endIndex]!.sample.timestamp) continue
+      observations.push({
+        path,
+        match,
+        startIndex: interval.startIndex,
+        endIndex: interval.endIndex,
+        fullRoute: member === representative,
+      })
+    }
+  }
+
+  observations.sort((a, b) => {
+    const aLength = a.endIndex - a.startIndex
+    const bLength = b.endIndex - b.startIndex
+    return Number(b.fullRoute) - Number(a.fullRoute) || bLength - aLength
+      || b.match.coverage - a.match.coverage || a.match.errorM - b.match.errorM
+  })
+  const unique: CandidateObservation[] = []
+  for (const observation of observations) {
+    const duplicate = unique.some((existing) => existing.path.id === observation.path.id
+      && observation.match.startIndex <= existing.match.endIndex
+      && observation.match.endIndex >= existing.match.startIndex)
+    if (!duplicate) unique.push(observation)
+  }
+  const pathDistances = new Map<string, number[]>()
+  for (const observation of unique) {
+    if (!pathDistances.has(observation.path.id)) pathDistances.set(observation.path.id, cumulativeDistances(observation.path.points))
+  }
+
+  let geometry = representative.geometry.map((fallback, routeIndex) => {
+    const byWorkout = new Map<string, { point: RoutePoint, errorM: number }>()
+    for (const observation of unique) {
+      if (!observation.fullRoute) continue
+      if (routeIndex < observation.startIndex || routeIndex > observation.endIndex) continue
+      const routeSpan = Math.max(1, observation.endIndex - observation.startIndex)
+      const cumulative = pathDistances.get(observation.path.id)!
+      const startDistance = cumulative[observation.match.startIndex]!
+      const endDistance = cumulative[observation.match.endIndex]!
+      const fraction = (routeIndex - observation.startIndex) / routeSpan
+      const point = pointAtDistance(observation.path.points, cumulative, startDistance + (endDistance - startDistance) * fraction)
+      const workoutId = observation.path.activity.sourceActivityId
+      const existing = byWorkout.get(workoutId)
+      if (!existing || observation.match.errorM < existing.errorM) byWorkout.set(workoutId, { point, errorM: observation.match.errorM })
+    }
+    const points = [...byWorkout.values()].map((value) => value.point)
+    return points.length === 0 ? { lat: fallback.lat, lon: fallback.lon } : {
+      lat: median(points.map((point) => point.lat)),
+      lon: median(points.map((point) => point.lon)),
+    }
+  })
+  let verified = unique.flatMap((observation) => {
+    if (!observation.fullRoute) return [observation]
+    const matches: Match[] = []
+    for (let startIndex = Math.max(0, observation.match.startIndex - 2);
+      startIndex <= Math.min(observation.path.points.length - 2, observation.match.startIndex + 2); startIndex += 1) {
+      const match = alignFrom(geometry, observation.path, startIndex, config)
+      if (match) matches.push(match)
+    }
+    const match = matches.sort((a, b) => b.coverage - a.coverage || a.errorM - b.errorM)[0]
+    return match ? [{ ...observation, match }] : []
+  })
+  const verifiedWorkoutIds = new Set(verified.filter((observation) => observation.fullRoute)
+    .map((observation) => observation.path.activity.sourceActivityId))
+  if ([...representative.workoutIds].some((id) => !verifiedWorkoutIds.has(id))) {
+    geometry = representative.geometry.map(({ lat, lon }) => ({ lat, lon }))
+    verified = unique
+  }
+  const distances = cumulativeDistances(geometry)
+  const supportProfile = geometry.map((_, routeIndex) => ({
+    distanceM: distances[routeIndex]!,
+    workoutCount: new Set(verified
+      .filter((observation) => routeIndex >= observation.startIndex && routeIndex <= observation.endIndex)
+      .map((observation) => observation.path.activity.sourceActivityId)).size,
+  }))
+  return { geometry, observations: verified, supportProfile, distances }
 }
 
 const sameClosedRoute = (loop: Candidate, segment: Candidate, config: DetectionConfig) => {
@@ -548,6 +686,7 @@ const traversal = (id: string, path: Path, match: Match, type: RouteType, config
 export interface DetectionResult {
   readonly routes: ReadonlyArray<DetectedRoute>
   readonly traversals: ReadonlyArray<RouteTraversal>
+  readonly coverages: ReadonlyArray<RouteCoverage>
 }
 
 export function detectRoutes(activities: ReadonlyArray<ImportedActivity>, overrides: Partial<DetectionConfig> = {}): DetectionResult {
@@ -641,7 +780,8 @@ export function detectRoutes(activities: ReadonlyArray<ImportedActivity>, overri
         const path = paths[pathIndex]!
         return findMatches(geometry, path, candidate.type, config, pathSpatialIndexes[pathIndex]).map((match) => ({ path, match }))
       })
-    if (new Set(matches.map(({ path }) => path.activity.sourceActivityId)).size >= config.minWorkoutCount) qualified.push({ ...candidate, matches })
+    const workoutIds = new Set(matches.map(({ path }) => path.activity.sourceActivityId))
+    if (workoutIds.size >= config.minWorkoutCount) qualified.push({ ...candidate, matches, workoutIds })
   }
 
   qualified.sort((a, b) => {
@@ -658,7 +798,11 @@ export function detectRoutes(activities: ReadonlyArray<ImportedActivity>, overri
     }
     const duplicate = representatives.some((representative) => {
       if (candidate.type === 'segment' && representative.type === 'loop') return sameClosedRoute(representative, candidate, config)
-      if (candidate.type === 'segment') return segmentContains(representative, candidate, config)
+      if (candidate.type === 'segment') {
+        const supportSimilarity = workoutJaccard(candidate.workoutIds, representative.workoutIds)
+        return supportSimilarity >= config.minSegmentSupportJaccard
+          && (containedInterval(representative, candidate, config) !== null || looselyContains(representative, candidate, config))
+      }
       return sameLoopShape(candidate, representative, config)
         || directedSimilarity(candidate, representative, config)
         || repeatedLoop(representative, candidate, config)
@@ -668,44 +812,84 @@ export function detectRoutes(activities: ReadonlyArray<ImportedActivity>, overri
 
   const routes: DetectedRoute[] = []
   const traversals: RouteTraversal[] = []
+  const coverages: RouteCoverage[] = []
   for (const candidate of representatives) {
-    const normalized = canonicalLoop(candidate)
-    const geometry = normalized.geometry.map(({ lat, lon }) => ({ lat, lon }))
+    const family = candidate.type === 'segment' ? segmentFamily(candidate, qualified, config) : null
+    const materialized: Candidate = family
+      ? {
+          ...candidate,
+          geometry: family.geometry,
+          distanceM: pathDistanceM(family.geometry),
+        }
+      : canonicalLoop(candidate)
+    const geometry = materialized.geometry.map(({ lat, lon }) => ({ lat, lon }))
+    const normalized = canonicalLoop(materialized)
     const id = routeId(normalized)
     const occurrences = new Map<string, number>()
-    const values = candidate.matches.flatMap(({ path, match }) => {
+    const observations = family?.observations ?? candidate.matches.map(({ path, match }) => ({
+      path,
+      match,
+      startIndex: 0,
+      endIndex: candidate.geometry.length - 1,
+      fullRoute: true,
+    }))
+    const coverageValues = observations.flatMap(({ path, match, startIndex, endIndex, fullRoute }) => {
       const activityId = path.activity.sourceActivityId
       const occurrence = occurrences.get(activityId) ?? 0
       occurrences.set(activityId, occurrence + 1)
+      const totalDistance = family?.distances.at(-1) ?? 1
+      const start = path.points[match.startIndex]!
+      const end = path.points[match.endIndex]!
+      if (!start.sample.timestamp || !end.sample.timestamp) return []
+      const errorScore = 1 - (match.errorM + match.endpointErrorM) / (config.maxRouteDeviationM * 2)
+      const qualityScore = Math.max(0, Math.min(1, match.coverage * errorScore))
+      const coverage: RouteCoverage = {
+        id: `${id}:coverage:garmin:${activityId}:${occurrence}`,
+        routeId: id,
+        activityId: `garmin:${activityId}`,
+        startedAt: start.sample.timestamp.toISOString(),
+        endedAt: end.sample.timestamp.toISOString(),
+        startDistanceM: family?.distances[startIndex] ?? 0,
+        endDistanceM: family?.distances[endIndex] ?? totalDistance,
+        qualityScore,
+      }
+      return [{ coverage, path, match, occurrence, fullRoute }]
+    })
+    const fullValues = coverageValues.filter((item) => item.fullRoute).flatMap(({ path, match, occurrence }) => {
       const value = traversal(id, path, match, candidate.type, config, occurrence)
       return value ? [value] : []
     })
-    const workoutCount = new Set(values.map((value) => value.activityId)).size
+    const workoutCount = new Set(fullValues.map((value) => value.activityId)).size
     if (workoutCount < config.minWorkoutCount) continue
     const byActivity = new Map<string, RouteTraversal[]>()
-    for (const value of values) byActivity.set(value.activityId, [...(byActivity.get(value.activityId) ?? []), value])
+    for (const value of fullValues) byActivity.set(value.activityId, [...(byActivity.get(value.activityId) ?? []), value])
     const workoutDistances = [...byActivity.values()].map((items) => items.reduce((sum, item) => sum + item.distanceM, 0) / items.length)
     const workoutQualities = [...byActivity.values()].map((items) => items.reduce((sum, item) => sum + item.qualityScore, 0) / items.length)
-    const distanceM = workoutDistances.reduce((sum, value) => sum + value, 0) / workoutDistances.length
+    const distanceM = family ? pathDistanceM(geometry) : workoutDistances.reduce((sum, value) => sum + value, 0) / workoutDistances.length
     const matchScore = workoutQualities.reduce((sum, value) => sum + value, 0) / workoutQualities.length
     const popularityScore = Math.min(1, Math.log1p(workoutCount) / Math.log(20))
-    const dates = values.map((value) => value.startedAt).sort()
+    const dates = fullValues.map((value) => value.startedAt).sort()
     routes.push({
       id,
       name: '',
       type: candidate.type,
       sport: candidate.sport,
       geometry,
+      supportProfile: family?.supportProfile ?? [
+        { distanceM: 0, workoutCount },
+        { distanceM, workoutCount },
+      ],
       distanceM,
       workoutCount,
-      traversalCount: values.length,
+      traversalCount: fullValues.length,
       matchScore,
       popularityScore,
       overallScore: matchScore * Math.log1p(workoutCount) * Math.log1p(distanceM),
       firstTraversalAt: dates[0]!,
       lastTraversalAt: dates.at(-1)!,
     })
-    traversals.push(...values)
+    traversals.push(...fullValues)
+    coverages.push(...coverageValues.map((item) => item.coverage))
   }
 
   routes.sort((a, b) => b.overallScore - a.overallScore)
@@ -728,5 +912,9 @@ export function detectRoutes(activities: ReadonlyArray<ImportedActivity>, overri
     nameCounts.set(key, number)
     return { ...route, name: `${route.sport[0]!.toUpperCase()}${route.sport.slice(1)} ${route.type} ${number}` }
   })
-  return { routes: finalRoutes, traversals: traversals.filter((item) => kept.has(item.routeId)) }
+  return {
+    routes: finalRoutes,
+    traversals: traversals.filter((item) => kept.has(item.routeId)),
+    coverages: coverages.filter((item) => kept.has(item.routeId)),
+  }
 }

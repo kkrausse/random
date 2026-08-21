@@ -108,6 +108,11 @@ input[type='number'] { width: 120px; padding-right: 8px; }
 .detail-summary { display: flex; flex-direction: column; justify-content: center; padding: clamp(24px, 4vw, 54px); background: rgba(247,244,233,.48); }
 .detail-summary h1 { margin: 10px 0 45px; font-size: clamp(2rem, 4vw, 3.7rem); }
 .hero-stats { gap: 20px 14px; }
+.support-profile { margin: 24px 0; padding: 20px 22px 14px; border: 1px solid #9da097; background: rgba(247,244,233,.48); }
+.support-profile svg { width: 100%; height: 120px; overflow: visible; border-bottom: 1px solid #9da097; }
+.support-profile polygon { fill: rgba(30,91,58,.16); }
+.support-profile polyline { fill: none; stroke: #1e5b3a; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.support-axis { display: flex; justify-content: space-between; padding-top: 7px; color: #737871; font: .62rem DM Mono, monospace; text-transform: uppercase; }
 .analysis-controls { display: grid; grid-template-columns: minmax(230px, 1fr) repeat(3, minmax(150px, .65fr)); align-items: center; gap: 28px; margin: 24px 0; padding: 22px; border: 1px solid #9da097; background: #e4e0d5; }
 .analysis-controls h2, .section-heading h2 { margin: 5px 0 0; font-size: 1.25rem; }
 .analysis-controls label span { float: right; color: #18201b; }

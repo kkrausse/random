@@ -17,6 +17,8 @@ interface ExperimentSnapshot {
   readonly createdAt: string
   readonly durationMs: number
   readonly activityCount: number
+  readonly traversalCount: number
+  readonly coverageCount: number
   readonly config: DetectionConfig
   readonly routes: ReadonlyArray<RouteSnapshot>
 }
@@ -46,6 +48,8 @@ const snapshot: ExperimentSnapshot = {
   createdAt: new Date().toISOString(),
   durationMs: performance.now() - startedAt,
   activityCount: result.activities,
+  traversalCount: result.analysis.traversals.length,
+  coverageCount: result.analysis.coverages.length,
   config: result.config,
   routes: result.analysis.routes.map((route) => ({ ...route, workoutIds: [...(workoutIds.get(route.id) ?? [])].sort() })),
 }
@@ -65,7 +69,7 @@ const jaccard = (a: ReadonlyArray<string>, b: ReadonlyArray<string>) => {
   return intersection / Math.max(1, new Set([...a, ...b]).size)
 }
 
-console.log(`${label}: ${snapshot.activityCount} activities, ${snapshot.routes.length} routes, ${result.analysis.traversals.length} traversals in ${(snapshot.durationMs / 1_000).toFixed(2)}s`)
+console.log(`${label}: ${snapshot.activityCount} activities, ${snapshot.routes.length} routes, ${snapshot.traversalCount} traversals, ${snapshot.coverageCount} coverage observations in ${(snapshot.durationMs / 1_000).toFixed(2)}s`)
 console.log(`Saved ${path.relative(process.cwd(), outputPath)}`)
 
 const baselineName = values.get('baseline')
