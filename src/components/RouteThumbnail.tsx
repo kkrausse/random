@@ -5,6 +5,7 @@ const HEIGHT = 64
 const PADDING = 7
 const TILE_SIZE = 256
 const MAX_LATITUDE = 85.051129
+const coordinate = (value: number) => Number(value.toFixed(3))
 
 interface MapTile {
   readonly href: string
@@ -57,13 +58,16 @@ function routeMap(points: ReadonlyArray<RoutePoint>): RouteMap | null {
       const wrappedX = ((tileX % tileCount) + tileCount) % tileCount
       tiles.push({
         href: `https://tile.openstreetmap.org/${zoom}/${wrappedX}/${tileY}.png`,
-        x: tileX * TILE_SIZE - originX,
-        y: tileY * TILE_SIZE - originY,
+        x: coordinate(tileX * TILE_SIZE - originX),
+        y: coordinate(tileY * TILE_SIZE - originY),
       })
     }
   }
 
-  const screenPoints = projected.map((point) => ({ x: point.x * worldSize - originX, y: point.y * worldSize - originY }))
+  const screenPoints = projected.map((point) => ({
+    x: coordinate(point.x * worldSize - originX),
+    y: coordinate(point.y * worldSize - originY),
+  }))
   return {
     path: screenPoints.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' '),
     tiles,

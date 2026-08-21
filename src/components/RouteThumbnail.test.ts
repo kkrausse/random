@@ -31,4 +31,16 @@ describe('routePath', () => {
     expect(markup).toContain('route-endpoint-start')
     expect(markup).toContain('route-endpoint-end')
   })
+
+  test('rounds rendered coordinates for consistent hydration', () => {
+    const markup = renderToStaticMarkup(RouteThumbnail({ points: [
+      { lat: 40.7, lon: -74.01 },
+      { lat: 40.71, lon: -74 },
+      { lat: 40.72, lon: -74.02 },
+    ] }))
+    const coordinates = [...markup.matchAll(/(?:cx|cy|x|y)="(-?\d+(?:\.\d+)?)"/g)].map((match) => match[1]!)
+
+    expect(coordinates.length).toBeGreaterThan(0)
+    expect(coordinates.every((value) => (value.split('.')[1]?.length ?? 0) <= 3)).toBeTrue()
+  })
 })
