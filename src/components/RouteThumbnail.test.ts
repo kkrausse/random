@@ -43,4 +43,14 @@ describe('routePath', () => {
     expect(coordinates.length).toBeGreaterThan(0)
     expect(coordinates.every((value) => (value.split('.')[1]?.length ?? 0) <= 3)).toBeTrue()
   })
+
+  test('can render attribution without a nested link', () => {
+    const markup = renderToStaticMarkup(RouteThumbnail({
+      points: [{ lat: 40.7, lon: -74.01 }, { lat: 40.71, lon: -74 }],
+      linkAttribution: false,
+    }))
+
+    expect(markup).not.toContain('<a')
+    expect(markup).toContain('<span class="map-attribution">© OpenStreetMap</span>')
+  })
 })

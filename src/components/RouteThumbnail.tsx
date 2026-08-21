@@ -80,7 +80,7 @@ export function routePath(points: ReadonlyArray<RoutePoint>): string | null {
   return routeMap(points)?.path ?? null
 }
 
-export function RouteThumbnail({ points }: { points: ReadonlyArray<RoutePoint> }) {
+export function RouteThumbnail({ points, linkAttribution = true }: { points: ReadonlyArray<RoutePoint>; linkAttribution?: boolean }) {
   const map = routeMap(points)
 
   return (
@@ -96,7 +96,9 @@ export function RouteThumbnail({ points }: { points: ReadonlyArray<RoutePoint> }
           <circle className="route-endpoint-start" cx={map.start.x} cy={map.start.y} r="2.2" />
         </g>}
       </svg>
-      {map && <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap</a>}
+      {map && (linkAttribution
+        ? <a className="map-attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap</a>
+        : <span className="map-attribution">© OpenStreetMap</span>)}
     </div>
   )
 }

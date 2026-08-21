@@ -40,7 +40,7 @@ export function AnalysisRouteList({ routes }: { routes: ReadonlyArray<DetectedRo
       <section className="route-grid" aria-label="Detected routes">
         {visible.map((route, index) => (
           <Link className="route-card" key={route.id} to="/analysis/$routeId" params={{ routeId: route.id }}>
-            <div className="route-card-map"><RouteThumbnail points={route.geometry} /><span className="route-rank">{String(index + 1).padStart(2, '0')}</span></div>
+            <div className="route-card-map"><RouteThumbnail points={route.geometry} linkAttribution={false} /><span className="route-rank">{String(index + 1).padStart(2, '0')}</span></div>
             <div className="route-card-body">
               <div className="route-card-title"><span className={`route-type route-type-${route.type}`}>{route.type === 'loop' ? <Repeat2 /> : <RouteIcon />}{route.type}</span><span>{route.sport}</span></div>
               <h2>{route.name}</h2>
