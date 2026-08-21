@@ -16,10 +16,8 @@ export function LoopRouteDetail({ route }: { route: RouteDetail }) {
   const [windowLength, setWindowLength] = useState(1)
   const [mode, setMode] = useState<'representative' | 'best' | 'all'>('representative')
   const [expandedEffortId, setExpandedEffortId] = useState<string | null>(null)
-  const workoutTraversalCounts = new Map<string, number>()
-  for (const traversal of route.traversals) {
-    workoutTraversalCounts.set(traversal.activityId, (workoutTraversalCounts.get(traversal.activityId) ?? 0) + 1)
-  }
+  const workoutLaps = groupByActivity(route.traversals)
+  for (const laps of workoutLaps.values()) laps.sort((a, b) => a.startedAt.localeCompare(b.startedAt))
   let efforts = [...route.traversals]
 
   if (windowLength > 1) {
@@ -76,7 +74,9 @@ export function LoopRouteDetail({ route }: { route: RouteDetail }) {
         <div className="section-heading"><div><p className="eyebrow">History</p><h2>Comparable efforts</h2></div><span>{filtered.length} qualifying</span></div>
         <div className="table-scroll"><table><thead><tr><th>Trace</th><th>Date</th><th>Loops</th><th>Time</th><th><HeartPulse /> Avg HR</th><th><Gauge /> Avg speed</th><th>Quality</th><th>Workout</th></tr></thead><tbody>{filtered.map((item) => {
           const expanded = expandedEffortId === item.id
-          return <Fragment key={item.id}><tr><td className="effort-trace"><RouteThumbnail points={item.activityRoute} /></td><td>{new Date(item.startedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</td><td className="numeric">{workoutTraversalCounts.get(item.activityId) ?? 1}</td><td className="numeric"><button className="lap-time-button" type="button" aria-expanded={expanded} onClick={() => setExpandedEffortId(expanded ? null : item.id)}><Timer /> {duration(item.durationSec)}<ChevronDown /></button></td><td className="numeric hr">{item.avgHeartRate === null ? '-' : Math.round(item.avgHeartRate)}</td><td className="numeric">{speed(item.avgSpeed)}</td><td><span className="quality">{Math.round(item.qualityScore * 100)}%</span></td><td className="numeric">{item.activityId.replace('garmin:', '#')}</td></tr>{expanded && <tr className="lap-breakdown-row"><td colSpan={8}><div className="lap-breakdown"><p>Lap breakdown</p><table><thead><tr><th>Lap</th><th>Time</th><th>Cumulative</th></tr></thead><tbody>{item.lapTimesSec.map((lapTime, index) => <tr key={index}><td className="numeric">{index + 1}</td><td className="numeric">{duration(lapTime)}</td><td className="numeric">{duration(item.lapTimesSec.slice(0, index + 1).reduce((sum, value) => sum + value, 0))}</td></tr>)}</tbody></table></div></td></tr>}</Fragment>
+          const laps = workoutLaps.get(item.activityId) ?? []
+          const toggleExpanded = () => setExpandedEffortId(expanded ? null : item.id)
+          return <Fragment key={item.id}><tr className="expandable-effort-row" tabIndex={0} aria-expanded={expanded} aria-label={`${expanded ? 'Hide' : 'Show'} all ${laps.length} loops from this workout`} onClick={toggleExpanded} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleExpanded() } }}><td className="effort-trace"><RouteThumbnail points={item.activityRoute} linkAttribution={false} /></td><td>{new Date(item.startedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</td><td className="numeric">{laps.length}</td><td className="numeric"><span className="lap-time"><Timer /> {duration(item.durationSec)}<ChevronDown /></span></td><td className="numeric hr">{item.avgHeartRate === null ? '-' : Math.round(item.avgHeartRate)}</td><td className="numeric">{speed(item.avgSpeed)}</td><td><span className="quality">{Math.round(item.qualityScore * 100)}%</span></td><td className="numeric">{item.activityId.replace('garmin:', '#')}</td></tr>{expanded && <tr className="lap-breakdown-row"><td colSpan={8}><div className="lap-breakdown"><p>All loops in workout</p><table><thead><tr><th>Loop</th><th>Time</th><th>Started</th><th>Quality</th></tr></thead><tbody>{laps.map((lap, index) => <tr key={lap.id}><td className="numeric">{index + 1}</td><td className="numeric">{duration(lap.durationSec)}</td><td className="numeric">{new Date(lap.startedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' })}</td><td><span className="quality">{Math.round(lap.qualityScore * 100)}%</span></td></tr>)}</tbody></table></div></td></tr>}</Fragment>
         })}</tbody></table></div>
       </section>
     </>
