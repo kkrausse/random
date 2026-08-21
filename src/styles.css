@@ -128,6 +128,16 @@ input[type='range'] { width: 100%; accent-color: #1e5b3a; }
 .effort-table .effort-trace .route-thumbnail { width: 96px; height: 48px; }
 .effort-table .effort-trace .route-thumbnail svg { width: 100%; height: 100%; }
 .quality { padding: 4px 6px; border: 1px solid #91b29d; color: #19553a; background: #d9e7dc; font: .68rem DM Mono, monospace; }
+.lap-time-button { display: inline-flex; align-items: center; gap: 6px; margin: -6px; border: 0; padding: 6px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+.lap-time-button:hover { background: rgba(255,255,255,.55); }
+.lap-time-button svg:last-child { width: 12px; transition: transform 120ms ease; }
+.lap-time-button[aria-expanded='true'] svg:last-child { transform: rotate(180deg); }
+.lap-breakdown-row, .lap-breakdown-row:hover { background: rgba(217,231,220,.42); }
+.lap-breakdown-row > td { padding: 0 12px 14px 58px; }
+.lap-breakdown { max-width: 380px; border-left: 2px solid #6d9078; padding: 10px 0 0 14px; }
+.lap-breakdown > p { margin: 0 0 7px; color: #59635c; font: 500 .62rem DM Mono, monospace; text-transform: uppercase; letter-spacing: .08em; }
+.lap-breakdown table { min-width: 0; border-top: 1px solid #9da097; }
+.lap-breakdown th, .lap-breakdown td { padding: 7px 10px; }
 
 @media (max-width: 1000px) {
   .route-grid { grid-template-columns: 1fr; }
