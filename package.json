@@ -12,6 +12,7 @@
     "build:app": "bun --bun vite build",
     "build:data": "bun run src/scripts/build-data.ts",
     "build:analysis": "bun run src/scripts/build-analysis.ts",
+    "analysis:experiment": "bun run src/scripts/analysis-experiment.ts",
     "garmin:login": "scripts/garmin/run auth login",
     "garmin:sync": "bun run scripts/garmin/sync.ts",
     "preview": "bun --bun vite preview",

@@ -131,6 +131,15 @@ export const rebuildRouteAnalysis = (overrides: Partial<DetectionConfig> = {}) =
   catch: (cause) => new FitnessDataError({ operation: 'rebuild route analysis', cause }),
 })
 
+export const analyzeRoutes = (overrides: Partial<DetectionConfig> = {}) => Effect.tryPromise({
+  try: async () => {
+    const config = resolveDetectionConfig(overrides)
+    const activities = await withDatabase(readNormalizedActivities)
+    return { activities: activities.length, config, analysis: detectRoutes(activities, config) }
+  },
+  catch: (cause) => new FitnessDataError({ operation: 'analyze routes', cause }),
+})
+
 export interface AnalysisSettings {
   readonly config: DetectionConfig
   readonly analyzedAt: string | null
