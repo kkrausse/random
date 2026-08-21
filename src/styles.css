@@ -133,12 +133,11 @@ input[type='range'] { width: 100%; accent-color: #1e5b3a; }
 .lap-time { display: inline-flex; align-items: center; gap: 6px; }
 .lap-time svg:last-child { width: 12px; transition: transform 120ms ease; }
 .expandable-effort-row[aria-expanded='true'] .lap-time svg:last-child { transform: rotate(180deg); }
+.lap-breakdown-heading { background: rgba(109,144,120,.14); }
+.lap-breakdown-heading th { padding-block: 7px; border-bottom-color: #b7c4b9; }
+.lap-breakdown-heading th:first-child, .lap-breakdown-row td:first-child { border-left: 2px solid #6d9078; }
 .lap-breakdown-row, .lap-breakdown-row:hover { background: rgba(217,231,220,.42); }
-.lap-breakdown-row > td { padding: 0 12px 14px 58px; }
-.lap-breakdown { max-width: 520px; border-left: 2px solid #6d9078; padding: 10px 0 0 14px; }
-.lap-breakdown > p { margin: 0 0 7px; color: #59635c; font: 500 .62rem DM Mono, monospace; text-transform: uppercase; letter-spacing: .08em; }
-.lap-breakdown table { min-width: 0; border-top: 1px solid #9da097; }
-.lap-breakdown th, .lap-breakdown td { padding: 7px 10px; }
+.lap-breakdown-row td { padding-block: 8px; }
 
 @media (max-width: 1000px) {
   .route-grid { grid-template-columns: 1fr; }
