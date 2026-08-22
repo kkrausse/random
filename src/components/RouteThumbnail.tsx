@@ -153,6 +153,7 @@ export function RouteThumbnail({ points, linkAttribution = true, selectedIndex, 
             aria-label={`View ${overlay.name}`}
             onPointerEnter={(event) => updateOverlay(overlay.id, event)}
             onPointerMove={(event) => updateOverlay(overlay.id, event)}
+            onPointerLeave={() => onOverlayChange?.(null)}
             onClick={() => onOverlaySelect?.(overlay.routeId)}
             onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onOverlaySelect?.(overlay.routeId) }}
           />
@@ -168,6 +169,8 @@ export function RouteThumbnail({ points, linkAttribution = true, selectedIndex, 
         to="/analysis/$routeId"
         params={{ routeId: activeOverlay.routeId }}
         search={{ type: 'all', sport: 'all', minimumWorkouts: 2, minimumQuality: 65, windowLength: 1, mode: 'representative' }}
+        onPointerEnter={() => onOverlayChange?.(activeOverlay.id)}
+        onPointerLeave={() => onOverlayChange?.(null)}
       >
         <RouteThumbnail points={activeOverlay.points} linkAttribution={false} />
         <span><i style={{ backgroundColor: activeOverlay.color }} />Segment</span>
