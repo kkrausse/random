@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { ArrowLeft, Gauge, HeartPulse, MapPin, Mountain, Repeat2, Route as RouteIcon, Timer } from 'lucide-react'
+import { Gauge, HeartPulse, MapPin, Mountain, Repeat2, Route as RouteIcon, Timer } from 'lucide-react'
 import { useState } from 'react'
 
 import type { WorkoutDetail as WorkoutDetailData, WorkoutSample } from '../domain/activity'
@@ -56,7 +56,6 @@ export function WorkoutDetail({ workout, routeMatches, initialTimestamp }: {
   return (
     <main>
       <AppNav />
-      <Link className="back-link" to="/" search={{ sort: 'startedAt', direction: 'desc' }}><ArrowLeft />All workouts</Link>
       <header className="workout-detail-header">
         <div><p className="eyebrow">{workout.sport.replaceAll('_', ' ')} / Workout #{workout.sourceActivityId}</p><h1>{new Date(workout.startedAt).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</h1></div>
         <div className="header-actions"><span>{new Date(workout.startedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</span><span>{workout.distanceM === null ? '-' : `${miles(workout.distanceM).toFixed(2)} mi`}</span><span>{duration(workout.durationSeconds)}</span></div>
