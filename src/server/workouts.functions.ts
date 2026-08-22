@@ -12,6 +12,13 @@ export const getWorkout = createServerFn({ method: 'GET' })
     return getWorkoutHandler(data.id)
   })
 
+export const getWorkoutRouteMatches = createServerFn({ method: 'GET' })
+  .validator((input: { id: string }) => input)
+  .handler(async ({ data }) => {
+    const { getWorkoutRouteMatchesHandler } = await import('./workouts.server')
+    return getWorkoutRouteMatchesHandler(data.id)
+  })
+
 export const syncGarmin = createServerFn({ method: 'POST' }).handler(async () => {
   const { syncGarminHandler } = await import('./workouts.server')
   return syncGarminHandler()

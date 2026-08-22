@@ -56,3 +56,19 @@ export interface RouteDetail extends DetectedRoute {
   readonly traversals: ReadonlyArray<RouteTraversal>
   readonly coverages: ReadonlyArray<RouteCoverage>
 }
+
+export interface WorkoutRouteMatch {
+  readonly traversalId: string
+  readonly routeId: string
+  readonly routeName: string
+  readonly routeType: RouteType
+  readonly geometry: ReadonlyArray<RoutePoint>
+  readonly startedAt: string
+  readonly endedAt: string
+  readonly durationSec: number
+  readonly distanceM: number
+  readonly avgHeartRate: number | null
+  readonly avgSpeed: number | null
+  readonly qualityScore: number
+  readonly lapCount: number
+}

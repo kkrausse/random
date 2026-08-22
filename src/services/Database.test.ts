@@ -5,7 +5,7 @@ import path from 'node:path'
 import { Effect } from 'effect'
 
 import { getActivity, listActivities, rebuildDatabase } from './Database'
-import { getAnalysisSettings, getDetectedRoute, listDetectedRoutes, rebuildRouteAnalysis } from './AnalysisDatabase'
+import { getAnalysisSettings, getDetectedRoute, listDetectedRoutes, listWorkoutRouteMatches, rebuildRouteAnalysis } from './AnalysisDatabase'
 
 let temporaryDirectory: string | undefined
 
@@ -93,5 +93,8 @@ describe('Database', () => {
     expect(Math.max(...(detail?.supportProfile.map((point) => point.workoutCount) ?? []))).toBe(4)
     expect(detail?.coverages.some((item) => item.endDistanceM - item.startDistanceM < segment.distanceM * 0.9)).toBe(true)
     expect(detail?.traversals).toHaveLength(3)
+    const workoutMatches = await Effect.runPromise(listWorkoutRouteMatches('garmin:full-0'))
+    expect(workoutMatches.length).toBeGreaterThan(0)
+    expect(workoutMatches.some((match) => match.routeId === segment.id && match.routeType === 'segment')).toBeTrue()
   })
 })

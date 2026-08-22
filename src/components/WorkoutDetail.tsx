@@ -1,8 +1,9 @@
 import { Link } from '@tanstack/react-router'
-import { ArrowLeft, Gauge, HeartPulse, MapPin, Mountain, Timer } from 'lucide-react'
+import { ArrowLeft, Gauge, HeartPulse, MapPin, Mountain, Repeat2, Route as RouteIcon, Timer } from 'lucide-react'
 import { useState } from 'react'
 
 import type { WorkoutDetail as WorkoutDetailData, WorkoutSample } from '../domain/activity'
+import type { WorkoutRouteMatch } from '../domain/analysis'
 import { AppNav } from './AppNav'
 import { RouteThumbnail } from './RouteThumbnail'
 
@@ -39,7 +40,11 @@ const nearestSampleIndex = (samples: ReadonlyArray<WorkoutSample>, target: strin
   return nearest
 }
 
-export function WorkoutDetail({ workout, initialTimestamp }: { workout: WorkoutDetailData; initialTimestamp?: string }) {
+export function WorkoutDetail({ workout, routeMatches, initialTimestamp }: {
+  workout: WorkoutDetailData
+  routeMatches: ReadonlyArray<WorkoutRouteMatch>
+  initialTimestamp?: string
+}) {
   const [sampleIndex, setSampleIndex] = useState(() => nearestSampleIndex(workout.samples, initialTimestamp))
   const sample = workout.samples[sampleIndex]
   const isPaceSport = workout.sport.toLowerCase().includes('run') || workout.sport.toLowerCase().includes('walk')
@@ -82,6 +87,24 @@ export function WorkoutDetail({ workout, initialTimestamp }: { workout: WorkoutD
           <div><span className="metric-symbol">W</span><span>Power</span><strong>{sample.powerW === null ? '-' : `${Math.round(sample.powerW)} W`}</strong></div>
         </section>
       </> : <section className="analysis-empty"><MapPin /><h2>No GPS samples</h2><p>This workout has no recorded route to play back.</p></section>}
+      <section className="workout-segments">
+        <div className="section-heading"><div><p className="eyebrow">Route analysis</p><h2>Detected segments</h2></div><span>{routeMatches.length} {routeMatches.length === 1 ? 'traversal' : 'traversals'}</span></div>
+        {routeMatches.length === 0
+          ? <div className="workout-segments-empty"><RouteIcon /><p>No detected segments or loops are linked to this workout.</p></div>
+          : <div className="table-scroll"><table><thead><tr><th>Trace</th><th>Segment</th><th>Start</th><th>Distance</th><th>Time</th><th><HeartPulse /> Avg HR</th><th><Gauge /> Avg speed</th><th>Quality</th></tr></thead><tbody>{routeMatches.map((match) => {
+            const startOffset = Math.max(0, (new Date(match.startedAt).getTime() - new Date(workout.startedAt).getTime()) / 1000)
+            return <tr key={match.traversalId}>
+              <td className="effort-trace"><RouteThumbnail points={match.geometry} linkAttribution={false} /></td>
+              <td><Link className="segment-name-link" to="/analysis/$routeId" params={{ routeId: match.routeId }} search={{ type: 'all', sport: 'all', minimumWorkouts: 2, minimumQuality: 65, windowLength: 1, mode: 'representative' }}><span className={`route-type route-type-${match.routeType}`}>{match.routeType === 'loop' ? <Repeat2 /> : <RouteIcon />}{match.routeType}</span><strong>{match.routeName}</strong></Link></td>
+              <td className="numeric"><button className="seek-segment-button" type="button" onClick={() => setSampleIndex(nearestSampleIndex(workout.samples, match.startedAt))}>{duration(startOffset)}</button></td>
+              <td className="numeric">{miles(match.distanceM).toFixed(2)} mi</td>
+              <td className="numeric">{duration(match.durationSec)}</td>
+              <td className="numeric hr">{match.avgHeartRate === null ? '-' : Math.round(match.avgHeartRate)}</td>
+              <td className="numeric">{match.avgSpeed === null ? '-' : `${(match.avgSpeed * 2.23694).toFixed(1)} mph`}</td>
+              <td><span className="quality">{Math.round(match.qualityScore * 100)}%</span></td>
+            </tr>
+          })}</tbody></table></div>}
+      </section>
     </main>
   )
 }

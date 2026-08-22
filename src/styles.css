@@ -164,6 +164,19 @@ input[type='range'] { width: 100%; accent-color: #1e5b3a; }
 .metric-symbol { font: 700 .75rem DM Mono, monospace; }
 .sample-metrics span:not(.metric-symbol) { color: #737871; font: .6rem DM Mono, monospace; text-transform: uppercase; }
 .sample-metrics strong { font: 500 .8rem DM Mono, monospace; white-space: nowrap; }
+.workout-segments { margin-top: 36px; border-bottom: 2px solid #29302b; }
+.workout-segments table { min-width: 900px; border-top: 2px solid #29302b; }
+.workout-segments th svg { width: 13px; height: 13px; vertical-align: -2px; }
+.workout-segments .effort-trace { width: 112px; padding-block: 7px; }
+.workout-segments .effort-trace .route-thumbnail { width: 96px; height: 48px; }
+.segment-name-link { display: grid; gap: 5px; color: inherit; text-decoration: none; }
+.segment-name-link strong { font-size: .82rem; }
+.segment-name-link:hover strong { color: #164f32; text-decoration: underline; text-underline-offset: 3px; }
+.seek-segment-button { border: 0; border-bottom: 1px solid #91b29d; padding: 3px 1px; color: #164f32; background: transparent; font: inherit; cursor: pointer; }
+.seek-segment-button:hover { color: #98472d; border-bottom-color: #c99c8c; }
+.workout-segments-empty { display: grid; place-items: center; gap: 10px; min-height: 170px; border-top: 2px solid #29302b; color: #656b65; background: rgba(255,255,255,.18); }
+.workout-segments-empty svg { width: 22px; color: #1e5b3a; }
+.workout-segments-empty p { margin: 0; font-size: .8rem; }
 
 @media (max-width: 1000px) {
   .route-grid { grid-template-columns: 1fr; }

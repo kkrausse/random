@@ -4,7 +4,7 @@ import type { DuckDBAppender, DuckDBValue } from '@duckdb/node-api'
 import { Effect } from 'effect'
 
 import type { ActivitySample, RoutePoint } from '../domain/activity'
-import type { DetectedRoute, RouteCoverage, RouteDetail, RouteTraversal } from '../domain/analysis'
+import type { DetectedRoute, RouteCoverage, RouteDetail, RouteTraversal, WorkoutRouteMatch } from '../domain/analysis'
 import { FitnessDataError } from './errors'
 import type { ImportedActivity } from './Database'
 import { DETECTION_DEFAULTS, detectRoutes, resolveDetectionConfig } from './SegmentDetector'
@@ -187,6 +187,39 @@ export const listDetectedRoutes = Effect.tryPromise({
     return result.getRowObjectsJS().map(routeFromRow)
   }),
   catch: (cause) => new FitnessDataError({ operation: 'query detected routes', cause }),
+})
+
+export const listWorkoutRouteMatches = (activityId: string) => Effect.tryPromise({
+  try: () => withDatabase(async (connection): Promise<ReadonlyArray<WorkoutRouteMatch>> => {
+    if (!await tableExists(connection, 'detected_routes') || !await tableExists(connection, 'route_traversals')) return []
+    const escapedId = activityId.replaceAll("'", "''")
+    const result = await connection.runAndReadAll(`
+      SELECT traversal.id AS traversal_id, route.id AS route_id, route.name AS route_name,
+        route.type AS route_type, route.geometry_json, traversal.started_at::VARCHAR AS started_at,
+        traversal.ended_at::VARCHAR AS ended_at, traversal.duration_sec, traversal.distance_m,
+        traversal.avg_heart_rate, traversal.avg_speed, traversal.quality_score, traversal.lap_count
+      FROM route_traversals traversal
+      JOIN detected_routes route ON route.id = traversal.route_id
+      WHERE traversal.activity_id = '${escapedId}'
+      ORDER BY traversal.started_at
+    `)
+    return result.getRowObjectsJS().map((row) => ({
+      traversalId: String(row.traversal_id),
+      routeId: String(row.route_id),
+      routeName: String(row.route_name),
+      routeType: String(row.route_type) as WorkoutRouteMatch['routeType'],
+      geometry: JSON.parse(String(row.geometry_json)) as RoutePoint[],
+      startedAt: String(row.started_at),
+      endedAt: String(row.ended_at),
+      durationSec: Number(row.duration_sec),
+      distanceM: Number(row.distance_m),
+      avgHeartRate: nullableNumber(row.avg_heart_rate),
+      avgSpeed: nullableNumber(row.avg_speed),
+      qualityScore: Number(row.quality_score),
+      lapCount: Number(row.lap_count),
+    }))
+  }),
+  catch: (cause) => new FitnessDataError({ operation: 'query workout route matches', cause }),
 })
 
 export const getDetectedRoute = (id: string) => Effect.tryPromise({
