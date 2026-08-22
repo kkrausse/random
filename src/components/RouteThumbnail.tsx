@@ -153,7 +153,7 @@ export function RouteThumbnail({ points, linkAttribution = true, selectedIndex, 
         ))}
         {map ? <path className="route-main-path" d={map.path} /> : <line x1="54" y1="32" x2="78" y2="32" />}
         {renderedOverlays.map((overlay) => <g key={overlay.id} className={overlay.id === activeOverlayId ? 'route-overlay is-active' : 'route-overlay'}>
-          <path className="route-overlay-visible" d={overlay.path} stroke={overlay.color} />
+          <path className="route-overlay-visible" d={overlay.path} style={{ stroke: overlay.color }} />
           <path
             className="route-overlay-hit-area"
             d={overlay.path}

@@ -9,7 +9,7 @@ import { RouteThumbnail } from './RouteThumbnail'
 import type { OverlayPosition, RouteOverlay } from './RouteThumbnail'
 
 const miles = (meters: number) => meters / 1609.344
-const segmentColors = ['#244b63', '#28647a', '#287d89', '#2a9488', '#43a47e', '#68b575', '#92c36b', '#b8cc68']
+const segmentColors = ['#2563eb', '#7c3aed', '#eab308', '#16a34a', '#0891b2', '#ea580c', '#db2777', '#65a30d']
 
 const elapsed = (workout: WorkoutDetailData, sample: WorkoutSample) => {
   if (!sample.timestamp) return null

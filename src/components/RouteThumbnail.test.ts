@@ -73,7 +73,7 @@ describe('routePath', () => {
     }))
 
     expect(markup).toContain('route-overlay-visible')
-    expect(markup).toContain('stroke="#d0523f"')
+    expect(markup).toContain('style="stroke:#d0523f"')
     expect(markup).toContain('aria-label="View Park climb"')
     expect(markup).not.toContain('NaN')
   })
