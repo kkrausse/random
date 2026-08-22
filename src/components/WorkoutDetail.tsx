@@ -9,12 +9,7 @@ import { RouteThumbnail } from './RouteThumbnail'
 import type { OverlayPosition, RouteOverlay } from './RouteThumbnail'
 
 const miles = (meters: number) => meters / 1609.344
-const segmentColors = ['#d0523f', '#287f8f', '#bd7929', '#7056a3', '#3b7b4d', '#b34e7d', '#526ca8']
-
-const segmentColor = (id: string) => {
-  const hash = [...id].reduce((value, character) => ((value * 31) + character.charCodeAt(0)) >>> 0, 0)
-  return segmentColors[hash % segmentColors.length]!
-}
+const segmentColors = ['#244b63', '#28647a', '#287d89', '#2a9488', '#43a47e', '#68b575', '#92c36b', '#b8cc68']
 
 const elapsed = (workout: WorkoutDetailData, sample: WorkoutSample) => {
   if (!sample.timestamp) return null
@@ -57,7 +52,7 @@ export function WorkoutDetail({ workout, routeMatches, initialTimestamp }: {
   const [activeSegment, setActiveSegment] = useState<{ readonly id: string, readonly position?: OverlayPosition } | null>(null)
   const segmentHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sample = workout.samples[sampleIndex]
-  const segmentOverlays = [...new Map(routeMatches.map((match) => [match.routeId, {
+  const segmentOverlays = [...new Map(routeMatches.map((match) => [match.routeId, match])).values()].map((match, index) => ({
     id: match.routeId,
     routeId: match.routeId,
     name: match.routeName,
@@ -68,8 +63,8 @@ export function WorkoutDetail({ workout, routeMatches, initialTimestamp }: {
     traversalCount: match.routeTraversalCount,
     matchScore: match.routeMatchScore,
     points: match.geometry,
-    color: segmentColor(match.routeId),
-  } satisfies RouteOverlay])).values()]
+    color: segmentColors[index % segmentColors.length]!,
+  } satisfies RouteOverlay))
   const isPaceSport = workout.sport.toLowerCase().includes('run') || workout.sport.toLowerCase().includes('walk')
   const speed = sample?.speedMps ?? null
   const speedLabel = speed === null || speed <= 0
