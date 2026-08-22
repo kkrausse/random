@@ -5,7 +5,7 @@ import type { DuckDBAppender, DuckDBValue } from '@duckdb/node-api'
 import { Effect, Schema } from 'effect'
 
 import { Activity } from '../domain/activity'
-import type { DecodedActivity, RoutePoint } from '../domain/activity'
+import type { DecodedActivity, RoutePoint, WorkoutDetail, WorkoutSample } from '../domain/activity'
 import { FitnessDataError } from './errors'
 
 export interface ImportedActivity extends DecodedActivity {
@@ -172,4 +172,60 @@ export const listActivities = Effect.tryPromise({
     }
   },
   catch: (cause) => new FitnessDataError({ operation: 'query DuckDB', cause }),
+})
+
+export const getActivity = (id: string) => Effect.tryPromise({
+  try: async (): Promise<WorkoutDetail | null> => {
+    const instance = await DuckDBInstance.create(databasePath())
+    const connection = await instance.connect()
+    try {
+      const escapedId = id.replaceAll("'", "''")
+      const activityResult = await connection.runAndReadAll(`
+        SELECT id, source_activity_id, sport, started_at::VARCHAR AS started_at,
+          duration_seconds, distance_m, ascent_m, avg_hr_bpm, max_hr_bpm
+        FROM activities
+        WHERE id = '${escapedId}'
+        LIMIT 1
+      `)
+      const activity = activityResult.getRowObjectsJS()[0]
+      if (!activity) return null
+
+      const sampleResult = await connection.runAndReadAll(`
+        SELECT timestamp::VARCHAR AS timestamp, lat, lon, distance_m, altitude_m,
+          speed_mps, heart_rate_bpm, cadence, power_w
+        FROM activity_samples
+        WHERE activity_id = '${escapedId}' AND lat IS NOT NULL AND lon IS NOT NULL
+        ORDER BY timestamp NULLS LAST
+      `)
+      const nullableNumber = (value: unknown) => value === null ? null : Number(value)
+      const samples: WorkoutSample[] = sampleResult.getRowObjectsJS().map((sample) => ({
+        timestamp: sample.timestamp === null ? null : String(sample.timestamp),
+        lat: Number(sample.lat),
+        lon: Number(sample.lon),
+        distanceM: nullableNumber(sample.distance_m),
+        altitudeM: nullableNumber(sample.altitude_m),
+        speedMps: nullableNumber(sample.speed_mps),
+        heartRateBpm: nullableNumber(sample.heart_rate_bpm),
+        cadence: nullableNumber(sample.cadence),
+        powerW: nullableNumber(sample.power_w),
+      }))
+
+      return {
+        id: String(activity.id),
+        sourceActivityId: String(activity.source_activity_id),
+        sport: String(activity.sport),
+        startedAt: String(activity.started_at),
+        durationSeconds: nullableNumber(activity.duration_seconds),
+        distanceM: nullableNumber(activity.distance_m),
+        ascentM: nullableNumber(activity.ascent_m),
+        avgHrBpm: nullableNumber(activity.avg_hr_bpm),
+        maxHrBpm: nullableNumber(activity.max_hr_bpm),
+        samples,
+      }
+    } finally {
+      connection.closeSync()
+      instance.closeSync()
+    }
+  },
+  catch: (cause) => new FitnessDataError({ operation: 'query workout detail', cause }),
 })

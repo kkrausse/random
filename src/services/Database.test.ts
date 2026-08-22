@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Effect } from 'effect'
 
-import { listActivities, rebuildDatabase } from './Database'
+import { getActivity, listActivities, rebuildDatabase } from './Database'
 import { getAnalysisSettings, getDetectedRoute, listDetectedRoutes, rebuildRouteAnalysis } from './AnalysisDatabase'
 
 let temporaryDirectory: string | undefined
@@ -42,6 +42,15 @@ describe('Database', () => {
       { lat: 40.7, lon: -74 },
       { lat: 40.701, lon: -74.001 },
     ])
+    const detail = await Effect.runPromise(getActivity('garmin:42'))
+    expect(detail?.samples).toHaveLength(2)
+    expect(new Date(detail?.samples[1]?.timestamp ?? '').toISOString()).toBe('2026-08-19T12:00:01.000Z')
+    expect(detail?.samples[1]).toMatchObject({
+      distanceM: 4,
+      heartRateBpm: 131,
+      cadence: 81,
+    })
+    expect(await Effect.runPromise(getActivity('garmin:missing'))).toBeNull()
 
     const result = await Effect.runPromise(rebuildRouteAnalysis({ minWorkoutCount: 2, maxRoutesPerSport: 5 }))
     const settings = await Effect.runPromise(getAnalysisSettings)

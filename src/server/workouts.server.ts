@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process'
 import { Effect } from 'effect'
 
-import { listActivities } from '../services/Database'
+import { getActivity, listActivities } from '../services/Database'
 
 export const getWorkoutsHandler = () => Effect.runPromise(listActivities)
+export const getWorkoutHandler = (id: string) => Effect.runPromise(getActivity(id))
 
 export const syncGarminHandler = () =>
   new Promise<{ message: string }>((resolve, reject) => {

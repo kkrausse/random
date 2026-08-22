@@ -1,4 +1,5 @@
 import { Gauge, HeartPulse, Timer } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
 
 import type { RouteDetail } from '../domain/analysis'
 import { DetailHero, DetailTrends, duration, QualityControl, speed } from './RouteDetailShared'
@@ -44,7 +45,7 @@ export function SegmentRouteDetail({ route, minimumQuality, onMinimumQualityChan
       <DetailTrends efforts={efforts} />
       <section className="effort-table">
         <div className="section-heading"><div><p className="eyebrow">History</p><h2>Traversals</h2></div><span>{efforts.length} qualifying</span></div>
-        <div className="table-scroll"><table><thead><tr><th>Trace</th><th>Date</th><th>Passes</th><th>Time</th><th><HeartPulse /> Avg HR</th><th><Gauge /> Avg speed</th><th>Quality</th><th>Workout</th></tr></thead><tbody>{efforts.map((item) => <tr key={item.id}><td className="effort-trace"><RouteThumbnail points={item.activityRoute} /></td><td>{new Date(item.startedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</td><td className="numeric">{workoutTraversalCounts.get(item.activityId) ?? 1}</td><td className="numeric"><Timer /> {duration(item.durationSec)}</td><td className="numeric hr">{item.avgHeartRate === null ? '-' : Math.round(item.avgHeartRate)}</td><td className="numeric">{speed(item.avgSpeed)}</td><td><span className="quality">{Math.round(item.qualityScore * 100)}%</span></td><td className="numeric">{item.activityId.replace('garmin:', '#')}</td></tr>)}</tbody></table></div>
+        <div className="table-scroll"><table><thead><tr><th>Trace</th><th>Date</th><th>Passes</th><th>Time</th><th><HeartPulse /> Avg HR</th><th><Gauge /> Avg speed</th><th>Quality</th><th>Workout</th></tr></thead><tbody>{efforts.map((item) => <tr key={item.id}><td className="effort-trace"><Link className="workout-map-link" to="/workouts/$activityId" params={{ activityId: item.activityId }} search={{ at: item.startedAt }} aria-label="Open workout at this traversal"><RouteThumbnail points={item.activityRoute} linkAttribution={false} /></Link></td><td>{new Date(item.startedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</td><td className="numeric">{workoutTraversalCounts.get(item.activityId) ?? 1}</td><td className="numeric"><Timer /> {duration(item.durationSec)}</td><td className="numeric hr">{item.avgHeartRate === null ? '-' : Math.round(item.avgHeartRate)}</td><td className="numeric">{speed(item.avgSpeed)}</td><td><span className="quality">{Math.round(item.qualityScore * 100)}%</span></td><td className="numeric"><Link className="workout-link" to="/workouts/$activityId" params={{ activityId: item.activityId }} search={{ at: item.startedAt }}>{item.activityId.replace('garmin:', '#')}</Link></td></tr>)}</tbody></table></div>
       </section>
     </>
   )

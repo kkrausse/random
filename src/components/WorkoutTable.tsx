@@ -8,6 +8,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table'
+import { Link } from '@tanstack/react-router'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import { useEffect, useMemo, useRef } from 'react'
 
@@ -55,7 +56,7 @@ const columns: ColumnDef<Activity>[] = [
     id: 'route',
     header: 'Route',
     enableSorting: false,
-    cell: ({ row }) => <RouteThumbnail points={row.original.route} />,
+    cell: ({ row }) => <Link className="workout-map-link" to="/workouts/$activityId" params={{ activityId: row.original.id }} search={{ at: undefined }} aria-label="Open workout"><RouteThumbnail points={row.original.route} linkAttribution={false} /></Link>,
   },
   {
     accessorKey: 'startedAt',
@@ -64,7 +65,7 @@ const columns: ColumnDef<Activity>[] = [
       const date = new Date(row.original.startedAt)
       return (
         <div className="date-cell">
-          <strong>{new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(date)}</strong>
+          <strong><Link className="workout-link" to="/workouts/$activityId" params={{ activityId: row.original.id }} search={{ at: undefined }}>{new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(date)}</Link></strong>
           <span>{new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(date)}</span>
         </div>
       )

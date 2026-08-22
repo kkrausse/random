@@ -21,6 +21,20 @@ export const Activity = Schema.Struct({
 export type Activity = typeof Activity.Type
 export type RoutePoint = typeof RoutePoint.Type
 
+export interface WorkoutSample extends RoutePoint {
+  readonly timestamp: string | null
+  readonly distanceM: number | null
+  readonly altitudeM: number | null
+  readonly speedMps: number | null
+  readonly heartRateBpm: number | null
+  readonly cadence: number | null
+  readonly powerW: number | null
+}
+
+export interface WorkoutDetail extends Omit<Activity, 'route'> {
+  readonly samples: ReadonlyArray<WorkoutSample>
+}
+
 export interface ActivitySample {
   readonly timestamp: Date | null
   readonly lat: number | null
