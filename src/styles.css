@@ -135,15 +135,19 @@ input[type='range'] { width: 100%; accent-color: #1e5b3a; }
 .effort-table .effort-trace .route-thumbnail svg { width: 100%; height: 100%; }
 .quality { padding: 4px 6px; border: 1px solid #91b29d; color: #19553a; background: #d9e7dc; font: .68rem DM Mono, monospace; }
 .lap-time { display: inline-flex; align-items: center; gap: 6px; }
-.expand-effort-button { display: inline-grid; place-items: center; width: 26px; height: 26px; border: 1px solid #9da097; border-radius: 2px; padding: 0; color: #31543d; background: #f6f2e7; cursor: pointer; }
-.expand-effort-button:hover { background: #d9e7dc; }
-.expand-effort-button svg { width: 12px; transition: transform 120ms ease; }
-.expand-effort-button[aria-expanded='true'] svg { transform: rotate(180deg); }
+.expandable-effort-row { cursor: pointer; transition: background-color 80ms ease-out; }
+.expandable-effort-row:focus-visible { outline: 2px solid #1e5b3a; outline-offset: -2px; }
+.effort-expand-indicator { width: 34px; padding-inline: 10px 0; color: #4f5951; }
+.effort-expand-indicator svg { width: 14px; transition: transform 100ms ease-out; transform: rotate(-90deg); }
+.expandable-effort-row[aria-expanded='true'] .effort-expand-indicator svg { transform: rotate(0); }
 .lap-breakdown-heading { background: rgba(109,144,120,.14); }
+.lap-breakdown-heading, .lap-breakdown-row { animation: reveal-lap 100ms ease-out both; transform-origin: top; }
 .lap-breakdown-heading th { padding-block: 7px; border-bottom-color: #b7c4b9; }
 .lap-breakdown-heading th:first-child, .lap-breakdown-row td:first-child { border-left: 2px solid #6d9078; }
 .lap-breakdown-row, .lap-breakdown-row:hover { background: rgba(217,231,220,.42); }
 .lap-breakdown-row td { padding-block: 8px; }
+@keyframes reveal-lap { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .expandable-effort-row, .effort-expand-indicator svg { transition: none; } .lap-breakdown-heading, .lap-breakdown-row { animation: none; } }
 .workout-map-link { display: block; width: fit-content; }
 .workout-map-link:focus-visible { outline: 2px solid #1e5b3a; outline-offset: 2px; }
 .workout-link { color: #164f32; text-decoration-color: #91b29d; text-underline-offset: 3px; }
