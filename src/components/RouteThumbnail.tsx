@@ -1,3 +1,5 @@
+import { Link } from '@tanstack/react-router'
+
 import type { RoutePoint } from '../domain/activity'
 
 const WIDTH = 132
@@ -19,6 +21,22 @@ interface RouteMap {
   readonly points: ReadonlyArray<{ readonly x: number, readonly y: number }>
   readonly start: { readonly x: number, readonly y: number }
   readonly end: { readonly x: number, readonly y: number }
+  readonly worldSize: number
+  readonly originX: number
+  readonly originY: number
+}
+
+export interface RouteOverlay {
+  readonly id: string
+  readonly routeId: string
+  readonly name: string
+  readonly points: ReadonlyArray<RoutePoint>
+  readonly color: string
+}
+
+export interface OverlayPosition {
+  readonly x: number
+  readonly y: number
 }
 
 const project = (point: RoutePoint) => {
@@ -75,6 +93,9 @@ function routeMap(points: ReadonlyArray<RoutePoint>, width = WIDTH, height = HEI
     points: screenPoints,
     start: screenPoints[0]!,
     end: screenPoints.at(-1)!,
+    worldSize,
+    originX,
+    originY,
   }
 }
 
@@ -82,30 +103,77 @@ export function routePath(points: ReadonlyArray<RoutePoint>): string | null {
   return routeMap(points)?.path ?? null
 }
 
-export function RouteThumbnail({ points, linkAttribution = true, selectedIndex, viewWidth = WIDTH, viewHeight = HEIGHT }: {
+export function RouteThumbnail({ points, linkAttribution = true, selectedIndex, viewWidth = WIDTH, viewHeight = HEIGHT, overlays = [], activeOverlayId, onOverlayChange, onOverlaySelect }: {
   points: ReadonlyArray<RoutePoint>
   linkAttribution?: boolean
   selectedIndex?: number
   viewWidth?: number
   viewHeight?: number
+  overlays?: ReadonlyArray<RouteOverlay>
+  activeOverlayId?: string | null
+  onOverlayChange?: (id: string | null, position?: OverlayPosition) => void
+  onOverlaySelect?: (routeId: string) => void
 }) {
   const map = routeMap(points, viewWidth, viewHeight)
   const selected = selectedIndex === undefined ? null : map?.points[selectedIndex]
+  const renderedOverlays = map ? overlays.flatMap((overlay) => {
+    if (overlay.points.length < 2) return []
+    const overlayPoints = overlay.points.map(project).map((point) => ({
+      x: coordinate(point.x * map.worldSize - map.originX),
+      y: coordinate(point.y * map.worldSize - map.originY),
+    }))
+    return [{ ...overlay, path: overlayPoints.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ') }]
+  }) : []
+  const activeOverlay = overlays.find((overlay) => overlay.id === activeOverlayId)
+
+  const updateOverlay = (id: string, event: React.PointerEvent<SVGPathElement>) => {
+    const bounds = event.currentTarget.ownerSVGElement?.getBoundingClientRect()
+    if (!bounds) return onOverlayChange?.(id)
+    onOverlayChange?.(id, {
+      x: Math.max(8, Math.min(92, ((event.clientX - bounds.left) / bounds.width) * 100)),
+      y: Math.max(10, Math.min(90, ((event.clientY - bounds.top) / bounds.height) * 100)),
+    })
+  }
 
   return (
-    <div className="route-thumbnail" role="img" aria-label={map ? 'Workout route on a map' : 'No GPS route'}>
-      <svg viewBox={`0 0 ${viewWidth} ${viewHeight}`} aria-hidden="true">
+    <div className="route-thumbnail" role={overlays.length === 0 ? 'img' : undefined} aria-label={map ? 'Workout route on a map' : 'No GPS route'} onPointerLeave={() => onOverlayChange?.(null)}>
+      <svg viewBox={`0 0 ${viewWidth} ${viewHeight}`} aria-hidden={overlays.length === 0 ? 'true' : undefined}>
         <rect className="route-background" width={viewWidth} height={viewHeight} rx="3" />
         {map?.tiles.map((tile) => (
           <image key={tile.href} href={tile.href} x={tile.x} y={tile.y} width={TILE_SIZE} height={TILE_SIZE} />
         ))}
-        {map ? <path d={map.path} /> : <line x1="54" y1="32" x2="78" y2="32" />}
+        {map ? <path className="route-main-path" d={map.path} /> : <line x1="54" y1="32" x2="78" y2="32" />}
+        {renderedOverlays.map((overlay) => <g key={overlay.id} className={overlay.id === activeOverlayId ? 'route-overlay is-active' : 'route-overlay'}>
+          <path className="route-overlay-visible" d={overlay.path} stroke={overlay.color} />
+          <path
+            className="route-overlay-hit-area"
+            d={overlay.path}
+            role="link"
+            tabIndex={0}
+            aria-label={`View ${overlay.name}`}
+            onPointerEnter={(event) => updateOverlay(overlay.id, event)}
+            onPointerMove={(event) => updateOverlay(overlay.id, event)}
+            onClick={() => onOverlaySelect?.(overlay.routeId)}
+            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onOverlaySelect?.(overlay.routeId) }}
+          />
+        </g>)}
         {map && <g className="route-endpoints">
           <circle className="route-endpoint-end" cx={map.end.x} cy={map.end.y} r="3.2" />
           <circle className="route-endpoint-start" cx={map.start.x} cy={map.start.y} r="2.2" />
         </g>}
         {selected && <circle className="route-current-point" cx={selected.x} cy={selected.y} r="7" />}
       </svg>
+      {activeOverlay && <Link
+        className="segment-map-tooltip"
+        to="/analysis/$routeId"
+        params={{ routeId: activeOverlay.routeId }}
+        search={{ type: 'all', sport: 'all', minimumWorkouts: 2, minimumQuality: 65, windowLength: 1, mode: 'representative' }}
+      >
+        <RouteThumbnail points={activeOverlay.points} linkAttribution={false} />
+        <span><i style={{ backgroundColor: activeOverlay.color }} />Segment</span>
+        <strong>{activeOverlay.name}</strong>
+        <small>Open segment</small>
+      </Link>}
       {map && (linkAttribution
         ? <a className="map-attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap</a>
         : <span className="map-attribution">© OpenStreetMap</span>)}

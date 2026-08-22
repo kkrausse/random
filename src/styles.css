@@ -31,6 +31,11 @@ tbody tr:hover { background: rgba(255,255,255,.36); }
 .route-thumbnail .route-background { fill: #d9ddd0; }
 .route-thumbnail image { opacity: .72; }
 .route-thumbnail path { fill: none; stroke: #164f32; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; paint-order: stroke; filter: drop-shadow(0 1px 1px rgba(255,255,255,.8)); vector-effect: non-scaling-stroke; }
+.route-thumbnail .route-main-path { stroke: #3f5548; opacity: .62; }
+.route-thumbnail .route-overlay-visible { stroke-width: 5; opacity: .82; pointer-events: none; }
+.route-thumbnail .route-overlay.is-active .route-overlay-visible { stroke-width: 9; opacity: 1; filter: drop-shadow(0 1px 2px rgba(24,32,27,.65)); }
+.route-thumbnail .route-overlay-hit-area { stroke: transparent; stroke-width: 18; cursor: pointer; filter: none; }
+.route-thumbnail .route-overlay-hit-area:focus-visible { stroke: rgba(247,244,233,.75); outline: none; }
 .route-thumbnail line { stroke: #9ca197; stroke-width: 2; }
 .route-thumbnail .map-attribution { position: absolute; right: 1px; bottom: 1px; padding: 1px 2px; color: #414740; background: rgba(247,244,233,.78); font: 500 6px DM Mono, monospace; text-decoration: none; }
 .sport { display: inline-block; max-width: 150px; padding: 5px 7px; border: 1px solid #a9aea4; border-radius: 2px; text-transform: capitalize; font: 500 .68rem DM Mono, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -156,6 +161,13 @@ input[type='range'] { width: 100%; accent-color: #1e5b3a; }
 .workout-playback { display: grid; grid-template-columns: minmax(0, 1fr) 260px; min-height: 450px; border-block: 2px solid #29302b; }
 .playback-map { min-width: 0; min-height: 450px; background: #d9ddd0; }
 .playback-map .route-thumbnail { width: 100%; height: 100%; border: 0; border-radius: 0; }
+.segment-map-tooltip { position: absolute; z-index: 2; left: var(--segment-tooltip-x, 50%); top: var(--segment-tooltip-y, 50%); display: grid; grid-template-columns: 92px minmax(120px, 1fr); grid-template-rows: auto auto 1fr; gap: 3px 12px; width: min(280px, calc(100% - 20px)); border: 1px solid #29302b; padding: 8px; color: #18201b; background: #f7f4e9; text-decoration: none; box-shadow: 4px 4px 0 rgba(41,48,43,.32); transform: translate(12px, calc(-100% - 12px)); }
+.segment-map-tooltip:hover { border-color: #164f32; }
+.playback-map .segment-map-tooltip .route-thumbnail { grid-row: 1 / 4; width: 92px; height: 58px; border: 1px solid #b3b5ac; }
+.segment-map-tooltip > span { color: #687068; font: 500 .58rem DM Mono, monospace; text-transform: uppercase; }
+.segment-map-tooltip i { display: inline-block; width: 12px; height: 3px; margin-right: 6px; vertical-align: 2px; }
+.segment-map-tooltip strong { overflow: hidden; font-size: .78rem; text-overflow: ellipsis; white-space: nowrap; }
+.segment-map-tooltip small { align-self: end; color: #164f32; font: .58rem DM Mono, monospace; text-transform: uppercase; }
 .playback-readout { display: flex; flex-direction: column; justify-content: center; border-left: 1px solid #9da097; padding: 28px; background: rgba(247,244,233,.7); }
 .playback-readout strong { margin: 10px 0 18px; font: 500 2.4rem DM Mono, monospace; letter-spacing: -.05em; }
 .playback-readout span { margin-top: 8px; color: #626861; font: .7rem/1.45 DM Mono, monospace; }
@@ -176,6 +188,7 @@ input[type='range'] { width: 100%; accent-color: #1e5b3a; }
 .segment-name-link { display: grid; gap: 5px; color: inherit; text-decoration: none; }
 .segment-name-link strong { font-size: .82rem; }
 .segment-name-link:hover strong { color: #164f32; text-decoration: underline; text-underline-offset: 3px; }
+.workout-segments tr.is-active-segment { background: rgba(217,231,220,.75); box-shadow: inset 3px 0 #1e5b3a; }
 .seek-segment-button { border: 0; border-bottom: 1px solid #91b29d; padding: 3px 1px; color: #164f32; background: transparent; font: inherit; cursor: pointer; }
 .seek-segment-button:hover { color: #98472d; border-bottom-color: #c99c8c; }
 .workout-segments-empty { display: grid; place-items: center; gap: 10px; min-height: 170px; border-top: 2px solid #29302b; color: #656b65; background: rgba(255,255,255,.18); }

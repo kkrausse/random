@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { Gauge, HeartPulse, MapPin, Mountain, Repeat2, Route as RouteIcon, Timer } from 'lucide-react'
 import { useState } from 'react'
 
@@ -6,8 +6,15 @@ import type { WorkoutDetail as WorkoutDetailData, WorkoutSample } from '../domai
 import type { WorkoutRouteMatch } from '../domain/analysis'
 import { AppNav } from './AppNav'
 import { RouteThumbnail } from './RouteThumbnail'
+import type { OverlayPosition, RouteOverlay } from './RouteThumbnail'
 
 const miles = (meters: number) => meters / 1609.344
+const segmentColors = ['#d0523f', '#287f8f', '#bd7929', '#7056a3', '#3b7b4d', '#b34e7d', '#526ca8']
+
+const segmentColor = (id: string) => {
+  const hash = [...id].reduce((value, character) => ((value * 31) + character.charCodeAt(0)) >>> 0, 0)
+  return segmentColors[hash % segmentColors.length]!
+}
 
 const elapsed = (workout: WorkoutDetailData, sample: WorkoutSample) => {
   if (!sample.timestamp) return null
@@ -45,8 +52,17 @@ export function WorkoutDetail({ workout, routeMatches, initialTimestamp }: {
   routeMatches: ReadonlyArray<WorkoutRouteMatch>
   initialTimestamp?: string
 }) {
+  const navigate = useNavigate()
   const [sampleIndex, setSampleIndex] = useState(() => nearestSampleIndex(workout.samples, initialTimestamp))
+  const [activeSegment, setActiveSegment] = useState<{ readonly id: string, readonly position?: OverlayPosition } | null>(null)
   const sample = workout.samples[sampleIndex]
+  const segmentOverlays = [...new Map(routeMatches.map((match) => [match.routeId, {
+    id: match.routeId,
+    routeId: match.routeId,
+    name: match.routeName,
+    points: match.geometry,
+    color: segmentColor(match.routeId),
+  } satisfies RouteOverlay])).values()]
   const isPaceSport = workout.sport.toLowerCase().includes('run') || workout.sport.toLowerCase().includes('walk')
   const speed = sample?.speedMps ?? null
   const speedLabel = speed === null || speed <= 0
@@ -63,7 +79,16 @@ export function WorkoutDetail({ workout, routeMatches, initialTimestamp }: {
 
       {sample ? <>
         <section className="workout-playback">
-          <div className="playback-map"><RouteThumbnail points={workout.samples} selectedIndex={sampleIndex} viewWidth={1000} viewHeight={500} /></div>
+          <div className="playback-map" style={activeSegment?.position ? { '--segment-tooltip-x': `${activeSegment.position.x}%`, '--segment-tooltip-y': `${activeSegment.position.y}%` } as React.CSSProperties : undefined}><RouteThumbnail
+            points={workout.samples}
+            selectedIndex={sampleIndex}
+            viewWidth={1000}
+            viewHeight={500}
+            overlays={segmentOverlays}
+            activeOverlayId={activeSegment?.id}
+            onOverlayChange={(id, position) => setActiveSegment(id ? { id, position } : null)}
+            onOverlaySelect={(routeId) => navigate({ to: '/analysis/$routeId', params: { routeId }, search: { type: 'all', sport: 'all', minimumWorkouts: 2, minimumQuality: 65, windowLength: 1, mode: 'representative' } })}
+          /></div>
           <div className="playback-readout">
             <p className="eyebrow">Point in time</p>
             <strong>{duration(elapsed(workout, sample))}</strong>
@@ -92,7 +117,7 @@ export function WorkoutDetail({ workout, routeMatches, initialTimestamp }: {
           ? <div className="workout-segments-empty"><RouteIcon /><p>No detected segments or loops are linked to this workout.</p></div>
           : <div className="table-scroll"><table><thead><tr><th>Trace</th><th>Segment</th><th>Start</th><th>Distance</th><th>Time</th><th><HeartPulse /> Avg HR</th><th><Gauge /> Avg speed</th><th>Quality</th></tr></thead><tbody>{routeMatches.map((match) => {
             const startOffset = Math.max(0, (new Date(match.startedAt).getTime() - new Date(workout.startedAt).getTime()) / 1000)
-            return <tr key={match.traversalId}>
+            return <tr key={match.traversalId} className={activeSegment?.id === match.routeId ? 'is-active-segment' : undefined} onPointerEnter={() => setActiveSegment({ id: match.routeId })} onPointerLeave={() => setActiveSegment(null)}>
               <td className="effort-trace"><RouteThumbnail points={match.geometry} linkAttribution={false} /></td>
               <td><Link className="segment-name-link" to="/analysis/$routeId" params={{ routeId: match.routeId }} search={{ type: 'all', sport: 'all', minimumWorkouts: 2, minimumQuality: 65, windowLength: 1, mode: 'representative' }}><span className={`route-type route-type-${match.routeType}`}>{match.routeType === 'loop' ? <Repeat2 /> : <RouteIcon />}{match.routeType}</span><strong>{match.routeName}</strong></Link></td>
               <td className="numeric"><button className="seek-segment-button" type="button" onClick={() => setSampleIndex(nearestSampleIndex(workout.samples, match.startedAt))}>{duration(startOffset)}</button></td>

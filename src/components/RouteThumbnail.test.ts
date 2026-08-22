@@ -53,4 +53,22 @@ describe('routePath', () => {
     expect(markup).not.toContain('<a')
     expect(markup).toContain('<span class="map-attribution">© OpenStreetMap</span>')
   })
+
+  test('projects interactive overlays into the workout map coordinate space', () => {
+    const markup = renderToStaticMarkup(RouteThumbnail({
+      points: [{ lat: 40.7, lon: -74.01 }, { lat: 40.72, lon: -74 }],
+      overlays: [{
+        id: 'segment-1',
+        routeId: 'route-1',
+        name: 'Park climb',
+        color: '#d0523f',
+        points: [{ lat: 40.705, lon: -74.008 }, { lat: 40.71, lon: -74.005 }],
+      }],
+    }))
+
+    expect(markup).toContain('route-overlay-visible')
+    expect(markup).toContain('stroke="#d0523f"')
+    expect(markup).toContain('aria-label="View Park climb"')
+    expect(markup).not.toContain('NaN')
+  })
 })
