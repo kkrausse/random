@@ -77,4 +77,21 @@ describe('routePath', () => {
     expect(markup).toContain('aria-label="View Park climb"')
     expect(markup).not.toContain('NaN')
   })
+
+  test('renders shorter overlapping routes above longer routes', () => {
+    const overlay = {
+      routeId: 'route', name: 'Route', type: 'segment' as const, sport: 'running', workoutCount: 4,
+      traversalCount: 6, matchScore: 0.92, color: '#2563eb',
+      points: [{ lat: 40.705, lon: -74.008 }, { lat: 40.71, lon: -74.005 }],
+    }
+    const markup = renderToStaticMarkup(RouteThumbnail({
+      points: [{ lat: 40.7, lon: -74.01 }, { lat: 40.72, lon: -74 }],
+      overlays: [
+        { ...overlay, id: 'short', name: 'Short route', distanceM: 500 },
+        { ...overlay, id: 'long', name: 'Long route', distanceM: 1500 },
+      ],
+    }))
+
+    expect(markup.indexOf('View Long route')).toBeLessThan(markup.indexOf('View Short route'))
+  })
 })

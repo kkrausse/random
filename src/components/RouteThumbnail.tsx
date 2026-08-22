@@ -132,7 +132,7 @@ export function RouteThumbnail({ points, linkAttribution = true, selectedIndex, 
       y: coordinate(point.y * map.worldSize - map.originY),
     }))
     return [{ ...overlay, path: overlayPoints.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ') }]
-  }) : []
+  }).sort((a, b) => b.distanceM - a.distanceM) : []
   const activeOverlay = overlays.find((overlay) => overlay.id === activeOverlayId)
 
   const updateOverlay = (id: string, event: React.PointerEvent<SVGPathElement>) => {
