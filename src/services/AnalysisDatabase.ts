@@ -195,7 +195,9 @@ export const listWorkoutRouteMatches = (activityId: string) => Effect.tryPromise
     const escapedId = activityId.replaceAll("'", "''")
     const result = await connection.runAndReadAll(`
       SELECT traversal.id AS traversal_id, route.id AS route_id, route.name AS route_name,
-        route.type AS route_type, route.geometry_json, traversal.started_at::VARCHAR AS started_at,
+        route.type AS route_type, route.sport AS route_sport, route.distance_m AS route_distance_m,
+        route.workout_count AS route_workout_count, route.traversal_count AS route_traversal_count,
+        route.match_score AS route_match_score, route.geometry_json, traversal.started_at::VARCHAR AS started_at,
         traversal.ended_at::VARCHAR AS ended_at, traversal.duration_sec, traversal.distance_m,
         traversal.avg_heart_rate, traversal.avg_speed, traversal.quality_score, traversal.lap_count
       FROM route_traversals traversal
@@ -208,6 +210,11 @@ export const listWorkoutRouteMatches = (activityId: string) => Effect.tryPromise
       routeId: String(row.route_id),
       routeName: String(row.route_name),
       routeType: String(row.route_type) as WorkoutRouteMatch['routeType'],
+      routeSport: String(row.route_sport),
+      routeDistanceM: Number(row.route_distance_m),
+      routeWorkoutCount: Number(row.route_workout_count),
+      routeTraversalCount: Number(row.route_traversal_count),
+      routeMatchScore: Number(row.route_match_score),
       geometry: JSON.parse(String(row.geometry_json)) as RoutePoint[],
       startedAt: String(row.started_at),
       endedAt: String(row.ended_at),

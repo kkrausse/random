@@ -62,6 +62,11 @@ export interface WorkoutRouteMatch {
   readonly routeId: string
   readonly routeName: string
   readonly routeType: RouteType
+  readonly routeSport: string
+  readonly routeDistanceM: number
+  readonly routeWorkoutCount: number
+  readonly routeTraversalCount: number
+  readonly routeMatchScore: number
   readonly geometry: ReadonlyArray<RoutePoint>
   readonly startedAt: string
   readonly endedAt: string

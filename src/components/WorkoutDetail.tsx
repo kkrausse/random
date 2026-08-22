@@ -61,6 +61,12 @@ export function WorkoutDetail({ workout, routeMatches, initialTimestamp }: {
     id: match.routeId,
     routeId: match.routeId,
     name: match.routeName,
+    type: match.routeType,
+    sport: match.routeSport,
+    distanceM: match.routeDistanceM,
+    workoutCount: match.routeWorkoutCount,
+    traversalCount: match.routeTraversalCount,
+    matchScore: match.routeMatchScore,
     points: match.geometry,
     color: segmentColor(match.routeId),
   } satisfies RouteOverlay])).values()]

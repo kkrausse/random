@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router'
 
 import type { RoutePoint } from '../domain/activity'
+import type { RouteType } from '../domain/analysis'
 
 const WIDTH = 132
 const HEIGHT = 64
@@ -30,6 +31,12 @@ export interface RouteOverlay {
   readonly id: string
   readonly routeId: string
   readonly name: string
+  readonly type: RouteType
+  readonly sport: string
+  readonly distanceM: number
+  readonly workoutCount: number
+  readonly traversalCount: number
+  readonly matchScore: number
   readonly points: ReadonlyArray<RoutePoint>
   readonly color: string
 }
@@ -38,6 +45,8 @@ export interface OverlayPosition {
   readonly x: number
   readonly y: number
 }
+
+const distance = (meters: number) => meters >= 1000 ? `${(meters / 1000).toFixed(2)} km` : `${Math.round(meters)} m`
 
 const project = (point: RoutePoint) => {
   const latitude = Math.max(-MAX_LATITUDE, Math.min(MAX_LATITUDE, point.lat))
@@ -173,9 +182,17 @@ export function RouteThumbnail({ points, linkAttribution = true, selectedIndex, 
         onPointerLeave={() => onOverlayChange?.(null)}
       >
         <RouteThumbnail points={activeOverlay.points} linkAttribution={false} />
-        <span><i style={{ backgroundColor: activeOverlay.color }} />Segment</span>
-        <strong>{activeOverlay.name}</strong>
-        <small>Open segment</small>
+        <span className="segment-map-tooltip-body">
+          <span className="segment-map-tooltip-title"><span><i style={{ backgroundColor: activeOverlay.color }} />{activeOverlay.type}</span><span>{activeOverlay.sport}</span></span>
+          <strong>{activeOverlay.name}</strong>
+          <span className="route-stats">
+            <span><small>Distance</small><b>{distance(activeOverlay.distanceM)}</b></span>
+            <span><small>Workouts</small><b>{activeOverlay.workoutCount}</b></span>
+            <span><small>{activeOverlay.type === 'loop' ? 'Laps' : 'Traversals'}</small><b>{activeOverlay.traversalCount}</b></span>
+            <span><small>Match</small><b>{Math.round(activeOverlay.matchScore * 100)}%</b></span>
+          </span>
+          <small className="segment-map-tooltip-action">Open route</small>
+        </span>
       </Link>}
       {map && (linkAttribution
         ? <a className="map-attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap</a>

@@ -96,5 +96,11 @@ describe('Database', () => {
     const workoutMatches = await Effect.runPromise(listWorkoutRouteMatches('garmin:full-0'))
     expect(workoutMatches.length).toBeGreaterThan(0)
     expect(workoutMatches.some((match) => match.routeId === segment.id && match.routeType === 'segment')).toBeTrue()
+    const workoutSegment = workoutMatches.find((match) => match.routeId === segment.id)!
+    expect(workoutSegment.routeSport).toBe(segment.sport)
+    expect(workoutSegment.routeDistanceM).toBe(segment.distanceM)
+    expect(workoutSegment.routeWorkoutCount).toBe(segment.workoutCount)
+    expect(workoutSegment.routeTraversalCount).toBe(segment.traversalCount)
+    expect(workoutSegment.routeMatchScore).toBe(segment.matchScore)
   })
 })
