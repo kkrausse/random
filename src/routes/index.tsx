@@ -3,7 +3,7 @@ import { useState, useTransition } from 'react'
 
 import { WorkoutTable } from '../components/WorkoutTable'
 import { AppNav } from '../components/AppNav'
-import { getWorkouts, syncGarmin } from '../server/workouts.functions'
+import { getGarminSyncStatus, getWorkouts, startGarminSync } from '../server/workouts.functions'
 
 export const Route = createFileRoute('/')({
   validateSearch: (search: Record<string, unknown>) => {
@@ -29,8 +29,14 @@ function Home() {
     setStatus(null)
     startTransition(async () => {
       try {
-        const result = await syncGarmin()
-        setStatus(result.message)
+        const { jobId } = await startGarminSync()
+        while (true) {
+          const result = await getGarminSyncStatus({ data: { jobId } })
+          setStatus(result.message)
+          if (result.status === 'failed') throw new Error(result.message)
+          if (result.status === 'complete') break
+          await new Promise((resolve) => setTimeout(resolve, 500))
+        }
         await router.invalidate()
       } catch (error) {
         setStatus(error instanceof Error ? error.message : 'Garmin sync failed')
