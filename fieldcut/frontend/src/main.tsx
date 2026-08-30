@@ -1,0 +1,1376 @@
+import {
+  StrictMode,
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type PointerEvent,
+} from "react";
+import { createRoot } from "react-dom/client";
+import type {
+  MediaAsset,
+  MediaInfo,
+  MediaPage,
+  NormalizedCrop,
+  PlaybackSource,
+  Project,
+  ProjectSettings,
+  TimelineItem,
+} from "../../lib/types";
+import { Slider } from "./components/ui/slider";
+import "./styles.css";
+
+type SaveState = "saved" | "saving" | "error";
+type ViewerSelection = { context: "source"; mediaId: string } | { context: "timeline"; itemId: string };
+type PlaybackContext = "library" | "timeline" | "clip";
+type PreviewMode = "off" | "playing" | "paused" | "ended";
+type PlaybackVariant = PlaybackSource | "stabilized-proxy";
+
+const ACTIVE_PROJECT_KEY = "video-editor-active-project";
+const PHOTO_DURATION = 4;
+const MINIMUM_CROP = 0.05;
+const MINIMUM_TRIM = 0.01;
+const TIMELINE_PIXELS_PER_SECOND = 30;
+const FPS_OPTIONS = [24, 25, 30, 50, 60] as const;
+const PRESETS: Array<{ label: string; settings: Pick<ProjectSettings, "width" | "height"> }> = [
+  { label: "16:9", settings: { width: 1920, height: 1080 } },
+  { label: "9:16", settings: { width: 1080, height: 1920 } },
+  { label: "1:1", settings: { width: 1080, height: 1080 } },
+  { label: "4:3", settings: { width: 1440, height: 1080 } },
+];
+
+function clamp(value: number, minimum: number, maximum: number) {
+  return Math.min(Math.max(value, minimum), maximum);
+}
+
+function formatDuration(seconds: number) {
+  if (!Number.isFinite(seconds)) return "--:--";
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+}
+
+function formatTimelineTime(seconds: number) {
+  if (!Number.isFinite(seconds)) return "--:--";
+  const totalSeconds = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor(totalSeconds % 3600 / 60);
+  const remainder = String(totalSeconds % 60).padStart(2, "0");
+  return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${remainder}` : `${minutes}:${remainder}`;
+}
+
+function normalizeDimension(value: number) {
+  if (!Number.isFinite(value)) return 2;
+  return clamp(Math.round(value / 2) * 2, 2, 8192);
+}
+
+function normalizeSettings(settings: ProjectSettings): ProjectSettings {
+  return {
+    width: normalizeDimension(settings.width),
+    height: normalizeDimension(settings.height),
+    fps: FPS_OPTIONS.includes(settings.fps as typeof FPS_OPTIONS[number]) ? settings.fps : 30,
+  };
+}
+
+function itemDuration(item: TimelineItem) {
+  return item.kind === "video" ? item.sourceOut - item.sourceIn : item.photoDuration;
+}
+
+function projectDuration(items: TimelineItem[]) {
+  return items.reduce((total, item) => total + itemDuration(item), 0);
+}
+
+function itemStartTime(items: TimelineItem[], itemId: string) {
+  const index = items.findIndex((item) => item.id === itemId);
+  return index < 0 ? 0 : projectDuration(items.slice(0, index));
+}
+
+function timelineTickInterval() {
+  return [1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find((seconds) => seconds * TIMELINE_PIXELS_PER_SECOND >= 64) ?? 600;
+}
+
+function thumbnailUrl(id: string) {
+  return `/api/media/thumbnail?id=${encodeURIComponent(id)}`;
+}
+
+function videoUrl(id: string, source: PlaybackSource | "stabilized-proxy") {
+  return `/api/media/video?id=${encodeURIComponent(id)}&source=${source}`;
+}
+
+async function responseJson<T>(response: Response): Promise<T> {
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error ?? `Request failed (${response.status})`);
+  return body;
+}
+
+function centeredCrop(info: MediaInfo | undefined, settings: ProjectSettings): NormalizedCrop | undefined {
+  if (!info?.width || !info.height) return undefined;
+  const sourceAspect = info.width / info.height;
+  const outputAspect = settings.width / settings.height;
+  if (sourceAspect > outputAspect) {
+    const width = outputAspect / sourceAspect;
+    return { x: (1 - width) / 2, y: 0, width, height: 1 };
+  }
+  const height = sourceAspect / outputAspect;
+  return { x: 0, y: (1 - height) / 2, width: 1, height };
+}
+
+function cropMatchesProject(crop: NormalizedCrop | undefined, info: MediaInfo | undefined, settings: ProjectSettings | undefined) {
+  if (!crop || !info || !settings) return true;
+  const cropAspect = crop.width * info.width / (crop.height * info.height);
+  return Math.abs(cropAspect / (settings.width / settings.height) - 1) <= 0.01;
+}
+
+function Thumbnail({ asset }: { asset: MediaAsset }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <span className="thumbnail-missing">No thumbnail</span>;
+  return <img src={thumbnailUrl(asset.id)} alt="" loading="lazy" onError={() => setFailed(true)} />;
+}
+
+function App() {
+  const [media, setMedia] = useState<MediaAsset[]>([]);
+  const [mediaTotal, setMediaTotal] = useState(0);
+  const [nextMediaCursor, setNextMediaCursor] = useState<string | null>(null);
+  const [includePhotos, setIncludePhotos] = useState(false);
+  const [loadingMedia, setLoadingMedia] = useState(false);
+  const [metadata, setMetadata] = useState<Record<string, MediaInfo>>({});
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [project, setProject] = useState<Project>();
+  const [viewerSelection, setViewerSelection] = useState<ViewerSelection>();
+  const [playbackSource, setPlaybackSource] = useState<PlaybackVariant>("proxy");
+  const [saveState, setSaveState] = useState<SaveState>("saved");
+  const [saveError, setSaveError] = useState<string>();
+  const [libraryError, setLibraryError] = useState<string>();
+  const [exporting, setExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState<{ message: string; percent: number }>();
+  const [exportResult, setExportResult] = useState<{ filename: string; url: string }>();
+  const [exportError, setExportError] = useState<string>();
+  const [playbackContext, setPlaybackContext] = useState<PlaybackContext>("library");
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("off");
+  const [cropMode, setCropMode] = useState(false);
+  const [clipPreviews, setClipPreviews] = useState<Record<string, string>>({});
+  const [preparingPreview, setPreparingPreview] = useState(false);
+  const [playbackError, setPlaybackError] = useState<string>();
+  const [videoPlaying, setVideoPlaying] = useState(false);
+  const [viewerFullscreen, setViewerFullscreen] = useState(false);
+  const [viewerHeight, setViewerHeight] = useState<number>();
+  const [playheadTime, setPlayheadTime] = useState(0);
+  const [timelinePlayhead, setTimelinePlayhead] = useState(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const mediaFrame = useRef<HTMLDivElement>(null);
+  const viewerStage = useRef<HTMLDivElement>(null);
+  const viewerStack = useRef<HTMLDivElement>(null);
+  const timelineRuler = useRef<HTMLDivElement>(null);
+  const libraryList = useRef<HTMLDivElement>(null);
+  const librarySentinel = useRef<HTMLDivElement>(null);
+  const mediaRequest = useRef<AbortController | undefined>(undefined);
+  const mediaGeneration = useRef(0);
+  const projectRef = useRef<Project | undefined>(undefined);
+  const serverRevision = useRef(0);
+  const changeVersion = useRef(0);
+  const savedVersion = useRef(0);
+  const savePromise = useRef<Promise<boolean> | undefined>(undefined);
+  const projectLoadGeneration = useRef(0);
+  const projectLoadController = useRef<AbortController | undefined>(undefined);
+  const photoTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const photoProgressTimer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const photoDeadline = useRef(0);
+  const photoRemaining = useRef(0);
+  const dragItemId = useRef<string | undefined>(undefined);
+  const dragMediaId = useRef<string | undefined>(undefined);
+  const autoplayNextSource = useRef(false);
+  const viewerSelectionRef = useRef<ViewerSelection | undefined>(undefined);
+  const playbackContextRef = useRef<PlaybackContext>(playbackContext);
+  const previewModeRef = useRef(previewMode);
+  const seekInteraction = useRef<number | undefined>(undefined);
+  const timelineSeekInteraction = useRef<number | undefined>(undefined);
+  const pendingTimelineSeek = useRef<{ itemId: string; sourceTime: number } | undefined>(undefined);
+  const cropInteraction = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    crop: NormalizedCrop;
+    direction?: string;
+  } | undefined>(undefined);
+  const viewerResize = useRef<{ pointerId: number; startY: number; startHeight: number } | undefined>(undefined);
+  const selectedItem = viewerSelection?.context === "timeline"
+    ? project?.items.find((item) => item.id === viewerSelection.itemId)
+    : undefined;
+  const selectedMediaId = selectedItem?.mediaId ?? (viewerSelection?.context === "source" ? viewerSelection.mediaId : undefined);
+  const selectedAsset = media.find((asset) => asset.id === selectedMediaId) ?? (selectedItem ? {
+    id: selectedItem.mediaId,
+    relativePath: selectedItem.mediaId,
+    filename: selectedItem.mediaId.split(/[\\/]/).at(-1) ?? selectedItem.mediaId,
+    kind: selectedItem.kind,
+  } : undefined);
+  const selectedInfo = selectedAsset ? metadata[selectedAsset.id] : undefined;
+  const activePlaybackSource: PlaybackSource | undefined = playbackSource === "original"
+    ? "original"
+    : selectedInfo ? selectedInfo.proxy ? "proxy" : "original" : undefined;
+  const activePlaybackVariant: PlaybackVariant | undefined = playbackSource === "stabilized-proxy"
+    ? selectedInfo ? selectedInfo.stabilizedProxy ? "stabilized-proxy" : "original" : undefined
+    : activePlaybackSource;
+  const previewKey = selectedItem?.kind === "video" && activePlaybackSource
+    ? `${selectedItem.id}:${activePlaybackSource}:${selectedItem.stabilize}`
+    : undefined;
+  const directClipPreview = selectedItem?.kind === "video" && activePlaybackSource
+    && (!selectedItem.stabilize || activePlaybackSource === "proxy")
+    ? videoUrl(selectedItem.mediaId, selectedItem.stabilize ? "stabilized-proxy" : activePlaybackSource)
+    : undefined;
+  const readyClipPreview = previewKey && (directClipPreview || clipPreviews[previewKey])
+    ? { key: previewKey, url: directClipPreview ?? clipPreviews[previewKey]! }
+    : undefined;
+  viewerSelectionRef.current = viewerSelection;
+  playbackContextRef.current = playbackContext;
+  previewModeRef.current = previewMode;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/projects", { signal: controller.signal }).then((response) => responseJson<{ projects: Project[] }>(response)).then(async (projectBody) => {
+      if (controller.signal.aborted) return;
+      setProjects(projectBody.projects);
+      const storedId = localStorage.getItem(ACTIVE_PROJECT_KEY);
+      const initial = projectBody.projects.find((candidate) => candidate.id === storedId) ?? projectBody.projects[0];
+      if (initial) await loadProject(initial.id, controller.signal);
+    }).catch((error) => {
+      if (error.name !== "AbortError") setLibraryError(error instanceof Error ? error.message : "Could not load projects");
+    });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const generation = ++mediaGeneration.current;
+    mediaRequest.current?.abort();
+    const controller = new AbortController();
+    mediaRequest.current = controller;
+    setMedia([]);
+    setMediaTotal(0);
+    setNextMediaCursor(null);
+    setLibraryError(undefined);
+    setLoadingMedia(true);
+    fetch(`/api/media?limit=48&includePhotos=${includePhotos}`, { signal: controller.signal })
+      .then((response) => responseJson<MediaPage>(response))
+      .then((page) => {
+        if (generation !== mediaGeneration.current) return;
+        setMedia(page.media);
+        setMediaTotal(page.total);
+        setNextMediaCursor(page.nextCursor);
+        void loadMediaInfo(page.media, controller.signal);
+      }).catch((error) => {
+        if (error.name !== "AbortError") setLibraryError(error instanceof Error ? error.message : "Could not load media");
+      }).finally(() => {
+        if (generation === mediaGeneration.current) setLoadingMedia(false);
+      });
+    return () => controller.abort();
+  }, [includePhotos]);
+
+  useEffect(() => {
+    const sentinel = librarySentinel.current;
+    if (!sentinel || loadingMedia || !nextMediaCursor || libraryError) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) void loadNextMediaPage();
+    }, { root: sentinel.closest(".clip-list"), rootMargin: "300px" });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [libraryError, loadingMedia, nextMediaCursor]);
+
+  useEffect(() => {
+    if (!selectedAsset || metadata[selectedAsset.id]) return;
+    const controller = new AbortController();
+    void loadMediaInfo([selectedAsset], controller.signal);
+    return () => controller.abort();
+  }, [selectedAsset?.id, metadata[selectedAsset?.id ?? ""]]);
+
+  useEffect(() => {
+    setPlaybackError(undefined);
+    setVideoPlaying(false);
+    const pending = selectedItem && pendingTimelineSeek.current?.itemId === selectedItem.id ? pendingTimelineSeek.current : undefined;
+    setPlayheadTime(pending?.sourceTime ?? (selectedItem?.kind === "video" ? selectedItem.sourceIn : 0));
+    if (selectedItem && !pending) setTimelinePlayhead(itemStartTime(projectRef.current?.items ?? [], selectedItem.id));
+    if (selectedItem?.kind === "photo" && pending) pendingTimelineSeek.current = undefined;
+  }, [viewerSelection?.context, viewerSelection?.context === "timeline" ? viewerSelection.itemId : viewerSelection?.mediaId]);
+
+  useEffect(() => {
+    const handleFullscreen = () => setViewerFullscreen(document.fullscreenElement === viewerStack.current);
+    document.addEventListener("fullscreenchange", handleFullscreen);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreen);
+  }, []);
+
+  useEffect(() => {
+    if (selectedItem?.kind !== "video" || !previewKey || !activePlaybackSource) {
+      setPreparingPreview(false);
+      return;
+    }
+    if (directClipPreview) {
+      setPreparingPreview(false);
+      return;
+    }
+    if (clipPreviews[previewKey]) {
+      setPreparingPreview(false);
+      return;
+    }
+    const controller = new AbortController();
+    setPreparingPreview(true);
+    setPlaybackError(undefined);
+    fetch("/api/media/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: selectedItem.mediaId, source: activePlaybackSource, stabilize: selectedItem.stabilize }),
+      signal: controller.signal,
+    }).then((response) => responseJson<{ url: string }>(response)).then((result) => {
+      setClipPreviews((current) => ({ ...current, [previewKey]: result.url }));
+    }).catch((error) => {
+      if (error.name !== "AbortError") setPlaybackError(error instanceof Error ? error.message : "Preview failed");
+    }).finally(() => {
+      if (!controller.signal.aborted) setPreparingPreview(false);
+    });
+    return () => controller.abort();
+  }, [previewKey, directClipPreview, clipPreviews[previewKey ?? ""]]);
+
+  const selectedTimelineIndex = selectedItem ? project?.items.findIndex((item) => item.id === selectedItem.id) ?? -1 : -1;
+  const nextVideoItem = selectedTimelineIndex >= 0
+    ? project?.items.slice(selectedTimelineIndex + 1).find((item) => item.kind === "video")
+    : undefined;
+  const nextVideoInfo = nextVideoItem ? metadata[nextVideoItem.mediaId] : undefined;
+  const nextVideoSource: PlaybackSource | undefined = nextVideoItem
+    ? playbackSource === "original" ? "original" : nextVideoInfo ? nextVideoInfo.proxy ? "proxy" : "original" : undefined
+    : undefined;
+  const nextPreviewKey = nextVideoItem && nextVideoSource
+    ? `${nextVideoItem.id}:${nextVideoSource}:${nextVideoItem.stabilize}`
+    : undefined;
+  const directNextPreview = nextVideoItem && nextVideoSource && (!nextVideoItem.stabilize || nextVideoSource === "proxy")
+    ? videoUrl(nextVideoItem.mediaId, nextVideoItem.stabilize ? "stabilized-proxy" : nextVideoSource)
+    : undefined;
+  const nextPreviewUrl = directNextPreview ?? (nextPreviewKey ? clipPreviews[nextPreviewKey] : undefined);
+
+  useEffect(() => {
+    if (!nextVideoItem || !nextVideoSource || !nextPreviewKey || nextPreviewUrl) return;
+    const controller = new AbortController();
+    fetch("/api/media/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: nextVideoItem.mediaId, source: nextVideoSource, stabilize: nextVideoItem.stabilize }),
+      signal: controller.signal,
+    }).then((response) => responseJson<{ url: string }>(response)).then((result) => {
+      setClipPreviews((current) => ({ ...current, [nextPreviewKey]: result.url }));
+    }).catch((error) => {
+      if (error.name !== "AbortError") console.warn(`Could not preload ${nextVideoItem.mediaId}:`, error);
+    });
+    return () => controller.abort();
+  }, [nextPreviewKey, nextPreviewUrl]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (selectedItem?.kind !== "video" || !readyClipPreview || !video || video.readyState < 1) return;
+    const pending = pendingTimelineSeek.current?.itemId === selectedItem.id ? pendingTimelineSeek.current : undefined;
+    if (!pending) return;
+    video.currentTime = pending.sourceTime;
+    setPlayheadTime(pending.sourceTime);
+    pendingTimelineSeek.current = undefined;
+  }, [selectedItem?.id, readyClipPreview?.url]);
+
+  useEffect(() => {
+    clearTimeout(photoTimer.current);
+    clearInterval(photoProgressTimer.current);
+    if (previewMode !== "playing" || selectedItem?.kind !== "photo") return;
+    const milliseconds = photoRemaining.current || selectedItem.photoDuration * 1000;
+    const elapsedBeforeStart = selectedItem.photoDuration * 1000 - milliseconds;
+    const timelineStart = itemStartTime(projectRef.current?.items ?? [], selectedItem.id);
+    const startedAt = Date.now();
+    photoRemaining.current = 0;
+    photoDeadline.current = Date.now() + milliseconds;
+    setTimelinePlayhead(timelineStart + elapsedBeforeStart / 1000);
+    photoProgressTimer.current = setInterval(() => {
+      setTimelinePlayhead(timelineStart + Math.min(selectedItem.photoDuration, (elapsedBeforeStart + Date.now() - startedAt) / 1000));
+    }, 50);
+    photoTimer.current = setTimeout(() => completePreviewItem(selectedItem.id), milliseconds);
+    return () => {
+      clearTimeout(photoTimer.current);
+      clearInterval(photoProgressTimer.current);
+    };
+  }, [previewMode, selectedItem?.id, selectedItem?.kind === "photo" ? selectedItem.photoDuration : undefined,
+    project?.items.map((item) => item.id).join(":")]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (previewMode !== "playing" || selectedItem?.kind !== "video" || !video) return;
+    if (!readyClipPreview) return;
+    if (video.currentTime < selectedItem.sourceIn || video.currentTime >= selectedItem.sourceOut) {
+      video.currentTime = selectedItem.sourceIn;
+    }
+    void video.play().catch(() => {
+      // A newly-mounted video will retry from onLoadedMetadata.
+    });
+  }, [previewMode, selectedItem?.id, readyClipPreview?.url]);
+
+  useEffect(() => {
+    function handlePlaybackShortcut(event: globalThis.KeyboardEvent) {
+      if (event.defaultPrevented) return;
+      const target = event.target as HTMLElement | null;
+      if (event.repeat) {
+        if (target?.closest("button, .source-select")
+          && ["Space", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.code)) {
+          event.preventDefault();
+        }
+        return;
+      }
+      const formControl = target?.closest("input, select:not(.source-select), textarea, [contenteditable='true']");
+      if (formControl || (playbackContext !== "timeline" && target?.closest("[role='slider']") && event.code !== "Space")) return;
+      if (event.code === "Space") {
+        event.preventDefault();
+        toggleActivePlayback();
+        return;
+      }
+      if (playbackContext === "library") {
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.code)) {
+          event.preventDefault();
+          navigateLibrary(event.code);
+        }
+        return;
+      }
+      if (!projectRef.current?.items.length) return;
+      if (event.shiftKey && (event.code === "ArrowLeft" || event.code === "ArrowRight")) {
+        event.preventDefault();
+        stepPlaybackFrame(event.code === "ArrowLeft" ? -1 : 1);
+        return;
+      }
+      const navigation = { ArrowLeft: -1, ArrowRight: 1 }[event.code];
+      if (navigation !== undefined) {
+        event.preventDefault();
+        navigateTimelineItem(navigation);
+      } else if (playbackContext === "timeline" && (event.code === "Home" || event.code === "End")) {
+        event.preventDefault();
+        pausePreview();
+        seekTimeline(event.code === "Home" ? 0 : projectDuration(projectRef.current.items));
+      } else if (target?.closest(".source-select")
+        && ["ArrowUp", "ArrowDown", "Home", "End"].includes(event.code)) {
+        event.preventDefault();
+      }
+    }
+    window.addEventListener("keydown", handlePlaybackShortcut, { capture: true });
+    return () => window.removeEventListener("keydown", handlePlaybackShortcut, { capture: true });
+  }, [playbackContext, previewMode, timelinePlayhead, selectedItem?.id, readyClipPreview?.url]);
+
+  async function loadMediaInfo(assets: MediaAsset[], signal?: AbortSignal) {
+    const entries = await Promise.all(assets.map(async (asset) => {
+      try {
+        const response = await fetch(`/api/media/info?id=${encodeURIComponent(asset.id)}`, { signal });
+        return [asset.id, await responseJson<MediaInfo>(response)] as const;
+      } catch (error) {
+        if ((error as Error).name === "AbortError") return undefined;
+        return undefined;
+      }
+    }));
+    if (signal?.aborted) return;
+    setMetadata((current) => ({ ...current, ...Object.fromEntries(entries.filter((entry) => entry !== undefined)) }));
+  }
+
+  async function loadNextMediaPage() {
+    if (loadingMedia || !nextMediaCursor) return;
+    const generation = mediaGeneration.current;
+    const controller = new AbortController();
+    mediaRequest.current = controller;
+    setLoadingMedia(true);
+    setLibraryError(undefined);
+    try {
+      const query = new URLSearchParams({ limit: "48", cursor: nextMediaCursor, includePhotos: String(includePhotos) });
+      const page = await fetch(`/api/media?${query}`, { signal: controller.signal }).then((response) => responseJson<MediaPage>(response));
+      if (generation !== mediaGeneration.current) return;
+      setMedia((current) => {
+        const ids = new Set(current.map((asset) => asset.id));
+        return [...current, ...page.media.filter((asset) => !ids.has(asset.id))];
+      });
+      setMediaTotal(page.total);
+      setNextMediaCursor(page.nextCursor);
+      void loadMediaInfo(page.media, controller.signal);
+    } catch (error) {
+      if ((error as Error).name !== "AbortError") setLibraryError(error instanceof Error ? error.message : "Could not load more media");
+    } finally {
+      if (generation === mediaGeneration.current) setLoadingMedia(false);
+    }
+  }
+
+  async function loadProject(id: string, signal?: AbortSignal) {
+    const generation = ++projectLoadGeneration.current;
+    projectLoadController.current?.abort();
+    const controller = new AbortController();
+    projectLoadController.current = controller;
+    const abort = () => controller.abort();
+    signal?.addEventListener("abort", abort, { once: true });
+    let loaded: Project;
+    try {
+      loaded = await fetch(`/api/projects/${encodeURIComponent(id)}`, { signal: controller.signal }).then((response) => responseJson<Project>(response));
+    } finally {
+      signal?.removeEventListener("abort", abort);
+      if (projectLoadController.current === controller) projectLoadController.current = undefined;
+    }
+    if (controller.signal.aborted || generation !== projectLoadGeneration.current) return false;
+    projectRef.current = loaded;
+    serverRevision.current = loaded.revision;
+    changeVersion.current = 0;
+    savedVersion.current = 0;
+    setProject(loaded);
+    setSaveState("saved");
+    setSaveError(undefined);
+    setViewerSelection(loaded.items[0] ? { context: "timeline", itemId: loaded.items[0].id } : undefined);
+    setPlaybackContext(loaded.items[0] ? "clip" : "library");
+    setPreviewMode("off");
+    setCropMode(false);
+    localStorage.setItem(ACTIVE_PROJECT_KEY, loaded.id);
+    return true;
+  }
+
+  async function runSave(): Promise<boolean> {
+    if (savePromise.current) {
+      if (!(await savePromise.current)) return false;
+      return savedVersion.current >= changeVersion.current ? true : runSave();
+    }
+    const task = (async () => {
+      while (projectRef.current && savedVersion.current < changeVersion.current) {
+        const activeId = projectRef.current.id;
+        const version = changeVersion.current;
+        const snapshot = { ...projectRef.current, revision: serverRevision.current };
+        setSaveState("saving");
+        setSaveError(undefined);
+        try {
+          const saved = await fetch(`/api/projects/${encodeURIComponent(activeId)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(snapshot),
+          }).then((response) => responseJson<Project>(response));
+          if (projectRef.current?.id !== activeId) return false;
+          serverRevision.current = saved.revision;
+          savedVersion.current = version;
+          const merged = { ...projectRef.current, revision: saved.revision, updatedAt: saved.updatedAt };
+          projectRef.current = merged;
+          setProject(merged);
+          setProjects((current) => current.map((candidate) => candidate.id === activeId ? merged : candidate));
+        } catch (error) {
+          setSaveState("error");
+          setSaveError(error instanceof Error ? error.message : "Save failed");
+          return false;
+        }
+      }
+      setSaveState("saved");
+      return true;
+    })();
+    savePromise.current = task;
+    try {
+      return await task;
+    } finally {
+      savePromise.current = undefined;
+    }
+  }
+
+  function scheduleSave() {
+    setSaveState("saving");
+    void runSave();
+  }
+
+  async function flushSave() {
+    return runSave();
+  }
+
+  function editProject(update: (current: Project) => Project) {
+    const current = projectRef.current;
+    if (!current) return;
+    const next = update(current);
+    projectRef.current = next;
+    changeVersion.current += 1;
+    setProject(next);
+    setExportResult(undefined);
+    setExportError(undefined);
+    scheduleSave();
+  }
+
+  async function switchProject(id: string) {
+    if (id === project?.id || !(await flushSave())) return;
+    try {
+      await loadProject(id);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setSaveState("error");
+      setSaveError(error instanceof Error ? error.message : "Could not open project");
+    }
+  }
+
+  async function createNewProject() {
+    if (!(await flushSave())) return;
+    const name = window.prompt("Project name", "Untitled Project")?.trim();
+    if (!name) return;
+    try {
+      const created = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      }).then((response) => responseJson<Project>(response));
+      setProjects((current) => [created, ...current]);
+      await loadProject(created.id);
+    } catch (error) {
+      setSaveState("error");
+      setSaveError(error instanceof Error ? error.message : "Could not create project");
+    }
+  }
+
+  async function deleteActiveProject() {
+    if (!project || !window.confirm(`Delete “${project.name}”?`)) return;
+    if (!(await flushSave())) return;
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}?revision=${serverRevision.current}`, { method: "DELETE" });
+      if (!response.ok) await responseJson(response);
+      const remaining = projects.filter((candidate) => candidate.id !== project.id);
+      setProjects(remaining);
+      projectRef.current = undefined;
+      setProject(undefined);
+      setViewerSelection(undefined);
+      localStorage.removeItem(ACTIVE_PROJECT_KEY);
+      if (remaining[0]) await loadProject(remaining[0].id);
+    } catch (error) {
+      setSaveState("error");
+      setSaveError(error instanceof Error ? error.message : "Could not delete project");
+    }
+  }
+
+  function selectSource(asset: MediaAsset) {
+    autoplayNextSource.current = viewerSelectionRef.current?.context === "source"
+      && Boolean(videoRef.current && !videoRef.current.paused && !videoRef.current.ended);
+    setPreviewMode("off");
+    setPlaybackContext("library");
+    setCropMode(false);
+    setViewerSelection({ context: "source", mediaId: asset.id });
+    setPlaybackError(undefined);
+  }
+
+  function addToTimeline(asset: MediaAsset) {
+    const info = metadata[asset.id];
+    if (!project || !info) {
+      setLibraryError("Media metadata is unavailable; scan the library before adding this item.");
+      return;
+    }
+    const common = { id: crypto.randomUUID(), mediaId: asset.id, stabilize: false, crop: centeredCrop(info, project.settings) };
+    const item: TimelineItem = asset.kind === "video"
+      ? { ...common, kind: "video", sourceIn: 0, sourceOut: info.duration }
+      : { ...common, kind: "photo", photoDuration: PHOTO_DURATION };
+    pauseForTimelineChange();
+    editProject((current) => ({ ...current, items: [...current.items, item] }));
+    setPlaybackContext("clip");
+    setViewerSelection({ context: "timeline", itemId: item.id });
+  }
+
+  function updateItem(id: string, update: (item: TimelineItem) => TimelineItem) {
+    enterClipEditMode();
+    editProject((current) => ({ ...current, items: current.items.map((item) => {
+      if (item.id !== id) return item;
+      return update(item);
+    }) }));
+  }
+
+  function changePlaybackVariant(variant: PlaybackVariant) {
+    setPlaybackSource(variant);
+    if (selectedItem?.kind !== "video") return;
+    const stabilize = variant === "stabilized-proxy";
+    if (selectedItem.stabilize !== stabilize) {
+      updateItem(selectedItem.id, (item) => ({ ...item, stabilize }));
+    }
+  }
+
+  function removeItem(id: string) {
+    const index = project?.items.findIndex((item) => item.id === id) ?? -1;
+    pauseForTimelineChange();
+    editProject((current) => ({ ...current, items: current.items.filter((item) => item.id !== id) }));
+    if (viewerSelection?.context === "timeline" && viewerSelection.itemId === id) {
+      const next = project?.items[index + 1] ?? project?.items[index - 1];
+      stopPreview();
+      setViewerSelection(next ? { context: "timeline", itemId: next.id } : undefined);
+      setPlaybackContext(next ? "clip" : "library");
+    }
+  }
+
+  function moveItem(id: string, offset: number) {
+    pauseForTimelineChange();
+    editProject((current) => {
+      const from = current.items.findIndex((item) => item.id === id);
+      const to = clamp(from + offset, 0, current.items.length - 1);
+      if (from < 0 || from === to) return current;
+      const items = [...current.items];
+      const [moved] = items.splice(from, 1);
+      items.splice(to, 0, moved!);
+      return { ...current, items };
+    });
+  }
+
+  function dropItem(event: DragEvent<HTMLElement>, targetId: string) {
+    event.preventDefault();
+    const sourceId = dragItemId.current;
+    if (!sourceId || sourceId === targetId) return;
+    pauseForTimelineChange();
+    editProject((current) => {
+      const items = [...current.items];
+      const from = items.findIndex((item) => item.id === sourceId);
+      const to = items.findIndex((item) => item.id === targetId);
+      if (from < 0 || to < 0) return current;
+      const [moved] = items.splice(from, 1);
+      items.splice(to, 0, moved!);
+      return { ...current, items };
+    });
+  }
+
+  function dropMedia(event: DragEvent<HTMLElement>) {
+    const mediaId = dragMediaId.current;
+    if (!mediaId) return;
+    event.preventDefault();
+    const asset = media.find((candidate) => candidate.id === mediaId);
+    dragMediaId.current = undefined;
+    if (asset) addToTimeline(asset);
+  }
+
+  function changeSettings(settings: ProjectSettings) {
+    const normalized = normalizeSettings(settings);
+    editProject((current) => ({ ...current, settings: normalized }));
+  }
+
+  function navigateLibrary(key: string) {
+    const buttons = Array.from(libraryList.current?.querySelectorAll<HTMLButtonElement>(".clip-row") ?? []);
+    const currentIndex = buttons.findIndex((button) => button.classList.contains("selected"));
+    if (currentIndex < 0 || !buttons[0]) return;
+    const firstNextRow = buttons.findIndex((button) => button.offsetTop !== buttons[0]!.offsetTop);
+    const columns = firstNextRow === -1 ? buttons.length : firstNextRow;
+    const next = { ArrowLeft: currentIndex - 1, ArrowRight: currentIndex + 1, ArrowUp: currentIndex - columns,
+      ArrowDown: currentIndex + columns, Home: 0, End: buttons.length - 1 }[key];
+    if (next === undefined || next < 0 || next >= buttons.length) return;
+    buttons[next]!.focus();
+    buttons[next]!.click();
+  }
+
+  function startPreview() {
+    if (!project?.items.length) return;
+    const duration = projectDuration(project.items);
+    const startTime = timelinePlayhead >= duration ? 0 : timelinePlayhead;
+    photoRemaining.current = 0;
+    setCropMode(false);
+    setPlaybackContext("timeline");
+    seekTimeline(startTime);
+    setPreviewMode("playing");
+    timelineRuler.current?.focus({ preventScroll: true });
+  }
+
+  function startClipPreview() {
+    if (!selectedItem) return;
+    setPlaybackContext("clip");
+    setCropMode(false);
+    if (selectedItem.kind === "video") {
+      const video = videoRef.current;
+      if (video && (previewMode === "ended" || video.currentTime < selectedItem.sourceIn || video.currentTime >= selectedItem.sourceOut)) {
+        video.currentTime = selectedItem.sourceIn;
+        setPlayheadTime(selectedItem.sourceIn);
+      }
+    } else if (previewMode === "ended" || previewMode === "off") {
+      photoRemaining.current = selectedItem.photoDuration * 1000;
+      setTimelinePlayhead(itemStartTime(projectRef.current?.items ?? [], selectedItem.id));
+    }
+    setPreviewMode("playing");
+    viewerStage.current?.focus({ preventScroll: true });
+  }
+
+  function togglePreviewPause() {
+    if (previewMode === "playing") {
+      if (selectedItem?.kind === "photo") photoRemaining.current = Math.max(0, photoDeadline.current - Date.now());
+      videoRef.current?.pause();
+      setPreviewMode("paused");
+    } else if (previewMode === "paused") {
+      setPreviewMode("playing");
+      if (selectedItem?.kind === "video" && readyClipPreview) void videoRef.current?.play();
+    }
+  }
+
+  function pausePreview() {
+    if (previewModeRef.current !== "playing") return;
+    const selection = viewerSelectionRef.current;
+    const item = selection?.context === "timeline"
+      ? projectRef.current?.items.find((candidate) => candidate.id === selection.itemId)
+      : undefined;
+    if (item?.kind === "photo") photoRemaining.current = Math.max(0, photoDeadline.current - Date.now());
+    videoRef.current?.pause();
+    setPreviewMode("paused");
+  }
+
+  function toggleActivePlayback() {
+    if (playbackContext === "library") {
+      toggleViewerPlayback();
+    } else if (previewMode === "playing" || previewMode === "paused") {
+      togglePreviewPause();
+    } else if (playbackContext === "timeline") {
+      startPreview();
+    } else {
+      startClipPreview();
+    }
+    if (playbackContext === "timeline") timelineRuler.current?.focus({ preventScroll: true });
+    else if (playbackContext === "clip") viewerStage.current?.focus({ preventScroll: true });
+  }
+
+  function stopPreview() {
+    clearTimeout(photoTimer.current);
+    clearInterval(photoProgressTimer.current);
+    photoRemaining.current = 0;
+    videoRef.current?.pause();
+    setPreviewMode("off");
+  }
+
+  function advancePreview() {
+    const current = projectRef.current;
+    const selection = viewerSelectionRef.current;
+    if (!current || selection?.context !== "timeline") return stopPreview();
+    const index = current.items.findIndex((item) => item.id === selection.itemId);
+    const next = current.items[index + 1];
+    photoRemaining.current = 0;
+    if (!next) {
+      setTimelinePlayhead(projectDuration(current.items));
+      videoRef.current?.pause();
+      setPreviewMode("ended");
+      return;
+    }
+    setTimelinePlayhead(itemStartTime(current.items, next.id));
+    setViewerSelection({ context: "timeline", itemId: next.id });
+  }
+
+  function completePreviewItem(itemId: string) {
+    const current = projectRef.current;
+    const selection = viewerSelectionRef.current;
+    if (!current || selection?.context !== "timeline") return stopPreview();
+    if (selection.itemId !== itemId) return;
+    if (playbackContextRef.current === "timeline") {
+      advancePreview();
+      return;
+    }
+    const item = current.items.find((candidate) => candidate.id === selection.itemId);
+    if (item) setTimelinePlayhead(itemStartTime(current.items, item.id) + itemDuration(item));
+    videoRef.current?.pause();
+    setPreviewMode("ended");
+  }
+
+  function navigateTimelineItem(offset: number) {
+    const current = projectRef.current;
+    const selection = viewerSelectionRef.current;
+    if (!current?.items.length) return;
+    let index = selection?.context === "timeline" ? current.items.findIndex((item) => item.id === selection.itemId) : -1;
+    if (index < 0) {
+      let elapsed = 0;
+      index = current.items.findIndex((item, itemIndex) => {
+        elapsed += itemDuration(item);
+        return timelinePlayhead < elapsed || itemIndex === current.items.length - 1;
+      });
+    }
+    const next = current.items[index + offset];
+    if (!next) return;
+    const keepPlaying = previewModeRef.current === "playing";
+    photoRemaining.current = 0;
+    videoRef.current?.pause();
+    setPlaybackContext("timeline");
+    seekTimeline(itemStartTime(current.items, next.id));
+    setPreviewMode(keepPlaying ? "playing" : "paused");
+    timelineRuler.current?.focus({ preventScroll: true });
+  }
+
+  function stepPlaybackFrame(direction: number) {
+    const current = projectRef.current;
+    if (!current || playbackContext === "library") return;
+    pausePreview();
+    const frame = 1 / current.settings.fps;
+    if (playbackContext === "timeline") {
+      seekTimeline(timelinePlayhead + direction * frame);
+    } else if (selectedItem?.kind === "video") {
+      const time = clamp((videoRef.current?.currentTime ?? playheadTime) + direction * frame, selectedItem.sourceIn, selectedItem.sourceOut);
+      if (videoRef.current) videoRef.current.currentTime = time;
+      setPlayheadTime(time);
+      setTimelinePlayhead(itemStartTime(current.items, selectedItem.id) + time - selectedItem.sourceIn);
+      setPreviewMode(time >= selectedItem.sourceOut ? "ended" : "paused");
+    }
+  }
+
+  function enterClipEditMode() {
+    setPlaybackContext("clip");
+    pausePreview();
+  }
+
+  function pauseForTimelineChange() {
+    if (playbackContextRef.current === "timeline") pausePreview();
+  }
+
+  function videoReady(video: HTMLVideoElement) {
+    if (selectedItem?.kind === "video") {
+      const pending = pendingTimelineSeek.current?.itemId === selectedItem.id ? pendingTimelineSeek.current : undefined;
+      const sourceTime = pending?.sourceTime ?? selectedItem.sourceIn;
+      video.currentTime = sourceTime;
+      setPlayheadTime(sourceTime);
+      pendingTimelineSeek.current = undefined;
+      if (previewMode === "playing" && readyClipPreview) void video.play();
+    } else if (viewerSelection?.context === "source" && autoplayNextSource.current) {
+      autoplayNextSource.current = false;
+      void video.play().catch(() => setPlaybackError("This browser could not continue video playback."));
+    }
+  }
+
+  function toggleViewerPlayback() {
+    const video = videoRef.current;
+    if (!video) return;
+    if (selectedItem && playbackContext !== "library") {
+      toggleActivePlayback();
+      return;
+    }
+    if (!video.paused) {
+      video.pause();
+      return;
+    }
+    const start = selectedItem?.kind === "video" ? selectedItem.sourceIn : 0;
+    const end = selectedItem?.kind === "video" ? selectedItem.sourceOut : selectedInfo?.duration ?? video.duration;
+    if (video.currentTime < start || video.currentTime >= end) {
+      video.currentTime = start;
+      setPlayheadTime(start);
+    }
+    void video.play().catch(() => setPlaybackError("This browser could not start video playback."));
+  }
+
+  function seekSource(values: number[]) {
+    const time = clamp(values[0] ?? 0, 0, selectedInfo?.duration ?? 0);
+    if (videoRef.current) videoRef.current.currentTime = time;
+    setPlayheadTime(time);
+  }
+
+  async function toggleViewerFullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await viewerStack.current?.requestFullscreen();
+    } catch {
+      setPlaybackError("Fullscreen is unavailable.");
+    }
+  }
+
+  function resizeViewer(event: PointerEvent<HTMLDivElement>) {
+    const resize = viewerResize.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    setViewerHeight(clamp(resize.startHeight + event.clientY - resize.startY, 220, Math.max(220, window.innerHeight - 120)));
+  }
+
+  function beginViewerResize(event: PointerEvent<HTMLDivElement>) {
+    if (!viewerStage.current || viewerFullscreen) return;
+    event.preventDefault();
+    viewerResize.current = { pointerId: event.pointerId, startY: event.clientY, startHeight: viewerStage.current.getBoundingClientRect().height };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function endViewerResize(event: PointerEvent<HTMLDivElement>) {
+    if (viewerResize.current?.pointerId !== event.pointerId) return;
+    viewerResize.current = undefined;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  function seekTimeline(time: number) {
+    const current = projectRef.current;
+    if (!current?.items.length) return;
+    const total = projectDuration(current.items);
+    const target = clamp(time, 0, total);
+    let elapsed = 0;
+    let item = current.items.at(-1)!;
+    for (const candidate of current.items) {
+      const end = elapsed + itemDuration(candidate);
+      item = candidate;
+      if (target < end || candidate === current.items.at(-1)) break;
+      elapsed = end;
+    }
+    const localTime = clamp(target - elapsed, 0, itemDuration(item));
+    setTimelinePlayhead(target);
+    setViewerSelection({ context: "timeline", itemId: item.id });
+    if (item.kind === "video") {
+      const sourceTime = item.sourceIn + localTime;
+      pendingTimelineSeek.current = { itemId: item.id, sourceTime };
+      setPlayheadTime(sourceTime);
+      if (viewerSelectionRef.current?.context === "timeline" && viewerSelectionRef.current.itemId === item.id && videoRef.current) {
+        videoRef.current.currentTime = sourceTime;
+        pendingTimelineSeek.current = undefined;
+      }
+    } else {
+      pendingTimelineSeek.current = viewerSelectionRef.current?.context === "timeline" && viewerSelectionRef.current.itemId === item.id
+        ? undefined
+        : { itemId: item.id, sourceTime: 0 };
+      photoRemaining.current = Math.max(0, item.photoDuration - localTime) * 1000;
+    }
+  }
+
+  function moveTimelinePlayhead(event: PointerEvent<HTMLDivElement>) {
+    if (timelineSeekInteraction.current !== event.pointerId || !project) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    seekTimeline(clamp((event.clientX - bounds.left) / bounds.width, 0, 1) * projectDuration(project.items));
+  }
+
+  function beginTimelineSeek(event: PointerEvent<HTMLDivElement>) {
+    if (!project?.items.length) return;
+    event.preventDefault();
+    pausePreview();
+    setPlaybackContext("timeline");
+    event.currentTarget.focus({ preventScroll: true });
+    timelineSeekInteraction.current = event.pointerId;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    moveTimelinePlayhead(event);
+  }
+
+  function endTimelineSeek(event: PointerEvent<HTMLDivElement>) {
+    if (timelineSeekInteraction.current !== event.pointerId) return;
+    timelineSeekInteraction.current = undefined;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  function updateTrim(values: number[]) {
+    if (!selectedItem || selectedItem.kind !== "video" || !selectedInfo) return;
+    const sourceIn = clamp(values[0] ?? selectedItem.sourceIn, 0, selectedInfo.duration - MINIMUM_TRIM);
+    const sourceOut = clamp(values[1] ?? selectedItem.sourceOut, sourceIn + MINIMUM_TRIM, selectedInfo.duration);
+    updateItem(selectedItem.id, (item) => item.kind === "video"
+      ? { ...item, sourceIn, sourceOut }
+      : item);
+    if (videoRef.current) {
+      const time = sourceIn !== selectedItem.sourceIn ? sourceIn : sourceOut;
+      videoRef.current.currentTime = time;
+      setPlayheadTime(time);
+    }
+  }
+
+  function moveTrimPlayhead(event: PointerEvent<HTMLDivElement>) {
+    if (seekInteraction.current !== event.pointerId || !selectedInfo?.duration) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const time = clamp((event.clientX - bounds.left) / bounds.width, 0, 1) * selectedInfo.duration;
+    if (videoRef.current) videoRef.current.currentTime = time;
+    setPlayheadTime(time);
+  }
+
+  function beginTrimSeek(event: PointerEvent<HTMLDivElement>) {
+    if ((event.target as HTMLElement).closest(".ui-slider-thumb")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.focus();
+    enterClipEditMode();
+    seekInteraction.current = event.pointerId;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    moveTrimPlayhead(event);
+  }
+
+  function endTrimSeek(event: PointerEvent<HTMLDivElement>) {
+    if (seekInteraction.current !== event.pointerId) return;
+    seekInteraction.current = undefined;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  function beginCrop(event: PointerEvent<HTMLDivElement>, direction?: string) {
+    if (!selectedItem?.crop) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    cropInteraction.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
+      crop: selectedItem.crop, direction };
+  }
+
+  function moveCrop(event: PointerEvent<HTMLDivElement>) {
+    const interaction = cropInteraction.current;
+    const bounds = mediaFrame.current?.getBoundingClientRect();
+    if (!interaction || interaction.pointerId !== event.pointerId || !bounds || !selectedItem || !selectedInfo || !project) return;
+    const dx = (event.clientX - interaction.startX) / bounds.width;
+    const dy = (event.clientY - interaction.startY) / bounds.height;
+    const start = interaction.crop;
+    if (!interaction.direction) {
+      updateItem(selectedItem.id, (item) => ({ ...item, crop: { ...start,
+        x: clamp(start.x + dx, 0, 1 - start.width), y: clamp(start.y + dy, 0, 1 - start.height) } }));
+      return;
+    }
+    const ratio = (selectedInfo.width / selectedInfo.height) / (project.settings.width / project.settings.height);
+    const direction = interaction.direction;
+    const anchorX = direction.includes("w") ? start.x + start.width : start.x;
+    const anchorY = direction.includes("n") ? start.y + start.height : start.y;
+    const widthFromX = direction.includes("w") ? start.width - dx : start.width + dx;
+    const heightFromY = direction.includes("n") ? start.height - dy : start.height + dy;
+    let width = Math.abs(dx) > Math.abs(dy) ? widthFromX : heightFromY / ratio;
+    const maxWidthX = direction.includes("w") ? anchorX : 1 - anchorX;
+    const maxHeight = direction.includes("n") ? anchorY : 1 - anchorY;
+    const minimumWidth = Math.max(MINIMUM_CROP, MINIMUM_CROP / ratio);
+    width = clamp(width, minimumWidth, Math.min(maxWidthX, maxHeight / ratio));
+    const height = width * ratio;
+    updateItem(selectedItem.id, (item) => ({ ...item, crop: {
+      x: direction.includes("w") ? anchorX - width : anchorX,
+      y: direction.includes("n") ? anchorY - height : anchorY,
+      width,
+      height,
+    } }));
+  }
+
+  function endCrop(event: PointerEvent<HTMLDivElement>) {
+    if (cropInteraction.current?.pointerId !== event.pointerId) return;
+    cropInteraction.current = undefined;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  async function exportProject() {
+    if (!project || !(await flushSave())) return;
+    setExporting(true);
+    setExportError(undefined);
+    setExportResult(undefined);
+    setExportProgress({ message: "Starting export", percent: 0 });
+    try {
+      const { jobId } = await fetch(`/api/projects/${encodeURIComponent(project.id)}/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ revision: serverRevision.current }),
+      }).then((response) => responseJson<{ jobId: string }>(response));
+      while (true) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const status = await fetch(`/api/projects/${encodeURIComponent(project.id)}/export?jobId=${encodeURIComponent(jobId)}`)
+          .then((response) => responseJson<{ state: "running" | "complete" | "error"; message: string; percent: number;
+            result?: { filename: string; url: string }; error?: string }>(response));
+        setExportProgress({ message: status.message, percent: status.percent });
+        if (status.state === "complete" && status.result) {
+          setExportResult(status.result);
+          break;
+        }
+        if (status.state === "error") throw new Error(status.error ?? "Export failed");
+      }
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : "Export failed");
+    } finally {
+      setExporting(false);
+      setExportProgress(undefined);
+    }
+  }
+
+  const viewerMediaUrl = selectedAsset?.kind === "video"
+    ? selectedItem?.kind === "video"
+      ? readyClipPreview?.url
+      : activePlaybackVariant ? videoUrl(selectedAsset.id, activePlaybackVariant) : undefined
+    : selectedAsset ? thumbnailUrl(selectedAsset.id) : undefined;
+  const displayedCrop = selectedItem && selectedInfo && project && !cropMode
+    ? selectedItem.crop ?? centeredCrop(selectedInfo, project.settings)
+    : undefined;
+  const viewerAspect = selectedInfo && displayedCrop
+    ? displayedCrop.width * selectedInfo.width / (displayedCrop.height * selectedInfo.height)
+    : selectedInfo ? selectedInfo.width / selectedInfo.height : undefined;
+  const croppedMediaStyle = displayedCrop ? {
+    width: `${100 / displayedCrop.width}%`,
+    height: `${100 / displayedCrop.height}%`,
+    left: `${-displayedCrop.x / displayedCrop.width * 100}%`,
+    top: `${-displayedCrop.y / displayedCrop.height * 100}%`,
+  } : undefined;
+  const totalTimelineDuration = projectDuration(project?.items ?? []);
+  const tickInterval = timelineTickInterval();
+  const timelineTicks = Array.from({ length: Math.floor(totalTimelineDuration / tickInterval) + 1 }, (_, index) => index * tickInterval);
+  if (totalTimelineDuration > 0 && timelineTicks.at(-1) !== totalTimelineDuration) timelineTicks.push(totalTimelineDuration);
+
+  return (
+    <main className="app-shell">
+      <section className="workspace">
+        <aside className="library-panel">
+          <div className="panel-heading"><h2>Library</h2>
+            <label className="library-filter"><input type="checkbox" checked={includePhotos} onChange={(event) => setIncludePhotos(event.target.checked)} /> Include photos</label>
+            <span>{media.length} / {mediaTotal}</span></div>
+          {libraryError && <p className="error-message">{libraryError}</p>}
+          {!libraryError && loadingMedia && media.length === 0 && <p className="empty-message">Loading library...</p>}
+          <div ref={libraryList} className="clip-list" role="group" aria-label="Source media">
+            {media.map((asset, index) => {
+              const selected = viewerSelection?.context === "source" && viewerSelection.mediaId === asset.id;
+              return (
+                <div className="library-item" key={asset.id} draggable={Boolean(project && metadata[asset.id])}
+                  onDragStart={(event) => {
+                    dragItemId.current = undefined;
+                    dragMediaId.current = asset.id;
+                    event.dataTransfer.effectAllowed = "copy";
+                    event.dataTransfer.setData("text/plain", asset.id);
+                  }} onDragEnd={() => { dragMediaId.current = undefined; }}>
+                  <button className={selected ? "clip-row selected" : "clip-row"} aria-pressed={selected}
+                    tabIndex={selected || (!viewerSelection && index === 0) ? 0 : -1}
+                    onClick={() => selectSource(asset)} onDoubleClick={() => addToTimeline(asset)}>
+                    <span className="clip-thumbnail"><Thumbnail asset={asset} /></span>
+                    <span className="clip-caption"><span className="clip-name" title={asset.relativePath}>{asset.filename}</span>
+                      <span className="clip-index">{asset.kind} {metadata[asset.id] ? formatDuration(metadata[asset.id]!.duration) : ""}</span></span>
+                  </button>
+                  <button className="add-button" disabled={!project || !metadata[asset.id]} onClick={() => addToTimeline(asset)}>Add to Timeline</button>
+                </div>
+              );
+            })}
+            <div ref={librarySentinel} className="library-sentinel">{loadingMedia && media.length > 0 ? "Loading more..." : ""}</div>
+          </div>
+        </aside>
+
+        <section className="editor-panel">
+          <header className="masthead">
+            <div className="project-controls">
+              <h1>Video Editor</h1>
+              <select aria-label="Open project" value={project?.id ?? ""} onChange={(event) => void switchProject(event.target.value)}>
+                {!project && <option value="">No project</option>}
+                {projects.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
+              </select>
+              <button onClick={() => void createNewProject()}>New</button>
+              <button onClick={() => void deleteActiveProject()} disabled={!project}>Delete</button>
+            </div>
+            <div className={`save-status ${saveState === "error" ? "error-text" : ""}`} title={saveError}>
+              {saveState === "saving" ? "Saving..." : saveState === "error" ? `Error: ${saveError}` : "Saved"}
+            </div>
+          </header>
+
+          <div className="viewer-heading">
+            <div><p className="eyebrow">{viewerSelection?.context === "timeline" ? "Timeline item" : "Source"}</p>
+              <h2>{selectedAsset?.filename ?? "Select media"}</h2></div>
+            <div className="viewer-actions">
+              {selectedAsset?.kind === "video" && <select className="source-select" aria-label="Playback source"
+                value={(selectedItem?.kind === "video"
+                  ? selectedItem.stabilize ? "stabilized-proxy" : activePlaybackSource
+                  : activePlaybackVariant) ?? ""}
+                disabled={!selectedInfo}
+                onChange={(event) => changePlaybackVariant(event.target.value as PlaybackVariant)}>
+                {!selectedInfo && <option value="">Loading...</option>}
+                <option value="proxy" disabled={!selectedInfo?.proxy}>Proxy</option>
+                <option value="original">Original</option>
+                <option value="stabilized-proxy" disabled={!selectedInfo?.stabilizedProxy}>Stabilized</option>
+              </select>}
+              {selectedAsset && viewerSelection?.context === "source" && <button onClick={() => addToTimeline(selectedAsset)}>Add to Timeline</button>}
+              {preparingPreview && <span className="processing-badge">Preparing preview...</span>}
+            </div>
+          </div>
+
+            <div ref={viewerStack} className="viewer-stack">
+            <div ref={viewerStage} className="viewer-stage" tabIndex={-1} style={{ height: viewerFullscreen ? undefined : viewerHeight }}>
+            {!selectedAsset && <div className="viewer-placeholder">Choose a source or timeline item</div>}
+            {selectedAsset && selectedInfo && <div ref={mediaFrame} className={croppedMediaStyle ? "media-frame cropped" : "media-frame"}
+              style={{ aspectRatio: viewerAspect }}>
+              {selectedAsset.kind === "video" ? viewerMediaUrl ? <video ref={videoRef} key={`${selectedItem?.id ?? "source"}:${activePlaybackVariant}:${readyClipPreview?.url ?? "direct"}`}
+                src={viewerMediaUrl} style={croppedMediaStyle} playsInline muted={false} preload="metadata" onLoadedMetadata={(event) => videoReady(event.currentTarget)}
+                onPlay={() => setVideoPlaying(true)} onPause={() => setVideoPlaying(false)}
+                onTimeUpdate={(event) => { setPlayheadTime(event.currentTarget.currentTime); if (selectedItem?.kind === "video") {
+                  setTimelinePlayhead(itemStartTime(projectRef.current?.items ?? [], selectedItem.id) + clamp(event.currentTarget.currentTime - selectedItem.sourceIn, 0, itemDuration(selectedItem)));
+                } if (selectedItem?.kind === "video" && event.currentTarget.currentTime >= selectedItem.sourceOut) {
+                  event.currentTarget.pause();
+                  if (previewModeRef.current === "playing") completePreviewItem(selectedItem.id);
+                } }} onEnded={() => { if (previewModeRef.current === "playing" && selectedItem?.kind === "video") completePreviewItem(selectedItem.id); }}
+                onError={() => setPlaybackError("This browser cannot play the selected video.")} />
+                : <div className="viewer-placeholder">Preparing preview...</div>
+                : <img src={viewerMediaUrl} alt={selectedAsset.filename} style={croppedMediaStyle} />}
+              {nextVideoItem?.kind === "video" && nextPreviewUrl && <video className="preload-video"
+                key={`${nextVideoItem.id}:${nextVideoSource}:${nextPreviewUrl}`} src={nextPreviewUrl} preload="auto" muted playsInline
+                onLoadedMetadata={(event) => { event.currentTarget.currentTime = nextVideoItem.sourceIn; }} />}
+              {viewerMediaUrl && cropMode && selectedItem?.crop && <div className="crop-rectangle" aria-label="Crop area. Drag to reposition; use corner handles to resize."
+                onPointerDown={(event) => beginCrop(event, (event.target as HTMLElement).dataset.direction)} onPointerMove={moveCrop}
+                onPointerUp={endCrop} onPointerCancel={endCrop} style={{ left: `${selectedItem.crop.x * 100}%`, top: `${selectedItem.crop.y * 100}%`,
+                  width: `${selectedItem.crop.width * 100}%`, height: `${selectedItem.crop.height * 100}%` }}>
+                {(["nw", "ne", "se", "sw"] as const).map((direction) => <span key={direction} className={`crop-handle crop-handle-${direction}`} data-direction={direction} />)}
+              </div>}
+            </div>}
+            {playbackError && <div className="error-message playback-error">{playbackError}</div>}
+            </div>
+
+            {selectedAsset?.kind === "video" && selectedInfo && selectedInfo.duration > 0 && <section className="viewer-controls" aria-label="Video controls">
+              <button onClick={toggleActivePlayback} disabled={!viewerMediaUrl || preparingPreview}>
+                {playbackContext === "library" ? videoPlaying ? "Pause" : "Play" : previewMode === "playing" ? "Pause" : "Play"}
+              </button>
+              {selectedItem?.kind === "video" ? <div className="trim-control" aria-label="Trim clip" tabIndex={-1} onPointerDownCapture={beginTrimSeek}
+                onPointerMove={moveTrimPlayhead} onPointerUp={endTrimSeek} onPointerCancel={endTrimSeek}>
+                <Slider className="trim-slider" min={0} max={selectedInfo.duration} step={MINIMUM_TRIM} minStepsBetweenThumbs={1}
+                  value={[selectedItem.sourceIn, selectedItem.sourceOut]} onValueChange={updateTrim} />
+                <span className="trim-playhead" style={{ left: `${clamp(playheadTime / selectedInfo.duration, 0, 1) * 100}%` }} />
+              </div> : <Slider aria-label="Seek video" min={0} max={selectedInfo.duration} step={MINIMUM_TRIM}
+                value={[clamp(playheadTime, 0, selectedInfo.duration)]} onValueChange={seekSource} />}
+              <button onClick={() => void toggleViewerFullscreen()}>{viewerFullscreen ? "Exit Fullscreen" : "Fullscreen"}</button>
+            </section>}
+            <div className="viewer-resize-handle" role="separator" aria-label="Resize video viewer" aria-orientation="horizontal"
+              onPointerDown={beginViewerResize} onPointerMove={resizeViewer} onPointerUp={endViewerResize} onPointerCancel={endViewerResize} />
+          </div>
+
+          <div className="edit-output-strip">
+            <div className="edit-strip">
+              {selectedItem && selectedInfo ? <>
+                <span>Crop {Math.round((selectedItem.crop?.width ?? 1) * selectedInfo.width)} × {Math.round((selectedItem.crop?.height ?? 1) * selectedInfo.height)} px</span>
+                {!cropMatchesProject(selectedItem.crop, selectedInfo, project?.settings)
+                  && <span className="invalid-crop-message">Crop does not match the project aspect ratio</span>}
+                <button className={cropMode ? "active" : ""} aria-pressed={cropMode} onClick={() => {
+                  if (!cropMode) enterClipEditMode();
+                  setCropMode(!cropMode);
+                }}>{cropMode ? "Done cropping" : "Crop"}</button>
+                {cropMode && <button onClick={() => updateItem(selectedItem.id, (item) => ({ ...item, crop: centeredCrop(selectedInfo, project!.settings) }))}>Reset crop</button>}
+                {selectedItem.kind === "photo" && <label>Photo duration <input type="number" min="0.1" step="0.1" value={selectedItem.photoDuration}
+                  onChange={(event) => updateItem(selectedItem.id, (item) => item.kind === "photo" ? { ...item, photoDuration: Math.max(0.1, Number(event.target.value)) } : item)} /> sec</label>}
+              </> : <span>{viewerSelection?.context === "source" ? "Source preview. Add it to edit crop, trim, or duration." : "Select a timeline item to edit."}</span>}
+            </div>
+
+            {project && <section className="project-settings" aria-label="Project settings">
+              <strong>Output</strong>
+              <input aria-label="Project name" value={project.name} onChange={(event) => editProject((current) => ({ ...current, name: event.target.value || "Untitled Project" }))} />
+              <div className="preset-buttons">{PRESETS.map((preset) => <button key={preset.label}
+                className={project.settings.width === preset.settings.width && project.settings.height === preset.settings.height ? "active" : ""}
+                onClick={() => changeSettings({ ...project.settings, ...preset.settings })}>{preset.label}</button>)}</div>
+              <label>W <input type="number" min="2" max="8192" step="2" value={project.settings.width} onChange={(event) => changeSettings({ ...project.settings, width: normalizeDimension(Number(event.target.value)) })} /></label>
+              <label>H <input type="number" min="2" max="8192" step="2" value={project.settings.height} onChange={(event) => changeSettings({ ...project.settings, height: normalizeDimension(Number(event.target.value)) })} /></label>
+              <label>FPS <select value={FPS_OPTIONS.includes(project.settings.fps as typeof FPS_OPTIONS[number]) ? project.settings.fps : 30}
+                onChange={(event) => changeSettings({ ...project.settings, fps: Number(event.target.value) })}>
+                {FPS_OPTIONS.map((fps) => <option key={fps}>{fps}</option>)}</select></label>
+            </section>}
+          </div>
+
+          <section className="timeline-section">
+            <div className="timeline-heading"><div><h2>Timeline</h2><span>{project?.items.length ?? 0} items</span></div>
+              <div className="timeline-actions">
+                <span className={`playback-context playback-context-${playbackContext}`}>{playbackContext}</span>
+                <button onClick={toggleActivePlayback} disabled={playbackContext === "library" ? selectedAsset?.kind !== "video" || !viewerMediaUrl : !project?.items.length}>
+                  {playbackContext === "library" ? videoPlaying ? "Pause" : "Play" : previewMode === "playing" ? "Pause" : "Play"}
+                </button>
+                <button onClick={stopPreview} disabled={previewMode === "off"}>Stop</button>
+                <button onClick={startPreview} disabled={!project?.items.length}>Play Timeline</button>
+                <button className="export-button" onClick={() => void exportProject()} disabled={!project?.items.length || exporting}>{exporting ? `Exporting ${exportProgress?.percent ?? 0}%` : "Export Project"}</button>
+              </div></div>
+            {exporting && exportProgress && <div className="export-progress" role="status">
+              <progress max="100" value={exportProgress.percent} />
+              <span>{exportProgress.message}</span>
+            </div>}
+            {exportError && <div className="error-message export-error-message" role="alert">Export failed: {exportError}</div>}
+            <div className="timeline-scroll" aria-label="Project timeline"
+              onDragOver={(event) => { if (dragMediaId.current) event.preventDefault(); }} onDrop={dropMedia}>
+              {project?.items.length ? <div className="timeline-content"
+                style={{ width: `max(100%, ${totalTimelineDuration * TIMELINE_PIXELS_PER_SECOND}px)` }}>
+                <div className="timeline">
+                  {project.items.map((item, index) => {
+                    const asset = media.find((candidate) => candidate.id === item.mediaId);
+                    const selected = viewerSelection?.context === "timeline" && viewerSelection.itemId === item.id;
+                    const invalidCrop = !cropMatchesProject(item.crop, metadata[item.mediaId], project.settings);
+                    const label = asset?.filename ?? item.mediaId;
+                    const playing = selected && playbackContext === "timeline" && previewMode === "playing";
+                    return <article key={item.id} className={`timeline-card${selected ? " selected" : ""}${playing ? " playing" : ""}${invalidCrop ? " invalid-crop" : ""}`}
+                      aria-invalid={invalidCrop || undefined} title={`${label}${invalidCrop ? " - Crop does not match the project aspect ratio" : ""}`} draggable
+                      style={{ width: `${itemDuration(item) / totalTimelineDuration * 100}%` }} onDragStart={(event) => {
+                        dragMediaId.current = undefined;
+                        dragItemId.current = item.id;
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", item.id);
+                      }}
+                      onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropItem(event, item.id)}>
+                      <button className="timeline-select" aria-label={`Select ${label}`} aria-pressed={selected}
+                        onClick={() => { stopPreview(); setPlaybackContext("clip"); setViewerSelection({ context: "timeline", itemId: item.id }); }}>
+                        <img src={thumbnailUrl(item.mediaId)} alt="" />
+                        <span className="timeline-duration">{formatDuration(itemDuration(item))}</span>
+                      </button>
+                      <div className="card-actions">
+                        <div><button aria-label={`Move ${label} left`} disabled={index === 0} onClick={() => moveItem(item.id, -1)}>←</button>
+                          <button aria-label={`Move ${label} right`} disabled={index === project.items.length - 1} onClick={() => moveItem(item.id, 1)}>→</button></div>
+                        <button className="remove-button" aria-label={`Remove ${label}`} onClick={() => removeItem(item.id)}>Remove</button>
+                      </div>
+                    </article>;
+                  })}
+                </div>
+                <div ref={timelineRuler} className="timeline-ruler" tabIndex={-1} aria-label="Project playhead" title="Drag to seek, then press Play" onPointerDown={beginTimelineSeek} onPointerMove={moveTimelinePlayhead}
+                  onPointerUp={endTimelineSeek} onPointerCancel={endTimelineSeek}>
+                  {timelineTicks.map((time, index) => <span key={time} className={`timeline-tick${index === 0 ? " first" : time === totalTimelineDuration ? " last" : ""}`}
+                    style={{ left: `${time / totalTimelineDuration * 100}%` }}><small>{formatTimelineTime(time)}</small></span>)}
+                  <span className="timeline-playhead" style={{ left: `${clamp(timelinePlayhead / totalTimelineDuration, 0, 1) * 100}%` }} />
+                </div>
+              </div> : <p className="empty-message">Add media from the library.</p>}
+            </div>
+            <div className="export-status">
+              <span>Project exports preserve source audio and use silence for photos.</span>
+              {exportResult && <a href={exportResult.url}>{exportResult.filename}</a>}
+            </div>
+          </section>
+        </section>
+      </section>
+    </main>
+  );
+}
+
+createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);

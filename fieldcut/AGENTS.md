@@ -1,0 +1,3 @@
+- commit after any change (unless otherwise specified (UOS))
+- for new components, super simple UI / styling by default. but still functional. we'll add complexity / niceness later.
+- assume i am running the dev server in another tab UOS
