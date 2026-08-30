@@ -20,6 +20,9 @@ export const getWorkoutRouteMatches = createServerFn({ method: 'GET' })
   })
 
 export const syncGarmin = createServerFn({ method: 'POST' }).handler(async () => {
-  const { syncGarminHandler } = await import('./workouts.server')
-  return syncGarminHandler()
+  const [{ syncGarminHandler }, { Effect }] = await Promise.all([
+    import('./workouts.server'),
+    import('effect'),
+  ])
+  return Effect.runPromise(syncGarminHandler())
 })

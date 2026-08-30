@@ -28,14 +28,17 @@ const downloadGarminActivities = () =>
     })
   })
 
-export const syncGarminHandler = async () => {
-  const downloadOutput = await downloadGarminActivities()
-  const { config } = await Effect.runPromise(getAnalysisSettings)
-  const imported = await Effect.runPromise(importRawActivities)
-  const analysis = await Effect.runPromise(rebuildRouteAnalysis(config))
+export const syncGarminHandler = () => Effect.gen(function* () {
+  const downloadOutput = yield* Effect.tryPromise({
+    try: downloadGarminActivities,
+    catch: (cause) => cause instanceof Error ? cause : new Error(String(cause)),
+  })
+  const { config } = yield* getAnalysisSettings
+  const imported = yield* importRawActivities
+  const analysis = yield* rebuildRouteAnalysis(config)
   const syncSummary = downloadOutput.split('\n').at(-1) ?? 'Garmin sync complete'
 
   return {
     message: `${syncSummary} Imported ${imported.activities} activities and ${imported.samples} samples. Analyzed ${analysis.routes} routes and ${analysis.traversals} traversals.`,
   }
-}
+})
