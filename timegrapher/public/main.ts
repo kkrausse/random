@@ -31,6 +31,12 @@ type AppState = {
   running: boolean;
   captureReady: CaptureReady | null;
   captureBatches: CaptureBatch[];
+  rawCaptureRecording: boolean;
+  rawCaptureChunks: Float32Array[][];
+  rawCaptureFrameCount: number;
+  rawCaptureSampleRate: number;
+  rawCaptureChannelCount: number;
+  rawCaptureStopped: (() => void) | null;
 };
 
 type CaptureReady = {
@@ -79,6 +85,7 @@ const query = <T extends HTMLElement>(selector: string) => {
 const elements = {
   toggle: query<HTMLButtonElement>("#toggle"),
   captureToggle: query<HTMLButtonElement>("#capture-toggle"),
+  rawCaptureToggle: query<HTMLButtonElement>("#raw-capture-toggle"),
   period: query<HTMLInputElement>("#period"),
   periodValue: query<HTMLOutputElement>("#period-value"),
   liftAngle: query<HTMLInputElement>("#lift-angle"),
@@ -128,6 +135,12 @@ const app: AppState = {
   running: false,
   captureReady: null,
   captureBatches: [],
+  rawCaptureRecording: false,
+  rawCaptureChunks: [],
+  rawCaptureFrameCount: 0,
+  rawCaptureSampleRate: 0,
+  rawCaptureChannelCount: 0,
+  rawCaptureStopped: null,
 };
 
 const setStatus = (text: string) => {
@@ -217,6 +230,129 @@ const copyCapture = async () => {
   } catch {
     setStatus("Could not copy capture.");
   }
+};
+
+const writeAscii = (view: DataView, offset: number, value: string) => {
+  for (let index = 0; index < value.length; index += 1) {
+    view.setUint8(offset + index, value.charCodeAt(index));
+  }
+};
+
+const makeFloat32Wav = (
+  chunks: Float32Array[][],
+  frameCount: number,
+  sampleRate: number,
+  channelCount: number,
+) => {
+  const bytesPerSample = 4;
+  const blockAlign = channelCount * bytesPerSample;
+  const dataBytes = frameCount * blockAlign;
+  const buffer = new ArrayBuffer(44 + dataBytes);
+  const view = new DataView(buffer);
+
+  writeAscii(view, 0, "RIFF");
+  view.setUint32(4, 36 + dataBytes, true);
+  writeAscii(view, 8, "WAVE");
+  writeAscii(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 3, true);
+  view.setUint16(22, channelCount, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bytesPerSample * 8, true);
+  writeAscii(view, 36, "data");
+  view.setUint32(40, dataBytes, true);
+
+  const samples = new Float32Array(buffer, 44, frameCount * channelCount);
+  let offset = 0;
+  for (let index = 0; index < chunks.length; index += 1) {
+    const channels = chunks[index];
+    const chunkFrames = channels[0]?.length || 0;
+    for (let frame = 0; frame < chunkFrames; frame += 1) {
+      for (let channel = 0; channel < channelCount; channel += 1) {
+        samples[offset] = channels[channel]?.[frame] || 0;
+        offset += 1;
+      }
+    }
+  }
+
+  return buffer;
+};
+
+const downloadRawCapture = () => {
+  if (!app.rawCaptureFrameCount || !app.rawCaptureSampleRate || !app.rawCaptureChannelCount) {
+    return;
+  }
+
+  const wav = makeFloat32Wav(
+    app.rawCaptureChunks,
+    app.rawCaptureFrameCount,
+    app.rawCaptureSampleRate,
+    app.rawCaptureChannelCount,
+  );
+  const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
+  const link = document.createElement("a");
+  const timestamp = new Date().toISOString().replaceAll(":", "-");
+  link.href = url;
+  link.download = `timegrapher-raw-${timestamp}.wav`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+};
+
+const resetRawCapture = () => {
+  app.rawCaptureRecording = false;
+  app.rawCaptureChunks = [];
+  app.rawCaptureFrameCount = 0;
+  app.rawCaptureSampleRate = 0;
+  app.rawCaptureChannelCount = 0;
+  elements.rawCaptureToggle.disabled = false;
+  elements.rawCaptureToggle.dataset.running = "false";
+  elements.rawCaptureToggle.textContent = "Record raw WAV";
+};
+
+const startRawCapture = () => {
+  if (!app.running || !app.worklet) {
+    setStatus("Start the microphone before recording raw audio.");
+    return;
+  }
+
+  resetRawCapture();
+  app.rawCaptureRecording = true;
+  elements.rawCaptureToggle.dataset.running = "true";
+  elements.rawCaptureToggle.textContent = "Stop and save raw WAV";
+  app.worklet.port.postMessage({ type: "configure-raw-capture", enabled: true });
+  setStatus("Recording raw audio.");
+};
+
+const stopRawCapture = () => {
+  if (!app.rawCaptureRecording || !app.worklet) {
+    downloadRawCapture();
+    resetRawCapture();
+    return Promise.resolve();
+  }
+
+  elements.rawCaptureToggle.disabled = true;
+  elements.rawCaptureToggle.textContent = "Finishing raw WAV...";
+
+  return new Promise<void>((resolve) => {
+    app.rawCaptureStopped = resolve;
+    app.worklet?.port.postMessage({ type: "configure-raw-capture", enabled: false });
+  });
+};
+
+const finishRawCapture = () => {
+  const seconds = app.rawCaptureSampleRate
+    ? app.rawCaptureFrameCount / app.rawCaptureSampleRate
+    : 0;
+  downloadRawCapture();
+  const resolve = app.rawCaptureStopped;
+  resetRawCapture();
+  app.rawCaptureStopped = null;
+  setStatus(`Saved ${seconds.toFixed(1)}s raw WAV.`);
+  resolve?.();
 };
 
 const formatBph = (value: number | null) => {
@@ -405,6 +541,17 @@ const start = async () => {
         setStatus("Recording");
       }
 
+      if (message.type === "raw-audio" && app.rawCaptureRecording) {
+        app.rawCaptureChunks.push(message.channels);
+        app.rawCaptureFrameCount += message.channels[0]?.length || 0;
+        app.rawCaptureSampleRate = message.sampleRate;
+        app.rawCaptureChannelCount = message.channels.length;
+      }
+
+      if (message.type === "raw-capture-stopped") {
+        finishRawCapture();
+      }
+
       if (message.type === "features" && app.worker) {
         captureFeatureMessage(message);
         app.featureGraph.update(message, getPeriodSeconds());
@@ -424,6 +571,10 @@ const start = async () => {
 };
 
 const stop = async () => {
+  if (app.rawCaptureRecording) {
+    await stopRawCapture();
+  }
+
   if (app.source) {
     app.source.disconnect();
     app.source = null;
@@ -458,16 +609,24 @@ const stop = async () => {
   }
 };
 
-elements.toggle.addEventListener("click", () => {
+elements.toggle.addEventListener("click", async () => {
   if (app.running) {
-    stop();
+    await stop();
   } else {
-    start();
+    await start();
   }
 });
 
 elements.captureToggle.addEventListener("click", () => {
   copyCapture();
+});
+
+elements.rawCaptureToggle.addEventListener("click", async () => {
+  if (app.rawCaptureRecording) {
+    await stopRawCapture();
+  } else {
+    startRawCapture();
+  }
 });
 
 elements.period.addEventListener("input", () => {

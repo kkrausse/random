@@ -59,6 +59,13 @@ bun run check
 bun run build
 ```
 
+The diagnostics section has two capture paths:
+- `Save capture` copies the latest processed feature frames as JSON.
+- `Record raw WAV` records every input channel as 32-bit float PCM at the audio
+  input sample rate. It captures the signal before mono conversion, filtering,
+  envelope extraction, compression, and feature-rate reduction, so the feature
+  extractor can be replayed or changed offline later.
+
 `index.html`:
 - Requests microphone access.
 - Creates the `AudioContext`, loads `feature-worklet.js`, and starts/stops the

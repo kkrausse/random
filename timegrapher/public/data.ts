@@ -45,6 +45,22 @@ export type ReadyMessage = {
   bands: string[];
 };
 
+export type RawAudioMessage = {
+  type: "raw-audio";
+  startRawFrame: number;
+  sampleRate: number;
+  channels: Float32Array[];
+};
+
+export type RawCaptureStoppedMessage = {
+  type: "raw-capture-stopped";
+};
+
+export type ConfigureRawCaptureMessage = {
+  type: "configure-raw-capture";
+  enabled: boolean;
+};
+
 export type ConfigureAnalysisMessage = {
   type: "configure";
   periodSeconds: number;
@@ -127,7 +143,12 @@ export type AnalysisMessage = {
   balanceAmplitude: BalanceAmplitude | null;
 };
 
-export type WorkletToMainMessage = ReadyMessage | FeatureMessage;
+export type WorkletToMainMessage =
+  | ReadyMessage
+  | FeatureMessage
+  | RawAudioMessage
+  | RawCaptureStoppedMessage;
+export type MainToWorkletMessage = ConfigureRawCaptureMessage;
 export type MainToAnalysisWorkerMessage = ConfigureAnalysisMessage | FeatureMessage;
 export type AnalysisWorkerToMainMessage = AnalysisMessage;
 

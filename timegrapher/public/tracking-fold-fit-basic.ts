@@ -36,11 +36,11 @@ type TrackingState = Tracking & {
 };
 
 const MIN_TRACKING_SECONDS = 2;
-const MIN_ERROR_BPH = 1;
+const MIN_ERROR_BPH = 0.5;
 const INITIAL_ERROR_BPH = 300;
 const MAX_ERROR_BPH = 300;
 const TRACKING_BAND_COUNT = 2;
-const STANDARD_SCORE_HISTORY_COUNT = 3;
+const STANDARD_SCORE_HISTORY_COUNT = 5;
 const STANDARD_SWITCH_SCORE_RATIO = 1.02;
 const SEARCH_STEPS_PER_SIDE = 4;
 const SEARCH_OFFSETS = Array.from(

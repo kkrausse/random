@@ -4,6 +4,7 @@ import {
   DEFAULT_FEATURE_POST_FRAME_COUNT,
   DEFAULT_FEATURE_RATE,
 } from "./defaults";
+import type { MainToWorkletMessage } from "./data";
 
 declare const sampleRate: number;
 declare function registerProcessor(
@@ -28,6 +29,8 @@ type BandpassFilter = {
   y1: number;
   y2: number;
 };
+
+const RAW_AUDIO_POST_FRAME_COUNT = 2**13;
 
 const makeBandpass = (band: Band, rate: number): BandpassFilter => {
   const center = Math.sqrt(band.low * band.high);
@@ -86,6 +89,10 @@ class FeatureProcessor extends AudioWorkletProcessor {
   featurePhase = 0;
   startFeatureFrame = 0;
   startRawFrame = 0;
+  rawCaptureEnabled = false;
+  rawCaptureStartFrame = 0;
+  rawCaptureOffset = 0;
+  rawCaptureBatch: Float32Array[] = [];
 
   constructor() {
     super();
@@ -99,6 +106,12 @@ class FeatureProcessor extends AudioWorkletProcessor {
     this.slow = new Float32Array(this.bands.length);
     this.current = new Float32Array(this.bands.length);
     this.batch = this.bands.map(() => new Float32Array(DEFAULT_FEATURE_POST_FRAME_COUNT));
+    this.port.onmessage = (event: MessageEvent<MainToWorkletMessage>) => {
+      const message = event.data;
+      if (message.type === "configure-raw-capture") {
+        this.configureRawCapture(message.enabled);
+      }
+    };
 
     this.port.postMessage({
       type: "ready",
@@ -118,6 +131,10 @@ class FeatureProcessor extends AudioWorkletProcessor {
     const frameCount = input[0].length;
 
     for (let frame = 0; frame < frameCount; frame += 1) {
+      if (this.rawCaptureEnabled) {
+        this.writeRawAudio(input, frame);
+      }
+
       let mono = 0;
       for (let channel = 0; channel < channelCount; channel += 1) {
         mono += input[channel][frame] || 0;
@@ -143,6 +160,63 @@ class FeatureProcessor extends AudioWorkletProcessor {
     }
 
     return true;
+  }
+
+  configureRawCapture(enabled: boolean) {
+    if (enabled === this.rawCaptureEnabled) return;
+
+    if (!enabled) {
+      this.flushRawAudio();
+      this.rawCaptureEnabled = false;
+      this.port.postMessage({ type: "raw-capture-stopped" });
+      return;
+    }
+
+    this.rawCaptureBatch = [];
+    this.rawCaptureOffset = 0;
+    this.rawCaptureEnabled = true;
+  }
+
+  writeRawAudio(input: Float32Array[], frame: number) {
+    if (this.rawCaptureBatch.length === 0) {
+      this.rawCaptureBatch = input.map(() => new Float32Array(RAW_AUDIO_POST_FRAME_COUNT));
+    }
+
+    if (this.rawCaptureOffset === 0) {
+      this.rawCaptureStartFrame = this.rawFrame;
+    }
+
+    for (let channel = 0; channel < this.rawCaptureBatch.length; channel += 1) {
+      this.rawCaptureBatch[channel][this.rawCaptureOffset] = input[channel]?.[frame] || 0;
+    }
+    this.rawCaptureOffset += 1;
+
+    if (this.rawCaptureOffset >= RAW_AUDIO_POST_FRAME_COUNT) {
+      this.flushRawAudio();
+    }
+  }
+
+  flushRawAudio() {
+    if (this.rawCaptureOffset === 0) return;
+
+    const channels = this.rawCaptureBatch.map((channel) =>
+      this.rawCaptureOffset === channel.length
+        ? channel
+        : channel.slice(0, this.rawCaptureOffset),
+    );
+
+    this.port.postMessage(
+      {
+        type: "raw-audio",
+        startRawFrame: this.rawCaptureStartFrame,
+        sampleRate,
+        channels,
+      },
+      channels.map((channel) => channel.buffer),
+    );
+
+    this.rawCaptureBatch = channels.map(() => new Float32Array(RAW_AUDIO_POST_FRAME_COUNT));
+    this.rawCaptureOffset = 0;
   }
 
   writeFeatureFrame() {
