@@ -1195,7 +1195,7 @@ function App() {
         <section className="editor-panel">
           <header className="masthead">
             <div className="project-controls">
-              <h1>Video Editor</h1>
+              <h1>FieldCut</h1>
               <select aria-label="Open project" value={project?.id ?? ""} onChange={(event) => void switchProject(event.target.value)}>
                 {!project && <option value="">No project</option>}
                 {projects.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}

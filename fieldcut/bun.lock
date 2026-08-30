@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "local-video-editor",
+      "name": "fieldcut",
       "dependencies": {
         "@radix-ui/react-slider": "^1.4.7",
         "@types/bun": "latest",
