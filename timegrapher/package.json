@@ -1,0 +1,16 @@
+{
+  "type": "module",
+  "scripts": {
+    "dev": "bun dev.ts",
+    "build": "bun scripts/build.ts",
+    "deploy": "bun run build && ./deploy.sh",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "latest"
+  },
+  "dependencies": {
+    "echarts": "^6.1.0"
+  }
+}
