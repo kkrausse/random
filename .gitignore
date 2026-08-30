@@ -1,0 +1,12 @@
+# This repository is opt-in: random projects in this directory stay local until
+# they are deliberately added to the monorepo.
+*
+
+!.gitignore
+!README.md
+!fieldcut/
+!fieldcut/**
+!skills/
+!skills/**
+!timegrapher/
+!timegrapher/**
