@@ -2,14 +2,15 @@ import { spawn } from 'node:child_process'
 import { Effect } from 'effect'
 
 import { getActivity, listActivities } from '../services/Database'
-import { listWorkoutRouteMatches } from '../services/AnalysisDatabase'
+import { getAnalysisSettings, listWorkoutRouteMatches, rebuildRouteAnalysis } from '../services/AnalysisDatabase'
+import { importRawActivities } from '../services/Importer'
 
 export const getWorkoutsHandler = () => Effect.runPromise(listActivities)
 export const getWorkoutHandler = (id: string) => Effect.runPromise(getActivity(id))
 export const getWorkoutRouteMatchesHandler = (id: string) => Effect.runPromise(listWorkoutRouteMatches(id))
 
-export const syncGarminHandler = () =>
-  new Promise<{ message: string }>((resolve, reject) => {
+const downloadGarminActivities = () =>
+  new Promise<string>((resolve, reject) => {
     const child = spawn('bun', ['run', 'garmin:sync'], {
       cwd: process.cwd(),
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -20,9 +21,21 @@ export const syncGarminHandler = () =>
     child.on('error', reject)
     child.on('close', (code) => {
       if (code === 0) {
-        resolve({ message: `${output.trim()} Run bun run build:data to index new files.` })
+        resolve(output.trim())
       } else {
         reject(new Error(output.trim() || `Garmin sync exited with code ${code}`))
       }
     })
   })
+
+export const syncGarminHandler = async () => {
+  const downloadOutput = await downloadGarminActivities()
+  const { config } = await Effect.runPromise(getAnalysisSettings)
+  const imported = await Effect.runPromise(importRawActivities)
+  const analysis = await Effect.runPromise(rebuildRouteAnalysis(config))
+  const syncSummary = downloadOutput.split('\n').at(-1) ?? 'Garmin sync complete'
+
+  return {
+    message: `${syncSummary} Imported ${imported.activities} activities and ${imported.samples} samples. Analyzed ${analysis.routes} routes and ${analysis.traversals} traversals.`,
+  }
+}

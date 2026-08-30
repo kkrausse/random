@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useState, useTransition } from 'react'
 
 import { WorkoutTable } from '../components/WorkoutTable'
@@ -18,6 +18,7 @@ export const Route = createFileRoute('/')({
 })
 
 function Home() {
+  const router = useRouter()
   const activities = Route.useLoaderData()
   const search = Route.useSearch()
   const navigate = Route.useNavigate()
@@ -30,6 +31,7 @@ function Home() {
       try {
         const result = await syncGarmin()
         setStatus(result.message)
+        await router.invalidate()
       } catch (error) {
         setStatus(error instanceof Error ? error.message : 'Garmin sync failed')
       }
