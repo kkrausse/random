@@ -14,3 +14,5 @@
 !workout-analyze/**
 !garmin-watch-face/
 !garmin-watch-face/**
+!opencode-plugin-commit-diff-viewer/
+!opencode-plugin-commit-diff-viewer/**
