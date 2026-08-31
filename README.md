@@ -7,6 +7,8 @@ scripts, skills, or explorations that do not need their own repository.
 
 - [`fieldcut/`](./fieldcut): A local-first video editor.
 - [`timegrapher/`](./timegrapher): A browser-based mechanical watch timegrapher.
+- [`workout-analyze/`](./workout-analyze): A Garmin workout analysis app.
+- [`garmin-watch-face/`](./garmin-watch-face): A simple analog Garmin watch face.
 - [`skills/`](./skills): Reusable agent skills.
 
 Projects are intentionally added one at a time. Other directories in this

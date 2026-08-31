@@ -1,5 +1,5 @@
 {
-  "name": "garmin-analyze",
+  "name": "workout-analyze",
   "private": true,
   "type": "module",
   "imports": {
