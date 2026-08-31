@@ -57,12 +57,12 @@ Expose the CLI plugin through the package's `./tui` entrypoint and load it from 
 ```json
 {
   "plugins": [
-    "/absolute/path/to/opencode-plugin-commit-diff-viewer"
+    "/absolute/path/to/opencode-plugin-commit-diff-viewer/tui.ts"
   ]
 }
 ```
 
-Preserve unrelated CLI settings when installing it.
+Configure the exact entrypoint file for a local checkout. OpenCode imports file targets directly; a directory target may be treated as a discovered plugin directory and resolved by appending `/tui`. Preserve unrelated CLI settings when installing it.
 
 ## POC Limitations
 
