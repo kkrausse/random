@@ -2,114 +2,57 @@
 
 ## Goal
 
-Create a local OpenCode V2 CLI plugin that keeps the system diff viewer experience but adds a commit picker for comparing the current checkout against an earlier commit. The plugin will register a separate `/commit-diff` command and run inside the normally installed `opencode2`; it will not require a custom OpenCode build.
+Add `/commit-diff` to the normally installed OpenCode V2 CLI. The command selects a Git revision and opens the bundled diff viewer for `<revision>..HEAD`, excluding working-tree changes.
 
-## Approach
+Do not copy the diff viewer, parse Git diff output, create temporary branches, or require a custom OpenCode build.
 
-Use the OpenCode repository as the reference source and initial dependency workspace. Start from the bundled system diff viewer, preserve its UI and file-tree behavior, and replace only the private host-context imports that cannot work from an externally loaded plugin.
+## Verified OpenCode Support
 
-Do not override the built-in `/diff` command initially. Register a distinct route and command so the custom viewer can coexist with the system viewer and remain easy to disable.
+The installed `opencode2 v0.0.0-beta-18707` server exposes:
 
-## Reference Source
+```ts
+client.vcs.diff({
+  location,
+  mode: "committed",
+  base: revision,
+  context: 12,
+})
+```
 
-Copy or adapt these files from the matching OpenCode revision:
+`base` accepts branch names, revision expressions such as `HEAD~1`, and full commit SHAs. This was verified against the running server. The server performs repository access, merge-base resolution, diff parsing, normalization, and output limiting, so it also works when the TUI and server do not share a filesystem.
 
-- `packages/tui/src/feature-plugins/system/diff-viewer.tsx`
-- `packages/tui/src/feature-plugins/system/diff-viewer-ui.tsx`
-- `packages/tui/src/feature-plugins/system/diff-viewer-file-tree.tsx`
-- `packages/tui/src/feature-plugins/system/diff-viewer-file-tree-utils.ts`
-- Relevant diff viewer tests under `packages/tui/test/`
+The bundled viewer already supports three sources:
 
-Record the OpenCode commit used as the source baseline so later upstream changes can be compared and selectively incorporated.
+- `working`: `HEAD` to the working copy.
+- `branch`: the selected base merge-base to the working copy.
+- `committed`: the selected base merge-base to `HEAD`.
 
-## Public Plugin Adaptation
+## POC Approach
 
-Use `@opencode-ai/plugin/tui` as the supported interface to the running TUI.
+Create a CLI-only plugin with no server component.
 
-Replace private context-dependent imports with values or components supplied by the plugin API:
+1. Register `/commit-diff` and `commit-diff.open`.
+2. Prompt for a commit SHA or revision expression.
+3. Navigate to the bundled `diff` route in `committed` mode.
+4. While that route contains the plugin marker, wrap `context.client.vcs.base` so the viewer labels the selected revision correctly.
+5. Wrap `context.client.vcs.diff` so the bundled viewer requests `mode: "committed"` with the selected revision as `base`.
+6. Delegate all calls outside the marked route unchanged and restore both methods when the plugin unloads.
 
-- Replace the internal theme hook with `api.theme` values passed through component props.
-- Replace internal keymap hooks with `api.keymap`, `api.keys`, and `api.tuiConfig.keybinds`.
-- Replace the internal select dialog with `api.ui.DialogSelect` and `api.ui.dialog`.
-- Remove indirect imports that create duplicate theme or keymap contexts.
+This reuses the bundled viewer's file tree, patches, syntax highlighting, navigation, reviewed state, image behavior, byte limits, and future UI improvements.
 
-Keep pure relative helpers temporarily where they do not rely on host context. Copy small helpers into the plugin when doing so makes the plugin independent of private OpenCode source paths. Likely examples include filetype lookup, text truncation, color tinting, and scroll configuration.
-
-## Plugin Structure
-
-Create a standalone package with approximately this layout:
+## POC Structure
 
 ```text
 opencode-plugin-commit-diff-viewer/
   package.json
+  tsconfig.json
+  tui.ts
   src/
-    tui.tsx
-    diff-viewer.tsx
-    diff-viewer-ui.tsx
-    diff-viewer-file-tree.tsx
-    diff-viewer-file-tree-utils.ts
-  test/
+    tui.ts
   plan.md
 ```
 
-Export the CLI plugin through the package's `./tui` entrypoint and use the OpenTUI and Solid packages as peer dependencies where required by OpenCode's plugin documentation.
-
-## Command And Route
-
-Register names that do not collide with the system plugin:
-
-- Plugin ID: `commit-diff-viewer`
-- Route: `commit-diff`
-- Command ID: `commit-diff.open`
-- Slash command: `/commit-diff`
-
-The route should retain the current route as its return destination so closing the viewer returns to the correct session or home screen.
-
-## Commit Selection
-
-When `/commit-diff` opens:
-
-1. Resolve the active repository and current branch from the plugin context.
-2. Load a bounded list of commits reachable from the current branch.
-3. Show a searchable picker containing abbreviated SHA, subject, author, and relative or absolute date.
-4. Default to a useful recent commit without silently selecting it.
-5. Load the diff from the selected commit to the current `HEAD`.
-6. Preserve the selected commit while the viewer remains open and support changing it from inside the viewer.
-
-The initial implementation should compare `<selected-commit>..HEAD`. Working-tree changes should remain excluded unless a later explicit scope option is added.
-
-## Git Integration
-
-Prefer OpenCode's public VCS/client API if it supports arbitrary revision comparisons by implementation time. If it only supports predefined working or branch modes, run read-only Git commands from the local CLI plugin using the repository directory supplied by the plugin context.
-
-Required Git operations:
-
-- Enumerate commits with machine-parseable delimiters.
-- Resolve and validate the selected revision.
-- Produce file status and unified patches for `<selected-commit>..HEAD`.
-- Handle renamed, added, modified, deleted, binary, and empty files.
-
-Do not create temporary branches or mutate repository state.
-
-## Diff Data
-
-Normalize Git output into the same shape expected by the copied viewer:
-
-```ts
-type DiffFile = {
-  file: string
-  patch?: string
-  additions: number
-  deletions: number
-  status: "added" | "deleted" | "modified"
-}
-```
-
-Keep parsing separate from rendering so Git behavior can be tested without starting the TUI.
-
-## Configuration
-
-Load the finished local plugin from `~/.config/opencode/cli.json` using its absolute package directory:
+Expose the CLI plugin through the package's `./tui` entrypoint and load it from `cli.json`:
 
 ```json
 {
@@ -119,49 +62,45 @@ Load the finished local plugin from `~/.config/opencode/cli.json` using its abso
 }
 ```
 
-Preserve all unrelated CLI settings when installing it.
+Preserve unrelated CLI settings when installing it.
 
-## Testing
+## POC Limitations
 
-Add focused tests for:
+- The bundled route does not publicly accept a base revision, so mutating the generated client's `base` and `diff` methods is an unsupported compatibility shim.
+- An explicit base previously selected in the bundled viewer's private in-memory storage may control its displayed label. The wrapped diff call still enforces the requested revision, but this interaction needs manual testing.
+- The POC prompts for a revision. OpenCode exposes branch listing but does not currently expose commit-history enumeration, so a searchable commit picker cannot be implemented remotely from a CLI-only plugin.
+- The package is pinned to the installed beta because the V2 CLI plugin API is changing.
 
-- Commit log parsing.
-- Revision validation.
-- Diff and numstat parsing.
-- Added, modified, deleted, renamed, and binary files.
-- Empty repositories and repositories with only one commit.
-- File-tree behavior retained from the system plugin.
-- Route registration and the `/commit-diff` command.
-- Closing the viewer returns to the originating route.
+## Verification
 
-Manually verify the plugin in repositories where the current branch is `main`, a feature branch, detached `HEAD`, and a repository with uncommitted changes.
+Automated:
 
-## Implementation Order
+- Typecheck against `@opencode-ai/plugin@0.0.0-beta-18707`.
+- Confirm ordinary VCS calls delegate unchanged outside the marked route.
+- Confirm marked diff requests force `mode: "committed"` and the selected `base`.
 
-1. Clone or fetch the OpenCode source revision matching the installed `opencode2` version.
-2. Create the standalone plugin package and copy the diff viewer source plus tests.
-3. Rename the plugin, route, and commands to avoid collisions.
-4. Replace private context-dependent imports with public plugin APIs.
-5. Confirm the copied viewer loads with a fixed test diff.
-6. Implement commit enumeration and selection.
-7. Implement arbitrary commit-to-`HEAD` diff loading and normalization.
-8. Add error, empty-state, refresh, and commit-switching behavior.
-9. Run unit tests and typechecking.
-10. Add the local package to `cli.json` and verify it in the installed `opencode2`.
+Manual:
+
+1. Open `/commit-diff` from home and from a session.
+2. Test a full SHA, abbreviated SHA, and `HEAD~N`.
+3. Confirm the displayed files match `git diff --name-only <revision>..HEAD`.
+4. Confirm uncommitted changes are excluded.
+5. Confirm closing returns to the originating route.
+6. Confirm ordinary `/diff` behavior is unchanged afterward.
+7. Test after choosing a base manually in the bundled viewer.
+8. Test against a remote OpenCode server.
+
+## Next Step After POC
+
+If the client wrapper is reliable, add a commit picker only after OpenCode exposes commit enumeration through its VCS API. Until then, keep revision entry as a text prompt rather than adding a server plugin or running local Git from the TUI.
+
+The ideal upstream API is for the bundled diff route to accept `mode` and `base` directly. That would remove both wrappers and reduce the plugin to a prompt plus navigation.
 
 ## Success Criteria
 
-- `/commit-diff` opens from the normally installed OpenCode V2 client.
-- The user can choose a prior commit on `main` and compare it with current `main`.
-- The viewer retains the system viewer's file tree, patch layout, syntax highlighting, navigation, and reviewed-file state where practical.
-- The plugin does not override `/diff`, mutate Git state, or require rebuilding OpenCode.
-- Removing the plugin entry from `cli.json` cleanly restores the unmodified OpenCode experience.
-
-## Risks
-
-- The public CLI plugin API is beta and may change between OpenCode releases.
-- Some system viewer behavior may depend on private helpers with no exact public equivalent.
-- Loading source copied from a different OpenCode revision may cause type or runtime incompatibilities.
-- Git diff parsing must account for filenames containing unusual characters and for binary patches.
-
-Mitigate these risks by pinning the source revision, minimizing copied private code, testing parser behavior independently, and keeping the custom command separate from the system viewer.
+- `/commit-diff` accepts a valid revision and opens the bundled viewer.
+- The comparison is the selected revision through `HEAD`.
+- Working-tree changes remain excluded.
+- No Git diff parsing or custom diff rendering exists in the plugin.
+- No additional server plugin or custom OpenCode build is required.
+- Removing the CLI plugin restores the unmodified experience.

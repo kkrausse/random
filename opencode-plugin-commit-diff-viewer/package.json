@@ -1,0 +1,23 @@
+{
+  "name": "opencode-plugin-commit-diff-viewer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tui": "./tui.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "0.0.0-beta-18707"
+  },
+  "devDependencies": {
+    "@opencode-ai/theme": "0.0.0-beta-18707",
+    "@opentui/core": "0.5.9",
+    "@opentui/solid": "0.5.9",
+    "@types/node": "24.12.2",
+    "solid-js": "1.9.15",
+    "typescript": "^5.9.2"
+  }
+}
