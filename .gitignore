@@ -16,3 +16,17 @@
 !garmin-watch-face/**
 !opencode-plugin-commit-diff-viewer/
 !opencode-plugin-commit-diff-viewer/**
+!mortgage-calculator/
+!mortgage-calculator/**
+!boox-plugin-test/
+!boox-plugin-test/**
+!picsync/
+!picsync/**
+!travel-map/
+!travel-map/**
+!bird-log/
+!bird-log/**
+!fix-chrome-extension/
+!fix-chrome-extension/**
+!isochron-home-map/
+!isochron-home-map/**

@@ -3,7 +3,9 @@ node_modules
 dist
 dist-ssr
 *.local
-.env
+.env*
+!.env.example
+!.env.*.example
 app_data/
 .nitro
 .tanstack

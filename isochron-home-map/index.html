@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Explore how far you can travel from Arguello Market in San Francisco.">
+  <title>From Arguello — San Francisco travel-time map</title>
+  <link rel="preconnect" href="https://unpkg.com">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <aside class="panel" aria-label="Map settings">
+      <header class="brand">
+        <span class="brand-mark" aria-hidden="true">A</span>
+        <div><p class="eyebrow">SAN FRANCISCO</p><h1>From Arguello</h1></div>
+      </header>
+
+      <section class="origin-card">
+        <div class="pin-dot" aria-hidden="true"></div>
+        <div><p class="label">STARTING FROM</p><h2>Arguello Market</h2><p>782 Arguello Blvd · Inner Richmond</p></div>
+      </section>
+
+      <section class="control-section">
+        <div class="section-heading"><span>Travel by</span><span id="mode-summary">Walking</span></div>
+        <div class="mode-grid" role="radiogroup" aria-label="Travel mode">
+          <button class="mode active" data-mode="pedestrian" role="radio" aria-checked="true"><span class="mode-icon">●</span>Walk</button>
+          <button class="mode" data-mode="bicycle" role="radio" aria-checked="false"><span class="mode-icon">◆</span>Bike</button>
+          <button class="mode" data-mode="multimodal" role="radio" aria-checked="false"><span class="mode-icon">▰</span>Transit</button>
+          <button class="mode" data-mode="auto" role="radio" aria-checked="false"><span class="mode-icon">⬟</span>Drive</button>
+        </div>
+      </section>
+
+      <section class="control-section time-section">
+        <div class="section-heading"><label for="time-range">Travel time</label><output id="time-output" for="time-range">20 min</output></div>
+        <input id="time-range" type="range" min="10" max="60" step="5" value="20">
+        <div class="range-labels"><span>10 min</span><span>60 min</span></div>
+      </section>
+
+      <section class="legend" aria-label="Map legend">
+        <p class="label">REACHABLE WITHIN</p>
+        <div id="legend-items"></div>
+      </section>
+
+      <div class="panel-footer">
+        <span><i class="status-dot"></i><span id="status">Calculating routes…</span></span>
+        <button id="recenter" type="button">Recenter</button>
+      </div>
+    </aside>
+
+    <section class="map-wrap" aria-label="Travel time map">
+      <div id="map"></div>
+      <div class="map-title"><p class="eyebrow">YOUR REACH</p><p id="map-caption">A 20 minute walk from the market</p></div>
+      <div class="zoom-note">Hover for distance · Zoom out to California</div>
+    </section>
+  </main>
+  <noscript>This map needs JavaScript enabled.</noscript>
+  <script src="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

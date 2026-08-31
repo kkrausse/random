@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Keep Tab Search Shortcut",
+  "description": "Stops websites from intercepting Ctrl+Shift+A / Command+Shift+A so Chrome can open Tab Search.",
+  "version": "1.0.0",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["shortcut-guard.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true,
+      "world": "MAIN"
+    }
+  ]
+}
