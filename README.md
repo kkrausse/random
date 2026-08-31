@@ -32,20 +32,14 @@ Both key files are intentionally ignored by Git. Back them up securely if you wa
 ## Install on the watch
 
 1. Connect the Forerunner 165 by USB and leave it on its normal charging screen.
-2. Build the face:
+2. Build and transfer the face:
 
 ```sh
-./build.sh
+./install.sh
 ```
 
-3. Transfer it to the watch:
-
-```sh
-mtp-sendfile bin/simple-analog.prg /GARMIN/Apps
-```
-
-4. Wait for the transfer to reach 100%, then unplug the watch.
-5. From the normal watch face, hold **UP**, select **Watch Face**, choose **Simple Analog**, and select **Apply**.
+3. Wait for the transfer to reach 100%, then unplug the watch.
+4. From the normal watch face, hold **UP**, select **Watch Face**, choose **Simple Analog**, and select **Apply**.
 
 The `UNKNOWN in libmtp` warning is expected for Garmin's USB product ID and is harmless when the device is subsequently identified as `Forerunner 165`.
 
