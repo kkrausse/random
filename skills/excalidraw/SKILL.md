@@ -8,6 +8,12 @@ description: Inspect and edit an Excalidraw scene in the user's attached browser
 Use Browser Control on the user's attached Excalidraw tab. Prefer the structured
 scene API over pointer input, screenshots, DOM scraping, or persistence data.
 
+Use the `browser-control` CLI only — never the claude-in-chrome MCP tools for
+this skill. The MCP cannot attach to the user's existing tab (its sibling tab's
+shared-scene sync clobbers unsaved edits) and cannot pipe payload files into the
+page, forcing element JSON through tool-call text. If `browser-control` is not
+on PATH, stop and ask the user to install it instead of falling back.
+
 This project expects Excalidraw sessions to remain editable. Do not create a
 read-only session unless the user explicitly requests one.
 
@@ -33,6 +39,22 @@ of reporting only that inspection succeeded.
 
 Use a screenshot only when the user asks about visual appearance, alignment,
 or aesthetics.
+
+## Export A Diagram
+
+To download the scene as a `.excalidraw` file, use the bundled full exporter
+instead of the compact inventory:
+
+```bash
+browser-control execute --json --target-url excalidraw.com \
+  --file ./skills/excalidraw/scripts/scene-export.js \
+  | jq -r '.value' > diagram.excalidraw
+```
+
+It returns a complete `{type, version, source, elements, appState, files}`
+document: all non-deleted elements verbatim, a minimal appState (grid +
+background), and only the files that live image elements reference. The value
+is a JSON string, so extract it with `jq -r '.value'`.
 
 ## Sessions
 
@@ -71,6 +93,16 @@ The canonical capability search is in `scripts/scene-inspect.js`. Reuse its
 needs the API. React traversal is an integration fallback, so fail closed if
 the capability checks do not pass.
 
+On excalidraw.com the `excalidrawAPI` prop is a callback ref, so the downward
+`memoizedProps.excalidrawAPI` search finds a function, not the API object. The
+working fallback is upward: read the `__reactFiber$*` key off the `.excalidraw`
+DOM node and walk `.return` until a class `stateNode` has `updateScene` and
+`scene`. That App instance stands in for the API via a small adapter
+(`getSceneElements` → `scene.getNonDeletedElements()`,
+`getSceneElementsIncludingDeleted` → `scene.getElementsIncludingDeleted()`);
+it has no `scrollToContent`, so zoom-to-fit with the Shift+1 shortcut instead.
+Cache the handle on `window` for follow-up calls; it dies on any reload.
+
 ## Inspect Precisely
 
 Start with the inventory script. Read a target's complete fresh object before
@@ -108,8 +140,35 @@ fields that should not carry over. Never inherit `boundElements`, `containerId`,
 `frameId`, or `groupIds` unintentionally.
 
 Do not use synthetic paste as the normal insertion path. Do not write directly
-to `localStorage` or IndexedDB; the mounted app can overwrite persistence with
-its in-memory scene.
+to `localStorage` or IndexedDB; the mounted app overwrites persistence with its
+in-memory scene, and excalidraw.com discards externally written scene storage
+even on a fresh page load.
+
+## Insert A Diagram
+
+To upload many new elements, do not inline full element JSON — most fields are
+boilerplate. Pass compact specs and expand them in-page with a defaults helper
+(`scripts/scene-upload.js`): a skeleton with id, type, geometry, text, colors,
+and (for arrows) points and bindings is enough; `updateScene` tolerates missing
+cosmetic fields and recomputes bound-text layout. The binding contract:
+
+- a labeled container has `boundElements: [{type: "text", id}]` and the text
+  element has `containerId` pointing back
+- an arrow carries `startBinding`/`endBinding` `{elementId, focus: 0, gap: 4}`
+  and each bound shape lists the arrow in its `boundElements`
+
+## Persist
+
+On excalidraw.com, `updateScene()` alone does not run the app's save path — a
+reload loses the entire push. After updating, drive one real edit through the
+input pipeline (select an element, press ArrowRight then ArrowLeft), wait past
+the debounce (over a second), then confirm the save landed: the `excalidraw`
+localStorage key holds the elements and the `version-dataState` timestamp
+bumps.
+
+All excalidraw.com tabs in a browser profile share one scene. Another open tab
+— an idle empty one, or a Reset clicked there — replaces your in-memory work on
+its next sync. Have the user close other excalidraw tabs before editing.
 
 ## Verify
 
