@@ -37,40 +37,47 @@ export default Plugin.define({
       return originalDiff({ ...input, mode: "committed", base }, options)
     }
 
-    context.keymap.layer(() => ({
-      mode: "global",
-      commands: [
-        {
-          id: "commit-diff.open",
-          title: "Compare HEAD with a commit",
-          group: "VCS",
-          palette: true,
-          slash: { name: "commit-diff" },
-          run: async () => {
-            const base = (
-              await context.ui.dialog.prompt({
-                title: "Compare with commit",
-                placeholder: "Commit SHA or revision (for example HEAD~3)",
-              })
-            )?.trim()
-            if (!base) return
+    const unregister = context.ui.slot({
+      append: "app",
+      render: () => {
+        context.keymap.layer(() => ({
+          mode: "global",
+          commands: [
+            {
+              id: "commit-diff.open",
+              title: "Compare HEAD with a commit",
+              group: "VCS",
+              palette: true,
+              slash: { name: "commit-diff" },
+              run: async () => {
+                const base = (
+                  await context.ui.dialog.prompt({
+                    title: "Compare with commit",
+                    placeholder: "Commit SHA or revision (for example HEAD~3)",
+                  })
+                )?.trim()
+                if (!base) return
 
-            const returnRoute = context.ui.router.current()
-            context.ui.router.navigate({
-              type: "plugin",
-              name: "diff",
-              data: {
-                mode: "committed",
-                [ROUTE_MARKER]: base,
-                returnRoute,
+                const returnRoute = context.ui.router.current()
+                context.ui.router.navigate({
+                  type: "plugin",
+                  name: "diff",
+                  data: {
+                    mode: "committed",
+                    [ROUTE_MARKER]: base,
+                    returnRoute,
+                  },
+                })
               },
-            })
-          },
-        },
-      ],
-    }))
+            },
+          ],
+        }))
+        return null
+      },
+    })
 
     return () => {
+      unregister()
       vcs.base = originalBase
       vcs.diff = originalDiff
     }
