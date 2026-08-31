@@ -1,0 +1,39 @@
+;;
+;; Domain:     birdmog.com.
+;; Exported:   2026-05-02 19:11:58
+;;
+;; This file is intended for use for informational and archival
+;; purposes ONLY and MUST be edited before use on a production
+;; DNS server.  In particular, you must:
+;;   -- update the SOA record with the correct authoritative name server
+;;   -- update the SOA record with the contact e-mail address information
+;;   -- update the NS record(s) with the authoritative name servers for this domain.
+;;
+;; For further information, please consult the BIND documentation
+;; located on the following website:
+;;
+;; http://www.isc.org/
+;;
+;; And RFC 1035:
+;;
+;; http://www.ietf.org/rfc/rfc1035.txt
+;;
+;; Please note that we do NOT offer technical support for any use
+;; of this zone data, the BIND name server, or any other third-party
+;; DNS software.
+;;
+;; Use at your own risk.
+;; SOA Record
+birdmog.com	3600	IN	SOA	anita.ns.cloudflare.com. dns.cloudflare.com. 2052941571 10000 2400 604800 3600
+
+;; NS Records
+birdmog.com.	86400	IN	NS	anita.ns.cloudflare.com.
+birdmog.com.	86400	IN	NS	drake.ns.cloudflare.com.
+
+;; CNAME Records
+birdmog.com.	1	IN	CNAME	1dbd3a1f-b625-49cb-bbd0-d8480f68d5df.cfargotunnel.com. ; cf_tags=cf-proxied:true
+accounts.birdmog.com.	1	IN	CNAME	accounts.clerk.services. ; cf_tags=cf-proxied:false
+clerk.birdmog.com.	1	IN	CNAME	frontend-api.clerk.services. ; cf_tags=cf-proxied:false
+clk._domainkey.birdmog.com.	1	IN	CNAME	dkim1.2f70ly86iyu4.clerk.services. ; cf_tags=cf-proxied:false
+clk2._domainkey.birdmog.com.	1	IN	CNAME	dkim2.2f70ly86iyu4.clerk.services. ; cf_tags=cf-proxied:false
+clkmail.birdmog.com.	1	IN	CNAME	mail.2f70ly86iyu4.clerk.services. ; cf_tags=cf-proxied:false
