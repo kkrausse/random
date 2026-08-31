@@ -1,0 +1,14 @@
+.gradle/
+.idea/
+local.properties
+**/build/
+kindle-window.xml
+
+# Android Studio and Android build artifacts
+*.iml
+.externalNativeBuild/
+.cxx/
+captures/
+*.hprof
+node_modules/
+chrome-plugin/dist/

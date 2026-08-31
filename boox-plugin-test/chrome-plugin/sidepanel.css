@@ -1,0 +1,269 @@
+:root {
+  color-scheme: light;
+  --ink: #17231d;
+  --paper: #f5f1e8;
+  --paper-deep: #e8e0d1;
+  --accent: #bf5b32;
+  --muted: #667169;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+button, input, textarea, select { font: inherit; }
+
+header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  min-height: 54px;
+  border-bottom: 1px solid var(--ink);
+  background: rgb(245 241 232 / 96%);
+}
+
+header button {
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+header .brand {
+  width: 54px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: Georgia, serif;
+  font-size: 17px;
+  letter-spacing: 0;
+}
+
+nav { display: flex; }
+nav button { padding: 0 10px; }
+nav button:hover { color: var(--accent); }
+
+main { padding: 24px 18px 40px; }
+
+h1 {
+  margin: 0 0 6px;
+  font-size: clamp(29px, 9vw, 42px);
+  font-weight: 500;
+  line-height: .96;
+  letter-spacing: -.035em;
+}
+
+h2, .eyebrow, label > span {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.subtitle { margin: 0 0 24px; color: var(--muted); font-style: italic; }
+.eyebrow { margin: 24px 0 8px; color: var(--accent); }
+
+.context-card, .message, .usage {
+  margin: 8px 0;
+  padding: 14px;
+  border: 1px solid #c9c0af;
+  background: rgb(255 255 255 / 36%);
+}
+
+.context-card blockquote {
+  margin: 8px 0 0;
+  font-size: 17px;
+  line-height: 1.45;
+}
+
+.highlight-card {
+  height: 132px;
+  overflow-y: auto;
+}
+
+.empty-capture { margin: 0; color: var(--muted); font-style: italic; }
+
+.context-preview {
+  height: 112px;
+  overflow-y: auto;
+  color: var(--muted);
+}
+
+.button-grid { display: grid; gap: 8px; margin: 10px 0 16px; }
+
+.primary, .secondary, .session, .small {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+  cursor: pointer;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: .07em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.primary:hover { background: var(--accent); border-color: var(--accent); }
+.secondary, .small { background: transparent; color: var(--ink); }
+.secondary:hover, .small:hover { border-color: var(--accent); color: var(--accent); }
+.small { width: auto; padding: 7px 9px; font-size: 10px; }
+
+textarea, input, select {
+  width: 100%;
+  margin: 6px 0 12px;
+  padding: 11px;
+  border: 1px solid #9e988b;
+  border-radius: 0;
+  background: #fffdf8;
+  color: var(--ink);
+}
+
+textarea { min-height: 84px; resize: vertical; line-height: 1.4; }
+textarea.template { min-height: 270px; font-family: ui-monospace, monospace; font-size: 12px; }
+
+.status { min-height: 20px; color: var(--accent); font-style: italic; }
+.empty { padding: 28px 0; color: var(--muted); font-style: italic; }
+
+.session {
+  margin: 0 0 8px;
+  border-color: #c9c0af;
+  background: transparent;
+  color: var(--ink);
+  text-transform: none;
+}
+.session strong { display: block; font-family: Georgia, serif; font-size: 16px; letter-spacing: 0; }
+.session-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 10px; color: var(--muted); font-size: 11px; font-weight: 400; }
+
+.message { border: 0; border-left: 3px solid var(--paper-deep); line-height: 1.5; }
+.message.assistant { border-color: var(--accent); background: transparent; }
+.message-meta { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; margin-bottom: 7px; }
+.message .role { margin: 0; color: var(--muted); }
+.message-model { color: var(--muted); font: 10px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.plain-message, .prompt-context-text, .prompt-source { white-space: pre-wrap; }
+.prompt-question { margin: 0 0 10px; font-size: 17px; font-weight: 600; line-height: 1.35; }
+.reading-prompt blockquote {
+  margin: 0;
+  padding-left: 12px;
+  border-left: 2px solid #c9c0af;
+  color: var(--muted);
+  font-style: italic;
+}
+.prompt-context { margin-top: 12px; border-top: 1px solid #d8d0c2; }
+.prompt-context summary {
+  padding: 9px 0 2px;
+  color: var(--accent);
+  cursor: pointer;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+.prompt-source { margin: 10px 0; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.prompt-context-text { max-height: 55vh; overflow: auto; padding: 10px; background: var(--paper-deep); font-size: 12px; }
+.markdown-body { overflow-wrap: anywhere; }
+.markdown-body > :first-child { margin-top: 0; }
+.markdown-body > :last-child { margin-bottom: 0; }
+.markdown-body p, .markdown-body ul, .markdown-body ol, .markdown-body blockquote { margin: 0 0 12px; }
+.markdown-body ul, .markdown-body ol { padding-left: 22px; }
+.markdown-body li + li { margin-top: 4px; }
+.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
+  margin: 18px 0 8px;
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.markdown-body h3, .markdown-body h4 { font-size: 15px; }
+.markdown-body blockquote { margin-left: 0; padding-left: 12px; border-left: 2px solid #c9c0af; color: var(--muted); }
+.markdown-body pre { overflow-x: auto; padding: 10px; background: var(--ink); color: var(--paper); font: 11px/1.5 ui-monospace, monospace; }
+.markdown-body code { padding: 1px 3px; background: var(--paper-deep); font: .85em ui-monospace, monospace; }
+.markdown-body pre code { padding: 0; background: transparent; }
+.markdown-body a { color: var(--accent); text-underline-offset: 2px; }
+.markdown-body table { display: block; overflow-x: auto; border-collapse: collapse; font-size: 12px; }
+.markdown-body th, .markdown-body td { padding: 6px 8px; border: 1px solid #c9c0af; text-align: left; }
+.thinking { margin: 0; color: var(--muted); font-style: italic; }
+.chat-capture-card {
+  height: 104px;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  background: #fff8ef;
+}
+.chat-capture-card .eyebrow { margin-top: 0; }
+.chat-capture-card blockquote {
+  height: 62px;
+  overflow-y: auto;
+  margin: 0 0 8px;
+  font-size: 15px;
+  line-height: 1.35;
+}
+.chat-capture-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.quick-prompt {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #c9c0af;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .06em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+.quick-prompt:hover { border-color: var(--accent); color: var(--accent); }
+#context-prompts { margin-bottom: 8px; }
+.chat-usage {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #c9c0af;
+  color: var(--muted);
+  font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.composer { padding: 12px 0; }
+.composer textarea { min-height: 64px; }
+.composer-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.composer-actions #send-reply { grid-column: 1 / -1; }
+.composer-actions.has-capture #send-reply { grid-column: auto; }
+[hidden] { display: none !important; }
+
+.settings-section { margin: 24px 0; padding-top: 14px; border-top: 1px solid #c9c0af; }
+.preset-editor { margin: 12px 0; padding: 12px; background: var(--paper-deep); }
+.preset-controls { display: flex; gap: 6px; }
+.help { color: var(--muted); font-size: 12px; line-height: 1.4; }
+
+.diagnostics {
+  overflow: auto;
+  max-height: 260px;
+  padding: 10px;
+  background: #17231d;
+  color: #f5f1e8;
+  font: 10px/1.45 ui-monospace, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 330px) {
+  nav button { padding: 0 6px; font-size: 10px; }
+  main { padding-inline: 12px; }
+  .chat-capture-presets { grid-template-columns: 1fr; }
+}

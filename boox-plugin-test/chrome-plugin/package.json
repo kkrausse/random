@@ -1,0 +1,23 @@
+{
+  "name": "reading-context-chrome-extension",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun run build.ts",
+    "test": "bun test",
+    "check": "bunx tsc"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/chrome": "latest",
+    "@types/markdown-it": "^14.1.2",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "typescript": "latest"
+  },
+  "dependencies": {
+    "markdown-it": "^15.0.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  }
+}

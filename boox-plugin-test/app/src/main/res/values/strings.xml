@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Reading Context</string>
+    <string name="process_text_label">Ask with Context</string>
+    <string name="share_target_label">Send to Reading Context</string>
+    <string name="accessibility_description">Collects recent prose from supported reading apps exposed to screen-reader accessibility services.</string>
+    <string name="title">READING CONTEXT</string>
+    <string name="explanation">Highlight text in a supported reading app, then press the accessibility shortcut to ask OpenCode about the passage.</string>
+    <string name="enable_service">Enable accessibility service</string>
+    <string name="open_kindle">Open reading app</string>
+    <string name="kindle_not_found">The reading app was not found.</string>
+    <string name="refresh_capture">Refresh captured text</string>
+    <string name="latest_capture">LATEST CAPTURE</string>
+    <string name="selected_text">HIGHLIGHTED TEXT</string>
+    <string name="current_text">CURRENT TEXT CONTEXT</string>
+    <string name="previous_text">PREVIOUS TEXT CONTEXT</string>
+    <string name="service_enabled">Service enabled. Read in a supported app, then press the K accessibility shortcut to inspect recent text.</string>
+    <string name="service_disabled">Service disabled. Enable Reading Context Capture to begin.</string>
+    <string name="no_capture">No reading text captured yet.</string>
+    <string name="no_selection">No highlighted text was exposed by the reading app. The full text context is still available below.</string>
+    <string name="selected_text_received">Selected text received directly from the reading app.</string>
+    <string name="shared_text_received">Shared text received from the reading app.</string>
+</resources>

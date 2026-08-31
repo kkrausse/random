@@ -1,0 +1,18 @@
+[Unit]
+Description=Palma 2 OpenCode reading server
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/deploys/palma2-opencode/workdir
+Environment=XDG_DATA_HOME=/home/pi/deploys/palma2-opencode/state/share
+EnvironmentFile=/home/pi/deploys/palma2-opencode/state/server.env
+ExecStart=/home/pi/.bun/bin/opencode serve --hostname 100.64.0.10 --port 41137
+Restart=on-failure
+RestartSec=3
+SyslogIdentifier=palma2-opencode
+
+[Install]
+WantedBy=multi-user.target
