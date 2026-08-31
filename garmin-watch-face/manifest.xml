@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="3">
+    <iq:application
+        id="a4da45a59e4c4705a5241dbd85f34db8"
+        type="watchface"
+        name="@Strings.AppName"
+        entry="Mq24App"
+        launcherIcon="@Drawables.LauncherIcon"
+        minApiLevel="5.2.0">
+        <iq:products>
+            <iq:product id="fr165"/>
+        </iq:products>
+        <iq:permissions/>
+        <iq:languages>
+            <iq:language>eng</iq:language>
+        </iq:languages>
+        <iq:barrels/>
+    </iq:application>
+</iq:manifest>
