@@ -50,6 +50,22 @@ does not. If the user reports edits not appearing, ask them to check the
 bridge tab's footer for a `.excs error` message — a parse error leaves the
 canvas untouched.
 
+## Version control
+
+Commit the `.excalidraw` only and gitignore `*.excs` — the sibling is a
+deterministic projection the bridge regenerates, and a committed copy can go
+stale. Raw JSON diffs are noise (every save regenerates nonces and re-measures
+text), so diff through the dumper. Once per repo:
+
+```bash
+echo '*.excalidraw diff=excs' >> .gitattributes
+echo '*.excs' >> .gitignore
+git config diff.excs.textconv "node $S/exc.mjs dump"   # absolute path to $S
+```
+
+`git diff`, `git log -p`, and `git show` then print the compact form. These
+diffs are read-only and cannot be applied as patches.
+
 ## Legacy
 
 `scripts/scene-{inspect,export,upload}.js` are the old browser-control payload
