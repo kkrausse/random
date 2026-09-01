@@ -104,6 +104,10 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .state { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  button.icon { padding: 2px 5px; line-height: 1; font-size: 12px; color: var(--muted); border-color: transparent; background: transparent; }
+  button.icon:hover:not(:disabled) { color: var(--ink); border-color: var(--line); background: var(--surface-2); }
+  .rootask { display: flex; gap: 6px; align-items: center; min-width: 0; }
+  .rootask input { font: inherit; font-size: 12px; padding: 3px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); width: 340px; max-width: 40vw; }
   .spacer { flex: 1 1 auto; }
   .actions { display: flex; gap: 6px; flex: none; }
 
@@ -242,6 +246,12 @@
     <div class="file">
       <span class="dot" id="dot"></span>
       <span class="name" id="fname">no file attached</span>
+      <button class="icon" id="btnCopyPath" hidden title="Copy absolute path (alt-click to change the folder's path)">&#x2398;</button>
+      <span class="rootask" id="rootAsk" hidden>
+        <input id="rootInput" spellcheck="false" placeholder="absolute path of this folder">
+        <button id="rootOk">Save</button>
+        <button id="rootCancel">Cancel</button>
+      </span>
       <span class="state" id="state"></span>
     </div>
     <div class="spacer"></div>
@@ -316,6 +326,7 @@
   var el = function (id) { return document.getElementById(id); };
   var ui = {
     veil: el("veil"), note: el("note"), dot: el("dot"), fname: el("fname"), state: el("state"),
+    copyPath: el("btnCopyPath"), rootAsk: el("rootAsk"), rootInput: el("rootInput"), rootOk: el("rootOk"), rootCancel: el("rootCancel"),
     msg: el("msg"), tIn: el("tIn"), tOut: el("tOut"), tCount: el("tCount"),
     trackIn: el("trackIn"), trackOut: el("trackOut"), toast: el("toast"),
     open: el("btnOpen"), neu: el("btnNew"), reconnect: el("btnReconnect"),
@@ -370,6 +381,8 @@
     ui.filesBtn.hidden = !dirHandle;
     ui.cancel.hidden = !attached;
     ui.copyLink.hidden = !(attached && relPath);
+    ui.copyPath.hidden = !attached;
+    if (!attached) ui.rootAsk.hidden = true;
     markCurrent();
     if (api) ui.tCount.textContent = api.getSceneElements().length;
   }
@@ -790,6 +803,41 @@
 
   ui.filesBtn.addEventListener("click", function () { browsing = !browsing; paint(); });
   ui.cancel.addEventListener("click", function () { browsing = false; paint(); });
+
+  // Copy the file's absolute path. The File System Access API exposes names
+  // only, so the folder's absolute path is asked for once and remembered per
+  // folder name; the file's own path is then root + relative path.
+  function rootKey() { return dirHandle ? "root:" + dirHandle.name : "root:file:" + handle.name; }
+  function leafPath() { return dirHandle && relPath ? relPath : handle.name; }
+  function copyAbsPath(root) {
+    var full = root.replace(/\/+$/, "") + "/" + leafPath();
+    return navigator.clipboard.writeText(full).then(function () { say("Copied " + full); },
+      function () { say("Clipboard blocked; path is " + full, true); });
+  }
+  function askRoot(current) {
+    ui.rootInput.value = current || "";
+    ui.rootInput.placeholder = "absolute path of " + (dirHandle ? "folder " + dirHandle.name : "the folder holding " + handle.name);
+    ui.rootAsk.hidden = false;
+    ui.rootInput.focus();
+  }
+  ui.copyPath.addEventListener("click", async function (ev) {
+    if (!handle) return;
+    var root = await recall(rootKey());
+    if (!root || ev.altKey) { askRoot(root); return; }
+    copyAbsPath(root);
+  });
+  function rootSubmit() {
+    var v = ui.rootInput.value.trim();
+    ui.rootAsk.hidden = true;
+    if (!v || !handle) return;
+    remember(rootKey(), v).then(function () { return copyAbsPath(v); });
+  }
+  ui.rootOk.addEventListener("click", rootSubmit);
+  ui.rootCancel.addEventListener("click", function () { ui.rootAsk.hidden = true; });
+  ui.rootInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") rootSubmit();
+    else if (e.key === "Escape") ui.rootAsk.hidden = true;
+  });
 
   ui.copyLink.addEventListener("click", function () {
     var url = location.href.split("?")[0] + "?file=" + encodeURIComponent(relPath);
