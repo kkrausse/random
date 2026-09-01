@@ -730,6 +730,7 @@
 
   async function attachFolder(dir, announce) {
     dirHandle = dir;
+    if (ROOT) await remember("root:" + dir.name, ROOT);
     await remember("dir", dir);
     ui.folderName.textContent = dir.name || "selected folder";
     ui.folderRow.hidden = false;
@@ -758,6 +759,8 @@
 
   var TYPES = [{ description: "Excalidraw scene", accept: { "application/json": [".excalidraw", ".json"] } }];
   var WANTED = new URLSearchParams(location.search).get("file");
+  // ?root=<absolute folder path> seeds the copy-path root so it is never asked for.
+  var ROOT = new URLSearchParams(location.search).get("root");
 
   // A published artifact always runs in a cross-origin frame, and Chrome will
   // not open a file picker in one. Running the page from disk is the fix --

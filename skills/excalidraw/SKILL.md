@@ -45,6 +45,9 @@ PNG (macOS qlmanage) to eyeball layout without a browser.
 ## The bridge page
 
 `excalidraw-file-sync.html` (open via file:// in Chrome, grant a folder once).
+When handing the user a link, always include both params:
+`?file=<path relative to the folder>&root=<absolute folder path>` — `root`
+seeds the header's copy-absolute-path button (the browser cannot learn it).
 Folder-opened scenes get the `.excs` sibling automatically; single-file mode
 does not. If the user reports edits not appearing, ask them to check the
 bridge tab's footer for a `.excs error` message — a parse error leaves the
