@@ -11,7 +11,8 @@
 //   text <id> <x>,<y> [k=v]* "text"
 //   arrow|line <id> <x,y;x,y;...> [k=v|flag]* ["label"]
 //   json {...}                                              passthrough (images, frames, ...)
-// Keys: stroke bg sw op angle groups fs ff tc talign align from to lfs ltc lxy
+// Keys: stroke bg sw op angle groups link fs ff tc talign align from to lfs ltc lxy
+// (link lives on the container line only; bound text never carries one)
 // Flags: dashed dotted sharp locked noend startarrow elbowed
 // Defaults elided on dump: stroke #1e1e1e, bg transparent, sw 2, op 100,
 // ff 3 (code font), rects rounded, arrows end-arrowhead only, bound text
@@ -76,6 +77,7 @@
         flag(e.strokeStyle === "dashed", "dashed");
         flag(e.strokeStyle === "dotted", "dotted");
         flag(e.locked, "locked");
+        if (e.link) kv.push("link=" + e.link);
       }
       function foldedText() {
         var t = boundText[e.id];
@@ -106,6 +108,7 @@
         attr("op", e.opacity, D.op);
         if (e.textAlign && e.textAlign !== "left") kv.push("align=" + e.textAlign);
         if (e.angle) kv.push("angle=" + r2(e.angle));
+        if (e.link) kv.push("link=" + e.link);
         out.push("text " + e.id + " " + r2(e.x) + "," + r2(e.y) + fmt(kv) + " " + q(e.text));
       } else if (e.type === "arrow" || e.type === "line") {
         common();
@@ -196,7 +199,8 @@
         strokeStyle: flags.dashed ? "dashed" : flags.dotted ? "dotted" : "solid",
         angle: kv.angle ? Number(kv.angle) : 0,
         groupIds: kv.groups ? kv.groups.split(",") : [],
-        locked: !!flags.locked
+        locked: !!flags.locked,
+        link: kv.link || null
       };
       function boundTextEl(container, text, fs, color, at, talign) {
         var w = estW(text, fs), h = estH(text, fs);
@@ -233,7 +237,7 @@
           width: estW(text, fs), height: estH(text, fs),
           strokeColor: kv.stroke || D.stroke, backgroundColor: "transparent",
           opacity: kv.op ? Number(kv.op) : D.op, angle: kv.angle ? Number(kv.angle) : 0,
-          fontSize: fs, fontFamily: kv.ff ? Number(kv.ff) : D.ff, text: text,
+          link: kv.link || null, fontSize: fs, fontFamily: kv.ff ? Number(kv.ff) : D.ff, text: text,
           textAlign: kv.align || "left", verticalAlign: "top", containerId: null,
           originalText: text, lineHeight: 1.25, roundness: null, boundElements: []
         }));
