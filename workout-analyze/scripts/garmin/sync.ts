@@ -10,7 +10,7 @@ const root = path.resolve(import.meta.dir, '../..')
 const rawDirectory = path.join(root, 'data/raw/garmin')
 const activityDirectory = path.join(rawDirectory, 'activities')
 const manifestPath = path.join(rawDirectory, 'manifest.json')
-const cli = path.join(root, '.venv/bin/garmin-connect')
+const cli = path.join(import.meta.dir, 'run')
 const pageSize = 100
 
 const GarminActivity = Schema.Struct({

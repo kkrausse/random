@@ -13,4 +13,4 @@ if [ ! -x "$CLI" ]; then
   "$VENV/bin/python" -m pip install "garmin-connect-cli==1.0.1"
 fi
 
-exec "$CLI" "$@"
+exec "$VENV/bin/python" "$CLI" "$@"
