@@ -31,6 +31,12 @@ binding/backref invariants, box overlaps, and counts arrow crossings.
 `node $S/exc.mjs preview scene.excalidraw` renders an approximate wireframe
 PNG (macOS qlmanage) to eyeball layout without a browser.
 
+Real export (SVG with embedded fonts + 2x PNG, faithful render):
+`node $S/export.mjs scene.excalidraw [-o outBase] [--scale 2]` — needs Chrome
+installed; `npm i` in `$S` once for playwright-core.
+Keep `scripts/package.json` free of `"type":"module"`: `excs.js` is a classic
+script shared with the bridge page, and `exc.mjs` loads it via `require`.
+
 ## Rules
 
 - `.excalidraw` is the source of truth; `.excs` is an ephemeral projection the

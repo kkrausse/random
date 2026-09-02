@@ -14,7 +14,11 @@
 import fs from 'node:fs';
 import { execSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-const EXCS = createRequire(import.meta.url)('./excs.js');
+// excs.js is a classic script shared with the bridge page. If scripts/package.json
+// ever says "type":"module", require() returns an empty ESM namespace and the
+// IIFE only sets globalThis.EXCS, so fall back to that.
+const EXCS = (() => { const m = createRequire(import.meta.url)('./excs.js'); return m && m.dump ? m : globalThis.EXCS; })();
+if (!EXCS || !EXCS.dump) { console.error('exc.mjs: could not load excs.js'); process.exit(1); }
 
 function check(file) {
   const s = JSON.parse(fs.readFileSync(file, 'utf8'));
