@@ -22,7 +22,18 @@ function Commands(props: { context: Plugin.Context }) {
           )?.trim()
           if (!base) return
 
-          const returnRoute = props.context.ui.router.current()
+          const currentRoute = props.context.ui.router.current()
+          const returnRoute =
+            currentRoute.type === "home"
+              ? { type: "home" as const }
+              : currentRoute.type === "session"
+                ? { type: "session" as const, sessionID: currentRoute.sessionID }
+                : {
+                    type: "plugin" as const,
+                    id: currentRoute.id,
+                    name: currentRoute.name,
+                    ...(currentRoute.data ? { data: { ...currentRoute.data } } : {}),
+                  }
           props.context.ui.router.navigate({
             type: "plugin",
             id: "opencode.diffs",

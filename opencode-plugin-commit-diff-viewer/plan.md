@@ -67,7 +67,7 @@ Configure the exact entrypoint file for a local checkout. OpenCode imports file 
 ## POC Limitations
 
 - The bundled route does not publicly accept a base revision, so mutating the generated client's `base` and `diff` methods is an unsupported compatibility shim.
-- An explicit base previously selected in the bundled viewer's private in-memory storage may control its displayed label. The wrapped diff call still enforces the requested revision, but this interaction needs manual testing.
+- An explicit base selected in the bundled viewer's private in-memory storage controls its displayed label. The wrapped diff call still enforces the requested revision, so choosing a base inside the marked viewer can make its label misleading until the TUI exits. Removing this limitation requires the bundled route to accept an explicit base.
 - The POC prompts for a revision. OpenCode exposes branch listing but does not currently expose commit-history enumeration, so a searchable commit picker cannot be implemented remotely from a CLI-only plugin.
 - The package is pinned to the installed beta because the V2 CLI plugin API is changing.
 
@@ -75,7 +75,7 @@ Configure the exact entrypoint file for a local checkout. OpenCode imports file 
 
 Automated:
 
-- Typecheck against `@opencode-ai/plugin@0.0.0-beta-18707`.
+- Typecheck against the pinned `@opencode-ai/plugin` version.
 - Confirm ordinary VCS calls delegate unchanged outside the marked route.
 - Confirm marked diff requests force `mode: "committed"` and the selected `base`.
 
@@ -89,6 +89,8 @@ Manual:
 6. Confirm ordinary `/diff` behavior is unchanged afterward.
 7. Test after choosing a base manually in the bundled viewer.
 8. Test against a remote OpenCode server.
+
+Terminal-control verification against `opencode2 v0.0.0-beta-18999` confirmed items 1–6 with `HEAD~1`, an abbreviated SHA, and a full SHA. It also confirmed the private base-selection limitation described above. Remote-server testing remains outstanding.
 
 ## Next Step After POC
 
