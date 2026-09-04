@@ -1,0 +1,968 @@
+<title>Excalidraw File Bridge</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235b57d1'/%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 11h14'/%3E%3Cpath d='M18 7l4 4-4 4'/%3E%3Cpath d='M24 21H10'/%3E%3Cpath d='M14 17l-4 4 4 4'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground: #f3f3f8;
+    --surface: #ffffff;
+    --surface-2: #ececf4;
+    --line: #dbdae8;
+    --ink: #191826;
+    --muted: #6a6883;
+    --accent: #5b57d1;
+    --accent-soft: #e9e8fb;
+    --ok: #2c8259;
+    --warn: #a2660f;
+    --err: #bd3b30;
+    --shadow: 0 1px 2px rgba(25, 24, 38, .06), 0 8px 24px rgba(25, 24, 38, .07);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #121220;
+      --surface: #1b1b2a;
+      --surface-2: #24243a;
+      --line: #30304a;
+      --ink: #e9e8f4;
+      --muted: #9b99b6;
+      --accent: #8f8bf0;
+      --accent-soft: #262445;
+      --ok: #4fb283;
+      --warn: #d6a044;
+      --err: #e2695e;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #121220;
+    --surface: #1b1b2a;
+    --surface-2: #24243a;
+    --line: #30304a;
+    --ink: #e9e8f4;
+    --muted: #9b99b6;
+    --accent: #8f8bf0;
+    --accent-soft: #262445;
+    --ok: #4fb283;
+    --warn: #d6a044;
+    --err: #e2695e;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
+  }
+
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+  #app { display: grid; grid-template-rows: auto 1fr auto; height: 100vh; height: 100dvh; }
+
+  /* ---------- top bar ---------- */
+  .bar {
+    display: flex; align-items: center; gap: 14px;
+    padding: 0 14px; height: 50px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    position: relative; z-index: 5;
+  }
+  .brand { display: flex; align-items: baseline; gap: 8px; flex: none; }
+  .brand b { font-weight: 600; font-size: 13px; letter-spacing: -.01em; }
+  .brand span {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted);
+  }
+
+  /* directional link indicator: two tracks, a dot runs the direction of transfer */
+  .link { display: flex; flex-direction: column; gap: 5px; flex: none; padding: 0 2px; }
+  .track {
+    position: relative; width: 46px; height: 2px; border-radius: 2px;
+    background: var(--surface-2); border: 1px solid var(--line); box-sizing: content-box; overflow: hidden;
+  }
+  .track i {
+    position: absolute; inset: 0 auto 0 0; width: 14px; border-radius: 2px;
+    background: var(--accent); opacity: 0; transform: translateX(-14px);
+  }
+  .track.fire i { animation: run-in .55s cubic-bezier(.4, 0, .2, 1); }
+  .track.out.fire i { animation: run-out .55s cubic-bezier(.4, 0, .2, 1); }
+  @keyframes run-in  { 0% { opacity: 0; transform: translateX(-14px); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateX(46px); } }
+  @keyframes run-out { 0% { opacity: 0; transform: translateX(46px); }  30% { opacity: 1; } 100% { opacity: 0; transform: translateX(-14px); } }
+  @media (prefers-reduced-motion: reduce) {
+    .track.fire i, .track.out.fire i { animation: none; opacity: 1; width: 100%; transform: none; transition: opacity .4s; }
+  }
+
+  .file { display: flex; align-items: center; gap: 9px; min-width: 0; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.ok { background: var(--ok); }
+  .dot.warn { background: var(--warn); }
+  .dot.err { background: var(--err); }
+  .name {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 13px; font-weight: 500;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .state { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  button.icon { padding: 3px 7px; line-height: 1; font-size: 16px; color: var(--muted); border-color: transparent; background: transparent; }
+  button.icon:hover:not(:disabled) { color: var(--ink); border-color: var(--line); background: var(--surface-2); }
+  .rootask { display: flex; gap: 6px; align-items: center; min-width: 0; }
+  .rootask input { font: inherit; font-size: 12px; padding: 3px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); width: 340px; max-width: 40vw; }
+  .spacer { flex: 1 1 auto; }
+  .actions { display: flex; gap: 6px; flex: none; }
+
+  button {
+    font: inherit; font-size: 12.5px; font-weight: 500;
+    color: var(--ink); background: var(--surface);
+    border: 1px solid var(--line); border-radius: 7px;
+    padding: 6px 11px; cursor: pointer;
+    transition: background .12s, border-color .12s;
+  }
+  button:hover:not(:disabled) { background: var(--surface-2); border-color: var(--muted); }
+  button:disabled { opacity: .45; cursor: default; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
+  button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+  /* ---------- canvas ---------- */
+  #canvas { position: relative; min-height: 0; background: var(--surface); }
+  #excal { height: 100%; }
+
+  /* ---------- footer log ---------- */
+  .foot {
+    display: flex; align-items: center; gap: 18px;
+    height: 28px; padding: 0 14px;
+    background: var(--surface); border-top: 1px solid var(--line);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px; color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .foot em { font-style: normal; color: var(--ink); }
+  .foot .msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .foot .msg.err { color: var(--err); }
+
+  /* ---------- connect screen ---------- */
+  .veil {
+    position: absolute; inset: 0; z-index: 10;
+    display: flex; justify-content: center; padding: 24px;
+    overflow: auto; background: var(--ground);
+  }
+  .card {
+    width: min(560px, 100%); margin: auto; flex: none;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: var(--shadow); padding: 30px 32px 26px;
+  }
+  .card h1 { margin: 0 0 6px; font-size: 21px; font-weight: 600; letter-spacing: -.02em; text-wrap: balance; }
+  .card p { margin: 0; color: var(--muted); line-height: 1.6; max-width: 62ch; }
+  /* One grid for the whole list so the labels share a column and the text
+     starts on the same line for every row. */
+  .steps {
+    list-style: none; margin: 22px 0; padding: 0;
+    display: grid; grid-template-columns: auto 1fr; gap: 13px 12px; align-items: start;
+  }
+  .steps li { display: contents; line-height: 1.5; }
+  .steps b {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 10px; font-weight: 500; color: var(--accent);
+    background: var(--accent-soft); border-radius: 5px;
+    padding: 3px 6px; margin-top: 1px;
+  }
+  .steps span { color: var(--muted); }
+  .steps span code {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px;
+    color: var(--ink); background: var(--surface-2); padding: 1px 5px; border-radius: 4px;
+  }
+  .card .row { display: flex; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
+  .note {
+    margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line);
+    font-size: 12.5px; color: var(--muted); line-height: 1.55;
+  }
+  .note.block { color: var(--err); }
+  .note code, .urlbox {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px;
+  }
+  .urlbox {
+    display: block; width: 100%; box-sizing: border-box; margin-top: 8px; padding: 7px 9px;
+    border: 1px solid var(--line); border-radius: 6px;
+    background: var(--surface-2); color: var(--ink);
+  }
+
+  /* Browsing over an open diagram: drop the explainer, keep the switcher, and
+     let the canvas show through so you can see what you are leaving. */
+  .veil.over { background: color-mix(in srgb, var(--ground) 80%, transparent); backdrop-filter: blur(5px); }
+  .card.compact .steps, .card.compact .intro { display: none; }
+  .card.compact .folder { margin-top: 18px; border-top: 0; padding-top: 0; }
+
+  /* ---------- folder browser ---------- */
+  .folder { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 16px; }
+  .folderhead { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 10px; letter-spacing: .1em; color: var(--muted); flex: none;
+  }
+  .foldername {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12.5px; font-weight: 500; flex: 1 1 auto; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .folderhead button { padding: 4px 8px; font-size: 11.5px; }
+  .filelist {
+    display: grid; gap: 2px; max-height: 210px; overflow-y: auto;
+    margin: 0 -6px; padding: 0 6px;
+  }
+  .fileitem {
+    display: flex; align-items: baseline; text-align: left; width: 100%;
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12.5px;
+    padding: 6px 9px; border: 1px solid transparent; background: transparent;
+    border-radius: 6px; cursor: pointer;
+  }
+  .fileitem:hover { background: var(--surface-2); border-color: var(--line); }
+  .fileitem .p { color: var(--muted); }
+  .fileitem .n { color: var(--ink); font-weight: 500; }
+  .fileitem.current { background: var(--accent-soft); border-color: var(--accent); }
+  .fileitem.current .n, .fileitem.current .p { color: var(--accent); }
+  .empty { font-size: 12.5px; color: var(--muted); padding: 4px 0; margin: 0; }
+
+  /* ---------- conflict toast ---------- */
+  .toast {
+    position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%);
+    z-index: 20; display: flex; align-items: center; gap: 14px;
+    background: var(--surface); border: 1px solid var(--warn); border-left-width: 3px;
+    border-radius: 9px; box-shadow: var(--shadow); padding: 10px 12px 10px 14px;
+    font-size: 13px; max-width: min(560px, 92vw);
+  }
+  .toast strong { font-weight: 600; }
+  [hidden] { display: none !important; }
+</style>
+
+<div id="app">
+  <header class="bar">
+    <div class="brand"><b>Bridge</b><span>excalidraw &hArr; disk</span></div>
+    <div class="link" title="Transfer direction">
+      <div class="track" id="trackIn"><i></i></div>
+      <div class="track out" id="trackOut"><i></i></div>
+    </div>
+    <div class="file">
+      <span class="dot" id="dot"></span>
+      <span class="name" id="fname">no file attached</span>
+      <button class="icon" id="btnCopyPath" hidden title="Copy absolute path (alt-click to change the folder's path)">&#x2398;</button>
+      <span class="rootask" id="rootAsk" hidden>
+        <input id="rootInput" spellcheck="false" placeholder="absolute path of this folder">
+        <button id="rootOk">Save</button>
+        <button id="rootCancel">Cancel</button>
+      </span>
+      <span class="state" id="state"></span>
+    </div>
+    <div class="spacer"></div>
+    <div class="actions">
+      <button id="btnFiles" hidden>Files</button>
+      <button id="btnPause" disabled>Pause sync</button>
+      <button id="btnPull" disabled>Reload from file</button>
+      <button id="btnPush" disabled>Save now</button>
+      <button id="btnDetach" disabled>Detach</button>
+    </div>
+  </header>
+
+  <main id="canvas">
+    <div class="veil" id="veil">
+      <div class="card">
+        <h1 id="cardTitle">Pair this canvas with a file on your disk</h1>
+        <p class="intro">Edits here are written back to your <code style="font-family:'IBM Plex Mono',monospace">.excalidraw</code> file, and edits an agent makes to that file appear here. One document, two editors.</p>
+        <ul class="steps">
+          <li><b>FOLDER</b><span>Grant a folder once and every diagram inside opens with no dialog &mdash; including ones an agent creates later. A link like <code>?file=docs/arch.excalidraw</code> then opens one straight from the URL.</span></li>
+          <li><b>DISK</b><span>The open file is polled about once a second. When its contents change, the canvas is replaced.</span></li>
+          <li><b>CANVAS</b><span>Your drawing is written back to the same file ~0.6s after you stop moving.</span></li>
+          <li><b>GIT</b><span>Output is canonical &mdash; keys sorted, churning version counters pinned, 2-space indent, trailing newline &mdash; so a <code>diff</code> shows only what actually moved.</span></li>
+          <li><b>AGENT</b><span>Folder-opened diagrams keep a compact <code>.excs</code> sibling in sync both ways &mdash; a small text form agents can diff and edit; either file wins by being newest, scene file first.</span></li>
+          <li><b>GUARD</b><span>Both directions compare that same canonical form, so a write never echoes back as a change. If the file moves while you draw, the file wins and your version stays recoverable.</span></li>
+        </ul>
+        <div class="folder" id="folderRow" hidden>
+          <div class="folderhead">
+            <span class="eyebrow">FOLDER</span>
+            <span class="foldername" id="folderName"></span>
+            <button id="btnRescan">Rescan</button>
+            <button id="btnCopyLink" hidden>Copy link to this diagram</button>
+          </div>
+          <div class="filelist" id="files"></div>
+        </div>
+        <div class="row">
+          <button class="primary" id="btnFolder">Open a folder</button>
+          <button id="btnOpen">Open a single file</button>
+          <button id="btnNew">Create a new file</button>
+          <button id="btnReconnect" hidden></button>
+          <button id="btnCancel" hidden>Back to canvas</button>
+        </div>
+        <div class="note" id="note"></div>
+      </div>
+    </div>
+    <div class="toast" id="toast" hidden>
+      <span><strong>The file changed while you were drawing.</strong> The file wins &mdash; your canvas version is still recoverable.</span>
+      <button id="btnRestore">Restore my version</button>
+    </div>
+  </main>
+
+  <footer class="foot">
+    <span>in <em id="tIn">&mdash;</em></span>
+    <span>out <em id="tOut">&mdash;</em></span>
+    <span>elements <em id="tCount">0</em></span>
+    <span class="msg" id="msg"></span>
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script>window.EXCALIDRAW_ASSET_PATH = "https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.17.6/dist/";</script>
+<script src="https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.17.6/dist/excalidraw.production.min.js"></script>
+<script src="scripts/excs.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var POLL_MS = 900;      // disk -> canvas
+  var WRITE_MS = 600;     // canvas -> disk, after the last change
+  var Lib = window.ExcalidrawLib;
+
+  var el = function (id) { return document.getElementById(id); };
+  var ui = {
+    veil: el("veil"), note: el("note"), dot: el("dot"), fname: el("fname"), state: el("state"),
+    copyPath: el("btnCopyPath"), rootAsk: el("rootAsk"), rootInput: el("rootInput"), rootOk: el("rootOk"), rootCancel: el("rootCancel"),
+    msg: el("msg"), tIn: el("tIn"), tOut: el("tOut"), tCount: el("tCount"),
+    trackIn: el("trackIn"), trackOut: el("trackOut"), toast: el("toast"),
+    open: el("btnOpen"), neu: el("btnNew"), reconnect: el("btnReconnect"),
+    pause: el("btnPause"), pull: el("btnPull"), push: el("btnPush"),
+    detach: el("btnDetach"), restore: el("btnRestore"),
+    folder: el("btnFolder"), folderRow: el("folderRow"), folderName: el("folderName"),
+    fileList: el("files"), filesBtn: el("btnFiles"), rescan: el("btnRescan"),
+    copyLink: el("btnCopyLink"), cancel: el("btnCancel"),
+    card: document.querySelector(".card"), cardTitle: el("cardTitle")
+  };
+
+  // ---------------------------------------------------------------- state
+  var api = null;            // Excalidraw imperative API
+  var handle = null;         // FileSystemFileHandle
+  var syncedFp = null;       // fingerprint both sides currently agree on
+  var seenMtime = -1, seenSize = -1;
+  var paused = false, applyingRemote = false, firstLoad = true;
+  var dirHandle = null;      // folder granted once, so paths resolve with no dialog
+  var relPath = null;        // current file's path inside that folder
+  var browsing = false;      // file list open over an attached canvas
+  var conflictBackup = null, conflictTimer = null;
+  var writeTimer = null, pollTimer = null;
+  var chain = Promise.resolve();   // serializes reads against writes
+  // .excs sibling: a compact text projection of the scene (see excs.js),
+  // kept in sync both ways when the file was opened through a folder grant.
+  var excsHandle = null, excsSeenMtime = -1, excsSeenSize = -1, excsSynced = null;
+
+  var lock = function (fn) { chain = chain.then(fn, fn); return chain; };
+  var clock = function () { return new Date().toTimeString().slice(0, 8); };
+
+  function say(text, isError) {
+    ui.msg.textContent = text || "";
+    ui.msg.classList.toggle("err", !!isError);
+  }
+  function flash(track) {
+    track.classList.remove("fire");
+    void track.offsetWidth;
+    track.classList.add("fire");
+  }
+  function paint() {
+    var attached = !!handle;
+    ui.fname.textContent = attached ? (relPath || handle.name) : "no file attached";
+    ui.dot.className = "dot" + (!attached ? "" : paused ? " warn" : " ok");
+    ui.state.textContent = !attached ? "" : paused ? "paused" : "live";
+    [ui.pause, ui.pull, ui.push, ui.detach].forEach(function (b) { b.disabled = !attached; });
+    ui.pause.textContent = paused ? "Resume sync" : "Pause sync";
+    ui.pause.classList.toggle("on", paused);
+    ui.veil.hidden = attached && !browsing;
+    ui.veil.classList.toggle("over", attached);
+    ui.card.classList.toggle("compact", attached);
+    ui.cardTitle.textContent = attached ? "Open another diagram" : "Pair this canvas with a file on your disk";
+    ui.filesBtn.hidden = !dirHandle;
+    ui.cancel.hidden = !attached;
+    ui.copyLink.hidden = !(attached && relPath);
+    ui.copyPath.hidden = !attached;
+    if (!attached) ui.rootAsk.hidden = true;
+    markCurrent();
+    if (api) ui.tCount.textContent = api.getSceneElements().length;
+  }
+
+  function markCurrent() {
+    var items = ui.fileList.querySelectorAll(".fileitem");
+    for (var i = 0; i < items.length; i++) {
+      items[i].classList.toggle("current", items[i].dataset.rel === relPath);
+    }
+  }
+
+  // ------------------------------------------------------- scene <-> text
+  // Rebuild every object with its keys in sorted order. Arrays keep the order
+  // they came in -- for points, groupIds and z-order it carries meaning.
+  function sortKeys(v) {
+    if (Array.isArray(v)) return v.map(sortKeys);
+    if (v && typeof v === "object") {
+      return Object.keys(v).sort().reduce(function (o, k) { o[k] = sortKeys(v[k]); return o; }, {});
+    }
+    return v;
+  }
+
+  // version/versionNonce/updated churn on every edit and say nothing about the
+  // drawing, so they are pinned instead of written through -- otherwise
+  // nudging one rectangle rewrites a counter on every element it touches.
+  function pin(e) {
+    var copy = {}, k;
+    for (k in e) copy[k] = e[k];
+    copy.version = 1; copy.versionNonce = 1; copy.updated = 1;
+    if (Array.isArray(copy.boundElements)) {
+      copy.boundElements = copy.boundElements.slice().sort(function (a, b) {
+        return String(a && a.id).localeCompare(String(b && b.id));
+      });
+    }
+    return sortKeys(copy);
+  }
+
+  // One function produces both the bytes we write and the value we compare, so
+  // a write can never read back as a change and two files describing the same
+  // drawing are byte-identical.
+  function canonical(text) {
+    var data = JSON.parse(text);
+    var elements = data.elements || [];
+    if (Lib.restore) {
+      try { elements = Lib.restore({ elements: elements, appState: {}, files: {} }, null, null).elements; }
+      catch (e) { /* restore() can't normalize this one; take the elements as-is */ }
+    }
+    var app = data.appState || {};
+    var scene = {
+      type: "excalidraw",
+      version: 2,
+      source: "excalidraw-file-bridge",
+      elements: elements.map(pin),
+      appState: { viewBackgroundColor: app.viewBackgroundColor || "#ffffff" },
+      files: data.files || {}
+    };
+    if (app.gridSize !== null && app.gridSize !== undefined) scene.appState.gridSize = app.gridSize;
+    return JSON.stringify(sortKeys(scene), null, 2) + "\n";
+  }
+
+  function snapshot() {
+    return canonical(Lib.serializeAsJSON(api.getSceneElements(), api.getAppState(), api.getFiles(), "local"));
+  }
+
+  function applyToCanvas(text) {
+    var data = JSON.parse(text);
+    var scene = { elements: data.elements || [], appState: data.appState || {}, files: data.files || {} };
+    if (Lib.restore) { try { scene = Lib.restore(scene, null, null); } catch (e) { /* use raw */ } }
+    applyingRemote = true;
+    try {
+      var files = scene.files || {};
+      if (Object.keys(files).length) api.addFiles(Object.keys(files).map(function (k) { return files[k]; }));
+      api.updateScene({
+        elements: scene.elements,
+        appState: { viewBackgroundColor: (scene.appState && scene.appState.viewBackgroundColor) || "#ffffff" }
+      });
+      if (firstLoad) {
+        firstLoad = false;
+        if (scene.elements.length) api.scrollToContent(scene.elements, { fitToContent: true });
+      }
+    } finally {
+      setTimeout(function () { applyingRemote = false; }, 60);
+    }
+    ui.tCount.textContent = scene.elements.length;
+  }
+
+  // Don't yank the scene out from under an in-progress gesture.
+  function midGesture() {
+    if (!api) return false;
+    var s = api.getAppState();
+    return !!(s.draggingElement || s.editingElement || s.resizingElement || s.multiElement || s.editingLinearElement);
+  }
+
+  // ------------------------------------------------------------- transfers
+  // The *Inner functions assume the lock is already held, so one can call
+  // the other without deadlocking on the chain.
+  function pullInner(manual) {
+    if (!handle || (paused && !manual)) return Promise.resolve();
+    if (!manual && midGesture()) return Promise.resolve();
+    return handle.getFile().then(function (file) {
+      if (!manual && file.lastModified === seenMtime && file.size === seenSize) return;
+      return file.text().then(function (text) {
+        var fp;
+        try { fp = canonical(text); }
+        catch (e) { say("File isn't valid Excalidraw JSON yet \u2014 waiting for a complete write", true); return; }
+        seenMtime = file.lastModified; seenSize = file.size;
+        if (fp === syncedFp) { say(""); return; }
+        if (syncedFp !== null && snapshot() !== syncedFp) stashConflict();
+        applyToCanvas(text);
+        syncedFp = fp;
+        ui.tIn.textContent = clock();
+        flash(ui.trackIn);
+        say("");
+        return syncExcsFromScene();
+      });
+    }).catch(function (e) {
+      say("Can't read " + (handle ? handle.name : "file") + ": " + e.message, true);
+    });
+  }
+
+  function pushInner(manual) {
+    if (!handle || !api || (paused && !manual)) return Promise.resolve();
+    var text;
+    try { text = snapshot(); } catch (e) { return Promise.resolve(); }
+    if (text === syncedFp) return Promise.resolve();
+    return handle.getFile().then(function (f) {
+      // The file moved under us: it wins. Keep this canvas as a recoverable
+      // backup and take the file, so an agent's write is never clobbered.
+      if (seenMtime !== -1 && (f.lastModified !== seenMtime || f.size !== seenSize)) {
+        stashConflict();
+        return pullInner(true);
+      }
+      return handle.createWritable().then(function (w) {
+        return w.write(text).then(function () { return w.close(); });
+      }).then(function () {
+        syncedFp = text;
+        return handle.getFile();
+      }).then(function (f2) {
+        seenMtime = f2.lastModified; seenSize = f2.size;
+        ui.tOut.textContent = clock();
+        ui.tCount.textContent = api.getSceneElements().length;
+        flash(ui.trackOut);
+        say("");
+        return syncExcsFromScene();
+      });
+    }).catch(function (e) {
+      say("Can't write " + handle.name + ": " + e.message, true);
+    });
+  }
+
+  function pull(manual) {
+    return lock(function () {
+      return pullInner(manual).then(function () { return excsPullInner(manual); });
+    });
+  }
+  function push(manual) { return lock(function () { return pushInner(manual); }); }
+
+  // -------------------------------------------------------- .excs sibling
+  // The scene file is the source of truth; the .excs is regenerated from it
+  // after every transfer, so it is never stale. An .excs edit is imported,
+  // pushed into the scene file, then rewritten in normalized form (the
+  // canonical() restore pass re-measures text with the real engine).
+  function syncExcsFromScene() {
+    if (!excsHandle || !window.EXCS || syncedFp === null) return Promise.resolve();
+    var text;
+    try { text = EXCS.dump(JSON.parse(syncedFp)); }
+    catch (e) { return Promise.resolve(); }
+    if (text === excsSynced) return Promise.resolve();
+    return excsHandle.getFile().then(function (f) {
+      return f.text().then(function (cur) {
+        if (cur === text) {
+          excsSynced = text; excsSeenMtime = f.lastModified; excsSeenSize = f.size;
+          return;
+        }
+        return excsHandle.createWritable().then(function (w) {
+          return w.write(text).then(function () { return w.close(); });
+        }).then(function () {
+          excsSynced = text;
+          return excsHandle.getFile();
+        }).then(function (f2) {
+          excsSeenMtime = f2.lastModified; excsSeenSize = f2.size;
+        });
+      });
+    }).catch(function (e) { say("Can't write .excs sibling: " + e.message, true); });
+  }
+
+  function excsPullInner(manual) {
+    if (!excsHandle || !window.EXCS || (paused && !manual)) return Promise.resolve();
+    if (!manual && midGesture()) return Promise.resolve();
+    return excsHandle.getFile().then(function (file) {
+      if (!manual && file.lastModified === excsSeenMtime && file.size === excsSeenSize) return;
+      return file.text().then(function (text) {
+        excsSeenMtime = file.lastModified; excsSeenSize = file.size;
+        if (text === excsSynced || !text.trim()) return;
+        var fp;
+        try { fp = canonical(JSON.stringify(EXCS.build(text))); }
+        catch (e) { say(".excs error — " + e.message, true); return; }
+        excsSynced = text;
+        if (fp === syncedFp) { say(""); return; }
+        if (syncedFp !== null && snapshot() !== syncedFp) stashConflict();
+        applyToCanvas(fp);
+        syncedFp = null;        // canvas is now ahead of the scene file: push it
+        ui.tIn.textContent = clock();
+        flash(ui.trackIn);
+        return pushInner(true).then(function () { return syncExcsFromScene(); });
+      });
+    }).catch(function (e) {
+      say("Can't read .excs sibling: " + e.message, true);
+    });
+  }
+
+  function stashConflict() {
+    conflictBackup = snapshot();
+    ui.toast.hidden = false;
+    clearTimeout(conflictTimer);
+    conflictTimer = setTimeout(function () { ui.toast.hidden = true; }, 15000);
+  }
+
+  ui.restore.addEventListener("click", function () {
+    if (!conflictBackup) return;
+    ui.toast.hidden = true;
+    applyToCanvas(conflictBackup);
+    syncedFp = null;          // force the next push to win
+    push(true);
+  });
+
+  function onSceneChange() {
+    if (applyingRemote || !handle || paused) return;
+    clearTimeout(writeTimer);
+    writeTimer = setTimeout(function () { push(false); }, WRITE_MS);
+  }
+
+  // ---------------------------------------------------------- file handles
+  // Two ways in. A single file costs one picker. A folder is granted once and
+  // then every diagram inside it opens with no dialog at all -- which is what
+  // makes ?file=<relative path> possible: the API takes no path string, only a
+  // handle you already hold.
+  function idb(mode, fn) {
+    return new Promise(function (resolve, reject) {
+      var req = indexedDB.open("excalidraw-bridge", 1);
+      req.onupgradeneeded = function () { req.result.createObjectStore("handles"); };
+      req.onerror = function () { reject(req.error); };
+      req.onsuccess = function () {
+        var db = req.result;
+        var tx = db.transaction("handles", mode);
+        var out = fn(tx.objectStore("handles"));
+        tx.oncomplete = function () { db.close(); resolve(out && out.result); };
+        tx.onerror = function () { db.close(); reject(tx.error); };
+      };
+    }).catch(function () { return null; });
+  }
+  var remember = function (k, v) { return idb("readwrite", function (s) { return s.put(v, k); }); };
+  var recall = function (k) { return idb("readonly", function (s) { return s.get(k); }); };
+
+  // Not every handle carries the permission methods, and a handle whose folder
+  // was deleted throws from them -- treat both as "no gate here".
+  function perm(h) {
+    try { return h.queryPermission ? h.queryPermission({ mode: "readwrite" }) : Promise.resolve("granted"); }
+    catch (e) { return Promise.resolve("denied"); }
+  }
+
+  function ensureWrite(h) {
+    return perm(h).then(function (p) {
+      if (p === "granted" || !h.requestPermission) return "granted";
+      return h.requestPermission({ mode: "readwrite" });
+    }).then(function (p) {
+      if (p !== "granted") throw new Error("write permission denied");
+      return h;
+    });
+  }
+
+  async function attach(h, seed) {
+    handle = h; firstLoad = true; syncedFp = null; seenMtime = -1; seenSize = -1;
+    excsSeenMtime = -1; excsSeenSize = -1; excsSynced = null;
+    browsing = false;
+    await remember("file", h);
+    paint();
+    // A file with nothing in it gets seeded from the canvas; anything else wins.
+    if (seed === undefined) seed = (await h.getFile()).size === 0;
+    await (seed ? push(true) : pull(true));
+    paint();
+    say("Watching " + (relPath || h.name) + " \u2014 polling every " + (POLL_MS / 1000) + "s");
+  }
+
+  // ------------------------------------------------------------ folder mode
+  var SKIP = { "node_modules": 1, ".git": 1, ".venv": 1, "venv": 1, "dist": 1, "build": 1, "target": 1 };
+
+  // Depth-limited so granting a big repo doesn't turn one click into a crawl.
+  async function scan(dir, prefix, depth, out) {
+    if (depth > 4 || out.length >= 300) return out;
+    for await (var entry of dir.values()) {
+      if (SKIP[entry.name]) continue;
+      if (entry.kind === "directory" && entry.name.charAt(0) === ".") continue;
+      var rel = prefix ? prefix + "/" + entry.name : entry.name;
+      if (entry.kind === "file") {
+        if (/\.excalidraw(\.json)?$/i.test(entry.name)) out.push(rel);
+      } else {
+        await scan(entry, rel, depth + 1, out);
+      }
+    }
+    return out;
+  }
+
+  // "docs/arch.excalidraw" -> a file handle inside the granted folder.
+  async function resolve(dir, rel, create) {
+    var parts = String(rel).split("/").filter(function (x) { return x && x !== "."; });
+    if (!parts.length) throw new Error("empty path");
+    if (parts.indexOf("..") !== -1) throw new Error("path must stay inside the folder");
+    var d = dir;
+    for (var i = 0; i < parts.length - 1; i++) {
+      d = await d.getDirectoryHandle(parts[i], { create: !!create });
+    }
+    return d.getFileHandle(parts[parts.length - 1], { create: !!create });
+  }
+
+  function esc(t) {
+    return String(t).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  function renderFileList(files) {
+    ui.fileList.innerHTML = "";
+    if (!files.length) {
+      var empty = document.createElement("p");
+      empty.className = "empty";
+      empty.textContent = "No .excalidraw files here yet. Create one and it shows up on the next rescan.";
+      ui.fileList.appendChild(empty);
+      return;
+    }
+    files.sort().forEach(function (rel) {
+      var b = document.createElement("button");
+      b.className = "fileitem";
+      b.type = "button";
+      b.dataset.rel = rel;
+      b.innerHTML = "<span class='p'>" + esc(rel.replace(/[^/]+$/, "")) + "</span>" +
+                    "<span class='n'>" + esc(rel.split("/").pop()) + "</span>";
+      b.addEventListener("click", function () {
+        openFromFolder(rel, false).catch(function (e) { say("Can't open " + rel + ": " + e.message, true); });
+      });
+      ui.fileList.appendChild(b);
+    });
+    markCurrent();
+  }
+
+  async function attachFolder(dir, announce) {
+    dirHandle = dir;
+    if (ROOT) await remember("root:" + dir.name, ROOT);
+    await remember("dir", dir);
+    ui.folderName.textContent = dir.name || "selected folder";
+    ui.folderRow.hidden = false;
+    var files = await scan(dir, "", 0, []);
+    renderFileList(files);
+    paint();
+    if (announce) {
+      say((dir.name || "folder") + ": " + files.length + " diagram" + (files.length === 1 ? "" : "s") +
+          " \u2014 open any of them without another dialog");
+    }
+    return files;
+  }
+
+  async function openFromFolder(rel, create) {
+    var h = await resolve(dirHandle, rel, create);
+    relPath = rel;
+    await remember("rel", rel);
+    excsHandle = null;
+    if (window.EXCS) {
+      var excsRel = rel.replace(/\.excalidraw(\.json)?$/i, ".excs");
+      try { excsHandle = await resolve(dirHandle, excsRel, true); }
+      catch (e) { /* sibling not creatable; .excs sync stays off */ }
+    }
+    await attach(h, create ? undefined : false);
+  }
+
+  var TYPES = [{ description: "Excalidraw scene", accept: { "application/json": [".excalidraw", ".json"] } }];
+  var WANTED = new URLSearchParams(location.search).get("file");
+  // ?root=<absolute folder path> seeds the copy-path root so it is never asked for.
+  var ROOT = new URLSearchParams(location.search).get("root");
+
+  // A published artifact always runs in a cross-origin frame, and Chrome will
+  // not open a file picker in one. Running the page from disk is the fix --
+  // file:// is a secure context and every picker works there.
+  var FRAMED_NOTE =
+    "This page is running inside a frame, where Chrome refuses to open a file picker. " +
+    "Save it to your machine and open the saved file directly \u2014 a <code>file://</code> page works fine, no server needed.";
+  var DEFAULT_NOTE =
+    "Chromium browsers only (Chrome, Edge, Arc, Brave). Everything stays on your machine \u2014 nothing is uploaded.";
+
+  function pickerFailed(e) {
+    if (e && e.name === "AbortError") return;
+    ui.note.classList.add("block");
+    if (window.self !== window.top) ui.note.innerHTML = FRAMED_NOTE;
+    else ui.note.textContent = "Couldn't open that: " + (e && e.message ? e.message : String(e));
+  }
+
+  ui.folder.addEventListener("click", function () {
+    window.showDirectoryPicker({ mode: "readwrite" })
+      .then(ensureWrite)
+      .then(function (d) { return attachFolder(d, true); })
+      .then(function () { if (WANTED) return openFromFolder(WANTED, true); })
+      .catch(pickerFailed);
+  });
+
+  ui.open.addEventListener("click", function () {
+    window.showOpenFilePicker({ types: TYPES, multiple: false })
+      .then(function (hs) { return ensureWrite(hs[0]); })
+      .then(function (h) { relPath = null; excsHandle = null; return attach(h, false); })
+      .catch(pickerFailed);
+  });
+
+  ui.neu.addEventListener("click", function () {
+    window.showSaveFilePicker({ types: TYPES, suggestedName: "diagram.excalidraw" })
+      .then(ensureWrite)
+      .then(function (h) { relPath = null; excsHandle = null; return attach(h, true); })
+      .catch(pickerFailed);
+  });
+
+  ui.rescan.addEventListener("click", function () {
+    if (dirHandle) attachFolder(dirHandle, true).catch(pickerFailed);
+  });
+
+  ui.filesBtn.addEventListener("click", function () { browsing = !browsing; paint(); });
+  ui.cancel.addEventListener("click", function () { browsing = false; paint(); });
+
+  // Copy the file's absolute path. The File System Access API exposes names
+  // only, so the folder's absolute path is asked for once and remembered per
+  // folder name; the file's own path is then root + relative path.
+  function rootKey() { return dirHandle ? "root:" + dirHandle.name : "root:file:" + handle.name; }
+  function leafPath() { return dirHandle && relPath ? relPath : handle.name; }
+  function copyAbsPath(root) {
+    var full = root.replace(/\/+$/, "") + "/" + leafPath();
+    return navigator.clipboard.writeText(full).then(function () { say("Copied " + full); },
+      function () { say("Clipboard blocked; path is " + full, true); });
+  }
+  function askRoot(current) {
+    ui.rootInput.value = current || "";
+    ui.rootInput.placeholder = "absolute path of " + (dirHandle ? "folder " + dirHandle.name : "the folder holding " + handle.name);
+    ui.rootAsk.hidden = false;
+    ui.rootInput.focus();
+  }
+  ui.copyPath.addEventListener("click", async function (ev) {
+    if (!handle) return;
+    var root = await recall(rootKey());
+    if (!root || ev.altKey) { askRoot(root); return; }
+    copyAbsPath(root);
+  });
+  function rootSubmit() {
+    var v = ui.rootInput.value.trim();
+    ui.rootAsk.hidden = true;
+    if (!v || !handle) return;
+    remember(rootKey(), v).then(function () { return copyAbsPath(v); });
+  }
+  ui.rootOk.addEventListener("click", rootSubmit);
+  ui.rootCancel.addEventListener("click", function () { ui.rootAsk.hidden = true; });
+  ui.rootInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") rootSubmit();
+    else if (e.key === "Escape") ui.rootAsk.hidden = true;
+  });
+
+  ui.copyLink.addEventListener("click", function () {
+    var url = location.href.split("?")[0] + "?file=" + encodeURIComponent(relPath);
+    navigator.clipboard.writeText(url).then(function () {
+      say("Link copied \u2014 opens straight into " + relPath);
+    }, function () {
+      ui.note.classList.remove("block");
+      ui.note.innerHTML = "Copy this:<span class='urlbox'>" + esc(url) + "</span>";
+    });
+  });
+
+  ui.reconnect.addEventListener("click", async function () {
+    try {
+      var dir = await recall("dir");
+      if (dir) {
+        await ensureWrite(dir);
+        await attachFolder(dir, true);
+        var target = WANTED || await recall("rel");
+        if (target) await openFromFolder(target, !!WANTED);
+        return;
+      }
+      var f = await recall("file");
+      if (f) { await ensureWrite(f); relPath = null; excsHandle = null; await attach(f, false); }
+    } catch (e) { pickerFailed(e); }
+  });
+
+  ui.pause.addEventListener("click", function () { paused = !paused; paint(); say(paused ? "Sync paused \u2014 the file and the canvas can now drift" : ""); if (!paused) pull(true).then(function () { return push(false); }); });
+  ui.pull.addEventListener("click", function () { pull(true); });
+  ui.push.addEventListener("click", function () { push(true); });
+  ui.detach.addEventListener("click", function () {
+    handle = null; relPath = null; syncedFp = null; excsHandle = null; browsing = false;
+    ui.toast.hidden = true; ui.note.classList.remove("block");
+    ui.note.textContent = "Detached. The canvas keeps its contents; nothing further is written.";
+    paint();
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); push(true); }
+  });
+  // Chrome throttles timers in hidden tabs to about once a minute, so flush
+  // and re-read the moment the tab comes back rather than waiting on the poll.
+  function resync() { return push(false).then(function () { return pull(false); }); }
+  window.addEventListener("focus", resync);
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") resync();
+  });
+  pollTimer = setInterval(function () { pull(false); }, POLL_MS);
+
+  // ------------------------------------------------------------- mounting
+  function theme() {
+    var stamped = document.documentElement.getAttribute("data-theme");
+    if (stamped === "dark" || stamped === "light") return stamped;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  var host = document.createElement("div");
+  host.id = "excal";
+  var root = ReactDOM.createRoot(el("canvas").appendChild(host));
+  function render() {
+    root.render(React.createElement(Lib.Excalidraw, {
+      excalidrawAPI: function (a) { api = a; paint(); },
+      onChange: onSceneChange,
+      theme: theme(),
+      name: handle ? handle.name : "untitled",
+      UIOptions: { canvasActions: { loadScene: false, saveToActiveFile: false, export: false, saveAsImage: true } }
+    }));
+  }
+  render();
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+  new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+  // ----------------------------------------------------------- entry state
+  // With a folder already granted, ?file=<path> opens straight onto the canvas.
+  // Chrome may still want a click to re-grant, so that becomes the one button.
+  async function boot() {
+    if (!window.showOpenFilePicker) {
+      ui.folder.disabled = ui.open.disabled = ui.neu.disabled = true;
+      ui.note.classList.add("block");
+      ui.note.textContent = "This browser has no File System Access API. Chrome, Edge, Arc, Brave or " +
+        "another Chromium browser is required \u2014 Safari and Firefox can't hold a writable handle to a local file.";
+      return;
+    }
+    if (window.self !== window.top) {
+      ui.folder.disabled = ui.open.disabled = ui.neu.disabled = true;
+      ui.note.classList.add("block");
+      ui.note.innerHTML = FRAMED_NOTE;
+      return;
+    }
+    ui.note.textContent = DEFAULT_NOTE;
+
+    var dir = await recall("dir");
+    if (dir) {
+      ui.folderName.textContent = dir.name || "selected folder";
+      ui.folderRow.hidden = false;
+      if (await perm(dir) === "granted") {
+        await attachFolder(dir, false);
+        var target = WANTED || await recall("rel");
+        if (target) {
+          try { return await openFromFolder(target, !!WANTED); }
+          catch (e) { say("Couldn't open " + target + ": " + e.message, true); }
+        }
+        return;
+      }
+      ui.reconnect.hidden = false;
+      ui.reconnect.textContent = "Reconnect " + dir.name + (WANTED ? " \u2192 " + WANTED : "");
+      say("Chrome needs one click to hand back access to " + dir.name);
+      return;
+    }
+
+    var last = await recall("file");
+    if (last) {
+      if (await perm(last) === "granted") { excsHandle = null; return attach(last, false); }
+      ui.reconnect.hidden = false;
+      ui.reconnect.textContent = "Reconnect " + last.name;
+    }
+    if (WANTED) say("Open the folder holding " + WANTED + " once, then this link goes straight there");
+  }
+  boot().catch(function (e) {
+    ui.note.classList.add("block");
+    ui.note.textContent = "Couldn't restore the last folder: " + e.message + ". Pick one again below.";
+  });
+
+  paint();
+})();
+</script>

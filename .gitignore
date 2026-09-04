@@ -30,3 +30,4 @@
 !fix-chrome-extension/**
 !isochron-home-map/
 !isochron-home-map/**
+node_modules/
