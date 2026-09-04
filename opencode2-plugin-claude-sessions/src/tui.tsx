@@ -48,6 +48,12 @@ function locationKey(session: SessionInfo) {
   return `${session.location.workspaceID ?? ""}\0${session.location.directory}`
 }
 
+function shortenLocation(location: string) {
+  const parts = location.split("/").filter((part) => part !== "")
+  if (parts.length <= 4) return location
+  return `…/${parts.slice(-3).join("/")}`
+}
+
 function SessionPicker(props: { context: Plugin.Context }) {
   const route = props.context.ui.router.current()
   const currentSessionID = route.type === "session" ? route.sessionID : undefined
@@ -91,7 +97,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
             : state === "running"
               ? "Working"
               : "Ready"
-      const location = props.context.ui.format.path(session.location.directory)
+      const location = shortenLocation(props.context.ui.format.path(session.location.directory))
       const details = [relativeTime(session.time.updated), location]
       if (session.agent) details.push(session.agent)
 
@@ -245,7 +251,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
     >
       <box height={3} flexShrink={0} flexDirection="column" paddingLeft={2} paddingRight={2}>
         <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
-          Sessions
+          {sessions().length > 0 ? `Sessions · ${sessions().length}` : "Sessions"}
         </text>
         <text fg={props.context.theme.text.subdued}>↑/↓ select  ·  →/enter open  ·  n new  ·  ←/esc close</text>
       </box>
@@ -279,7 +285,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
               const active = () => selectedIndex() === index()
               const titleColor = () => props.context.theme.text.default
               const descriptionColor = () => props.context.theme.text.subdued
-              const cursorColor = () => props.context.theme.text.action.primary.default
+              const cursorColor = () => props.context.theme.hue.accent[400]
               const iconColor = () => {
                 if (option.state === "permission") return props.context.theme.text.status.permission
                 if (option.state === "question") return props.context.theme.text.status.question
@@ -294,7 +300,11 @@ function SessionPicker(props: { context: Plugin.Context }) {
                   flexDirection="column"
                   paddingLeft={1}
                   paddingRight={2}
-                  backgroundColor={props.context.theme.contextual.overlay.background.default}
+                  backgroundColor={
+                    active()
+                      ? props.context.theme.contextual.overlay.background.surface.offset
+                      : props.context.theme.contextual.overlay.background.default
+                  }
                   onMouseDown={() => {
                     selectedValue = option.value
                     setSelectedIndex(index())
