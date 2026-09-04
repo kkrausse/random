@@ -1,122 +1,82 @@
 ---
 name: Excalidraw
-description: Inspect and edit an Excalidraw scene in the user's attached browser tab through the structured Excalidraw API. Use for reading diagrams, adding or changing elements with exact data, or verifying scene changes without mouse drawing.
+description: Edit .excalidraw diagram files through their compact .excs text sibling — dump/build/check/preview via exc.mjs, with the file-bridge page live-syncing edits onto the canvas. Use for reading, editing, or restructuring Excalidraw scenes without touching raw scene JSON.
 ---
 
-# Excalidraw
+# Excalidraw (.excs file workflow)
 
-Use Browser Control on the user's attached Excalidraw tab. Prefer the structured
-scene API over pointer input, screenshots, DOM scraping, or persistence data.
+Never read or edit .excalidraw JSON directly — work through the `.excs`
+projection: one line per element (~60x smaller), z-order = line order.
 
-This project expects Excalidraw sessions to remain editable. Do not create a
-read-only session unless the user explicitly requests one.
+All scripts live in this skill's `scripts/` directory (referred to as `$S` below).
 
-## Inspect A Diagram
-
-Use the bundled compact inventory for both interpretation and edit planning:
+## Read a scene
 
 ```bash
-browser-control execute --json --target-url excalidraw.com \
-  --file ./skills/excalidraw/scripts/scene-inspect.js \
-  | jq -c '{session: .session.id, value}'
+node $S/exc.mjs dump scene.excalidraw          # compact text to stdout
 ```
 
-This selects and verifies the attached tab, discovers the API, and returns an
-edit-ready inventory of every live element. Compact row formats preserve IDs,
-geometry, text, style, grouping, bindings, and connector points without dumping
-large raw Excalidraw objects. It also includes bounds, viewport, and file count.
+## Edit a scene
 
-The CLI currently requires `--json` when using `--file`; the `jq` filter keeps
-one value copy plus the continuation session ID. Do not return the complete
-elements array. After this call, answer the user's question directly instead
-of reporting only that inspection succeeded.
+1. If a `.excs` sibling exists and the user has the bridge tab open, edit the
+   `.excs` directly with normal file edits. The bridge imports it within ~1s,
+   re-measures text with the real engine, writes the `.excalidraw`, and
+   rewrites the `.excs` normalized. Done.
+2. Otherwise: `dump -o scene.excs`, edit, then
+   `node $S/exc.mjs build scene.excs -o scene.excalidraw`.
+   Build estimates text sizes; the bridge self-heals them on next load.
 
-Use a screenshot only when the user asks about visual appearance, alignment,
-or aesthetics.
+**Always after editing**: `node $S/exc.mjs check scene.excalidraw` — validates
+binding/backref invariants, box overlaps, and counts arrow crossings.
+`node $S/exc.mjs preview scene.excalidraw` renders an approximate wireframe
+PNG (macOS qlmanage) to eyeball layout without a browser.
 
-## Sessions
+Real export (SVG with embedded fonts + 2x PNG, faithful render):
+`node $S/export.mjs scene.excalidraw [-o outBase] [--scale 2]` — needs Chrome
+installed; `npm i` in `$S` once for playwright-core.
+Keep `scripts/package.json` free of `"type":"module"`: `excs.js` is a classic
+script shared with the bridge page, and `exc.mjs` loads it via `require`.
 
-A one-shot inspection does not need adoption or a preliminary URL call because
-`--target-url` selects the existing tab and the inventory includes its URL.
+## Rules
 
-The one-shot target selection does not make that tab the session default. For
-follow-up edits, adopt the tab using the session ID returned by the inventory,
-then continue with that session:
+- `.excalidraw` is the source of truth; `.excs` is an ephemeral projection the
+  bridge regenerates after every sync. Never rebuild from a stale `.excs`.
+- The user may edit the canvas concurrently — on conflict the scene file wins.
+- Format reference is the header comment in `scripts/excs.js` (grammar, keys,
+  flags, elided defaults). Bound text folds into its container's line; images
+  and freedraw pass through as `json` lines.
+- Layout hygiene: order rows/boxes so arrows fan out without crossing; aim for
+  `check` reporting 0 crossings unless the user drew them.
+
+## The bridge page
+
+`excalidraw-file-sync.html` (open via file:// in Chrome, grant a folder once).
+When handing the user a link, always include both params:
+`?file=<path relative to the folder>&root=<absolute folder path>` — `root`
+seeds the header's copy-absolute-path button (the browser cannot learn it).
+Folder-opened scenes get the `.excs` sibling automatically; single-file mode
+does not. If the user reports edits not appearing, ask them to check the
+bridge tab's footer for a `.excs error` message — a parse error leaves the
+canvas untouched.
+
+## Version control
+
+Commit the `.excalidraw` only and gitignore `*.excs` — the sibling is a
+deterministic projection the bridge regenerates, and a committed copy can go
+stale. Raw JSON diffs are noise (every save regenerates nonces and re-measures
+text), so diff through the dumper. Once per repo:
 
 ```bash
-browser-control session adopt --target-url excalidraw.com --session <session-id>
+echo '*.excalidraw diff=excs' >> .gitattributes
+echo '*.excs' >> .gitignore
+git config diff.excs.textconv "node $S/exc.mjs dump"   # absolute path to $S
 ```
 
-When starting an editing session without first running the inventory, do not
-assume a named session already exists. Start an editable session with a bare
-`browser-control execute`, retain its generated ID, then adopt with that ID:
+`git diff`, `git log -p`, and `git show` then print the compact form. These
+diffs are read-only and cannot be applied as patches.
 
-```bash
-browser-control execute 'return page.url()'
-browser-control session adopt --target-url excalidraw.com --session <session-id>
-```
+## Legacy
 
-If a known session already controls the tab, reuse it rather than creating a
-new one.
-
-## Find The API
-
-The hosted app usually exposes the official API through an `excalidrawAPI`
-React prop rather than directly on `window`. Discover it by the capabilities
-`getSceneElements()` and `updateScene()`, never by minified component names or
-random React property suffixes.
-
-The canonical capability search is in `scripts/scene-inspect.js`. Reuse its
-`findExcalidrawAPI()` function inside each `page.evaluate()` operation that
-needs the API. React traversal is an integration fallback, so fail closed if
-the capability checks do not pass.
-
-## Inspect Precisely
-
-Start with the inventory script. Read a target's complete fresh object before
-mutating it when the request needs a field omitted from the compact rows.
-
-Read live data with:
-
-- `getSceneElements()` for current elements
-- `getSceneElementsIncludingDeleted()` when preparing an update
-- `getAppState()` for viewport or selection state
-- `getFiles()` for embedded assets
-
-## Update
-
-Use `updateScene()` for exact edits. Build the complete next element array from
-a fresh `getSceneElementsIncludingDeleted()` read, preserve unrelated elements,
-and change only intended fields. Set:
-
-```js
-{
-  ...target,
-  ...patch,
-  version: target.version + 1,
-  versionNonce: Math.floor(Math.random() * 2 ** 31),
-  updated: Date.now(),
-}
-```
-
-Call `updateScene({ elements, captureUpdate: "IMMEDIATELY" })` so the edit
-participates in undo/redo.
-
-For insertion, prefer cloning a live element of the same type as a schema
-template. Replace identity, geometry, bindings, grouping, version, and style
-fields that should not carry over. Never inherit `boundElements`, `containerId`,
-`frameId`, or `groupIds` unintentionally.
-
-Do not use synthetic paste as the normal insertion path. Do not write directly
-to `localStorage` or IndexedDB; the mounted app can overwrite persistence with
-its in-memory scene.
-
-## Verify
-
-Treat an update call as an attempt, not proof. Read the scene again through the
-API and assert the requested values. After persistence has had time to run,
-make a fresh Browser Control call and verify again.
-
-For destructive or broad edits, first identify exact target IDs and obtain user
-approval. Afterward, verify both the intended changes and that unrelated IDs or
-counts did not change.
+`scripts/scene-{inspect,export,upload}.js` are the old browser-control payload
+scripts for driving an excalidraw.com tab. Prefer the file workflow; use these
+only when the user explicitly wants to work with a non-bridge tab.

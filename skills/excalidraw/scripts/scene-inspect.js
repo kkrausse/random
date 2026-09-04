@@ -43,6 +43,36 @@ return await page.evaluate(() => {
       if (fiber.sibling) stack.push(fiber.sibling)
     }
 
+    // excalidraw.com passes excalidrawAPI as a callback ref, so the prop
+    // search above finds a function there. Walk up from the .excalidraw DOM
+    // node to the App class instance and adapt it.
+    const mount = document.querySelector(".excalidraw")
+    const fiberKey = mount && Object.getOwnPropertyNames(mount)
+      .find((key) => key.startsWith("__reactFiber$"))
+    let node = fiberKey ? mount[fiberKey] : null
+    let hops = 0
+    while (node && hops < 200) {
+      const app = node.stateNode
+      if (
+        app &&
+        typeof app.updateScene === "function" &&
+        app.scene &&
+        typeof app.scene.getNonDeletedElements === "function"
+      ) {
+        return {
+          getSceneElements: () => app.scene.getNonDeletedElements(),
+          getSceneElementsIncludingDeleted: () =>
+            app.scene.getElementsIncludingDeleted(),
+          getAppState: () => app.state,
+          getFiles: () => app.files ?? {},
+          updateScene: (payload) => app.updateScene(payload),
+          // no scrollToContent on the App instance; use the Shift+1 shortcut
+        }
+      }
+      node = node.return
+      hops += 1
+    }
+
     throw new Error("Excalidraw API not found")
   }
 
