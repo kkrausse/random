@@ -51,6 +51,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
   const [cursor, setCursor] = createSignal<string>()
   const [loading, setLoading] = createSignal(false)
   const [failure, setFailure] = createSignal<string>()
+  const queriedLocations = new Set<string>()
   let select: SelectRenderable | undefined
 
   const rows = createMemo(() => {
@@ -83,23 +84,26 @@ function SessionPicker(props: { context: Plugin.Context }) {
     }),
   )
 
-  async function refreshAttention(loaded: SessionInfo[]) {
+  function refreshAttention(loaded: SessionInfo[]) {
     const locations = new Map<string, SessionInfo["location"]>()
     for (const session of loaded) locations.set(locationKey(session), session.location)
 
-    const lookups: Array<Promise<readonly { sessionID: string }[]>> = [...locations.values()].flatMap((location) => [
-      props.context.client.permission.request.list({ location }).then((result) => result.data),
-      props.context.client.form.request.list({ location }).then((result) => result.data),
-    ])
-    const requests = await Promise.allSettled(lookups)
+    for (const [key, location] of locations) {
+      if (queriedLocations.has(key)) continue
+      queriedLocations.add(key)
 
-    setAttentionIDs(
-      new Set(
-        requests
+      const lookups: Array<Promise<readonly { sessionID: string }[]>> = [
+        props.context.client.permission.request.list({ location }).then((result) => result.data),
+        props.context.client.form.request.list({ location }).then((result) => result.data),
+      ]
+      void Promise.allSettled(lookups).then((requests) => {
+        const ids = requests
           .flatMap((result) => (result.status === "fulfilled" ? result.value : []))
-          .map((request) => request.sessionID),
-      ),
-    )
+          .map((request) => request.sessionID)
+        if (ids.length === 0) return
+        setAttentionIDs((current) => new Set([...current, ...ids]))
+      })
+    }
   }
 
   async function loadMore(initial = false) {
@@ -118,7 +122,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
       const loaded = [...known.values()]
       setSessions(loaded)
       setCursor(result.cursor.next ?? undefined)
-      await refreshAttention(loaded)
+      refreshAttention(loaded)
     } catch (error) {
       setFailure(error instanceof Error ? error.message : "Could not load sessions")
     } finally {
@@ -145,7 +149,11 @@ function SessionPicker(props: { context: Plugin.Context }) {
   onMount(() => void loadMore(true))
 
   return (
-    <box flexDirection="column" height={24}>
+    <box
+      flexDirection="column"
+      height={24}
+      backgroundColor={props.context.theme.contextual.overlay.background.default}
+    >
       <text fg={props.context.theme.text.default}>Sessions</text>
       <text fg={props.context.theme.text.subdued}>↑/↓ select · →/enter open · ←/esc close</text>
       {failure() ? (
