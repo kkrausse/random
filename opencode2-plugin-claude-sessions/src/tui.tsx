@@ -1,14 +1,16 @@
 /** @jsxImportSource @opentui/solid */
 import type { SessionInfo } from "@opencode-ai/client"
 import { Plugin } from "@opencode-ai/plugin/tui"
-import type { SelectOption, SelectRenderable } from "@opentui/core"
-import { createEffect, createMemo, createSignal, onMount } from "solid-js"
+import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
+import { For, createEffect, createMemo, createSignal, onMount } from "solid-js"
 
 const PAGE_SIZE = 100
 const LOAD_MORE_THRESHOLD = 10
 const NEW_SESSION_VALUE = "__claude_sessions_new__"
 
-type SessionState = "attention" | "running" | "idle"
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+type SessionState = "permission" | "question" | "running" | "idle"
 
 interface SessionRow {
   session: SessionInfo
@@ -16,7 +18,7 @@ interface SessionRow {
 }
 
 function stateRank(state: SessionState) {
-  if (state === "attention") return 0
+  if (state === "permission" || state === "question") return 0
   if (state === "running") return 1
   return 2
 }
@@ -51,20 +53,21 @@ function SessionPicker(props: { context: Plugin.Context }) {
   const currentSessionID = route.type === "session" ? route.sessionID : undefined
   const currentSession = currentSessionID ? props.context.data.session.get(currentSessionID) : undefined
   const [sessions, setSessions] = createSignal<SessionInfo[]>(currentSession ? [currentSession] : [])
-  const [attentionIDs, setAttentionIDs] = createSignal(new Set<string>())
+  const [attention, setAttention] = createSignal(new Map<string, "permission" | "question">())
   const [cursor, setCursor] = createSignal<string>()
   const [loading, setLoading] = createSignal(false)
   const [failure, setFailure] = createSignal<string>()
+  const [selectedIndex, setSelectedIndex] = createSignal(0)
   const queriedLocations = new Set<string>()
-  let select: SelectRenderable | undefined
+  let scroll: ScrollBoxRenderable | undefined
 
   const rows = createMemo(() => {
-    const attention = attentionIDs()
+    const attentionByID = attention()
     return sortRows(
       sessions().map((session) => ({
         session,
-        state: attention.has(session.id)
-          ? "attention"
+        state: attentionByID.get(session.id)
+          ? attentionByID.get(session.id)!
           : props.context.data.session.status(session.id) === "running"
             ? "running"
             : "idle",
@@ -72,22 +75,31 @@ function SessionPicker(props: { context: Plugin.Context }) {
     )
   })
 
-  const options = createMemo<SelectOption[]>(() => [
+  const options = createMemo(() => [
     {
-      name: "+ New session",
+      title: "New session",
       description: "Start with a blank prompt",
       value: NEW_SESSION_VALUE,
+      state: "new" as const,
     },
     ...rows().map(({ session, state }) => {
-      const status = state === "attention" ? "Needs input" : state === "running" ? "Working" : "Ready"
-      const marker = state === "attention" ? "?" : state === "running" ? "●" : "○"
+      const status =
+        state === "permission"
+          ? "Permission required"
+          : state === "question"
+            ? "Question waiting"
+            : state === "running"
+              ? "Working"
+              : "Ready"
       const location = props.context.ui.format.path(session.location.directory)
-      const details = [status, relativeTime(session.time.updated), location]
+      const details = [relativeTime(session.time.updated), location]
       if (session.agent) details.push(session.agent)
 
       return {
-        name: `${marker} ${session.title?.trim() || "Untitled session"}`,
-        description: details.join(" · "),
+        title: session.title?.trim() || "Untitled session",
+        description: details.join("  ·  "),
+        status,
+        state,
         value: session.id,
       }
     }),
@@ -101,16 +113,22 @@ function SessionPicker(props: { context: Plugin.Context }) {
       if (queriedLocations.has(key)) continue
       queriedLocations.add(key)
 
-      const lookups: Array<Promise<readonly { sessionID: string }[]>> = [
-        props.context.client.permission.request.list({ location }).then((result) => result.data),
-        props.context.client.form.request.list({ location }).then((result) => result.data),
+      const lookups: Array<Promise<{ kind: "permission" | "question"; ids: string[] }>> = [
+        props.context.client.permission.request
+          .list({ location })
+          .then((result) => ({ kind: "permission", ids: result.data.map((request) => request.sessionID) })),
+        props.context.client.form.request
+          .list({ location })
+          .then((result) => ({ kind: "question", ids: result.data.map((request) => request.sessionID) })),
       ]
       void Promise.allSettled(lookups).then((requests) => {
-        const ids = requests
-          .flatMap((result) => (result.status === "fulfilled" ? result.value : []))
-          .map((request) => request.sessionID)
-        if (ids.length === 0) return
-        setAttentionIDs((current) => new Set([...current, ...ids]))
+        const found = requests.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []))
+        if (found.length === 0) return
+        setAttention((current) => {
+          const next = new Map(current)
+          for (const result of found) for (const id of result.ids) next.set(id, result.kind)
+          return next
+        })
       })
     }
   }
@@ -149,9 +167,27 @@ function SessionPicker(props: { context: Plugin.Context }) {
     props.context.ui.router.navigate({ type: "home" })
   }
 
+  function moveSelection(delta: number) {
+    const available = options()
+    if (available.length === 0) return
+    const next = Math.max(0, Math.min(available.length - 1, selectedIndex() + delta))
+    const option = available[next]
+    if (!option) return
+    selectedValue = option.value
+    setSelectedIndex(next)
+    if (next >= available.length - LOAD_MORE_THRESHOLD) void loadMore()
+  }
+
+  function selectCurrent() {
+    const option = options()[selectedIndex()]
+    if (!option) return
+    if (option.value === NEW_SESSION_VALUE) newSession()
+    else open(option.value)
+  }
+
   props.context.keymap.layer(() => ({
     mode: "global",
-    target: () => select,
+    target: () => scroll,
     priority: 200,
     commands: [
       {
@@ -162,18 +198,30 @@ function SessionPicker(props: { context: Plugin.Context }) {
         bind: "n",
         run: newSession,
       },
+      { bind: "up", run: () => moveSelection(-1) },
+      { bind: "k", run: () => moveSelection(-1) },
+      { bind: "down", run: () => moveSelection(1) },
+      { bind: "j", run: () => moveSelection(1) },
+      { bind: "shift+up", run: () => moveSelection(-8) },
+      { bind: "shift+down", run: () => moveSelection(8) },
+      { bind: "return", run: selectCurrent },
+      { bind: "linefeed", run: selectCurrent },
+      { bind: "right", run: selectCurrent },
     ],
   }))
 
   let selectedValue = currentSessionID ?? NEW_SESSION_VALUE
   createEffect(() => {
     const available = options()
-    if (!select) return
     const index = available.findIndex((option) => option.value === selectedValue)
-    if (index >= 0) select.setSelectedIndex(index)
+    if (index < 0) return
+    setSelectedIndex(index)
+    queueMicrotask(() => scroll?.scrollChildIntoView(`claude-session-${index}`))
   })
 
   onMount(() => {
+    // Applying this after the dialog exists reliably overrides its default 60-column width.
+    props.context.ui.dialog.set({ size: "xlarge", centered: true })
     if (currentSessionID && !currentSession) {
       void props.context.client.session
         .get({ sessionID: currentSessionID })
@@ -186,54 +234,115 @@ function SessionPicker(props: { context: Plugin.Context }) {
   return (
     <box
       flexDirection="column"
-      height={24}
+      height={30}
       backgroundColor={props.context.theme.contextual.overlay.background.default}
     >
-      <text fg={props.context.theme.text.default}>Sessions</text>
-      <text fg={props.context.theme.text.subdued}>↑/↓ select · →/enter open · n new · ←/esc close</text>
+      <box height={3} flexShrink={0} flexDirection="column" paddingLeft={2} paddingRight={2}>
+        <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
+          Sessions
+        </text>
+        <text fg={props.context.theme.text.subdued}>↑/↓ select  ·  →/enter open  ·  n new  ·  ←/esc close</text>
+      </box>
       {failure() ? (
-        <text fg={props.context.theme.text.feedback.error.default}>{failure()}</text>
+        <box paddingLeft={2} paddingRight={2}>
+          <text fg={props.context.theme.text.feedback.error.default}>{failure()}</text>
+        </box>
       ) : options().length === 0 && loading() ? (
-        <text fg={props.context.theme.text.subdued}>Loading sessions…</text>
+        <box paddingLeft={2} paddingRight={2}>
+          <text fg={props.context.theme.text.subdued}>Loading sessions…</text>
+        </box>
       ) : (
-        <select
-          ref={select}
+        <scrollbox
+          ref={scroll}
           focused
           flexGrow={1}
-          options={options()}
-          showDescription
-          showScrollIndicator
-          wrapSelection={false}
-          textColor={props.context.theme.text.default}
-          descriptionColor={props.context.theme.text.subdued}
-          selectedTextColor={props.context.theme.text.action.primary.focused}
-          selectedDescriptionColor={props.context.theme.text.action.primary.focused}
-          selectedBackgroundColor={props.context.theme.background.action.primary.default}
-          keyBindings={[
-            { name: "up", action: "move-up" },
-            { name: "k", action: "move-up" },
-            { name: "down", action: "move-down" },
-            { name: "j", action: "move-down" },
-            { name: "up", shift: true, action: "move-up-fast" },
-            { name: "down", shift: true, action: "move-down-fast" },
-            { name: "return", action: "select-current" },
-            { name: "linefeed", action: "select-current" },
-            { name: "right", action: "select-current" },
-          ]}
-          onChange={(index, option) => {
-            if (typeof option?.value === "string") selectedValue = option.value
-            if (index >= options().length - LOAD_MORE_THRESHOLD) void loadMore()
+          scrollY
+          scrollX={false}
+          viewportCulling
+          contentOptions={{ flexDirection: "column" }}
+          verticalScrollbarOptions={{
+            visible: true,
+            trackOptions: {
+              backgroundColor: props.context.theme.contextual.overlay.background.default,
+              foregroundColor: props.context.theme.contextual.overlay.scrollbar.default,
+            },
           }}
-          onSelect={(_index, option) => {
-            if (option?.value === NEW_SESSION_VALUE) newSession()
-            else if (typeof option?.value === "string") open(option.value)
-          }}
-        />
+        >
+          <For each={options()}>
+            {(option, index) => {
+              const active = () => selectedIndex() === index()
+              const titleColor = () =>
+                active()
+                  ? props.context.theme.text.action.primary.focused
+                  : props.context.theme.text.default
+              const iconColor = () => {
+                if (option.state === "permission") return props.context.theme.text.status.permission
+                if (option.state === "question") return props.context.theme.text.status.question
+                if (option.state === "running") return props.context.theme.text.status.running
+                return titleColor()
+              }
+              return (
+                <box
+                  id={`claude-session-${index()}`}
+                  height={3}
+                  flexShrink={0}
+                  flexDirection="column"
+                  paddingLeft={2}
+                  paddingRight={2}
+                  backgroundColor={
+                    active()
+                      ? props.context.theme.background.action.primary.default
+                      : props.context.theme.contextual.overlay.background.default
+                  }
+                  onMouseDown={() => {
+                    selectedValue = option.value
+                    setSelectedIndex(index())
+                  }}
+                >
+                  <box height={1} flexDirection="row">
+                    <box width={3} flexShrink={0}>
+                      {option.state === "running" ? (
+                        <spinner frames={SPINNER_FRAMES} interval={80} color={iconColor()} />
+                      ) : (
+                        <text fg={iconColor()}>
+                          {option.state === "permission"
+                            ? "!"
+                            : option.state === "question"
+                              ? "?"
+                              : option.state === "new"
+                                ? "+"
+                                : ""}
+                        </text>
+                      )}
+                    </box>
+                    <text fg={titleColor()} attributes={active() ? TextAttributes.BOLD : undefined}>
+                      {option.title}
+                    </text>
+                  </box>
+                  <box height={1} flexDirection="row" paddingLeft={3}>
+                    {"status" in option ? (
+                      <>
+                        <text fg={iconColor()}>{option.status}</text>
+                        <text fg={active() ? titleColor() : props.context.theme.text.subdued}>
+                          {`  ·  ${option.description}`}
+                        </text>
+                      </>
+                    ) : (
+                      <text fg={active() ? titleColor() : props.context.theme.text.subdued}>{option.description}</text>
+                    )}
+                  </box>
+                </box>
+              )
+            }}
+          </For>
+        </scrollbox>
       )}
       {loading() ? (
-        <text fg={props.context.theme.text.subdued}>
-          {sessions().length === 0 ? "Loading sessions…" : "Loading more…"}
-        </text>
+        <box paddingLeft={2} paddingRight={2}>
+          <text fg={props.context.theme.text.subdued}>
+            {sessions().length === 0 ? "Loading sessions…" : "Loading more…"}
+          </text>
+        </box>
       ) : null}
     </box>
   )
