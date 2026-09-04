@@ -32,7 +32,7 @@ The bundled viewer already supports three sources:
 Create a CLI-only plugin with no server component.
 
 1. Register `/commit-diff` and `commit-diff.open`.
-2. Prompt for a commit SHA or revision expression.
+2. Show a searchable picker containing the 25 most recent commits before HEAD, with their subjects, authors, and relative dates. Keep manual SHA/revision entry as the final option and as the fallback when local history is unavailable.
 3. Navigate to the bundled `diff` route in `committed` mode.
 4. While that route contains the plugin marker, wrap `context.client.vcs.base` so the viewer labels the selected revision correctly.
 5. Wrap `context.client.vcs.diff` so the bundled viewer requests `mode: "committed"` with the selected revision as `base`.
@@ -68,7 +68,7 @@ Configure the exact entrypoint file for a local checkout. OpenCode imports file 
 
 - The bundled route does not publicly accept a base revision, so mutating the generated client's `base` and `diff` methods is an unsupported compatibility shim.
 - An explicit base selected in the bundled viewer's private in-memory storage controls its displayed label. The wrapped diff call still enforces the requested revision, so choosing a base inside the marked viewer can make its label misleading until the TUI exits. Removing this limitation requires the bundled route to accept an explicit base.
-- The POC prompts for a revision. OpenCode exposes branch listing but does not currently expose commit-history enumeration, so a searchable commit picker cannot be implemented remotely from a CLI-only plugin.
+- OpenCode does not currently expose commit-history enumeration. The searchable picker therefore runs local `git log` in the CLI's location and falls back to manual revision entry if that repository is unavailable locally (for example, when connected to a remote server).
 - The package is pinned to the installed beta because the V2 CLI plugin API is changing.
 
 ## Verification
@@ -94,13 +94,13 @@ Terminal-control verification against `opencode2 v0.0.0-beta-18999` confirmed it
 
 ## Next Step After POC
 
-If the client wrapper is reliable, add a commit picker only after OpenCode exposes commit enumeration through its VCS API. Until then, keep revision entry as a text prompt rather than adding a server plugin or running local Git from the TUI.
+If OpenCode exposes commit enumeration through its VCS API, replace the local `git log` picker with that API so commit history also works against remote servers.
 
 The ideal upstream API is for the bundled diff route to accept `mode` and `base` directly. That would remove both wrappers and reduce the plugin to a prompt plus navigation.
 
 ## Success Criteria
 
-- `/commit-diff` accepts a valid revision and opens the bundled viewer.
+- `/commit-diff` offers recent commits with their messages, accepts a manually entered revision, and opens the bundled viewer.
 - The comparison is the selected revision through `HEAD`.
 - Working-tree changes remain excluded.
 - No Git diff parsing or custom diff rendering exists in the plugin.
