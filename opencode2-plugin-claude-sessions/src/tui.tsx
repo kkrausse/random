@@ -295,7 +295,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
               return (
                 <box
                   id={`claude-session-${index()}`}
-                  height={3}
+                  height={2}
                   flexShrink={0}
                   flexDirection="column"
                   paddingLeft={1}
