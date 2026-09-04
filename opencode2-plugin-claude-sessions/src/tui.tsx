@@ -2,10 +2,11 @@
 import type { SessionInfo } from "@opencode-ai/client"
 import { Plugin } from "@opencode-ai/plugin/tui"
 import type { SelectOption, SelectRenderable } from "@opentui/core"
-import { createMemo, createSignal, onMount } from "solid-js"
+import { createEffect, createMemo, createSignal, onMount } from "solid-js"
 
 const PAGE_SIZE = 100
 const LOAD_MORE_THRESHOLD = 10
+const NEW_SESSION_VALUE = "__claude_sessions_new__"
 
 type SessionState = "attention" | "running" | "idle"
 
@@ -46,7 +47,10 @@ function locationKey(session: SessionInfo) {
 }
 
 function SessionPicker(props: { context: Plugin.Context }) {
-  const [sessions, setSessions] = createSignal<SessionInfo[]>([])
+  const route = props.context.ui.router.current()
+  const currentSessionID = route.type === "session" ? route.sessionID : undefined
+  const currentSession = currentSessionID ? props.context.data.session.get(currentSessionID) : undefined
+  const [sessions, setSessions] = createSignal<SessionInfo[]>(currentSession ? [currentSession] : [])
   const [attentionIDs, setAttentionIDs] = createSignal(new Set<string>())
   const [cursor, setCursor] = createSignal<string>()
   const [loading, setLoading] = createSignal(false)
@@ -68,8 +72,13 @@ function SessionPicker(props: { context: Plugin.Context }) {
     )
   })
 
-  const options = createMemo<SelectOption[]>(() =>
-    rows().map(({ session, state }) => {
+  const options = createMemo<SelectOption[]>(() => [
+    {
+      name: "+ New session",
+      description: "Start with a blank prompt",
+      value: NEW_SESSION_VALUE,
+    },
+    ...rows().map(({ session, state }) => {
       const status = state === "attention" ? "Needs input" : state === "running" ? "Working" : "Ready"
       const marker = state === "attention" ? "?" : state === "running" ? "●" : "○"
       const location = props.context.ui.format.path(session.location.directory)
@@ -82,7 +91,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
         value: session.id,
       }
     }),
-  )
+  ])
 
   function refreshAttention(loaded: SessionInfo[]) {
     const locations = new Map<string, SessionInfo["location"]>()
@@ -117,7 +126,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
         order: "desc",
         ...(initial ? {} : { cursor: cursor() }),
       })
-      const known = new Map((initial ? [] : sessions()).map((session) => [session.id, session]))
+      const known = new Map(sessions().map((session) => [session.id, session]))
       for (const session of result.data) known.set(session.id, session)
       const loaded = [...known.values()]
       setSessions(loaded)
@@ -135,7 +144,13 @@ function SessionPicker(props: { context: Plugin.Context }) {
     props.context.ui.router.navigate({ type: "session", sessionID })
   }
 
+  function newSession() {
+    props.context.ui.dialog.clear()
+    props.context.ui.router.navigate({ type: "home" })
+  }
+
   props.context.keymap.layer(() => ({
+    mode: "global",
     target: () => select,
     priority: 200,
     commands: [
@@ -143,10 +158,30 @@ function SessionPicker(props: { context: Plugin.Context }) {
         bind: "left",
         run: () => props.context.ui.dialog.clear(),
       },
+      {
+        bind: "n",
+        run: newSession,
+      },
     ],
   }))
 
-  onMount(() => void loadMore(true))
+  let selectedValue = currentSessionID ?? NEW_SESSION_VALUE
+  createEffect(() => {
+    const available = options()
+    if (!select) return
+    const index = available.findIndex((option) => option.value === selectedValue)
+    if (index >= 0) select.setSelectedIndex(index)
+  })
+
+  onMount(() => {
+    if (currentSessionID && !currentSession) {
+      void props.context.client.session
+        .get({ sessionID: currentSessionID })
+        .then((session) => setSessions((loaded) => [session, ...loaded.filter((item) => item.id !== session.id)]))
+        .catch(() => undefined)
+    }
+    void loadMore(true)
+  })
 
   return (
     <box
@@ -155,7 +190,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
       backgroundColor={props.context.theme.contextual.overlay.background.default}
     >
       <text fg={props.context.theme.text.default}>Sessions</text>
-      <text fg={props.context.theme.text.subdued}>↑/↓ select · →/enter open · ←/esc close</text>
+      <text fg={props.context.theme.text.subdued}>↑/↓ select · →/enter open · n new · ←/esc close</text>
       {failure() ? (
         <text fg={props.context.theme.text.feedback.error.default}>{failure()}</text>
       ) : options().length === 0 && loading() ? (
@@ -185,20 +220,34 @@ function SessionPicker(props: { context: Plugin.Context }) {
             { name: "linefeed", action: "select-current" },
             { name: "right", action: "select-current" },
           ]}
-          onChange={(index) => {
+          onChange={(index, option) => {
+            if (typeof option?.value === "string") selectedValue = option.value
             if (index >= options().length - LOAD_MORE_THRESHOLD) void loadMore()
           }}
           onSelect={(_index, option) => {
-            if (typeof option?.value === "string") open(option.value)
+            if (option?.value === NEW_SESSION_VALUE) newSession()
+            else if (typeof option?.value === "string") open(option.value)
           }}
         />
       )}
-      {loading() && options().length > 0 ? <text fg={props.context.theme.text.subdued}>Loading more…</text> : null}
+      {loading() ? (
+        <text fg={props.context.theme.text.subdued}>
+          {sessions().length === 0 ? "Loading sessions…" : "Loading more…"}
+        </text>
+      ) : null}
     </box>
   )
 }
 
 function EmptyPromptBinding(props: { context: Plugin.Context }) {
+  const openPicker = () => {
+    const route = props.context.ui.router.current()
+    if (route.type !== "home" && route.type !== "session") return false
+
+    props.context.ui.dialog.set({ size: "xlarge", centered: true })
+    props.context.ui.dialog.show(() => <SessionPicker context={props.context} />)
+  }
+
   props.context.keymap.layer(() => ({
     priority: 100,
     commands: [
@@ -208,15 +257,26 @@ function EmptyPromptBinding(props: { context: Plugin.Context }) {
         group: "Sessions",
         bind: "left",
         run: () => {
-          const route = props.context.ui.router.current()
-          if (route.type !== "home" && route.type !== "session") return false
-
           const editor = props.context.renderer.currentFocusedEditor
           if (!editor || editor.plainText !== "") return false
 
-          props.context.ui.dialog.set({ size: "xlarge", centered: true })
-          props.context.ui.dialog.show(() => <SessionPicker context={props.context} />)
+          return openPicker()
         },
+      },
+    ],
+  }))
+
+  props.context.keymap.layer(() => ({
+    mode: "global",
+    priority: 100,
+    commands: [
+      {
+        id: "claude-sessions.open-global",
+        title: "Open session picker",
+        group: "Sessions",
+        bind: "alt+s",
+        palette: true,
+        run: openPicker,
       },
     ],
   }))
