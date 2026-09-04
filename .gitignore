@@ -16,6 +16,8 @@
 !garmin-watch-face/**
 !opencode-plugin-commit-diff-viewer/
 !opencode-plugin-commit-diff-viewer/**
+!opencode2-plugin-claude-sessions/
+!opencode2-plugin-claude-sessions/**
 !mortgage-calculator/
 !mortgage-calculator/**
 !boox-plugin-test/
