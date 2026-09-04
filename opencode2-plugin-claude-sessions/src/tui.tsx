@@ -216,6 +216,12 @@ function SessionPicker(props: { context: Plugin.Context }) {
     const index = available.findIndex((option) => option.value === selectedValue)
     if (index < 0) return
     setSelectedIndex(index)
+  })
+
+  createEffect(() => {
+    const index = selectedIndex()
+    // Track row creation as pages load, but do not react to manual viewport scrolling.
+    options().length
     queueMicrotask(() => scroll?.scrollChildIntoView(`claude-session-${index}`))
   })
 
