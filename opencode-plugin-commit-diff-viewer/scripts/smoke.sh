@@ -13,4 +13,9 @@ tmux new-session -d -x 160 -y 50 -s "$session" "opencode2"
 sleep 3
 
 tmux has-session -t "$session"
-printf 'OpenCode started with the configured POC plugin; verify the startup toast manually\n'
+tmux send-keys -t "$session" '/commit-diff'
+sleep 1
+
+output="$(tmux capture-pane -p -J -t "$session" -S -50)"
+grep -Fq "/commit-diff   Open commit diff" <<<"$output"
+printf 'OpenCode exposed the /commit-diff command\n'

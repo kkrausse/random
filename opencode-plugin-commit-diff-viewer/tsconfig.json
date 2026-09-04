@@ -2,9 +2,11 @@
   "compilerOptions": {
     "strict": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "jsx": "preserve",
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "target": "ESNext"
   },
-  "include": ["tui.ts", "src/**/*.ts"]
+  "include": ["tui.ts", "src/**/*.ts", "src/**/*.tsx"]
 }
