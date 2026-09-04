@@ -17,5 +17,5 @@ tmux send-keys -t "$session" '/commit-diff'
 sleep 1
 
 output="$(tmux capture-pane -p -J -t "$session" -S -50)"
-grep -Fq "/commit-diff   Open commit diff" <<<"$output"
+grep -Fq "/commit-diff   Compare HEAD with a commit" <<<"$output"
 printf 'OpenCode exposed the /commit-diff command\n'
