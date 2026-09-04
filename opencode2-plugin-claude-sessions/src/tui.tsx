@@ -277,15 +277,14 @@ function SessionPicker(props: { context: Plugin.Context }) {
           <For each={options()}>
             {(option, index) => {
               const active = () => selectedIndex() === index()
-              const titleColor = () =>
-                active()
-                  ? props.context.theme.text.action.primary.focused
-                  : props.context.theme.text.default
+              const titleColor = () => props.context.theme.text.default
+              const descriptionColor = () => props.context.theme.text.subdued
+              const cursorColor = () => props.context.theme.text.action.primary.default
               const iconColor = () => {
                 if (option.state === "permission") return props.context.theme.text.status.permission
                 if (option.state === "question") return props.context.theme.text.status.question
                 if (option.state === "running") return props.context.theme.text.status.running
-                return titleColor()
+                return descriptionColor()
               }
               return (
                 <box
@@ -293,19 +292,18 @@ function SessionPicker(props: { context: Plugin.Context }) {
                   height={3}
                   flexShrink={0}
                   flexDirection="column"
-                  paddingLeft={2}
+                  paddingLeft={1}
                   paddingRight={2}
-                  backgroundColor={
-                    active()
-                      ? props.context.theme.background.action.primary.default
-                      : props.context.theme.contextual.overlay.background.default
-                  }
+                  backgroundColor={props.context.theme.contextual.overlay.background.default}
                   onMouseDown={() => {
                     selectedValue = option.value
                     setSelectedIndex(index())
                   }}
                 >
                   <box height={1} flexDirection="row">
+                    <box width={2} flexShrink={0}>
+                      <text fg={cursorColor()}>{active() ? "❯" : " "}</text>
+                    </box>
                     <box width={3} flexShrink={0}>
                       {option.state === "running" ? (
                         <spinner frames={SPINNER_FRAMES} interval={80} color={iconColor()} />
@@ -325,16 +323,14 @@ function SessionPicker(props: { context: Plugin.Context }) {
                       {option.title}
                     </text>
                   </box>
-                  <box height={1} flexDirection="row" paddingLeft={3}>
+                  <box height={1} flexDirection="row" paddingLeft={5}>
                     {"status" in option ? (
                       <>
                         <text fg={iconColor()}>{option.status}</text>
-                        <text fg={active() ? titleColor() : props.context.theme.text.subdued}>
-                          {`  ·  ${option.description}`}
-                        </text>
+                        <text fg={descriptionColor()}>{`  ·  ${option.description}`}</text>
                       </>
                     ) : (
-                      <text fg={active() ? titleColor() : props.context.theme.text.subdued}>{option.description}</text>
+                      <text fg={descriptionColor()}>{option.description}</text>
                     )}
                   </box>
                 </box>
