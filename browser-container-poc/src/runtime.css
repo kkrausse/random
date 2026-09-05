@@ -1,0 +1,3 @@
+html, body, #terminal { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #111318; }
+.xterm { height: 100%; padding: 10px; }
+.fatal { margin: 0; padding: 16px; color: #ff9b9b; white-space: pre-wrap; }

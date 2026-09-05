@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QEMU-Wasm runtime</title>
+    <script>var Module = { preRun: [] };</script>
+    <script src="/qemu/load-rootfs.js"></script>
+    <script src="/qemu/load-kernel.js"></script>
+    <script src="/qemu/load-initramfs.js"></script>
+    <script src="/qemu/load-rom.js"></script>
+  </head>
+  <body>
+    <div id="terminal"></div>
+    <script type="module" src="/src/runtime.ts"></script>
+  </body>
+</html>

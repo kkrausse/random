@@ -1,0 +1,18 @@
+{
+  "source": "https://github.com/ktock/qemu-wasm-demo-images",
+  "revision": "b7c549b5e6f4c376f76483a03e983214421434ad",
+  "directory": "alpine-x86_64",
+  "files": {
+    "load-initramfs.data": { "bytes": 9699151, "gitBlob": "fb860d70281427f7a287ab622c1c5c2c3d151ce6" },
+    "load-initramfs.js": { "bytes": 7045, "gitBlob": "cf103d7a34f8961b204f7fe5a2aeeb5f7227a6d5" },
+    "load-kernel.data": { "bytes": 11666432, "gitBlob": "1715a152ddb657019e2d6028c8d246a93b0d80ad" },
+    "load-kernel.js": { "bytes": 7027, "gitBlob": "747b9b6fe3d6c111c93150298179b74f63a10262" },
+    "load-rom.data": { "bytes": 473088, "gitBlob": "8208b999407a360c481870616b74215e7490320d" },
+    "load-rom.js": { "bytes": 7307, "gitBlob": "85c31dbef0b5d163047804fb7ddb08e449664274" },
+    "load-rootfs.data": { "bytes": 82611515, "gitBlob": "f1a80a2106cdb1abdcd8ed415c9e77eddb7cf104" },
+    "load-rootfs.js": { "bytes": 1167089, "gitBlob": "ca87197d5eb0026549ea45f3e68229425a65f14f" },
+    "out.js": { "bytes": 240815, "gitBlob": "d86c79eda8acfdf4fdd13ba5545bcbbfece8b6d1" },
+    "qemu-system-x86_64.wasm": { "bytes": 40799480, "gitBlob": "fef74e9681c75a5828c071c69069a1e82dc61dd5" },
+    "qemu-system-x86_64.worker.js": { "bytes": 6000, "gitBlob": "b9dbfeda73d1739e5ee90ed13f43253f8b13fcb7" }
+  }
+}
