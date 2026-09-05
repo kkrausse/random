@@ -1,0 +1,7 @@
+:root { font-family: ui-sans-serif, system-ui, sans-serif; color: #20242b; background: #f2f4f7; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
+main { padding: 40px; text-align: center; border: 1px solid #d8dce2; border-radius: 10px; background: white; }
+img { width: 48px; }
+p { margin: 18px 0 4px; color: #737983; font-size: 13px; }
+h1 { margin: 0 0 18px; font-size: 25px; }
+span { display: inline-flex; align-items: center; gap: 7px; color: #555b65; font-size: 13px; }

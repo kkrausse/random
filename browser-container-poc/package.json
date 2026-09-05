@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "artifacts": "bun scripts/fetch-artifacts.ts",
+    "guest:build": "bash scripts/build-guest.sh",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
