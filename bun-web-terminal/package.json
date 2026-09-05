@@ -3,9 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --hot src/server.ts",
+    "dev": "bun --watch src/server.ts",
     "start": "bun src/server.ts",
-    "typecheck": "bunx tsc --noEmit"
+    "typecheck": "bunx tsc --noEmit",
+    "test": "bun test src"
   },
   "dependencies": {
     "ghostty-web": "0.4.0-next.20.g1858a59"
