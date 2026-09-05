@@ -454,10 +454,6 @@ function SessionPicker(props: { context: Plugin.Context }) {
                     selectedValue = option.value
                     setSelectedIndex(index())
                   }}
-                  onMouseOver={() => {
-                    selectedValue = option.value
-                    setSelectedIndex(index())
-                  }}
                 >
                   <box height={1} flexDirection="row">
                     <box width={2} flexShrink={0}>
@@ -498,7 +494,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
           </For>
         </scrollbox>
       )}
-      <box height={9} flexShrink={0} flexDirection="column" paddingLeft={2} paddingRight={2}
+      <box height={13} flexShrink={0} flexDirection="column" paddingLeft={2} paddingRight={2}
         border={["top"]} borderColor={props.context.theme.contextual.overlay.scrollbar.default}>
         <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
           {permission() ? `Permission required · 1 of ${visiblePreview()!.permissions.length}` : visiblePreview()?.forms.length ? "Question waiting" : "Preview"}
