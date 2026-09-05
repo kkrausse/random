@@ -12,12 +12,12 @@ The tmux refactor below is implemented, but **the user reports a regression and 
 - Implementation commit: `26a1fba` — `Rework web terminal sessions around tmux attachment state`.
 - Before that commit, this project's working tree was clean; unrelated projects have other agents' changes. Scope commits to your own paths; never stage everything.
 - **Port 3000 is the user's manually used instance. Do not restart it, take over its sessions, or overwrite its build output.**
-- Separate test instance on **3107**, PID **1037** at handoff time. Verify PID/port before stopping anything.
+- The separate test instance on **3107** (formerly PID **1037**) exited cleanly after the handoff was written. It is no longer running; verify port availability before relaunching.
 - Test launch command:
   ```sh
   PORT=3107 TERMINAL_DIST=/private/var/folders/t_/x48jtnps7n5_0g_pt9xpvbg00000gn/T/opencode/bun-web-terminal-dist bun src/server.ts
   ```
-- Test sessions page: `http://127.0.0.1:3107/sessions`. A btop session was left running inside its isolated tmux server. Browser automation session was deleted after testing.
+- Test sessions page after relaunch: `http://127.0.0.1:3107/sessions`. The clean shutdown also ends that instance's tmux/btop sessions. Browser automation session was deleted after testing.
 - Bun 1.4.0 and Homebrew tmux are installed here. Do not start the default dev server; use an isolated test instance when needed.
 
 ## Original symptoms and findings
