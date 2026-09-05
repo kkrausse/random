@@ -78,7 +78,7 @@ async function startTerminalPage() {
   const id = location.pathname.split("/").filter(Boolean).at(-1);
   const theme = await getTheme();
   applyPageTheme(theme);
-  setFavicon("terminal");
+  setFavicon("shell");
   await init();
 
   const terminal = new Terminal({
@@ -235,7 +235,8 @@ async function startTerminalPage() {
 
   function updateTitle(title: string) {
     document.title = title;
-    setFavicon(iconKind(title));
+    const kind = iconKind(title);
+    setFavicon(kind === "terminal" ? "shell" : kind);
   }
 }
 
@@ -255,7 +256,7 @@ function applyPageTheme(theme: LocalTheme) {
   root.style.setProperty("--terminal-font", theme.fontFamily);
 }
 
-type IconKind = "terminal" | "code" | "editor" | "server" | "remote";
+type IconKind = "terminal" | "shell" | "code" | "editor" | "server" | "remote";
 
 function iconKind(title: string): IconKind {
   const value = title.toLowerCase();
@@ -275,7 +276,8 @@ function iconBody(kind: IconKind) {
   if (kind === "editor") return `<path d="M14 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="m13 15 1-4 4.6-4.6a1.4 1.4 0 0 0-2-2L12 9l-1 4 2 2Z"/>`;
   if (kind === "server") return `<rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6"/>`;
   if (kind === "remote") return `<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4M8 9l2 2-2 2m5 0h3"/>`;
-  return `<text x="4.5" y="17.5" font-size="13" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-weight="600" fill="currentColor" stroke="none">$_</text>`;
+  if (kind === "shell") return `<text x="4.5" y="17.5" font-size="13" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-weight="600" fill="currentColor" stroke="none">$_</text>`;
+  return `<rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 9 3 3-3 3m6 0h4"/>`;
 }
 
 function setFavicon(kind: IconKind) {
