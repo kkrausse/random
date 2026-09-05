@@ -30,6 +30,8 @@
 !bird-log/**
 !fix-chrome-extension/
 !fix-chrome-extension/**
+!browser-container-poc/
+!browser-container-poc/**
 !isochron-home-map/
 !isochron-home-map/**
 node_modules/
