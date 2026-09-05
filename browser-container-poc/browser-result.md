@@ -137,3 +137,32 @@ remain unproven. No guest or QEMU artifacts were regenerated in this follow-up.
 Final `public/qemu/` disk usage after the patched runtime copy: **390 MiB**. Host free space: **15 GiB**. No broad Docker
 pruning was performed. A final `docker system df` failed with a missing-snapshot error, so fresh Docker usage totals are
 unavailable.
+
+## Continuation: standalone Vite and repeatable workload gate
+
+Resumed `amber-walrus-881` without rebooting. The installed `browser-control` wrapper is on PATH and working;
+`bunx --bun @opencode-ai/browser-control` also works. The exported `BUN_JSC_useFTLJIT=false` remained set.
+
+Started the standalone Vite build at guest timestamp `1788648999`:
+
+```sh
+(date +%s
+ timeout -s KILL 900 bun node_modules/vite/bin/vite.js build
+ echo VITE_EXIT=$?
+ date +%s) >/tmp/vite-ftloff.log 2>&1 &
+```
+
+It reached the Vite 7.1.4 banner and `transforming...`; the serial shell remained responsive.
+**Outcome pending** at this update. A background host observer uses brief CLI calls to read the guest log,
+with no long-running browser execute. It stops when a standalone `VITE_EXIT` marker appears.
+
+Added `guest/validate-workload.sh`, installed as `validate-workload` by future guest builds. It checks effective
+JSC settings, deletes fixture build metadata for a clean full build, requests the Vite index/client/transformed source
+over guest loopback, and checks server termination. The script was transferred into the existing guest at
+`/tmp/validate-workload.sh` in 160-character base64 chunks; both host and guest report SHA-256
+`3ff76928a59d09308256be18aff47206b088f4277cd6830aa90d343677a94570`.
+It is queued to run **only if** standalone Vite exits zero; its output will be `/tmp/workload.log`, with a wrapper
+`WORKLOAD_EXIT` marker. `WORKLOAD_PASS` is required for the complete workload gate. No preview/HMR pass is claimed.
+
+Host `bun run build`, shell syntax checks, and `git diff --check` passed. Guest/runtime images have not been rebuilt
+in this continuation. `docker system df` now succeeds; no cleanup was performed.

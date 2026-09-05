@@ -36,6 +36,8 @@ chmod 755 /mnt/sdb/usr/local/bin/bun
 tar -xOzf /mnt/sdc1/opencode.tgz package/bin/opencode2 > /mnt/sdb/usr/local/bin/opencode2
 chmod 755 /mnt/sdb/usr/local/bin/opencode2
 cp -a /mnt/sdc1/workspace /mnt/sdb/workspace
+cp /mnt/sdc1/validate-workload.sh /mnt/sdb/usr/local/bin/validate-workload
+chmod 755 /mnt/sdb/usr/local/bin/validate-workload
 cp /etc/resolv.conf /mnt/sdb/etc/resolv.conf
 
 # Bun 1.4.2 reads BUN_JSC_*, not JSC_*. FTL has aborted under QEMU.

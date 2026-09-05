@@ -80,6 +80,14 @@ The runtime build also emits `public/qemu/popcnt-test`, a standalone x86-64 regr
 
 ## Known boundary
 
+For repeatable workload validation, the guest recipe installs `validate-workload` from
+[`guest/validate-workload.sh`](./guest/validate-workload.sh). Run it in the guest with
+`validate-workload >/tmp/workload.log 2>&1 &` and inspect `tail -n 30 /tmp/workload.log`.
+It verifies Bun's effective FTL option, removes fixture TypeScript build metadata, runs a bounded clean build,
+starts Vite, requests the index/client/transformed source over guest loopback HTTP, and checks server shutdown.
+Only `WORKLOAD_PASS` means all these checks passed. This does not validate the browser preview or WebSocket bridge.
+Existing generated images need the script copied into `/tmp` and run with `sh /tmp/validate-workload.sh` until rebuilt.
+
 The custom image now boots in the browser, prints the pinned toolchain versions, and passes the POPCNT regression.
 Browser TypeScript now **passes** with `BUN_JSC_useFTLJIT=false`, retaining baseline and DFG JIT. The traced run took
 514 seconds including startup and diagnostic dumps. `BUN_JSC_dumpOptions=1` confirmed the effective setting; earlier
