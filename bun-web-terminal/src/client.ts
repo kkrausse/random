@@ -1,4 +1,6 @@
 import { FitAddon, init, Terminal, type ITheme } from "../vendor/ghostty-web/lib/index";
+import { TerminalConnection } from "./connection";
+import { installScrolling } from "./scroll";
 
 type Session = {
   id: string;
@@ -99,13 +101,13 @@ async function startTerminalPage() {
   }
   container.dataset.renderer = "webgl";
   fit.fit();
-  fit.observeResize();
   terminal.focus();
   terminal.onTitleChange(updateTitle);
-
-  container.addEventListener("keydown", (event) => {
-    if (event.ctrlKey && event.key === "Tab") event.stopImmediatePropagation();
-  }, { capture: true });
+  installScrolling(container, () => ({
+    lineHeight: terminal.renderer?.getMetrics().height ?? 20,
+    rows: terminal.rows,
+    mode: terminal.wasmTerm?.hasMouseTracking() ? "mouse" : terminal.wasmTerm?.isAlternateScreen() ? "alternate" : "history",
+  }));
 
   container.addEventListener("paste", (event) => {
     const images = [...(event.clipboardData?.files ?? [])].filter((file) => file.type.startsWith("image/"));
@@ -116,142 +118,68 @@ async function startTerminalPage() {
   }, { capture: true });
 
   const connectionStatus = document.querySelector<HTMLButtonElement>("#connection-status");
-  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  let socket: WebSocket | undefined;
-  let reconnectTimer: number | undefined;
-  let reconnectAttempt = 0;
-  let hasConnected = false;
-  let lastPongAt = 0;
-  let replaying = true;
-  let replayTimer: number | undefined;
-  let redrawFrame: number | undefined;
   let titleBuffer = "";
   const titleDecoder = new TextDecoder();
-  connect();
-
-  terminal.onData((data) => {
-    if (socket?.readyState === WebSocket.OPEN) socket.send(data);
-  });
-  terminal.onResize(({ cols, rows }) => {
-    sendControl({ type: "resize", cols, rows });
-  });
-  connectionStatus?.addEventListener("click", refreshConnection);
-  window.addEventListener("resize", restoreLayout);
-  window.addEventListener("online", reconnectNow);
-  window.addEventListener("pageshow", restoreConnection);
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) restoreConnection();
-  });
-  window.setInterval(() => {
-    if (!document.hidden && socket?.readyState === WebSocket.OPEN) ping(socket);
-  }, 20_000);
-  void document.fonts?.ready.then(restoreLayout);
-  requestAnimationFrame(restoreLayout);
-  window.setTimeout(restoreLayout, 250);
-
-  function connect() {
-    window.clearTimeout(reconnectTimer);
-    if (!navigator.onLine || socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) return;
-
-    setConnectionStatus(reconnectAttempt === 0 && !hasConnected ? "connecting" : "reconnecting");
-    const nextSocket = new WebSocket(`${protocol}//${location.host}/ws/${id}?cols=${terminal.cols}&rows=${terminal.rows}`);
-    socket = nextSocket;
-    nextSocket.binaryType = "arraybuffer";
-    nextSocket.onopen = () => {
-      if (socket !== nextSocket) return;
-      reconnectAttempt = 0;
-      if (hasConnected) {
-        terminal.reset();
-        titleBuffer = "";
-        titleDecoder.decode();
-      }
-      hasConnected = true;
-      replaying = true;
-      setConnectionStatus("connected");
-      sendControl({ type: "resize", cols: terminal.cols, rows: terminal.rows });
-      ping(nextSocket);
-    };
-    nextSocket.onmessage = (event) => {
-      if (socket !== nextSocket) return;
-      if (typeof event.data === "string" && event.data === '{"type":"pong"}') {
-        lastPongAt = Date.now();
-        return;
-      }
-      const wasAlternate = terminal.wasmTerm?.isAlternateScreen();
-      const data = typeof event.data === "string" ? event.data : new Uint8Array(event.data);
-      inspectTitles(typeof data === "string" ? data : titleDecoder.decode(data, { stream: true }));
+  const connection = new TerminalConnection(id!, {
+    size: () => ({ cols: terminal.cols, rows: terminal.rows }),
+    reset() {
+      titleBuffer = "";
+      titleDecoder.decode();
+      terminal.scrollToBottom();
+      terminal.write("\x1bc");
+    },
+    write(data) {
+      inspectTitles(titleDecoder.decode(data, { stream: true }));
       terminal.write(data);
-      if (wasAlternate !== terminal.wasmTerm?.isAlternateScreen()) forceRedraw();
-      if (replaying) {
-        window.clearTimeout(replayTimer);
-        replayTimer = window.setTimeout(() => {
-          replaying = false;
-          forceRedraw();
-        }, 75);
-      }
-    };
-    nextSocket.onclose = () => {
-      if (socket !== nextSocket) return;
-      socket = undefined;
-      scheduleReconnect();
-    };
-    nextSocket.onerror = () => nextSocket.close();
-  }
-
-  function scheduleReconnect() {
-    setConnectionStatus(navigator.onLine ? "reconnecting" : "offline");
-    window.clearTimeout(reconnectTimer);
-    const delay = Math.min(10_000, 750 * 2 ** reconnectAttempt++);
-    reconnectTimer = window.setTimeout(connect, delay);
-  }
-
-  function reconnectNow() {
-    reconnectAttempt = 0;
-    if (!socket || socket.readyState === WebSocket.CLOSED) connect();
-  }
-
-  function refreshConnection() {
-    restoreLayout();
-    if (socket) {
-      setConnectionStatus("reconnecting");
-      socket.close(4001, "Refreshing terminal");
-    } else {
-      reconnectNow();
+    },
+    status(status) {
+      if (!connectionStatus) return;
+      connectionStatus.dataset.status = status;
+      connectionStatus.textContent = {
+        connecting: "Connecting...", connected: "Connected", reconnecting: "Reconnecting...",
+        offline: "Offline", detached: "Active in another tab · Take over", closed: "Disconnected · Reattach",
+      }[status];
+    },
+  });
+  terminal.onData((data) => connection.input(data));
+  terminal.onResize(() => connection.resize());
+  // Ctrl+V belongs to the terminal (e.g. Emacs scroll-down); paste remains Cmd+V
+  // on macOS and Ctrl+Shift+V elsewhere.
+  container.addEventListener("keydown", (event) => {
+    if (event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && event.code === "KeyV") {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      connection.input("\x16");
     }
+  }, { capture: true });
+  let layoutTimer: ReturnType<typeof setTimeout> | undefined;
+  function scheduleLayout() {
+    clearTimeout(layoutTimer);
+    layoutTimer = setTimeout(() => {
+      if (document.hidden) return;
+      const size = fit.proposeDimensions();
+      if (size) terminal.resize(Math.max(2, Math.min(500, size.cols)), Math.max(2, Math.min(300, size.rows)));
+    }, 150);
   }
-
-  function restoreConnection() {
-    restoreLayout();
-    if (socket?.readyState === WebSocket.OPEN) ping(socket);
-    else reconnectNow();
-  }
-
-  function restoreLayout() {
-    fit.fit();
-    forceRedraw();
-    sendControl({ type: "resize", cols: terminal.cols, rows: terminal.rows });
-  }
-
-  function ping(target: WebSocket) {
-    if (target.readyState !== WebSocket.OPEN) return;
-    const sentAt = Date.now();
-    target.send('{"type":"ping"}');
-    window.setTimeout(() => {
-      if (socket === target && target.readyState === WebSocket.OPEN && lastPongAt < sentAt) {
-        target.close(4000, "Connection timed out");
-      }
-    }, 8_000);
-  }
-
-  function sendControl(control: { type: string; cols?: number; rows?: number }) {
-    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(control));
-  }
-
-  function setConnectionStatus(status: "connecting" | "connected" | "reconnecting" | "offline") {
-    if (!connectionStatus) return;
-    connectionStatus.dataset.status = status;
-    connectionStatus.textContent = status === "connected" ? "Connected" : status === "reconnecting" ? "Reconnecting..." : status === "offline" ? "Offline" : "Connecting...";
-  }
+  const observer = new ResizeObserver(scheduleLayout);
+  observer.observe(container);
+  connectionStatus?.addEventListener("click", () => connection.refresh());
+  window.addEventListener("online", () => connection.restore());
+  window.addEventListener("pageshow", (event) => {
+    observer.observe(container);
+    scheduleLayout();
+    if (event.persisted) connection.refresh();
+    else connection.restore();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) { scheduleLayout(); connection.restore(); }
+  });
+  void document.fonts?.ready.then(scheduleLayout);
+  window.addEventListener("pagehide", () => {
+    connection.suspend();
+    observer.disconnect();
+    clearTimeout(layoutTimer);
+  });
 
   async function pasteImages(images: File[]) {
     try {
@@ -268,16 +196,6 @@ async function startTerminalPage() {
     } catch (error) {
       terminal.write(`\r\n\x1b[38;2;204;102;102m[image paste failed: ${error instanceof Error ? error.message : String(error)}]\x1b[0m\r\n`);
     }
-  }
-
-  function forceRedraw() {
-    if (redrawFrame !== undefined) return;
-    redrawFrame = requestAnimationFrame(() => {
-      redrawFrame = undefined;
-      if (terminal.renderer && terminal.wasmTerm) {
-        terminal.renderer.render(terminal.wasmTerm, true, terminal.viewportY, terminal);
-      }
-    });
   }
 
   function inspectTitles(data: string) {

@@ -1,36 +1,14 @@
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { join } from "node:path";
+import { dimensions, SessionManager, type Attachment, type Session } from "./sessions";
 
-type SocketData = { sessionId: string };
-type SessionStatus = "running" | "exited";
-type Session = {
-  id: string;
-  name: string;
-  title: string;
-  status: SessionStatus;
-  clients: Set<Bun.ServerWebSocket<SocketData>>;
-  createdAt: Date;
-  exitCode: number | null;
-  output: Uint8Array[];
-  outputBytes: number;
-  outputPrefix: Uint8Array[];
-  outputPrefixBytes: number;
-  outputRemovedBytes: number;
-  outputTrimmed: boolean;
-  titleBuffer: string;
-  titleDecoder: TextDecoder;
-  terminal: Bun.Terminal;
-  process: Bun.Subprocess;
-};
+type SocketData = { sessionId: string; cols: number; rows: number; attachment?: Attachment };
 
 const host = process.env.HOST ?? "127.0.0.1";
 const port = parsePort(process.env.PORT ?? "3000");
-const outputLimit = 1024 * 1024;
-const outputPrefixLimit = 64 * 1024;
 const attachmentLimit = 20 * 1024 * 1024;
-const sessions = new Map<string, Session>();
-const dist = join(import.meta.dir, "..", "dist");
+const dist = process.env.TERMINAL_DIST ?? join(import.meta.dir, "..", "dist");
 const defaultTerminalCwd = join(import.meta.dir, "..", "..");
 const attachmentRoot = join(tmpdir(), "bun-web-terminal");
 
@@ -43,6 +21,11 @@ if (host === "0.0.0.0") {
 
 await buildClient();
 const theme = loadGhosttyTheme();
+const manager = new SessionManager(process.env.TERMINAL_CWD ?? defaultTerminalCwd);
+const sessions = manager.sessions;
+process.once("exit", () => manager.dispose());
+process.once("SIGTERM", () => process.exit(0));
+process.once("SIGINT", () => process.exit(0));
 
 const server = Bun.serve<SocketData>({
   hostname: host,
@@ -55,17 +38,16 @@ const server = Bun.serve<SocketData>({
       const sessionId = url.pathname.slice(4);
       const session = sessions.get(sessionId);
       if (!session) return new Response("Session not found", { status: 404 });
-      const cols = boundedInteger(url.searchParams.get("cols"), 80, 2, 500);
-      const rows = boundedInteger(url.searchParams.get("rows"), 24, 2, 300);
-      session.terminal.resize(cols, rows);
-      return server.upgrade(request, { data: { sessionId } }) ? undefined : new Response("Upgrade failed", { status: 400 });
+      const size = dimensions(Number(url.searchParams.get("cols")), Number(url.searchParams.get("rows")));
+      if (!size) return new Response("Invalid terminal dimensions", { status: 400 });
+      return server.upgrade(request, { data: { sessionId, ...size } }) ? undefined : new Response("Upgrade failed", { status: 400 });
     }
 
     if (url.pathname === "/api/theme" && request.method === "GET") return Response.json(theme);
     if (url.pathname === "/api/sessions" && request.method === "GET") return Response.json([...sessions.values()].map(publicSession));
     if (url.pathname === "/api/sessions" && request.method === "POST") {
       if (!isSameOrigin(request)) return new Response("Forbidden", { status: 403 });
-      const session = createSession();
+      const session = manager.create();
       return Response.json(publicSession(session), { status: 201 });
     }
     if (url.pathname.startsWith("/api/sessions/") && url.pathname.endsWith("/attachments") && request.method === "POST") {
@@ -79,8 +61,8 @@ const server = Bun.serve<SocketData>({
       if (!isSameOrigin(request)) return new Response("Forbidden", { status: 403 });
       const session = sessions.get(url.pathname.slice(14));
       if (!session) return new Response("Session not found", { status: 404 });
-      closeSession(session);
-      sessions.delete(session.id);
+      manager.remove(session);
+      void rm(join(attachmentRoot, session.id), { recursive: true, force: true });
       return new Response(null, { status: 204 });
     }
 
@@ -90,7 +72,7 @@ const server = Bun.serve<SocketData>({
     if (url.pathname === "/ghostty-vt.wasm") return serveFile(join(dist, "ghostty-vt.wasm"), "application/wasm");
     if (url.pathname === "/" ) return Response.redirect(new URL("/sessions", url), 302);
     if (url.pathname === "/sessions/new" && request.method === "GET") {
-      const session = createSession();
+      const session = manager.create();
       return Response.redirect(new URL(`/terminal/${session.id}`, url), 303);
     }
     if (url.pathname === "/sessions") return html(sessionsPage());
@@ -102,108 +84,36 @@ const server = Bun.serve<SocketData>({
     return new Response("Not found", { status: 404 });
   },
   websocket: {
+    maxPayloadLength: 1024 * 1024,
+    backpressureLimit: 256 * 1024,
+    closeOnBackpressureLimit: true,
     open(socket) {
       const session = sessions.get(socket.data.sessionId);
-      if (!session) return socket.close(1008, "Session not found");
-      session.clients.add(socket);
-      if (session.outputTrimmed) {
-        for (const chunk of session.outputPrefix) socket.send(chunk);
-      }
-      for (const chunk of session.output) socket.send(chunk);
+      if (!session) return socket.close(4004, "Session not found");
+      socket.data.attachment = manager.attach(session, socket, socket.data.cols, socket.data.rows);
     },
     message(socket, message) {
-      const session = sessions.get(socket.data.sessionId);
-      if (!session || session.status !== "running") return;
-      if (typeof message === "string" && message.startsWith("{")) {
-        try {
-          const control = JSON.parse(message) as { type?: string; cols?: number; rows?: number };
-          if (control.type === "ping") {
-            socket.send('{"type":"pong"}');
-            return;
-          }
-          if (control.type === "resize") {
-            session.terminal.resize(boundedInteger(control.cols, 80, 2, 500), boundedInteger(control.rows, 24, 2, 300));
-            return;
-          }
-        } catch {}
-      }
-      session.terminal.write(message);
+      const attachment = socket.data.attachment;
+      if (!attachment) return;
+      if (typeof message !== "string") return attachment.input(message);
+      try {
+        const control = JSON.parse(message);
+        if (control?.type === "ping") { socket.send('{"type":"pong"}'); return; }
+        if (control?.type === "ack" && attachment.acknowledge(control.bytes)) return;
+        if (control?.type === "resize") {
+          const size = dimensions(control.cols, control.rows);
+          if (size) { attachment.resize(size.cols, size.rows); return; }
+        }
+      } catch {}
+      socket.close(1008, "Invalid terminal control message");
     },
     close(socket) {
-      sessions.get(socket.data.sessionId)?.clients.delete(socket);
+      socket.data.attachment?.close();
     },
   },
 });
 
 console.log(`Web terminal: http://${host}:${server.port}/sessions`);
-
-function createSession() {
-  const id = crypto.randomUUID();
-  const shell = process.env.SHELL ?? "/bin/zsh";
-  let session!: Session;
-  const child = Bun.spawn([shell, "-l"], {
-    cwd: process.env.TERMINAL_CWD ?? defaultTerminalCwd,
-    env: { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor" },
-    terminal: {
-      cols: 100,
-      rows: 30,
-      name: "xterm-256color",
-      data(_terminal, data) {
-        if (!session) return;
-        const chunk = data.slice();
-        inspectSessionTitles(session, session.titleDecoder.decode(chunk, { stream: true }));
-        if (session.outputPrefixBytes < outputPrefixLimit) {
-          const prefixChunk = chunk.slice(0, outputPrefixLimit - session.outputPrefixBytes);
-          session.outputPrefix.push(prefixChunk);
-          session.outputPrefixBytes += prefixChunk.byteLength;
-        }
-        session.output.push(chunk);
-        session.outputBytes += chunk.byteLength;
-        if (session.outputBytes > outputLimit) session.outputTrimmed = true;
-        while (session.outputTrimmed && session.output.length > 1 && (session.outputBytes > outputLimit || session.outputRemovedBytes < session.outputPrefixBytes)) {
-          const removed = session.output.shift()!;
-          session.outputBytes -= removed.byteLength;
-          session.outputRemovedBytes += removed.byteLength;
-        }
-        for (const socket of session.clients) socket.send(chunk);
-      },
-    },
-  });
-
-  session = {
-    id,
-    name: `${basename(shell)} ${sessions.size + 1}`,
-    title: "",
-    status: "running",
-    clients: new Set(),
-    createdAt: new Date(),
-    exitCode: null,
-    output: [],
-    outputBytes: 0,
-    outputPrefix: [],
-    outputPrefixBytes: 0,
-    outputRemovedBytes: 0,
-    outputTrimmed: false,
-    titleBuffer: "",
-    titleDecoder: new TextDecoder(),
-    terminal: child.terminal!,
-    process: child,
-  };
-  sessions.set(id, session);
-  void child.exited.then((code) => {
-    session.status = "exited";
-    session.exitCode = code;
-    session.terminal.close();
-  });
-  return session;
-}
-
-function closeSession(session: Session) {
-  for (const socket of session.clients) socket.close(1000, "Session removed");
-  if (session.status === "running") session.process.kill();
-  if (!session.terminal.closed) session.terminal.close();
-  void rm(join(attachmentRoot, session.id), { recursive: true, force: true });
-}
 
 async function saveAttachment(request: Request, session: Session) {
   const declaredSize = Number(request.headers.get("content-length"));
@@ -237,38 +147,10 @@ function publicSession(session: Session) {
     name: session.name,
     title: session.title,
     status: session.status,
-    clients: session.clients.size,
+    clients: session.attachment ? 1 : 0,
     createdAt: session.createdAt.toISOString(),
     exitCode: session.exitCode,
   };
-}
-
-function inspectSessionTitles(session: Session, data: string) {
-  session.titleBuffer += data;
-  while (true) {
-    const start = session.titleBuffer.indexOf("\x1b]");
-    if (start === -1) {
-      session.titleBuffer = session.titleBuffer.endsWith("\x1b") ? "\x1b" : "";
-      return;
-    }
-
-    const bell = session.titleBuffer.indexOf("\x07", start + 2);
-    const stringTerminator = session.titleBuffer.indexOf("\x1b\\", start + 2);
-    const end = bell === -1 ? stringTerminator : stringTerminator === -1 ? bell : Math.min(bell, stringTerminator);
-    if (end === -1) {
-      session.titleBuffer = session.titleBuffer.length - start <= 8192 ? session.titleBuffer.slice(start) : "";
-      return;
-    }
-
-    const separator = session.titleBuffer.indexOf(";", start + 2);
-    if (separator !== -1 && separator < end) {
-      const command = session.titleBuffer.slice(start + 2, separator);
-      if (command === "0" || command === "2") {
-        session.title = session.titleBuffer.slice(separator + 1, end).replace(/[\x00-\x1f\x7f]/g, "").slice(0, 512);
-      }
-    }
-    session.titleBuffer = session.titleBuffer.slice(end + (end === stringTerminator ? 2 : 1));
-  }
 }
 
 async function buildClient() {
@@ -338,11 +220,6 @@ function isSameOrigin(request: Request) {
   }
 
   return origin === requestUrl.origin;
-}
-
-function boundedInteger(value: string | number | null | undefined, fallback: number, min: number, max: number) {
-  const parsed = typeof value === "number" ? value : Number.parseInt(value ?? "", 10);
-  return Number.isInteger(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
 }
 
 function parsePort(value: string) {
