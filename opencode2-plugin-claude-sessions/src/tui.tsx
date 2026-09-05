@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import type { SessionInfo } from "@opencode-ai/client"
+import type { FormInfo, PermissionRequest, SessionInfo } from "@opencode-ai/client"
 import { Plugin } from "@opencode-ai/plugin/tui"
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { For, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
@@ -66,8 +66,14 @@ function SessionPicker(props: { context: Plugin.Context }) {
   const [selectedIndex, setSelectedIndex] = createSignal(0)
   const [tick, setTick] = createSignal(0)
   const [liveVersion, setLiveVersion] = createSignal(0)
+  const [reviewVersion, setReviewVersion] = createSignal(0)
+  const [preview, setPreview] = createSignal<{ sessionID: string; permissions: PermissionRequest[]; forms: FormInfo[] }>()
+  const [previewLoading, setPreviewLoading] = createSignal(false)
+  const [previewError, setPreviewError] = createSignal<string>()
+  const [replying, setReplying] = createSignal(false)
   const queriedLocations = new Set<string>()
   let scroll: ScrollBoxRenderable | undefined
+  let previewScroll: ScrollBoxRenderable | undefined
 
   const rows = createMemo(() => {
     tick()
@@ -114,6 +120,52 @@ function SessionPicker(props: { context: Plugin.Context }) {
       }
     }),
   ])
+
+  const selectedSession = createMemo(() => sessions().find((session) => session.id === options()[selectedIndex()]?.value))
+  const visiblePreview = createMemo(() => preview()?.sessionID === selectedSession()?.id ? preview() : undefined)
+  const permission = createMemo(() => visiblePreview()?.permissions[0])
+
+  createEffect(() => {
+    visiblePreview()
+    previewScroll?.scrollTo(0)
+  })
+
+  createEffect(() => {
+    const sessionID = selectedSession()?.id
+    reviewVersion()
+    let cancelled = false
+    onCleanup(() => { cancelled = true })
+    setPreview(undefined)
+    setPreviewError(undefined)
+    setPreviewLoading(!!sessionID)
+    if (!sessionID) return
+    void Promise.all([
+      props.context.client.permission.list({ sessionID }),
+      props.context.client.form.list({ sessionID }),
+    ]).then(([permissions, forms]) => {
+      if (!cancelled) setPreview({ sessionID, permissions, forms })
+    }).catch((error) => {
+      if (!cancelled) setPreviewError(error instanceof Error ? error.message : "Could not load preview")
+    }).finally(() => {
+      if (!cancelled) setPreviewLoading(false)
+    })
+  })
+
+  async function replyToPermission(reply: "once" | "reject") {
+    const request = permission()
+    if (!request || replying() || previewLoading()) return
+    setReplying(true)
+    try {
+      await props.context.client.permission.reply({ sessionID: request.sessionID, requestID: request.id, reply })
+      props.context.ui.toast.show({ message: reply === "once" ? "Permission approved once" : "Permission denied", variant: "success" })
+    } catch (error) {
+      props.context.ui.toast.show({ message: error instanceof Error ? error.message : "Could not reply to permission", variant: "error" })
+    } finally {
+      setReplying(false)
+      setReviewVersion((version) => version + 1)
+      refreshLocationForSession(request.sessionID)
+    }
+  }
 
   function applyAttentionLookup(location: SessionInfo["location"], key: string) {
     const lookups: Array<Promise<{ kind: "permission" | "question"; ids: string[] }>> = [
@@ -243,6 +295,8 @@ function SessionPicker(props: { context: Plugin.Context }) {
       { bind: "return", run: selectCurrent },
       { bind: "linefeed", run: selectCurrent },
       { bind: "right", run: selectCurrent },
+      { bind: "a", run: (_input, event) => { if (!event?.repeated) return replyToPermission("once") } },
+      { bind: "d", run: (_input, event) => { if (!event?.repeated) return replyToPermission("reject") } },
     ],
   }))
 
@@ -276,6 +330,11 @@ function SessionPicker(props: { context: Plugin.Context }) {
     // context.data.session.status, but permission/question badges and titles
     // need explicit event handling.
     const unsubscribes = [
+      props.context.data.listen(({ details }) => {
+        if (["permission.asked", "permission.replied", "form.created", "form.replied", "form.cancelled"].includes(details.type)) {
+          setReviewVersion((version) => version + 1)
+        }
+      }),
       props.context.data.on("permission.asked", (event) => {
         setAttention((current) => new Map(current).set(event.data.sessionID, "permission"))
       }),
@@ -307,6 +366,10 @@ function SessionPicker(props: { context: Plugin.Context }) {
         )
       }),
       props.context.data.on("session.deleted", (event) => {
+        if (selectedValue === event.data.sessionID) {
+          selectedValue = NEW_SESSION_VALUE
+          setSelectedIndex(0)
+        }
         setSessions((loaded) => loaded.filter((item) => item.id !== event.data.sessionID))
         setAttention((current) => {
           if (!current.has(event.data.sessionID)) return current
@@ -333,7 +396,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
     >
       <box height={3} flexShrink={0} flexDirection="column" paddingLeft={2} paddingRight={2}>
         <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
-          {sessions().length > 0 ? `Sessions · ${sessions().length}` : "Sessions"}
+          {sessions().length > 0 ? `Sessions viewer · ${sessions().length}` : "Sessions viewer"}
         </text>
         <text fg={props.context.theme.text.subdued}>↑/↓ select  ·  →/enter open  ·  n new  ·  ←/esc close</text>
       </box>
@@ -391,6 +454,10 @@ function SessionPicker(props: { context: Plugin.Context }) {
                     selectedValue = option.value
                     setSelectedIndex(index())
                   }}
+                  onMouseOver={() => {
+                    selectedValue = option.value
+                    setSelectedIndex(index())
+                  }}
                 >
                   <box height={1} flexDirection="row">
                     <box width={2} flexShrink={0}>
@@ -431,6 +498,26 @@ function SessionPicker(props: { context: Plugin.Context }) {
           </For>
         </scrollbox>
       )}
+      <box height={9} flexShrink={0} flexDirection="column" paddingLeft={2} paddingRight={2}
+        border={["top"]} borderColor={props.context.theme.contextual.overlay.scrollbar.default}>
+        <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
+          {permission() ? `Permission required · 1 of ${visiblePreview()!.permissions.length}` : visiblePreview()?.forms.length ? "Question waiting" : "Preview"}
+        </text>
+        <scrollbox ref={previewScroll} flexGrow={1} scrollY scrollX={false}>
+          <text fg={props.context.theme.text.default}>
+            {previewLoading() ? "Loading preview…" : previewError() ? `Preview unavailable: ${previewError()}` : permission()
+              ? [permission()!.action, permission()!.message, ...permission()!.resources,
+                  permission()!.metadata ? JSON.stringify(permission()!.metadata, null, 2) : undefined].filter(Boolean).join("\n")
+              : visiblePreview()?.forms.length
+                ? visiblePreview()!.forms.map((form) => `${form.title}\n${JSON.stringify(form.fields, null, 2)}`).join("\n\n")
+                : selectedSession() ? `${selectedSession()!.title}\n${props.context.ui.format.path(selectedSession()!.location.directory)}\nNo pending permission or question.`
+                  : "Start a new session with a blank prompt."}
+          </text>
+        </scrollbox>
+        <text fg={props.context.theme.text.subdued}>
+          {replying() ? "Sending reply…" : permission() ? "a approve once  ·  d deny  ·  scroll preview for details  ·  enter open session" : "enter open session"}
+        </text>
+      </box>
       {loading() ? (
         <box paddingLeft={2} paddingRight={2}>
           <text fg={props.context.theme.text.subdued}>
