@@ -75,8 +75,8 @@ Priority is our proposed experiment order, not a maturity or performance rating.
 
 ### container2wasm Project Health
 
-Status checked 2026-09-05. The project is active and suitable for a timeboxed POC, but it carries meaningful
-single-maintainer risk:
+Status checked 2026-09-05. The project is active and suitable for a timeboxed POC, but upstream explicitly calls it
+"experimental software" and a "PoC converter," and it carries meaningful single-maintainer risk:
 
 - Latest release: **v0.8.4**, 2026-03-16. It added a browser LLM-container example and reduced a browser runtime
   dependency. Earlier 2025 releases included browser compatibility fixes for Firefox and Safari.
