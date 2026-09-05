@@ -31,9 +31,10 @@ validated against its expected Git blob hash and size. Generated artifacts live 
 ## Build the toolchain guest
 
 The downloaded image is only the Alpine boot baseline. A custom image recipe in `guest/` adds Bun 1.4.2's stock
-x64-musl baseline build, stock OpenCode
-V2 `0.0.0-beta-19157`, and a preinstalled Vite fixture. Building it requires a running Docker daemon and is intentionally
-separate because it boots an x86-64 Alpine installer under native QEMU and then builds the Emscripten preload packages:
+x64-musl baseline build, OpenCode V2 `0.0.0-beta-19157`'s stock x64 baseline-musl binary, and a preinstalled Vite
+fixture. The Alpine ISO, Bun archive, and OpenCode npm artifact are pinned and verified before use. Building requires a
+running Docker daemon and is intentionally separate because it boots an x86-64 Alpine installer under native QEMU and
+then builds the Emscripten preload packages:
 
 ```sh
 # Fetch the base QEMU/ROM artifacts first, then replace its guest packages.
@@ -44,6 +45,19 @@ bun run guest:build
 The build is slow and writes generated files to `public/qemu/`. On the next VM boot, logging in as `root` prints the
 pinned Bun and OpenCode versions and starts in `/workspace`. Re-running `bun run artifacts` restores the upstream boot
 baseline; run `bun run guest:build` afterward to restore the toolchain guest.
+
+The builder removes its temporary QEMU checkout and raw 768 MB disk output when it exits. It retains verified downloads
+in `.cache/downloads/`, browser-ready files in `public/qemu/`, and normal reusable Docker layers.
+
+### Toolchain build status
+
+The native-QEMU validation has passed through all guest workload checks: Bun reports `1.4.2`, OpenCode reports
+`0.0.0-beta-19157`, the frozen fixture install completes, TypeScript compiles, and Vite builds the fixture. Final browser
+artifact packaging and a browser boot of that custom image remain to be recorded.
+
+QEMU uses `-cpu max,-popcnt`. Bun needs features missing from the legacy default `qemu64` model, while QEMU-Wasm's
+`POPCNT` implementation produced a wrong result and panicked Alpine during browser boot when the unrestricted `max`
+model was tested. The restricted model still needs a completed browser boot result.
 
 ## Known boundary
 

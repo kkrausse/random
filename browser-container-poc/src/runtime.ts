@@ -42,7 +42,7 @@ async function boot() {
 
   const assetRoot = `${window.location.origin}/qemu/`;
   Module.arguments = [
-    "-nographic", "-M", "pc", "-m", "512M", "-accel", "tcg,tb-size=500",
+    "-nographic", "-M", "pc", "-m", "512M", "-accel", "tcg,tb-size=500", "-cpu", "max,-popcnt",
     "-L", "/pack-rom/", "-nic", "none",
     "-kernel", "/pack-kernel/vmlinuz-virt",
     "-initrd", "/pack-initramfs/initramfs-virt",
