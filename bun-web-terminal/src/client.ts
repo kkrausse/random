@@ -81,6 +81,8 @@ async function startTerminalPage() {
   setFavicon("shell");
   await init();
 
+  const copyToast = document.querySelector<HTMLElement>("#copy-toast");
+  let copyToastTimer: ReturnType<typeof setTimeout> | undefined;
   const terminal = new Terminal({
     cursorBlink: true,
     fontFamily: theme.fontFamily,
@@ -88,6 +90,13 @@ async function startTerminalPage() {
     scrollback: 10_000,
     selectOnDrag: true,
     copyOnSelect: false, // Set true to copy automatically when highlighting text.
+    onClipboardWrite(success) {
+      if (!copyToast) return;
+      clearTimeout(copyToastTimer);
+      copyToast.dataset.status = success ? "success" : "error";
+      copyToast.textContent = success ? "Copied" : "Copy failed · Try again";
+      copyToastTimer = setTimeout(() => { copyToast.textContent = ""; }, success ? 1800 : 4000);
+    },
     smoothScrollDuration: 0,
     theme: theme.terminal,
     rendererType: "webgl",
@@ -187,6 +196,8 @@ async function startTerminalPage() {
   });
   void document.fonts?.ready.then(scheduleLayout);
   window.addEventListener("pagehide", () => {
+    clearTimeout(copyToastTimer);
+    if (copyToast) copyToast.textContent = "";
     connection.suspend();
     observer.disconnect();
     clearTimeout(layoutTimer);
