@@ -1,7 +1,7 @@
 # Browser Coding Workspace POC Plan
 
-See [assessment and decision matrix](assessment.md) for the follow-up critique, explicit eligibility gates, provisional
-ratings, and a timeboxed validation proposal. It recommends keeping QEMU as the lead experiment while testing existing
+See the [descriptive decision matrix](decision-matrix.md) for criteria-by-approach facts, without ratings or coloring.
+The separate [assessment](assessment.md) provides critique and a timeboxed validation proposal. It recommends testing existing
 container2wasm/QEMU packaging before committing to direct integration; the original proposal below is retained for context.
 
 Research sketch, 2026-09-05. This explores a generic coding workspace whose harness, source tree, and development
