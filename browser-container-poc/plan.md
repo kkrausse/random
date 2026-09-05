@@ -1,5 +1,9 @@
 # Browser Coding Workspace POC Plan
 
+See [assessment and decision matrix](assessment.md) for the follow-up critique, explicit eligibility gates, provisional
+ratings, and a timeboxed validation proposal. It recommends keeping QEMU as the lead experiment while testing existing
+container2wasm/QEMU packaging before committing to direct integration; the original proposal below is retained for context.
+
 Research sketch, 2026-09-05. This explores a generic coding workspace whose harness, source tree, and development
 server execute inside the browser. The editor shell and application preview are views in the same browser application.
 No candidate has been built or benchmarked against the fixture yet. Capabilities below are upstream documentation
