@@ -122,6 +122,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
   ])
 
   const selectedSession = createMemo(() => sessions().find((session) => session.id === options()[selectedIndex()]?.value))
+  const baseDirectory = createMemo(() => (currentSession ?? selectedSession() ?? sessions()[0]?.location.directory) ? (currentSession ?? selectedSession() ?? sessions()[0])!.location.directory : undefined)
   const visiblePreview = createMemo(() => preview()?.sessionID === selectedSession()?.id ? preview() : undefined)
   const permission = createMemo(() => visiblePreview()?.permissions[0])
 
@@ -394,9 +395,12 @@ function SessionPicker(props: { context: Plugin.Context }) {
       height={30}
       backgroundColor={props.context.theme.contextual.overlay.background.default}
     >
-      <box height={3} flexShrink={0} flexDirection="column" paddingLeft={2} paddingRight={2}>
+      <box height={4} flexShrink={0} flexDirection="column" paddingLeft={2} paddingRight={2}>
         <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
           {sessions().length > 0 ? `Sessions viewer · ${sessions().length}` : "Sessions viewer"}
+        </text>
+        <text fg={props.context.theme.text.subdued}>
+          {baseDirectory() ? props.context.ui.format.path(baseDirectory()!) : " "}
         </text>
         <text fg={props.context.theme.text.subdued}>↑/↓ select  ·  →/enter open  ·  n new  ·  ←/esc close</text>
       </box>
@@ -494,25 +498,31 @@ function SessionPicker(props: { context: Plugin.Context }) {
           </For>
         </scrollbox>
       )}
-      <box height={13} flexShrink={0} flexDirection="column" paddingLeft={2} paddingRight={2}
-        border={["top"]} borderColor={props.context.theme.contextual.overlay.scrollbar.default}>
-        <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
-          {permission() ? `Permission required · 1 of ${visiblePreview()!.permissions.length}` : visiblePreview()?.forms.length ? "Question waiting" : "Preview"}
-        </text>
-        <scrollbox ref={previewScroll} flexGrow={1} scrollY scrollX={false}>
-          <text fg={props.context.theme.text.default}>
-            {previewLoading() ? "Loading preview…" : previewError() ? `Preview unavailable: ${previewError()}` : permission()
-              ? [permission()!.action, permission()!.message, ...permission()!.resources,
-                  permission()!.metadata ? JSON.stringify(permission()!.metadata, null, 2) : undefined].filter(Boolean).join("\n")
-              : visiblePreview()?.forms.length
-                ? visiblePreview()!.forms.map((form) => `${form.title}\n${JSON.stringify(form.fields, null, 2)}`).join("\n\n")
-                : selectedSession() ? `${selectedSession()!.title}\n${props.context.ui.format.path(selectedSession()!.location.directory)}\nNo pending permission or question.`
-                  : "Start a new session with a blank prompt."}
-          </text>
-        </scrollbox>
-        <text fg={props.context.theme.text.subdued}>
-          {replying() ? "Sending reply…" : permission() ? "a approve once  ·  d deny  ·  scroll preview for details  ·  enter open session" : "enter open session"}
-        </text>
+      <box height={9} flexShrink={0} flexDirection="column" paddingLeft={2} paddingRight={2}
+        border={["top"]} borderColor={permission() ? props.context.theme.text.status.permission : props.context.theme.contextual.overlay.scrollbar.default}>
+        {permission() ? (
+          <>
+            <text fg={props.context.theme.text.status.permission} attributes={TextAttributes.BOLD}>
+              {`Approval required · 1 of ${visiblePreview()!.permissions.length}`}
+            </text>
+            <scrollbox ref={previewScroll} height={5} scrollY scrollX={false}>
+              <text fg={props.context.theme.text.default}>
+                {[permission()!.action, permission()!.message, ...permission()!.resources,
+                  permission()!.metadata ? JSON.stringify(permission()!.metadata, null, 2) : undefined].filter(Boolean).join("\n")}
+              </text>
+            </scrollbox>
+            <text fg={props.context.theme.text.subdued}>
+              {replying() ? "Sending reply…" : "a approve once  ·  d deny  ·  enter open session"}
+            </text>
+          </>
+        ) : (
+          <>
+            <text fg={props.context.theme.text.subdued}>
+              {previewLoading() ? "Checking for approval requests…" : previewError() ? `Preview unavailable: ${previewError()}` : visiblePreview()?.forms.length ? "Question waiting — open session to answer" : "No permission requested"}
+            </text>
+            <text fg={props.context.theme.text.subdued}>enter open session</text>
+          </>
+        )}
       </box>
       {loading() ? (
         <box paddingLeft={2} paddingRight={2}>
