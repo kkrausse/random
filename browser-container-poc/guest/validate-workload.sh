@@ -4,6 +4,8 @@
 set -eu
 export BUN_JSC_useFTLJIT=false
 cd /workspace
+mode=${1:-dev}
+case "$mode" in dev|build) ;; *) echo 'Usage: validate-workload [dev|build]' >&2; exit 2 ;; esac
 server_pid=
 cleanup() {
   if [ -n "$server_pid" ]; then
@@ -26,9 +28,12 @@ step() {
 
 step OPTIONS timeout -s KILL 120 env BUN_JSC_dumpOptions=1 bun -e 'console.log("option probe")' > /tmp/workload-options.log 2>&1
 grep 'useFTLJIT=false' /tmp/workload-options.log
-# Force a real typecheck even when the image contains native-build metadata.
-find . -path ./node_modules -prune -o -name '*.tsbuildinfo' -type f -exec rm {} \;
-step BUILD timeout -s KILL 1200 bun run build
+if [ "$mode" = build ]; then
+  # Optional diagnostic; production bundling is not required for the HMR POC.
+  # Force a real typecheck even when the image contains native-build metadata.
+  find . -path ./node_modules -prune -o -name '*.tsbuildinfo' -type f -exec rm {} \;
+  step BUILD timeout -s KILL 1200 bun run build
+fi
 
 echo "DEV_START=$(date +%s)"
 bun node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5173 --strictPort > /tmp/workload-vite.log 2>&1 &
@@ -40,7 +45,7 @@ trap 'cleanup; kill "$watchdog_pid" 2>/dev/null || true' EXIT
 ready=false
 for attempt in $(seq 1 90); do
   kill -0 "$server_pid" || break
-  if curl --fail --silent --max-time 5 http://127.0.0.1:5173/ > /tmp/workload-index.html; then
+  if curl --noproxy '*' --fail --silent --max-time 5 http://127.0.0.1:5173/ > /tmp/workload-index.html; then
     ready=true
     break
   fi
@@ -48,8 +53,8 @@ for attempt in $(seq 1 90); do
 done
 [ "$ready" = true ]
 grep -q '/@vite/client' /tmp/workload-index.html
-step DEV_CLIENT curl --fail --silent --max-time 120 -o /tmp/workload-client.js http://127.0.0.1:5173/@vite/client
-step DEV_SOURCE curl --fail --silent --max-time 120 -o /tmp/workload-main.js http://127.0.0.1:5173/src/main.tsx
+step DEV_CLIENT curl --noproxy '*' --fail --silent --max-time 120 -o /tmp/workload-client.js http://127.0.0.1:5173/@vite/client
+step DEV_SOURCE curl --noproxy '*' --fail --silent --max-time 120 -o /tmp/workload-main.js http://127.0.0.1:5173/src/main.tsx
 echo "DEV_HTTP_PASS=$(date +%s)"
 kill -TERM "$server_pid"
 result=0
@@ -57,7 +62,7 @@ wait "$server_pid" || result=$?
 server_pid=
 echo "DEV_STOP_EXIT=$result"
 case "$result" in 0|143) ;; *) exit 1 ;; esac
-if curl --fail --silent --max-time 5 http://127.0.0.1:5173/ > /dev/null; then
+if curl --noproxy '*' --fail --silent --max-time 5 http://127.0.0.1:5173/ > /dev/null; then
   echo 'DEV_STOP_FAILED=port still serving'
   exit 1
 fi

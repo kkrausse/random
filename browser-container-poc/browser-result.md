@@ -153,16 +153,35 @@ Started the standalone Vite build at guest timestamp `1788648999`:
 ```
 
 It reached the Vite 7.1.4 banner and `transforming...`; the serial shell remained responsive.
-**Outcome pending** at this update. A background host observer uses brief CLI calls to read the guest log,
-with no long-running browser execute. It stops when a standalone `VITE_EXIT` marker appears.
+At the user's direction, switched focus to dev serving/HMR instead of production optimization.
+Sent SIGTERM to Bun and verified `VITE_EXIT=143` at `1788649494` (495 seconds after launch), no remaining Bun/timeout
+processes, and a responsive shell. This is a successful cancellation check, not a production-build pass or timeout.
+The background host observer completed after capturing the exit marker.
 
 Added `guest/validate-workload.sh`, installed as `validate-workload` by future guest builds. It checks effective
 JSC settings, deletes fixture build metadata for a clean full build, requests the Vite index/client/transformed source
 over guest loopback, and checks server termination. The script was transferred into the existing guest at
 `/tmp/validate-workload.sh` in 160-character base64 chunks; both host and guest report SHA-256
 `3ff76928a59d09308256be18aff47206b088f4277cd6830aa90d343677a94570`.
-It is queued to run **only if** standalone Vite exits zero; its output will be `/tmp/workload.log`, with a wrapper
-`WORKLOAD_EXIT` marker. `WORKLOAD_PASS` is required for the complete workload gate. No preview/HMR pass is claimed.
+The queued full-workload check correctly skipped execution because standalone Vite was canceled.
+The checked-in script now defaults to **dev only**; `validate-workload build` opts into the slower clean production build.
+The transferred script/hash above describes the earlier version, not this updated default.
+
+Started Vite dev mode directly in the same guest with the corrected FTL setting:
+
+```sh
+(date +%s
+ bun node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5173 --strictPort
+ echo DEV_EXIT=$?) >/tmp/vite-dev.log 2>&1 &
+```
+
+Dev HTTP and preview/HMR results are pending. Production bundling is no longer a gate for the dev/HMR POC.
+
+Vite dev mode printed **`VITE v7.1.4 ready in 64001 ms`** and `http://127.0.0.1:5173/`.
+The first curl attempts exposed inherited proxy variables routing loopback requests to `192.168.127.253:80`.
+The validator now passes `--noproxy '*'` on all guest HTTP checks; the live shell also exports loopback `NO_PROXY`.
+A direct request connected but exceeded its initial 10-second response limit. Retrying in the background with a
+180-second bound, writing the response to `/tmp/dev-index.html` and an `INDEX_HTTP_EXIT` marker to `/tmp/dev-http.log`.
 
 Host `bun run build`, shell syntax checks, and `git diff --check` passed. Guest/runtime images have not been rebuilt
 in this continuation. `docker system df` now succeeds; no cleanup was performed.
