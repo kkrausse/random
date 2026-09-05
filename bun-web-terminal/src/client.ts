@@ -275,7 +275,7 @@ function iconBody(kind: IconKind) {
   if (kind === "editor") return `<path d="M14 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="m13 15 1-4 4.6-4.6a1.4 1.4 0 0 0-2-2L12 9l-1 4 2 2Z"/>`;
   if (kind === "server") return `<rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6"/>`;
   if (kind === "remote") return `<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4M8 9l2 2-2 2m5 0h3"/>`;
-  return `<rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 9 3 3-3 3m6 0h4"/>`;
+  return `<text x="4.5" y="17.5" font-size="13" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-weight="600" fill="currentColor" stroke="none">$_</text>`;
 }
 
 function setFavicon(kind: IconKind) {
@@ -284,7 +284,7 @@ function setFavicon(kind: IconKind) {
   const styles = getComputedStyle(document.documentElement);
   const background = styles.getPropertyValue("--background").trim() || "#282c34";
   const accent = styles.getPropertyValue("--accent").trim() || "#b5bd68";
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="${background}"/><g fill="none" stroke="${accent}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${iconBody(kind)}</g></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="${background}"/><g fill="none" stroke="${accent}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${iconBody(kind).replaceAll("currentColor", accent)}</g></svg>`;
   link.href = `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
