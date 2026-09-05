@@ -87,6 +87,7 @@ async function startTerminalPage() {
     fontSize: theme.fontSize,
     scrollback: 10_000,
     selectOnDrag: true,
+    copyOnSelect: false, // Set true to copy automatically when highlighting text.
     smoothScrollDuration: 0,
     theme: theme.terminal,
     rendererType: "webgl",

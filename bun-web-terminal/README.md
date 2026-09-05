@@ -23,7 +23,7 @@ Terminal pages reconnect automatically after network interruptions or a suspende
 - Resizing settles for 150 ms in the browser and is coalesced again at the PTY. Output is delivered in batches of at most 32 KiB, with at most 128 KiB awaiting browser acknowledgment and 512 KiB queued. A stalled attachment is dropped and restored from tmux rather than accumulating unlimited work.
 - Scrolling runs at 50% sensitivity and accumulates fractional trackpad deltas. Shell history lives in tmux (10,000 lines); scrolling up enters its copy mode, and **Escape** returns to live input. Applications with mouse support receive normalized wheel input.
 - **Ctrl+V** reaches the application, including Emacs. Use **Cmd+V** on macOS or **Ctrl+Shift+V** on other platforms to paste.
-- Drag to highlight and automatically copy terminal text; the highlight stays after release. **Cmd+C** copies the selection again. Hold **Alt** to send mouse clicks/drags to the application instead. Scrolling still goes through tmux.
+- Drag to highlight terminal text; the highlight stays after release. **Cmd+C** copies the selection. Auto-copy is disabled; toggle `copyOnSelect` in `src/client.ts` to enable it. Hold **Alt** to send mouse clicks/drags to the application instead. Scrolling still goes through tmux.
 
 The browser terminal and tmux negotiate their own capabilities; programs inside tmux use `TERM=tmux-256color`. Ghostty-web remains the rendering/input engine, so engine-specific keyboard or rendering limitations can still be investigated independently.
 
