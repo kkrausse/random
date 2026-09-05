@@ -83,17 +83,19 @@ The runtime build also emits `public/qemu/popcnt-test`, a standalone x86-64 regr
 For repeatable workload validation, the guest recipe installs `validate-workload` from
 [`guest/validate-workload.sh`](./guest/validate-workload.sh). Run it in the guest with
 `validate-workload >/tmp/workload.log 2>&1 &` and inspect `tail -n 30 /tmp/workload.log`.
-It verifies Bun's effective FTL option, removes fixture TypeScript build metadata, runs a bounded clean build,
-starts Vite, requests the index/client/transformed source over guest loopback HTTP, and checks server shutdown.
+It verifies Bun's effective FTL option, starts Vite in dev mode, requests the index/client/transformed source over
+guest loopback HTTP, and checks server shutdown. The optional `validate-workload build` mode first removes fixture
+TypeScript build metadata and runs a bounded clean production build; this is not required for the HMR POC.
 Only `WORKLOAD_PASS` means all these checks passed. This does not validate the browser preview or WebSocket bridge.
 Existing generated images need the script copied into `/tmp` and run with `sh /tmp/validate-workload.sh` until rebuilt.
 
 The custom image now boots in the browser, prints the pinned toolchain versions, and passes the POPCNT regression.
 Browser TypeScript now **passes** with `BUN_JSC_useFTLJIT=false`, retaining baseline and DFG JIT. The traced run took
 514 seconds including startup and diagnostic dumps. `BUN_JSC_dumpOptions=1` confirmed the effective setting; earlier
-attempted JIT-disable experiments used an ignored prefix. Vite and the complete browser build with the corrected setting
-have not yet been run. See the result card for exact commands, timings, and handoff state.
-After validating Vite and the complete browser build, add an explicit guest HTTP/WebSocket bridge for Vite assets and HMR, followed by the bounded
+attempted JIT-disable experiments used an ignored prefix. Vite dev mode now reports ready in the browser guest;
+direct HTTP validation is in progress. The production build was canceled to focus on the dev/HMR goal.
+See the result card for exact commands, timings, and handoff state.
+After validating Vite dev HTTP, add an explicit guest HTTP/WebSocket bridge for Vite assets and HMR, followed by the bounded
 model relay. The empty preview pane intentionally does not claim those milestones are complete.
 
 ## Pinned upstream
