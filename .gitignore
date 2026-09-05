@@ -34,4 +34,7 @@
 !browser-container-poc/**
 !isochron-home-map/
 !isochron-home-map/**
+!.gitmodules
+!bun-web-terminal/
+!bun-web-terminal/**
 node_modules/
