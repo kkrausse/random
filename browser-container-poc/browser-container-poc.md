@@ -1,14 +1,14 @@
 # Browser Coding Workspace POC
 
-Research sketch, 2026-09-05. Addendum to [Admin OpenCode UI Editing Plan](./admin-opencode-edit-plan.md).
-This explores replacing the Raspberry Pi with browser execution; it does not supersede that plan or select a runtime.
-No candidate has been built or benchmarked against this repository yet. Capabilities below are upstream documentation
+Research sketch, 2026-09-05. This explores a generic coding workspace whose harness, source tree, and development
+server execute inside the browser. The editor shell and application preview are views in the same browser application.
+No candidate has been built or benchmarked against the fixture yet. Capabilities below are upstream documentation
 claims unless explicitly described as our proposal. Pin revisions and record actual results when running the POCs.
 
 ## What We Want To Learn
 
-Can an administrator open an editing workspace, prompt a code change, see the existing frontend update, and retain the
-source changes, with the coding harness and workspace executing on their own computer inside the browser?
+Can a user open an editing workspace, prompt a code change, see a frontend update through HMR, and retain the source
+changes, with the coding harness and workspace executing on their own computer inside the browser?
 
 The runtime should be inspectable, modifiable, buildable, and self-hostable. A free trial, public SDK wrapper, or hosted
 demo is insufficient. Prefer standard open-source licenses; distinguish permissive licenses, copyleft, and custom
@@ -28,23 +28,34 @@ There are two separate questions:
 Do not decide that a VM is necessary just because the original implementation uses a container. Also do not equate
 WebAssembly execution with running arbitrary Linux binaries: that requires CPU/OS emulation or porting the programs.
 
-## Repository Workload
+## First POC Decisions
 
-The current [package scripts](../package.json) start both React Router and a Bun API with SOPS configuration.
-[Vite](../vite.config.ts) uses React Router, Tailwind 4, and path-alias plugins, with Bun SSR conditions and an API proxy.
-[React Router](../react-router.config.ts) enables SSR and prerendering. `bun dev` is therefore not the browser POC entry.
+These choices are enough to begin; avoid designing a general browser-compute platform first.
 
-Reuse the original plan's frontend-only entry/provider boundary. Start with synthetic fixtures and actual application
-components. Keep AWS/Clerk/IRS credentials, decrypted config, runtime databases, and deployment access out of the workspace.
-Supply a reviewed source snapshot at a known commit; avoid private Git authentication in the first experiment.
+- **Outer application:** Bun for package management and scripts, TypeScript, React, and Vite.
+- **Fixture:** a small, self-contained Vite + React + TypeScript application with two source files, one local asset,
+  one dependency, and no secrets, backend, authentication, private Git access, or application-specific integration.
+- **Harness:** OpenCode in headless/server mode for the stock-harness track. A lightweight track may adapt the harness,
+  but must expose equivalent file read/search/patch, process output, cancellation, and model-streaming behavior.
+- **Preview:** a sandboxed iframe in the same browser application. The runtime may live in workers, but preview assets,
+  errors, and HMR WebSocket traffic must cross an explicit port/transport bridge.
+- **Model access:** defer model calls until runtime, filesystem, dev server, and HMR work. Then use a narrow model relay;
+  do not put provider credentials in the editable workspace.
+- **Persistence:** memory is sufficient for the first vertical slice. Add OPFS and patch export only after HMR works.
+- **Package installation:** prebundle the fixture and dependencies. Arbitrary installs are a later capability.
+- **Security:** use public fixture code on localhost. Origin hardening and untrusted projects are follow-up work.
 
-The meaningful compatibility workload includes:
+The fixture must prove:
 
-- React 19 TSX, `@/*` imports, local assets, and the existing component dependencies.
-- React Router integration and its generated files, not only an isolated React hello-world.
-- Tailwind compilation, including a newly introduced utility class after an edit.
-- Module resolution, native dependency fallbacks, file watching, and preview asset delivery.
-- A harness reading/searching files, applying a multi-file edit, observing a build error, and repairing it.
+- TypeScript and TSX compilation, imports, a local asset, and dependency resolution.
+- A harness reading/searching files and applying a multi-file edit.
+- A visible HMR update after a harness edit, without manually refreshing the preview.
+- Useful build diagnostics after a deliberate import or type error, followed by recovery.
+- Dev-server process output, exit status, and cancellation.
+
+TypeScript is an implementation choice for the shell and adapters, not a runtime strategy. The remaining go/no-go
+decision is whether unmodified OpenCode is mandatory. If it is, prioritize machine emulation. If a compatible adapter
+is acceptable, prioritize a browser Node-compatible runtime for a faster first result.
 
 ## Candidate Map
 
@@ -55,8 +66,8 @@ Priority is our proposed experiment order, not a maturity or performance rating.
 | **container2wasm**                         | Converts container images into browser/WASI artifacts using emulators. Converter is Apache-2.0; guest and emulator components retain their own licenses. [Project](https://github.com/container2wasm/container2wasm), [license](https://github.com/container2wasm/container2wasm/blob/main/LICENSE).    | **Primary stock-harness track.** Package pinned OpenCode, Bun, Git, and frontend dependencies. Can the actual edit loop run comfortably?                                                                     |
 | **QEMU WASM directly**                     | System emulation; the browser fork documents x86-64, AArch64, and RISC-V examples. Its status distinguishes interpreter support from ongoing WASM JIT upstreaming. [Project](https://github.com/ktock/qemu-wasm).                                                                                       | Use when container2wasm hides a needed option or backend. Record exact fork/backend; do not assume a stock QEMU release includes the same browser acceleration.                                              |
 | **Bochs / TinyEMU through container2wasm** | Existing conversion backends: x86-64 via Bochs and RISC-V via TinyEMU. [Backend overview](https://github.com/container2wasm/container2wasm).                                                                                                                                                            | Cheap comparison if the conversion path is already working. Bochs is relevant to x64 binaries; RISC-V needs matching tools and is not a stock Bun target.                                                    |
-| **Vivari**                                 | MIT repository; browser workers, Node's JS library code, virtual processes/files/networking. Advertises React Router, Tailwind, Vite/HMR, and Bun API emulation. [Project](https://github.com/maitrungduc1410/vivari).                                                                                  | **Primary lightweight-runtime track.** Promising overlap with our dependencies; prove the actual stack rather than accepting the compatibility table.                                                        |
-| **almostnode**                             | JS Node API emulation with VFS, browser compilation, and preview support; [MIT license](https://raw.githubusercontent.com/macaly/almostnode/main/LICENSE). [Project](https://github.com/macaly/almostnode).                                                                                             | **Quick comparison.** Try the same component/route fixture as Vivari; inspect whether its dev-server behavior matches our needed plugins.                                                                    |
+| **Vivari**                                 | MIT repository; browser workers, Node's JS library code, virtual processes/files/networking. Advertises React Router, Tailwind, Vite/HMR, and Bun API emulation. [Project](https://github.com/maitrungduc1410/vivari).                                                                                  | **Primary lightweight-runtime track.** Promising overlap with the fixture; prove actual behavior rather than accepting the compatibility table.                                                              |
+| **almostnode**                             | JS Node API emulation with VFS, browser compilation, and preview support; [MIT license](https://raw.githubusercontent.com/macaly/almostnode/main/LICENSE). [Project](https://github.com/macaly/almostnode).                                                                                             | **Quick comparison.** Try the same Vite fixture as Vivari and compare dev-server, filesystem, and HMR behavior.                                                                                               |
 | **Wasmer SDK / WASIX**                     | Runs WASM-targeted programs with filesystem/process/port APIs; current SDK calls itself alpha. Includes browser shell and networking examples. [Project](https://github.com/wasmerio/wasmer-sdk).                                                                                                       | **Conditional second round.** Useful middle ground between JS emulation and a whole machine. Native Bun/OpenCode binaries do not become WASIX programs automatically.                                        |
 | **NanoVM / userland.run**                  | RISC-V user-mode Linux emulation, plus additional execution runners. Emulator offers AGPL-3.0 or commercial terms; SDK is described separately as MPL-2.0. [Project](https://github.com/userland-run/nano), [license explanation](https://raw.githubusercontent.com/userland-run/nano/main/LICENSE.md). | **Exploratory second round.** Interesting syscall-emulation/hybrid approach. Check static-binary requirements, runner selection, and actual Node performance. RISC-V is a poor starting point for stock Bun. |
 | **v86**                                    | BSD-2-Clause x86-to-WASM emulator; lacks 64-bit extensions and multicore. [Project](https://github.com/copy/v86).                                                                                                                                                                                       | Useful Linux/shell reference, low priority for this workload. Current [Bun platforms](https://github.com/oven-sh/bun) are x64/ARM64, so this is not a direct stock-harness route.                            |
@@ -103,7 +114,7 @@ Trusted editor shell
   -> isolated runtime origin / worker
        QEMU or Bochs -> Linux -> OpenCode + source + frontend build/dev server
   -> separate preview frame <- bridge for guest assets and updates
-  -> existing AWS app: authenticated, bounded model relay
+  -> authenticated, bounded model relay
 ```
 
 Use container2wasm as packaging first. Build an image with tools and dependencies preinstalled; x64 is the initial
@@ -122,7 +133,7 @@ Trusted editor shell
        browser Node/Bun compatibility layer + virtual source tree + frontend tooling
        compatible harness, or adapted file/process tools
   -> separate preview frame
-  -> existing AWS app: authenticated, bounded model relay
+  -> authenticated, bounded model relay
 ```
 
 Try Vivari first, almostnode second. Test frontend compatibility before spending time porting OpenCode. A runtime can
@@ -145,9 +156,9 @@ provides a simulated shell and filesystem. It cannot execute arbitrary native bi
 Node-only. It is [Apache-2.0](https://raw.githubusercontent.com/vercel-labs/just-bash/main/packages/just-bash/LICENSE).
 
 This gives maximum control and might be enough for UI edits, but transfers responsibility to us for tool behavior,
-conversation/cancellation, build diagnostics, package resolution, and the supported editing surface. esbuild does not
-automatically reproduce our React Router and Tailwind Vite plugins. Start with one real screen, then explicitly measure
-the work needed for route changes and new CSS utilities. Do not quietly turn the preview into a separate application.
+conversation/cancellation, build diagnostics, package resolution, and the supported editing surface. It also does not
+prove that a real Vite development server or its HMR protocol can run. Keep it as a baseline, not a substitute that
+quietly changes the goal.
 
 ## Small POC Sequence
 
@@ -157,7 +168,7 @@ blocker rather than building a general runtime compatibility layer.
 | Trial                | Initial effort cap                 | Evidence to collect                                                                                                                    |
 | -------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | Shared fixture       | Half day                           | A secrets-free source snapshot and frontend-only entry that works in a normal local runtime. Use the same input for all candidates.    |
-| Vivari               | Half day                           | Build/serve a real component and route, change a Tailwind class, observe update, reload saved files. Then probe headless OpenCode.     |
+| Vivari               | Half day                           | Build and serve the fixture, edit TSX and CSS, observe HMR, and reload saved files. Then probe headless OpenCode.                       |
 | almostnode           | A few hours                        | Run the same fixture; compare actual plugin behavior and required adaptations with Vivari.                                             |
 | container2wasm/QEMU  | One day                            | Boot a prebuilt image; run Bun, stock OpenCode, file tools, and frontend build. Prove browser asset delivery before polishing HMR.     |
 | Bochs backend        | A few hours, if already accessible | Repeat the same guest workload and compare timing/compatibility. Avoid a separate image-building project.                              |
@@ -170,10 +181,10 @@ self-hosted build. Keep all POC code optional and outside the normal application
 
 ### Common Editing Exercise
 
-1. Load a fixed base revision and open a representative existing screen with fixture data.
-2. Ask for a two-file UI change involving an imported component and a new Tailwind utility.
+1. Load a fixed fixture revision and open its preview.
+2. Ask for a two-file UI change involving an imported component and CSS.
 3. Check the diff and visible result. Introduce a deliberate import/type error and verify useful diagnostics/recovery.
-4. Add or change a route, load a local asset, and reload a nested preview URL.
+4. Load a local asset and verify both JavaScript and CSS HMR updates.
 5. Save, refresh, close/reopen, and recover the exact source changes. Export a patch with its base commit.
 6. Cancel a running operation and simulate worker failure. Recover files without silently resetting the workspace.
 
@@ -203,10 +214,9 @@ Guest localhost is not the browser's localhost. Determine how guest HTTP respons
 the preview. Preinstalled dependencies reduce the initial networking problem; arbitrary package installation is a later
 capability. [Networking modes](https://github.com/container2wasm/container2wasm)
 
-**Model access:** removing the Pi does not remove remote inference. Prefer a narrow authenticated model relay in the
-existing AWS application, with fixed provider destinations, spending limits, and cancellation. Keep provider keys out
-of the editable environment. This would add backend work beyond the original token-only endpoint; it is a proposed
-tradeoff. The relay must not become an arbitrary URL proxy.
+**Model access:** local tool execution does not mean local inference. Prefer a narrow authenticated model relay with
+fixed provider destinations, spending limits, and cancellation. Keep provider keys out of the editable environment.
+The relay must not become an arbitrary URL proxy.
 
 **Persistence:** keep a versioned base snapshot plus saved edits. OPFS is a possible implementation, but remains
 origin-scoped, quota-limited browser storage; clearing site data removes it. Request persistence where supported and
@@ -214,33 +224,18 @@ provide explicit export/checkpoint recovery. Record base revision, file addition
 source is separate from preserving VM RAM or conversations. [OPFS](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API/Origin_private_file_system)
 
 **Runtime lifetime:** assume tab suspension, browser crashes, and device sleep interrupt execution. Save incrementally;
-do not rely on unload handlers. This replaces the Pi's persistent shared workspace with a per-browser workspace unless
-we add synchronization. A small backend checkpoint store could restore cross-device continuity without hosting compute.
+do not rely on unload handlers. The default is a per-browser workspace unless synchronization is added. A small backend
+checkpoint store could restore cross-device continuity without hosting compute.
 
 **Origin and header requirements:** test workers, WASM, service workers, and cross-origin isolation in the intended
 embedding topology. Worker isolation alone does not strip access to same-origin services. Give runtime/preview code
-separate origins from production credentials. Scope any service worker to a dedicated origin. If the original plan's
-service-worker prohibition must change, change it only for the reviewed runtime transport, never production scope.
+separate origins from privileged application credentials. Scope any service worker to a dedicated origin.
 For comparison, [WebContainers documents embedding/header constraints](https://webcontainers.io/guides/troubleshooting);
 each shortlisted implementation needs its own measured answer. A standalone editor page is an acceptable early POC,
 but does not demonstrate the final embedded experience.
 
-**Production reads:** fixtures only for these trials. Later, preserve the original plan's parent-owned authentication,
-audited read allowlist, explicit activation, expiry, and exit behavior. Local execution removes the Pi as a data recipient,
-but editable code still sees supplied data and may transmit it through allowed network paths. A VM alone does not
-establish confidentiality from its own code or the model provider.
-
-## Relationship To The Original Plan
-
-| Original element                                 | Browser alternative to investigate                                                                                                       |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Pi + Compose + tunnel + Nginx                    | Static runtime/image artifacts, local browser execution, and explicit preview/network bridges.                                           |
-| Remote gateway capability token                  | May become unnecessary for local control; server-side authorization still applies to model relay, source delivery, and production reads. |
-| Persistent shared volume                         | Browser workspace plus export or backend checkpoints; shared ownership is a separate decision.                                           |
-| Stock OpenCode                                   | Preserve in machine-emulation track; test compatibility or adapt/replace in lighter tracks.                                              |
-| Direct dev-server HMR                            | Runtime-supported forwarding, or rebuild/reload for the initial custom-compiler experiment.                                              |
-| Auth/provider cleanup and production-data broker | Still useful independent seams; retain before any real-data preview.                                                                     |
-| Manual review/export, no automatic deployment    | Same promotion boundary.                                                                                                                 |
+**External data:** fixtures only for these trials. Editable code may transmit any data it can read through allowed
+network paths. A VM alone does not establish confidentiality from its own code or the model provider.
 
 ## Broader Direction: Applications And Agents In Browser Boxes
 
