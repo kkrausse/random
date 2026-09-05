@@ -297,7 +297,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
       { bind: "linefeed", run: selectCurrent },
       { bind: "right", run: selectCurrent },
       { bind: "a", run: (_input, event) => { if (!event?.repeated) return replyToPermission("once") } },
-      { bind: "A", run: (_input, event) => { if (!event?.repeated) return replyToPermission("always") } },
+      { bind: "shift+a", run: (_input, event) => { if (!event?.repeated) return replyToPermission("always") } },
       { bind: "d", run: (_input, event) => { if (!event?.repeated) return replyToPermission("reject") } },
     ],
   }))
