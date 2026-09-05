@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import type { FormInfo, PermissionRequest, SessionInfo } from "@opencode-ai/client"
+import type { FormInfo, ModelInfo, PermissionRequest, SessionInfo, SessionMessageAssistant, SessionMessageInfo } from "@opencode-ai/client"
 import { Plugin } from "@opencode-ai/plugin/tui"
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { For, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
@@ -65,18 +65,68 @@ function formatCost(value: number) {
   return `$${value.toFixed(2)}`
 }
 
-function contextStatsLine(session: SessionInfo | undefined, messageCount: number | undefined) {
+// Mirrors opencode's sidebar context calculation
+// (packages/tui/src/util/session.ts + feature-plugins/sidebar/context.tsx):
+// current window usage = last assistant message with token usage after the
+// last completed compaction, before any revert boundary. Percent resolves
+// against that message's model limit.
+function lastAssistantWithUsage(messages: ReadonlyArray<SessionMessageInfo>, boundary?: string) {
+  const boundaryIndex = boundary ? messages.findIndex((message) => message.id === boundary) : -1
+  if (boundary && boundaryIndex === -1) return undefined
+  const end = boundaryIndex === -1 ? messages.length : boundaryIndex
+  const compactionIndex = messages.findLastIndex(
+    (message, index) => message.type === "compaction" && message.status === "completed" && index < end,
+  )
+  return messages.findLast(
+    (message, index): message is SessionMessageAssistant & { tokens: NonNullable<SessionMessageAssistant["tokens"]> } =>
+      message.type === "assistant" && message.tokens !== undefined && index > compactionIndex && index < end,
+  )
+}
+
+function contextUsage(
+  messages: ReadonlyArray<SessionMessageInfo> | undefined,
+  models: ReadonlyArray<ModelInfo> | undefined,
+  boundary?: string,
+) {
+  if (!messages) return undefined
+  const last = lastAssistantWithUsage(messages, boundary)
+  if (!last) return undefined
+  const tokens =
+    last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
+  if (tokens <= 0) return undefined
+  const model = models?.find((candidate) => candidate.providerID === last.model.providerID && candidate.id === last.model.id)
+  return {
+    tokens,
+    percent: model?.limit.context ? Math.round((tokens / model.limit.context) * 100) : undefined,
+    model: last.model,
+  }
+}
+
+function contextStatsLine(
+  session: SessionInfo | undefined,
+  usage: { tokens: number; percent?: number; model?: { providerID: string; id: string } } | undefined,
+  cost: number,
+  syncing: boolean,
+) {
   if (!session) return "New session — no context yet"
-  const tokens = session.tokens
-  const cacheTotal = tokens.cache.read + tokens.cache.write
-  const total = tokens.input + tokens.output + tokens.reasoning + cacheTotal
-  const parts = [
-    session.model ? `${session.model.providerID}/${session.model.id}` : undefined,
-    `⬡ ${formatCompactTokens(total)} toks (in ${formatCompactTokens(tokens.input)} · out ${formatCompactTokens(tokens.output)} · cache ${formatCompactTokens(cacheTotal)})`,
-    formatCost(session.cost),
-  ]
-  if (messageCount) parts.push(`${messageCount} msgs`)
-  return parts.filter(Boolean).join("  ·  ")
+  if (!usage) {
+    // Messages for this session aren't synced yet (or it has no assistant
+    // usage). Fall back to the session's cumulative totals so the row still
+    // shows something useful.
+    const tokens = session.tokens
+    const total = tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write
+    if (total <= 0) return syncing ? "Context — loading…" : "Context — no usage yet"
+    const label = `Context ≈${formatCompactTokens(total)} total toks · ${formatCost(cost || session.cost)}`
+    return syncing ? `${label} · loading…` : label
+  }
+  const tokensLabel =
+    usage.percent !== undefined
+      ? `${usage.tokens.toLocaleString()} tokens (${usage.percent}% used)`
+      : `${usage.tokens.toLocaleString()} tokens`
+  const modelLabel = usage.model ? `${usage.model.providerID}/${usage.model.id}` : undefined
+  return [`Context ${tokensLabel}`, modelLabel, cost > 0 ? `${formatCost(cost)} spent` : undefined]
+    .filter(Boolean)
+    .join("  ·  ")
 }
 
 function SessionPicker(props: { context: Plugin.Context }) {
@@ -147,16 +197,47 @@ function SessionPicker(props: { context: Plugin.Context }) {
   ])
 
   const selectedSession = createMemo(() => sessions().find((session) => session.id === options()[selectedIndex()]?.value))
-  const selectedMessageCount = createMemo(() => {
+  const [contextSyncing, setContextSyncing] = createSignal(false)
+  const selectedMessages = createMemo(() => {
     const sessionID = selectedSession()?.id
-    if (!sessionID) return undefined
-    const messages = props.context.data.session.message.list(sessionID)
-    return messages && messages.length > 0 ? messages.length : undefined
+    return sessionID ? props.context.data.session.message.list(sessionID) : undefined
   })
-  const selectedStats = createMemo(() => contextStatsLine(selectedSession(), selectedMessageCount()))
+  const selectedModels = createMemo(() => {
+    const session = selectedSession()
+    return session ? props.context.data.location.model.list(session.location) : undefined
+  })
+  const selectedCost = createMemo(() => {
+    const session = selectedSession()
+    if (!session) return 0
+    const live = props.context.data.session.cost(session.id)
+    return live > 0 ? live : session.cost
+  })
+  const selectedUsage = createMemo(() =>
+    contextUsage(selectedMessages(), selectedModels(), selectedSession()?.revert?.messageID),
+  )
+  const selectedStats = createMemo(() =>
+    contextStatsLine(selectedSession(), selectedUsage(), selectedCost(), contextSyncing()),
+  )
   const baseDirectory = createMemo(() => (currentSession ?? selectedSession() ?? sessions()[0]?.location.directory) ? (currentSession ?? selectedSession() ?? sessions()[0])!.location.directory : undefined)
   const visiblePreview = createMemo(() => preview()?.sessionID === selectedSession()?.id ? preview() : undefined)
   const permission = createMemo(() => visiblePreview()?.permissions[0])
+
+  createEffect(() => {
+    const session = selectedSession()
+    let cancelled = false
+    onCleanup(() => { cancelled = true })
+    if (!session) {
+      setContextSyncing(false)
+      return
+    }
+    setContextSyncing(true)
+    void Promise.allSettled([
+      props.context.data.session.message.sync(session.id),
+      props.context.data.location.model.sync(session.location),
+    ]).finally(() => {
+      if (!cancelled) setContextSyncing(false)
+    })
+  })
 
   createEffect(() => {
     visiblePreview()
