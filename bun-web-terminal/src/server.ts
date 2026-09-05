@@ -264,4 +264,4 @@ function notFoundPage() {
   return document("Session not found", "sessions-page", `<main class="sessions-shell"><span class="eyebrow">404</span><h1>Session not found</h1><p><a href="/sessions">Back to sessions</a></p></main>`);
 }
 
-const terminalFavicon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="#282c34"/><g fill="none" stroke="#b5bd68" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="m7 9 3 3-3 3m6 0h4"/></g></svg>`;
+const terminalFavicon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="#282c34"/><text x="4.5" y="17.5" font-size="13" font-family="monospace" font-weight="600" fill="#b5bd68">$_</text></svg>`;
