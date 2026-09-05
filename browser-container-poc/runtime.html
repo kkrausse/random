@@ -4,7 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>QEMU-Wasm runtime</title>
-    <script>var Module = { preRun: [] };</script>
+    <script>
+      // The Emscripten data loaders execute before the TypeScript entrypoint.
+      // They therefore need the relocated artifact path up front, not in runtime.ts.
+      var Module = {
+        preRun: [],
+        locateFile: (path) => "/qemu/" + path,
+        mainScriptUrlOrBlob: "/qemu/out.js",
+      };
+      window.addEventListener("error", (event) => {
+        window.parent.postMessage({
+          source: "qemu-runtime",
+          status: "error",
+          detail: event.message || "A QEMU preload failed.",
+        }, window.location.origin);
+      });
+    </script>
     <script src="/qemu/load-rootfs.js"></script>
     <script src="/qemu/load-kernel.js"></script>
     <script src="/qemu/load-initramfs.js"></script>
