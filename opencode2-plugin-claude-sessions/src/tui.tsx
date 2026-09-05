@@ -393,7 +393,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
   return (
     <box
       flexDirection="column"
-      height={30}
+      height={38}
       backgroundColor={props.context.theme.contextual.overlay.background.default}
     >
       <box height={4} flexShrink={0} flexDirection="column" paddingLeft={2} paddingRight={2}>
@@ -499,14 +499,14 @@ function SessionPicker(props: { context: Plugin.Context }) {
           </For>
         </scrollbox>
       )}
-      <box height={9} flexShrink={0} flexDirection="column" paddingLeft={2} paddingRight={2}
+      <box height={12} flexShrink={0} flexDirection="column" paddingLeft={2} paddingRight={2}
         border={["top"]} borderColor={permission() ? props.context.theme.text.status.permission : props.context.theme.contextual.overlay.scrollbar.default}>
         {permission() ? (
           <>
             <text fg={props.context.theme.text.status.permission} attributes={TextAttributes.BOLD}>
               {`Approval required · 1 of ${visiblePreview()!.permissions.length}`}
             </text>
-            <scrollbox ref={previewScroll} height={5} scrollY scrollX={false}>
+            <scrollbox ref={previewScroll} height={8} scrollY scrollX={false}>
               <text fg={props.context.theme.text.default}>
                 {[permission()!.action, permission()!.message, ...permission()!.resources,
                   permission()!.metadata ? JSON.stringify(permission()!.metadata, null, 2) : undefined].filter(Boolean).join("\n")}
