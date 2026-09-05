@@ -65,8 +65,8 @@ Priority is our proposed experiment order, not a maturity or performance rating.
 | **container2wasm**                         | Converts container images into browser/WASI artifacts using emulators. Converter is Apache-2.0; guest and emulator components retain their own licenses. [Project](https://github.com/container2wasm/container2wasm), [license](https://github.com/container2wasm/container2wasm/blob/main/LICENSE).    | **Primary stock-harness track.** Package pinned OpenCode, Bun, Git, and frontend dependencies. Can the actual edit loop run comfortably?                                                                     |
 | **QEMU WASM directly**                     | System emulation; the browser fork documents x86-64, AArch64, and RISC-V examples. Its status distinguishes interpreter support from ongoing WASM JIT upstreaming. [Project](https://github.com/ktock/qemu-wasm).                                                                                       | Use when container2wasm hides a needed option or backend. Record exact fork/backend; do not assume a stock QEMU release includes the same browser acceleration.                                              |
 | **Bochs / TinyEMU through container2wasm** | Existing conversion backends: x86-64 via Bochs and RISC-V via TinyEMU. [Backend overview](https://github.com/container2wasm/container2wasm).                                                                                                                                                            | Cheap comparison if the conversion path is already working. Bochs is relevant to x64 binaries; RISC-V needs matching tools and is not a stock Bun target.                                                    |
-| **Vivari**                                 | MIT repository; browser workers, Node's JS library code, virtual processes/files/networking. Advertises React Router, Tailwind, Vite/HMR, and Bun API emulation. [Project](https://github.com/maitrungduc1410/vivari).                                                                                  | **Primary lightweight-runtime track.** Promising overlap with the fixture; prove actual behavior rather than accepting the compatibility table.                                                              |
-| **almostnode**                             | JS Node API emulation with VFS, browser compilation, and preview support; [MIT license](https://raw.githubusercontent.com/macaly/almostnode/main/LICENSE). [Project](https://github.com/macaly/almostnode).                                                                                             | **Quick comparison.** Try the same Vite fixture as Vivari and compare dev-server, filesystem, and HMR behavior.                                                                                               |
+| **Vivari**                                 | MIT repository; browser workers, Node's JS library code, virtual processes/files/networking. Advertises React Router, Tailwind, Vite/HMR, and Bun API emulation. [Project](https://github.com/maitrungduc1410/vivari).                                                                                  | **Lightweight fallback.** Promising overlap with the fixture, but does not meet the initial stock-harness requirement.                                                                                        |
+| **almostnode**                             | JS Node API emulation with VFS, browser compilation, and preview support; [MIT license](https://raw.githubusercontent.com/macaly/almostnode/main/LICENSE). [Project](https://github.com/macaly/almostnode).                                                                                             | **Lightweight fallback.** Compare with Vivari only after deciding that an adapted harness is acceptable.                                                                                                      |
 | **Wasmer SDK / WASIX**                     | Runs WASM-targeted programs with filesystem/process/port APIs; current SDK calls itself alpha. Includes browser shell and networking examples. [Project](https://github.com/wasmerio/wasmer-sdk).                                                                                                       | **Conditional second round.** Useful middle ground between JS emulation and a whole machine. Native Bun/OpenCode binaries do not become WASIX programs automatically.                                        |
 | **NanoVM / userland.run**                  | RISC-V user-mode Linux emulation, plus additional execution runners. Emulator offers AGPL-3.0 or commercial terms; SDK is described separately as MPL-2.0. [Project](https://github.com/userland-run/nano), [license explanation](https://raw.githubusercontent.com/userland-run/nano/main/LICENSE.md). | **Exploratory second round.** Interesting syscall-emulation/hybrid approach. Check static-binary requirements, runner selection, and actual Node performance. RISC-V is a poor starting point for stock Bun. |
 | **v86**                                    | BSD-2-Clause x86-to-WASM emulator; lacks 64-bit extensions and multicore. [Project](https://github.com/copy/v86).                                                                                                                                                                                       | Useful Linux/shell reference, low priority for this workload. Current [Bun platforms](https://github.com/oven-sh/bun) are x64/ARM64, so this is not a direct stock-harness route.                            |
@@ -91,6 +91,54 @@ Sources: [repository](https://github.com/container2wasm/container2wasm),
 [v0.8.4 release](https://github.com/container2wasm/container2wasm/releases/tag/v0.8.4),
 [maintainers](https://github.com/container2wasm/container2wasm/blob/main/MAINTAINERS), and
 [contributors](https://github.com/container2wasm/container2wasm/graphs/contributors).
+
+### Maintenance And Compatibility Comparison
+
+Status checked 2026-09-05. Several alternatives show more recent or broader maintenance than container2wasm, but none
+combines that advantage with self-hostable open-source x86-64 Linux compatibility for stock Bun and OpenCode:
+
+| Option | Current maintenance signal | Why it does not replace container2wasm for this POC |
+| ------ | -------------------------- | -------------------------------------------------- |
+| **v86** | Active through September 2026, about 23k stars, and several substantial contributors. | Its emulated CPU remains 32-bit x86. It cannot run x86-64 Linux, Bun, or OpenCode's selected native binary. |
+| **Wasmer SDK** | Organization-backed and active through September 2026. | Executes WASI/WASIX programs rather than arbitrary Linux binaries; stock Bun and OpenCode do not become WASIX programs automatically. Its modified MIT license also needs separate review. |
+| **WebVM / CheerpX** | Company-developed and active through August 2026. | The Apache-2.0 WebVM shell depends on the proprietary CheerpX core, whose business use and self-hosting have separate terms. |
+| **NanoVM / userland.run** | Active in 2026 but new and small. | Runs RISC-V statically linked Linux binaries, not the stock Bun target; the emulator is AGPL-3.0 or commercially licensed. |
+| **Vivari** | Active but created only in July 2026 and still small. | Emulates selected Node/Bun APIs rather than providing normal Linux binary compatibility. |
+| **QEMU WASM** | Browser fork is maintained in the same ecosystem as container2wasm. | It shares the same key maintainer, so using it directly does not reduce the bus-factor concern. |
+
+If licensing and runtime modifiability become negotiable, WebVM/CheerpX is the most credible actively supported
+full-Linux comparison. Otherwise, container2wasm remains the closest match and should be treated as a technology probe,
+not a production dependency commitment.
+
+### v86 x86-64 Status And Box64
+
+v86 does not have experimental x86-64 support. Its only official branches are `master` and `wip`; `wip` is a staging
+branch and contains no long-mode implementation. The canonical x86-64 request has remained open and unassigned since
+2017 with no milestone or linked implementation. PAE support merged in 2022, but PAE extends 32-bit memory addressing;
+it does not add x86-64 instructions or long mode.
+
+Recent discussion has not turned into development:
+
+- A March 2025 x64 request was closed as a duplicate.
+- In February 2025, a commenter suggested Box64 as reference material.
+- A November 2025 request motivated by modern Node versions was closed without an implementation.
+- Work on an NX bit in late 2025/early 2026 was closed unmerged and was not long-mode support.
+- The latest canonical-issue comment, from March 2026, only expressed interest. No active x86-64 pull request, branch,
+  roadmap assignment, or relevant recent commit was found.
+
+[Box64](https://github.com/ptitSeb/box64) is a Linux userspace emulator and dynamic recompiler that runs x86-64 Linux
+programs on an existing 64-bit Arm, RISC-V, or LoongArch Linux host. It maps calls to the host's native Linux libraries
+instead of emulating a complete computer. It cannot be dropped into v86: v86 provides a 32-bit x86 machine, Box64 needs
+a 64-bit non-x86 Linux host, and Box64 is not a browser/WASM runtime. The suggestion was to study its translation
+techniques, not to use it as an available v86 plugin. A hypothetical browser RISC-V layer plus Box64 would require a
+port and two translation layers; no usable implementation was found.
+
+Sources: [v86 README](https://github.com/copy/v86/blob/master/Readme.md),
+[canonical x86-64 issue](https://github.com/copy/v86/issues/133),
+[implementation tips](https://github.com/copy/v86/issues/648),
+[2025 duplicate request](https://github.com/copy/v86/issues/1293),
+[Node-motivated request](https://github.com/copy/v86/issues/1458), and
+[Box64 README](https://github.com/ptitSeb/box64/blob/main/README.md).
 
 ### Important Caveats In The Shortlist
 
