@@ -257,7 +257,7 @@ function sessionsPage() {
 }
 
 function terminalPage(session: Session) {
-  return document(session.name, "terminal-page", `<main id="terminal" aria-label="${session.name}"></main><button id="connection-status" type="button" data-status="connecting" title="Refresh terminal connection" aria-live="polite">Connecting...</button>`);
+  return document(session.name, "terminal-page", `<main id="terminal" aria-label="${session.name}"></main><aside class="terminal-notices" aria-label="Terminal notifications"><button id="connection-status" class="terminal-notice" type="button" data-status="connecting" title="Refresh terminal connection" aria-live="polite">Connecting...</button><div id="copy-toast" class="terminal-notice" role="status" aria-live="polite" aria-atomic="true"></div></aside>`);
 }
 
 function notFoundPage() {

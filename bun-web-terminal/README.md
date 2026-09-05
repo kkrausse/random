@@ -14,6 +14,8 @@ Open <http://127.0.0.1:3000/sessions>. Sessions keep running when the browser di
 
 Terminal pages reconnect automatically after network interruptions or a suspended tab. Use the connection indicator in the top-right corner to force a fresh attachment and redraw.
 
+Compact light-blue notices in the top-right show connection status and confirm successful browser selection copies with a brief “Copied” toast. Copy failures show an error instead; application-owned clipboard operations do not trigger this toast.
+
 ## Session behavior
 
 - Each shell runs inside an isolated tmux server, with its status bar and prefix keys disabled. Your normal tmux server/configuration is independent.
