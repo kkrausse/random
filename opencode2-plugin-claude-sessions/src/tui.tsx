@@ -393,7 +393,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
   return (
     <box
       flexDirection="column"
-      height={38}
+      height={48}
       backgroundColor={props.context.theme.contextual.overlay.background.default}
     >
       <box height={4} flexShrink={0} flexDirection="column" paddingLeft={2} paddingRight={2}>
