@@ -2,7 +2,7 @@
 import type { SessionInfo } from "@opencode-ai/client"
 import { Plugin } from "@opencode-ai/plugin/tui"
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
-import { For, createEffect, createMemo, createSignal, onMount } from "solid-js"
+import { For, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 
 const PAGE_SIZE = 100
 const LOAD_MORE_THRESHOLD = 10
@@ -64,10 +64,14 @@ function SessionPicker(props: { context: Plugin.Context }) {
   const [loading, setLoading] = createSignal(false)
   const [failure, setFailure] = createSignal<string>()
   const [selectedIndex, setSelectedIndex] = createSignal(0)
+  const [tick, setTick] = createSignal(0)
+  const [liveVersion, setLiveVersion] = createSignal(0)
   const queriedLocations = new Set<string>()
   let scroll: ScrollBoxRenderable | undefined
 
   const rows = createMemo(() => {
+    tick()
+    liveVersion()
     const attentionByID = attention()
     return sortRows(
       sessions().map((session) => ({
@@ -111,31 +115,57 @@ function SessionPicker(props: { context: Plugin.Context }) {
     }),
   ])
 
-  function refreshAttention(loaded: SessionInfo[]) {
+  function applyAttentionLookup(location: SessionInfo["location"], key: string) {
+    const lookups: Array<Promise<{ kind: "permission" | "question"; ids: string[] }>> = [
+      props.context.client.permission.request
+        .list({ location })
+        .then((result) => ({ kind: "permission", ids: result.data.map((request) => request.sessionID) })),
+      props.context.client.form.request
+        .list({ location })
+        .then((result) => ({ kind: "question", ids: result.data.map((request) => request.sessionID) })),
+    ]
+    void Promise.allSettled(lookups).then((requests) => {
+      const found = requests.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []))
+      if (found.length === 0) return
+      setAttention((current) => {
+        const next = new Map(current)
+        // Reconcile: drop stale entries for sessions in this location, then apply fresh state.
+        const locationSessionIDs = new Set(
+          sessions()
+            .filter((session) => locationKey(session) === key)
+            .map((session) => session.id),
+        )
+        for (const id of locationSessionIDs) next.delete(id)
+        for (const result of found) for (const id of result.ids) next.set(id, result.kind)
+        return next
+      })
+    })
+  }
+
+  function refreshAttention(loaded: SessionInfo[], force = false) {
     const locations = new Map<string, SessionInfo["location"]>()
     for (const session of loaded) locations.set(locationKey(session), session.location)
 
     for (const [key, location] of locations) {
-      if (queriedLocations.has(key)) continue
+      if (!force && queriedLocations.has(key)) continue
       queriedLocations.add(key)
+      applyAttentionLookup(location, key)
+    }
+  }
 
-      const lookups: Array<Promise<{ kind: "permission" | "question"; ids: string[] }>> = [
-        props.context.client.permission.request
-          .list({ location })
-          .then((result) => ({ kind: "permission", ids: result.data.map((request) => request.sessionID) })),
-        props.context.client.form.request
-          .list({ location })
-          .then((result) => ({ kind: "question", ids: result.data.map((request) => request.sessionID) })),
-      ]
-      void Promise.allSettled(lookups).then((requests) => {
-        const found = requests.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []))
-        if (found.length === 0) return
-        setAttention((current) => {
-          const next = new Map(current)
-          for (const result of found) for (const id of result.ids) next.set(id, result.kind)
-          return next
-        })
-      })
+  function refreshLocationForSession(sessionID: string) {
+    const session = sessions().find((item) => item.id === sessionID)
+    if (!session) return
+    applyAttentionLookup(session.location, locationKey(session))
+  }
+
+  async function refreshSessionRow(sessionID: string) {
+    try {
+      const fresh = await props.context.client.session.get({ sessionID })
+      setSessions((loaded) => loaded.map((item) => (item.id === fresh.id ? fresh : item)))
+      setLiveVersion((version) => version + 1)
+    } catch {
+      // Session may be deleted or unreachable; event handlers below clean up.
     }
   }
 
@@ -241,6 +271,58 @@ function SessionPicker(props: { context: Plugin.Context }) {
         .catch(() => undefined)
     }
     void loadMore(true)
+
+    // Live updates while the picker is open. Running/idle also flows through
+    // context.data.session.status, but permission/question badges and titles
+    // need explicit event handling.
+    const unsubscribes = [
+      props.context.data.on("permission.asked", (event) => {
+        setAttention((current) => new Map(current).set(event.data.sessionID, "permission"))
+      }),
+      props.context.data.on("permission.replied", (event) => {
+        refreshLocationForSession(event.data.sessionID)
+      }),
+      props.context.data.on("form.created", (event) => {
+        setAttention((current) => new Map(current).set(event.data.form.sessionID, "question"))
+      }),
+      props.context.data.on("form.replied", (event) => {
+        refreshLocationForSession(event.data.sessionID)
+      }),
+      props.context.data.on("form.cancelled", (event) => {
+        refreshLocationForSession(event.data.sessionID)
+      }),
+      props.context.data.on("session.status", (event) => {
+        void refreshSessionRow(event.data.sessionID)
+      }),
+      props.context.data.on("session.idle", (event) => {
+        void refreshSessionRow(event.data.sessionID)
+      }),
+      props.context.data.on("session.created", (event) => {
+        void refreshSessionRow(event.data.sessionID)
+      }),
+      props.context.data.on("session.renamed", (event) => {
+        const title = event.data.title
+        setSessions((loaded) =>
+          loaded.map((item) => (item.id === event.data.sessionID ? { ...item, title } : item)),
+        )
+      }),
+      props.context.data.on("session.deleted", (event) => {
+        setSessions((loaded) => loaded.filter((item) => item.id !== event.data.sessionID))
+        setAttention((current) => {
+          if (!current.has(event.data.sessionID)) return current
+          const next = new Map(current)
+          next.delete(event.data.sessionID)
+          return next
+        })
+      }),
+    ]
+
+    // Keep "xm ago" labels fresh without refetching.
+    const timer = setInterval(() => setTick((value) => value + 1), 30_000)
+    onCleanup(() => {
+      clearInterval(timer)
+      for (const unsubscribe of unsubscribes) unsubscribe()
+    })
   })
 
   return (
