@@ -103,6 +103,14 @@ async function startTerminalPage() {
   fit.fit();
   terminal.focus();
   terminal.onTitleChange(updateTitle);
+  // Ctrl+Tab / Ctrl+Shift+Tab switch browser tabs. The emulator would encode
+  // these and preventDefault them, so stop them at window capture before they
+  // reach the terminal and let the browser handle them.
+  window.addEventListener("keydown", (event) => {
+    if (event.code === "Tab" && event.ctrlKey && !event.altKey && !event.metaKey) {
+      event.stopImmediatePropagation();
+    }
+  }, { capture: true });
   installScrolling(container, () => ({
     lineHeight: terminal.renderer?.getMetrics().height ?? 20,
     rows: terminal.rows,
