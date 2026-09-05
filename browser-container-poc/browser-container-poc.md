@@ -14,10 +14,9 @@ The runtime should be inspectable, modifiable, buildable, and self-hostable. A f
 demo is insufficient. Prefer standard open-source licenses; distinguish permissive licenses, copyleft, and custom
 restrictions. Open source does not necessarily mean permissive, and a wrapper's license does not cover its runtime.
 
-The wider idea is a reusable browser compute environment: small isolated workspaces that can host applications and
-agents operating on them. Frontend editing is the first useful workload, not necessarily the eventual boundary.
-Evaluate both how quickly a candidate solves this use case and how much freedom it leaves for substantially different
-programs later. A slightly heavier runtime may be worthwhile if it avoids rebuilding the environment for every new app.
+The target is a reusable browser coding environment: an agentic harness, its source workspace, and the workspace's HMR
+development server all run in the browser. Evaluate both how quickly a candidate completes that loop and whether its
+runtime is a sound, extensible base rather than a collection of demo-specific special cases.
 
 There are two separate questions:
 
@@ -25,8 +24,8 @@ There are two separate questions:
 2. **Can we deliver the editing experience with less machinery?** Try a browser Node-compatible runtime or explicit
    file tools plus a browser compiler. This may require adapting or replacing the harness.
 
-Do not decide that a VM is necessary just because the original implementation uses a container. Also do not equate
-WebAssembly execution with running arbitrary Linux binaries: that requires CPU/OS emulation or porting the programs.
+Do not assume that a VM is necessary. Also do not equate WebAssembly execution with running arbitrary Linux binaries:
+that requires CPU/OS emulation or porting the programs.
 
 ## First POC Decisions
 
@@ -34,7 +33,7 @@ These choices are enough to begin; avoid designing a general browser-compute pla
 
 - **Outer application:** Bun for package management and scripts, TypeScript, React, and Vite.
 - **Fixture:** a small, self-contained Vite + React + TypeScript application with two source files, one local asset,
-  one dependency, and no secrets, backend, authentication, private Git access, or application-specific integration.
+  one dependency, and no secrets, backend, authentication, private Git access, or external integration.
 - **Harness:** stock OpenCode in headless/server mode inside a full Linux environment. Do not begin with an adapted or
   reduced harness.
 - **Preview:** load the guest dev server as the top-level browser page during the POC, not in an iframe. Preview assets,
@@ -243,7 +242,7 @@ blocker rather than building a general runtime compatibility layer.
 
 Do not require every trial before choosing. The interesting first comparison is **stock-harness fidelity versus browser
 editing latency and integration effort**. Evaluate demos on public fixtures; load private source only into a reviewed,
-self-hosted build. Keep all POC code optional and outside the normal application startup path.
+self-hosted build.
 
 ### Common Editing Exercise
 
@@ -303,65 +302,15 @@ but does not demonstrate the final embedded experience.
 **External data:** fixtures only for these trials. Editable code may transmit any data it can read through allowed
 network paths. A VM alone does not establish confidentiality from its own code or the model provider.
 
-## Broader Direction: Applications And Agents In Browser Boxes
+## POC Boundary
 
-Treat a box conceptually as **a runtime, a filesystem, running processes, and explicitly granted connections**. An agent
-could live inside the same box as an application, or a trusted agent controller could operate one or more boxes through
-file/process tools. Neither arrangement needs to be implemented as a general platform during this POC.
+Treat the browser workspace as **a runtime, a filesystem, an agentic harness, running development processes, and an
+explicit preview connection**. Keep a small adapter around workspace creation, file read/write/export, process
+start/stop/output, preview ports, and disposal. Do not build a general orchestration platform during this POC.
 
-Examples worth keeping in view:
-
-- A Python data-processing workspace with scripts, packages, input files, and an agent that iterates on results.
-- A small API plus SQLite, with an agent exercising endpoints and changing the application.
-- A document/media conversion toolchain using native CLI programs and generated output files.
-- A compiler/test environment for another language, with an agent reading diagnostics and repairing code.
-- Multiple disposable experiments created from one base image, with selected results exported back to the user.
-
-These are proposed workloads, not claims that any candidate supports them. Running an agent locally also does not mean
-running model inference locally; keep inference placement independent from tool execution.
-
-### What Each Runtime Family Leaves Open
-
-| Family                                 | Potential breadth                                                                                          | Limitation to probe                                                                                                                                         |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Full Linux machine emulation           | Broadest compatibility hypothesis for existing applications, language runtimes, package tools, and agents. | Matching CPU architecture/features, memory and disk size, throughput, and hardware/device requirements. A Linux image does not guarantee a usable workload. |
-| User-mode CPU/syscall emulation        | Existing binaries without booting a full guest kernel; potentially useful between a full VM and a port.    | Exact syscall coverage, linking/loader constraints, process semantics, and architecture-specific binary availability.                                       |
-| WASI/WASIX programs                    | A collection of purpose-built WASM executables sharing files and process/network facilities.               | Each required program and native dependency needs an available compatible build or a port.                                                                  |
-| Browser Node/Bun compatibility runtime | JS applications, development tools, and agents whose dependencies fit the implemented API surface.         | Native binaries, FFI, unsupported runtime APIs, and tools outside the JS ecosystem. Additional language runtimes may be separate integrations.              |
-| Custom compiler/file tools             | Very controllable editing and execution of a deliberately supported application shape.                     | Least general option; broader application support becomes our responsibility. Keep as a focused baseline, not the default platform direction.               |
-
-The broader ambition raises the value of the emulation track and makes WASIX/user-mode emulation more than fallback
-curiosities. Keep two scores: **usefulness for today's editor** and **breadth of future applications**. Do not collapse
-them into one benchmark or choose solely by fastest React refresh.
-
-### Cheap Breadth Probes
-
-After a candidate passes a basic workspace exercise, try a few of these before investing in product integration:
-
-| Probe                                                                    | What it tells us                                                            |
-| ------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| Run a Python script over a local CSV and save a result                   | A second language, filesystem interoperability, and artifact export.        |
-| Start a small HTTP API backed by SQLite and call it from another process | Long-lived services, local networking, shared files, and database support.  |
-| Run a non-JS CLI already present in the image/package collection         | Whether arbitrary supported executables work or commands are special-cased. |
-| Run two processes with pipes, interrupt one, and inspect exit status     | Whether an agent can reliably supervise applications.                       |
-| Create two workspaces from one base; change a file in one                | Isolation and potential reuse of immutable downloads without mixing edits.  |
-| Resume saved files after termination and export a generated binary file  | Durability beyond text patches and independence from process snapshots.     |
-
-Use tiny fixtures and available tools; record unsupported probes without porting entire ecosystems. For conversion or
-compiler workloads, separately measure sustained CPU time. Do not infer general compute performance from interactive
-shell responsiveness.
-
-### Boundaries A Future Platform Would Need
-
-Browser-hosted services initially serve the local user's session. Public inbound access, collaboration, or work that
-continues after the tab closes needs additional infrastructure or a different execution host. Likewise, filesystem
-access to user-selected files, network relays, and hardware/GPU access are explicit integrations, not automatic guest
-Linux capabilities. Keep those distinctions visible when describing what a box can host.
-
-For the experiments, keep a small adapter around workspace creation, file read/write/export, process start/stop/output,
-preview ports, and disposal. Record capabilities such as supported executable formats and persistence behavior. Do not
-build a universal orchestration API yet. The durable asset should be portable source/input files and a reproducible
-environment recipe; opaque VM snapshots can remain an engine-specific optimization.
+The durable assets should be portable source files and a reproducible environment recipe; opaque VM snapshots can
+remain an engine-specific optimization. Running the harness locally does not imply local model inference, and public
+hosting, collaboration, and execution after the tab closes are outside this experiment.
 
 Working hypothesis: try **container2wasm/QEMU first** with stock OpenCode, Bun, and Vite. Use Bochs as a nearby backend
 comparison if practical. Keep Vivari, almostnode, and a custom compiler loop as fallbacks only if full machine emulation
