@@ -86,6 +86,7 @@ async function startTerminalPage() {
     fontFamily: theme.fontFamily,
     fontSize: theme.fontSize,
     scrollback: 10_000,
+    selectOnDrag: true,
     smoothScrollDuration: 0,
     theme: theme.terminal,
     rendererType: "webgl",
