@@ -35,10 +35,10 @@ These choices are enough to begin; avoid designing a general browser-compute pla
 - **Outer application:** Bun for package management and scripts, TypeScript, React, and Vite.
 - **Fixture:** a small, self-contained Vite + React + TypeScript application with two source files, one local asset,
   one dependency, and no secrets, backend, authentication, private Git access, or application-specific integration.
-- **Harness:** OpenCode in headless/server mode for the stock-harness track. A lightweight track may adapt the harness,
-  but must expose equivalent file read/search/patch, process output, cancellation, and model-streaming behavior.
-- **Preview:** a sandboxed iframe in the same browser application. The runtime may live in workers, but preview assets,
-  errors, and HMR WebSocket traffic must cross an explicit port/transport bridge.
+- **Harness:** stock OpenCode in headless/server mode inside a full Linux environment. Do not begin with an adapted or
+  reduced harness.
+- **Preview:** load the guest dev server as the top-level browser page during the POC, not in an iframe. Preview assets,
+  errors, and HMR WebSocket traffic must cross an explicit port/transport bridge. Embedding and isolation come later.
 - **Model access:** defer model calls until runtime, filesystem, dev server, and HMR work. Then use a narrow model relay;
   do not put provider credentials in the editable workspace.
 - **Persistence:** memory is sufficient for the first vertical slice. Add OPFS and patch export only after HMR works.
@@ -53,9 +53,8 @@ The fixture must prove:
 - Useful build diagnostics after a deliberate import or type error, followed by recovery.
 - Dev-server process output, exit status, and cancellation.
 
-TypeScript is an implementation choice for the shell and adapters, not a runtime strategy. The remaining go/no-go
-decision is whether unmodified OpenCode is mandatory. If it is, prioritize machine emulation. If a compatible adapter
-is acceptable, prioritize a browser Node-compatible runtime for a faster first result.
+TypeScript is an implementation choice for the shell and adapters, not a runtime strategy. This POC prioritizes
+unmodified OpenCode and normal Linux tooling, so machine emulation is the primary path.
 
 ## Candidate Map
 
@@ -73,6 +72,25 @@ Priority is our proposed experiment order, not a maturity or performance rating.
 | **v86**                                    | BSD-2-Clause x86-to-WASM emulator; lacks 64-bit extensions and multicore. [Project](https://github.com/copy/v86).                                                                                                                                                                                       | Useful Linux/shell reference, low priority for this workload. Current [Bun platforms](https://github.com/oven-sh/bun) are x64/ARM64, so this is not a direct stock-harness route.                            |
 | **Sandpack client bundler**                | Apache-2.0 browser bundler with documented custom `bundlerURL` setup. [Bundler repository](https://github.com/codesandbox/sandpack-bundler).                                                                                                                                                            | **Preview-only alternative.** Could accompany a custom agent loop. Prove current React/CSS behavior and self-host dependency delivery. Do not confuse it with Nodebox.                                       |
 | **Custom file tools + esbuild-wasm**       | Assemble browser file/search/edit tools and a compiler instead of simulating an OS. esbuild documents a browser API. [API](https://esbuild.github.io/api/#browser).                                                                                                                                     | **Small baseline POC.** Tests whether we need a general shell/runtime at all. We own route/CSS/build integration and the harness.                                                                            |
+
+### container2wasm Project Health
+
+Status checked 2026-09-05. The project is active and suitable for a timeboxed POC, but it carries meaningful
+single-maintainer risk:
+
+- Latest release: **v0.8.4**, 2026-03-16. It added a browser LLM-container example and reduced a browser runtime
+  dependency. Earlier 2025 releases included browser compatibility fixes for Firefox and Safari.
+- The repository reports activity through 2026-08-24 and is not archived. It has about 2.8k stars, 150 forks, and an
+  Apache-2.0 license.
+- `MAINTAINERS` lists only Kohei Tokunaga. GitHub attributes 721 commits to him and 165 to Dependabot, with very few
+  outside contributions. Treat the bus factor as one despite the repository living in an organization.
+- It remains pre-1.0 and has open issues and pull requests. Pin the tested release and its QEMU dependency; do not rely
+  on `main` or assume browser/Bun/OpenCode compatibility beyond what we measure.
+
+Sources: [repository](https://github.com/container2wasm/container2wasm),
+[v0.8.4 release](https://github.com/container2wasm/container2wasm/releases/tag/v0.8.4),
+[maintainers](https://github.com/container2wasm/container2wasm/blob/main/MAINTAINERS), and
+[contributors](https://github.com/container2wasm/container2wasm/graphs/contributors).
 
 ### Important Caveats In The Shortlist
 
@@ -113,7 +131,7 @@ also verify that the necessary runtime source and build inputs are present. This
 Trusted editor shell
   -> isolated runtime origin / worker
        QEMU or Bochs -> Linux -> OpenCode + source + frontend build/dev server
-  -> separate preview frame <- bridge for guest assets and updates
+  -> top-level preview page <- bridge for guest assets and updates
   -> authenticated, bounded model relay
 ```
 
@@ -168,10 +186,10 @@ blocker rather than building a general runtime compatibility layer.
 | Trial                | Initial effort cap                 | Evidence to collect                                                                                                                    |
 | -------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | Shared fixture       | Half day                           | A secrets-free source snapshot and frontend-only entry that works in a normal local runtime. Use the same input for all candidates.    |
-| Vivari               | Half day                           | Build and serve the fixture, edit TSX and CSS, observe HMR, and reload saved files. Then probe headless OpenCode.                       |
-| almostnode           | A few hours                        | Run the same fixture; compare actual plugin behavior and required adaptations with Vivari.                                             |
 | container2wasm/QEMU  | One day                            | Boot a prebuilt image; run Bun, stock OpenCode, file tools, and frontend build. Prove browser asset delivery before polishing HMR.     |
 | Bochs backend        | A few hours, if already accessible | Repeat the same guest workload and compare timing/compatibility. Avoid a separate image-building project.                              |
+| Vivari               | Optional fallback                  | Only try if full machine emulation fails a measured performance or compatibility threshold and adapting the harness becomes acceptable. |
+| almostnode           | Optional fallback                  | Compare with Vivari only after deciding that a reduced browser runtime is acceptable.                                                   |
 | Custom compiler loop | Half day                           | Apply a scripted multi-file patch, rebuild, display diagnostics, fix the error, export the patch. Add the model only after that works. |
 | WASIX / NanoVM       | Optional second round              | Only if initial results reveal a specific gap they could solve. First prove relevant toolchain binaries and license fit.               |
 
@@ -297,7 +315,7 @@ preview ports, and disposal. Record capabilities such as supported executable fo
 build a universal orchestration API yet. The durable asset should be portable source/input files and a reproducible
 environment recipe; opaque VM snapshots can remain an engine-specific optimization.
 
-Working hypothesis: try **container2wasm/QEMU and Vivari first**, with **almostnode and a small custom compiler loop**
-as inexpensive comparisons. Give **WASIX and NanoVM** a short breadth probe if their licensing and available packages
-fit. Choose after exercising real workloads, rather than treating a Linux boot demo or a claimed Bun API surface as
-the finished environment. The winning frontend POC and the most promising general-purpose box may be different.
+Working hypothesis: try **container2wasm/QEMU first** with stock OpenCode, Bun, and Vite. Use Bochs as a nearby backend
+comparison if practical. Keep Vivari, almostnode, and a custom compiler loop as fallbacks only if full machine emulation
+fails a measured performance or compatibility threshold. Give WASIX and NanoVM a short breadth probe only if they
+address a specific observed blocker. A Linux boot demo is not success; the complete harness-to-HMR loop must work.
