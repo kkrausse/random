@@ -16,6 +16,7 @@ type LocalTheme = {
   terminal: ITheme;
   fontFamily: string;
   fontSize: number;
+  scrollSensitivity?: number;
 };
 
 const sessionList = document.querySelector<HTMLElement>("#session-list");
@@ -115,7 +116,7 @@ async function startTerminalPage() {
     lineHeight: terminal.renderer?.getMetrics().height ?? 20,
     rows: terminal.rows,
     mode: terminal.wasmTerm?.hasMouseTracking() ? "mouse" : terminal.wasmTerm?.isAlternateScreen() ? "alternate" : "history",
-  }));
+  }), theme.scrollSensitivity ?? 0.5);
 
   container.addEventListener("paste", (event) => {
     const images = [...(event.clipboardData?.files ?? [])].filter((file) => file.type.startsWith("image/"));
