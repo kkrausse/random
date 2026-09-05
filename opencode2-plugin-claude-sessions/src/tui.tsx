@@ -102,31 +102,34 @@ function contextUsage(
   }
 }
 
-function contextStatsLine(
+function contextStats(
   session: SessionInfo | undefined,
   usage: { tokens: number; percent?: number; model?: { providerID: string; id: string } } | undefined,
   cost: number,
   syncing: boolean,
-) {
-  if (!session) return "New session — no context yet"
+): { left: string; right: string } {
+  if (!session) return { left: "New session — no context yet", right: "" }
   if (!usage) {
     // Messages for this session aren't synced yet (or it has no assistant
     // usage). Fall back to the session's cumulative totals so the row still
     // shows something useful.
     const tokens = session.tokens
     const total = tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write
-    if (total <= 0) return syncing ? "Context — loading…" : "Context — no usage yet"
-    const label = `Context ≈${formatCompactTokens(total)} total toks · ${formatCost(cost || session.cost)}`
-    return syncing ? `${label} · loading…` : label
+    if (total <= 0) return syncing ? { left: "Context — loading…", right: "" } : { left: "Context — no usage yet", right: "" }
+    return {
+      left: `Context ≈${formatCompactTokens(total)} total toks · ${formatCost(cost || session.cost)}`,
+      right: syncing ? "loading…" : "",
+    }
   }
-  const tokensLabel =
-    usage.percent !== undefined
-      ? `${usage.tokens.toLocaleString()} tokens (${usage.percent}% used)`
-      : `${usage.tokens.toLocaleString()} tokens`
-  const modelLabel = usage.model ? `${usage.model.providerID}/${usage.model.id}` : undefined
-  return [`Context ${tokensLabel}`, modelLabel, cost > 0 ? `${formatCost(cost)} spent` : undefined]
-    .filter(Boolean)
-    .join("  ·  ")
+  const leftParts = [
+    `Context ${usage.tokens.toLocaleString()} tokens`,
+    usage.model ? `${usage.model.providerID}/${usage.model.id}` : undefined,
+    cost > 0 ? `${formatCost(cost)} spent` : undefined,
+  ]
+  return {
+    left: leftParts.filter(Boolean).join("  ·  "),
+    right: usage.percent !== undefined ? `${usage.percent}% used` : syncing ? "loading…" : "",
+  }
 }
 
 function SessionPicker(props: { context: Plugin.Context }) {
@@ -198,6 +201,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
 
   const selectedSession = createMemo(() => sessions().find((session) => session.id === options()[selectedIndex()]?.value))
   const [contextSyncing, setContextSyncing] = createSignal(false)
+  const [contextVersion, setContextVersion] = createSignal(0)
   const selectedMessages = createMemo(() => {
     const sessionID = selectedSession()?.id
     return sessionID ? props.context.data.session.message.list(sessionID) : undefined
@@ -216,7 +220,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
     contextUsage(selectedMessages(), selectedModels(), selectedSession()?.revert?.messageID),
   )
   const selectedStats = createMemo(() =>
-    contextStatsLine(selectedSession(), selectedUsage(), selectedCost(), contextSyncing()),
+    contextStats(selectedSession(), selectedUsage(), selectedCost(), contextSyncing()),
   )
   const baseDirectory = createMemo(() => (currentSession ?? selectedSession() ?? sessions()[0]?.location.directory) ? (currentSession ?? selectedSession() ?? sessions()[0])!.location.directory : undefined)
   const visiblePreview = createMemo(() => preview()?.sessionID === selectedSession()?.id ? preview() : undefined)
@@ -224,6 +228,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
 
   createEffect(() => {
     const session = selectedSession()
+    contextVersion()
     let cancelled = false
     onCleanup(() => { cancelled = true })
     if (!session) {
@@ -333,6 +338,16 @@ function SessionPicker(props: { context: Plugin.Context }) {
     } catch {
       // Session may be deleted or unreachable; event handlers below clean up.
     }
+  }
+
+  function refreshContextForSession(sessionID: string) {
+    // Invalidate the cached messages so the next sync refetches, then bump
+    // the version to retrigger the selected-session context sync effect.
+    // The effect's sync() repopulates even without invalidate, but dropping
+    // the cache first avoids showing stale usage while refetching.
+    if (selectedSession()?.id !== sessionID) return
+    props.context.data.session.message.invalidate(sessionID)
+    setContextVersion((version) => version + 1)
   }
 
   async function loadMore(initial = false) {
@@ -467,9 +482,11 @@ function SessionPicker(props: { context: Plugin.Context }) {
       }),
       props.context.data.on("session.status", (event) => {
         void refreshSessionRow(event.data.sessionID)
+        refreshContextForSession(event.data.sessionID)
       }),
       props.context.data.on("session.idle", (event) => {
         void refreshSessionRow(event.data.sessionID)
+        refreshContextForSession(event.data.sessionID)
       }),
       props.context.data.on("session.created", (event) => {
         void refreshSessionRow(event.data.sessionID)
@@ -614,9 +631,14 @@ function SessionPicker(props: { context: Plugin.Context }) {
       )}
       <box height={permission() ? 19 : 6} flexShrink={0} flexDirection="column" paddingLeft={2} paddingRight={2}
         border={["top"]} borderColor={permission() ? props.context.theme.text.status.permission : props.context.theme.contextual.overlay.scrollbar.default}>
-        <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
-          {selectedStats()}
-        </text>
+        <box height={1} flexDirection="row" justifyContent="space-between">
+          <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
+            {selectedStats().left}
+          </text>
+          <text fg={props.context.theme.text.subdued} attributes={TextAttributes.BOLD}>
+            {selectedStats().right}
+          </text>
+        </box>
         {permission() ? (
           <>
             <text fg={props.context.theme.text.status.permission} attributes={TextAttributes.BOLD}>
