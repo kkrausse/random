@@ -38,13 +38,17 @@ chmod 755 /mnt/sdb/usr/local/bin/opencode2
 cp -a /mnt/sdc1/workspace /mnt/sdb/workspace
 cp /etc/resolv.conf /mnt/sdb/etc/resolv.conf
 
-# Bun's highest JIT tier aborted in FTLLazySlowPath under native QEMU.
-# Keep the interpreter, baseline JIT, and DFG enabled in both build and browser sessions.
-printf 'export JSC_useFTLJIT=false\n' > /mnt/sdb/etc/profile.d/browser-toolchain.sh
-export JSC_useFTLJIT=false
+# Bun 1.4.2 reads BUN_JSC_*, not JSC_*. FTL has aborted under QEMU.
+# Keep the interpreter, baseline JIT, and DFG enabled; verify the effective option below.
+printf 'export BUN_JSC_useFTLJIT=false\n' > /mnt/sdb/etc/profile.d/browser-toolchain.sh
+export BUN_JSC_useFTLJIT=false
 
 timeout -s KILL 120 chroot /mnt/sdb bun --version
 timeout -s KILL 120 chroot /mnt/sdb opencode2 --version
+timeout -s KILL 120 chroot /mnt/sdb /usr/bin/env BUN_JSC_dumpOptions=1 \
+  bun -e 'console.log("JSC option probe passed")' > /tmp/guest-jsc-options.log 2>&1
+cat /tmp/guest-jsc-options.log
+grep -q 'useFTLJIT=false' /tmp/guest-jsc-options.log
 timeout -s KILL 600 chroot /mnt/sdb /bin/sh -lc 'cd /workspace && bun install --frozen-lockfile'
 timeout -s KILL 600 chroot /mnt/sdb /bin/sh -lc 'cd /workspace && bun run build'
 printf 'toolchain and fixture validation passed\n' > /mnt/sdb/guest-build-ok

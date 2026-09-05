@@ -89,7 +89,7 @@ BUN_SHA256=$BUN_SHA256
 OPENCODE_VERSION=$OPENCODE_VERSION
 QEMU_CPU_MODEL=max
 REQUIRES_RUNTIME_PATCH=ctpop-operand-indexes
-JSC_useFTLJIT=false
+BUN_JSC_useFTLJIT=false
 EOF
 
 echo "Custom guest artifacts written to $DESTINATION"
