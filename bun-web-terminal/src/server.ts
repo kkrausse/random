@@ -171,8 +171,9 @@ async function buildClient() {
 function loadGhosttyTheme() {
   const fallback = { background: "#282c34", foreground: "#ffffff" };
   const browserFont = process.env.TERMINAL_FONT ?? "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace";
+  const scrollSensitivity = parseScrollSensitivity(process.env.TERMINAL_SCROLL_SENSITIVITY);
   const defaults = Bun.spawnSync(["ghostty", "+show-config", "--default"], { stdout: "pipe", stderr: "ignore" });
-  if (defaults.exitCode !== 0) return { terminal: fallback, fontFamily: browserFont, fontSize: 14 };
+  if (defaults.exitCode !== 0) return { terminal: fallback, fontFamily: browserFont, fontSize: 14, scrollSensitivity };
   const overrides = Bun.spawnSync(["ghostty", "+show-config"], { stdout: "pipe", stderr: "ignore" });
 
   const values = new Map<string, string[]>();
@@ -201,6 +202,7 @@ function loadGhosttyTheme() {
     terminal,
     fontFamily: browserFont,
     fontSize: Number(values.get("font-size")?.at(-1)) || 14,
+    scrollSensitivity,
   };
 }
 
@@ -225,6 +227,13 @@ function isSameOrigin(request: Request) {
 function parsePort(value: string) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) throw new Error(`Invalid PORT: ${value}`);
+  return parsed;
+}
+
+function parseScrollSensitivity(value: string | undefined) {
+  if (value === undefined || value === "") return 0.5;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 5) throw new Error(`Invalid TERMINAL_SCROLL_SENSITIVITY: ${value}`);
   return parsed;
 }
 

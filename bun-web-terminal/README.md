@@ -21,7 +21,7 @@ Terminal pages reconnect automatically after network interruptions or a suspende
 - One tab controls a session at a time. Opening it elsewhere detaches the previous tab, which shows **Take over** instead of repeatedly reconnecting.
 - Sessions survive browser disconnections, but belong to this server process. A normal server shutdown/restart ends them. Existing sessions from the previous direct-PTY implementation cannot migrate into tmux. Finish those before restarting your existing server to pick up this version.
 - Resizing settles for 150 ms in the browser and is coalesced again at the PTY. Output is delivered in batches of at most 32 KiB, with at most 128 KiB awaiting browser acknowledgment and 512 KiB queued. A stalled attachment is dropped and restored from tmux rather than accumulating unlimited work.
-- Scrolling runs at 35% sensitivity and accumulates fractional trackpad deltas. Shell history lives in tmux (10,000 lines); scrolling up enters its copy mode, and **Escape** returns to live input. Applications with mouse support receive normalized wheel input.
+- Scrolling runs at 50% sensitivity and accumulates fractional trackpad deltas. Shell history lives in tmux (10,000 lines); scrolling up enters its copy mode, and **Escape** returns to live input. Applications with mouse support receive normalized wheel input.
 - **Ctrl+V** reaches the application, including Emacs. Use **Cmd+V** on macOS or **Ctrl+Shift+V** on other platforms to paste.
 
 The browser terminal and tmux negotiate their own capabilities; programs inside tmux use `TERM=tmux-256color`. Ghostty-web remains the rendering/input engine, so engine-specific keyboard or rendering limitations can still be investigated independently.
@@ -58,6 +58,7 @@ Environment variables:
 - `HOST`: bind address, default `127.0.0.1`; use `0.0.0.0` for LAN access
 - `TERMINAL_CWD`: shell working directory, default is this repository's parent directory
 - `TERMINAL_FONT`: browser terminal font stack, default `ui-monospace, SFMono-Regular, Menlo, Monaco, monospace`
+- `TERMINAL_SCROLL_SENSITIVITY`: wheel scroll multiplier, default `0.5` (was `0.35`)
 - `TERMINAL_DIST`: client build output directory, default `dist`; use a separate directory for parallel test instances
 - `SHELL`: shell executable, default `/bin/zsh`
 

@@ -4,21 +4,26 @@ export class WheelAccumulator {
   private remainder = 0;
   private lastAt = 0;
   private lastMode = "";
+  readonly sensitivity: number;
+
+  constructor(sensitivity = 0.5) {
+    this.sensitivity = Number.isFinite(sensitivity) && sensitivity > 0 ? sensitivity : 0.5;
+  }
 
   steps(delta: number, deltaMode: number, lineHeight: number, rows: number, mode: string, now: number) {
     const lines = deltaMode === 1 ? delta : deltaMode === 2 ? delta * rows : delta / lineHeight;
     if (now - this.lastAt > 200 || mode !== this.lastMode || Math.sign(lines) !== Math.sign(this.remainder)) this.remainder = 0;
     this.lastAt = now;
     this.lastMode = mode;
-    this.remainder += lines * 0.35;
+    this.remainder += lines * this.sensitivity;
     const whole = Math.trunc(this.remainder);
     this.remainder -= whole;
     return Math.max(-8, Math.min(8, whole));
   }
 }
 
-export function installScrolling(container: HTMLElement, metrics: () => { lineHeight: number; rows: number; mode: string }) {
-  const accumulator = new WheelAccumulator();
+export function installScrolling(container: HTMLElement, metrics: () => { lineHeight: number; rows: number; mode: string }, sensitivity = 0.5) {
+  const accumulator = new WheelAccumulator(sensitivity);
   let forwarding = false;
   const handler = (event: WheelEvent) => {
     if (forwarding) return;
