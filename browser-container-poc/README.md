@@ -92,10 +92,10 @@ Existing generated images need the script copied into `/tmp` and run with `sh /t
 The custom image now boots in the browser, prints the pinned toolchain versions, and passes the POPCNT regression.
 Browser TypeScript now **passes** with `BUN_JSC_useFTLJIT=false`, retaining baseline and DFG JIT. The traced run took
 514 seconds including startup and diagnostic dumps. `BUN_JSC_dumpOptions=1` confirmed the effective setting; earlier
-attempted JIT-disable experiments used an ignored prefix. Vite dev mode now reports ready in the browser guest;
-direct HTTP validation is in progress. The production build was canceled to focus on the dev/HMR goal.
+attempted JIT-disable experiments used an ignored prefix. Vite dev mode now starts and serves the HTML, HMR client,
+and transformed TSX successfully over guest loopback HTTP. The production build was canceled to focus on the dev/HMR goal.
 See the result card for exact commands, timings, and handoff state.
-After validating Vite dev HTTP, add an explicit guest HTTP/WebSocket bridge for Vite assets and HMR, followed by the bounded
+Next, add an explicit guest HTTP/WebSocket bridge for Vite assets and HMR, followed by the bounded
 model relay. The empty preview pane intentionally does not claim those milestones are complete.
 
 ## Pinned upstream

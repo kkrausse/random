@@ -183,5 +183,20 @@ The validator now passes `--noproxy '*'` on all guest HTTP checks; the live shel
 A direct request connected but exceeded its initial 10-second response limit. Retrying in the background with a
 180-second bound, writing the response to `/tmp/dev-index.html` and an `INDEX_HTTP_EXIT` marker to `/tmp/dev-http.log`.
 
+### Vite dev guest HTTP: PASS
+
+All three direct guest-loopback requests completed successfully:
+
+| Request | Exit | Response bytes |
+| --- | --- | --- |
+| `/` | `INDEX_HTTP_EXIT=0` | 518 |
+| `/@vite/client` | `CLIENT_HTTP_EXIT=0` | 177,754 |
+| `/src/main.tsx` | `SOURCE_HTTP_EXIT=0` | 1,390 |
+
+Fresh serial inspection confirmed the HTML contains the React Refresh bootstrap, `/@vite/client`, and the fixture
+`/src/main.tsx` entrypoint. The successful index request ran from `1788649640` to `1788649713` (**73 seconds**).
+This is first-request latency during dev startup, not a warm-request or HMR measurement. Vite remains running in
+session `amber-walrus-881`. The HTTP gate is cleared; the adjacent preview and actual HMR WebSocket are still unbridged.
+
 Host `bun run build`, shell syntax checks, and `git diff --check` passed. Guest/runtime images have not been rebuilt
 in this continuation. `docker system df` now succeeds; no cleanup was performed.
