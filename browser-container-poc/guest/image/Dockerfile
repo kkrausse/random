@@ -17,7 +17,7 @@ COPY ./opencode.tgz /share/
 RUN dd if=/dev/zero of=/out/tmp.img bs=80M count=1 && mkfs.ext4 /out/tmp.img && \
     dd if=/dev/zero of=/out/disk-rootfs.img bs=768M count=1 && mkfs.ext4 -O ^has_journal /out/disk-rootfs.img
 
-COPY ./init.sh ./create-image.sh ./setup-wasm-networking ./root-profile /share/
+COPY ./init.sh ./create-image.sh ./setup-wasm-networking ./root-profile ./validate-workload.sh /share/
 COPY ./workspace /share/workspace
 COPY --from=create-image-dev /out/create-image /create-image
 COPY ./create-image-args-x86_64.json .

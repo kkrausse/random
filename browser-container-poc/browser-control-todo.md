@@ -1,5 +1,13 @@
 # Browser-control checks
 
+- [x] Continuation, same 0.7.0 session `amber-walrus-881` at localhost:5173: the installed
+  `/Users/kkrausse/.local/bin/browser-control` is on the non-interactive shell PATH and works directly.
+  `locator.fill()` on xterm's helper textarea returned successfully but did not send a serial command;
+  use `pressSequentially()` followed by `press("Enter")`. A single approximately 2.8 KB base64 paste
+  exceeded the guest terminal's line capacity and did not create the destination file. Recovery:
+  append base64 in 160-character chunks, decode, and compare host/guest SHA-256. The hashes matched.
+  These are terminal input constraints; no relay/session failure occurred in these interactions.
+
 - [x] 2026-09-05, browser-control 0.7.0, session `amber-walrus-881`: CLI was not on PATH;
    recovered using `bunx --bun @opencode-ai/browser-control`.
 - [x] Follow-up: user installed `/Users/kkrausse/.local/bin/browser-control`, a wrapper executing the global CLI with

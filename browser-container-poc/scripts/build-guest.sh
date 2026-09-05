@@ -44,6 +44,7 @@ cp "$ROOT/guest/image/Dockerfile" \
   "$ROOT/guest/image/create-image-args-x86_64.json" \
   "$ROOT/guest/image/root-profile" \
   "$CONTEXT/"
+cp "$ROOT/guest/validate-workload.sh" "$CONTEXT/validate-workload.sh"
 rm -rf "$CONTEXT/workspace"
 mkdir -p "$CONTEXT/workspace"
 tar -C "$ROOT/guest/fixture" \
