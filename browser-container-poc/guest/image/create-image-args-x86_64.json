@@ -1,5 +1,5 @@
 [
-  "-nographic", "-m", "512M", "-accel", "tcg", "-cpu", "max,-popcnt",
+  "-nographic", "-m", "512M", "-accel", "tcg", "-cpu", "max",
   "-nic", "user",
   "-cdrom", "/out/alpine.iso",
   "-drive", "file=/out/tmp.img,format=raw",

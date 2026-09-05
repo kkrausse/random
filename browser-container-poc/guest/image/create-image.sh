@@ -38,8 +38,15 @@ chmod 755 /mnt/sdb/usr/local/bin/opencode2
 cp -a /mnt/sdc1/workspace /mnt/sdb/workspace
 cp /etc/resolv.conf /mnt/sdb/etc/resolv.conf
 
-chroot /mnt/sdb /bin/sh -lc 'cd /workspace && bun install --frozen-lockfile'
-chroot /mnt/sdb /bin/sh -lc 'bun --version && opencode2 --version && cd /workspace && bun run build'
+# Bun's highest JIT tier aborted in FTLLazySlowPath under native QEMU.
+# Keep the interpreter, baseline JIT, and DFG enabled in both build and browser sessions.
+printf 'export JSC_useFTLJIT=false\n' > /mnt/sdb/etc/profile.d/browser-toolchain.sh
+export JSC_useFTLJIT=false
+
+timeout -s KILL 120 chroot /mnt/sdb bun --version
+timeout -s KILL 120 chroot /mnt/sdb opencode2 --version
+timeout -s KILL 600 chroot /mnt/sdb /bin/sh -lc 'cd /workspace && bun install --frozen-lockfile'
+timeout -s KILL 600 chroot /mnt/sdb /bin/sh -lc 'cd /workspace && bun run build'
 printf 'toolchain and fixture validation passed\n' > /mnt/sdb/guest-build-ok
 
 cp /mnt/sdc1/setup-wasm-networking /mnt/sdb/etc/init.d/

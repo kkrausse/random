@@ -22,7 +22,7 @@ COPY ./workspace /share/workspace
 COPY --from=create-image-dev /out/create-image /create-image
 COPY ./create-image-args-x86_64.json .
 RUN printf '%s' "$PACKAGES" > /share/packages && \
-    /create-image --args-json=create-image-args-x86_64.json qemu-system-x86_64
+    timeout --signal=TERM --kill-after=10s 30m /create-image --args-json=create-image-args-x86_64.json qemu-system-x86_64
 RUN rm -f /tmp/guest-build-ok && \
     debugfs -R 'dump /guest-build-ok /tmp/guest-build-ok' /out/disk-rootfs.img && \
     test -s /tmp/guest-build-ok && \
