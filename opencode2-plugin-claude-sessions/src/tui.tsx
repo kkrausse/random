@@ -54,6 +54,31 @@ function shortenLocation(location: string) {
   return `…/${parts.slice(-3).join("/")}`
 }
 
+function formatCompactTokens(value: number) {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`
+  return `${Math.round(value)}`
+}
+
+function formatCost(value: number) {
+  if (value < 0.01 && value > 0) return `$${value.toFixed(4)}`
+  return `$${value.toFixed(2)}`
+}
+
+function contextStatsLine(session: SessionInfo | undefined, messageCount: number | undefined) {
+  if (!session) return "New session — no context yet"
+  const tokens = session.tokens
+  const cacheTotal = tokens.cache.read + tokens.cache.write
+  const total = tokens.input + tokens.output + tokens.reasoning + cacheTotal
+  const parts = [
+    session.model ? `${session.model.providerID}/${session.model.id}` : undefined,
+    `⬡ ${formatCompactTokens(total)} toks (in ${formatCompactTokens(tokens.input)} · out ${formatCompactTokens(tokens.output)} · cache ${formatCompactTokens(cacheTotal)})`,
+    formatCost(session.cost),
+  ]
+  if (messageCount) parts.push(`${messageCount} msgs`)
+  return parts.filter(Boolean).join("  ·  ")
+}
+
 function SessionPicker(props: { context: Plugin.Context }) {
   const route = props.context.ui.router.current()
   const currentSessionID = route.type === "session" ? route.sessionID : undefined
@@ -122,6 +147,13 @@ function SessionPicker(props: { context: Plugin.Context }) {
   ])
 
   const selectedSession = createMemo(() => sessions().find((session) => session.id === options()[selectedIndex()]?.value))
+  const selectedMessageCount = createMemo(() => {
+    const sessionID = selectedSession()?.id
+    if (!sessionID) return undefined
+    const messages = props.context.data.session.message.list(sessionID)
+    return messages && messages.length > 0 ? messages.length : undefined
+  })
+  const selectedStats = createMemo(() => contextStatsLine(selectedSession(), selectedMessageCount()))
   const baseDirectory = createMemo(() => (currentSession ?? selectedSession() ?? sessions()[0]?.location.directory) ? (currentSession ?? selectedSession() ?? sessions()[0])!.location.directory : undefined)
   const visiblePreview = createMemo(() => preview()?.sessionID === selectedSession()?.id ? preview() : undefined)
   const permission = createMemo(() => visiblePreview()?.permissions[0])
@@ -499,8 +531,11 @@ function SessionPicker(props: { context: Plugin.Context }) {
           </For>
         </scrollbox>
       )}
-      <box height={permission() ? 18 : 5} flexShrink={0} flexDirection="column" paddingLeft={2} paddingRight={2}
+      <box height={permission() ? 19 : 6} flexShrink={0} flexDirection="column" paddingLeft={2} paddingRight={2}
         border={["top"]} borderColor={permission() ? props.context.theme.text.status.permission : props.context.theme.contextual.overlay.scrollbar.default}>
+        <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
+          {selectedStats()}
+        </text>
         {permission() ? (
           <>
             <text fg={props.context.theme.text.status.permission} attributes={TextAttributes.BOLD}>
