@@ -1,0 +1,20 @@
+{
+  "name": "bun-web-terminal",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot src/server.ts",
+    "start": "bun src/server.ts",
+    "typecheck": "bunx tsc --noEmit"
+  },
+  "dependencies": {
+    "ghostty-web": "0.4.0-next.20.g1858a59"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "bun": ">=1.3.5"
+  }
+}
