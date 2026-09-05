@@ -1,14 +1,32 @@
-# Browser Coding Workspace POC
+# Browser Coding Workspace POC Plan
 
 Research sketch, 2026-09-05. This explores a generic coding workspace whose harness, source tree, and development
 server execute inside the browser. The editor shell and application preview are views in the same browser application.
 No candidate has been built or benchmarked against the fixture yet. Capabilities below are upstream documentation
 claims unless explicitly described as our proposal. Pin revisions and record actual results when running the POCs.
 
-## What We Want To Learn
+## POC Contract
 
-Can a user open an editing workspace, prompt a code change, see a frontend update through HMR, and retain the source
-changes, with the coding harness and workspace executing on their own computer inside the browser?
+The POC has one black-and-white goal:
+
+> Run OpenCode inside a browser-hosted runtime, let OpenCode edit a workspace in that runtime, run the workspace's HMR
+> development server in the same runtime, and show the adjacent browser preview update from the edit without a manual
+> refresh.
+
+A candidate passes only when one continuous demonstration proves all of the following:
+
+1. The browser starts the candidate runtime without a host-side compute process.
+2. A pinned stock OpenCode V2 CLI/server starts inside that runtime. Use the current `opencode2` command if that is the
+   pinned distribution's executable name.
+3. OpenCode receives a real prompt and reads, searches, and edits files in a fixture workspace stored inside the runtime.
+4. Vite starts inside the same runtime and serves that workspace.
+5. The outer browser application displays the running fixture beside the workspace controls.
+6. OpenCode makes a visible multi-file change and Vite HMR updates the preview automatically, without restarting the
+   dev server or refreshing the preview.
+
+Model inference may use an external provider through a narrow relay. The harness, editable filesystem, and development
+server must execute in the browser runtime. A scripted patch, a separately hosted dev server, merely starting OpenCode,
+or rebuild-and-refresh does not pass.
 
 The runtime should be inspectable, modifiable, buildable, and self-hostable. A free trial, public SDK wrapper, or hosted
 demo is insufficient. Prefer standard open-source licenses; distinguish permissive licenses, copyleft, and custom
@@ -18,11 +36,11 @@ The target is a reusable browser coding environment: an agentic harness, its sou
 development server all run in the browser. Evaluate both how quickly a candidate completes that loop and whether its
 runtime is a sound, extensible base rather than a collection of demo-specific special cases.
 
-There are two separate questions:
+There are two implementation tracks, but they are judged by the same contract:
 
 1. **Can we preserve stock OpenCode and normal Linux tooling?** Try full machine emulation first.
-2. **Can we deliver the editing experience with less machinery?** Try a browser Node-compatible runtime or explicit
-   file tools plus a browser compiler. This may require adapting or replacing the harness.
+2. **Can OpenCode run on a lighter browser-native runtime?** Try Vivari as a side investigation. It only passes if real
+   OpenCode runs; a custom replacement harness is useful research but is not this POC.
 
 Do not assume that a VM is necessary. Also do not equate WebAssembly execution with running arbitrary Linux binaries:
 that requires CPU/OS emulation or porting the programs.
@@ -34,21 +52,19 @@ These choices are enough to begin; avoid designing a general browser-compute pla
 - **Outer application:** Bun for package management and scripts, TypeScript, React, and Vite.
 - **Fixture:** a small, self-contained Vite + React + TypeScript application with two source files, one local asset,
   one dependency, and no secrets, backend, authentication, private Git access, or external integration.
-- **Harness:** stock OpenCode in headless/server mode inside a full Linux environment. Do not begin with an adapted or
-  reduced harness.
-- **Preview:** load the guest dev server as the top-level browser page during the POC, not in an iframe. Preview assets,
-  errors, and HMR WebSocket traffic must cross an explicit port/transport bridge. Embedding and isolation come later.
-- **Model access:** defer model calls until runtime, filesystem, dev server, and HMR work. Then use a narrow model relay;
-  do not put provider credentials in the editable workspace.
+- **Harness:** a pinned stock OpenCode V2 CLI/server. An SDK entrypoint is acceptable for the Vivari investigation only
+  if it runs the real OpenCode host and preserves its file/process tool behavior.
+- **Preview:** show the guest dev server beside the workspace controls. Preview assets, errors, and HMR WebSocket traffic
+  must cross an explicit port/transport bridge.
+- **Model access:** use a narrow model relay and do not put provider credentials in the editable workspace. Infrastructure
+  can be proven incrementally, but the final pass requires a real OpenCode prompt causing the edit.
 - **Persistence:** memory is sufficient for the first vertical slice. Add OPFS and patch export only after HMR works.
 - **Package installation:** prebundle the fixture and dependencies. Arbitrary installs are a later capability.
 - **Security:** use public fixture code on localhost. Origin hardening and untrusted projects are follow-up work.
 
-The fixture must prove:
+In addition to the core pass, collect these diagnostics when practical:
 
 - TypeScript and TSX compilation, imports, a local asset, and dependency resolution.
-- A harness reading/searching files and applying a multi-file edit.
-- A visible HMR update after a harness edit, without manually refreshing the preview.
 - Useful build diagnostics after a deliberate import or type error, followed by recovery.
 - Dev-server process output, exit status, and cancellation.
 
@@ -61,11 +77,11 @@ Priority is our proposed experiment order, not a maturity or performance rating.
 
 | Candidate                                  | Execution model and licensing evidence                                                                                                                                                                                                                                                                  | Fit / first question                                                                                                                                                                                         |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **container2wasm**                         | Converts container images into browser/WASI artifacts using emulators. Converter is Apache-2.0; guest and emulator components retain their own licenses. [Project](https://github.com/container2wasm/container2wasm), [license](https://github.com/container2wasm/container2wasm/blob/main/LICENSE).    | **Primary stock-harness track.** Package pinned OpenCode, Bun, Git, and frontend dependencies. Can the actual edit loop run comfortably?                                                                     |
-| **QEMU WASM directly**                     | System emulation; the browser fork documents x86-64, AArch64, and RISC-V examples. Its status distinguishes interpreter support from ongoing WASM JIT upstreaming. [Project](https://github.com/ktock/qemu-wasm).                                                                                       | Use when container2wasm hides a needed option or backend. Record exact fork/backend; do not assume a stock QEMU release includes the same browser acceleration.                                              |
+| **QEMU WASM directly**                     | System emulation; the browser fork documents x86-64, AArch64, and RISC-V examples. Its status distinguishes interpreter support from ongoing WASM JIT upstreaming. [Project](https://github.com/ktock/qemu-wasm).                                                                                       | **Lead approach.** Own the browser integration and guest image explicitly. First run pinned stock OpenCode, Bun, and Vite; then implement the asset/HMR bridge. Record the exact fork and backend.            |
+| **container2wasm**                         | Converts container images into browser/WASI artifacts using emulators. Converter is Apache-2.0; guest and emulator components retain their own licenses. [Project](https://github.com/container2wasm/container2wasm), [license](https://github.com/container2wasm/container2wasm/blob/main/LICENSE).    | **Reference and build helper.** Reuse its image-conversion recipes, patches, filesystem, networking, or packaging where useful without making its generated runtime our primary abstraction.                 |
 | **Bochs / TinyEMU through container2wasm** | Existing conversion backends: x86-64 via Bochs and RISC-V via TinyEMU. [Backend overview](https://github.com/container2wasm/container2wasm).                                                                                                                                                            | Cheap comparison if the conversion path is already working. Bochs is relevant to x64 binaries; RISC-V needs matching tools and is not a stock Bun target.                                                    |
-| **Vivari**                                 | MIT repository; browser workers, Node's JS library code, virtual processes/files/networking. Advertises React Router, Tailwind, Vite/HMR, and Bun API emulation. [Project](https://github.com/maitrungduc1410/vivari).                                                                                  | **Lightweight fallback.** Promising overlap with the fixture, but does not meet the initial stock-harness requirement.                                                                                        |
-| **almostnode**                             | JS Node API emulation with VFS, browser compilation, and preview support; [MIT license](https://raw.githubusercontent.com/macaly/almostnode/main/LICENSE). [Project](https://github.com/macaly/almostnode).                                                                                             | **Lightweight fallback.** Compare with Vivari only after deciding that an adapted harness is acceptable.                                                                                                      |
+| **Vivari**                                 | MIT repository; browser workers, Node's JS library code, virtual processes/files/networking. Advertises React Router, Tailwind, Vite/HMR, and Bun API emulation. [Project](https://github.com/maitrungduc1410/vivari).                                                                                  | **Side quest.** It already targets the development-server half of the contract. Determine whether the real OpenCode V2 host can run on its Node/Bun compatibility surface.                                  |
+| **almostnode**                             | JS Node API emulation with VFS, browser compilation, and preview support; [MIT license](https://raw.githubusercontent.com/macaly/almostnode/main/LICENSE). [Project](https://github.com/macaly/almostnode).                                                                                             | **Deferred alternative.** Consider only if the Vivari investigation reveals a specific advantage almostnode could provide.                                                                                   |
 | **Wasmer SDK / WASIX**                     | Runs WASM-targeted programs with filesystem/process/port APIs; current SDK calls itself alpha. Includes browser shell and networking examples. [Project](https://github.com/wasmerio/wasmer-sdk).                                                                                                       | **Conditional second round.** Useful middle ground between JS emulation and a whole machine. Native Bun/OpenCode binaries do not become WASIX programs automatically.                                        |
 | **NanoVM / userland.run**                  | RISC-V user-mode Linux emulation, plus additional execution runners. Emulator offers AGPL-3.0 or commercial terms; SDK is described separately as MPL-2.0. [Project](https://github.com/userland-run/nano), [license explanation](https://raw.githubusercontent.com/userland-run/nano/main/LICENSE.md). | **Exploratory second round.** Interesting syscall-emulation/hybrid approach. Check static-binary requirements, runner selection, and actual Node performance. RISC-V is a poor starting point for stock Bun. |
 | **v86**                                    | BSD-2-Clause x86-to-WASM emulator; lacks 64-bit extensions and multicore. [Project](https://github.com/copy/v86).                                                                                                                                                                                       | Useful Linux/shell reference, low priority for this workload. Current [Bun platforms](https://github.com/oven-sh/bun) are x64/ARM64, so this is not a direct stock-harness route.                            |
@@ -93,10 +109,11 @@ Sources: [repository](https://github.com/container2wasm/container2wasm),
 
 ### Maintenance And Compatibility Comparison
 
-Status checked 2026-09-05. Several alternatives show more recent or broader maintenance than container2wasm, but none
-combines that advantage with self-hostable open-source x86-64 Linux compatibility for stock Bun and OpenCode:
+Status checked 2026-09-05. Several alternatives have stronger maintenance signals than the QEMU-Wasm/container2wasm
+ecosystem, but none combines that advantage with self-hostable open-source x86-64 Linux compatibility for stock Bun and
+OpenCode:
 
-| Option | Current maintenance signal | Why it does not replace container2wasm for this POC |
+| Option | Current maintenance signal | Implication for the lead QEMU-Wasm approach |
 | ------ | -------------------------- | -------------------------------------------------- |
 | **v86** | Active through September 2026, about 23k stars, and several substantial contributors. | Its emulated CPU remains 32-bit x86. It cannot run x86-64 Linux, Bun, or OpenCode's selected native binary. |
 | **Wasmer SDK** | Organization-backed and active through September 2026. | Executes WASI/WASIX programs rather than arbitrary Linux binaries; stock Bun and OpenCode do not become WASIX programs automatically. Its modified MIT license also needs separate review. |
@@ -106,8 +123,8 @@ combines that advantage with self-hostable open-source x86-64 Linux compatibilit
 | **QEMU WASM** | Browser fork is maintained in the same ecosystem as container2wasm. | It shares the same key maintainer, so using it directly does not reduce the bus-factor concern. |
 
 If licensing and runtime modifiability become negotiable, WebVM/CheerpX is the most credible actively supported
-full-Linux comparison. Otherwise, container2wasm remains the closest match and should be treated as a technology probe,
-not a production dependency commitment.
+full-Linux comparison. Otherwise, direct QEMU-Wasm remains the lead experiment. Treat container2wasm as implementation
+evidence and a source of reusable build/runtime pieces, not a required production abstraction.
 
 ### v86 x86-64 Status And Box64
 
@@ -170,51 +187,61 @@ execution directly. [Browser backend notes](https://github.com/ktock/qemu-wasm)
 License findings describe the inspected upstream versions. Before a trial, save the exact revision and license files;
 also verify that the necessary runtime source and build inputs are present. This matters more than repository popularity.
 
-## Three Shapes Worth Trying
+## Implementation Tracks
 
 ### A. Stock Harness Inside An Emulated Machine
 
 ```text
 Trusted editor shell
   -> isolated runtime origin / worker
-       QEMU or Bochs -> Linux -> OpenCode + source + frontend build/dev server
-  -> top-level preview page <- bridge for guest assets and updates
+       QEMU-Wasm -> Linux -> OpenCode + source + frontend build/dev server
+  -> adjacent preview <- bridge for guest assets and HMR
   -> authenticated, bounded model relay
 ```
 
-Use container2wasm as packaging first. Build an image with tools and dependencies preinstalled; x64 is the initial
-candidate, with AArch64 as an alternative if that backend offers better compatibility/performance. First prove
-`bun`, OpenCode startup, and the real frontend build without any model call. Then add a prompt.
+Integrate [QEMU-Wasm](https://github.com/ktock/qemu-wasm) directly so the POC controls machine startup, filesystem image,
+serial/process control, networking, port forwarding, and instrumentation. Build a minimal Linux image with pinned
+OpenCode, Bun, the fixture, and its dependencies preinstalled. x64 is the initial candidate; test AArch64 only if its
+backend provides a concrete compatibility or performance advantage.
+
+Use container2wasm as a reference and optional build helper. Borrow its kernel/image recipes, patches, filesystem setup,
+network stack, or generated artifacts when that saves time, but keep our browser-facing runtime integration against
+QEMU-Wasm rather than the converter's output contract.
+
+Prove in this order: guest boot and control, `bun`, stock OpenCode startup, Vite serving bridged assets, HMR transport,
+then a real OpenCode prompt that performs the visible edit. These are incremental milestones; only the final step passes
+the POC contract.
 
 Expected advantage: fewer harness changes and more faithful shell/tool behavior. Main unknowns: image download size,
 memory, guest CPU features, process startup, filesystem performance, and HMR forwarding. Do not build a desktop GUI;
 serial/headless control is sufficient. A normal container on the developer machine is a useful timing baseline.
 
-### B. Browser Runtime With A Compatible Or Adapted Harness
+### B. Vivari Side Quest
 
 ```text
 Trusted editor shell
   -> isolated runtime host
        browser Node/Bun compatibility layer + virtual source tree + frontend tooling
-       compatible harness, or adapted file/process tools
+        real OpenCode host using the available Node/Bun surface
   -> separate preview frame
   -> authenticated, bounded model relay
 ```
 
-Try Vivari first, almostnode second. Test frontend compatibility before spending time porting OpenCode. A runtime can
-win the preview comparison while failing the harness comparison. If a small adapter fixes the latter, document it; if
-it becomes a fork of numerous Bun/Node internals, stop and compare with A or C.
+Vivari already claims the Vite/HMR, virtual filesystem, package-manager, and process pieces. Start by attempting to run
+the real OpenCode V2 host—preferably through its SDK or JavaScript entrypoint—before integrating Vivari's preview UI. A
+thin launch adapter is acceptable; replacing OpenCode's agent or file/process tools is not a pass. Record every missing
+Node/Bun API. Stop if success requires a broad compatibility fork.
 
 Wasmer/WASIX is a possible variation using ported executables. Its examples include outbound networking through WISP;
 record any external relay instead of describing the result as independent of servers.
 [SDK examples](https://github.com/wasmerio/wasmer-sdk)
 
-### C. Purpose-Built Browser Editing Loop
+### C. Purpose-Built Comparison Only
 
 Give the model explicit `listFiles`, `readFile`, `search`, `applyPatch`, and `buildPreview` operations over one virtual
-workspace. Compile through esbuild-wasm, supply pinned dependency artifacts, and render in a separate frame. Start with
-rebuild-and-reload, without requiring React state-preserving HMR. This is an intentional POC relaxation of the original
-plan, not proof that the full V1 HMR requirement is met.
+workspace. Compile through esbuild-wasm, supply pinned dependency artifacts, and render in a separate frame. This can
+help isolate integration problems, but it does not pass this POC because it replaces OpenCode and the in-runtime HMR
+server.
 
 If shell syntax helps the agent, consider [just-bash](https://github.com/vercel-labs/just-bash): its browser-supported core
 provides a simulated shell and filesystem. It cannot execute arbitrary native binaries; several optional commands are
@@ -227,18 +254,19 @@ quietly changes the goal.
 
 ## Small POC Sequence
 
-Suggested exploration order; timeboxes are effort caps, not delivery estimates. Stop a failing candidate with a concrete
-blocker rather than building a general runtime compatibility layer.
+Suggested exploration order. Stop a failing candidate with a concrete blocker rather than building a general runtime
+compatibility layer.
 
-| Trial                | Initial effort cap                 | Evidence to collect                                                                                                                    |
-| -------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Shared fixture       | Half day                           | A secrets-free source snapshot and frontend-only entry that works in a normal local runtime. Use the same input for all candidates.    |
-| container2wasm/QEMU  | One day                            | Boot a prebuilt image; run Bun, stock OpenCode, file tools, and frontend build. Prove browser asset delivery before polishing HMR.     |
-| Bochs backend        | A few hours, if already accessible | Repeat the same guest workload and compare timing/compatibility. Avoid a separate image-building project.                              |
-| Vivari               | Optional fallback                  | Only try if full machine emulation fails a measured performance or compatibility threshold and adapting the harness becomes acceptable. |
-| almostnode           | Optional fallback                  | Compare with Vivari only after deciding that a reduced browser runtime is acceptable.                                                   |
-| Custom compiler loop | Half day                           | Apply a scripted multi-file patch, rebuild, display diagnostics, fix the error, export the patch. Add the model only after that works. |
-| WASIX / NanoVM       | Optional second round              | Only if initial results reveal a specific gap they could solve. First prove relevant toolchain binaries and license fit.               |
+| Trial                       | Priority           | Evidence to collect                                                                                                                |
+| --------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Shared fixture              | Prerequisite       | A secrets-free source snapshot that runs under pinned Bun/Vite locally. Use exactly the same fixture for each runtime.              |
+| Direct QEMU-Wasm boot       | First              | Boot and control the pinned x64 Linux image in-browser; capture download size, startup time, memory, and selected execution backend. |
+| OpenCode inside QEMU-Wasm   | First              | Start pinned stock OpenCode, make a real model call, and prove its read/search/edit/process tools operate on the guest workspace.   |
+| Vite/HMR inside QEMU-Wasm   | First              | Bridge HTTP and WebSocket traffic, show the adjacent preview, and pass the complete prompt-to-HMR contract.                         |
+| container2wasm comparison   | Supporting         | Identify build recipes, patches, networking pieces, or generated artifacts worth reusing in the direct integration.                |
+| Vivari                      | Side quest         | Run the real OpenCode host, then pass the same prompt-to-HMR contract; list every compatibility patch.                              |
+| Bochs / other emulators     | Only after blocker | Compare only when a measured QEMU-Wasm blocker gives another backend a specific reason to win.                                     |
+| Custom compiler loop        | Diagnostic only    | Isolate filesystem/compiler/preview issues. Do not count it as a successful POC.                                                   |
 
 Do not require every trial before choosing. The interesting first comparison is **stock-harness fidelity versus browser
 editing latency and integration effort**. Evaluate demos on public fixtures; load private source only into a reviewed,
@@ -312,7 +340,7 @@ The durable assets should be portable source files and a reproducible environmen
 remain an engine-specific optimization. Running the harness locally does not imply local model inference, and public
 hosting, collaboration, and execution after the tab closes are outside this experiment.
 
-Working hypothesis: try **container2wasm/QEMU first** with stock OpenCode, Bun, and Vite. Use Bochs as a nearby backend
-comparison if practical. Keep Vivari, almostnode, and a custom compiler loop as fallbacks only if full machine emulation
-fails a measured performance or compatibility threshold. Give WASIX and NanoVM a short breadth probe only if they
-address a specific observed blocker. A Linux boot demo is not success; the complete harness-to-HMR loop must work.
+Working hypothesis: integrate **QEMU-Wasm directly** with an x64 Linux image containing pinned stock OpenCode, Bun, Vite,
+and the fixture. Use container2wasm as a reference or build helper where useful, without centering the architecture on
+it. Pursue Vivari as a side quest against the exact same pass contract. A Linux boot, an OpenCode startup screen, a
+scripted file edit, or a preview that requires refresh is not success; the complete real-prompt-to-HMR loop must work.
