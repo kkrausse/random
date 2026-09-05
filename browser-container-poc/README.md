@@ -40,11 +40,15 @@ then builds the Emscripten preload packages:
 # Fetch the base QEMU/ROM artifacts first, then replace its guest packages.
 bun run artifacts
 bun run guest:build
+bun run runtime:build
 ```
 
 The build is slow and writes generated files to `public/qemu/`. On the next VM boot, logging in as `root` prints the
 pinned Bun and OpenCode versions and starts in `/workspace`. Re-running `bun run artifacts` restores the upstream boot
 baseline; run `bun run guest:build` afterward to restore the toolchain guest.
+Also run `bun run runtime:build` to restore the patched QEMU runtime. The runtime builder uses the pinned QEMU source
+plus `guest/qemu-popcnt.patch`; it retains its source checkout in `.cache/qemu-runtime` and its Docker builder image
+for subsequent builds. Compilation uses two jobs to limit peak resource usage.
 
 The builder removes its temporary QEMU checkout and raw 768 MB disk output when it exits. It retains verified downloads
 in `.cache/downloads/`, browser-ready files in `public/qemu/`, and normal reusable Docker layers.
@@ -52,18 +56,32 @@ in `.cache/downloads/`, browser-ready files in `public/qemu/`, and normal reusab
 ### Toolchain build status
 
 The native-QEMU validation has passed through all guest workload checks: Bun reports `1.4.2`, OpenCode reports
-`0.0.0-beta-19157`, the frozen fixture install completes, TypeScript compiles, and Vite builds the fixture. Final browser
-artifact packaging and a browser boot of that custom image remain to be recorded.
+`0.0.0-beta-19157`, the frozen fixture install completes, TypeScript compiles, and Vite builds the fixture. Custom guest
+artifact packaging has also completed. See [`browser-result.md`](./browser-result.md) for the executed checks and browser
+validation status.
 
-QEMU uses `-cpu max,-popcnt`. Bun needs features missing from the legacy default `qemu64` model, while QEMU-Wasm's
-`POPCNT` implementation produced a wrong result and panicked Alpine during browser boot when the unrestricted `max`
-model was tested. The restricted model still needs a completed browser boot result.
+The native guest builder uses `-cpu max`. Disabling POPCNT reproduced a Bun startup hang, printing only its crash-report
+separator during the frozen install. Version checks now run before installation, with bounded timeouts for each workload
+and a 30-minute outer installer limit.
+
+Guest sessions set `JSC_useFTLJIT=false` via `/etc/profile.d/browser-toolchain.sh`: a subsequent native-QEMU Vite build
+aborted in JavaScriptCore's `FTL::LazySlowPath::generate`. This disables the highest optimization tier while retaining
+the lower JIT tiers, and leaves the pinned Bun/OpenCode binaries unmodified. The builder uses the same setting.
+
+The baseline browser runtime still uses `max,-popcnt` to avoid the known kernel panic. The patched runtime enables `max`:
+`guest/qemu-popcnt.patch` corrects both ctpop operand indexes and zero-extends the 32-bit Wasm result before storing it in
+the 64-bit register global. `public/qemu/runtime-build.txt` selects the patched CPU configuration; the toolchain image
+requires that marker. `bun run artifacts` removes both custom build markers when restoring the baseline.
+The runtime build also emits `public/qemu/popcnt-test`, a standalone x86-64 regression executable from
+`guest/popcnt-test.S` that checks 32/64-bit, zero, patterned, and in-place operands over 100,000 iterations.
 
 ## Known boundary
 
-The toolchain image recipe is the second milestone, but it still needs an executed browser result card. Next, add an
-explicit guest HTTP/WebSocket bridge for Vite assets and HMR, followed by the bounded model relay. The empty preview pane
-intentionally does not claim those milestones are complete.
+The custom image now boots in the browser, prints the pinned toolchain versions, and passes the POPCNT regression.
+The browser fixture build is still blocked: it stalls during the TypeScript step, even with FTL disabled. The next
+diagnostic is `JSC_useJIT=false` in a fresh guest; this experiment is not yet executed. See the result card for details.
+After resolving that stall, add an explicit guest HTTP/WebSocket bridge for Vite assets and HMR, followed by the bounded
+model relay. The empty preview pane intentionally does not claim those milestones are complete.
 
 ## Pinned upstream
 

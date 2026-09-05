@@ -41,8 +41,16 @@ async function boot() {
   terminal.loadAddon(master);
 
   const assetRoot = `${window.location.origin}/qemu/`;
+  const runtimeBuild = await fetch(assetRoot + "runtime-build.txt", { cache: "no-store" });
+  const patchedPopcnt = runtimeBuild.ok && (await runtimeBuild.text()).includes("PATCH=ctpop-operand-indexes");
+  if (!patchedPopcnt) {
+    const guestBuild = await fetch(assetRoot + "guest-build.txt", { cache: "no-store" });
+    if (guestBuild.ok && (await guestBuild.text()).includes("REQUIRES_RUNTIME_PATCH=ctpop-operand-indexes")) {
+      throw new Error("The toolchain guest requires the POPCNT fix. Run bun run runtime:build, then restart the VM.");
+    }
+  }
   Module.arguments = [
-    "-nographic", "-M", "pc", "-m", "512M", "-accel", "tcg,tb-size=500", "-cpu", "max,-popcnt",
+    "-nographic", "-M", "pc", "-m", "512M", "-accel", "tcg,tb-size=500", "-cpu", patchedPopcnt ? "max" : "max,-popcnt",
     "-L", "/pack-rom/", "-nic", "none",
     "-kernel", "/pack-kernel/vmlinuz-virt",
     "-initrd", "/pack-initramfs/initramfs-virt",

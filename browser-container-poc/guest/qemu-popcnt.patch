@@ -1,0 +1,19 @@
+diff --git a/tcg/wasm32/tcg-target.c.inc b/tcg/wasm32/tcg-target.c.inc
+--- a/tcg/wasm32/tcg-target.c.inc
++++ b/tcg/wasm32/tcg-target.c.inc
+@@ -1501,5 +1501,6 @@
+     tcg_wasm_out_op_global_get_r(s, src);
+     tcg_wasm_out_op_i32_wrap_i64(s);
+     tcg_wasm_out_op_i32_popcnt(s);
++    tcg_wasm_out_op_i64_extend_i32_u(s);
+     tcg_wasm_out_op_global_set_r(s, dest);
+ }
+@@ -3690,6 +3691,6 @@
+     case INDEX_op_ctpop_i32:
+-        tcg_out_ctpop_i32(s, opc, args[1], args[2]);
++        tcg_out_ctpop_i32(s, opc, args[0], args[1]);
+         break;
+     case INDEX_op_ctpop_i64:
+-        tcg_out_ctpop_i64(s, opc, args[1], args[2]);
++        tcg_out_ctpop_i64(s, opc, args[0], args[1]);
+         break;

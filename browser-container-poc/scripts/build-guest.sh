@@ -61,6 +61,7 @@ docker build \
   --output "type=local,dest=$OUTPUT" \
   "$CONTEXT"
 
+rm -f "$DESTINATION/guest-build.txt"
 for kind in kernel initramfs rootfs; do
   pack="$OUTPUT/pack-$kind"
   rm -rf "$pack"
@@ -70,13 +71,13 @@ for kind in kernel initramfs rootfs; do
     initramfs) cp "$OUTPUT/initramfs-virt" "$pack/" ;;
     rootfs) cp "$OUTPUT/disk-rootfs.img" "$pack/" ;;
   esac
-  lz4=()
-  [[ "$kind" == rootfs ]] && lz4=(--lz4)
+  lz4=""
+  [[ "$kind" == rootfs ]] && lz4="--lz4"
   docker run --rm \
     -v "$pack:/pack-$kind:ro" \
     -v "$DESTINATION:/artifacts" \
     "$PACKAGER_IMAGE" /bin/sh -lc \
-    "cd /artifacts && /emsdk/upstream/emscripten/tools/file_packager.py load-$kind.data ${lz4[*]} --preload /pack-$kind > load-$kind.js"
+    "cd /artifacts && /emsdk/upstream/emscripten/tools/file_packager.py load-$kind.data $lz4 --preload /pack-$kind > load-$kind.js"
 done
 
 cat > "$DESTINATION/guest-build.txt" <<EOF
@@ -86,7 +87,9 @@ ALPINE_SHA256=$ALPINE_SHA256
 BUN_VERSION=$BUN_VERSION
 BUN_SHA256=$BUN_SHA256
 OPENCODE_VERSION=$OPENCODE_VERSION
-QEMU_CPU_MODEL=max,-popcnt
+QEMU_CPU_MODEL=max
+REQUIRES_RUNTIME_PATCH=ctpop-operand-indexes
+JSC_useFTLJIT=false
 EOF
 
 echo "Custom guest artifacts written to $DESTINATION"

@@ -13,6 +13,7 @@ async function gitBlobSha(file: string, bytes: number) {
 }
 
 await mkdir(destination, { recursive: true });
+await Promise.all(["guest-build.txt", "runtime-build.txt"].map((name) => rm(resolve(destination, name), { force: true })));
 
 for (const [name, expected] of Object.entries(lock.files)) {
   const output = resolve(destination, name);
