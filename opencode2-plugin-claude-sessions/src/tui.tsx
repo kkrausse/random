@@ -152,13 +152,13 @@ function SessionPicker(props: { context: Plugin.Context }) {
     })
   })
 
-  async function replyToPermission(reply: "once" | "reject") {
+  async function replyToPermission(reply: "once" | "always" | "reject") {
     const request = permission()
     if (!request || replying() || previewLoading()) return
     setReplying(true)
     try {
       await props.context.client.permission.reply({ sessionID: request.sessionID, requestID: request.id, reply })
-      props.context.ui.toast.show({ message: reply === "once" ? "Permission approved once" : "Permission denied", variant: "success" })
+      props.context.ui.toast.show({ message: reply === "once" ? "Permission approved once" : reply === "always" ? "Permission approved always" : "Permission denied", variant: "success" })
     } catch (error) {
       props.context.ui.toast.show({ message: error instanceof Error ? error.message : "Could not reply to permission", variant: "error" })
     } finally {
@@ -297,6 +297,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
       { bind: "linefeed", run: selectCurrent },
       { bind: "right", run: selectCurrent },
       { bind: "a", run: (_input, event) => { if (!event?.repeated) return replyToPermission("once") } },
+      { bind: "A", run: (_input, event) => { if (!event?.repeated) return replyToPermission("always") } },
       { bind: "d", run: (_input, event) => { if (!event?.repeated) return replyToPermission("reject") } },
     ],
   }))
@@ -512,7 +513,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
               </text>
             </scrollbox>
             <text fg={props.context.theme.text.subdued}>
-              {replying() ? "Sending reply…" : "a approve once  ·  d deny  ·  enter open session"}
+              {replying() ? "Sending reply…" : "a approve once  ·  A always  ·  d deny  ·  enter open session"}
             </text>
           </>
         ) : (
