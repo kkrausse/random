@@ -64,9 +64,12 @@ The native guest builder uses `-cpu max`. Disabling POPCNT reproduced a Bun star
 separator during the frozen install. Version checks now run before installation, with bounded timeouts for each workload
 and a 30-minute outer installer limit.
 
-Guest sessions set `JSC_useFTLJIT=false` via `/etc/profile.d/browser-toolchain.sh`: a subsequent native-QEMU Vite build
-aborted in JavaScriptCore's `FTL::LazySlowPath::generate`. This disables the highest optimization tier while retaining
-the lower JIT tiers, and leaves the pinned Bun/OpenCode binaries unmodified. The builder uses the same setting.
+The guest recipe sets `BUN_JSC_useFTLJIT=false` via `/etc/profile.d/browser-toolchain.sh` to disable Bun's highest
+optimization tier while retaining the lower tiers. FTL crashes have been observed under QEMU. The builder uses the same
+setting and checks Bun's effective option dump before installing dependencies. The pinned binaries remain unmodified.
+**Existing generated artifacts still contain the old, ineffective `JSC_useFTLJIT=false` setting.** Bun 1.4.2 only reads
+`BUN_JSC_*`; export `BUN_JSC_useFTLJIT=false` manually when testing those artifacts. The corrected recipe has not yet been
+rebuilt. See the result card for the distinction between observed native passes and the earlier incorrect JIT diagnosis.
 
 The baseline browser runtime still uses `max,-popcnt` to avoid the known kernel panic. The patched runtime enables `max`:
 `guest/qemu-popcnt.patch` corrects both ctpop operand indexes and zero-extends the 32-bit Wasm result before storing it in
@@ -78,9 +81,11 @@ The runtime build also emits `public/qemu/popcnt-test`, a standalone x86-64 regr
 ## Known boundary
 
 The custom image now boots in the browser, prints the pinned toolchain versions, and passes the POPCNT regression.
-The browser fixture build is still blocked: it stalls during the TypeScript step, even with FTL disabled. The next
-diagnostic is `JSC_useJIT=false` in a fresh guest; this experiment is not yet executed. See the result card for details.
-After resolving that stall, add an explicit guest HTTP/WebSocket bridge for Vite assets and HMR, followed by the bounded
+Browser TypeScript now **passes** with `BUN_JSC_useFTLJIT=false`, retaining baseline and DFG JIT. The traced run took
+514 seconds including startup and diagnostic dumps. `BUN_JSC_dumpOptions=1` confirmed the effective setting; earlier
+attempted JIT-disable experiments used an ignored prefix. Vite and the complete browser build with the corrected setting
+have not yet been run. See the result card for exact commands, timings, and handoff state.
+After validating Vite and the complete browser build, add an explicit guest HTTP/WebSocket bridge for Vite assets and HMR, followed by the bounded
 model relay. The empty preview pane intentionally does not claim those milestones are complete.
 
 ## Pinned upstream
