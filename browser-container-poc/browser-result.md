@@ -200,3 +200,87 @@ session `amber-walrus-881`. The HTTP gate is cleared; the adjacent preview and a
 
 Host `bun run build`, shell syntax checks, and `git diff --check` passed. Guest/runtime images have not been rebuilt
 in this continuation. `docker system df` now succeeds; no cleanup was performed.
+
+## Adjacent guest preview and actual HMR: PASS — 2026-09-05
+
+Implemented a serial-backed HTTP/WebSocket bridge. QEMU still has `-nic none`; application execution and the real
+Vite HTTP/WebSocket endpoints remain inside the guest at `127.0.0.1:5173`. There is no host HTTP proxy for guest assets.
+
+- `guest/preview-bridge.ts`: concurrent loopback HTTP, gzip/base64 responses, real text WebSockets, and guest shell commands.
+- `public/serial-bridge.js`: framed JSON over the existing QEMU PTY, correlated requests, socket channels, bounded waits,
+  streaming UTF-8 decoding, and bounded HMR event diagnostics.
+- `public/preview-sw.js`: scoped `/__guest/` navigation and controlled-document asset fetching through MessageChannels.
+  Guest HTML receives `preview-websocket.js` ahead of the Vite bootstrap; successful and error responses carry COEP/CORP.
+- `src/App.tsx`: Connect preview, adjacent iframe, Reload preview, and a guest command field. The React component is now
+  separated from the `createRoot` entrypoint so editing the workspace component preserves the running VM.
+
+### Startup and cold-load findings
+
+The handed-off VM was lost during host UI development reloads. A later host-server outage also triggered Vite reconnect
+navigation; the host server was restarted with user permission. Final verification used a fresh VM in the same
+`amber-walrus-881` session. The slow login-time OpenCode version probe was interrupted; its version had already been proven.
+These development interruptions are not guest workload failures. See `browser-control-todo.md` for exact errors.
+
+Guest Vite must have stdin detached; otherwise it can be suspended with `Stopped (tty input)` after printing readiness:
+
+```sh
+cd /workspace
+export BUN_JSC_useFTLJIT=false
+bun node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5173 --strictPort \
+  </dev/null >/tmp/vite-dev.log 2>&1 &
+```
+
+The final run printed `ready in 63883 ms`. Connect preview transferred the helper at a shell prompt without rebooting.
+Host and guest SHA-256 both matched:
+`7115e84e557f34f5846092cae8b3b7933fbbade339697bec91a3ca7da4c05e4c`.
+
+The first preview attempt preceded server readiness. A retry loaded the guest HTML and transformed modules, and the
+guest HMR client reported `[vite] connected.` Cold dependency optimization then exceeded the helper's 240-second timeout
+for the first `react-dom_client.js` request (HTTP 502). The optimized dependency directory eventually contained 6 MiB,
+including React DOM and Lucide. Reloading **only the preview** against the warm cache rendered the full fixture, its
+stylesheet, SVG mark, and Lucide icon. This is a successful warm-cache render, not an uninterrupted cold-load pass.
+
+A temporary serial wakeup diagnostic was tried during cold optimization, then disabled before the successful warm
+render and HMR check. It is not part of the bridge. The live serial connection received the same UTF-8 decoding fix
+covered by the transport test. No guest or QEMU images were regenerated.
+
+### Actual hot update
+
+Baseline adjacent preview: `http://localhost:5173/__guest/`, heading **Ready for an agent edit**.
+Through **Guest command → Run in guest**, executed:
+
+```sh
+sed -i 's/Ready for an agent edit/Guest HMR is live/' src/WelcomeCard.tsx
+grep h1 src/WelcomeCard.tsx
+```
+
+The command exited 0 and printed `<h1>Guest HMR is live</h1>`. The host fixture source was not edited.
+
+| Evidence | Observed value |
+| --- | --- |
+| Host start timestamp, before filling/running the command | `1788652739240` ms |
+| Guest Vite WebSocket event | `js-update`, path and acceptedPath `/src/WelcomeCard.tsx`, timestamp `1788652740208` |
+| WebSocket event received by serial bridge | `1788652745353` ms (6.113 s after start) |
+| Updated module | `/src/WelcomeCard.tsx?t=1788652740208`, HTTP 200, `fromServiceWorker: true` |
+| Vite console | `[vite] hot updated: /src/WelcomeCard.tsx` |
+| DOM mutation observed | `1788652754354` ms — **15.114 seconds** after start |
+| Visible heading afterward | **Guest HMR is live** |
+| Document sentinel, before and after | `f37d2cb3-8e54-45ae-9f25-3431e745e80c` |
+| `performance.timeOrigin`, before and after | `1788652645373.725` |
+
+The unchanged sentinel and time origin prove the preview document was not reloaded. This measures a guest shell edit,
+WebSocket notification, transformed-module fetch, and React Refresh render—not a model-driven OpenCode edit.
+The bridge counted 27 HTTP requests across cold attempts, warm reload, and HMR; 3 inbound WebSocket messages;
+and zero JSON framing errors. HTTP count includes the failed cold request.
+
+Evidence JSON and a visually inspected screenshot are saved in the approved temporary directory:
+
+- `/private/var/folders/t_/x48jtnps7n5_0g_pt9xpvbg00000gn/T/opencode/guest-hmr-proof.json`
+- `/private/var/folders/t_/x48jtnps7n5_0g_pt9xpvbg00000gn/T/opencode/guest-hmr-preview.png`
+
+Validation: host `bun run build`; `bun test scripts/preview-bridge.test.ts` (service-worker routing/decompression/HTML
+injection and out-of-order, fragmented UTF-8 serial responses); native helper gzip/HTTP smoke check; `git diff --check`.
+
+Handoff: the VM, guest Vite, bridge, and updated adjacent preview remain running in `amber-walrus-881`.
+Use the guest command field while the bridge owns the serial tty. Host Vite runs on port 5173.
+Next milestone: bounded model access and an actual OpenCode multi-file edit producing visible HMR.
