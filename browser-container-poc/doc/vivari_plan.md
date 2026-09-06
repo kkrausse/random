@@ -1,6 +1,8 @@
 # Vivari implementation plan
 
-Status: warm fixture/HMR probes pass; runtime compatibility investigation started.
+Status: source-build baseline and initial SQLite API probes pass; SQLite
+qualification is incomplete. Paused for user-requested handoff; see
+[handoff](vivari-handoff.md) for the exact failing ownership regression and fix.
 The first OpenCode installation attempt is blocked by a native dependency.
 See [result card](vivari-result.md) for the original measurements and
 [runtime audit](vivari-runtime-audit.md) for the follow-up evidence.
@@ -72,9 +74,16 @@ First implementation slice:
   OpenCode packages; wider import-graph qualification remains part of host import.
 - [x] Qualify sql.js WASM queries, rollback, and VFS export/reopen in separate
   browser processes. See the runtime audit for untested persistence semantics.
-- [ ] Establish a reproducible Vivari source-patch/build path before runtime fixes.
+- [x] Establish a reproducible Vivari source-patch/build path before runtime fixes.
 - [ ] Implement the smallest demonstrated compatibility gap and rerun its probe.
 - [ ] Retry normal SDK import, host creation, and session creation.
+
+The initial shared SQLite implementation now uses official SQLite WASM
+3.49.1-build1 (same SQLite engine 3.49.1) rather than sql.js's limited prebuilt
+API. Node/Bun query tests and separate-process recovery pass. A termination
+regression exposed a committed-prefix persistence bug; the source fix passes
+a focused unit test but awaits a browser rerun. Page-reload recovery, actual
+OPFS fault qualification, final patched HMR, and OpenCode migrations remain open.
 
 Use Vivari's existing JS/WASM drop-in machinery where a genuine compatible backend
 exists. A CPU-check bypass, empty search result, no-op lock, or successful stub

@@ -1,0 +1,47 @@
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const { DatabaseSync } = require("node:sqlite");
+const { Database } = require("bun:sqlite");
+const mode = process.argv[2] || "memory";
+const filename = mode === "memory" ? ":memory:" : "/runtime-probe/api.sqlite";
+if (mode === "recover") {
+  const db = new DatabaseSync(filename);
+  const q = db.prepare("SELECT big, blob, value FROM fixture");
+  q.setReadBigInts(true);
+  const row = q.all()[0];
+  assert.equal(row.big, 9007199254740993n);
+  assert.deepEqual([...row.blob], [0, 127, 255]);
+  assert.equal(row.value, "committed");
+  db.close();
+  console.log("SQLITE_API_RECOVERED");
+} else {
+  const db = new DatabaseSync(filename, { readOnly: undefined, timeout: undefined, allowExtension: undefined, open: true, enableForeignKeyConstraints: true });
+  db.exec("DROP TABLE IF EXISTS child; DROP TABLE IF EXISTS fixture; CREATE TABLE fixture(id INTEGER PRIMARY KEY, big INTEGER, blob BLOB, value TEXT); CREATE TABLE child(parent INTEGER REFERENCES fixture(id));");
+  const insert = db.prepare("INSERT INTO fixture(big, blob, value) VALUES(?, ?, ?) RETURNING id");
+  assert.equal(insert.all(9007199254740993n, new Uint8Array([0,127,255]), "original")[0].id, 1);
+  assert.throws(() => db.exec("INSERT INTO child VALUES(999)"));
+  assert.throws(() => db.prepare("SELECT big FROM fixture").all(), /BigInt/);
+  const q = db.prepare("SELECT big, typeof(big) AS kind FROM fixture");
+  q.setReadBigInts(true); q.setReturnArrays(true);
+  assert.deepEqual(q.all(), [[9007199254740993n, "integer"]]);
+  db.exec("BEGIN; UPDATE fixture SET value='rollback'; ROLLBACK;");
+  assert.equal(db.prepare("SELECT value FROM fixture").all()[0].value, "original");
+  db.exec("BEGIN; UPDATE fixture SET value='committed'; COMMIT;");
+  assert.equal(db.prepare("SELECT json_extract(?, '$.a') AS x").all('{"a":42}')[0].x, 42);
+  const large = "x".repeat(1100000);
+  assert.equal(db.prepare("SELECT ? AS x").all(large)[0].x, large);
+  assert.equal(db.prepare("PRAGMA foreign_keys").all()[0].foreign_keys, 1);
+  assert.notEqual(db.prepare("PRAGMA journal_mode=WAL").all()[0].journal_mode, "wal");
+  assert.throws(() => db.exec("ATTACH ':memory:' AS extra"));
+  assert.throws(() => db.loadExtension("example.so"));
+  if (mode !== "memory") assert.throws(() => new DatabaseSync(filename), /SQLITE_BUSY/);
+  db.close();
+  assert.throws(() => q.all(), /closed/);
+  const bun = new Database(":memory:", { readonly: undefined, readwrite: true, create: true });
+  bun.run("CREATE TABLE b(x)");
+  bun.query("INSERT INTO b VALUES(?)").run(123n);
+  assert.deepEqual(bun.query("SELECT x FROM b").safeIntegers().values(), [[123n]]);
+  assert.equal(Buffer.from(bun.serialize()).subarray(0, 15).toString(), "SQLite format 3");
+  bun.close();
+  console.log("SQLITE_API_PASSED", mode);
+}

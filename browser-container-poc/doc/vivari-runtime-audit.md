@@ -1,5 +1,31 @@
 # Vivari runtime compatibility audit — September 6, 2026
 
+## Continuation checkpoint: source build + experimental SQLite facades
+
+See [handoff](vivari-handoff.md) for exact commands, live sessions, implementation
+ownership model, and remaining work. The original observations below describe
+the unpatched baseline; a source patch now exists in `vivari/patches/`.
+
+- Pristine pinned source build, its 14 browser baseline cases, full headless
+  verification, and five-edit Vite/HMR benchmark passed.
+- Shared official SQLite WASM 3.49.1-backed Node/Bun facades passed memory/write/
+  separate-process recovery tests, exact int64 binds/reads, binary data, foreign
+  keys, transactions, JSON/RETURNING, and >1 MiB parameter/result transport.
+- A cross-process termination test correctly rejected contention and killed the
+  holder with status 143, but reopening failed `no such table: owner`. A
+  multi-statement exec committed a prefix before BEGIN and the adapter failed
+  to persist that prefix. The fix uses SQLite's parser to persist each autocommit;
+  it passes the focused unit test and builds, but browser rerun is pending.
+- The final patch adds a one-kernel-per-origin Web Lock and atomic OPFS file/
+  manifest replacements with surfaced write errors. Actual OPFS fault/crash and
+  page-reload recovery are still unverified. Do not call this slice complete.
+- Highest OpenCode checkpoint is unchanged: installation failed EBADPLATFORM;
+  normal SDK import/create and migrations have not been attempted in this slice.
+
+The user requested this pause/handoff to save context. There is no new architecture
+decision being requested. Continue correctness qualification before advancing SDK
+startup. Full details and evidence are retained in the handoff above.
+
 **Direction: run mainline OpenCode inside Vivari, extending runtime compatibility.
 sql.js already runs real SQLite WASM in this browser. The OpenCode host remains
 unverified; its normal SQLite API adapters and native dependencies need work.**

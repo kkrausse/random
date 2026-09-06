@@ -44,7 +44,8 @@ HMR is disabled to avoid destroying an active guest run when editing the harness
   lock in this runtime. This is recorded as a compatibility failure, not frozen
   dependency reproducibility. Capture the resulting tree before comparisons.
 - `node:test` was unavailable; the added test uses `bun:test` instead.
-- No edits to `node_modules` or upstream runtime patches.
+- Runtime source patches now live in `patches/`; installed packages and generated
+  worker bundles are never hand-edited. The published SDK remains the default.
 
 ## Browser probes
 
@@ -104,3 +105,62 @@ phase. No provider credentials are needed.
 Build check: `bun run build`. For static deployment, serve `dist/` with the same
 isolation headers. The production bundle includes all four worker files, the
 service worker, and npm payload.
+
+## Pinned source build and SQLite handoff
+
+See [handoff](../doc/vivari-handoff.md) for the current checkpoint and limitations.
+Source builds run on the Mac; application and SQLite execution run in browser
+workers. Rust is only the existing Vivari VFS/codec/crypto build prerequisite.
+
+Prerequisites: Bun 1.4.0; Rust 1.93.0 with `wasm32-unknown-unknown` and
+`wasm32-wasip1` targets (`rustup target add --toolchain 1.93.0 ...`). The build
+invokes wasm-pack 0.13.1 explicitly and respects upstream Cargo locks and the
+npm lock migrated by Bun. It does not install/upgrade the Rust toolchain.
+
+```sh
+bun run setup
+bun scripts/build-runtime.ts baseline
+bun scripts/build-runtime.ts patched
+# Run one server per build; inspect existing listeners before choosing ports.
+VIVARI_DIST=.runtime/baseline/packages/core/dist bunx vite --host 127.0.0.1 --port 5191 --strictPort
+VIVARI_DIST=.runtime/patched/packages/core/dist bunx vite --host 127.0.0.1 --port 5192 --strictPort
+```
+
+The script clones revision `2629c71097238400c45aefa213ef61df4794c2b7` into
+gitignored `.runtime/<mode>`, builds web/headless WASM plus the upstream WASI test
+fixture, builds the core SDK, and records patch/lock/asset SHA-256 hashes in
+`.runtime/<mode>-build.json`. It accepts a pristine checkout or exactly the
+recorded single patch; unrecognized source edits cause a failure. New patches
+are applied to source with `git apply`, never to `node_modules` or emitted JS.
+For editing an existing patched checkout, export its reviewed diff with
+`git diff --binary HEAD > ../../patches/0001-sqlite.patch` from that checkout;
+new source files must first be marked with `git add -N <your-files>`.
+
+SQLite uses `@sqlite.org/sqlite-wasm@3.49.1-build1` (package metadata Apache-2.0;
+SQLite code public domain), keeping SQLite **3.49.1**. The POC's frozen Bun lock
+pins delivery of this dependency; the upstream build resolves it from the
+enclosing POC installation. `LICENSE.sqlite-wasm` records the Apache license;
+build output includes it and Vivari's license. `sql.js@1.13.0` remains a pinned
+comparison probe (MIT), not the new runtime backend.
+
+```sh
+bun scripts/qualify-sqlite-backends.ts
+bun test scripts/sqlite-server.test.ts
+# From each .runtime/<mode> directory, on this Apple Silicon host:
+bunx --package node-bin-darwin-arm64@24.18.0 node scripts/verify-node.mjs
+# From repo root, after booting the patched browser:
+browser-control execute --session <id> --file browser-container-poc/vivari/scripts/sqlite-api.js
+browser-control execute --session <id> --file browser-container-poc/vivari/scripts/sqlite-owner.js
+```
+
+Inspect `window.sqliteApiProbe` / `window.sqliteOwnerProbe` until complete or
+failed. The API runner replaces only `/runtime-probe/api.sqlite`. For a reload
+check, save its report, reload the page, boot, set `state.sqliteMode = "recover"`
+through Browser Control, then rerun `sqlite-api.js`. This mode does not rewrite
+the database. Reset `state.sqliteMode` before running the full suite again.
+
+`VIVARI_DIST` also selects production assets: use
+`VIVARI_DIST=.runtime/patched/packages/core/dist bun run build` for deployment.
+The asset middleware re-reads filenames after rebuilds. Changes to the Vite
+configuration itself require restarting that host server because harness HMR is
+disabled. An already-running browser retains its old workers until page reload.
