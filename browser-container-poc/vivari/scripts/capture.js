@@ -14,7 +14,7 @@ const report = await page.evaluate(async () => {
     userAgent: navigator.userAgent, cores: navigator.hardwareConcurrency,
     versions, samples, dependencies,
     source: await vm.fs.readFile("/workspace/src/WelcomeCard.tsx", "utf-8"),
-    output: document.querySelector("#output").textContent,
+    output: window.probe.output,
     host: window.hostProbe && { phase: window.hostProbe.phase, error: window.hostProbe.error, output: window.hostProbe.output, ms: window.hostProbe.ms },
   };
 });

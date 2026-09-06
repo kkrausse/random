@@ -1,5 +1,45 @@
 # Vivari feasibility POC
 
+## Manual SDK demo
+
+The page now includes a small xterm.js terminal and SDK demo buttons. From this
+directory, using the existing patched runtime and pinned probe installation:
+
+```sh
+bun install --frozen-lockfile
+bun scripts/package-opencode.ts host
+VIVARI_DIST=.runtime/patched/packages/core/dist bun run dev --port 5192
+```
+
+Open **http://127.0.0.1:5192/** and use this sequence:
+
+1. **Boot and mount fixture**.
+2. **Create saved session**. Allow roughly 10 seconds for verified bundle/asset
+   delivery and SDK execution. Look for session ID, readback, host closed, and PASS.
+3. Reload the page, boot again, then **Recover saved session**. Check that the
+   same ID returns. This opens the real file-backed SDK database in the worker.
+
+No Browser Control is required for the manual demo. Keep the same origin for
+recovery; the SDK demo buttons need the generated `.runtime/opencode-package`
+files served by the dev harness. A plain static `dist` deployment does not
+include those ignored generated files.
+
+The JSON argv field launches runtime commands, for example `["node","--version"]`.
+For stdin, run
+`["node","-e","process.stdin.on('data',d=>console.log('INPUT:'+d.toString()))"]`,
+click the terminal, and type. **Stop command** or Ctrl+C terminates the process.
+xterm renders ANSI output and forwards keystrokes to process stdin. It currently
+has no shell prompt, PTY allocation, or process resize API. It is not yet the
+OpenCode TUI. Stop a running command before starting another demo.
+
+Manual qualification: SDK create/readback/close and same-ID recovery across
+reload passed through the buttons; a typed `x` reached a real guest Node process
+and produced `INPUT:"x"`, exit 0. Terminal layout was visually checked.
+
+Next compatibility gates: official file search against a fixture, real tool
+execution and streaming events, then genuine PTY/terminal behavior. Preserve
+the current Node-conditioned packaging limitation when describing Bun support.
+
 **Latest continuation:** [OpenCode compatibility checkpoint](../doc/vivari-opencode-checkpoint.md).
 The real Node/Bun SQLite adapters pass, including reload recovery. Host packaging
 passes normal SDK import/create/session/readback/close with the default in-memory
