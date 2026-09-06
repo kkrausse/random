@@ -3,32 +3,13 @@ import type { FormInfo, ModelInfo, PermissionRequest, SessionInfo, SessionMessag
 import { Plugin } from "@opencode-ai/plugin/tui"
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { For, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
+import { groupLabel, sessionState, sortRows } from "./session-groups"
 
 const PAGE_SIZE = 100
 const LOAD_MORE_THRESHOLD = 10
 const NEW_SESSION_VALUE = "__claude_sessions_new__"
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-
-type SessionState = "permission" | "question" | "running" | "idle"
-
-interface SessionRow {
-  session: SessionInfo
-  state: SessionState
-}
-
-function stateRank(state: SessionState) {
-  if (state === "permission" || state === "question") return 0
-  if (state === "running") return 1
-  return 2
-}
-
-function sortRows(rows: SessionRow[]) {
-  return rows.sort((a, b) => {
-    const rank = stateRank(a.state) - stateRank(b.state)
-    return rank || b.session.time.updated - a.session.time.updated
-  })
-}
 
 function relativeTime(timestamp: number) {
   const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1_000))
@@ -133,6 +114,10 @@ function contextStats(
 }
 
 function SessionPicker(props: { context: Plugin.Context }) {
+  const [lifecycle, updateLifecycle] = props.context.storage.store("session-lifecycle", {
+    initial: { inactive: {} as Record<string, boolean> },
+  })
+  const [changingLifecycle, setChangingLifecycle] = createSignal(false)
   const route = props.context.ui.router.current()
   const currentSessionID = route.type === "session" ? route.sessionID : undefined
   const currentSession = currentSessionID ? props.context.data.session.get(currentSessionID) : undefined
@@ -160,11 +145,8 @@ function SessionPicker(props: { context: Plugin.Context }) {
     return sortRows(
       sessions().map((session) => ({
         session,
-        state: attentionByID.get(session.id)
-          ? attentionByID.get(session.id)!
-          : props.context.data.session.status(session.id) === "running"
-            ? "running"
-            : "idle",
+        state: sessionState(attentionByID.get(session.id),
+          props.context.data.session.status(session.id) === "running", !!lifecycle.inactive[session.id]),
       })),
     )
   })
@@ -184,7 +166,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
             ? "Question waiting"
             : state === "running"
               ? "Working"
-              : "Ready"
+               : state === "inactive" ? "Inactive" : "Ready"
       const location = shortenLocation(props.context.ui.format.path(session.location.directory))
       const details = [relativeTime(session.time.updated), location]
       if (session.agent) details.push(session.agent)
@@ -272,7 +254,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
 
   async function replyToPermission(reply: "once" | "always" | "reject") {
     const request = permission()
-    if (!request || replying() || previewLoading()) return
+    if (!request || replying() || changingLifecycle() || previewLoading()) return
     setReplying(true)
     try {
       await props.context.client.permission.reply({ sessionID: request.sessionID, requestID: request.id, reply })
@@ -283,6 +265,27 @@ function SessionPicker(props: { context: Plugin.Context }) {
       setReplying(false)
       setReviewVersion((version) => version + 1)
       refreshLocationForSession(request.sessionID)
+    }
+  }
+
+  async function changeLifecycle(inactive: boolean) {
+    const session = selectedSession()
+    if (!session || changingLifecycle() || replying()) return
+    setChangingLifecycle(true)
+    try {
+      if (inactive) await props.context.client.session.interrupt({ sessionID: session.id, continue: false })
+      await updateLifecycle((draft) => {
+        if (inactive) draft.inactive[session.id] = true
+        else delete draft.inactive[session.id]
+      })
+      props.context.ui.toast.show({ message: inactive ? "Session interrupted and marked inactive" : "Session restored to active", variant: "success" })
+    } catch (error) {
+      props.context.ui.toast.show({ message: error instanceof Error ? error.message : "Could not update session", variant: "error" })
+    } finally {
+      setChangingLifecycle(false)
+      void refreshSessionRow(session.id)
+      refreshLocationForSession(session.id)
+      setReviewVersion((version) => version + 1)
     }
   }
 
@@ -424,6 +427,8 @@ function SessionPicker(props: { context: Plugin.Context }) {
       { bind: "return", run: selectCurrent },
       { bind: "linefeed", run: selectCurrent },
       { bind: "right", run: selectCurrent },
+      { bind: "x", run: (_input, event) => { if (!event?.repeated) return changeLifecycle(true) } },
+      { bind: "r", run: (_input, event) => { if (!event?.repeated) return changeLifecycle(false) } },
       { bind: "a", run: (_input, event) => { if (!event?.repeated) return replyToPermission("once") } },
       { bind: "shift+a", run: (_input, event) => { if (!event?.repeated) return replyToPermission("always") } },
       { bind: "d", run: (_input, event) => { if (!event?.repeated) return replyToPermission("reject") } },
@@ -534,6 +539,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
           {baseDirectory() ? props.context.ui.format.path(baseDirectory()!) : " "}
         </text>
         <text fg={props.context.theme.text.subdued}>↑/↓ select  ·  →/enter open  ·  n new  ·  ←/esc close</text>
+        <text fg={props.context.theme.text.subdued}>{changingLifecycle() ? "Updating session…" : "x stop + mark inactive  ·  r restore to active"}</text>
       </box>
       {failure() ? (
         <box paddingLeft={2} paddingRight={2}>
@@ -563,7 +569,11 @@ function SessionPicker(props: { context: Plugin.Context }) {
           <For each={options()}>
             {(option, index) => {
               const active = () => selectedIndex() === index()
-              const titleColor = () => props.context.theme.text.default
+               const titleColor = () => option.state === "inactive" ? props.context.theme.text.subdued : props.context.theme.text.default
+               const heading = () => {
+                 const label = groupLabel(option.state)
+                 return label !== groupLabel(options()[index() - 1]?.state ?? "new") ? label : undefined
+               }
               const descriptionColor = () => props.context.theme.text.subdued
               const cursorColor = () => props.context.theme.hue.accent[400]
               const iconColor = () => {
@@ -573,6 +583,13 @@ function SessionPicker(props: { context: Plugin.Context }) {
                 return descriptionColor()
               }
               return (
+                <>
+                {heading() ? (
+                  <box height={3} flexShrink={0} paddingLeft={2} paddingRight={2}
+                    border={["top"]} borderColor={props.context.theme.hue.accent[400]}>
+                    <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>{heading()}</text>
+                  </box>
+                ) : null}
                 <box
                   id={`claude-session-${index()}`}
                   height={2}
@@ -624,6 +641,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
                     )}
                   </box>
                 </box>
+                </>
               )
             }}
           </For>
