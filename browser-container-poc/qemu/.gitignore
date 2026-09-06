@@ -1,0 +1,6 @@
+node_modules/
+dist/
+public/qemu/
+.cache/
+guest/fixture/node_modules/
+*.tsbuildinfo

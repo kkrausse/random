@@ -1,6 +1,2 @@
-node_modules/
-dist/
-public/qemu/
-.cache/
-guest/fixture/node_modules/
-*.tsbuildinfo
+.DS_Store
+doc/logs/

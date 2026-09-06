@@ -9,7 +9,7 @@ if (!session || !Number.isInteger(count) || count < 1 || count > 20 || !['all', 
   process.exit(1);
 }
 const source = await Bun.file(new URL('./profile-browser.js', import.meta.url)).text();
-const directory = new URL('../.cache/profiles/', import.meta.url);
+const directory = new URL('../../doc/logs/qemu/profiles/', import.meta.url);
 await mkdir(directory, { recursive: true });
 const report = { session, mode, startedAt: new Date().toISOString(), samples: [] as any[], failure: undefined as unknown };
 const output = new URL(`${Date.now()}-${mode}.json`, directory);
