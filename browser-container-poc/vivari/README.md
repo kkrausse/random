@@ -9,7 +9,7 @@ are outside guest terminal output. Shell sessions can coexist with the single
 command/demo slot and the bridge's foreground operation.
 
 The patched guest shell now supports one pipeline followed by `&`, `jobs`,
-`kill %N`, `fg %N` (wait/interrupt), and `exit`. For example:
+`kill %N`, `fg %N` (stdin ownership/wait/interrupt), and `exit`. For example:
 
 ```sh
 # Shell 1, after boot (install again after reload if vite is not found):
@@ -23,10 +23,14 @@ node -e "const fs=require('fs');const p='src/WelcomeCard.tsx';fs.writeFileSync(p
 
 Vite + second-shell edits + preview HMR passed in a real browser, with iframe
 document identity preserved. Stop shell kills that shell's descendants and frees
-the server port; sibling shells survive. `&` jobs receive stdin EOF, including
-after `fg`; `bg` reports unsupported suspension/resume. No PTY, process groups,
-catchable signals, or actual guest resize: xterm fits visually while the guest
-reports fixed 80×24. Files persist, processes do not survive reload. Guest Bun
+the server port; sibling shells survive. `&` jobs keep stdin open without taking
+shell input; `fg` routes input to the selected job. Ctrl+C delivers catchable
+SIGINT (unhandled: exit 130); Stop forcibly terminates even a busy worker.
+Spawn dimensions and xterm resize reach guest stdout/stderr, their `resize`
+listeners, and process `SIGWINCH`. Dimensions are inherited by descendants.
+No PTY, process groups, suspension or cooked terminal discipline. SIGTERM/SIGKILL
+remain forced cleanup; other requested signals reject ENOTSUP. Files persist,
+processes do not survive reload. Guest Bun
 install remains npm delegation and rewrites the lock, not a frozen-install proof.
 
 Reproduce on an unused origin with `bun run dev --port 5196`. Preserve any active
@@ -36,6 +40,26 @@ started with `bun run dev &`). This isolated port is intentionally outside the
 existing dev relay allowlist; CLI bridge qualification uses its allowed origins.
 See [shell results and exact limits](../doc/vivari-shell-results.md) and the
 [updated handoff](../doc/vivari-ghostty-shell-handoff.md).
+
+Latest terminal slice is live on **http://127.0.0.1:5197/**, Browser Control
+`quiet-otter-107`; earlier :5196/:5192 jobs were preserved. With an unused :5197,
+build as below, `bun run dev --port 5197`, boot and open two shells. Run
+`bun install --frozen-lockfile` then `bun run dev &` in Shell 1. On a fresh Shell 2:
+
+```sh
+# From repo root (Browser Control CLI only):
+browser-control execute --session SESSION --file browser-container-poc/vivari/scripts/terminal-browser.js
+browser-control execute --session SESSION --file browser-container-poc/vivari/scripts/shell-browser.js
+```
+
+The terminal runner owns `terminal-*` fixtures and resizes Shell 2's element to
+580×210px; it tests actual guest geometry and keyboard foreground input/Ctrl+C.
+Use a fresh/restarted Shell 2 for repeat runs (the test expects job `%1`).
+The SDK API is `spawn('sh', [], {terminal: {cols: 100, rows: 30}})` and
+`proc.resize({cols: 70, rows: 20})`. Sizes must be integers 1..65535; delivery is
+asynchronous and newest pre-start resize is retained. Guest `resize` is the
+notification, not an SDK application-acknowledgment. TypeScript uses generated
+patched declarations via `tsconfig.json`; build the patched runtime first.
 
 Focused checks, after the source build below:
 
@@ -170,7 +194,8 @@ messages, guest command output and page errors, not a complete DevTools log.
 The page's **Open shell** button and CLI `shell` launch the same patched Vivari
 `sh` implementation with history, completion, pipes and running-job handling.
 Ctrl+C is forwarded to the shell; **Stop shell** kills only its own UI shell.
-There is no native PTY or guest resize operation. Use Browser Control for visual
+There is no native PTY. UI shells propagate guest resize; the CLI bridge does
+not yet forward terminal dimensions. Use Browser Control for visual
 checks/navigation; use the bridge for command/probe/file results.
 
 ## Manual SDK demo
@@ -202,7 +227,8 @@ For stdin, run
 `["node","-e","process.stdin.on('data',d=>console.log('INPUT:'+d.toString()))"]`,
 click the terminal, and type. **Stop command** terminates the process.
 xterm renders ANSI output and forwards keystrokes to process stdin. **Open shell**
-starts Vivari's interactive prompt. There is no PTY allocation or process resize API. It is not yet the
+starts Vivari's interactive prompt. UI shells use the patched process resize API;
+the separate command/demo slot retains its older geometry behavior. There is no PTY allocation. It is not yet the
 OpenCode TUI. Stop a running command before starting another demo.
 
 Use Ctrl+D on an empty shell line or the patched `exit` builtin to exit.

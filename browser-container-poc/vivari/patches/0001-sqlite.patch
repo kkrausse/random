@@ -31,23 +31,43 @@ index bfb9dbd..6a17c54 100644
 \ No newline at end of file
 +- **Background research** → `research.md`
 diff --git a/ARCHITECTURE.md b/ARCHITECTURE.md
-index d88c8f8..28f38bb 100644
+index d88c8f8..622c2a0 100644
 --- a/ARCHITECTURE.md
 +++ b/ARCHITECTURE.md
-@@ -1,5 +1,61 @@
+@@ -1,5 +1,81 @@
  # Vivari — Architecture
  
++## Local terminal geometry and foreground continuation
++
++SDK spawn accepts `terminal: {cols, rows}`; `VivariProcess.resize()` validates
++1..65535 integer dimensions and posts `proc-resize` after `proc-started` (retaining
++the newest pre-start size). The kernel owns a geometry object inherited by child
++processes, sends `terminal-event` updates to attached descendants, and supplies
++current dimensions to newly spawned workers. Worker entries retain these events
++until boot control is ready. Guest loop delivery updates stdout AND stderr before
++emitting their real `resize` events, then process `SIGWINCH`; duplicate sizes are
++silent. Geometry membership is a shell subtree, not POSIX foreground groups.
++It does not change legacy isTTY detection or the separate `tty.WriteStream` stub.
++
++`OP_KILL` supports catchable SIGINT via a queued worker event. Unhandled SIGINT
++exits 130; a handler can keep running. SIGTERM/SIGKILL and SDK Stop remain forced
++subtree teardown, including a worker blocked on synchronous code. Other signal
++names reject ENOTSUP. Cooperative delivery cannot interrupt a busy JS/WASM loop;
++use Stop for forced cleanup. Shell Ctrl+C targets current pipeline stages; batch
++shell wrappers forward SIGINT and stdin to their current child. Background pipes
++stay open but receive no terminal input until `fg` selects their wrapper. No
++SIGTTIN, suspension, process groups, controlling terminal, cooked mode or PTY.
++
 +## Local shell running-job slice
 +
 +The POC retains xterm and independent SDK shell ownership. The guest shell accepts
 +one pipeline followed by `&`, runs it under a child `sh -c`, and tracks at most 32
 +jobs. `jobs` lists/reaps completed jobs; `kill %N` terminates a job subtree;
 +`fg %N` waits for a running job and makes Ctrl+C target it. Background stdin is
-+EOF and remains EOF after fg. `exit` exits the shell and kernel finalization kills
++held open until fg selects the job. `exit` exits the shell and kernel finalization kills
 +its descendants. Compound background lists and suspension/resume are unsupported;
 +`bg` errors explicitly. This is not POSIX process-group/terminal job control.
-+The existing kernel kill path terminates workers rather than delivering catchable
-+signals; SIGSTOP/SIGCONT must not be used to infer suspend/resume support.
++SIGSTOP/SIGCONT reject explicitly; suspend/resume remains unsupported.
 +The SDK merged-output ReadableStream is bounded to 1 Mi characters; overflow
 +errors its consumer and kills the owning subtree. This bounds the SDK queue,
 +not the browser MessagePort queue; a worker-side credit protocol remains future work.
@@ -96,7 +116,7 @@ index d88c8f8..28f38bb 100644
  This document explains how Vivari works end to end: the core constraint it
  solves, the worker topology, the syscall protocol, the filesystem, the process
  model, the Node runtime, networking, native code, and the build. It is the
-@@ -917,4 +973,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
+@@ -917,4 +993,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
    `GET / → 200` (network-gated, like `verify-express`).
  
  See [`AGENTS.md`](./AGENTS.md) §"Testing & verification" for exactly when to run
@@ -104,10 +124,34 @@ index d88c8f8..28f38bb 100644
 \ No newline at end of file
 +each and the network requirement.
 diff --git a/packages/core/src/process.ts b/packages/core/src/process.ts
-index 41f53ab..c0d08c0 100644
+index 41f53ab..1d511f5 100644
 --- a/packages/core/src/process.ts
 +++ b/packages/core/src/process.ts
-@@ -37,6 +37,13 @@ export class VivariProcess {
+@@ -19,6 +19,8 @@ export class VivariProcess {
+   private readonly bridge: KernelBridge;
+   private readonly execId: number;
+   private killed = false;
++  private started = false;
++  private terminal?: { cols: number; rows: number };
+ 
+   constructor(
+     bridge: KernelBridge,
+@@ -29,6 +31,14 @@ export class VivariProcess {
+   ) {
+     this.bridge = bridge;
+     this.execId = execId;
++    if (options.terminal) this.validateTerminal(options.terminal);
++    this.terminal = options.terminal;
++    const offStarted = bridge.on("proc-started", (m: KernelMessage) => {
++      if (m.execId !== execId) return;
++      this.started = true;
++      offStarted();
++      if (this.terminal) this.resize(this.terminal);
++    });
+ 
+     let outController!: ReadableStreamDefaultController<string>;
+     let resolveExit!: (code: number) => void;
+@@ -37,6 +47,13 @@ export class VivariProcess {
      const offOut = bridge.on("proc-out", (m: KernelMessage) => {
        if (m.execId !== execId) return;
        try {
@@ -121,7 +165,16 @@ index 41f53ab..c0d08c0 100644
          outController.enqueue(m.chunk as string);
        } catch {
          /* consumer cancelled the stream */
-@@ -59,7 +66,7 @@ export class VivariProcess {
+@@ -46,6 +63,8 @@ export class VivariProcess {
+       if (m.execId !== execId) return;
+       offOut();
+       offExit();
++      offStarted();
++      this.killed = true;
+       try {
+         outController.close();
+       } catch {
+@@ -59,7 +78,7 @@ export class VivariProcess {
          outController = controller;
        },
        cancel: () => this.kill(),
@@ -130,6 +183,45 @@ index 41f53ab..c0d08c0 100644
  
      this.input = new WritableStream<string>({
        write: (chunk) => {
+@@ -78,10 +97,24 @@ export class VivariProcess {
+       args,
+       cwd: options.cwd,
+       env: options.env,
++      terminal: options.terminal,
+     });
+   }
+ 
+-  /** Terminate the process (SIGTERM). Its `exit` still resolves. */
++  private validateTerminal(size: { cols: number; rows: number }): void {
++    if (![size.cols, size.rows].every(n => Number.isInteger(n) && n > 0 && n <= 65535))
++      throw new RangeError("Terminal cols/rows must be integers from 1 to 65535");
++  }
++
++  /** Update the owned terminal and its descendants asynchronously. */
++  resize(size: { cols: number; rows: number }): void {
++    this.validateTerminal(size);
++    if (this.killed) return;
++    this.terminal = { ...size };
++    if (this.started) this.bridge.post("proc-resize", { execId: this.execId, ...size });
++  }
++
++  /** Force termination and subtree cleanup. Its `exit` still resolves. */
+   kill(): void {
+     if (this.killed) return;
+     this.killed = true;
+diff --git a/packages/core/src/types.ts b/packages/core/src/types.ts
+index 40d2c8a..c6b0adc 100644
+--- a/packages/core/src/types.ts
++++ b/packages/core/src/types.ts
+@@ -56,6 +56,8 @@ export interface DirEnt {
+ 
+ /** Options for {@link Vivari.spawn}. */
+ export interface SpawnOptions {
++  /** Terminal geometry, inherited by descendants; not a PTY allocation. */
++  terminal?: { cols: number; rows: number };
+   /** Working directory for the process. Defaults to the VM root (or active project). */
+   cwd?: string;
+   /** Extra environment variables, merged over Vivari's package-manager-friendly defaults. */
 diff --git a/packages/core/src/workers/fs-worker.ts b/packages/core/src/workers/fs-worker.ts
 index 533d855..9e7540a 100644
 --- a/packages/core/src/workers/fs-worker.ts
@@ -176,8 +268,89 @@ index 533d855..9e7540a 100644
 -})();
 \ No newline at end of file
 +})();
+diff --git a/packages/core/src/workers/kernel-worker.ts b/packages/core/src/workers/kernel-worker.ts
+index 23caf3d..6bc8859 100644
+--- a/packages/core/src/workers/kernel-worker.ts
++++ b/packages/core/src/workers/kernel-worker.ts
+@@ -895,7 +895,7 @@ function baseProcEnv(dir) {
+ const execByPid = new Map(); // pid -> execId
+ const pidByExec = new Map(); // execId -> pid
+ 
+-async function spawnProcess(execId, command, args, cwd, extraEnv) {
++async function spawnProcess(execId, command, args, cwd, extraEnv, terminal) {
+   if (!kernel) {
+     post("proc-exit", { execId, code: 127, error: "kernel not ready" });
+     return;
+@@ -909,7 +909,7 @@ async function spawnProcess(execId, command, args, cwd, extraEnv) {
+   // which the kernel gates itself), so the gate has to run here.
+   await kernel.ensureCommandLoaded(command);
+   if (!kernel) return;
+-  const pid = kernel.launch(command, Array.isArray(args) ? args : [], { cwd: dir, env });
++  const pid = kernel.launch(command, Array.isArray(args) ? args : [], { cwd: dir, env, terminal });
+   if (pid < 0) {
+     post("proc-exit", { execId, code: 127, error: command + ": not found" });
+     return;
+@@ -1985,7 +1985,7 @@ self.onmessage = async (event) => {
+   // Run one command directly (no wrapping shell) and stream its output/exit back
+   // by `execId`. See spawnProcess + the execByPid routing in boot().
+   if (m.type === "proc-spawn") {
+-    void spawnProcess(m.execId, m.command, m.args, m.cwd, m.env).catch((err) =>
++    void spawnProcess(m.execId, m.command, m.args, m.cwd, m.env, m.terminal).catch((err) =>
+       post("proc-exit", { execId: m.execId, code: 127, error: (err && err.message) || String(err) }),
+     );
+     return;
+@@ -1996,6 +1996,11 @@ self.onmessage = async (event) => {
+     if (pid != null && kernel) kernel.sendStdin(pid, m.chunk == null ? null : m.chunk);
+     return;
+   }
++  if (m.type === "proc-resize") {
++    const pid = pidByExec.get(m.execId);
++    if (pid != null && kernel) kernel.resizeTerminal(pid, m);
++    return;
++  }
+   // Kill a spawned process (its exit is still reported via onProcExit → proc-exit).
+   if (m.type === "proc-kill") {
+     const pid = pidByExec.get(m.execId);
+@@ -2320,4 +2325,4 @@ self.onmessage = async (event) => {
+     port.postMessage(resp);
+     return;
+   }
+-};
+\ No newline at end of file
++};
+diff --git a/packages/core/src/workers/process-worker.ts b/packages/core/src/workers/process-worker.ts
+index 8686985..9aa24e0 100644
+--- a/packages/core/src/workers/process-worker.ts
++++ b/packages/core/src/workers/process-worker.ts
+@@ -29,6 +29,7 @@ try {
+ }
+ 
+ let control = null;
++const terminalPending = [];
+ 
+ // [optimize] Native codecs (Phase 2 #11 zlib, #12 crypto): the Rust/Wasm cores
+ // beneath Node's real lib/zlib.js and our lib/crypto.js. The kernel worker
+@@ -99,6 +100,7 @@ self.onmessage = async (event) => {
+       send: (msgType, extra) => self.postMessage({ type: msgType, ...extra }),
+       onReady: (c) => {
+         control = c;
++        for (const m of terminalPending.splice(0)) control.dispatchTerminal(m);
+       },
+       codec: makeZStream,
+       cryptoCodec,
+@@ -139,6 +141,10 @@ self.onmessage = async (event) => {
+     control && control.dispatchPipe(event.data);
+   // An interactive stdin chunk for this process (host terminal / parent -> child).
+   else if (type === "stdin") control && control.dispatchStdin(event.data);
++  else if (type === "terminal-event") {
++    if (control) control.dispatchTerminal(event.data);
++    else terminalPending.push(event.data);
++  }
+   // An async fetch result relayed by the kernel (parallel downloads).
+   else if (type === "fetch-done") control && control.dispatchFetch(event.data);
+ };
 diff --git a/packages/kernel-host/coreutils.js b/packages/kernel-host/coreutils.js
-index aa430c1..cea3409 100644
+index aa430c1..4fa6e87 100644
 --- a/packages/kernel-host/coreutils.js
 +++ b/packages/kernel-host/coreutils.js
 @@ -267,7 +267,7 @@ if (evalCode != null) {
@@ -212,7 +385,7 @@ index aa430c1..cea3409 100644
 +  const id = nextJob++;
 +  const job = { id, child, line, code: null, done: null };
 +  jobs.set(id, job);
-+  child.stdin.end(); // background jobs never steal terminal input
++  // Keep the pipe open, but only currentChild receives terminal input after fg.
 +  child.stdout.on('data', d => process.stdout.write(d));
 +  child.stderr.on('data', d => process.stderr.write(d));
 +  job.done = new Promise(resolve => {
@@ -272,7 +445,17 @@ index aa430c1..cea3409 100644
    let status = 0;
    for (const el of parse(toks)) {
      if (!el.stages.some((s) => s.argv.length || s.redirs.length)) continue;
-@@ -537,7 +592,7 @@ function runInteractive() {
+@@ -497,6 +552,9 @@ async function runLine(line) {
+ 
+ // Batch mode: \`sh script\` or \`sh -c "..."\`. Run each line, then exit.
+ async function runBatch() {
++  process.on('SIGINT', () => { if (currentKill) currentKill('SIGINT'); else process.exit(130); });
++  process.stdin.on('data', d => { if (currentChild) currentChild.stdin.write(d); });
++  process.stdin.on('end', () => { if (currentChild) currentChild.stdin.end(); });
+   let status = 0;
+   for (const raw of script.split('\\n')) {
+     const line = raw.replace(/#.*$/, '').trim();
+@@ -537,7 +595,7 @@ function runInteractive() {
    const setLine = (s) => { line = s; pos = s.length; redraw(); };
  
    // ---- Tab completion -------------------------------------------------------
@@ -281,7 +464,7 @@ index aa430c1..cea3409 100644
    // Scripting no-ops: still handled by runSimple / installed on /bin (used in
    // shell scripts and \`&&\`||\` chains), but hidden from Tab suggestions since
    // nobody completes them interactively and they only clutter the list.
-@@ -718,4 +773,4 @@ function runInteractive() {
+@@ -718,4 +776,4 @@ function runInteractive() {
  if (argv[2]) runBatch();
  else runInteractive();
  `,
@@ -330,6 +513,91 @@ index b4805b2..3ca7d59 100644
        const bytes = this.dispatch(opcode, flags, fields, clientId);
        if (bytes.length > data.length) {
          // The response doesn't fit the shared window (e.g. a whole-file read of a
+diff --git a/packages/kernel-host/kernel.js b/packages/kernel-host/kernel.js
+index 2628e01..fa983ba 100644
+--- a/packages/kernel-host/kernel.js
++++ b/packages/kernel-host/kernel.js
+@@ -307,12 +307,14 @@ export class Kernel {
+ 
+   // ---- process lifecycle ----------------------------------------------------
+   createProcess(spec, { parentPid = null, capture = false, stream = false, threadPort = null } = {}) {
++    const terminal = this.procs.get(parentPid)?.terminal || (spec.terminal ? this.terminalSize(spec.terminal) : null);
+     const pid = this.nextPid++;
+     const sab = new SharedArrayBuffer(SAB_BYTES);
+     const { ctrl, data } = makeViews(sab);
+     const proc = {
+       pid,
+       parentPid,
++      terminal,
+       capture,
+       // #15: async children stream their output to the *parent worker* (so its
+       // event loop can react live) instead of buffering (capture) or going to the
+@@ -341,7 +343,7 @@ export class Kernel {
+     proc.handle = this.spawnWorker({
+       pid,
+       sab,
+-      spec: { ...spec, pid, ppid: parentPid ?? 0 },
++      spec: { ...spec, terminal, pid, ppid: parentPid ?? 0 },
+       // #16 stage 2b: a spawned thread gets its creator's MessageChannel end as a
+       // transferable, delivered to the worker as parentPort at init.
+       threadPort,
+@@ -501,7 +503,7 @@ export class Kernel {
+     const programPath = this.resolveProgram(command, cwd, opts.env || {});
+     if (!programPath) return -1;
+     return this.createProcess(
+-      { programPath, args, cwd, env: opts.env || {} },
++      { programPath, args, cwd, env: opts.env || {}, terminal: opts.terminal },
+       { capture: !!opts.capture },
+     );
+   }
+@@ -521,7 +523,7 @@ export class Kernel {
+         return;
+       }
+       const pid = this.createProcess(
+-        { command, programPath, args, cwd, env: opts.env || {} },
++        { command, programPath, args, cwd, env: opts.env || {}, terminal: opts.terminal },
+         { capture: !!opts.capture },
+       );
+       this.procs.get(pid).onExit = resolve;
+@@ -930,10 +932,38 @@ export class Kernel {
+       return;
+     }
+     const signal = msg.signal || "SIGTERM";
++    if (!["SIGINT", "SIGTERM", "SIGKILL"].includes(signal)) {
++      this.respondErr(proc, "ENOTSUP");
++      return;
++    }
+     this.respondOk(proc, EMPTY);
++    if (signal === "SIGINT") {
++      this.postToProc(pid, { type: "terminal-event", signal });
++      return;
++    }
+     this.finalize(pid, signal === "SIGKILL" ? 137 : 143, signal);
+   }
+ 
++  terminalSize(size) {
++    if (![size.cols, size.rows].every(n => Number.isInteger(n) && n > 0 && n <= 65535))
++      throw new RangeError("Terminal cols/rows must be integers from 1 to 65535");
++    return { cols: size.cols, rows: size.rows };
++  }
++
++  resizeTerminal(pid, size) {
++    const next = this.terminalSize(size);
++    const owner = this.procs.get(pid);
++    if (!owner) return;
++    if (!owner.terminal) owner.terminal = { cols: 80, rows: 24 };
++    const terminal = owner.terminal;
++    if (terminal.cols === next.cols && terminal.rows === next.rows) return;
++    Object.assign(terminal, next);
++    for (const proc of this.procs.values()) {
++      if (proc.terminal === terminal)
++        this.postToProc(proc.pid, { type: "terminal-event", ...next });
++    }
++  }
++
+   // ---- worker_threads brokering (#16 stage 2b) ------------------------------
+   // A process' worker_threads asks us to spawn a nested thread worker. Unlike a
+   // child process (#15) the thread talks to its creator directly over a
 diff --git a/packages/kernel-host/opfs-persistence.js b/packages/kernel-host/opfs-persistence.js
 index 6198a52..c973d8f 100644
 --- a/packages/kernel-host/opfs-persistence.js
@@ -665,6 +933,26 @@ index b6b6158..38f1cd4 100644
      op === OP_WATCH ||
      op === OP_UNWATCH
    );
+diff --git a/packages/runtime/boot.js b/packages/runtime/boot.js
+index eb3334d..ee7d708 100644
+--- a/packages/runtime/boot.js
++++ b/packages/runtime/boot.js
+@@ -52,6 +52,7 @@ export function bootProcess({
+     // process.argv becomes ['node', programPath, ...args]
+     argv: [spec.programPath, ...(spec.args || [])],
+     env: spec.env || {},
++    terminal: spec.terminal,
+     cwd: spec.cwd || "/",
+     stdout: (chunk) => send("stdout", { chunk }),
+     stderr: (chunk) => send("stderr", { chunk }),
+@@ -91,6 +92,7 @@ export function bootProcess({
+       dispatchSse: runtime.dispatchSse,
+       dispatchPipe: runtime.dispatchPipe,
+       dispatchStdin: runtime.dispatchStdin,
++      dispatchTerminal: runtime.dispatchTerminal,
+       dispatchFetch: runtime.dispatchFetch,
+       memStats: runtime.memStats,
+     });
 diff --git a/packages/runtime/builtins/sea.js b/packages/runtime/builtins/sea.js
 new file mode 100644
 index 0000000..ffed890
@@ -807,7 +1095,7 @@ index c6f68b8..8505980 100644
      writeFile: (p, content) => {
        const body = typeof content === "string" ? b(content) : content;
 diff --git a/packages/runtime/index.js b/packages/runtime/index.js
-index af2b08d..0cec50b 100644
+index af2b08d..a36cba4 100644
 --- a/packages/runtime/index.js
 +++ b/packages/runtime/index.js
 @@ -14,6 +14,8 @@ import { createWebSocket } from "./websocket.js";
@@ -819,7 +1107,51 @@ index af2b08d..0cec50b 100644
  
  function createConsole(process, util) {
    const toOut = (...a) => process.stdout.write(util.format(...a) + "\n");
-@@ -1121,6 +1123,9 @@ export function createRuntime({
+@@ -61,6 +63,7 @@ export function createRuntime({
+   ppid = 0,
+   argv = [],
+   env = {},
++  terminal = null,
+   cwd = "/",
+   stdout = () => {},
+   stderr = () => {},
+@@ -289,6 +292,15 @@ export function createRuntime({
+   const Buffer = bufferModule.Buffer;
+   const path = nodeModules.require("path");
+   const EventEmitter = nodeModules.require("events");
++  // Stdout/stderr need real resize listeners (their boot-time stream facade
++  // deliberately has no EventEmitter). Keep writes on the existing transport.
++  for (const stream of [process.stdout, process.stderr]) {
++    const events = new EventEmitter();
++    for (const name of ["on", "once", "addListener", "prependListener", "prependOnceListener", "removeListener", "off", "removeAllListeners", "emit", "listeners", "listenerCount", "setMaxListeners", "getMaxListeners"])
++      stream[name] = (...args) => { const result = events[name](...args); return result === events ? stream : result; };
++    if (terminal) { stream.columns = terminal.cols; stream.rows = terminal.rows; }
++    stream.getWindowSize = () => [stream.columns, stream.rows];
++  }
+   const util = nodeModules.require("util");
+   const fs = nodeModules.require("fs");
+   const stream = nodeModules.require("stream");
+@@ -495,7 +507,19 @@ export function createRuntime({
+   // enqueues; drainStdin (a loop turn) pushes into the Readable so 'data' fires in
+   // a controlled turn. A null chunk is stdin EOF (Ctrl+D / closed terminal).
+   const stdinQueue = [];
++  const terminalQueue = [];
+   drainStdin = () => {
++    while (terminalQueue.length) {
++      const event = terminalQueue.shift();
++      if (event.signal) {
++        if (!process.emit(event.signal)) process.exit(130);
++      } else {
++        const changed = [process.stdout, process.stderr].filter(s => s.columns !== event.cols || s.rows !== event.rows);
++        for (const s of changed) { s.columns = event.cols; s.rows = event.rows; }
++        for (const s of changed) s.emit("resize");
++        if (changed.length) process.emit("SIGWINCH");
++      }
++    }
+     while (stdinQueue.length) {
+       const chunk = stdinQueue.shift();
+       if (chunk === null) stdin.push(null);
+@@ -1121,6 +1145,9 @@ export function createRuntime({
      diagnostics_channel: diagnosticsChannel,
      cluster,
    };
@@ -829,7 +1161,7 @@ index af2b08d..0cec50b 100644
  
    // Node exposes the posix/win32 path flavors as their own subpath builtins
    // (`require('node:path/posix')`). We're posix, so `path` already IS posix;
-@@ -1272,6 +1277,7 @@ export function createRuntime({
+@@ -1272,6 +1299,7 @@ export function createRuntime({
    // `typeof Bun !== 'undefined'`. See packages/runtime/builtins/bun.js.
    const bunRuntime = createBunRuntime({ process, Buffer, require: vvRootRequire });
    for (const [name, mod] of Object.entries(bunRuntime.modules)) builtins[name] = mod;
@@ -837,7 +1169,15 @@ index af2b08d..0cec50b 100644
    globalThis.__ocInstallBun = () => {
      globalThis.Bun = bunRuntime.Bun;
      return bunRuntime.Bun;
-@@ -1386,4 +1392,4 @@ export function createRuntime({
+@@ -1329,6 +1357,7 @@ export function createRuntime({
+     /** External delivery from the kernel: an interactive stdin chunk for THIS
+      * process ({type:'stdin', chunk} - chunk null = EOF). Feeds process.stdin. */
+     dispatchStdin: (msg) => dispatchStdin(msg),
++    dispatchTerminal: (msg) => { terminalQueue.push(msg); loop.wakeNet(); },
+     /**
+      * Run an entry file like `node <entry>`, then drive the event loop until it
+      * is quiescent (no pending timers/immediates/nextTicks and no open servers).
+@@ -1386,4 +1415,4 @@ export function createRuntime({
        return finish(code);
      },
    };
@@ -845,7 +1185,7 @@ index af2b08d..0cec50b 100644
 \ No newline at end of file
 +}
 diff --git a/roadmap.md b/roadmap.md
-index 3ab02ef..c4be459 100644
+index 3ab02ef..be78e42 100644
 --- a/roadmap.md
 +++ b/roadmap.md
 @@ -1,5 +1,26 @@
@@ -875,7 +1215,7 @@ index 3ab02ef..c4be459 100644
  Built on the principle **de-risk the hardest part first**: prove the riskiest
  primitive (synchronous cross-thread access to a shared kernel) before expanding.
  
-@@ -3041,4 +3062,10 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
+@@ -3041,4 +3062,21 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
  | `Fetcher Worker` | Network/registry worker |
  | `Node.js Worker PID n` | Process = 1 worker + Node shim |
  | `[worker n]` | Nested `worker_threads` — real (#16 stage 2b) |
@@ -888,6 +1228,17 @@ index 3ab02ef..c4be459 100644
 +`fg` (wait/interrupt only; stdin stays EOF), `kill %N`, and shell `exit`. Ownership
 +uses existing recursive kernel finalization; no process groups or suspension.
 +The enclosing POC qualifies concurrent shell sessions and Vite/HMR in-browser.
++# Local POC terminal continuation — 2026-09-06
++
++Added inherited spawn geometry and live SDK resize to stdout/stderr with real
++resize listeners and SIGWINCH notification. Queued delivery runs inside the guest
++loop; worker startup retains early terminal events. Background stdin remains open
++and fg selects its input route; batch wrappers forward input and SIGINT. SIGINT
++is catchable (default exit 130); other than forced SIGTERM/SIGKILL, unsupported
++signals reject ENOTSUP. Forced Stop handles busy workers and subtree cleanup.
++No PTYs/process groups/suspension; geometry follows attached descendants rather
++than POSIX foreground groups. The enclosing POC shell-headless contract exercises
++dimensions, notifications, input ownership, catchable interrupts and isolation.
 diff --git a/scripts/fs-worker.mjs b/scripts/fs-worker.mjs
 index c528166..62e2571 100644
 --- a/scripts/fs-worker.mjs
@@ -912,3 +1263,34 @@ index c528166..62e2571 100644
  
  // A vfs-bound facade for the dependency cache (mirror of buildAccess in the
  // browser fs-worker). Headless has no OPFS, so the snapshot store is an in-memory
+diff --git a/scripts/process-worker.mjs b/scripts/process-worker.mjs
+index 24e3045..9043340 100644
+--- a/scripts/process-worker.mjs
++++ b/scripts/process-worker.mjs
+@@ -48,6 +48,7 @@ try {
+ }
+ 
+ let control = null;
++const terminalPending = [];
+ 
+ parentPort.on("message", (msg) => {
+   if (msg.type === "init") {
+@@ -60,6 +61,7 @@ parentPort.on("message", (msg) => {
+       send: (type, extra) => parentPort.postMessage({ type, ...extra }),
+       onReady: (c) => {
+         control = c;
++        for (const m of terminalPending.splice(0)) control.dispatchTerminal(m);
+       },
+       codec: makeZStream,
+       cryptoCodec,
+@@ -94,6 +96,10 @@ parentPort.on("message", (msg) => {
+     control && control.dispatchPipe(msg);
+   // An interactive stdin chunk for this process (host terminal / parent -> child).
+   else if (msg.type === "stdin") control && control.dispatchStdin(msg);
++  else if (msg.type === "terminal-event") {
++    if (control) control.dispatchTerminal(msg);
++    else terminalPending.push(msg);
++  }
+   // An async fetch result relayed by the kernel (parallel downloads).
+   else if (msg.type === "fetch-done") control && control.dispatchFetch(msg);
+ });

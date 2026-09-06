@@ -1,7 +1,7 @@
 // Browser Control runner. Dedicated http://127.0.0.1:5196 only; boot/install,
 // open Shell 1 + Shell 2, and run `bun run dev &` in Shell 1 first.
 // Leaves Vite and both shells alive for visual inspection; does not reset OPFS.
-if (page.url() !== 'http://127.0.0.1:5196/') throw Error('Use the isolated shell origin :5196');
+if (!['http://127.0.0.1:5196/', 'http://127.0.0.1:5197/'].includes(page.url())) throw Error('Use an owned isolated shell origin :5196 or :5197');
 return await page.evaluate(async () => {
   const report = window.shellQualification = { phase: 'running', results: [], started: new Date().toISOString() };
   const a = window.shells.sessions.get(1), b = window.shells.sessions.get(2);

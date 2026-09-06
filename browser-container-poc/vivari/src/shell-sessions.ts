@@ -63,6 +63,7 @@ class ShellSession {
     this.terminal.loadAddon(this.fit);
     this.terminal.open(this.screen);
     this.terminal.onData(data => this.send(data));
+    this.terminal.onResize(size => { this.proc?.resize(size); this.updateStatus(); });
     this.observer = new ResizeObserver(() => { if (!this.pane.hidden) { this.fit.fit(); this.updateStatus(); } });
     this.observer.observe(this.screen);
   }
@@ -71,7 +72,7 @@ class ShellSession {
     this.updateStatus();
     this.log(`[shell ${this.id}] ${state}\n`);
   }
-  private updateStatus() { this.status.textContent = `Shell ${this.id}: ${this.state} · visual ${this.terminal.cols}×${this.terminal.rows}; guest resize unavailable `; }
+  private updateStatus() { this.status.textContent = `Shell ${this.id}: ${this.state} · terminal ${this.terminal.cols}×${this.terminal.rows} `; }
   show(visible: boolean) {
     this.pane.hidden = !visible;
     this.tab.setAttribute('aria-pressed', String(visible));
@@ -82,8 +83,9 @@ class ShellSession {
     this.starting = true; this.vm = vm; this.stopping = false;
     this.report('starting');
     try {
-      const proc = await vm.spawn('sh', [], { cwd: '/workspace', env: { TERM: 'xterm-256color' } });
+      const proc = await vm.spawn('sh', [], { cwd: '/workspace', env: { TERM: 'xterm-256color' }, terminal: { cols: this.terminal.cols, rows: this.terminal.rows } });
       this.proc = proc;
+      proc.resize({ cols: this.terminal.cols, rows: this.terminal.rows });
       if (this.closed || this.stopping) proc.kill();
       this.writer = proc.input.getWriter();
       this.report(this.stopping ? 'stopping' : 'running');

@@ -8,6 +8,7 @@
     "allowJs": true,
     "skipLibCheck": true,
     "noEmit": true,
+    "paths": { "@vivari/core": ["./.runtime/patched/packages/core/dist/index.d.ts"] },
     "types": ["bun", "vite/client"]
   },
   "include": ["*.ts", "src", "scripts/*.ts"]

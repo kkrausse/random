@@ -1,5 +1,88 @@
 # Vivari xterm-first shell qualification
 
+## Latest continuation: guest geometry and foreground input (2026-09-06)
+
+**PASS:** real guest spawn dimensions and live resize; foreground stdin recovered
+with `fg`; a signal-aware guest catches keyboard Ctrl+C and continues reading.
+All application execution remains Vivari workers. Prior results below are the
+historical `bf50f8f` checkpoint; this section supersedes its resize/signal/stdin
+limitations.
+
+### Shipped contract
+
+- `SpawnOptions.terminal` and `VivariProcess.resize({cols, rows})`, validated
+  positive integer dimensions up to 65535. Newest pre-start resize is retained
+  until `proc-started`; worker bootstrap queues early terminal events.
+- Kernel-owned shared geometry is inherited through shell wrappers and children.
+  Resize updates existing descendants, then future children start at the new size.
+  Guest stdout/stderr dimensions update together before real `resize` listeners,
+  followed by `process.on('SIGWINCH')`. Equal dimensions emit no duplicate event.
+- Background stdin stays open without consuming shell keystrokes. `fg` selects
+  its wrapper; batch shells forward stdin and SIGINT to their current pipeline.
+- SIGINT is queued inside the guest loop: a handler can survive it; unhandled
+  SIGINT exits 130. SIGTERM/SIGKILL and SDK Stop retain forced subtree teardown.
+  Other requested signals (including SIGSTOP/SIGCONT) reject ENOTSUP.
+
+### Exact validation
+
+| Check | Latest result |
+|---|---|
+| Pinned cumulative source patch/build | PASS, Rust/WASM + SDK; no bundle/package edits |
+| Upstream `verify-node.mjs` | PASS, full runtime verification |
+| Expanded `shell-headless.mjs` | PASS: previous jobs/shared-files/cleanup suite; 101×31 spawn → 73×17 live; stdout/stderr resize and SIGWINCH; duplicate/invalid sizes; late child; sibling stays 90×25; background/fg reader; handler writes guest file and survives; SIGSTOP rejects; forced busy-loop worker cleanup |
+| SDK contracts | PASS: output cap plus newest pre-start resize, cross-exec filtering, invalid size and exit/listener cleanup (2 tests, 15 assertions) |
+| `bun run build` | PASS, patched declarations, TypeScript, production build |
+| Live browser geometry | PASS: guest starts at xterm 186×19, actual element resize → 67×13; both guest streams and SIGWINCH agree |
+| Live foreground input | PASS: background reader receives neither shell input nor EOF; `fg %1`; real keyboard `hello`, Control+C caught in guest, then `finish` exits to usable prompt |
+| Vite + second-shell HMR | PASS on new build: Vite 7.1.4 guest job `%1`; shared-file read, edit/restoration with identical iframe Document; 1,000 ANSI lines; unhandled Ctrl+C stops writer; stop/restart sibling preserves Vite HTTP |
+| Earlier active origins | PRESERVED: :5196 and :5192 not reloaded or stopped |
+| CLI resize, mobile/IME, OpenCode TUI, POSIX PTY | NOT ATTEMPTED / PTY unsupported |
+
+Initial UI TypeScript build failed because it used published SDK declarations;
+`tsconfig.json` now selects declarations from the reproducible patched build.
+The first browser input probe incorrectly assumed keyboard bytes arrive in one
+chunk; inspection showed all characters delivered individually. The guest probe
+now accumulates until newline and passed. This was a test assumption failure,
+not a cooked-mode implementation. The :5197 relay CORS rejection is expected
+because that isolated origin is outside the existing CLI relay allowlist.
+
+### Reproduction and evidence
+
+Use the commands below with **:5197**, then the README's terminal runner before
+the existing shell/HMR runner. Browser Control session **quiet-otter-107** retains
+`http://127.0.0.1:5197/`, Vite job `%1` in Shell 1, usable Shell 2 and restored
+fixture. Guest preview: `http://127.0.0.1:5197/preview/5173/`. Preserve that active
+origin; processes do not survive reload. The final HTML explanatory-copy change
+is built but the active page retains the earlier sentence to preserve jobs.
+
+Ignored evidence under `doc/logs/vivari/`: `terminal-browser.json`,
+`terminal-hmr.json`, `terminal-final.png` (native image inspected),
+`terminal-verify.log`, `terminal-build.log`, `terminal-ui-build.log`,
+`terminal-headless.json`, `terminal-build.json` (build hashes snapshot).
+
+### Remaining design boundaries
+
+1. Geometry membership follows attached descendants, including background jobs;
+   SIGWINCH is not POSIX foreground-process-group delivery. There is no controlling
+   terminal, PTY fd/device, process group, SIGTTIN, suspension or resume.
+2. SIGINT delivery is cooperative. A busy JS/WASM loop or blocking syscall cannot
+   run a handler until it yields; **Stop shell** forcibly cleans it up. Catchable
+   SIGTERM/SIGHUP and general signal semantics are not implemented. Arbitrary
+   non-shell wrappers need their own signal forwarding; kernel SIGINT is per PID.
+3. Stdin is raw transport. Shell foreground routing converts CR to LF and handles
+   Ctrl+C itself, even if the child requests raw mode. No canonical editing/echo
+   discipline; mixed chunks containing Ctrl+C retain the old chunk-local behavior.
+4. `process.stdout/stderr` have real resize listeners/dimensions, but legacy
+   `isTTY` detection, the separate `tty.WriteStream` facade, redirected/pipe fd
+   identity, CLI bridge resize and the single-command UI slot need a real fd/TTY
+   contract. No claim of full Node tty or POSIX support.
+5. Foreground routing is shell-local rather than kernel-enforced terminal access.
+   Batch forwarding tracks the current child only; input/EOF across sequential
+   batch commands is not qualified. Existing parser, Unicode, flow-control and
+   executable-link persistence limitations below still apply.
+
+## Historical xterm-first checkpoint
+
 2026-09-06. **Primary acceptance passed:** interactive guest shells share the
 filesystem; real Vite runs as a background guest job while another shell edits
 the React fixture and preview HMR updates without document replacement.
