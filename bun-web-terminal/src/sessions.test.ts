@@ -19,9 +19,14 @@ test("tmux restores a live alternate screen, coalesces resize storms, and surviv
     terminals.push(terminal);
     let attachment: Attachment;
     let closeCode = 0;
+    let mouseTracking: boolean | undefined;
     attachment = manager.attach(session, {
       send(data) {
-        if (typeof data === "string") return;
+        if (typeof data === "string") {
+          const message = JSON.parse(data);
+          if (message.type === "mouse-mode") mouseTracking = message.tracking;
+          return;
+        }
         terminal.write(data);
         let response: string | null;
         while ((response = terminal.readResponse()) !== null) attachment.input(new TextEncoder().encode(response));
@@ -34,20 +39,26 @@ test("tmux restores a live alternate screen, coalesces resize storms, and surviv
       text: () => Array.from({ length: rows }, (_, y) => (terminal.getLine(y) ?? []).map(cell => String.fromCodePoint(cell.codepoint || 32)).join("")).join("\n"),
       input: (value: string) => attachment.input(new TextEncoder().encode(value)),
       closed: () => closeCode,
+      mouseTracking: () => mouseTracking,
     };
   }
   try {
     const session = manager.create();
     const first = attach(session);
     await Bun.sleep(300);
+    await until(() => first.mouseTracking() === false);
+    // The outer terminal still tracks mice for tmux scrolling at a plain shell.
+    expect(first.terminal.hasMouseTracking()).toBe(true);
     first.input(`'${process.execPath}' '${import.meta.dir}/fixtures/tui.ts'\r`);
     await until(() => first.text().includes("ATTACHMENT-FIXTURE count=0"));
+    await until(() => first.mouseTracking() === true);
     first.input("+");
     await until(() => first.text().includes("count=1"));
     first.attachment.close();
 
     const second = attach(session);
     await until(() => second.text().includes("ATTACHMENT-FIXTURE count=1"));
+    await until(() => second.mouseTracking() === true);
     for (let i = 0; i < 300; i++) second.attachment.resize(80 + i % 40, 24 + i % 10);
     second.terminal.resize(110, 28);
     second.attachment.resize(110, 28);
@@ -64,6 +75,8 @@ test("tmux restores a live alternate screen, coalesces resize storms, and surviv
     await until(() => recovered.text().includes("ATTACHMENT-FIXTURE count=1"));
     recovered.input("+");
     await until(() => recovered.text().includes("count=2"));
+    recovered.input("q");
+    await until(() => recovered.mouseTracking() === false);
     manager.remove(session);
     expect(recovered.closed()).toBe(4004);
     expect(manager.sessions.size).toBe(0);

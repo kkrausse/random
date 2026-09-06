@@ -80,6 +80,30 @@ export class SessionManager {
     let closed = false;
     let child: Bun.Subprocess | undefined;
     let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+    let mouseTimer: ReturnType<typeof setTimeout> | undefined;
+    let mouseTracking: boolean | undefined;
+    // tmux's outer mouse mode is always on for scrolling. Read the pane's
+    // application modes separately; serialize queries so slow tmux cannot pile up.
+    const reportMouseMode = async () => {
+      try {
+        const query = Bun.spawn(["tmux", "-L", this.socket, "display-message", "-p", "-t", session.id,
+          "#{pane_in_mode}|#{mouse_any_flag}|#{mouse_all_flag}|#{mouse_button_flag}|#{mouse_standard_flag}"],
+        { env: this.env, stdout: "pipe", stderr: "ignore" });
+        const [output, code] = await Promise.all([new Response(query.stdout).text(), query.exited]);
+        if (closed || code !== 0) return;
+        const [inMode, ...flags] = output.trim().split("|");
+        if (flags.length !== 4 || ![inMode, ...flags].every(flag => flag === "0" || flag === "1")) return;
+        const tracking = inMode === "0" && flags.includes("1");
+        if (tracking !== mouseTracking) {
+          mouseTracking = tracking;
+          peer.send(JSON.stringify({ type: "mouse-mode", tracking }));
+        }
+      } catch {
+        // Keep the last known mode if tmux is temporarily unavailable.
+      } finally {
+        if (!closed) mouseTimer = setTimeout(() => { void reportMouseMode(); }, 150);
+      }
+    };
     let size = { cols, rows };
     let pendingSize = size;
     const flow = new OutputFlow((data) => peer.send(data), () => attachment.close(1013, "Terminal output stalled; reconnecting"));
@@ -100,6 +124,7 @@ export class SessionManager {
         closed = true;
         clearTimeout(resizeTimer);
         flow.dispose();
+        clearTimeout(mouseTimer);
         if (session.attachment === attachment) session.attachment = undefined;
         child?.kill();
         child?.terminal?.close();
@@ -115,6 +140,7 @@ export class SessionManager {
         terminal: { cols, rows, name: "xterm-256color", data(_terminal, data) { flow.push(data); } },
       });
       void child.exited.then(() => attachment.close(1000, "Terminal attachment ended"));
+      void reportMouseMode();
     } catch (error) {
       attachment.close(1011, "Could not attach terminal");
       throw error;
