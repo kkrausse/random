@@ -40,9 +40,25 @@ async function startSessionsPage(list: HTMLElement) {
   }
 
   list.addEventListener("click", async (event) => {
-    const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-delete]");
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-delete], [data-rename]");
     if (!button) return;
     event.preventDefault();
+    if (button.dataset.rename) {
+      const name = window.prompt("Session name", button.dataset.name);
+      if (name === null) return;
+      try {
+        const response = await fetch(`/api/sessions/${button.dataset.rename}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        if (!response.ok) throw new Error(await response.text());
+        await refresh();
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "Could not rename session");
+      }
+      return;
+    }
     await fetch(`/api/sessions/${button.dataset.delete}`, { method: "DELETE" });
     await refresh();
   });
@@ -65,7 +81,7 @@ function renderSessions(container: HTMLElement, sessions: Session[]) {
       return `<a class="session" href="/terminal/${session.id}">
         <span class="session-icon" aria-hidden="true">${iconSvg(iconKind(session.title || session.name))}<span class="status ${session.status}"></span></span>
         <span class="session-main"><strong>${escapeHtml(session.name)}</strong><small>${detail} · ${relativeTime(session.createdAt)}</small></span>
-        <span class="open-label">Open</span>
+        <button class="rename" data-rename="${session.id}" data-name="${escapeHtml(session.name)}" aria-label="Rename ${escapeHtml(session.name)}">Rename</button>
         <button class="delete" data-delete="${session.id}" aria-label="Remove ${escapeHtml(session.name)}">×</button>
       </a>`;
     })

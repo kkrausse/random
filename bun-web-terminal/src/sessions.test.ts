@@ -104,6 +104,15 @@ test("discovers standard tmux sessions and tracks renames and external removal",
     expect(manager.sessions.get(id)?.name).toBe("existing");
     const prefix = tmux("show-options", "-gv", "prefix").stdout.toString();
     const created = manager.create();
+    const pane = tmux("display-message", "-p", "-t", created.id, "#{pane_pid}").stdout.toString();
+    manager.rename(created, "My terminal");
+    expect(manager.sessions.get(created.id)?.name).toBe("My terminal");
+    expect(tmux("display-message", "-p", "-t", created.id, "#{pane_pid}").stdout.toString()).toBe(pane);
+    expect(() => manager!.rename(created, "existing")).toThrow();
+    for (const name of ["", "  ", "bad.name", "bad:name", "bad\nname", "x".repeat(129)]) {
+      expect(() => manager!.rename(created, name)).toThrow();
+    }
+    expect(created.name).toBe("My terminal");
     expect(tmux("show-options", "-gv", "prefix").stdout.toString()).toBe(prefix);
     tmux("rename-session", "-t", id, "renamed");
     await until(() => manager!.sessions.get(id)?.name === "renamed");
