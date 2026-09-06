@@ -36,7 +36,7 @@ async function boot() {
     } };
   } });
   kernel.installCoreutils();
-  for (const file of ["sqlite-api.cjs", "sqlite-owner.cjs"]) kernel.writeFile(`/runtime-probe/${file}`, readFileSync(new URL(`../probes/runtime/${file}`, import.meta.url)));
+  for (const file of ["sqlite-api.cjs", "sqlite-owner.cjs", "sea.cjs"]) kernel.writeFile(`/runtime-probe/${file}`, readFileSync(new URL(`../probes/runtime/${file}`, import.meta.url)));
   const opts = { cwd: "/runtime-probe", env: { PATH: "/bin" }, capture: true };
   return {
     kernel, get output() { return output; }, opts,
@@ -50,6 +50,7 @@ async function boot() {
 }
 try {
   host = await boot();
+  for (const command of ["node", "bun"]) await host.run("sea.cjs", "", command);
   for (const command of ["node", "bun"]) for (const mode of ["memory", "write", "recover"]) await host.run("sqlite-api.cjs", mode, command);
   const pid = host.kernel.launch("node", ["sqlite-owner.cjs", "hold"], { ...host.opts, capture: false });
   const until = Date.now() + 10000;

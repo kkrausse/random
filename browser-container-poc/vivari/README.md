@@ -1,5 +1,12 @@
 # Vivari feasibility POC
 
+**Latest continuation:** [OpenCode compatibility checkpoint](../doc/vivari-opencode-checkpoint.md).
+The real Node/Bun SQLite adapters pass, including reload recovery. Host packaging
+now reaches missing tree-sitter WASM assets during normal SDK import. Run
+`bun scripts/package-opencode.ts host` (or `sqlite-adapter`), then the Browser
+Control `scripts/opencode-packaged.js` runner against a booted patched runtime.
+The checkpoint document explains selection, exact failures, and packaging scope.
+
 Minimal browser-native runtime, command output, and real Vite preview. The local
 Vite server delivers the harness/assets; fixture commands execute in Vivari workers.
 See the [result card](../doc/vivari-result.md) for measured performance and the
