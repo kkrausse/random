@@ -19,6 +19,18 @@ export class TerminalConnection {
   private stopped = false;
   private ready = false;
   private encoder = new TextEncoder();
+  private attachmentId?: string;
+  private attachmentListeners = new Set<() => void>();
+
+  get attachment() {
+    return this.ready && this.socket?.readyState === WebSocket.OPEN && this.attachmentId
+      ? { sessionId: this.id, attachmentId: this.attachmentId } : undefined;
+  }
+
+  onAttachmentChange(listener: () => void) {
+    this.attachmentListeners.add(listener);
+    return () => { this.attachmentListeners.delete(listener); };
+  }
 
   constructor(private id: string, private view: TerminalView) {
     this.heartbeat = setInterval(() => { if (!document.hidden) this.ping(); }, 20_000);
@@ -67,6 +79,8 @@ export class TerminalConnection {
           // helpers pointing at the freed instance. RIS resets it in place.
           this.view.reset();
           this.ready = true;
+          this.attachmentId = message.attachmentId;
+          for (const listener of this.attachmentListeners) listener();
           this.view.status("connected");
           this.resize();
           this.ping();
@@ -123,6 +137,8 @@ export class TerminalConnection {
     const socket = this.socket;
     this.socket = undefined;
     this.ready = false;
+    this.attachmentId = undefined;
+    for (const listener of this.attachmentListeners) listener();
     socket?.close();
     clearTimeout(this.retry);
     clearTimeout(this.pongTimeout);

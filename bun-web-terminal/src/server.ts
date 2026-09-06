@@ -2,8 +2,11 @@ import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dimensions, SessionManager, type Attachment, type Session } from "./sessions";
+import { DictationService } from "./dictation-service";
+import { DictationProxy } from "./dictation-server";
 
-type SocketData = { sessionId: string; cols: number; rows: number; attachment?: Attachment };
+type SocketData = { kind: "terminal"; sessionId: string; cols: number; rows: number; attachment?: Attachment }
+  | { kind: "dictation"; proxy?: DictationProxy };
 
 const host = process.env.HOST ?? "127.0.0.1";
 const port = parsePort(process.env.PORT ?? "3000");
@@ -23,15 +26,26 @@ await buildClient();
 const theme = loadGhosttyTheme();
 const manager = new SessionManager(process.env.TERMINAL_CWD ?? defaultTerminalCwd);
 const sessions = manager.sessions;
+const dictation = new DictationService();
 process.once("exit", () => manager.dispose());
-process.once("SIGTERM", () => process.exit(0));
-process.once("SIGINT", () => process.exit(0));
+const shutdown = async () => { manager.dispose(); await dictation.dispose(); process.exit(0); };
+process.once("SIGTERM", () => { void shutdown(); });
+process.once("SIGINT", () => { void shutdown(); });
 
 const server = Bun.serve<SocketData>({
   hostname: host,
   port,
   async fetch(request, server) {
     const url = new URL(request.url);
+
+    if (url.pathname === "/api/dictation/status" && request.method === "GET") {
+      if (!isSameOrigin(request)) return new Response("Forbidden", { status: 403 });
+      return Response.json(await dictation.status(), { headers: { "cache-control": "no-store" } });
+    }
+    if (url.pathname === "/api/dictation/stream") {
+      if (!isSameOrigin(request)) return new Response("Forbidden", { status: 403 });
+      return server.upgrade(request, { data: { kind: "dictation" } }) ? undefined : new Response("Upgrade failed", { status: 400 });
+    }
 
     if (url.pathname.startsWith("/ws/")) {
       if (!isSameOrigin(request)) return new Response("Forbidden", { status: 403 });
@@ -40,7 +54,7 @@ const server = Bun.serve<SocketData>({
       if (!session) return new Response("Session not found", { status: 404 });
       const size = dimensions(Number(url.searchParams.get("cols")), Number(url.searchParams.get("rows")));
       if (!size) return new Response("Invalid terminal dimensions", { status: 400 });
-      return server.upgrade(request, { data: { sessionId, ...size } }) ? undefined : new Response("Upgrade failed", { status: 400 });
+      return server.upgrade(request, { data: { kind: "terminal", sessionId, ...size } }) ? undefined : new Response("Upgrade failed", { status: 400 });
     }
 
     if (url.pathname === "/api/theme" && request.method === "GET") return Response.json(theme);
@@ -82,6 +96,7 @@ const server = Bun.serve<SocketData>({
     }
 
     if (url.pathname === "/client.js") return serveFile(join(dist, "client.js"), "text/javascript; charset=utf-8");
+    if (url.pathname === "/audio-worklet.js") return serveFile(join(dist, "audio-worklet.js"), "text/javascript; charset=utf-8");
     if (url.pathname === "/styles.css") return serveFile(join(import.meta.dir, "styles.css"), "text/css; charset=utf-8");
     if (url.pathname === "/favicon.svg") return new Response(terminalFavicon, { headers: { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" } });
     if (url.pathname === "/ghostty-vt.wasm") return serveFile(join(dist, "ghostty-vt.wasm"), "application/wasm");
@@ -103,11 +118,13 @@ const server = Bun.serve<SocketData>({
     backpressureLimit: 256 * 1024,
     closeOnBackpressureLimit: true,
     open(socket) {
+      if (socket.data.kind === "dictation") { socket.data.proxy = new DictationProxy(socket, sessions, dictation); return; }
       const session = sessions.get(socket.data.sessionId);
       if (!session) return socket.close(4004, "Session not found");
       socket.data.attachment = manager.attach(session, socket, socket.data.cols, socket.data.rows);
     },
     message(socket, message) {
+      if (socket.data.kind === "dictation") { socket.data.proxy?.message(message); return; }
       const attachment = socket.data.attachment;
       if (!attachment) return;
       if (typeof message !== "string") return attachment.input(message);
@@ -123,6 +140,7 @@ const server = Bun.serve<SocketData>({
       socket.close(1008, "Invalid terminal control message");
     },
     close(socket) {
+      if (socket.data.kind === "dictation") { socket.data.proxy?.close(); return; }
       socket.data.attachment?.close();
     },
   },
@@ -171,10 +189,10 @@ function publicSession(session: Session) {
 async function buildClient() {
   await mkdir(dist, { recursive: true });
   const result = await Bun.build({
-    entrypoints: [join(import.meta.dir, "client.ts")],
+    entrypoints: [join(import.meta.dir, "client.ts"), join(import.meta.dir, "audio-worklet.ts")],
     outdir: dist,
     target: "browser",
-    naming: "client.js",
+    naming: "[name].js",
     minify: process.env.NODE_ENV === "production",
     sourcemap: process.env.NODE_ENV === "production" ? "none" : "inline",
   });

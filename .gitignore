@@ -38,4 +38,6 @@
 !.gitmodules
 !bun-web-terminal/
 !bun-web-terminal/**
+!dictation-server/
+!dictation-server/**
 node_modules/

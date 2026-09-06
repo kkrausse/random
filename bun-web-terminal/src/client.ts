@@ -188,7 +188,7 @@ async function startTerminalPage() {
     copyToast.dataset.status = "success";
     copyToast.textContent = message;
     copyToastTimer = setTimeout(() => { copyToast.textContent = ""; }, 3000);
-  });
+  }, connection);
   terminal.onData((data) => connection.input(mobile.input(data)));
   terminal.onResize(() => connection.resize());
   // Ctrl+V belongs to the terminal (e.g. Emacs scroll-down); paste remains Cmd+V
