@@ -1,5 +1,42 @@
 # Vivari feasibility POC
 
+## Local development bridge
+
+Run the patched Vite harness below and, in another terminal, `bun run relay`.
+Keep the browser page open at **http://127.0.0.1:5192/** (5190 also allowed).
+The dev page connects automatically; routine runtime work then uses the CLI:
+
+```sh
+bun run vv status
+# Copy the desired page's runtime ID; selection is always explicit.
+bun run vv --runtime ID boot
+bun run vv --runtime ID exec -- node --version
+bun run vv --runtime ID shell
+bun run vv --runtime ID logs
+bun scripts/qualify-bridge.ts ID
+```
+
+`bun run vv --help` documents file transfer, probes, cwd, and timeout options.
+The relay binds to 127.0.0.1:5193 and forwards NDJSON results from the browser;
+it never runs guest commands locally. Browser WebSockets require a random relay
+token and an allowed harness origin. Each page load receives a new runtime ID.
+Reconnects do not replay commands. Disconnects/timeouts cancel owned guest jobs.
+Boot itself uses Vivari's non-cancellable boot API.
+
+One foreground operation owns the harness at a time (including an open shell).
+Input, kill, status and bounded logs remain available while it runs. Output is
+the SDK's **merged stdout/stderr** stream. Files move in 256 KiB chunks using
+guest Node fd operations, avoiding SDK whole-file syscall limits; destination
+parents must already exist. Transfers are not atomic across chunks.
+Logs retain the latest one million characters, including forwarded kernel
+messages, guest command output and page errors, not a complete DevTools log.
+
+The page's **Open shell** button and CLI `shell` launch the same existing Vivari
+`sh` implementation with history, completion, pipes and foreground-job handling.
+Ctrl+C is forwarded to the shell; **Stop command** kills a UI-owned shell.
+There is no native PTY or guest resize operation. Use Browser Control for visual
+checks/navigation; use the bridge for command/probe/file results.
+
 ## Manual SDK demo
 
 The page now includes a small xterm.js terminal and SDK demo buttons. From this
@@ -27,10 +64,14 @@ include those ignored generated files.
 The JSON argv field launches runtime commands, for example `["node","--version"]`.
 For stdin, run
 `["node","-e","process.stdin.on('data',d=>console.log('INPUT:'+d.toString()))"]`,
-click the terminal, and type. **Stop command** or Ctrl+C terminates the process.
-xterm renders ANSI output and forwards keystrokes to process stdin. It currently
-has no shell prompt, PTY allocation, or process resize API. It is not yet the
+click the terminal, and type. **Stop command** terminates the process.
+xterm renders ANSI output and forwards keystrokes to process stdin. **Open shell**
+starts Vivari's interactive prompt. There is no PTY allocation or process resize API. It is not yet the
 OpenCode TUI. Stop a running command before starting another demo.
+
+Use Ctrl+D on an empty shell line to exit; the current upstream `sh` does not
+implement an `exit` command. CLI `exec` supports piped text stdin; interactive
+`shell` handles raw keystrokes. Guest stdin is a string transport, not binary stdin.
 
 Manual qualification: SDK create/readback/close and same-ID recovery across
 reload passed through the buttons; a typed `x` reached a real guest Node process

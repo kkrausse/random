@@ -21,7 +21,7 @@
 <button id="recover" disabled>Recover saved session</button>
 <p>Create a session, reload this page, boot again, then recover it. The same session ID should return.</p>
 <h2>Runtime terminal</h2>
-<p>Run commands as JSON argv below. Terminal keystrokes go to the active process; Ctrl+C stops it. This connection uses process stdin/stdout, not a PTY.</p>
+<p>Open the existing Vivari shell, or launch JSON argv below. Keystrokes (including Ctrl+C) go to the active process; in the shell, Ctrl+C interrupts its foreground job. Stop command terminates the whole process. This is process stdin/stdout, not a PTY.</p>
 <form id="command"><input id="args" aria-label="Command as JSON argv" size="70" value='["node","--version"]'><button disabled>Run command</button></form>
 <div id="output" aria-label="Terminal output"></div>
 <iframe id="preview" title="Fixture preview"></iframe>

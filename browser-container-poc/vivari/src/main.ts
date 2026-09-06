@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { runOpenCode } from "./opencode";
+import { connectDevBridge } from "./dev-bridge";
 
 const files = import.meta.glob("../fixture/**/*", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 const status = document.querySelector<HTMLElement>("#status")!;
@@ -14,6 +15,7 @@ terminal.open(output);
 new ResizeObserver(() => fit.fit()).observe(output);
 const preview = document.querySelector<HTMLIFrameElement>("#preview")!;
 let vm: Vivari;
+let ready = false;
 let active: VivariProcess | undefined;
 let input: WritableStreamDefaultWriter<string> | undefined;
 let busy = false;
@@ -25,7 +27,6 @@ function setProcess(proc: VivariProcess | undefined) {
   input = proc?.input.getWriter();
 }
 terminal.onData(data => {
-  if (data === "\x03") { stop(); return; }
   if (input) void input.write(data).catch(error => log(`\n${error}\n`));
 });
 let serverStart = 0;
@@ -94,6 +95,7 @@ async function boot() {
   document.querySelectorAll<HTMLButtonElement>("button").forEach(button => button.disabled = false);
   document.querySelector<HTMLButtonElement>("#boot")!.disabled = true;
   status.textContent = "Runtime ready";
+  ready = true;
 }
 function action(id: string, fn: () => Promise<unknown>) {
   document.querySelector(id)!.addEventListener("click", () => {
@@ -109,6 +111,14 @@ action("#install", () => run(["bun", "install", "--frozen-lockfile"]));
 action("#dev", () => run(["bun", "run", "dev"], false));
 action("#test", () => run(["bun", "test", "test/fixture.test.mjs"]));
 action("#stop", async () => stop());
+const shell = document.createElement('button');
+shell.textContent = 'Open shell';
+document.querySelector('#stop')!.after(shell);
+shell.addEventListener('click', () => {
+  if (!vm || busy || active) { log('\nBoot the runtime and stop the active command first\n'); return; }
+  busy = true;
+  void run(['sh'], false).catch(error => log(`\n${error}\n`)).finally(() => { busy = false; terminal.focus(); });
+});
 for (const [id, recover] of [["#sdk", false], ["#recover", true]] as const) {
   action(id, async () => {
     if (active) throw Error("Stop the active command first");
@@ -134,3 +144,11 @@ document.querySelector("#command")!.addEventListener("submit", event => {
 });
 // Browser Control probes use the host clock and real VFS, without a host-side executor.
 Object.assign(window, { probe: { get vm() { return vm; }, get output() { return transcript; }, run, samples, versions: { vivari: "1.0.0", revision: "2629c71097238400c45aefa213ef61df4794c2b7" } } });
+if (import.meta.env.DEV) connectDevBridge({
+  vm: () => ready ? vm : undefined, boot, log, logs: () => transcript,
+  acquire: () => {
+    if (busy || active) throw Error('Runtime busy; stop the active command first');
+    busy = true;
+    return () => { busy = false; };
+  },
+});
