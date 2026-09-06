@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { dimensions, SessionManager, type Attachment, type Session } from "./sessions";
 import { DictationService } from "./dictation-service";
 import { DictationProxy } from "./dictation-server";
+import { printStartupLink } from "./startup";
 
 type SocketData = { kind: "terminal"; sessionId: string; cols: number; rows: number; attachment?: Attachment }
   | { kind: "dictation"; proxy?: DictationProxy };
@@ -146,7 +147,7 @@ const server = Bun.serve<SocketData>({
   },
 });
 
-console.log(`Web terminal: http://${host}:${server.port}/sessions`);
+void printStartupLink(host, server.port!);
 
 async function saveAttachment(request: Request, session: Session) {
   const declaredSize = Number(request.headers.get("content-length"));
