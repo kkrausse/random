@@ -179,7 +179,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
       assert.ok(scroll.height >= 2, `list remains usable at ${width}x${height}`)
       assert.ok(preview.y + preview.height <= picker.y + picker.height)
       assert.ok(approve.y + approve.height <= preview.y + preview.height)
-      assert.match(setup.captureCharFrame(), /\[Open\].*\[New\].*\[Close\]/)
+      assert.match(setup.captureCharFrame(), /double-tap to open|←\/esc close/)
     }
     setup.resize(36, 24)
     await setup.renderOnce()
@@ -187,12 +187,10 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     await setup.mockMouse.click(approve.x + 1, approve.y)
     await new Promise((resolve) => setTimeout(resolve, 20))
     assert.equal(approved, true)
-    const openButton = setup.renderer.root.findDescendantById("claude-session-open")!
-    await setup.mockMouse.click(openButton.x + 1, openButton.y)
+    commands.find((c) => c.bind === "return").run()
     assert.equal(opened, "s0")
-    const closeButton = setup.renderer.root.findDescendantById("claude-session-close")!
     const beforeClose = closed
-    await setup.mockMouse.click(closeButton.x + 1, closeButton.y)
+    commands.find((c) => c.bind === "left").run()
     assert.equal(closed, beforeClose + 1)
   } finally {
     setup.renderer.destroy()

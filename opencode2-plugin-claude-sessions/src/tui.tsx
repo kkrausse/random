@@ -576,20 +576,12 @@ export function SessionPicker(props: { context: Plugin.Context }) {
       overflow="hidden"
       backgroundColor={props.context.theme.contextual.overlay.background.default}
     >
-      <box height={compact() ? 3 : 5} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1}>
-        <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
-          {sessions().length > 0 ? `Sessions viewer · ${sessions().length}` : "Sessions viewer"}
-        </text>
+      <box height={compact() ? 1 : 3} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1}>
         {!compact() ? <text wrapMode="none" fg={props.context.theme.text.subdued}>
           {baseDirectory() ? props.context.ui.format.path(baseDirectory()!) : " "}
         </text> : null}
         {!compact() ? <text wrapMode="none" fg={props.context.theme.text.subdued}>↑/↓/click select  ·  →/enter/double-click open  ·  n new  ·  ←/esc close</text> : null}
-        <box height={1} flexShrink={0} flexDirection="row" gap={1}>
-          <text id="claude-session-open" fg={props.context.theme.text.default} onMouseDown={(event) => { if (event.button === 0) { event.stopPropagation(); selectCurrent() } }}>[Open]</text>
-          <text fg={props.context.theme.text.default} onMouseDown={(event) => { if (event.button === 0) { event.stopPropagation(); newSession() } }}>[New]</text>
-          <text id="claude-session-close" fg={props.context.theme.text.default} onMouseDown={(event) => { if (event.button === 0) { event.stopPropagation(); props.context.ui.dialog.clear() } }}>[Close]</text>
-        </box>
-        <text wrapMode="none" fg={props.context.theme.text.subdued}>{changingLifecycle() ? "Updating session…" : compact() ? "Tap row to preview, then Open" : "x stop + mark inactive  ·  r restore to active"}</text>
+        <text wrapMode="none" fg={props.context.theme.text.subdued}>{changingLifecycle() ? "Updating session…" : compact() ? "Tap to preview, double-tap to open" : "x stop + mark inactive  ·  r restore to active"}</text>
       </box>
       {failure() ? (
         <box paddingLeft={2} paddingRight={2}>
