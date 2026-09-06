@@ -26,6 +26,9 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Pending questions show their title and field details; open the session to answer them. Approval shortcuts do not answer or dismiss questions.
 - Preview loading/errors disable permission actions, replies cannot overlap, and held-key repeat events are ignored. Errors appear as toasts and requests refresh after replying.
 - Older sessions load as you scroll.
+- The picker resizes with the terminal, including phone keyboard/rotation changes. Narrow or short terminals use a compact header and a smaller scrollable approval preview.
+- Tap/click a row to preview, then **Open** to enter it; **New** and **Close** are also clickable. Approval previews have **Once**, **Always**, and **Deny** buttons alongside the existing keyboard shortcuts.
+- In `bun-web-terminal`, use its **Keyboard** button to explicitly show/hide the phone keyboard. Taps select TUI controls without opening it, and swipes scroll without clicking.
 
 ## Effect execution and diagnostics
 

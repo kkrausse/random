@@ -7,9 +7,10 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
   toolbar.setAttribute("role", "group");
   toolbar.setAttribute("aria-label", "Terminal extra keys");
   const keys = [
+    ["Keyboard", "Keyboard"],
     ["Escape", "Esc"], ["Tab", "Tab"], ["Control", "Ctrl"],
     ["ArrowUp", "↑"], ["ArrowDown", "↓"], ["ArrowLeft", "←"], ["ArrowRight", "→"],
-    ["Paste", "Paste"], ["Select", "Select"], ["Copy", "Copy"], ["Keyboard", "Keyboard"],
+    ["Paste", "Paste"], ["Select", "Select"], ["Copy", "Copy"],
   ];
   for (const [key, label] of keys) {
     const button = document.createElement("button");
@@ -54,7 +55,6 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
       catch { notice("Copy failed · check clipboard permission"); }
       return;
     }
-    focus();
     if (key === "Control") { setControl(!control); return; }
     if (key === "Paste") {
       setControl(false);
@@ -110,7 +110,17 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
     event.stopImmediatePropagation();
     // Suppress compatibility mouse events, including after a canceled multi-touch gesture.
     event.preventDefault();
-    if (gesture && !gesture.moved && !selecting) focus();
+    if (gesture && !gesture.moved && !selecting) {
+      // Defer the entire click until release: a swipe must never press a TUI row.
+      // The engine listens on the container. Bypass its canvas focus listener
+      // so menu taps don't summon the software keyboard.
+      for (const type of ["mousedown", "mouseup"]) {
+        container.dispatchEvent(new MouseEvent(type, {
+          bubbles: true, cancelable: true, button: 0, buttons: type === "mousedown" ? 1 : 0,
+          clientX: gesture.x, clientY: gesture.y,
+        }));
+      }
+    }
     gesture = undefined;
   }, { capture: true, passive: false });
   container.addEventListener("touchcancel", () => { gesture = undefined; }, { capture: true });

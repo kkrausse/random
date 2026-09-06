@@ -13,6 +13,9 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
   const commands: any[] = []
   const [lifecycle, setLifecycle] = createStore({ inactive: {} as Record<string, boolean> })
   let opened: string | undefined
+  let closed = 0
+  let withPermission = false
+  let approved = false
   let interruptFailure = false
   let storageFailure = false
   let running = false
@@ -61,7 +64,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
           opened = route.sessionID
         },
       },
-      dialog: { set() {}, clear() {} },
+      dialog: { set() {}, clear() { closed++ } },
       toast: { show: (toast: any) => toasts.push(toast) },
       format: { path: (s: string) => s },
     },
@@ -82,7 +85,11 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
         },
         get: async ({ sessionID }: any) => sessions.find((s) => s.id === sessionID),
       },
-      permission: { list: empty, request: { list: async () => ({ data: [] }) } },
+      permission: {
+        list: async ({ sessionID }: any) => withPermission ? [{ id: "p1", sessionID, action: "shell", resources: ["echo hello\n".repeat(30)] }] : [],
+        reply: async () => { approved = true },
+        request: { list: async () => ({ data: [] }) },
+      },
       form: { list: empty, request: { list: async () => ({ data: [] }) } },
     },
   }
@@ -157,6 +164,36 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     assert.equal(toasts.at(-1)!.message, "Session marked inactive")
     assert.match(setup.captureCharFrame(), /❯\s+\+\s+New session/)
     assert.match(setup.captureCharFrame(), /New session — no context yet/)
+
+    // A keyboard-sized phone viewport must retain a usable list and tap actions.
+    withPermission = true
+    commands.find((c) => c.bind === "down").run()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    for (const [width, height] of [[36, 24], [36, 16], [100, 55]]) {
+      setup.resize(width!, height!)
+      await setup.renderOnce()
+      const picker = setup.renderer.root.findDescendantById("claude-session-picker")!
+      const preview = setup.renderer.root.findDescendantById("claude-session-preview")!
+      const approve = setup.renderer.root.findDescendantById("claude-session-approve")!
+      assert.ok(picker.height <= height! - 6)
+      assert.ok(scroll.height >= 2, `list remains usable at ${width}x${height}`)
+      assert.ok(preview.y + preview.height <= picker.y + picker.height)
+      assert.ok(approve.y + approve.height <= preview.y + preview.height)
+      assert.match(setup.captureCharFrame(), /\[Open\].*\[New\].*\[Close\]/)
+    }
+    setup.resize(36, 24)
+    await setup.renderOnce()
+    const approve = setup.renderer.root.findDescendantById("claude-session-approve")!
+    await setup.mockMouse.click(approve.x + 1, approve.y)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(approved, true)
+    const openButton = setup.renderer.root.findDescendantById("claude-session-open")!
+    await setup.mockMouse.click(openButton.x + 1, openButton.y)
+    assert.equal(opened, "s0")
+    const closeButton = setup.renderer.root.findDescendantById("claude-session-close")!
+    const beforeClose = closed
+    await setup.mockMouse.click(closeButton.x + 1, closeButton.y)
+    assert.equal(closed, beforeClose + 1)
   } finally {
     setup.renderer.destroy()
   }

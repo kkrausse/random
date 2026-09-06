@@ -2,6 +2,7 @@
 import type { FormInfo, ModelInfo, PermissionRequest, SessionInfo, SessionMessageAssistant, SessionMessageInfo } from "@opencode-ai/client"
 import { Plugin } from "@opencode-ai/plugin/tui"
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
+import { useTerminalDimensions } from "@opentui/solid"
 import { Index, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { groupLabel, sessionState, sortRows } from "./session-groups"
 import { sectionNeighbor } from "./picker-selection"
@@ -117,6 +118,11 @@ function contextStats(
 }
 
 export function SessionPicker(props: { context: Plugin.Context }) {
+  const dimensions = useTerminalDimensions()
+  // Leave room for the host dialog's margins, including when a phone keyboard opens.
+  const height = () => Math.max(1, Math.min(48, dimensions().height - 6))
+  const compact = () => dimensions().width < 70 || height() < 32
+  const previewHeight = () => Math.min(permission() ? 19 : 6, Math.max(3, Math.floor(height() * 0.4)))
   const runner = makeRunner((message, cause) => {
     console.error(`[claude.sessions] ${message}\n${Cause.pretty(cause)}`)
   })
@@ -565,18 +571,25 @@ export function SessionPicker(props: { context: Plugin.Context }) {
   return (
     <box
       flexDirection="column"
-      height={48}
+      id="claude-session-picker"
+      height={height()}
+      overflow="hidden"
       backgroundColor={props.context.theme.contextual.overlay.background.default}
     >
-      <box height={4} flexShrink={0} flexDirection="column" paddingLeft={2} paddingRight={2}>
+      <box height={compact() ? 3 : 5} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1}>
         <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
           {sessions().length > 0 ? `Sessions viewer · ${sessions().length}` : "Sessions viewer"}
         </text>
-        <text fg={props.context.theme.text.subdued}>
+        {!compact() ? <text wrapMode="none" fg={props.context.theme.text.subdued}>
           {baseDirectory() ? props.context.ui.format.path(baseDirectory()!) : " "}
-        </text>
-        <text fg={props.context.theme.text.subdued}>↑/↓/click select  ·  →/enter/double-click open  ·  n new  ·  ←/esc close</text>
-        <text fg={props.context.theme.text.subdued}>{changingLifecycle() ? "Updating session…" : "x stop + mark inactive  ·  r restore to active"}</text>
+        </text> : null}
+        {!compact() ? <text wrapMode="none" fg={props.context.theme.text.subdued}>↑/↓/click select  ·  →/enter/double-click open  ·  n new  ·  ←/esc close</text> : null}
+        <box height={1} flexShrink={0} flexDirection="row" gap={1}>
+          <text id="claude-session-open" fg={props.context.theme.text.default} onMouseDown={(event) => { if (event.button === 0) { event.stopPropagation(); selectCurrent() } }}>[Open]</text>
+          <text fg={props.context.theme.text.default} onMouseDown={(event) => { if (event.button === 0) { event.stopPropagation(); newSession() } }}>[New]</text>
+          <text id="claude-session-close" fg={props.context.theme.text.default} onMouseDown={(event) => { if (event.button === 0) { event.stopPropagation(); props.context.ui.dialog.clear() } }}>[Close]</text>
+        </box>
+        <text wrapMode="none" fg={props.context.theme.text.subdued}>{changingLifecycle() ? "Updating session…" : compact() ? "Tap row to preview, then Open" : "x stop + mark inactive  ·  r restore to active"}</text>
       </box>
       {failure() ? (
         <box paddingLeft={2} paddingRight={2}>
@@ -588,6 +601,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
           ref={scroll}
           focused
           flexGrow={1}
+          minHeight={0}
           scrollY
           scrollX={false}
           viewportCulling
@@ -662,7 +676,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
                         </text>
                       )}
                     </box>
-                    <text fg={titleColor()} attributes={active() ? TextAttributes.BOLD : undefined}>
+                    <text wrapMode="none" fg={titleColor()} attributes={active() ? TextAttributes.BOLD : undefined}>
                       {option().title}
                     </text>
                   </box>
@@ -672,7 +686,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
                       return "status" in row ? (
                         <>
                           <text fg={iconColor()}>{row.status}</text>
-                          <text fg={descriptionColor()}>{`  ·  ${row.description}`}</text>
+                          <text wrapMode="none" fg={descriptionColor()}>{`  ·  ${row.description}`}</text>
                         </>
                       ) : (
                         <text fg={descriptionColor()}>{row.description}</text>
@@ -685,10 +699,10 @@ export function SessionPicker(props: { context: Plugin.Context }) {
             }}
           </Index>
         </scrollbox>
-      <box height={permission() ? 19 : 6} flexShrink={0} flexDirection="column" paddingLeft={2} paddingRight={2}
+      <box id="claude-session-preview" height={previewHeight()} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1}
         border={["top"]} borderColor={permission() ? props.context.theme.text.status.permission : props.context.theme.contextual.overlay.scrollbar.default}>
         <box height={1} flexDirection="row" justifyContent="space-between">
-          <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
+           <text wrapMode="none" fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
             {selectedStats().left}
           </text>
           <text fg={props.context.theme.text.subdued} attributes={TextAttributes.BOLD}>
@@ -697,25 +711,27 @@ export function SessionPicker(props: { context: Plugin.Context }) {
         </box>
         {permission() ? (
           <>
-            <text fg={props.context.theme.text.status.permission} attributes={TextAttributes.BOLD}>
+            <text wrapMode="none" flexShrink={0} fg={props.context.theme.text.status.permission} attributes={TextAttributes.BOLD}>
               {`Approval required · 1 of ${visiblePreview()!.permissions.length}`}
             </text>
-            <scrollbox ref={previewScroll} height={14} scrollY scrollX={false}>
+            <scrollbox ref={previewScroll} flexGrow={1} minHeight={0} scrollY scrollX={false}>
               <text fg={props.context.theme.text.default}>
                 {[permission()!.action, permission()!.message, ...permission()!.resources,
                   permission()!.metadata ? JSON.stringify(permission()!.metadata, null, 2) : undefined].filter(Boolean).join("\n")}
               </text>
             </scrollbox>
-            <text fg={props.context.theme.text.subdued}>
-              {replying() ? "Sending reply…" : "a approve once  ·  A always  ·  d deny  ·  enter open session"}
-            </text>
+            <box height={1} flexShrink={0} flexDirection="row" gap={1}>
+              <text id="claude-session-approve" fg={props.context.theme.text.subdued} onMouseDown={(event) => { if (event.button === 0) { event.stopPropagation(); void replyToPermission("once") } }}>{replying() ? "Sending…" : "[Once]"}</text>
+              <text fg={props.context.theme.text.subdued} onMouseDown={(event) => { if (event.button === 0) { event.stopPropagation(); void replyToPermission("always") } }}>[Always]</text>
+              <text fg={props.context.theme.text.subdued} onMouseDown={(event) => { if (event.button === 0) { event.stopPropagation(); void replyToPermission("reject") } }}>[Deny]</text>
+            </box>
           </>
         ) : (
           <>
-            <text fg={props.context.theme.text.subdued}>
+            <text wrapMode="none" fg={props.context.theme.text.subdued}>
               {previewLoading() ? "Checking for approval requests…" : previewError() ? `Preview unavailable: ${previewError()}` : visiblePreview()?.forms.length ? "Question waiting — open session to answer" : "No permission requested"}
             </text>
-            <text fg={props.context.theme.text.subdued}>enter open session</text>
+            {!compact() ? <text fg={props.context.theme.text.subdued}>enter open session</text> : null}
           </>
         )}
       </box>

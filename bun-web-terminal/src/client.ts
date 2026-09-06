@@ -114,7 +114,7 @@ async function startTerminalPage() {
   }
   container.dataset.renderer = "webgl";
   fit.fit();
-  terminal.focus();
+  if (!matchMedia("(any-pointer: coarse)").matches) terminal.focus();
   terminal.onTitleChange(updateTitle);
   // Ctrl+Tab / Ctrl+Shift+Tab switch browser tabs. The emulator would encode
   // these and preventDefault them, so stop them at window capture before they

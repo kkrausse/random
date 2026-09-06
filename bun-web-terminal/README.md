@@ -16,8 +16,8 @@ Terminal pages reconnect automatically after network interruptions or a suspende
 
 ## Phone controls
 
-- Tap the terminal to open the software keyboard. Swipe vertically to scroll the application or tmux history; gestures use the same wheel encoding and sensitivity as desktop scrolling. A small movement threshold distinguishes taps from drags, and lifting your finger stops scrolling.
-- A horizontally scrollable extra-keys bar appears on touch devices and narrow windows: **Esc**, **Tab**, one-shot **Ctrl**, arrows, **Paste**, **Select**, **Copy**, and **Keyboard**. Tap **Ctrl**, then a letter (for example **C** to interrupt or **U** to clear the shell input). **Keyboard** toggles keyboard focus.
+- Tap the terminal to click in a mouse-aware application. The click is sent only when you lift your finger without dragging. Swipe vertically to scroll the application or tmux history; gestures use the same wheel encoding and sensitivity as desktop scrolling. A small movement threshold distinguishes taps from drags, and lifting your finger stops scrolling.
+- A horizontally scrollable extra-keys bar appears on touch devices and narrow windows: **Keyboard**, **Esc**, **Tab**, one-shot **Ctrl**, arrows, **Paste**, **Select**, and **Copy**. Tap **Ctrl**, then a letter (for example **C** to interrupt or **U** to clear the shell input). **Keyboard** explicitly opens/closes the software keyboard; terminal taps and extra keys leave keyboard focus alone. Touch devices do not autofocus on page load.
 - Tap **Select**, then drag across visible terminal text and tap **Copy**. Toggle **Select** off to resume swipe scrolling. Selection gestures stay local instead of clicking the running application.
 - **Paste** uses the browser clipboard and the terminal's bracketed-paste handling. It needs HTTPS (or localhost) and browser clipboard permission; use the phone keyboard's paste action if access is unavailable.
 - The terminal fits the visible viewport above the software keyboard and sends the updated dimensions to tmux. The existing engine handles mobile text/composition input with autocorrect and capitalization disabled.
