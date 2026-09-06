@@ -28,11 +28,14 @@ transcript handling. Show the unfinished word in a small preview above the bar.
   same-origin checks. Its socket data/handlers currently assume every socket is
   a terminal attachment; add a discriminated socket kind for dictation.
 - Tailscale Serve already provides HTTPS/WSS, needed for phone microphone access.
-- `../dictation-server-test` records and resamples browser audio for a Sherpa
-  endpoint at `ws://trpi:6006`. Its documented backend is **non-streaming**; it is
-  a useful audio-format reference, not the recommended backend here.
-- `../hackwhisper` has a documented Moonshine streaming implementation, but the
-  inspected process list did not show that backend running.
+
+### Invalidated prior experiments
+
+The user confirmed that `../hackwhisper` and `../dictation-server-test` are old
+experiments whose approaches were invalidated. Do not use their implementations
+as references, reuse their audio pipelines, or treat their backends as fallback
+options. Base this implementation on the working local Hex fork and its pinned
+FluidAudio dependency.
 
 ### Actual Hex installation
 
