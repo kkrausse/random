@@ -1,4 +1,3 @@
-import { basename } from "node:path";
 import { OutputFlow } from "./output-flow";
 
 const titleFormat = "#{?#{||:#{==:#{pane_title},#{host}},#{==:#{pane_title},#{host_short}}},#{pane_current_command},#{pane_title}}";
@@ -26,52 +25,45 @@ export function dimensions(cols: unknown, rows: unknown) {
   return { cols: Math.max(2, Math.min(500, cols as number)), rows: Math.max(2, Math.min(300, rows as number)) };
 }
 
-// An isolated tmux server avoids modifying the user's normal tmux configuration.
+// Production uses the standard tmux server; tests supply an isolated socket.
 export class SessionManager {
   readonly sessions = new Map<string, Session>();
-  private readonly socket = `bun-web-terminal-${process.pid}-${crypto.randomUUID()}`;
   private readonly env = { ...process.env, TMUX: undefined, TERM: "xterm-256color", COLORTERM: "truecolor" };
   private poll: ReturnType<typeof setInterval>;
 
-  constructor(private cwd: string) {
+  constructor(private cwd: string, private socket?: string) {
     const check = Bun.spawnSync(["tmux", "-V"], { stderr: "pipe" });
     if (check.exitCode !== 0) throw new Error("tmux is required (macOS: brew install tmux).");
+    this.refresh();
     this.poll = setInterval(() => this.refresh(), 2000);
     this.poll.unref();
   }
 
   private command(args: string[]) {
-    return Bun.spawnSync(["tmux", "-L", this.socket, "-f", "/dev/null", ...args], { env: this.env, stdout: "pipe", stderr: "pipe" });
+    return Bun.spawnSync([...this.tmuxCommand(), ...args], { env: this.env, stdout: "pipe", stderr: "pipe" });
+  }
+
+  private tmuxCommand() {
+    return ["tmux", ...(this.socket ? ["-L", this.socket, "-f", "/dev/null"] : [])];
   }
 
   create() {
-    const id = crypto.randomUUID();
+    const name = `web-${crypto.randomUUID()}`;
     const shell = process.env.SHELL ?? "/bin/zsh";
     const result = this.command([
-      "start-server",
-      ";", "set-option", "-g", "default-terminal", "tmux-256color",
-      ";", "set-option", "-g", "history-limit", "10000",
-      ...(this.sessions.size === 0 ? [";", "set-option", "-as", "terminal-features", ",xterm-256color:RGB"] : []),
-      ";",
-      "new-session", "-d", "-s", id, "-c", this.cwd, "-x", "100", "-y", "30", "--", shell, "-l",
-      ";", "set-option", "-t", id, "status", "off",
-      ";", "set-option", "-t", id, "prefix", "None",
-      ";", "set-option", "-t", id, "prefix2", "None",
-      ";", "set-option", "-t", id, "remain-on-exit", "on",
-      ";", "set-option", "-t", id, "window-size", "latest",
-      ";", "set-option", "-t", id, "mouse", "on",
-      ";", "set-option", "-t", id, "set-titles", "on",
-      ";", "set-option", "-t", id, "set-titles-string", titleFormat,
-      ";", "set-option", "-s", "escape-time", "0",
-      ...["copy-mode", "copy-mode-vi"].flatMap(table => [
-        ";", "bind-key", "-T", table, "WheelUpPane", "send-keys", "-X", "-N", "1", "scroll-up",
-        ";", "bind-key", "-T", table, "WheelDownPane", "send-keys", "-X", "-N", "1", "scroll-down",
-        ";", "bind-key", "-T", table, "Escape", "send-keys", "-X", "cancel",
-      ]),
+      "new-session", "-d", "-P", "-F", "#{session_id}", "-s", name, "-c", this.cwd, "-x", "100", "-y", "30", "--", shell, "-l",
+      ";", "set-option", "-t", name, "status", "off",
+      ";", "set-option", "-t", name, "remain-on-exit", "on",
+      ";", "set-option", "-t", name, "window-size", "latest",
+      ";", "set-option", "-t", name, "mouse", "on",
+      ";", "set-option", "-t", name, "set-titles", "on",
+      ";", "set-option", "-t", name, "set-titles-string", titleFormat,
     ]);
     if (result.exitCode !== 0) throw new Error(`Could not create terminal: ${result.stderr.toString().trim()}`);
-    const session: Session = { id, name: `${basename(shell)} ${this.sessions.size + 1}`, title: "", status: "running", createdAt: new Date(), exitCode: null };
-    this.sessions.set(id, session);
+    const id = result.stdout.toString().trim();
+    this.refresh();
+    const session = this.sessions.get(id);
+    if (!session) throw new Error("Could not discover newly created terminal.");
     return session;
   }
 
@@ -86,7 +78,7 @@ export class SessionManager {
     // application modes separately; serialize queries so slow tmux cannot pile up.
     const reportMouseMode = async () => {
       try {
-        const query = Bun.spawn(["tmux", "-L", this.socket, "display-message", "-p", "-t", session.id,
+        const query = Bun.spawn([...this.tmuxCommand(), "display-message", "-p", "-t", session.id,
           "#{pane_in_mode}|#{mouse_any_flag}|#{mouse_all_flag}|#{mouse_button_flag}|#{mouse_standard_flag}"],
         { env: this.env, stdout: "pipe", stderr: "ignore" });
         const [output, code] = await Promise.all([new Response(query.stdout).text(), query.exited]);
@@ -135,7 +127,7 @@ export class SessionManager {
     // This marks a fresh terminal, never a replay of historical terminal queries.
     peer.send(JSON.stringify({ type: "ready", cols, rows }));
     try {
-      child = Bun.spawn(["tmux", "-L", this.socket, "-f", "/dev/null", "attach-session", "-t", session.id], {
+      child = Bun.spawn([...this.tmuxCommand(), "attach-session", "-t", session.id], {
         env: this.env,
         terminal: { cols, rows, name: "xterm-256color", data(_terminal, data) { flow.push(data); } },
       });
@@ -149,15 +141,27 @@ export class SessionManager {
   }
 
   private refresh() {
-    if (!this.sessions.size) return;
-    const result = this.command(["list-panes", "-a", "-F", `#{session_name}\t#{pane_dead}\t#{pane_dead_status}\t${titleFormat}`]);
-    if (result.exitCode !== 0) return;
+    const result = this.command(["list-sessions", "-F", `#{session_id}\t#{session_name}\t#{session_created}\t#{pane_dead}\t#{pane_dead_status}\t${titleFormat}`]);
+    if (result.exitCode !== 0 && !/no server running|no sessions|error connecting to/.test(result.stderr.toString())) return;
+    const seen = new Set<string>();
     for (const line of result.stdout.toString().trimEnd().split("\n")) {
-      const [id, dead, code, ...title] = line.split("\t");
-      const session = this.sessions.get(id!);
-      if (!session) continue;
+      const [id, name, created, dead, code, ...title] = line.split("\t");
+      if (!id || !name) continue;
+      seen.add(id);
+      let session = this.sessions.get(id);
+      if (!session) {
+        session = { id, name, title: "", status: "running", createdAt: new Date(Number(created) * 1000), exitCode: null };
+        this.sessions.set(id, session);
+      }
+      session.name = name;
       session.title = title.join("\t").slice(0, 512);
-      if (dead === "1") { session.status = "exited"; session.exitCode = Number(code) || 0; }
+      session.status = dead === "1" ? "exited" : "running";
+      session.exitCode = dead === "1" ? Number(code) || 0 : null;
+    }
+    for (const [id, session] of this.sessions) {
+      if (seen.has(id)) continue;
+      session.attachment?.close(4004, "Session removed");
+      this.sessions.delete(id);
     }
   }
 
@@ -170,7 +174,6 @@ export class SessionManager {
   dispose() {
     clearInterval(this.poll);
     for (const session of this.sessions.values()) session.attachment?.close(1001, "Server stopping");
-    if (this.sessions.size) this.command(["kill-server"]);
     this.sessions.clear();
   }
 }
