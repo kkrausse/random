@@ -4,6 +4,7 @@ import { Plugin } from "@opencode-ai/plugin/tui"
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { Index, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { groupLabel, sessionState, sortRows } from "./session-groups"
+import { sectionNeighbor } from "./picker-selection"
 
 const PAGE_SIZE = 100
 const LOAD_MORE_THRESHOLD = 10
@@ -113,7 +114,7 @@ function contextStats(
   }
 }
 
-function SessionPicker(props: { context: Plugin.Context }) {
+export function SessionPicker(props: { context: Plugin.Context }) {
   const [lifecycle, updateLifecycle] = props.context.storage.store("session-lifecycle", {
     initial: { inactive: {} as Record<string, boolean> },
   })
@@ -126,7 +127,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
   const [cursor, setCursor] = createSignal<string>()
   const [loading, setLoading] = createSignal(false)
   const [failure, setFailure] = createSignal<string>()
-  const [selectedIndex, setSelectedIndex] = createSignal(0)
+  const [selectedValue, setSelectedValue] = createSignal(currentSessionID ?? NEW_SESSION_VALUE)
   const [tick, setTick] = createSignal(0)
   const [liveVersion, setLiveVersion] = createSignal(0)
   const [reviewVersion, setReviewVersion] = createSignal(0)
@@ -151,9 +152,8 @@ function SessionPicker(props: { context: Plugin.Context }) {
     )
   })
 
-  const optionCache = new Map<string, { title: string; description: string; status?: string; state: string; value: string }>()
   const options = createMemo(() => {
-    const next = [
+    return [
       {
         title: "New session",
         description: "Start with a blank prompt",
@@ -161,46 +161,30 @@ function SessionPicker(props: { context: Plugin.Context }) {
         state: "new" as const,
       },
       ...rows().map(({ session, state }) => {
-      const status =
-        state === "permission"
-          ? "Permission required"
-          : state === "question"
-            ? "Question waiting"
-            : state === "running"
-              ? "Working"
-               : state === "inactive" ? "Inactive" : "Ready"
-      const location = shortenLocation(props.context.ui.format.path(session.location.directory))
-      const details = [relativeTime(session.time.updated), location]
-      if (session.agent) details.push(session.agent)
+        const status = {
+          permission: "Permission required",
+          question: "Question waiting",
+          running: "Working",
+          inactive: "Inactive",
+          idle: "Ready",
+        }[state]
+        const location = shortenLocation(props.context.ui.format.path(session.location.directory))
+        const details = [relativeTime(session.time.updated), location]
+        if (session.agent) details.push(session.agent)
 
-      return {
-        title: session.title?.trim() || "Untitled session",
-        description: details.join("  ·  "),
-        status,
-        state,
-        value: session.id,
-      }
-    }),
+        return {
+          title: session.title?.trim() || "Untitled session",
+          description: details.join("  ·  "),
+          status,
+          state,
+          value: session.id,
+        }
+      }),
     ]
-    // Return stable object identities so <For> moves rows instead of
-    // recreating them (which resets scroll and breaks click handlers).
-    return next.map((option) => {
-      const prev = optionCache.get(option.value)
-      if (
-        prev &&
-        prev.title === option.title &&
-        prev.description === option.description &&
-        prev.state === option.state &&
-        (prev.status ?? undefined) === ((option as { status?: string }).status ?? undefined)
-      ) {
-        return prev as typeof option
-      }
-      optionCache.set(option.value, option)
-      return option
-    })
   })
 
-  const selectedSession = createMemo(() => sessions().find((session) => session.id === options()[selectedIndex()]?.value))
+  const selectedIndex = createMemo(() => options().findIndex((option) => option.value === selectedValue()))
+  const selectedSession = createMemo(() => sessions().find((session) => session.id === selectedValue()))
   const [contextSyncing, setContextSyncing] = createSignal(false)
   const [contextVersion, setContextVersion] = createSignal(0)
   const selectedMessages = createMemo(() => {
@@ -290,6 +274,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
   async function changeLifecycle(inactive: boolean) {
     const session = selectedSession()
     if (!session || changingLifecycle() || replying()) return
+    const neighbor = sectionNeighbor(options(), session.id) ?? NEW_SESSION_VALUE
     setChangingLifecycle(true)
     try {
       if (inactive) await props.context.client.session.interrupt({ sessionID: session.id, continue: false })
@@ -297,6 +282,8 @@ function SessionPicker(props: { context: Plugin.Context }) {
         if (inactive) draft.inactive[session.id] = true
         else delete draft.inactive[session.id]
       })
+      // Don't steal selection if the user navigated while the request ran.
+      if (selectedValue() === session.id) setSelectedValue(neighbor)
       props.context.ui.toast.show({ message: inactive ? "Session interrupted and marked inactive" : "Session restored to active", variant: "success" })
     } catch (error) {
       props.context.ui.toast.show({ message: error instanceof Error ? error.message : "Could not update session", variant: "error" })
@@ -409,7 +396,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
   function scrollToIndex(index: number) {
     const option = options()[index]
     if (!option) return
-    const id = `claude-session-${option.value}`
+    const id = `claude-session-row-${index}`
     queueMicrotask(() => scroll?.scrollChildIntoView(id))
   }
 
@@ -419,8 +406,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
     const next = Math.max(0, Math.min(available.length - 1, index))
     const option = available[next]
     if (!option) return
-    selectedValue = option.value
-    setSelectedIndex(next)
+    setSelectedValue(option.value)
     if (follow) scrollToIndex(next)
     if (next >= available.length - LOAD_MORE_THRESHOLD) void loadMore()
   }
@@ -432,7 +418,8 @@ function SessionPicker(props: { context: Plugin.Context }) {
   function selectRowByValue(value: string) {
     const index = options().findIndex((option) => option.value === value)
     if (index < 0) return
-    selectIndex(index, true)
+    // The pointer already identifies a visible row; clicking must not scroll it.
+    selectIndex(index, false)
   }
 
   let lastClick: { value: string; time: number } | undefined
@@ -486,15 +473,11 @@ function SessionPicker(props: { context: Plugin.Context }) {
     ],
   }))
 
-  let selectedValue = currentSessionID ?? NEW_SESSION_VALUE
   let initialScrollDone = false
   createEffect(() => {
     const available = options()
-    const index = available.findIndex((option) => option.value === selectedValue)
+    const index = available.findIndex((option) => option.value === selectedValue())
     if (index < 0) return
-    // Follow the selected row when the list re-sorts (e.g. x/r changes its
-    // group) without moving the viewport: only update the index, keep scroll.
-    if (index !== selectedIndex()) setSelectedIndex(index)
     if (!initialScrollDone && available.length > 0) {
       initialScrollDone = true
       scrollToIndex(index)
@@ -554,10 +537,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
         )
       }),
       props.context.data.on("session.deleted", (event) => {
-        if (selectedValue === event.data.sessionID) {
-          selectedValue = NEW_SESSION_VALUE
-          setSelectedIndex(0)
-        }
+        if (selectedValue() === event.data.sessionID) setSelectedValue(NEW_SESSION_VALUE)
         setSessions((loaded) => loaded.filter((item) => item.id !== event.data.sessionID))
         setAttention((current) => {
           if (!current.has(event.data.sessionID)) return current
@@ -596,12 +576,9 @@ function SessionPicker(props: { context: Plugin.Context }) {
         <box paddingLeft={2} paddingRight={2}>
           <text fg={props.context.theme.text.feedback.error.default}>{failure()}</text>
         </box>
-      ) : options().length === 0 && loading() ? (
-        <box paddingLeft={2} paddingRight={2}>
-          <text fg={props.context.theme.text.subdued}>Loading sessions…</text>
-        </box>
-      ) : (
+      ) : null}
         <scrollbox
+          id="claude-session-list"
           ref={scroll}
           focused
           flexGrow={1}
@@ -642,7 +619,7 @@ function SessionPicker(props: { context: Plugin.Context }) {
                   </box>
                 ) : null}
                 <box
-                  id={`claude-session-${option().value}`}
+                  id={`claude-session-row-${index}`}
                   height={2}
                   flexShrink={0}
                   flexDirection="column"
@@ -653,7 +630,10 @@ function SessionPicker(props: { context: Plugin.Context }) {
                       ? props.context.theme.contextual.overlay.background.surface.offset
                       : props.context.theme.contextual.overlay.background.default
                   }
-                  onMouseDown={() => {
+                  onMouseDown={(event) => {
+                    if (event.button !== 0) return
+                    event.stopPropagation()
+                    event.preventDefault()
                     handleRowClick(option().value)
                   }}
                 >
@@ -699,7 +679,6 @@ function SessionPicker(props: { context: Plugin.Context }) {
             }}
           </Index>
         </scrollbox>
-      )}
       <box height={permission() ? 19 : 6} flexShrink={0} flexDirection="column" paddingLeft={2} paddingRight={2}
         border={["top"]} borderColor={permission() ? props.context.theme.text.status.permission : props.context.theme.contextual.overlay.scrollbar.default}>
         <box height={1} flexDirection="row" justifyContent="space-between">
