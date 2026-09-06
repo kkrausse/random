@@ -4,6 +4,7 @@ type TerminalView = {
   reset(): void;
   write(data: Uint8Array): void;
   status(status: Status): void;
+  mouseMode(tracking: boolean): void;
 };
 
 // Binary messages are terminal bytes; text messages are protocol controls.
@@ -69,6 +70,8 @@ export class TerminalConnection {
           this.view.status("connected");
           this.resize();
           this.ping();
+        } else if (message.type === "mouse-mode" && typeof message.tracking === "boolean") {
+          this.view.mouseMode(message.tracking);
         } else if (message.type === "pong") {
           clearTimeout(this.pongTimeout);
           this.pongTimeout = undefined;

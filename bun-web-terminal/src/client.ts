@@ -88,7 +88,7 @@ async function startTerminalPage() {
     fontFamily: theme.fontFamily,
     fontSize: theme.fontSize,
     scrollback: 10_000,
-    selectOnDrag: false, // Honor application mouse tracking; Shift+drag selects locally.
+    selectOnDrag: false, // Updated from tmux's inner application mouse mode below.
     copyOnSelect: false, // Set true to copy automatically when highlighting text.
     onClipboardWrite(success) {
       if (!copyToast) return;
@@ -143,6 +143,7 @@ async function startTerminalPage() {
   const connection = new TerminalConnection(id!, {
     size: () => ({ cols: terminal.cols, rows: terminal.rows }),
     reset() {
+      terminal.options.selectOnDrag = false;
       titleBuffer = "";
       titleDecoder.decode();
       terminal.scrollToBottom();
@@ -151,6 +152,9 @@ async function startTerminalPage() {
     write(data) {
       inspectTitles(titleDecoder.decode(data, { stream: true }));
       terminal.write(data);
+    },
+    mouseMode(tracking) {
+      terminal.options.selectOnDrag = !tracking;
     },
     status(status) {
       if (!connectionStatus) return;

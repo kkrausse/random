@@ -15,6 +15,9 @@ process.stdin.on("data", (data) => {
       process.stdout.write(("X".repeat(100) + "\r\n").repeat(12_000));
       draw();
     }
-    if (key === "q") process.exit(0);
+    if (key === "q") {
+      process.stdout.write("\x1b[?1000l\x1b[?1006l\x1b[?2004l\x1b[?1049l");
+      process.exit(0);
+    }
   }
 });
