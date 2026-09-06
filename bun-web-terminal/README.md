@@ -18,25 +18,26 @@ Compact light-blue notices in the top-right show connection status and confirm s
 
 ## Session behavior
 
-- Each shell runs inside an isolated tmux server, with its status bar and prefix keys disabled. Your normal tmux server/configuration is independent.
+- Uses your standard tmux server and configuration. Existing sessions appear automatically; new browser-created sessions are named `web-<uuid>`, with their status bar hidden and mouse support enabled. Global options and key bindings are left to your tmux configuration.
 - Refreshing or reconnecting attaches a fresh PTY to the same running application. tmux redraws the current screen and negotiates terminal modes; the browser never replays a truncated output log or historical terminal queries.
-- One tab controls a session at a time. Opening it elsewhere detaches the previous tab, which shows **Take over** instead of repeatedly reconnecting.
-- Sessions survive browser disconnections, but belong to this server process. A normal server shutdown/restart ends them. Existing sessions from the previous direct-PTY implementation cannot migrate into tmux. Finish those before restarting your existing server to pick up this version.
+- One tab per Bun instance controls a session at a time. Opening it elsewhere detaches the previous tab, which shows **Take over** instead of repeatedly reconnecting. Native tmux clients can remain attached alongside the browser.
+- Sessions survive browser disconnections, Bun shutdowns, and code reloads. Startup discovers existing sessions, and the list refreshes every two seconds. Terminal URLs use tmux session IDs, so renaming a session keeps its URL working while the tmux server lives. Removing a session in the browser kills that tmux session. Machine reboots or killing tmux still end the processes.
+- Sessions created by the older isolated-server version are not automatically migrated; that older running Bun process still ends them on shutdown.
 - Resizing settles for 150 ms in the browser and is coalesced again at the PTY. Output is delivered in batches of at most 32 KiB, with at most 128 KiB awaiting browser acknowledgment and 512 KiB queued. A stalled attachment is dropped and restored from tmux rather than accumulating unlimited work.
-- Scrolling runs at 50% sensitivity and accumulates fractional trackpad deltas. Shell history lives in tmux (10,000 lines); scrolling up enters its copy mode, and **Escape** returns to live input. Applications with mouse support receive normalized wheel input.
+- Scrolling runs at 50% sensitivity and accumulates fractional trackpad deltas. Shell history and copy-mode bindings follow your tmux configuration; with mouse support enabled, scrolling up enters copy mode. Applications with mouse support receive normalized wheel input.
 - **Ctrl+V** reaches the application, including Emacs. Use **Cmd+V** on macOS or **Ctrl+Shift+V** on other platforms to paste.
 - Drag normally to highlight text at the shell or in applications without mouse support; **Cmd+C** copies it and the highlight stays after release. Mouse-aware applications automatically receive clicks and drags instead. Hold **Shift** while dragging to force local highlighting in those applications. The server checks the inner tmux pane's mouse modes every 150 ms while attached, so switching may take a moment. tmux copy mode also uses local highlighting. Auto-copy is disabled; toggle `copyOnSelect` in `src/client.ts` to enable it. Scrolling still goes through tmux.
 
-The browser terminal and tmux negotiate their own capabilities; programs inside tmux use `TERM=tmux-256color`. Ghostty-web remains the rendering/input engine, so engine-specific keyboard or rendering limitations can still be investigated independently.
+The browser terminal and tmux negotiate their own capabilities; programs inside tmux use your configured `default-terminal`. Ghostty-web remains the rendering/input engine, so engine-specific keyboard or rendering limitations can still be investigated independently.
 
 ## Development and stress checks
 
 ```sh
 bun run typecheck
-bun test
+bun run test
 ```
 
-Tests use an isolated tmux server and the same Ghostty WASM as the browser. They cover alternate-screen reattachment, live application state, 300 coalesced resize requests, tab takeover, output acknowledgments/stalls, and fractional scrolling.
+Tests use isolated tmux servers and the same Ghostty WASM as the browser. They cover live application state across SessionManager shutdown/recreation, existing-session discovery, renames/removal, alternate-screen reattachment, 300 coalesced resize requests, tab takeover, output acknowledgments/stalls, and fractional scrolling.
 
 To test alongside a manually used instance on port 3000, use a separate port **and build directory**:
 
@@ -44,7 +45,7 @@ To test alongside a manually used instance on port 3000, use a separate port **a
 PORT=3107 TERMINAL_DIST="$(mktemp -d)" bun start
 ```
 
-Open `http://127.0.0.1:3107/sessions`, start `btop`, repeatedly resize the window, then click the connection indicator and reload the page. Confirm that btop remains usable and the same process survives. Open the same session URL in another tab to check takeover. Test shell history scrolling and application scrolling separately. The `dev` command uses process restarts (`--watch`), so source changes end that development instance's sessions.
+Open `http://127.0.0.1:3107/sessions`, start `btop`, repeatedly resize the window, then click the connection indicator and reload the page. Confirm that btop remains usable and the same process survives. Open the same session URL in another tab to check takeover. Test shell history scrolling and application scrolling separately. Restart Bun or edit source under `dev` (`--watch`) and confirm that the browser reconnects to the same running application. Parallel app instances share the standard tmux sessions.
 
 To expose it only to devices permitted by your tailnet policy, keep the app bound to its default loopback address and run Tailscale Serve in another terminal:
 

@@ -12,7 +12,8 @@ async function until(check: () => boolean, timeout = 5000) {
 
 test("tmux restores a live alternate screen, coalesces resize storms, and survives slow attachments", async () => {
   const ghostty = await Ghostty.load(new URL(import.meta.resolve("ghostty-web/ghostty-vt.wasm")).pathname);
-  const manager = new SessionManager(import.meta.dir);
+  const socket = `bun-web-terminal-test-${crypto.randomUUID()}`;
+  let manager = new SessionManager(import.meta.dir, socket);
   const terminals: ReturnType<typeof ghostty.createTerminal>[] = [];
   function attach(session: Session, cols = 100, rows = 30, acknowledge = true) {
     const terminal = ghostty.createTerminal(cols, rows);
@@ -54,9 +55,13 @@ test("tmux restores a live alternate screen, coalesces resize storms, and surviv
     await until(() => first.mouseTracking() === true);
     first.input("+");
     await until(() => first.text().includes("count=1"));
-    first.attachment.close();
-
-    const second = attach(session);
+    manager.dispose();
+    expect(first.closed()).toBe(1001);
+    manager = new SessionManager(import.meta.dir, socket);
+    const restored = manager.sessions.get(session.id)!;
+    expect(restored.name).toBe(session.name);
+    expect(restored.createdAt).toEqual(session.createdAt);
+    const second = attach(restored);
     await until(() => second.text().includes("ATTACHMENT-FIXTURE count=1"));
     await until(() => second.mouseTracking() === true);
     for (let i = 0; i < 300; i++) second.attachment.resize(80 + i % 40, 24 + i % 10);
@@ -65,23 +70,48 @@ test("tmux restores a live alternate screen, coalesces resize storms, and surviv
     await until(() => second.text().includes("size=110x28"));
     expect(second.text()).toContain("resizes=1");
 
-    const slow = attach(session, 110, 28, false);
+    const slow = attach(restored, 110, 28, false);
     expect(second.closed()).toBe(4002);
     await until(() => slow.text().includes("count=1"));
     slow.input("f");
     await until(() => slow.closed() === 1013, 12_000);
-    expect(session.title).toContain("bun");
-    const recovered = attach(session, 110, 28);
+    expect(restored.title).toContain("bun");
+    const recovered = attach(restored, 110, 28);
     await until(() => recovered.text().includes("ATTACHMENT-FIXTURE count=1"));
     recovered.input("+");
     await until(() => recovered.text().includes("count=2"));
     recovered.input("q");
     await until(() => recovered.mouseTracking() === false);
-    manager.remove(session);
+    manager.remove(restored);
     expect(recovered.closed()).toBe(4004);
     expect(manager.sessions.size).toBe(0);
   } finally {
     manager.dispose();
+    Bun.spawnSync(["tmux", "-L", socket, "kill-server"]);
     for (const terminal of terminals) terminal.free();
   }
 }, 25_000);
+
+test("discovers standard tmux sessions and tracks renames and external removal", async () => {
+  const socket = `bun-web-terminal-test-${crypto.randomUUID()}`;
+  const tmux = (...args: string[]) => Bun.spawnSync(["tmux", "-L", socket, "-f", "/dev/null", ...args]);
+  let manager: SessionManager | undefined;
+  try {
+    const result = tmux("new-session", "-d", "-P", "-F", "#{session_id}", "-s", "existing", "sleep 60");
+    expect(result.exitCode).toBe(0);
+    const id = result.stdout.toString().trim();
+    manager = new SessionManager(import.meta.dir, socket);
+    expect(manager.sessions.get(id)?.name).toBe("existing");
+    const prefix = tmux("show-options", "-gv", "prefix").stdout.toString();
+    const created = manager.create();
+    expect(tmux("show-options", "-gv", "prefix").stdout.toString()).toBe(prefix);
+    tmux("rename-session", "-t", id, "renamed");
+    await until(() => manager!.sessions.get(id)?.name === "renamed");
+    manager.remove(created);
+    tmux("kill-session", "-t", id);
+    await until(() => manager!.sessions.size === 0);
+  } finally {
+    manager?.dispose();
+    tmux("kill-server");
+  }
+});
