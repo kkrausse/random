@@ -1,6 +1,7 @@
 import { FitAddon, init, Terminal, type ITheme } from "../vendor/ghostty-web/lib/index";
 import { TerminalConnection } from "./connection";
 import { installScrolling } from "./scroll";
+import { installMobileControls } from "./mobile";
 
 type Session = {
   id: string;
@@ -165,7 +166,14 @@ async function startTerminalPage() {
       }[status];
     },
   });
-  terminal.onData((data) => connection.input(data));
+  const mobile = installMobileControls(container, terminal, (message) => {
+    if (!copyToast) return;
+    clearTimeout(copyToastTimer);
+    copyToast.dataset.status = "success";
+    copyToast.textContent = message;
+    copyToastTimer = setTimeout(() => { copyToast.textContent = ""; }, 3000);
+  });
+  terminal.onData((data) => connection.input(mobile.input(data)));
   terminal.onResize(() => connection.resize());
   // Ctrl+V belongs to the terminal (e.g. Emacs scroll-down); paste remains Cmd+V
   // on macOS and Ctrl+Shift+V elsewhere.

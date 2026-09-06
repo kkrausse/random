@@ -14,6 +14,16 @@ Open <http://127.0.0.1:3000/sessions>. Sessions keep running when the browser di
 
 Terminal pages reconnect automatically after network interruptions or a suspended tab. Use the connection indicator in the top-right corner to force a fresh attachment and redraw.
 
+## Phone controls
+
+- Tap the terminal to open the software keyboard. Swipe vertically to scroll the application or tmux history; gestures use the same wheel encoding and sensitivity as desktop scrolling. A small movement threshold distinguishes taps from drags, and lifting your finger stops scrolling.
+- A horizontally scrollable extra-keys bar appears on touch devices and narrow windows: **Esc**, **Tab**, one-shot **Ctrl**, arrows, **Paste**, **Select**, **Copy**, and **Keyboard**. Tap **Ctrl**, then a letter (for example **C** to interrupt or **U** to clear the shell input). **Keyboard** toggles keyboard focus.
+- Tap **Select**, then drag across visible terminal text and tap **Copy**. Toggle **Select** off to resume swipe scrolling. Selection gestures stay local instead of clicking the running application.
+- **Paste** uses the browser clipboard and the terminal's bracketed-paste handling. It needs HTTPS (or localhost) and browser clipboard permission; use the phone keyboard's paste action if access is unavailable.
+- The terminal fits the visible viewport above the software keyboard and sends the updated dimensions to tmux. The existing engine handles mobile text/composition input with autocorrect and capitalization disabled.
+
+For a phone check, open the Tailscale HTTPS URL below, try swiping inside a mouse-aware application, open/close the keyboard and rotate the phone, then try **Ctrl+C**, selection/copy, and paste. Actual software-keyboard behavior should be checked on the target phone; desktop touch-event simulation cannot fully reproduce it.
+
 Compact light-blue notices in the top-right show connection status and confirm successful browser selection copies with a brief “Copied” toast. Copy failures show an error instead; application-owned clipboard operations do not trigger this toast.
 
 ## Session behavior
