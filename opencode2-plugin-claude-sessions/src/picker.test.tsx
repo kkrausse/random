@@ -1,10 +1,13 @@
 /** @jsxImportSource @opentui/solid */
 import { strict as assert } from "node:assert"
 import { test } from "node:test"
-import { testRender } from "@opentui/solid"
+import { extend, testRender } from "@opentui/solid"
 import { createStore } from "solid-js/store"
-import type { ScrollBoxRenderable } from "@opentui/core"
+import { TextRenderable, type ScrollBoxRenderable } from "@opentui/core"
 import { SessionPicker } from "./tui"
+
+// The host registers its spinner; the standalone renderer only needs a row placeholder.
+extend({ spinner: TextRenderable })
 
 test("mouse and keyboard selection stay correct across lifecycle reordering", async () => {
   const commands: any[] = []
@@ -12,6 +15,8 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
   let opened: string | undefined
   let interruptFailure = false
   let storageFailure = false
+  let running = false
+  let interruptCalls = 0
   const toasts: Array<{ message: string; variant: string }> = []
   const sessions = Array.from({ length: 40 }, (_, i) => ({
     id: `s${i}`,
@@ -62,7 +67,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     },
     keymap: { layer: (fn: any) => commands.push(...fn().commands) },
     data: {
-      session: { status: () => "idle", message: { list: () => [], sync: empty }, cost: () => 0 },
+      session: { status: () => running ? "running" : "idle", message: { list: () => [], sync: empty }, cost: () => 0 },
       location: { model: { list: () => [], sync: empty } },
       on: () => () => {},
       listen: () => () => {},
@@ -71,7 +76,9 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
       session: {
         list: async () => ({ data: sessions, cursor: {} }),
         interrupt: async () => {
+          interruptCalls++
           if (interruptFailure) throw { message: "Unexpected Status", response: { status: 409 } }
+          running = false
         },
         get: async ({ sessionID }: any) => sessions.find((s) => s.id === sessionID),
       },
@@ -96,6 +103,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     assert.ok(scroll.scrollTop > 0)
     const before = scroll.scrollTop
     interruptFailure = true
+    running = true
     await commands.find((c) => c.bind === "x").run()
     await setup.renderOnce()
     assert.match(toasts.at(-1)!.message, /Interrupt session \(s20\).*HTTP 409/)
@@ -110,6 +118,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     assert.equal(lifecycle.inactive.s20, undefined)
     assert.match(setup.captureCharFrame(), /❯\s+Session 20/)
     storageFailure = false
+    running = true
     await commands.find((c) => c.bind === "x").run()
     await setup.renderOnce()
     assert.equal(scroll.scrollTop, before)
@@ -131,6 +140,23 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     assert.equal(opened, "s21")
     await setup.mockMouse.doubleClick(previous.x + 8, previous.y)
     assert.equal(opened, "s19")
+
+    // Idle sessions must remain markable when their location runtime cannot start.
+    running = false
+    interruptFailure = true
+    const callsBeforeIdle = interruptCalls
+    // Stop every remaining active session, including the last row in its section.
+    for (let i = 0; i < 50; i++) commands.find((c) => c.bind === "up").run()
+    commands.find((c) => c.bind === "down").run()
+    for (let i = 0; i < 39; i++) {
+      await commands.find((c) => c.bind === "x").run()
+      await setup.renderOnce()
+    }
+    assert.equal(Object.values(lifecycle.inactive).filter(Boolean).length, 40)
+    assert.equal(interruptCalls, callsBeforeIdle)
+    assert.equal(toasts.at(-1)!.message, "Session marked inactive")
+    assert.match(setup.captureCharFrame(), /❯\s+\+\s+New session/)
+    assert.match(setup.captureCharFrame(), /New session — no context yet/)
   } finally {
     setup.renderer.destroy()
   }
