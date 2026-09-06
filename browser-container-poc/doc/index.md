@@ -34,4 +34,5 @@ go to `doc/logs/qemu/profiles/`.
 - [Original plan](plan.md), [assessment](assessment.md), and
   [decision matrix](decision-matrix.md) — historical research; some sections
   predate the working QEMU implementation.
-- [Vivari next steps](vivari.md) — intended scope of the new attempt.
+- [Vivari implementation plan](vivari_plan.md) — defaults, performance and
+  compatibility gates, and decision criteria for the new attempt.
