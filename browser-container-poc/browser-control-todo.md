@@ -1,5 +1,15 @@
 # Browser-control checks
 
+- [x] Profiling continuation, browser-control 0.7.0 / extension 0.0.24, session
+  `amber-walrus-881`, localhost workspace: changing only the preview iframe URL
+  inside a long `page.evaluate` returned `evaluate: Execution context was destroyed,
+  most likely because of a navigation.` Diagnostics reported `mainFrameNavigations=0`,
+  `pageClosed=false`, `urlChanged=false`. Expected the parent evaluation to survive
+  child navigation. A short subsequent snapshot confirmed the VM and preview still
+  present. Recovery: split preview reload into setup evaluation, UI click, readiness
+  wait, and fresh result evaluation; no workspace navigation or relay reset.
+  Verified recovery: three reloads and the following HTTP/edit phases completed.
+
 - [x] HMR evidence capture, browser-control 0.7.0, same session: the first inline capture had
   `SyntaxError: Parser error`; moving it to `--file` exposed a separate caller error,
   `The "cb" argument must be of type function. Received undefined`, from awaiting callback-based `fs.writeFile`.

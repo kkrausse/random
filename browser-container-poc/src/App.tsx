@@ -60,6 +60,12 @@ export function App() {
       if (worker && worker.state !== "activated") await new Promise<void>((resolve) => {
         worker.addEventListener("statechange", () => { if (worker.state === "activated") resolve(); });
       });
+      await new Promise<void>((resolve, reject) => {
+        const channel = new MessageChannel();
+        const timer = setTimeout(() => { channel.port1.close(); reject(new Error("Preview cache reset timed out")); }, 5_000);
+        channel.port1.onmessage = () => { clearTimeout(timer); channel.port1.close(); resolve(); };
+        registration.active!.postMessage({ source: "preview-cache", type: "reset" }, [channel.port2]);
+      });
       setPreviewStatus("connected");
     } catch (error) { setPreviewStatus("disconnected"); setOutput(String(error)); }
   };
