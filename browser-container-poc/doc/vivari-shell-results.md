@@ -1,5 +1,19 @@
 # Vivari xterm-first shell qualification
 
+## Latest primary gate: actual OpenCode TUI (2026-09-06)
+
+**BLOCKED before first frame.** Actual CLI dev-19167 postinstall rejects
+`linux-wasm32`; real OpenTUI 0.4.5 imports in both packaged export conditions but
+`createCliRenderer()` rejects the native asset target. A real pinned Zig WASI
+cross-build fails with nine errors. [Full TUI results](vivari-tui-results.md)
+record exact pins, source audit, worker failures, build evidence and the smallest
+credible OpenTUI WASM backend slice. No runtime patch was changed in this audit.
+
+Independent :5198 guest Shell 2 edit → Vite 7.1.4 HMR → restoration passed with
+an independently read file diff and the same iframe Document. This is not a
+model/TUI edit. Live Browser Control `quiet-raven-411` retains :5198 with Vite
+job `%1` in Shell 1 and usable Shell 2. :5192/:5196/:5197 were preserved.
+
 ## Latest continuation: guest geometry and foreground input (2026-09-06)
 
 **PASS:** real guest spawn dimensions and live resize; foreground stdin recovered
