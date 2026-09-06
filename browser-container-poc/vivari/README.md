@@ -13,8 +13,11 @@ Vite forwards `/api/model/*` to this server on loopback port 5194. After
 
 **Current result: HTTP 429 from the free endpoint, not a successful model/tool
 loop.** Failure events, receipts and cleanup work; the success path still needs
-qualification. The proxy has passed local mock streaming/cancellation tests;
-real model calls and credential use have not resumed. Upstream base URLs are
+qualification. The proxy has passed local mock streaming/cancellation tests.
+Subsequent real browser E2E attempts with the explicitly approved Zen key reached
+upstream through the Bun proxy, but Big Pickle and MiMo V2.5 Free both returned
+429 with no tokens or tools. The credential-bearing server was stopped afterward.
+Upstream base URLs are
 generated offline from the pinned SDK catalog during build. Only Zen is enabled.
 The server defaults to public auth; `VIVARI_MODEL_API_KEY` is a server-only opt-in.
 It does not read host OpenCode auth files. See [transport design and setup](../doc/model-transport.md)

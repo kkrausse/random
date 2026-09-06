@@ -11,6 +11,13 @@ for architecture, commands, credential configuration, and mock-only verification
 No provider calls or existing credentials were used during that implementation.
 Credential ownership and real model qualification are still open.
 
+**Later E2E update:** the user subsequently approved the existing Zen API key
+for free-model qualification. Both Big Pickle and MiMo V2.5 Free reached Zen
+through the new Bun proxy from the browser-hosted SDK, but returned HTTP 429
+with no inference output. Sessions closed cleanly and failure receipts were
+retained. See the authenticated E2E section in the current transport doc for
+session IDs, evidence, and service state. Successful inference remains blocked.
+
 The remainder of this file records the historical `c7c05a4` checkpoint; its
 Vite proxy/auth-file details and restart instructions have been superseded.
 
