@@ -1,6 +1,7 @@
 import type { Terminal } from "../vendor/ghostty-web/lib/index";
 import { DictationController } from "./dictation";
 import type { TerminalConnection } from "./connection";
+import { installTerminalTouchControls } from "./touch";
 
 // Leave key encoding, composition, bracketed paste, and mouse reporting to Ghostty.
 export function installMobileControls(container: HTMLElement, terminal: Terminal, notice: (message: string) => void, connection: TerminalConnection) {
@@ -98,61 +99,7 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
     }));
   });
 
-  let gesture: { id: number; x: number; y: number; lastY: number; moved: boolean; anchor: number } | undefined;
-  const cellAt = (x: number, y: number) => {
-    const canvas = container.querySelector("canvas")!;
-    const rect = canvas.getBoundingClientRect();
-    const metrics = terminal.renderer!.getMetrics();
-    const col = Math.max(0, Math.min(terminal.cols - 1, Math.floor((x - rect.left) / metrics.width)));
-    const row = Math.max(0, Math.min(terminal.rows - 1, Math.floor((y - rect.top) / metrics.height)));
-    return row * terminal.cols + col;
-  };
-  container.addEventListener("touchstart", (event) => {
-    // Claim touches before the engine can turn them into clicks or focus changes.
-    event.stopImmediatePropagation();
-    if (event.touches.length !== 1) { gesture = undefined; return; }
-    const touch = event.touches[0]!;
-    gesture = { id: touch.identifier, x: touch.clientX, y: touch.clientY, lastY: touch.clientY,
-      moved: false, anchor: cellAt(touch.clientX, touch.clientY) };
-  }, { capture: true, passive: true });
-  container.addEventListener("touchmove", (event) => {
-    event.stopImmediatePropagation();
-    if (!gesture || event.touches.length !== 1) { gesture = undefined; return; }
-    event.preventDefault();
-    const touch = [...event.touches].find((touch) => touch.identifier === gesture!.id);
-    if (!touch) return;
-    if (!gesture.moved && Math.hypot(touch.clientX - gesture.x, touch.clientY - gesture.y) < 8) return;
-    gesture.moved = true;
-    if (selecting) {
-      const end = cellAt(touch.clientX, touch.clientY);
-      const start = Math.min(gesture.anchor, end);
-      terminal.select(start % terminal.cols, Math.floor(start / terminal.cols), Math.abs(end - gesture.anchor) + 1);
-    } else {
-      container.querySelector("canvas")?.dispatchEvent(new WheelEvent("wheel", {
-        bubbles: true, cancelable: true, deltaY: gesture.lastY - touch.clientY,
-        clientX: touch.clientX, clientY: touch.clientY,
-      }));
-    }
-    gesture.lastY = touch.clientY;
-  }, { capture: true, passive: false });
-  container.addEventListener("touchend", (event) => {
-    event.stopImmediatePropagation();
-    // Suppress compatibility mouse events, including after a canceled multi-touch gesture.
-    event.preventDefault();
-    if (gesture && !gesture.moved && !selecting) {
-      // Defer the entire click until release: a swipe must never press a TUI row.
-      // The engine listens on the container. Bypass its canvas focus listener
-      // so menu taps don't summon the software keyboard.
-      for (const type of ["mousedown", "mouseup"]) {
-        container.dispatchEvent(new MouseEvent(type, {
-          bubbles: true, cancelable: true, button: 0, buttons: type === "mousedown" ? 1 : 0,
-          clientX: gesture.x, clientY: gesture.y,
-        }));
-      }
-    }
-    gesture = undefined;
-  }, { capture: true, passive: false });
-  container.addEventListener("touchcancel", () => { gesture = undefined; }, { capture: true });
+  installTerminalTouchControls(container, terminal, () => selecting, notice);
 
   // visualViewport shrinks with the software keyboard even when 100dvh does not.
   const viewport = window.visualViewport;
@@ -165,7 +112,7 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
   viewport?.addEventListener("scroll", layout);
   window.addEventListener("resize", layout);
   window.addEventListener("pageshow", layout);
-  window.addEventListener("blur", () => { setControl(false); gesture = undefined; });
+  window.addEventListener("blur", () => { setControl(false); });
   layout();
 
   return {
