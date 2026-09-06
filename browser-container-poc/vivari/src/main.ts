@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { runOpenCode } from "./opencode";
 import { connectDevBridge } from "./dev-bridge";
+import { ShellSessions } from './shell-sessions';
 
 const files = import.meta.glob("../fixture/**/*", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 const status = document.querySelector<HTMLElement>("#status")!;
@@ -32,7 +33,11 @@ terminal.onData(data => {
 let serverStart = 0;
 const samples: { phase: string; ms: number; [key: string]: unknown }[] = [];
 let transcript = "";
-function log(text: string) { transcript = (transcript + text).slice(-1000000); terminal.write(text); }
+const diagnostics = document.querySelector<HTMLElement>('#diagnostics')!;
+function log(text: string) { transcript = (transcript + text).slice(-1000000); diagnostics.textContent = transcript; }
+function guestOutput(text: string) { log(text); terminal.write(text); }
+const shells = new ShellSessions(() => vm, document.querySelector('#shell-tabs')!, document.querySelector('#shell-panes')!, log);
+Object.assign(window, { shells });
 async function run(argv: string[], wait = true) {
   if (active) throw Error("Stop the active command first");
   const start = performance.now();
@@ -40,18 +45,21 @@ async function run(argv: string[], wait = true) {
   log(`\n$ ${argv.join(" ")}\n`);
   const proc = await vm.spawn(argv[0], argv.slice(1), { cwd: "/workspace" });
   setProcess(proc);
-  const stream = (async () => { for await (const chunk of proc.output) log(chunk); })();
+  const stream = (async () => { for await (const chunk of proc.output) guestOutput(chunk); })();
+  // Attach immediately: an output failure can precede the process exit event.
+  void stream.catch(() => proc.kill());
   if (!wait) {
     void stream.catch(error => log(String(error)));
     void proc.exit.then(code => { if (active === proc) setProcess(undefined); log(`\n${argv.join(" ")} exited: ${code}\n`); });
     return;
   }
-  const code = await proc.exit;
-  await stream;
-  if (active === proc) setProcess(undefined);
-  samples.push({ phase: argv.join(" "), ms: performance.now() - start, code });
-  log(`\nexit: ${code}\n`);
-  if (code !== 0) throw new Error(`${argv[0]} exited ${code}`);
+  try {
+    const code = await proc.exit;
+    await stream;
+    samples.push({ phase: argv.join(" "), ms: performance.now() - start, code });
+    log(`\nexit: ${code}\n`);
+    if (code !== 0) throw new Error(`${argv[0]} exited ${code}`);
+  } finally { if (active === proc) setProcess(undefined); }
 }
 async function boot() {
   const start = performance.now();
@@ -116,9 +124,8 @@ const shell = document.createElement('button');
 shell.textContent = 'Open shell';
 document.querySelector('#stop')!.after(shell);
 shell.addEventListener('click', () => {
-  if (!vm || busy || active) { log('\nBoot the runtime and stop the active command first\n'); return; }
-  busy = true;
-  void run(['sh'], false).catch(error => log(`\n${error}\n`)).finally(() => { busy = false; terminal.focus(); });
+  if (!ready) { log('\nBoot the runtime first\n'); return; }
+  void shells.open().catch(error => log(`\n${error}\n`));
 });
 for (const [id, recover] of [["#sdk", false], ["#recover", true]] as const) {
   action(id, async () => {
