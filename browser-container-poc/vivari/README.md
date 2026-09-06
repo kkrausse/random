@@ -11,10 +11,13 @@ because direct upstream requests fail Chrome's CORS preflight. Start
 Vite forwards `/api/model/*` to this server on loopback port 5194. After
 `bun run build`, the same Bun server can serve the built UI directly.
 
-**Current result: HTTP 429 from the free endpoint, not a successful model/tool
-loop.** Failure events, receipts and cleanup work; the success path still needs
-qualification. The proxy has passed local mock streaming/cancellation tests.
-Subsequent real browser E2E attempts with the explicitly approved Zen key reached
+**Current result: Nemotron 3.5 Lightning Free completed a real browser model/tool
+loop through the proxy.** It streamed text, discovered/read files, observed a
+failing test, edited the implementation, and reran the unchanged test successfully.
+OpenCode reported session success. The stricter probe still exits 1 because the
+model skipped `grep`; full five-tool coverage remains open. Run it with
+`probe --model nemotron-3.5-lightning-free`. The proxy also passed local mock streaming/cancellation tests.
+Earlier real browser E2E attempts with the explicitly approved Zen key reached
 upstream through the Bun proxy, but Big Pickle and MiMo V2.5 Free both returned
 429 with no tokens or tools. The credential-bearing server was stopped afterward.
 Upstream base URLs are
