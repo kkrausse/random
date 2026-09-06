@@ -23,7 +23,7 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Press `N` from the picker to start a new session.
 - Click a row or use the arrow keys to preview it below the list without changing the session behind the dialog. Hovering does not change selection, so you can move the mouse to the taller preview and scroll long commands without switching requests.
 - Pending permissions show the action, message, resources, and any metadata in a scrollable preview. Press `a` to approve **once**, `A` (shift) to always approve, or `d` to deny the displayed request. The picker stays open; multiple requests are handled one at a time, never as a bulk approval.
-- Pending questions show their title and field details; open the session to answer them. Approval shortcuts do not answer or dismiss questions.
+- Subagent (child) sessions are hidden from the list and folded into their parent: a child's pending permission/question lights up the parent row, and the parent preview aggregates the child's requests so approve/deny still works from there. A child whose parent isn't loaded yet stays visible so its requests can't disappear.- Pending questions show their title and field details; open the session to answer them. Approval shortcuts do not answer or dismiss questions.
 - Preview loading/errors disable permission actions, replies cannot overlap, and held-key repeat events are ignored. Errors appear as toasts and requests refresh after replying.
 - Older sessions load as you scroll.
 - The picker resizes with the terminal, including phone keyboard/rotation changes. Narrow or short terminals use a compact header and a smaller scrollable approval preview.
