@@ -1,8 +1,9 @@
 # Vivari implementation plan
 
-Status: bounded POC implemented; warm fixture/HMR probes pass, real OpenCode
-installation is blocked by a native dependency. See [result card](vivari-result.md)
-for timings, adaptations, failed checkpoints, and the next bounded probe.
+Status: warm fixture/HMR probes pass; runtime compatibility investigation started.
+The first OpenCode installation attempt is blocked by a native dependency.
+See [result card](vivari-result.md) for the original measurements and
+[runtime audit](vivari-runtime-audit.md) for the follow-up evidence.
 Implementation directory: `../vivari/`.
 
 Goal: test whether browser-native JS execution delivers a responsive coding
@@ -54,6 +55,47 @@ OpenCode adaptation. Reassess the approach if bounded fixes do not improve it.
 
 ## Gate 2: real OpenCode compatibility
 
+### Agreed direction: mainline OpenCode inside Vivari
+
+Keep the pinned, official V2 SDK and normal `OpenCode.create()` entrypoint running
+as a Vivari process. Extend Vivari's Bun/Node compatibility and native-dependency
+substitution mechanisms. OpenCode-specific profiles and a separate browser host
+are architecture alternatives requiring a new decision, not the default path.
+
+First implementation slice:
+
+- [x] Inspect the pinned Vivari source: builtin APIs, module conditions, native
+  package aliases, SQLite, FFI, and process execution.
+- [x] Run isolated browser probes for module selection, SQLite, FFI, filesystem
+  operations, and child-process behavior. Preserve failures as executable cases.
+- [x] Inventory SQLite, process-lock, file-finder, and PTY calls in the pinned
+  OpenCode packages; wider import-graph qualification remains part of host import.
+- [x] Qualify sql.js WASM queries, rollback, and VFS export/reopen in separate
+  browser processes. See the runtime audit for untested persistence semantics.
+- [ ] Establish a reproducible Vivari source-patch/build path before runtime fixes.
+- [ ] Implement the smallest demonstrated compatibility gap and rerun its probe.
+- [ ] Retry normal SDK import, host creation, and session creation.
+
+Use Vivari's existing JS/WASM drop-in machinery where a genuine compatible backend
+exists. A CPU-check bypass, empty search result, no-op lock, or successful stub
+import is not a working replacement. Keep package substitutions/version provenance
+explicit. Native code needs an actual JS/WASM implementation; generic native FFI
+is outside this first slice. Host-side packaging is allowed; execution stays inside
+Vivari. Pin source patches and retain upstream licensing; avoid ad-hoc edits to
+installed worker bundles.
+
+SQLite must execute real queries and transactions and recover persisted data.
+Locks must demonstrate contention/release across processes. Commands must preserve
+stdout/stderr, exit status, stdin, and cancellation. Qualify each independently
+before claiming OpenCode compatibility. Estimate remaining effort after these
+checkpoints rather than assuming all named shims are complete.
+
+SQLite will use a browser-native WASM backend (sql.js is the first candidate),
+including if Linux commands later use QEMU. Native SQLite in the VM is not the
+intended database architecture. Verify the backend directly before adapting the
+synchronous `node:sqlite` / `bun:sqlite` interfaces, including initialization,
+64-bit values, transaction rollback, and persistence across processes/reloads.
+
 Work through these checkpoints in order and record failures with reproductions:
 
 1. Import and create the pinned OpenCode V2 SDK host inside Vivari.
@@ -82,7 +124,8 @@ committed files and diagnostic reports.
   representative agent tasks.
 - **Small compatibility gaps:** implement bounded fixes, rerun the affected
   workflow, and document the supported command surface.
-- **Linux-only tools are the remaining blocker:** evaluate the preserved QEMU VM
+- **Linux-only tools are the remaining blocker:** evaluate a small QEMU/BusyBox
+  environment using the preserved QEMU work
   as an explicit command backend, starting with one useful command and synchronized
   source. Prove value before building transparent process routing or a shared mount.
 - **Major host/runtime gaps or persistent poor latency:** write up the evidence
@@ -92,6 +135,10 @@ A Linux hybrid must explicitly handle shared-file consistency, watch events,
 process routing, cancellation, and cross-runtime networking. Linux Bash launching
 Linux Node would put heavy JS back under emulation. The runtimes do not automatically
 share a filesystem or localhost, so hybrid integration is a separate milestone.
+Prefer one authoritative workspace exposed to both environments; evaluate a
+shared-filesystem bridge before relying on bidirectional file copies. BusyBox
+supplies a shell and common utilities, not arbitrary missing Linux binaries.
+Keep OpenCode, SQLite WASM, and fast JS tooling in Vivari for this hybrid option.
 
 ## Completion evidence
 

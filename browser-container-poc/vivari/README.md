@@ -75,6 +75,32 @@ per command. No provider credentials are needed for these checkpoints.
 The sibling Bun lock records the host-side inspection dependency tree; the
 browser's npm tree may differ. The harness does not run a network OpenCode host.
 
+## Runtime-first OpenCode follow-up
+
+The current direction keeps the normal pinned OpenCode SDK inside Vivari and
+extends Vivari's runtime/dependency compatibility. See the
+[updated plan](../doc/vivari_plan.md) and [runtime audit](../doc/vivari-runtime-audit.md).
+SQLite uses browser-native WASM; QEMU/BusyBox remains an option for Linux commands.
+
+After boot, run the isolated compatibility probes:
+
+```sh
+browser-control execute --session <id> --file browser-container-poc/vivari/scripts/runtime.js
+# Inspect window.runtimeProbe until phase is complete or failed.
+browser-control execute --session <id> --file browser-container-poc/vivari/scripts/sqlite.js
+# Inspect window.sqliteProbe until phase is complete or failed.
+```
+
+The runtime runner checks seven cases under each of `bun` and `node`; current
+SQLite/FFI builtin failures are expected and retained in its report. The SQLite
+runner installs pinned sql.js 1.13.0, executes real database assertions, exports
+to `/sqlite-probe/session.sqlite`, and recovers it in a second process. Re-running
+the SQLite runner replaces that dedicated probe database. Neither runner proves
+page-reload database recovery or a working OpenCode database adapter. Reports are
+available on `window`; runners start asynchronously so Browser Control calls stay
+short. Process timeouts are 15 seconds per baseline case and 90 seconds per SQLite
+phase. No provider credentials are needed.
+
 Build check: `bun run build`. For static deployment, serve `dist/` with the same
 isolation headers. The production bundle includes all four worker files, the
 service worker, and npm payload.
