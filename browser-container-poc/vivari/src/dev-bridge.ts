@@ -57,8 +57,9 @@ export function connectDevBridge(host: {
           };
           if (op === 'exec') result = { code: await run(args.argv, output, args.env, args.cwd) };
           else if (op === 'probe') {
-            if (args.entry !== undefined && !['host', 'tools'].includes(args.entry)) throw Error('Unknown probe entry');
-            result = await runOpenCode(vm, { entry: args.entry, recover: !!args.recover, signal: job.abort.signal, log: output, process: attach });
+            if (args.entry !== undefined && !['host', 'tools', 'model'].includes(args.entry)) throw Error('Unknown probe entry');
+            if (args.model !== undefined && (typeof args.model !== 'string' || !/^[a-zA-Z0-9._-]+$/.test(args.model))) throw Error('Invalid model ID');
+            result = await runOpenCode(vm, { entry: args.entry, model: args.model, recover: !!args.recover, signal: job.abort.signal, log: output, process: attach });
           }
           else if (op === 'read' || op === 'write') {
             // Use guest fd I/O: SDK whole-file reads/writes exceed the syscall window.

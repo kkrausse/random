@@ -1,5 +1,19 @@
 # Vivari feasibility POC
 
+## Model loop checkpoint (paused for transport design)
+
+`bun run vv --runtime ID probe --model [MODEL_ID]` submits a real SDK prompt in
+browser workers. Package it with `bun scripts/package-opencode.ts model` after
+packaging ripgrep as below. Default model is Big Pickle; only catalog-listed free
+models are accepted. The dev harness forwards model HTTP through a fixed Vite
+proxy, because direct upstream requests fail Chrome's CORS preflight.
+
+**Current result: HTTP 429 from the free endpoint, not a successful model/tool
+loop.** Failure events, receipts and cleanup work; the success path still needs
+qualification. Production proxy architecture and credential ownership are pending
+discussion. See [model checkpoint](../doc/vivari-model-checkpoint.md) before resuming.
+The optional host auth-file setting is unqualified and disabled by default.
+
 ## OpenCode tool qualification
 
 Package the pinned SDK tool probe and genuine ripgrep WASM, then run in the
@@ -84,7 +98,7 @@ directory, using the existing patched runtime and pinned probe installation:
 ```sh
 bun install --frozen-lockfile
 bun scripts/package-opencode.ts host
-VIVARI_DIST=.runtime/patched/packages/core/dist bun run dev --port 5192
+bun run dev --port 5192
 ```
 
 Open **http://127.0.0.1:5192/** and use this sequence:
@@ -173,7 +187,8 @@ HMR is disabled to avoid destroying an active guest run when editing the harness
   dependency reproducibility. Capture the resulting tree before comparisons.
 - `node:test` was unavailable; the added test uses `bun:test` instead.
 - Runtime source patches now live in `patches/`; installed packages and generated
-  worker bundles are never hand-edited. The published SDK remains the default.
+  worker bundles are never hand-edited. The project `.env` now selects the patched
+  source build by default; `VIVARI_DIST` can select another built runtime.
 
 ## Browser probes
 
@@ -267,6 +282,11 @@ close, not quota exhaustion or power-loss simulation. Failed DB paths require a
 kernel restart; an unacknowledged operation may recover old or new data.
 
 See [handoff](../doc/vivari-handoff.md) for the current checkpoint and limitations.
+The project `.env` defaults `VIVARI_DIST` to `.runtime/patched/packages/core/dist`
+for Bun-launched commands. Build that runtime first; then use `bun run dev --port
+5192` and `bun run build` without inline environment assignments. An exported
+`VIVARI_DIST` overrides this default for baseline comparisons.
+
 Source builds run on the Mac; application and SQLite execution run in browser
 workers. Rust is only the existing Vivari VFS/codec/crypto build prerequisite.
 
@@ -317,8 +337,8 @@ check, save its report, reload the page, boot, set `state.sqliteMode = "recover"
 through Browser Control, then rerun `sqlite-api.js`. This mode does not rewrite
 the database. Reset `state.sqliteMode` before running the full suite again.
 
-`VIVARI_DIST` also selects production assets: use
-`VIVARI_DIST=.runtime/patched/packages/core/dist bun run build` for deployment.
+`VIVARI_DIST` also selects production assets: `bun run build` uses the patched
+runtime selected by `.env`.
 The asset middleware re-reads filenames after rebuilds. Changes to the Vite
 configuration itself require restarting that host server because harness HMR is
 disabled. An already-running browser retains its old workers until page reload.

@@ -1,5 +1,10 @@
 # Vivari implementation plan
 
+**Current pause:** discuss long-term model transport/auth before continuing.
+The model probe and experimental dev proxy are implemented, but the free endpoint
+returns 429; no model-driven loop has passed. See
+[model checkpoint and decision handoff](vivari-model-checkpoint.md).
+
 Status: the scoped SQLite local/browser qualification gate passes, including
 ownership, reload recovery, real OPFS failure/interruption and patched HMR. See
 [SQLite qualification](vivari-sqlite-qualification.md) for scope and remaining limits.
