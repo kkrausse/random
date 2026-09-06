@@ -47,8 +47,9 @@ export class SessionManager {
     return ["tmux", ...(this.socket ? ["-L", this.socket, "-f", "/dev/null"] : [])];
   }
 
-  create() {
-    const name = `web-${crypto.randomUUID()}`;
+  create(label?: unknown) {
+    const suffix = typeof label === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(label) ? `-${label}` : "";
+    const name = `web-${crypto.randomUUID()}${suffix}`;
     const shell = process.env.SHELL ?? "/bin/zsh";
     const result = this.command([
       "new-session", "-d", "-P", "-F", "#{session_id}", "-s", name, "-c", this.cwd, "-x", "100", "-y", "30", "--", shell, "-l",
