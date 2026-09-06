@@ -1,0 +1,6 @@
+{
+  "name": "vivari-opencode-host-probe",
+  "private": true,
+  "type": "module",
+  "dependencies": { "@opencode-ai/sdk": "0.0.0-dev-19167" }
+}

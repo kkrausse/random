@@ -1,0 +1,80 @@
+# Vivari feasibility POC
+
+Minimal browser-native runtime, command output, and real Vite preview. The local
+Vite server delivers the harness/assets; fixture commands execute in Vivari workers.
+See the [result card](../doc/vivari-result.md) for measured performance and the
+blocked real-host checkpoint.
+
+## Run
+
+```sh
+cd browser-container-poc/vivari
+bun run setup
+bun run dev
+```
+
+Open `http://127.0.0.1:5190`. Click **Boot and mount fixture**, **Install
+dependencies**, then **Start Vite**. Wait for the fixture heading. **Test** runs
+the fixture's Bun tests. The command field accepts a JSON argv array, for example
+`["node","-e","console.log(process.cwd())"]`. Stop command terminates the most
+recently spawned command; it is not a complete terminal/job manager.
+
+The origin needs COOP/COEP, including on worker responses. Source files use
+Vivari's OPFS persistence. Boot only mounts the fixture if its package manifest
+is absent; changing the host fixture does not overwrite an existing VFS workspace.
+Reinstallation was required after page reload in the tested SDK. Outer harness
+HMR is disabled to avoid destroying an active guest run when editing the harness.
+
+## Pins and adaptations
+
+- `@vivari/core@1.0.0`, upstream gitHead
+  `2629c71097238400c45aefa213ef61df4794c2b7`, MIT (`LICENSE.vivari`).
+- Host Bun used during development: `1.4.0 (34cbb9a40)`; host dependencies are
+  frozen in `bun.lock`.
+- The original QEMU fixture and Bun lock were copied verbatim, then a test file
+  was added. Direct fixture package versions remain identical.
+- Published worker URLs are root-relative `/assets/*`; the Vite plugin serves
+  and emits the exact packaged worker files at those paths, and `/sw.js`.
+- Published SDK omits `vendor/npm-pack.bin`. `scripts/vendor-npm.ts` builds that
+  asset from locked `npm@10.9.2`, using the pinned upstream archive format. No
+  runtime work is delegated to host npm.
+- Published SDK forwards outbound preview tunnels but omits inbound delivery.
+  `src/main.ts` forwards kernel `vv-ws`/`vv-sse` envelopes to the preview iframe.
+- `bun install --frozen-lockfile` actually delegates to npm and rewrites the Bun
+  lock in this runtime. This is recorded as a compatibility failure, not frozen
+  dependency reproducibility. Capture the resulting tree before comparisons.
+- `node:test` was unavailable; the added test uses `bun:test` instead.
+- No edits to `node_modules` or upstream runtime patches.
+
+## Browser probes
+
+Use the Bun-backed Browser Control CLI and retain its returned session ID:
+
+```sh
+browser-control execute 'await page.goto("http://127.0.0.1:5190"); return await snapshot()'
+# Boot/install/start using the visible controls, then:
+browser-control execute --session <id> --file browser-container-poc/vivari/scripts/profile.js
+browser-control execute --session <id> --file browser-container-poc/vivari/scripts/capture.js
+browser-control execute --session <id> --file browser-container-poc/vivari/scripts/opencode.js
+```
+
+Run those commands from the repo root. Browser Control's relay working directory
+must be the repo root, `browser-container-poc`, or `vivari`. Profiling brings the
+tab forward, measures five edits plus their restorations followed by three
+preview-only reloads, and writes raw JSON under `doc/logs/vivari/` (gitignored).
+It asserts document identity for HMR. There is 150 ms pacing between edits,
+outside timed regions: an immediate restoration was lost by the watcher in an
+earlier probe. Visibility is DOM geometry observed on the host animation clock,
+not compositor paint or all-assets-loaded timing.
+
+The OpenCode probe mounts `probes/opencode` at `/opencode-probe`, installs the
+real pinned V2 SDK using npm with `--legacy-peer-deps`, then runs `bun host.mjs`
+to import, create a host, and create a session for `/workspace`. Inspect
+`window.hostProbe` (phase, output, error, duration); it has a 180-second timeout
+per command. No provider credentials are needed for these checkpoints.
+The sibling Bun lock records the host-side inspection dependency tree; the
+browser's npm tree may differ. The harness does not run a network OpenCode host.
+
+Build check: `bun run build`. For static deployment, serve `dist/` with the same
+isolation headers. The production bundle includes all four worker files, the
+service worker, and npm payload.

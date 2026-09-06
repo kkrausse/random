@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Vivari feasibility probe</title>
+<style>
+  body { font-family: system-ui; margin: 16px; }
+  button, input { font: inherit; margin: 4px; }
+  pre { white-space: pre-wrap; height: 240px; overflow: auto; background: #eee; padding: 8px; }
+  iframe { width: 100%; height: 500px; border: 1px solid #aaa; }
+</style>
+<h1>Vivari feasibility probe</h1>
+<p id="status">Ready to boot</p>
+<button id="boot">Boot and mount fixture</button>
+<button id="install" disabled>Install dependencies</button>
+<button id="dev" disabled>Start Vite</button>
+<button id="test" disabled>Test</button>
+<button id="stop" disabled>Stop command</button>
+<form id="command"><input id="args" aria-label="Command as JSON argv" size="70" value='["node","--version"]'><button disabled>Run command</button></form>
+<pre id="output" aria-label="Terminal output"></pre>
+<iframe id="preview" title="Fixture preview"></iframe>
+<script type="module" src="/src/main.ts"></script>
+</html>
