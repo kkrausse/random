@@ -91,8 +91,41 @@ completion, client-abort propagation through actual Bun servers, and redirects.
 Build/typechecking also pass. Static serving and isolation headers were checked
 on the built app.
 
-No real provider calls or credential use were performed for this implementation.
-The previous 429 evidence remains the last real model result. A browser SDK
-success loop and authenticated forwarding remain unqualified. Before those
-calls, decide the provider credential explicitly; see the
-[historical checkpoint](vivari-model-checkpoint.md).
+No real provider calls or credential use were performed in the implementation
+commit `fb5ad55`. The subsequently approved E2E run is recorded below.
+
+### Authenticated browser E2E attempt (2026-09-06)
+
+User explicitly approved using the existing Zen API-key entry with free models.
+The key was loaded into the Bun server's process environment only, without
+printing it or writing a credential file. The browser stayed at origin 5192,
+reloaded the new harness, and booted its existing OPFS storage without resetting it.
+
+Both probes packaged and digest-verified the SDK/assets, created an OpenCode
+host and session inside Vivari, checked zero catalog input/output pricing, and
+issued a primary request through `/api/model/opencode/chat/completions`:
+
+| Model | Session | Guest fixture | Result |
+| --- | --- | --- | --- |
+| `big-pickle` | `ses_f881ce5e3ffeMEGZjJg9vaAIJO` | `/workspace/opencode-model-1788717767000` | HTTP 429 |
+| `mimo-v2.5-free` | `ses_f881c8703ffeFE1G70c0uCsQ9M` | `/workspace/opencode-model-1788717791303` | HTTP 429 |
+
+OpenCode classified each response as `provider.rate-limit`: “Error from provider
+(Console): Rate limit exceeded. Please try again later.” Each emitted
+`session.step.failed` and `session.execution.failed`, wrote `failure.json`,
+closed its host cleanly, and returned exit 1. No token output or tool calls
+occurred. This establishes the real browser → Vite → Bun proxy → Zen response
+path with the configured credential; it does not establish successful inference,
+credential acceptance, or model-selected tool execution. The 429 alone does not
+identify whether the restriction is account-, IP-, or model-scoped.
+
+Ignored host evidence in `vivari/.runtime/opencode-package/`:
+`model-e2e-zen.log`, `model-e2e-zen-failure.json`,
+`model-e2e-zen-mimo.log`, `model-e2e-zen-mimo-failure.json`.
+Guest fixtures retain their traces. Browser runtime ID at this handoff:
+`5bcd61cc-9d00-483b-b457-f835c1caad2f`; recheck with `vv status`.
+
+The credential-bearing Bun server was stopped after the attempts. Vite on 5192,
+the relay on 5193, and the browser tab were retained. A new probe needs the Bun
+server started again. The remaining gate is successful inference after the Zen
+limit clears or another explicitly selected provider/model becomes available.
