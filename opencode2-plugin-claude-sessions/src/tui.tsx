@@ -4,7 +4,7 @@ import { Plugin } from "@opencode-ai/plugin/tui"
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { Index, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
-import { groupLabel, sessionState, sortRows } from "./session-groups"
+import { descendantIDs, groupLabel, propagateAttention, sessionState, sortRows, visibleSessions } from "./session-groups"
 import { sectionNeighbor } from "./picker-selection"
 import { Cause, Effect } from "effect"
 import { makeRunner, operation } from "./effects"
@@ -157,11 +157,13 @@ export function SessionPicker(props: { context: Plugin.Context }) {
   const rows = createMemo(() => {
     tick()
     liveVersion()
-    const attentionByID = attention()
+    const loaded = sessions()
+    const visible = visibleSessions(loaded, currentSessionID)
+    const effective = propagateAttention(loaded, attention(), currentSessionID)
     return sortRows(
-      sessions().map((session) => ({
+      visible.map((session) => ({
         session,
-        state: sessionState(attentionByID.get(session.id),
+        state: sessionState(effective.get(session.id),
           props.context.data.session.status(session.id) === "running", !!lifecycle.inactive[session.id]),
       })),
     )
@@ -263,11 +265,16 @@ export function SessionPicker(props: { context: Plugin.Context }) {
     setPreviewError(undefined)
     setPreviewLoading(!!sessionID)
     if (!sessionID) return
+    // Include hidden subagent descendants so their approval requests are
+    // still actionable from the parent preview.
+    const related = [sessionID, ...descendantIDs(sessions(), sessionID)]
     const job = runner.start(Effect.gen(function* () {
-      const [permissions, forms] = yield* Effect.all([
-        operation({ operation: "Load preview permissions", sessionID }, (signal) => props.context.client.permission.list({ sessionID }, { signal })),
-        operation({ operation: "Load preview questions", sessionID }, (signal) => props.context.client.form.list({ sessionID }, { signal })),
-      ], { concurrency: "unbounded" })
+      const lookups = yield* Effect.all(related.map((id) => Effect.all([
+        operation({ operation: "Load preview permissions", sessionID: id }, (signal) => props.context.client.permission.list({ sessionID: id }, { signal })),
+        operation({ operation: "Load preview questions", sessionID: id }, (signal) => props.context.client.form.list({ sessionID: id }, { signal })),
+      ], { concurrency: "unbounded" })), { concurrency: "unbounded" })
+      const permissions = lookups.flatMap(([list]) => list)
+      const forms = lookups.flatMap(([, list]) => list)
       if (!cancelled) setPreview({ sessionID, permissions, forms })
     }).pipe(Effect.ensuring(Effect.sync(() => { if (!cancelled) setPreviewLoading(false) }))),
     (message) => { if (!cancelled) setPreviewError(message) })
