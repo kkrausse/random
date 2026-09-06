@@ -1,5 +1,15 @@
 # Vivari handoff — 2026-09-06
 
+## Latest: OpenCode adapter/import continuation
+
+Read [OpenCode checkpoint](vivari-opencode-checkpoint.md) first. Actual pinned
+Node and Bun SQLite Effect adapters pass in Chrome, including reload recovery.
+`node:sea` non-SEA behavior is implemented and verified. Host-side packaging
+advances SDK import to missing tree-sitter WASM assets; create/session and full
+migrations are still unverified. Current session moved to **127.0.0.1:5192**
+because an older localhost kernel retains the persistence lease. Full resume
+commands, packaging limitations, worker hashes, and evidence are in that report.
+
 ## Resumed SQLite checkpoint (supersedes the paused status below)
 
 See [SQLite qualification](vivari-sqlite-qualification.md) for the current

@@ -1,5 +1,13 @@
 # Vivari runtime compatibility audit — September 6, 2026
 
+## Latest continuation: real OpenCode SQLite adapters pass
+
+See [OpenCode checkpoint](vivari-opencode-checkpoint.md). Both actual pinned
+adapters now pass in Chrome, including reload recovery. A verified `node:sea`
+fix and host packaging advance SDK import to missing tree-sitter WASM assets.
+Normal host creation/session and full migrations remain unverified. The report
+records ESM false-success and oversized SDK mount failures discovered here.
+
 ## Current checkpoint: scoped SQLite qualification passes
 
 The [SQLite qualification report](vivari-sqlite-qualification.md) supersedes the

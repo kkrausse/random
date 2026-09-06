@@ -1,5 +1,25 @@
 # Browser Control observations
 
+- [ ] 2026-09-06 OpenCode continuation, CLI/relay 0.7.0 (build
+  2026-09-05T19:03:42.828Z), extension 0.0.24, `tidy-otter-432`:
+  sending a 28 MB bundle as a `page.evaluate` argument failed with
+  `evaluate: Target page, context or browser has been closed`. The next short
+  inspect returned `about:blank` and warned that the relay connection was lost
+  and re-established. No deliberate relay restart. Expected a mounted file;
+  actual session page was replaced. Use same-origin fetch for large delivery.
+  Status subsequently showed two relay-owned targets for this session plus old
+  5192 user targets. A newly booted localhost kernel had no durable persistence
+  while an origin Web Lock remained held. Switched this continuation to the
+  separate `http://127.0.0.1:5192/` origin; real adapter persistence then worked.
+  Old tabs were retained. Root cause of page/target duplication is unresolved.
+- [x] Same continuation: relay cwd was `browser-container-poc`, so an initial
+  relative host read failed ENOENT. Corrected its path; final runner fetches the
+  bundle from the harness instead. A diagnostic read of an oversized failed
+  mount also returned ENOENT. SDK mount/writeFile had acknowledged a >1 MiB
+  kernel write that was dropped with `kernel fs request too large for the shared
+  data region`. This is an application transport limitation. Final delivery
+  chunks writes and verifies the assembled SHA-256 inside the guest.
+
 - [x] Continuation, CLI 0.7.0, two port-5192 kernels (`tidy-otter-432` and
   temporary `cosmic-tiger-633`): SQLite contention check passed, but starting the
   first kernel's Vite preview after tearing down the second showed an empty

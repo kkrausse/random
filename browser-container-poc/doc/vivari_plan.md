@@ -4,6 +4,9 @@ Status: the scoped SQLite local/browser qualification gate passes, including
 ownership, reload recovery, real OPFS failure/interruption and patched HMR. See
 [SQLite qualification](vivari-sqlite-qualification.md) for scope and remaining limits.
 The first OpenCode installation attempt is blocked by a native dependency.
+The subsequent [OpenCode checkpoint](vivari-opencode-checkpoint.md) verifies the
+real Node/Bun SQLite adapters and advances host-packaged SDK import to missing
+tree-sitter WASM assets. Create/session remains pending.
 See [result card](vivari-result.md) for the original measurements and
 [runtime audit](vivari-runtime-audit.md) for the follow-up evidence.
 Implementation directory: `../vivari/`.

@@ -1,10 +1,14 @@
 diff --git a/AGENTS.md b/AGENTS.md
-index bfb9dbd..fd39742 100644
+index bfb9dbd..6a17c54 100644
 --- a/AGENTS.md
 +++ b/AGENTS.md
-@@ -1,5 +1,16 @@
+@@ -1,5 +1,20 @@
  # AGENTS.md
  
++Local OpenCode continuation: `runtime/builtins/sea.js` implements non-SEA behavior
++only. Native PTY/FFI remain unsupported. Never count an exit-zero import as host
++success: the enclosing POC requires explicit create/session checkpoint output.
++
 +Local SQLite experiment: `kernel-host/sqlite-server.js` owns the shared WASM
 +engine; `runtime/builtins/sqlite.js` provides the synchronous facades. Keep the
 +OP_SQLITE ABI in sync with fs-client and fs-server. SQLite initialization must
@@ -19,7 +23,7 @@ index bfb9dbd..fd39742 100644
  Guidance for AI agents (and humans) working in this repo. Read this first, then
  read [`ARCHITECTURE.md`](./ARCHITECTURE.md) before touching the runtime, the
  protocol, or networking. [`roadmap.md`](./roadmap.md) is the chronological log of
-@@ -1206,4 +1217,4 @@ the gap can't silently regress.
+@@ -1206,4 +1221,4 @@ the gap can't silently regress.
  
  - **How it works** → [`ARCHITECTURE.md`](./ARCHITECTURE.md)
  - **Why it was built this way / status per feature** → [`roadmap.md`](./roadmap.md)
@@ -27,12 +31,20 @@ index bfb9dbd..fd39742 100644
 \ No newline at end of file
 +- **Background research** → `research.md`
 diff --git a/ARCHITECTURE.md b/ARCHITECTURE.md
-index d88c8f8..888fb3b 100644
+index d88c8f8..a8f8a87 100644
 --- a/ARCHITECTURE.md
 +++ b/ARCHITECTURE.md
-@@ -1,5 +1,38 @@
+@@ -1,5 +1,46 @@
  # Vivari — Architecture
  
++## Local OpenCode import checkpoint
++
++`node:sea` reports the actual non-single-executable process mode (`isSea() ===
++false`); asset calls throw ERR_NOT_IN_SINGLE_EXECUTABLE_APPLICATION. This permits
++ordinary Node-mode feature detection; native PTY and libc FFI remain unsupported.
++The enclosing POC packages the pinned SDK on the host and executes it in browser
++workers; packaging is not a native backend substitution.
++
 +## Local SQLite compatibility experiment
 +
 +The FS worker initializes pinned `@sqlite.org/sqlite-wasm@3.49.1-build1`
@@ -69,7 +81,7 @@ index d88c8f8..888fb3b 100644
  This document explains how Vivari works end to end: the core constraint it
  solves, the worker topology, the syscall protocol, the filesystem, the process
  model, the Node runtime, networking, native code, and the build. It is the
-@@ -917,4 +950,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
+@@ -917,4 +958,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
    `GET / → 200` (network-gated, like `verify-express`).
  
  See [`AGENTS.md`](./AGENTS.md) §"Testing & verification" for exactly when to run
@@ -499,6 +511,27 @@ index b6b6158..38f1cd4 100644
      op === OP_WATCH ||
      op === OP_UNWATCH
    );
+diff --git a/packages/runtime/builtins/sea.js b/packages/runtime/builtins/sea.js
+new file mode 100644
+index 0000000..ffed890
+--- /dev/null
++++ b/packages/runtime/builtins/sea.js
+@@ -0,0 +1,15 @@
++// Vivari processes are never Node single-executable applications.
++export function createSea() {
++  function unavailable() {
++    const error = new Error("Operation cannot be invoked when not in a single-executable application");
++    error.code = "ERR_NOT_IN_SINGLE_EXECUTABLE_APPLICATION";
++    throw error;
++  }
++  return {
++    isSea: () => false,
++    getAsset: unavailable,
++    getAssetAsBlob: unavailable,
++    getRawAsset: unavailable,
++    getAssetKeys: unavailable,
++  };
++}
 diff --git a/packages/runtime/builtins/sqlite.js b/packages/runtime/builtins/sqlite.js
 new file mode 100644
 index 0000000..201183c
@@ -620,27 +653,29 @@ index c6f68b8..8505980 100644
      writeFile: (p, content) => {
        const body = typeof content === "string" ? b(content) : content;
 diff --git a/packages/runtime/index.js b/packages/runtime/index.js
-index af2b08d..938423b 100644
+index af2b08d..0cec50b 100644
 --- a/packages/runtime/index.js
 +++ b/packages/runtime/index.js
-@@ -14,6 +14,7 @@ import { createWebSocket } from "./websocket.js";
+@@ -14,6 +14,8 @@ import { createWebSocket } from "./websocket.js";
  import { rewriteDynamicImportToGlobal } from "./esm.js";
  import { isEsbuildInprocActive, esbuildWasmBytes } from "./esbuild-inproc-patch.js";
  import { createBunRuntime } from "./builtins/bun.js";
 +import { createSqlite } from "./builtins/sqlite.js";
++import { createSea } from "./builtins/sea.js";
  
  function createConsole(process, util) {
    const toOut = (...a) => process.stdout.write(util.format(...a) + "\n");
-@@ -1121,6 +1122,8 @@ export function createRuntime({
+@@ -1121,6 +1123,9 @@ export function createRuntime({
      diagnostics_channel: diagnosticsChannel,
      cluster,
    };
 +  const sqlite = createSqlite({ fs, path, process, syscalls, Buffer });
 +  builtins.sqlite = sqlite.node;
++  builtins["node:sea"] = createSea();
  
    // Node exposes the posix/win32 path flavors as their own subpath builtins
    // (`require('node:path/posix')`). We're posix, so `path` already IS posix;
-@@ -1272,6 +1275,7 @@ export function createRuntime({
+@@ -1272,6 +1277,7 @@ export function createRuntime({
    // `typeof Bun !== 'undefined'`. See packages/runtime/builtins/bun.js.
    const bunRuntime = createBunRuntime({ process, Buffer, require: vvRootRequire });
    for (const [name, mod] of Object.entries(bunRuntime.modules)) builtins[name] = mod;
@@ -648,7 +683,7 @@ index af2b08d..938423b 100644
    globalThis.__ocInstallBun = () => {
      globalThis.Bun = bunRuntime.Bun;
      return bunRuntime.Bun;
-@@ -1386,4 +1390,4 @@ export function createRuntime({
+@@ -1386,4 +1392,4 @@ export function createRuntime({
        return finish(code);
      },
    };
@@ -656,12 +691,20 @@ index af2b08d..938423b 100644
 \ No newline at end of file
 +}
 diff --git a/roadmap.md b/roadmap.md
-index 3ab02ef..cae3bd5 100644
+index 3ab02ef..d32da32 100644
 --- a/roadmap.md
 +++ b/roadmap.md
-@@ -1,5 +1,18 @@
+@@ -1,5 +1,26 @@
  # Vivari — Roadmap
  
++## Local OpenCode continuation: non-SEA detection
++
++Host-packaged official SDK execution reached missing `node:sea`. Add the actual
++non-SEA behavior: false detection and explicit asset errors. The larger native
++PTY/FFI gaps remain. The enclosing POC now exercises the actual OpenCode Node
++and Bun SQLite Effect adapters, including transactions, rollback, int64, BLOBs,
++array rows, and scoped close/reopen. Full host creation is not yet qualified.
++
 +## Local experiment: SQLite WASM facades (under qualification)
 +
 +The enclosing browser-container POC adds shared SQLite 3.49.1 execution and
@@ -678,7 +721,7 @@ index 3ab02ef..cae3bd5 100644
  Built on the principle **de-risk the hardest part first**: prove the riskiest
  primitive (synchronous cross-thread access to a shared kernel) before expanding.
  
-@@ -3041,4 +3054,4 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
+@@ -3041,4 +3062,4 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
  | `Fetcher Worker` | Network/registry worker |
  | `Node.js Worker PID n` | Process = 1 worker + Node shim |
  | `[worker n]` | Nested `worker_threads` — real (#16 stage 2b) |
