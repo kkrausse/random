@@ -1,6 +1,6 @@
 // Packaging only: the official SDK executes exclusively in Vivari.
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import ts from "typescript";
 const root = resolve(import.meta.dir, "..");
@@ -33,13 +33,32 @@ const lowered = ts.transpileModule(await result.outputs[0].text(), {
 }).outputText;
 const bytes = new TextEncoder().encode(`(async function() {\nconst __packageMeta = { url: require('node:url').pathToFileURL(__filename).href, resolve: s => require('node:url').pathToFileURL(require.resolve(s)).href };\n${lowered}\n})().catch(e => { console.error(e.stack ?? String(e)); process.exitCode = 1; });\n`);
 await writeFile(resolve(out, `${entry}.txt`), bytes);
+const assets: { file: string; destination: string; bytes: number; sha256: string }[] = [];
+if (entry === "host") {
+  for (const [name, wasm] of [
+    ["web-tree-sitter", "tree-sitter.wasm"],
+    ["tree-sitter-bash", "tree-sitter-bash.wasm"],
+    ["tree-sitter-powershell", "tree-sitter-powershell.wasm"],
+    ["@silvia-odwyer/photon-node", "photon_rs_bg.wasm"],
+  ]) {
+    const dir = resolve(probe, "node_modules", name);
+    const files = [wasm, "package.json", ...(await readdir(dir)).filter(f => /^(license|copying|notice)/i.test(f))];
+    for (const source of files) {
+      const data = await readFile(resolve(dir, source));
+      const file = `${entry}-asset-${assets.length}.bin`;
+      await writeFile(resolve(out, file), data);
+      assets.push({ file, destination: `/opencode-packaged/node_modules/${name}/${source}`, bytes: data.length, sha256: createHash("sha256").update(data).digest("hex") });
+    }
+  }
+}
 const receipt = {
   sdk: sdk.version, bun: Bun.version, typescript: ts.version, target: "node", external, entry,
-  successMarker: entry === "host" ? "checkpoint: session created" : "checkpoint: adapters passed",
+  successMarker: entry === "host" ? "checkpoint: host passed" : "checkpoint: adapters passed",
   packaging: ["jsonc-parser: published lib/esm/main.js", "TypeScript CommonJS lowering with async module wrapper and bundle-relative import.meta"],
   bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex"),
   lockSha256: createHash("sha256").update(await readFile(resolve(probe, "bun.lock"))).digest("hex"),
-  note: "Unchanged official entrypoint, Node conditions matching current Vivari. Native externals remain unresolved, not substituted. Runtime assets are not yet packaged.",
+  assets,
+  note: "Unchanged official entrypoint, Node conditions matching current Vivari. Native externals remain unresolved, not substituted. Pinned tree-sitter and photon WASM assets include package metadata and license files.",
 };
 await writeFile(resolve(out, `${entry}-receipt.json`), JSON.stringify(receipt, null, 2) + "\n");
 console.log(receipt);

@@ -6,7 +6,9 @@ ownership, reload recovery, real OPFS failure/interruption and patched HMR. See
 The first OpenCode installation attempt is blocked by a native dependency.
 The subsequent [OpenCode checkpoint](vivari-opencode-checkpoint.md) verifies the
 real Node/Bun SQLite adapters and advances host-packaged SDK import to missing
-tree-sitter WASM assets. Create/session remains pending.
+tree-sitter WASM assets. Subsequent pinned asset delivery now passes normal
+SDK create/session/readback/close (default in-memory database) and explicit
+file-backed SDK recovery after page reload. Real tool execution is next.
 See [result card](vivari-result.md) for the original measurements and
 [runtime audit](vivari-runtime-audit.md) for the follow-up evidence.
 Implementation directory: `../vivari/`.

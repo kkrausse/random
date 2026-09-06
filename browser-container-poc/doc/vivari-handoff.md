@@ -2,6 +2,11 @@
 
 ## Latest: OpenCode adapter/import continuation
 
+**Update:** normal SDK import/create/session/readback/close now passes in the
+browser worker after packaging pinned WASM assets. Explicit file-backed SDK
+session recovery also passes after page reload. Real tools are next. See the newest section of the
+checkpoint below; the earlier missing-assets status is superseded.
+
 Read [OpenCode checkpoint](vivari-opencode-checkpoint.md) first. Actual pinned
 Node and Bun SQLite Effect adapters pass in Chrome, including reload recovery.
 `node:sea` non-SEA behavior is implemented and verified. Host-side packaging

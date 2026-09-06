@@ -2,7 +2,8 @@
 
 **Latest continuation:** [OpenCode compatibility checkpoint](../doc/vivari-opencode-checkpoint.md).
 The real Node/Bun SQLite adapters pass, including reload recovery. Host packaging
-now reaches missing tree-sitter WASM assets during normal SDK import. Run
+passes normal SDK import/create/session/readback/close with the default in-memory
+host database, plus explicit file-backed SDK recovery after page reload. Run
 `bun scripts/package-opencode.ts host` (or `sqlite-adapter`), then the Browser
 Control `scripts/opencode-packaged.js` runner against a booted patched runtime.
 The checkpoint document explains selection, exact failures, and packaging scope.

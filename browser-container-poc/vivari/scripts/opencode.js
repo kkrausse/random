@@ -22,7 +22,7 @@ await page.evaluate(async tree => {
       await run("npm", ["install", "--no-audit", "--no-fund", "--legacy-peer-deps"]);
       window.hostProbe.phase = "host";
       await run("bun", ["host.mjs"]);
-      if (!window.hostProbe.output.includes("checkpoint: session created")) throw new Error("Process exited without session checkpoint");
+      if (!window.hostProbe.output.includes("checkpoint: host passed")) throw new Error("Process exited without host completion checkpoint");
       window.hostProbe.phase = "passed";
     } catch (error) {
       window.hostProbe.error = String(error);

@@ -1,5 +1,11 @@
 # Browser Control observations
 
+- [x] Next continuation, CLI 0.7.0, `tidy-otter-432`: first inspect again
+  returned about:blank; explicit 127.0.0.1:5192 navigation returned
+  `net::ERR_CONNECTION_REFUSED` because the scoped dev server had stopped.
+  Restarted that patched server, navigated and booted explicitly; host probe
+  passes. Expected retained page; cause of blank page remains unresolved.
+
 - [ ] 2026-09-06 OpenCode continuation, CLI/relay 0.7.0 (build
   2026-09-05T19:03:42.828Z), extension 0.0.24, `tidy-otter-432`:
   sending a 28 MB bundle as a `page.evaluate` argument failed with
