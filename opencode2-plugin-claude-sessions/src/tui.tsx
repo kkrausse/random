@@ -225,6 +225,10 @@ export function SessionPicker(props: { context: Plugin.Context }) {
   const baseDirectory = createMemo(() => (currentSession ?? selectedSession() ?? sessions()[0]?.location.directory) ? (currentSession ?? selectedSession() ?? sessions()[0])!.location.directory : undefined)
   const visiblePreview = createMemo(() => preview()?.sessionID === selectedSession()?.id ? preview() : undefined)
   const permission = createMemo(() => visiblePreview()?.permissions[0])
+  const selectedInactive = createMemo(() => {
+    const session = selectedSession()
+    return session ? !!lifecycle.inactive[session.id] : false
+  })
 
   createEffect(() => {
     const session = selectedSession()
@@ -732,6 +736,20 @@ export function SessionPicker(props: { context: Plugin.Context }) {
             {!compact() ? <text fg={props.context.theme.text.subdued}>enter open session</text> : null}
           </>
         )}
+        {selectedSession() ? (
+          <box height={1} flexShrink={0} flexDirection="row" justifyContent="space-between">
+            <text wrapMode="none" fg={props.context.theme.text.subdued}>{compact() ? "" : changingLifecycle() ? "Updating session…" : selectedInactive() ? "r restore to active" : "x stop + mark inactive"}</text>
+            <text
+              id="claude-session-inactive"
+              fg={props.context.theme.text.subdued}
+              onMouseDown={(event) => {
+                if (event.button !== 0) return
+                event.stopPropagation()
+                void changeLifecycle(!selectedInactive())
+              }}
+            >{changingLifecycle() ? "Working…" : selectedInactive() ? "[r restore]" : "[x inactive]"}</text>
+          </box>
+        ) : null}
       </box>
       {loading() ? (
         <box paddingLeft={2} paddingRight={2}>
