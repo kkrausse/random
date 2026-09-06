@@ -1,0 +1,19 @@
+{
+  "name": "vivari-feasibility-poc",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "setup": "bun install --frozen-lockfile && bun scripts/vendor-npm.ts",
+    "dev": "bun scripts/vendor-npm.ts && vite --host 127.0.0.1 --port 5190 --strictPort",
+    "build": "bun scripts/vendor-npm.ts && tsc --noEmit && vite build"
+  },
+  "dependencies": {
+    "@vivari/core": "1.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "1.2.21",
+    "npm": "10.9.2",
+    "typescript": "5.9.2",
+    "vite": "7.1.4"
+  }
+}

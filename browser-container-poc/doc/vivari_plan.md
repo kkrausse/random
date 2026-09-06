@@ -1,6 +1,8 @@
 # Vivari implementation plan
 
-Status: ready for a bounded feasibility POC; implementation has not started.
+Status: bounded POC implemented; warm fixture/HMR probes pass, real OpenCode
+installation is blocked by a native dependency. See [result card](vivari-result.md)
+for timings, adaptations, failed checkpoints, and the next bounded probe.
 Implementation directory: `../vivari/`.
 
 Goal: test whether browser-native JS execution delivers a responsive coding
