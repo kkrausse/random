@@ -5,6 +5,8 @@ import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { Index, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { groupLabel, sessionState, sortRows } from "./session-groups"
 import { sectionNeighbor } from "./picker-selection"
+import { Cause, Effect } from "effect"
+import { makeRunner, operation } from "./effects"
 
 const PAGE_SIZE = 100
 const LOAD_MORE_THRESHOLD = 10
@@ -115,6 +117,13 @@ function contextStats(
 }
 
 export function SessionPicker(props: { context: Plugin.Context }) {
+  const runner = makeRunner((message, cause) => {
+    console.error(`[claude.sessions] ${message}\n${Cause.pretty(cause)}`)
+  })
+  onCleanup(() => runner.dispose())
+  const showFailure = (message: string) => props.context.ui.toast.show({
+    title: "Sessions viewer", message, variant: "error", duration: 8000,
+  })
   const [lifecycle, updateLifecycle] = props.context.storage.store("session-lifecycle", {
     initial: { inactive: {} as Record<string, boolean> },
   })
@@ -221,12 +230,13 @@ export function SessionPicker(props: { context: Plugin.Context }) {
       return
     }
     setContextSyncing(true)
-    void Promise.allSettled([
-      props.context.data.session.message.sync(session.id),
-      props.context.data.location.model.sync(session.location),
-    ]).finally(() => {
-      if (!cancelled) setContextSyncing(false)
-    })
+    const job = runner.start(Effect.all([
+      operation({ operation: "Sync context messages", sessionID: session.id }, () => props.context.data.session.message.sync(session.id)),
+      operation({ operation: "Sync models", directory: session.location.directory }, () => props.context.data.location.model.sync(session.location)),
+    ], { concurrency: "unbounded" }).pipe(
+      Effect.ensuring(Effect.sync(() => { if (!cancelled) setContextSyncing(false) })),
+    ))
+    onCleanup(job.cancel)
   })
 
   createEffect(() => {
@@ -243,70 +253,63 @@ export function SessionPicker(props: { context: Plugin.Context }) {
     setPreviewError(undefined)
     setPreviewLoading(!!sessionID)
     if (!sessionID) return
-    void Promise.all([
-      props.context.client.permission.list({ sessionID }),
-      props.context.client.form.list({ sessionID }),
-    ]).then(([permissions, forms]) => {
+    const job = runner.start(Effect.gen(function* () {
+      const [permissions, forms] = yield* Effect.all([
+        operation({ operation: "Load preview permissions", sessionID }, (signal) => props.context.client.permission.list({ sessionID }, { signal })),
+        operation({ operation: "Load preview questions", sessionID }, (signal) => props.context.client.form.list({ sessionID }, { signal })),
+      ], { concurrency: "unbounded" })
       if (!cancelled) setPreview({ sessionID, permissions, forms })
-    }).catch((error) => {
-      if (!cancelled) setPreviewError(error instanceof Error ? error.message : "Could not load preview")
-    }).finally(() => {
-      if (!cancelled) setPreviewLoading(false)
-    })
+    }).pipe(Effect.ensuring(Effect.sync(() => { if (!cancelled) setPreviewLoading(false) }))),
+    (message) => { if (!cancelled) setPreviewError(message) })
+    onCleanup(job.cancel)
   })
 
-  async function replyToPermission(reply: "once" | "always" | "reject") {
+  function replyToPermission(reply: "once" | "always" | "reject") {
     const request = permission()
     if (!request || replying() || changingLifecycle() || previewLoading()) return
     setReplying(true)
-    try {
-      await props.context.client.permission.reply({ sessionID: request.sessionID, requestID: request.id, reply })
+    return runner.start(Effect.gen(function* () {
+      yield* operation({ operation: `Reply to permission (${reply})`, sessionID: request.sessionID, requestID: request.id },
+        (signal) => props.context.client.permission.reply({ sessionID: request.sessionID, requestID: request.id, reply }, { signal }))
       props.context.ui.toast.show({ message: reply === "once" ? "Permission approved once" : reply === "always" ? "Permission approved always" : "Permission denied", variant: "success" })
-    } catch (error) {
-      props.context.ui.toast.show({ message: error instanceof Error ? error.message : "Could not reply to permission", variant: "error" })
-    } finally {
+    }).pipe(Effect.ensuring(Effect.sync(() => {
       setReplying(false)
       setReviewVersion((version) => version + 1)
       refreshLocationForSession(request.sessionID)
-    }
+    }))), showFailure).done
   }
 
-  async function changeLifecycle(inactive: boolean) {
+  function changeLifecycle(inactive: boolean) {
     const session = selectedSession()
     if (!session || changingLifecycle() || replying()) return
     const neighbor = sectionNeighbor(options(), session.id) ?? NEW_SESSION_VALUE
     setChangingLifecycle(true)
-    try {
-      if (inactive) await props.context.client.session.interrupt({ sessionID: session.id, continue: false })
-      await updateLifecycle((draft) => {
+    return runner.start(Effect.gen(function* () {
+      if (inactive) yield* operation({ operation: "Interrupt session", sessionID: session.id },
+        (signal) => props.context.client.session.interrupt({ sessionID: session.id, continue: false }, { signal }))
+      yield* operation({ operation: inactive ? "Persist inactive marker (session already interrupted)" : "Persist active marker", sessionID: session.id }, () => updateLifecycle((draft) => {
         if (inactive) draft.inactive[session.id] = true
         else delete draft.inactive[session.id]
-      })
+      }))
       // Don't steal selection if the user navigated while the request ran.
       if (selectedValue() === session.id) setSelectedValue(neighbor)
       props.context.ui.toast.show({ message: inactive ? "Session interrupted and marked inactive" : "Session restored to active", variant: "success" })
-    } catch (error) {
-      props.context.ui.toast.show({ message: error instanceof Error ? error.message : "Could not update session", variant: "error" })
-    } finally {
+    }).pipe(Effect.ensuring(Effect.sync(() => {
       setChangingLifecycle(false)
       void refreshSessionRow(session.id)
       refreshLocationForSession(session.id)
       setReviewVersion((version) => version + 1)
-    }
+    }))), showFailure).done
   }
 
   function applyAttentionLookup(location: SessionInfo["location"], key: string) {
-    const lookups: Array<Promise<{ kind: "permission" | "question"; ids: string[] }>> = [
-      props.context.client.permission.request
-        .list({ location })
-        .then((result) => ({ kind: "permission", ids: result.data.map((request) => request.sessionID) })),
-      props.context.client.form.request
-        .list({ location })
-        .then((result) => ({ kind: "question", ids: result.data.map((request) => request.sessionID) })),
-    ]
-    void Promise.allSettled(lookups).then((requests) => {
-      const found = requests.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []))
-      if (found.length === 0) return
+    runner.start(Effect.gen(function* () {
+      const [permissions, forms] = yield* Effect.all([
+        operation({ operation: "Refresh permission badges", directory: location.directory },
+          (signal) => props.context.client.permission.request.list({ location }, { signal })),
+        operation({ operation: "Refresh question badges", directory: location.directory },
+          (signal) => props.context.client.form.request.list({ location }, { signal })),
+      ], { concurrency: "unbounded" })
       setAttention((current) => {
         const next = new Map(current)
         // Reconcile: drop stale entries for sessions in this location, then apply fresh state.
@@ -316,10 +319,11 @@ export function SessionPicker(props: { context: Plugin.Context }) {
             .map((session) => session.id),
         )
         for (const id of locationSessionIDs) next.delete(id)
-        for (const result of found) for (const id of result.ids) next.set(id, result.kind)
+        for (const request of permissions.data) next.set(request.sessionID, "permission")
+        for (const request of forms.data) next.set(request.sessionID, "question")
         return next
       })
-    })
+    }), () => { queriedLocations.delete(key) })
   }
 
   function refreshAttention(loaded: SessionInfo[], force = false) {
@@ -339,14 +343,13 @@ export function SessionPicker(props: { context: Plugin.Context }) {
     applyAttentionLookup(session.location, locationKey(session))
   }
 
-  async function refreshSessionRow(sessionID: string) {
-    try {
-      const fresh = await props.context.client.session.get({ sessionID })
+  function refreshSessionRow(sessionID: string) {
+    return runner.start(Effect.gen(function* () {
+      const fresh = yield* operation({ operation: "Refresh session row", sessionID },
+        (signal) => props.context.client.session.get({ sessionID }, { signal }))
       setSessions((loaded) => loaded.map((item) => (item.id === fresh.id ? fresh : item)))
       setLiveVersion((version) => version + 1)
-    } catch {
-      // Session may be deleted or unreachable; event handlers below clean up.
-    }
+    })).done
   }
 
   function refreshContextForSession(sessionID: string) {
@@ -359,28 +362,24 @@ export function SessionPicker(props: { context: Plugin.Context }) {
     setContextVersion((version) => version + 1)
   }
 
-  async function loadMore(initial = false) {
+  function loadMore(initial = false) {
     if (loading() || (!initial && !cursor())) return
     setLoading(true)
     setFailure(undefined)
 
-    try {
-      const result = await props.context.client.session.list({
+    return runner.start(Effect.gen(function* () {
+      const result = yield* operation({ operation: initial ? "Load sessions" : "Load more sessions" }, (signal) => props.context.client.session.list({
         limit: PAGE_SIZE,
         order: "desc",
         ...(initial ? {} : { cursor: cursor() }),
-      })
+      }, { signal }))
       const known = new Map(sessions().map((session) => [session.id, session]))
       for (const session of result.data) known.set(session.id, session)
       const loaded = [...known.values()]
       setSessions(loaded)
       setCursor(result.cursor.next ?? undefined)
       refreshAttention(loaded)
-    } catch (error) {
-      setFailure(error instanceof Error ? error.message : "Could not load sessions")
-    } finally {
-      setLoading(false)
-    }
+    }).pipe(Effect.ensuring(Effect.sync(() => setLoading(false)))), setFailure).done
   }
 
   function open(sessionID: string) {
@@ -488,10 +487,11 @@ export function SessionPicker(props: { context: Plugin.Context }) {
     // Applying this after the dialog exists reliably overrides its default 60-column width.
     props.context.ui.dialog.set({ size: "xlarge", centered: true })
     if (currentSessionID && !currentSession) {
-      void props.context.client.session
-        .get({ sessionID: currentSessionID })
-        .then((session) => setSessions((loaded) => [session, ...loaded.filter((item) => item.id !== session.id)]))
-        .catch(() => undefined)
+      runner.start(Effect.gen(function* () {
+        const session = yield* operation({ operation: "Load current session", sessionID: currentSessionID },
+          (signal) => props.context.client.session.get({ sessionID: currentSessionID }, { signal }))
+        setSessions((loaded) => [session, ...loaded.filter((item) => item.id !== session.id)])
+      }))
     }
     void loadMore(true)
 

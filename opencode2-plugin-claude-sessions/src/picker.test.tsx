@@ -10,6 +10,9 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
   const commands: any[] = []
   const [lifecycle, setLifecycle] = createStore({ inactive: {} as Record<string, boolean> })
   let opened: string | undefined
+  let interruptFailure = false
+  let storageFailure = false
+  const toasts: Array<{ message: string; variant: string }> = []
   const sessions = Array.from({ length: 40 }, (_, i) => ({
     id: `s${i}`,
     title: `Session ${i}`,
@@ -24,6 +27,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
       store: () => [
         lifecycle,
         async (update: any) => {
+          if (storageFailure) throw new Error("disk unavailable")
           const draft = { inactive: { ...lifecycle.inactive } }
           update(draft)
           setLifecycle("inactive", draft.inactive)
@@ -53,7 +57,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
         },
       },
       dialog: { set() {}, clear() {} },
-      toast: { show() {} },
+      toast: { show: (toast: any) => toasts.push(toast) },
       format: { path: (s: string) => s },
     },
     keymap: { layer: (fn: any) => commands.push(...fn().commands) },
@@ -66,7 +70,9 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     client: {
       session: {
         list: async () => ({ data: sessions, cursor: {} }),
-        interrupt: empty,
+        interrupt: async () => {
+          if (interruptFailure) throw { message: "Unexpected Status", response: { status: 409 } }
+        },
         get: async ({ sessionID }: any) => sessions.find((s) => s.id === sessionID),
       },
       permission: { list: empty, request: { list: async () => ({ data: [] }) } },
@@ -89,6 +95,21 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     const scroll = setup.renderer.root.findDescendantById("claude-session-list") as ScrollBoxRenderable
     assert.ok(scroll.scrollTop > 0)
     const before = scroll.scrollTop
+    interruptFailure = true
+    await commands.find((c) => c.bind === "x").run()
+    await setup.renderOnce()
+    assert.match(toasts.at(-1)!.message, /Interrupt session \(s20\).*HTTP 409/)
+    assert.equal(toasts.at(-1)!.variant, "error")
+    assert.equal(lifecycle.inactive.s20, undefined)
+    assert.match(setup.captureCharFrame(), /❯\s+Session 20/)
+    interruptFailure = false
+    storageFailure = true
+    await commands.find((c) => c.bind === "x").run()
+    await setup.renderOnce()
+    assert.match(toasts.at(-1)!.message, /Persist inactive marker \(session already interrupted\).*s20.*disk unavailable/)
+    assert.equal(lifecycle.inactive.s20, undefined)
+    assert.match(setup.captureCharFrame(), /❯\s+Session 20/)
+    storageFailure = false
     await commands.find((c) => c.bind === "x").run()
     await setup.renderOnce()
     assert.equal(scroll.scrollTop, before)

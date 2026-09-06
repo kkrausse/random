@@ -11,7 +11,8 @@
     "test": "bun test --preload @opentui/solid/preload"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "0.0.0-beta-18999"
+    "@opencode-ai/plugin": "0.0.0-beta-18999",
+    "effect": "4.0.0-rc.112"
   },
   "devDependencies": {
     "@opencode-ai/theme": "0.0.0-beta-18999",
