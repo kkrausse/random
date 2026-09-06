@@ -1,5 +1,22 @@
 # Browser-control checks
 
+- [x] HMR evidence capture, browser-control 0.7.0, same session: the first inline capture had
+  `SyntaxError: Parser error`; moving it to `--file` exposed a separate caller error,
+  `The "cb" argument must be of type function. Received undefined`, from awaiting callback-based `fs.writeFile`.
+  Used `fs.writeFileSync` instead. Evidence JSON and screenshot were saved successfully; no page/session replacement.
+
+- [x] Bridge continuation, same session: dynamic import of `/serial-bridge.js?import` failed with
+  `net::ERR_CONNECTION_REFUSED` after the host server stopped. Host curl confirmed port 5173 was down.
+  With user permission, restarted host Vite. Its reconnect behavior navigated the tab to
+  `chrome-error://chromewebdata/`, discarding the VM despite the full-reload event guard. Reopened the
+  same localhost URL and booted again. Keep the host server alive during long guest runs.
+
+- [x] Bridge continuation, browser-control 0.7.0, same localhost session: `click: Timeout 30000ms exceeded`
+  on **Connect preview**, with `element is not enabled`. Updating the host entry/public files triggered Vite's full-page
+  reload and discarded the ephemeral iframe; the next snapshot correctly showed Start VM. This was an application
+  development reload, not a relay failure. Booted again and installed a temporary `vite:beforeFullReload` listener in
+  the host page that rejects development reloads while validating the live VM. Guest preview HMR remains enabled.
+
 - [x] Continuation, same 0.7.0 session `amber-walrus-881` at localhost:5173: the installed
   `/Users/kkrausse/.local/bin/browser-control` is on the non-interactive shell PATH and works directly.
   `locator.fill()` on xterm's helper textarea returned successfully but did not send a serial command;

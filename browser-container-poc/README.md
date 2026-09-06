@@ -1,8 +1,8 @@
 # Browser container POC
 
-v0 boots an x86-64 Alpine Linux guest under QEMU-Wasm in a browser worker and connects an interactive serial terminal.
-It establishes the first milestone in [`plan.md`](./plan.md); it does **not** yet include OpenCode, Bun, Vite, or the
-preview/HMR network bridge.
+This POC boots an x86-64 Alpine Linux guest under QEMU-Wasm in a browser worker, connects a serial terminal,
+and bridges guest Vite HTTP and HMR into an adjacent preview. The custom guest includes Bun and OpenCode;
+the real model-driven editing loop remains a later milestone. See [`browser-result.md`](./browser-result.md) for evidence.
 
 ## Run
 
@@ -95,8 +95,32 @@ Browser TypeScript now **passes** with `BUN_JSC_useFTLJIT=false`, retaining base
 attempted JIT-disable experiments used an ignored prefix. Vite dev mode now starts and serves the HTML, HMR client,
 and transformed TSX successfully over guest loopback HTTP. The production build was canceled to focus on the dev/HMR goal.
 See the result card for exact commands, timings, and handoff state.
-Next, add an explicit guest HTTP/WebSocket bridge for Vite assets and HMR, followed by the bounded
-model relay. The empty preview pane intentionally does not claim those milestones are complete.
+The serial-backed preview bridge is described below. The bounded model relay and real OpenCode editing loop remain next.
+
+## Guest preview and HMR
+
+At the guest shell prompt, start Vite in the background:
+
+```sh
+export BUN_JSC_useFTLJIT=false
+bun node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5173 --strictPort </dev/null >/tmp/vite-dev.log 2>&1 &
+```
+
+Wait for Vite readiness (`cat /tmp/vite-dev.log`), then click **Connect preview**. The workspace transfers
+`guest/preview-bridge.ts` into the running guest and starts it with the serial tty in raw mode. A scoped service worker
+forwards preview HTTP requests through MessageChannels and the serial transport to guest-loopback Vite. Responses are
+gzip/base64 encoded over serial; HTML receives a WebSocket adapter before Vite's bootstrap. The adapter forwards text
+messages to a real guest WebSocket, including Vite's HMR token and subprotocol. No host Vite proxy serves guest assets.
+
+While connected, use **Guest command → Run in guest** to edit files or inspect logs; the serial tty is occupied by the
+bridge. Commands run in `/workspace`. Restart VM discards the guest overlay and bridge. The POC supports asset GET/HEAD
+requests and text WebSockets for Vite; request bodies, binary WebSockets, external networking, and multiple workspaces
+on the same origin are outside this bridge's current scope. Preview and workspace share an origin and are trusted POC code.
+
+Cold Vite dependency optimization can exceed the four-minute guest HTTP timeout. After optimization completes,
+use **Reload preview** to retry with the warm cache; this preserves the VM. The measured warm-cache guest edit changed
+the visible heading in **15.114 seconds**, with a real Vite `js-update` message and no preview-document replacement.
+See the result card for the cold-load timeout and exact HMR evidence.
 
 ## Pinned upstream
 
