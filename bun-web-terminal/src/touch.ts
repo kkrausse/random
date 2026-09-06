@@ -1,11 +1,20 @@
 import type { Terminal } from "../vendor/ghostty-web/lib/index";
 
-// Touch selection is local, including when the application owns mouse input.
+// Long presses follow desktop drag routing; the Select toolbar forces local selection.
 export function installTerminalTouchControls(container: HTMLElement, terminal: Terminal, selecting: () => boolean, notice: (message: string) => void) {
-  let gesture: { id: number; x: number; y: number; lastY: number; moved: boolean; anchor: number; selecting: boolean } | undefined;
+  let gesture: { id: number; x: number; y: number; lastX: number; lastY: number; moved: boolean; anchor: number; selecting: boolean; application: boolean } | undefined;
   let holdTimer: ReturnType<typeof setTimeout> | undefined;
   const clearHold = () => { clearTimeout(holdTimer); holdTimer = undefined; };
-  const cancel = () => { clearHold(); gesture = undefined; };
+  const mouse = (type: string, x: number, y: number) => container.dispatchEvent(new MouseEvent(type, {
+    bubbles: true, cancelable: true, button: 0, buttons: type === "mouseup" ? 0 : 1,
+    clientX: x, clientY: y,
+  }));
+  const cancel = () => {
+    clearHold();
+    // Balance an application press even on multi-touch, suspension or touchcancel.
+    if (gesture?.application) mouse("mouseup", gesture.lastX, gesture.lastY);
+    gesture = undefined;
+  };
   const cellAt = (x: number, y: number) => {
     const rect = container.querySelector("canvas")!.getBoundingClientRect();
     const metrics = terminal.renderer!.getMetrics();
@@ -24,16 +33,20 @@ export function installTerminalTouchControls(container: HTMLElement, terminal: T
     cancel();
     if (event.touches.length !== 1) return;
     const touch = event.touches[0]!;
-    gesture = { id: touch.identifier, x: touch.clientX, y: touch.clientY, lastY: touch.clientY,
-      moved: false, anchor: cellAt(touch.clientX, touch.clientY), selecting: selecting() };
+    gesture = { id: touch.identifier, x: touch.clientX, y: touch.clientY, lastX: touch.clientX, lastY: touch.clientY,
+      moved: false, anchor: cellAt(touch.clientX, touch.clientY), selecting: selecting(), application: false };
     if (gesture.selecting) selectTo(gesture.anchor);
     else holdTimer = setTimeout(() => {
       holdTimer = undefined;
       if (!gesture) return;
       gesture.selecting = true;
-      selectTo(gesture.anchor);
+      gesture.application = !terminal.options.selectOnDrag && !!terminal.wasmTerm?.hasMouseTracking();
+      if (gesture.application) {
+        // Use Ghostty's normal mouse encoding and the same inner-pane mode as desktop.
+        mouse("mousedown", gesture.x, gesture.y);
+      } else selectTo(gesture.anchor);
       // Keep keyboard/viewport geometry stable while the finger is down.
-      notice("Drag to select · then tap Copy");
+      notice(gesture.application ? "Drag to select in application" : "Drag to select · then tap Copy");
     }, 500);
   }, { capture: true, passive: true });
   container.addEventListener("touchmove", (event) => {
@@ -46,13 +59,15 @@ export function installTerminalTouchControls(container: HTMLElement, terminal: T
     clearHold();
     gesture.moved = true;
     if (gesture.selecting) {
-      selectTo(cellAt(touch.clientX, touch.clientY));
+      if (gesture.application) mouse("mousemove", touch.clientX, touch.clientY);
+      else selectTo(cellAt(touch.clientX, touch.clientY));
     } else {
       container.querySelector("canvas")?.dispatchEvent(new WheelEvent("wheel", {
         bubbles: true, cancelable: true, deltaY: gesture.lastY - touch.clientY,
         clientX: touch.clientX, clientY: touch.clientY,
       }));
     }
+    gesture.lastX = touch.clientX;
     gesture.lastY = touch.clientY;
   }, { capture: true, passive: false });
   container.addEventListener("touchend", (event) => {
@@ -62,15 +77,18 @@ export function installTerminalTouchControls(container: HTMLElement, terminal: T
     clearHold();
     if (gesture?.selecting) {
       const touch = [...event.changedTouches].find((touch) => touch.identifier === gesture!.id);
-      if (touch) selectTo(cellAt(touch.clientX, touch.clientY));
+      if (touch) {
+        if (gesture.application) {
+          if (touch.clientX !== gesture.lastX || touch.clientY !== gesture.lastY) mouse("mousemove", touch.clientX, touch.clientY);
+          gesture.lastX = touch.clientX;
+          gesture.lastY = touch.clientY;
+        } else selectTo(cellAt(touch.clientX, touch.clientY));
+      }
     } else if (gesture && !gesture.moved) {
       // Defer the entire click until release: a swipe must never press a TUI row.
       // Bypass the canvas focus listener so taps don't summon the software keyboard.
       for (const type of ["mousedown", "mouseup"]) {
-        container.dispatchEvent(new MouseEvent(type, {
-          bubbles: true, cancelable: true, button: 0, buttons: type === "mousedown" ? 1 : 0,
-          clientX: gesture.x, clientY: gesture.y,
-        }));
+        mouse(type, gesture.x, gesture.y);
       }
     }
     cancel();
