@@ -24,7 +24,9 @@ performance for our workload remain unproven.
 
 Agreed after the manual SDK demo: make routine runtime development possible
 from a local CLI, without Browser Control carrying commands and results.
-**Not implemented yet.** Build this slice before expanding OpenCode tool coverage.
+**Implemented and qualified 2026-09-06.** See `../vivari/README.md` for CLI setup
+and [handoff](vivari-handoff.md) for evidence. The requirements below describe
+the implemented slice; next is actual OpenCode search/read/edit/command tool coverage.
 
 - Add a dev-only local relay to the harness. The browser tab connects and
   exposes named runtime operations; a Bun/TypeScript CLI uses that connection.

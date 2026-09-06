@@ -2,6 +2,35 @@
 
 ## Resume here: dev bridge + interactive shell
 
+**Update 2026-09-06: implemented.** Routine guest commands/logs/files/probes can
+now use `bun run vv` through the local relay. Start `bun run relay` in `vivari/`,
+keep the patched harness page open, then `bun run vv status` to select its current
+runtime ID. `bun run vv --runtime ID boot`, `exec -- node --version`, `shell`,
+`logs`, `read`, `write`, and `probe [--recover]` are available. See the README
+for full setup. Each page reload changes its ID; old IDs fail closed.
+
+Qualification: real Chrome merged stdout/stderr, cwd, exit 7, exact 1.25 MiB binary
+file roundtrip, existing `sh` input/cwd/foreground Ctrl+C/survival/Ctrl+D all pass
+via `scripts/qualify-bridge.ts ID`. Local CLI PTY and xterm UI both show working
+`pwd` prompts. CLI piped stdin passes; 500 ms command timeout fails and cancels;
+reload during execution produces `Browser disconnected`. Relay agent separately
+verified wrong-origin/token rejection, duplicate IDs, runtime selection and
+disconnect/timeout routing with protocol clients. Patched harness build passes.
+
+SDK create and full-page-reload recovery through the CLI returned the same ID
+`ses_f88ac4e42ffeOdCu8nbLLDaPzs`, with explicit readback/host-close/host-passed
+checkpoints and the unchanged `1ab7ce5a...de33` bundle hash. Browser Control was
+used for page lifecycle and xterm UI checks; guest results came through the relay.
+
+Scope: dev-only relay on 127.0.0.1:5193; browser connector in `src/dev-bridge.ts`;
+one foreground operation at a time; separate status/log/input/kill operations.
+File transport uses guest Node fd chunks, independent of `sh`, but still requires
+a working guest Node runtime. SDK output merges stderr/stdout; logs are bounded
+to one million characters. No native PTY/resize. `sh` exits via Ctrl+D, not `exit`.
+No upstream runtime edits were needed. Continue with OpenCode's actual tools.
+
+The following paragraph records the pre-implementation checkpoint:
+
 Latest implementation commit: `c1ae0eb` adds xterm output/stdin and manual SDK
 create/recover buttons. Earlier `161b540` qualifies normal SDK host/session/close
 and file-backed same-session recovery after page reload. Manual demo setup and
