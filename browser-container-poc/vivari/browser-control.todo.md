@@ -1,5 +1,14 @@
 # Browser Control observations
 
+- [x] 2026-09-06 WASM renderer, CLI 0.7.0, `lucky-falcon-533`, :5202:
+  inspection mistakenly used `window.probe.shells` (undefined); correct API is
+  `window.shells.sessions`. Guest remained running; corrected the inspection.
+  Later the user's software-update reboot stopped the server/browser/relay.
+  First recovered execute warned that relay state/refs reset, and `window.shells`
+  was undefined on about:blank. Inspected URL, restarted only :5202, navigated
+  explicitly and booted without resetting OPFS. Re-delivered owned probe assets
+  and reran actual keyboard/resize/destroy plus independent libc probes: PASS.
+
 - [x] 2026-09-06 TUI audit, CLI 0.7.0, `quiet-raven-411`, owned :5198:
   evidence-copy code using `fs.copyFileSync('browser-container-poc/vivari/.runtime/patched-build.json', ...)`
   failed ENOENT because the relay cwd is `browser-container-poc`, not the caller's

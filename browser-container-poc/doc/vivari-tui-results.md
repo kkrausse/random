@@ -1,5 +1,12 @@
 # Actual OpenCode TUI qualification — 2026-09-06
 
+**Implementation continuation:** [real WASM core results](vivari-wasm-renderer-results.md)
+supersede the cross-build blocker below. The real Zig renderer/edit buffer now
+renders, accepts keyboard text, resizes and destroys in a browser worker using
+a source-built WASI reactor and reusable `fd_pwrite` runtime support. The
+TypeScript `createCliRenderer` / `TextRenderable` backend and actual OpenCode TUI
+are still not reached. The following sections retain the original audit evidence.
+
 **BLOCKED before first frame.** The actual pinned CLI installer rejects Vivari's
 `linux-wasm32`. Independently, the real OpenTUI module imports in guest workers,
 but `createCliRenderer()` rejects its native library target. A pinned Zig WASI

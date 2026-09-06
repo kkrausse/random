@@ -1,0 +1,75 @@
+diff --git a/packages/core/src/zig/build.zig b/packages/core/src/zig/build.zig
+index 0c82ba3d..92625d93 100644
+--- a/packages/core/src/zig/build.zig
++++ b/packages/core/src/zig/build.zig
+@@ -205,7 +205,7 @@ fn addYogaDependencies(b: *std.Build, artifact: *std.Build.Step.Compile) void {
+     artifact.addCSourceFiles(.{
+         .root = yoga_dep.path(""),
+         .files = &YOGA_CXX_SOURCES,
+-        .flags = &YOGA_CXX_FLAGS,
++        .flags = if (artifact.root_module.resolved_target.?.result.cpu.arch == .wasm32) &.{ "-std=c++20", "-fno-exceptions", "-fno-rtti" } else &YOGA_CXX_FLAGS,
+     });
+ }
+ 
+@@ -478,13 +478,25 @@ fn buildTarget(
+     }
+ 
+     const module = b.createModule(.{
+-        .root_source_file = b.path(ROOT_SOURCE_FILE),
++        .root_source_file = b.path(if (target.result.cpu.arch == .wasm32) "wasm-lib.zig" else ROOT_SOURCE_FILE),
+         .target = target,
+         .optimize = optimize,
+     });
+ 
+     applyDependencies(b, module, optimize, target, build_options);
+ 
++    if (target.result.cpu.arch == .wasm32) {
++        const wasm = b.addExecutable(.{ .name = "opentui", .root_module = module });
++        wasm.entry = .disabled;
++        wasm.wasi_exec_model = .reactor;
++        wasm.rdynamic = true;
++        wasm.root_module.single_threaded = true;
++        wasm.linkLibC();
++        addYogaDependencies(b, wasm);
++        b.installArtifact(wasm);
++        return;
++    }
++
+     const lib = b.addLibrary(.{
+         .name = LIB_NAME,
+         .root_module = module,
+diff --git a/packages/core/src/zig/renderer-output.zig b/packages/core/src/zig/renderer-output.zig
+index 7d773f74..f70044ec 100644
+--- a/packages/core/src/zig/renderer-output.zig
++++ b/packages/core/src/zig/renderer-output.zig
+@@ -383,7 +383,7 @@ pub const BufferedBackend = struct {
+     }
+ 
+     pub fn supportsThreading(self: *BufferedBackend) bool {
+-        return self.output.thread_safe;
++        return !builtin.single_threaded and self.output.thread_safe;
+     }
+ 
+     pub fn isUseThread(self: *BufferedBackend) bool {
+@@ -391,6 +391,7 @@ pub const BufferedBackend = struct {
+     }
+ 
+     pub fn setUseThread(self: *BufferedBackend, use_thread: bool) void {
++        if (comptime builtin.single_threaded) return;
+         if (use_thread and !self.supportsThreading()) return;
+         if (self.useThread == use_thread) return;
+ 
+diff --git a/packages/core/src/zig/text-buffer.zig b/packages/core/src/zig/text-buffer.zig
+index cef075d5..47ca7979 100644
+--- a/packages/core/src/zig/text-buffer.zig
++++ b/packages/core/src/zig/text-buffer.zig
+@@ -1200,7 +1200,8 @@ pub const UnifiedTextBuffer = struct {
+ 
+         self.clear();
+ 
+-        const content = self.allocator.alloc(u8, file_size) catch return TextBufferError.OutOfMemory;
++        const content_size = std.math.cast(usize, file_size) orelse return TextBufferError.OutOfMemory;
++        const content = self.allocator.alloc(u8, content_size) catch return TextBufferError.OutOfMemory;
+         const bytes_read = file.readAll(content) catch return TextBufferError.OutOfMemory;
+         const text = content[0..bytes_read];
+         const mem_id = try self.mem_registry.register(text, false);
