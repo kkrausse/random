@@ -1,5 +1,9 @@
 # Browser container POC
 
+The preserved app now lives in `../qemu/`. Run host commands below from that
+directory; host-side paths are relative to it. See [the experiment index](index.md)
+for the new layout and Vivari attempt.
+
 This POC boots an x86-64 Alpine Linux guest under QEMU-Wasm in a browser worker, connects a serial terminal,
 and bridges guest Vite HTTP and HMR into an adjacent preview. The custom guest includes Bun and OpenCode;
 the real model-driven editing loop remains a later milestone. See [`browser-result.md`](./browser-result.md) for evidence.
@@ -81,7 +85,7 @@ The runtime build also emits `public/qemu/popcnt-test`, a standalone x86-64 regr
 ## Known boundary
 
 For repeatable workload validation, the guest recipe installs `validate-workload` from
-[`guest/validate-workload.sh`](./guest/validate-workload.sh). Run it in the guest with
+[`guest/validate-workload.sh`](../qemu/guest/validate-workload.sh). Run it in the guest with
 `validate-workload >/tmp/workload.log 2>&1 &` and inspect `tail -n 30 /tmp/workload.log`.
 It verifies Bun's effective FTL option, starts Vite in dev mode, requests the index/client/transformed source over
 guest loopback HTTP, and checks server shutdown. The optional `validate-workload build` mode first removes fixture
@@ -131,7 +135,7 @@ See the result card for the cold-load timeout and exact HMR evidence.
 With the working preview connected, run `bun run profile <browser-control-session>`
 to measure preview-only reloads, cached guest HTTP, and edit-to-visible HMR (three
 samples each). It preserves the VM, restores the fixture after every edit, and saves
-JSON reports under `.cache/profiles/`. Use `bun run profile <session> 5 edit` for a
+JSON reports under `../doc/logs/qemu/profiles/`. Use `bun run profile <session> 5 edit` for a
 focused warm-edit comparison. See [`profiling.md`](./profiling.md) for setup,
 measurement boundaries, and the initial finding: repeated edits fell from 4.7–11.2s
 to 2.0–3.7s while cached module delivery took only 0.15–0.20s. Post-reload edits can

@@ -1,5 +1,8 @@
 # Performance feedback loop
 
+Run host commands from `browser-container-poc/qemu/`. Existing profiling reports
+were moved into `doc/logs/qemu/profiles/` alongside the other local logs.
+
 ## Run against the working VM
 
 Keep `bun run dev` running. Once the guest Vite preview is connected and displays
@@ -17,7 +20,7 @@ bun run profile amber-walrus-881 3 http
 ```
 
 This uses the Bun-backed `browser-control` CLI and the existing browser VM. Each
-sample is printed and saved to `.cache/profiles/<timestamp>-<mode>.json` as it
+sample is printed and saved to `../doc/logs/qemu/profiles/<timestamp>-<mode>.json` as it
 finishes. Run only one profiling command at a time, keep the browser foregrounded,
 and avoid guest edits or other heavy workloads during a run.
 
