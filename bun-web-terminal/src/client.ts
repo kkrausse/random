@@ -88,7 +88,7 @@ async function startTerminalPage() {
     fontFamily: theme.fontFamily,
     fontSize: theme.fontSize,
     scrollback: 10_000,
-    selectOnDrag: true,
+    selectOnDrag: false, // Honor application mouse tracking; Shift+drag selects locally.
     copyOnSelect: false, // Set true to copy automatically when highlighting text.
     onClipboardWrite(success) {
       if (!copyToast) return;
