@@ -297,11 +297,13 @@ function applyPageTheme(theme: LocalTheme) {
   root.style.setProperty("--terminal-font", theme.fontFamily);
 }
 
-type IconKind = "terminal" | "shell" | "code" | "editor" | "server" | "remote";
+type IconKind = "terminal" | "shell" | "code" | "editor" | "server" | "remote" | "emacs" | "opencode";
 
 function iconKind(title: string): IconKind {
   const value = title.toLowerCase();
-  if (/\b(opencode|code|codex)\b/.test(value)) return "code";
+  if (/\bopencode2?\b/.test(value)) return "opencode";
+  if (/\bemacs(?:client)?\b/.test(value)) return "emacs";
+  if (/\b(code|codex)\b/.test(value)) return "code";
   if (/\b(n?vim|nano|emacs|helix|zed)\b/.test(value)) return "editor";
   if (/\b(ssh|mosh|remote)\b/.test(value)) return "remote";
   if (/\b(bun|node|deno|npm|pnpm|yarn|vite|webpack|next\.js|dev server)\b/.test(value) || /https?:\/\//.test(value)) return "server";
@@ -313,6 +315,10 @@ function iconSvg(kind: IconKind) {
 }
 
 function iconBody(kind: IconKind) {
+  // OpenCode favicon: https://opencode.ai/favicon.svg (scaled from 512 to 24).
+  if (kind === "opencode") return `<g stroke="none" transform="scale(.046875)"><rect width="512" height="512" fill="#131010"/><path d="M320 224V352H192V224H320Z" fill="#5a5858"/><path fill-rule="evenodd" d="M384 416H128V96H384V416ZM320 160H192V352H320V160Z" fill="white"/></g>`;
+  // GNU Emacs mark from Simple Icons (CC0): https://simpleicons.org/?q=gnuemacs
+  if (kind === "emacs") return `<g stroke="none"><circle cx="12" cy="12" r="12" fill="#7f5ab6"/><path fill="white" d="M8.03 20.197s.978.069 2.236-.042c.51-.045 2.444-.235 3.891-.552 0 0 1.764-.377 2.707-.725.987-.364 1.524-.673 1.766-1.11-.011-.09.074-.408-.381-.599-1.164-.488-2.514-.4-5.185-.457-2.962-.102-3.948-.598-4.472-.997-.503-.405-.25-1.526 1.907-2.513 1.086-.526 5.345-1.496 5.345-1.496-1.434-.709-4.109-1.955-4.659-2.224-.482-.236-1.254-.591-1.421-1.021-.19-.413.448-.768.804-.87 1.147-.331 2.766-.536 4.24-.56.741-.012.861-.059.861-.059 1.022-.17 1.695-.869 1.414-1.976-.252-1.13-1.579-1.795-2.84-1.565-1.188.217-4.05 1.048-4.05 1.048 3.539-.031 4.131.028 4.395.398.156.218-.071.518-1.015.672-1.027.168-3.163.37-3.163.37-2.049.122-3.492.13-3.925 1.046-.283.599.302 1.129.558 1.46 1.082 1.204 2.646 1.853 3.652 2.331.379.18 1.49.52 1.49.52-3.265-.18-5.619.823-7.001 1.977-1.562 1.445-.871 3.168 2.33 4.228 1.891.626 2.828.921 5.648.667 1.661-.09 1.923-.036 1.939.1.023.192-1.845.669-2.355.816-1.298.374-4.699 1.129-4.716 1.133z"/></g>`;
   if (kind === "code") return `<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 8h18M9 12l-2 2 2 2m6-4 2 2-2 2"/>`;
   if (kind === "editor") return `<path d="M14 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="m13 15 1-4 4.6-4.6a1.4 1.4 0 0 0-2-2L12 9l-1 4 2 2Z"/>`;
   if (kind === "server") return `<rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6"/>`;

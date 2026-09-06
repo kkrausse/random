@@ -28,6 +28,8 @@ Compact light-blue notices in the top-right show connection status and confirm s
 
 ## Session behavior
 
+- The sessions menu and terminal tab favicon recognize Emacs (including `emacsclient`) and OpenCode (including `opencode2`) in terminal titles and show their bundled logos. Other programs use generic category icons.
+
 - **Rename** in the sessions menu changes the tmux session name. Names are separate from the short tmux ID used for URLs and attachments, so renaming preserves links and running processes. Names must be unique on the tmux server and contain 1–128 characters without dots, colons, or control characters.
 
 - Uses your standard tmux server and configuration. Existing sessions appear automatically; new browser-created sessions are named `web-<uuid>`, with their status bar hidden and mouse support enabled. Global options and key bindings are left to your tmux configuration.
