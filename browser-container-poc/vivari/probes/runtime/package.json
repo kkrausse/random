@@ -1,0 +1,11 @@
+{
+  "name": "vivari-runtime-compatibility-probe",
+  "private": true,
+  "imports": {
+    "#runtime": {
+      "bun": "./bun.cjs",
+      "node": "./node.cjs",
+      "default": "./default.cjs"
+    }
+  }
+}

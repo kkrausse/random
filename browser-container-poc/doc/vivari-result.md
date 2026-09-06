@@ -1,8 +1,10 @@
 # Vivari feasibility result — September 5–6, 2026
 
-**Recommendation: retain Vivari for the fast JS workspace and do one bounded
-OpenCode native-dependency adaptation probe next. The real OpenCode host is
-blocked before import; this is not an end-to-end agent success.**
+**Original POC: fast JS workspace, real OpenCode host blocked before import.**
+Follow-up: [runtime audit](vivari-runtime-audit.md) confirms real sql.js WASM
+queries and second-process recovery. The [updated plan](vivari_plan.md) keeps
+mainline OpenCode inside Vivari and targets runtime compatibility fixes, with
+QEMU/BusyBox retained as a possible Linux command backend.
 
 Implementation: [`../vivari/`](../vivari/README.md). Upstream SDK `1.0.0`, gitHead
 `2629c71097238400c45aefa213ef61df4794c2b7` (MIT). No upstream runtime edits;
@@ -111,7 +113,8 @@ separate `bun:sqlite` / `node:sqlite` database implementations. Those paths are
 failed first. Import, host creation, session storage, host tools, model streaming,
 prompt-to-edit-to-HMR and OpenCode cancellation remain unverified.
 
-Next bounded probe: determine whether the real SDK's Node-compatible host can
+Original proposed next probe (superseded by the runtime-first plan): determine
+whether the real SDK's Node-compatible host can
 omit/fallback from the native file finder and native PTY/process-lock adapters
 without replacing the real host or silently changing tool results. A platform
 check bypass alone would not prove native support. If this requires a substantial
