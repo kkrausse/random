@@ -5,6 +5,7 @@
     "moduleResolution": "Bundler",
     "lib": ["ESNext", "DOM", "DOM.Iterable", "DOM.AsyncIterable"],
     "strict": true,
+    "allowJs": true,
     "skipLibCheck": true,
     "noEmit": true,
     "types": ["bun", "vite/client"]

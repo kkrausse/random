@@ -9,9 +9,9 @@ await page.evaluate(async ({ source, mode }) => {
   const report = window.sqliteApiProbe = { phase: "running", results: [] };
   void (async () => {
     try {
-      for (const test of mode === "recover" ? ["recover"] : ["memory", "write", "recover"]) {
-        const proc = await vm.spawn("node", ["sqlite-api.cjs", test], { cwd: "/runtime-probe" });
-        const result = { test, output: "", timedOut: false };
+      for (const command of ["node", "bun"]) for (const test of mode === "recover" ? ["recover"] : ["memory", "write", "recover"]) {
+        const proc = await vm.spawn(command, ["sqlite-api.cjs", test], { cwd: "/runtime-probe" });
+        const result = { command, test, output: "", timedOut: false };
         report.results.push(result);
         const timeout = setTimeout(() => { result.timedOut = true; proc.kill(); }, 30000);
         try {

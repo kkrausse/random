@@ -29,6 +29,11 @@ if (mode === "recover") {
   db.exec("BEGIN; UPDATE fixture SET value='committed'; COMMIT;");
   assert.equal(db.prepare("SELECT json_extract(?, '$.a') AS x").all('{"a":42}')[0].x, 42);
   const large = "x".repeat(1100000);
+  for (const value of [Infinity, -Infinity, 1.25, null]) assert.equal(db.prepare("SELECT ? AS x").get(value).x, value);
+  assert.equal(db.prepare("SELECT ? AS x").get(NaN).x, null);
+  assert.throws(() => db.prepare("SELECT ?").all(), /SQLITE_RANGE/);
+  assert.throws(() => db.prepare("SELECT 1").all(2), /SQLITE_RANGE/);
+  assert.throws(() => insert.run(1n << 63n, null, "invalid"), /out of range/);
   assert.equal(db.prepare("SELECT ? AS x").all(large)[0].x, large);
   assert.equal(db.prepare("PRAGMA foreign_keys").all()[0].foreign_keys, 1);
   assert.notEqual(db.prepare("PRAGMA journal_mode=WAL").all()[0].journal_mode, "wal");

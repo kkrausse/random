@@ -1,8 +1,8 @@
 # Vivari implementation plan
 
-Status: source-build baseline and initial SQLite API probes pass; SQLite
-qualification is incomplete. Paused for user-requested handoff; see
-[handoff](vivari-handoff.md) for the exact failing ownership regression and fix.
+Status: the scoped SQLite local/browser qualification gate passes, including
+ownership, reload recovery, real OPFS failure/interruption and patched HMR. See
+[SQLite qualification](vivari-sqlite-qualification.md) for scope and remaining limits.
 The first OpenCode installation attempt is blocked by a native dependency.
 See [result card](vivari-result.md) for the original measurements and
 [runtime audit](vivari-runtime-audit.md) for the follow-up evidence.
@@ -75,15 +75,17 @@ First implementation slice:
 - [x] Qualify sql.js WASM queries, rollback, and VFS export/reopen in separate
   browser processes. See the runtime audit for untested persistence semantics.
 - [x] Establish a reproducible Vivari source-patch/build path before runtime fixes.
-- [ ] Implement the smallest demonstrated compatibility gap and rerun its probe.
+- [x] Implement the smallest demonstrated compatibility gap and rerun its probe.
 - [ ] Retry normal SDK import, host creation, and session creation.
 
 The initial shared SQLite implementation now uses official SQLite WASM
 3.49.1-build1 (same SQLite engine 3.49.1) rather than sql.js's limited prebuilt
-API. Node/Bun query tests and separate-process recovery pass. A termination
-regression exposed a committed-prefix persistence bug; the source fix passes
-a focused unit test but awaits a browser rerun. Page-reload recovery, actual
-OPFS fault qualification, final patched HMR, and OpenCode migrations remain open.
+API. Shared local/browser tests and separate-process/kernel/page recovery pass.
+The termination regression's committed-prefix fix is browser-verified. Real OPFS
+exclusive-handle failures and interrupted writable-stream replacements pass;
+failed paths require kernel restart. Patched HMR also passes. Quota exhaustion,
+power loss, large-database performance, full API conformance and actual OpenCode
+migrations remain unqualified. Assess this checkpoint before expanding SDK work.
 
 Use Vivari's existing JS/WASM drop-in machinery where a genuine compatible backend
 exists. A CPU-check bypass, empty search result, no-op lock, or successful stub
