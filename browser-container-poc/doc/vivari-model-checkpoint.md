@@ -1,5 +1,19 @@
 # Browser-hosted model loop — paused 2026-09-06
 
+## Subsequent transport decision and implementation
+
+The discussion after `c7c05a4` selected a deployment-neutral Bun HTTP proxy in
+the web app server, with OpenCode/provider handling remaining in browser workers.
+The first implementation replaces the fixed Vite Zen proxy and removes host
+auth-file discovery. It derives upstream bases offline from the pinned SDK
+catalog and forwards SDK-selected paths. See [current transport documentation](model-transport.md)
+for architecture, commands, credential configuration, and mock-only verification.
+No provider calls or existing credentials were used during that implementation.
+Credential ownership and real model qualification are still open.
+
+The remainder of this file records the historical `c7c05a4` checkpoint; its
+Vite proxy/auth-file details and restart instructions have been superseded.
+
 ## Resume with a design discussion
 
 User explicitly requested a breakpoint and context reset before deciding model
