@@ -31,12 +31,27 @@ index bfb9dbd..6a17c54 100644
 \ No newline at end of file
 +- **Background research** → `research.md`
 diff --git a/ARCHITECTURE.md b/ARCHITECTURE.md
-index d88c8f8..a8f8a87 100644
+index d88c8f8..28f38bb 100644
 --- a/ARCHITECTURE.md
 +++ b/ARCHITECTURE.md
-@@ -1,5 +1,46 @@
+@@ -1,5 +1,61 @@
  # Vivari — Architecture
  
++## Local shell running-job slice
++
++The POC retains xterm and independent SDK shell ownership. The guest shell accepts
++one pipeline followed by `&`, runs it under a child `sh -c`, and tracks at most 32
++jobs. `jobs` lists/reaps completed jobs; `kill %N` terminates a job subtree;
++`fg %N` waits for a running job and makes Ctrl+C target it. Background stdin is
++EOF and remains EOF after fg. `exit` exits the shell and kernel finalization kills
++its descendants. Compound background lists and suspension/resume are unsupported;
++`bg` errors explicitly. This is not POSIX process-group/terminal job control.
++The existing kernel kill path terminates workers rather than delivering catchable
++signals; SIGSTOP/SIGCONT must not be used to infer suspend/resume support.
++The SDK merged-output ReadableStream is bounded to 1 Mi characters; overflow
++errors its consumer and kills the owning subtree. This bounds the SDK queue,
++not the browser MessagePort queue; a worker-side credit protocol remains future work.
++
 +## Local OpenCode import checkpoint
 +
 +`node:sea` reports the actual non-single-executable process mode (`isSea() ===
@@ -81,13 +96,40 @@ index d88c8f8..a8f8a87 100644
  This document explains how Vivari works end to end: the core constraint it
  solves, the worker topology, the syscall protocol, the filesystem, the process
  model, the Node runtime, networking, native code, and the build. It is the
-@@ -917,4 +958,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
+@@ -917,4 +973,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
    `GET / → 200` (network-gated, like `verify-express`).
  
  See [`AGENTS.md`](./AGENTS.md) §"Testing & verification" for exactly when to run
 -each and the network requirement.
 \ No newline at end of file
 +each and the network requirement.
+diff --git a/packages/core/src/process.ts b/packages/core/src/process.ts
+index 41f53ab..c0d08c0 100644
+--- a/packages/core/src/process.ts
++++ b/packages/core/src/process.ts
+@@ -37,6 +37,13 @@ export class VivariProcess {
+     const offOut = bridge.on("proc-out", (m: KernelMessage) => {
+       if (m.execId !== execId) return;
+       try {
++        // There is no worker-side credit protocol yet. Bound the SDK queue and
++        // fail/terminate explicitly rather than silently dropping terminal bytes.
++        if ((m.chunk as string).length > (outController.desiredSize ?? 0)) {
++          outController.error(new Error("Vivari process output backlog exceeded 1 Mi characters"));
++          this.kill();
++          return;
++        }
+         outController.enqueue(m.chunk as string);
+       } catch {
+         /* consumer cancelled the stream */
+@@ -59,7 +66,7 @@ export class VivariProcess {
+         outController = controller;
+       },
+       cancel: () => this.kill(),
+-    });
++    }, { highWaterMark: 1 << 20, size: chunk => chunk?.length ?? 0 });
+ 
+     this.input = new WritableStream<string>({
+       write: (chunk) => {
 diff --git a/packages/core/src/workers/fs-worker.ts b/packages/core/src/workers/fs-worker.ts
 index 533d855..9e7540a 100644
 --- a/packages/core/src/workers/fs-worker.ts
@@ -134,6 +176,118 @@ index 533d855..9e7540a 100644
 -})();
 \ No newline at end of file
 +})();
+diff --git a/packages/kernel-host/coreutils.js b/packages/kernel-host/coreutils.js
+index aa430c1..cea3409 100644
+--- a/packages/kernel-host/coreutils.js
++++ b/packages/kernel-host/coreutils.js
+@@ -267,7 +267,7 @@ if (evalCode != null) {
+   // pipes (|), redirects (< > >> 2> 2>> 2>&1), builtins (cd, pwd, export, :,
+   // true, false), everything else spawned as a child process inheriting cwd/env.
+   // Quotes ("' ) are stripped by the lexer. Not supported: $VAR expansion, globs,
+-  // background (&), subshells.
++  // subshell syntax. A trailing & supports one background pipeline (see below).
+   sh: `
+ const fs = require('fs');
+ const cp = require('child_process');
+@@ -304,6 +304,7 @@ function lex(s) {
+     if (c === '<') { flush(); op('<'); continue; }
+     if (c === '|') { flush(); if (s[i + 1] === '|') { op('||'); i += 1; } else op('|'); continue; }
+     if (c === '&' && s[i + 1] === '&') { flush(); op('&&'); i += 1; continue; }
++    if (c === '&') { flush(); op('&'); continue; }
+     if (c === ';') { flush(); op(';'); continue; }
+     cur += c; has = true;
+   }
+@@ -347,6 +348,34 @@ function parse(toks) {
+ // tears the entire \`a | b | c\` down, not just the last stage.
+ let currentChild = null;
+ let currentKill = null;
++const jobs = new Map();
++let nextJob = 1;
++
++// A background pipeline is owned by a child batch shell, so its whole subtree
++// has one kill target. This is running-job control, not POSIX process groups.
++function background(line) {
++  if (jobs.size >= 32) throw Error('sh: background job limit (32); use jobs to reap completed jobs');
++  const child = cp.spawn('sh', ['-c', line], { cwd: process.cwd(), env: process.env });
++  const id = nextJob++;
++  const job = { id, child, line, code: null, done: null };
++  jobs.set(id, job);
++  child.stdin.end(); // background jobs never steal terminal input
++  child.stdout.on('data', d => process.stdout.write(d));
++  child.stderr.on('data', d => process.stderr.write(d));
++  job.done = new Promise(resolve => {
++    let settled = false;
++    const finish = code => {
++      if (settled) return;
++      settled = true; job.code = code;
++      if (currentChild === child) { currentChild = null; currentKill = null; }
++      resolve(code);
++    };
++    child.on('error', e => { process.stderr.write('sh: ' + e.message + '\\n'); finish(127); });
++    child.on('close', (code, signal) => finish(code == null ? (signal === 'SIGKILL' ? 137 : signal ? 143 : 0) : code));
++  });
++  process.stdout.write('[' + id + '] ' + child.pid + '\\n');
++  return 0;
++}
+ 
+ // Interactive command history, shared between the line editor (up/down recall)
+ // and the \`history\` builtin below. Populated by the REPL in interactive mode;
+@@ -357,6 +386,25 @@ function runSimple(tokens) {
+   if (!tokens.length) return Promise.resolve(0);
+   const cmd = tokens[0];
+   const args = tokens.slice(1);
++  if (cmd === 'exit') { process.exit(args.length ? Number(args[0]) || 0 : 0); }
++  if (cmd === 'jobs') {
++    for (const [id, job] of jobs) {
++      process.stdout.write('[' + id + '] ' + (job.code === null ? 'Running' : 'Done (' + job.code + ')') + ' ' + job.line + '\\n');
++      if (job.code !== null) jobs.delete(id);
++    }
++    return Promise.resolve(0);
++  }
++  if (cmd === 'bg') { process.stderr.write('sh: bg: suspension/resume is unsupported; use a trailing & to start a running job\\n'); return Promise.resolve(1); }
++  if (cmd === 'fg' || cmd === 'kill') {
++    const id = args[0] ? Number(args[0].replace(/^%/, '')) : Array.from(jobs.keys()).pop();
++    const job = jobs.get(id);
++    if (!job || job.code !== null) { process.stderr.write('sh: ' + cmd + ': no running job\\n'); return Promise.resolve(1); }
++    if (cmd === 'kill') { job.child.kill('SIGTERM'); return Promise.resolve(0); }
++    currentChild = job.child;
++    currentKill = sig => job.child.kill(sig);
++    process.stdout.write(job.line + '\\n');
++    return job.done.then(code => { jobs.delete(id); return code; });
++  }
+   if (cmd === 'cd') {
+     try { process.chdir(args[0] || '/'); return Promise.resolve(0); }
+     catch (e) { process.stderr.write('cd: ' + (e.code || e.message) + '\\n'); return Promise.resolve(1); }
+@@ -483,6 +531,13 @@ function runPipeline(stages) {
+ async function runLine(line) {
+   const toks = lex(line);
+   if (!toks.length) return 0;
++  const amp = toks.findIndex(t => t.t === 'op' && t.v === '&');
++  if (amp !== -1) {
++    if (amp !== toks.length - 1 || amp === 0 || toks.some(t => t.t === 'op' && [';', '&&', '||'].includes(t.v))) {
++      throw Error('sh: supported background syntax is one pipeline followed by &');
++    }
++    return background(line.slice(0, line.lastIndexOf('&')).trim());
++  }
+   let status = 0;
+   for (const el of parse(toks)) {
+     if (!el.stages.some((s) => s.argv.length || s.redirs.length)) continue;
+@@ -537,7 +592,7 @@ function runInteractive() {
+   const setLine = (s) => { line = s; pos = s.length; redraw(); };
+ 
+   // ---- Tab completion -------------------------------------------------------
+-  const BUILTINS = ['cd', 'pwd', 'export', 'history'];
++  const BUILTINS = ['cd', 'pwd', 'export', 'history', 'exit', 'jobs', 'fg', 'bg', 'kill'];
+   // Scripting no-ops: still handled by runSimple / installed on /bin (used in
+   // shell scripts and \`&&\`||\` chains), but hidden from Tab suggestions since
+   // nobody completes them interactively and they only clutter the list.
+@@ -718,4 +773,4 @@ function runInteractive() {
+ if (argv[2]) runBatch();
+ else runInteractive();
+ `,
+-};
+\ No newline at end of file
++};
 diff --git a/packages/kernel-host/fs-server.js b/packages/kernel-host/fs-server.js
 index b4805b2..3ca7d59 100644
 --- a/packages/kernel-host/fs-server.js
@@ -691,7 +845,7 @@ index af2b08d..0cec50b 100644
 \ No newline at end of file
 +}
 diff --git a/roadmap.md b/roadmap.md
-index 3ab02ef..d32da32 100644
+index 3ab02ef..c4be459 100644
 --- a/roadmap.md
 +++ b/roadmap.md
 @@ -1,5 +1,26 @@
@@ -721,13 +875,19 @@ index 3ab02ef..d32da32 100644
  Built on the principle **de-risk the hardest part first**: prove the riskiest
  primitive (synchronous cross-thread access to a shared kernel) before expanding.
  
-@@ -3041,4 +3062,4 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
+@@ -3041,4 +3062,10 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
  | `Fetcher Worker` | Network/registry worker |
  | `Node.js Worker PID n` | Process = 1 worker + Node shim |
  | `[worker n]` | Nested `worker_threads` — real (#16 stage 2b) |
 -| `sw.js` | Service Worker preview |
 \ No newline at end of file
 +| `sw.js` | Service Worker preview |
++# Local POC continuation: xterm-first shell jobs (2026-09-06)
++
++Added a bounded running-job table for a single background pipeline (`&`), `jobs`,
++`fg` (wait/interrupt only; stdin stays EOF), `kill %N`, and shell `exit`. Ownership
++uses existing recursive kernel finalization; no process groups or suspension.
++The enclosing POC qualifies concurrent shell sessions and Vite/HMR in-browser.
 diff --git a/scripts/fs-worker.mjs b/scripts/fs-worker.mjs
 index c528166..62e2571 100644
 --- a/scripts/fs-worker.mjs

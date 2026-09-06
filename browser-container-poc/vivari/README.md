@@ -1,5 +1,50 @@
 # Vivari feasibility POC
 
+## Guest shell workspace (xterm-first)
+
+**Open shell** creates up to four independent guest `sh` sessions sharing
+`/workspace`. Select a shell tab to type. Each has its own xterm, ordered input,
+output consumer, Stop/Close and Restart-after-exit lifecycle. Harness diagnostics
+are outside guest terminal output. Shell sessions can coexist with the single
+command/demo slot and the bridge's foreground operation.
+
+The patched guest shell now supports one pipeline followed by `&`, `jobs`,
+`kill %N`, `fg %N` (wait/interrupt), and `exit`. For example:
+
+```sh
+# Shell 1, after boot (install again after reload if vite is not found):
+bun install --frozen-lockfile
+bun run dev &
+jobs
+# Shell 2:
+pwd
+node -e "const fs=require('fs');const p='src/WelcomeCard.tsx';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('Ready for an agent edit','Hello from shell 2'))"
+```
+
+Vite + second-shell edits + preview HMR passed in a real browser, with iframe
+document identity preserved. Stop shell kills that shell's descendants and frees
+the server port; sibling shells survive. `&` jobs receive stdin EOF, including
+after `fg`; `bg` reports unsupported suspension/resume. No PTY, process groups,
+catchable signals, or actual guest resize: xterm fits visually while the guest
+reports fixed 80×24. Files persist, processes do not survive reload. Guest Bun
+install remains npm delegation and rewrites the lock, not a frozen-install proof.
+
+Reproduce on an unused origin with `bun run dev --port 5196`. Preserve any active
+runtime there; do not open a second kernel at the same origin. Browser Control
+runner: `scripts/shell-browser.js` (expects installed fixture, two shells, Vite
+started with `bun run dev &`). This isolated port is intentionally outside the
+existing dev relay allowlist; CLI bridge qualification uses its allowed origins.
+See [shell results and exact limits](../doc/vivari-shell-results.md) and the
+[updated handoff](../doc/vivari-ghostty-shell-handoff.md).
+
+Focused checks, after the source build below:
+
+```sh
+bun test scripts/process-output.test.ts
+bunx --package node-bin-darwin-arm64@24.18.0 node scripts/shell-headless.mjs
+bun run build
+```
+
 ## Model loop and web app proxy
 
 `bun run vv --runtime ID probe --model [MODEL_ID]` submits a real SDK prompt in
@@ -113,7 +158,8 @@ token and an allowed harness origin. Each page load receives a new runtime ID.
 Reconnects do not replay commands. Disconnects/timeouts cancel owned guest jobs.
 Boot itself uses Vivari's non-cancellable boot API.
 
-One foreground operation owns the harness at a time (including an open shell).
+One bridge foreground operation owns the command/demo slot at a time (including
+a CLI shell); independent UI shell tabs do not acquire that slot.
 Input, kill, status and bounded logs remain available while it runs. Output is
 the SDK's **merged stdout/stderr** stream. Files move in 256 KiB chunks using
 guest Node fd operations, avoiding SDK whole-file syscall limits; destination
@@ -121,9 +167,9 @@ parents must already exist. Transfers are not atomic across chunks.
 Logs retain the latest one million characters, including forwarded kernel
 messages, guest command output and page errors, not a complete DevTools log.
 
-The page's **Open shell** button and CLI `shell` launch the same existing Vivari
-`sh` implementation with history, completion, pipes and foreground-job handling.
-Ctrl+C is forwarded to the shell; **Stop command** kills a UI-owned shell.
+The page's **Open shell** button and CLI `shell` launch the same patched Vivari
+`sh` implementation with history, completion, pipes and running-job handling.
+Ctrl+C is forwarded to the shell; **Stop shell** kills only its own UI shell.
 There is no native PTY or guest resize operation. Use Browser Control for visual
 checks/navigation; use the bridge for command/probe/file results.
 
@@ -159,8 +205,8 @@ xterm renders ANSI output and forwards keystrokes to process stdin. **Open shell
 starts Vivari's interactive prompt. There is no PTY allocation or process resize API. It is not yet the
 OpenCode TUI. Stop a running command before starting another demo.
 
-Use Ctrl+D on an empty shell line to exit; the current upstream `sh` does not
-implement an `exit` command. CLI `exec` supports piped text stdin; interactive
+Use Ctrl+D on an empty shell line or the patched `exit` builtin to exit.
+CLI `exec` supports piped text stdin; interactive
 `shell` handles raw keystrokes. Guest stdin is a string transport, not binary stdin.
 
 Manual qualification: SDK create/readback/close and same-ID recovery across
