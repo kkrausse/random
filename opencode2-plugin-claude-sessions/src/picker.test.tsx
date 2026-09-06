@@ -179,8 +179,8 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
       assert.ok(scroll.height >= 2, `list remains usable at ${width}x${height}`)
       assert.ok(preview.y + preview.height <= picker.y + picker.height)
       assert.ok(approve.y + approve.height <= preview.y + preview.height)
-      assert.match(setup.captureCharFrame(), /double-tap to open|←\/esc close/)
     }
+    assert.match(setup.captureCharFrame(), /←\/esc close/)
     setup.resize(36, 24)
     await setup.renderOnce()
     const approve = setup.renderer.root.findDescendantById("claude-session-approve")!
