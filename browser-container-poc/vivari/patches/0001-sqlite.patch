@@ -1,0 +1,675 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index bfb9dbd..222d444 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -1,5 +1,13 @@
+ # AGENTS.md
+ 
++Local SQLite experiment: `kernel-host/sqlite-server.js` owns the shared WASM
++engine; `runtime/builtins/sqlite.js` provides the synchronous facades. Keep the
++OP_SQLITE ABI in sync with fs-client and fs-server. SQLite initialization must
++finish before FS-worker readiness, never inside synchronous module resolution.
++Validate database behavior in the enclosing POC's `probes/runtime/sqlite-api.cjs`
++and in the browser, including reload and ownership release. Never call a
++best-effort VFS write a durable SQLite commit.
++
+ Guidance for AI agents (and humans) working in this repo. Read this first, then
+ read [`ARCHITECTURE.md`](./ARCHITECTURE.md) before touching the runtime, the
+ protocol, or networking. [`roadmap.md`](./roadmap.md) is the chronological log of
+@@ -1206,4 +1214,4 @@ the gap can't silently regress.
+ 
+ - **How it works** → [`ARCHITECTURE.md`](./ARCHITECTURE.md)
+ - **Why it was built this way / status per feature** → [`roadmap.md`](./roadmap.md)
+-- **Background research** → `research.md`
+\ No newline at end of file
++- **Background research** → `research.md`
+diff --git a/ARCHITECTURE.md b/ARCHITECTURE.md
+index d88c8f8..8f052cf 100644
+--- a/ARCHITECTURE.md
++++ b/ARCHITECTURE.md
+@@ -1,5 +1,28 @@
+ # Vivari — Architecture
+ 
++## Local SQLite compatibility experiment
++
++The FS worker initializes pinned `@sqlite.org/sqlite-wasm@3.49.1-build1`
++(SQLite 3.49.1) before announcing readiness. `node:sqlite` and `bun:sqlite`
++share that engine through OP_SQLITE. Requests/results travel via temporary VFS
++files and the existing chunked fd operations; the SAB carries only their path.
++Each database pathname permits one live connection. FS client unregistration
++closes its databases (rolling back uncommitted work). Symlink/hardlink aliases,
++ATTACH, native extensions, and excluded/volatile persistent paths are rejected.
++Memory journal mode is reported honestly; this is not a WAL implementation.
++
++Committed snapshots are exported without closing the SQLite connection, written
++to the VFS in one whole-file mutation, and acknowledged only after OPFS flush.
++The mirror replaces files/manifests using atomic writable-stream close and
++surfaces queued write errors. A failed persistence operation poisons its SQLite
++connection. Other raw filesystem writes to an open database are outside this
++ownership model. These changes are under qualification in the enclosing POC;
++they do not establish a working OpenCode host.
++
++A lifetime Web Lock leases the OPFS mirror to one kernel per browser origin.
++Another kernel cannot obtain persistent SQLite connections; worker termination
++releases the lease. This is separate from the still-unimplemented libc flock API.
++
+ This document explains how Vivari works end to end: the core constraint it
+ solves, the worker topology, the syscall protocol, the filesystem, the process
+ model, the Node runtime, networking, native code, and the build. It is the
+@@ -917,4 +940,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
+   `GET / → 200` (network-gated, like `verify-express`).
+ 
+ See [`AGENTS.md`](./AGENTS.md) §"Testing & verification" for exactly when to run
+-each and the network requirement.
+\ No newline at end of file
++each and the network requirement.
+diff --git a/packages/core/src/workers/fs-worker.ts b/packages/core/src/workers/fs-worker.ts
+index 533d855..9e7540a 100644
+--- a/packages/core/src/workers/fs-worker.ts
++++ b/packages/core/src/workers/fs-worker.ts
+@@ -21,6 +21,7 @@ import initKernel, { VirtualFileSystem } from "../../../vfs/pkg/vivari_vfs.js";
+ import { FsServer } from "../../../kernel-host/fs-server.js";
+ import { createOpfsPersistence } from "../../../kernel-host/opfs-persistence.js";
+ import { createDepCache } from "../../../kernel-host/dep-cache.js";
++import { createSqliteServer } from "../../../kernel-host/sqlite-server.js";
+ 
+ const post = (type, extra) => self.postMessage({ type, ...extra });
+ 
+@@ -71,7 +72,7 @@ function handle(msg) {
+       }
+       break;
+     case "fs-flush": // page is hiding — best-effort force the mirror to disk
+-      if (server && server.persistence) server.persistence.flush();
++      if (server && server.persistence) server.persistence.flush().catch(error => post("log", { line: String(error) }));
+       break;
+     case "fs-mem": {
+       // Diagnostic: report the VFS's in-RAM content footprint (see the studio's
+@@ -193,11 +194,7 @@ function buildAccess(vfs) {
+       }
+     },
+     writeFile(path, bytes) {
+-      try {
+-        vfs.write_file(path, bytes);
+-      } catch {
+-        /* parent missing / restore race — skip */
+-      }
++      vfs.write_file(path, bytes);
+     },
+     symlink(target, path) {
+       try {
+@@ -342,7 +339,9 @@ async function createOpfsDepStorage() {
+     depCache = null;
+   }
+ 
++  const sqlite = await createSqliteServer(vfs, persistence);
+   server = new FsServer(vfs, persistence);
++  server.sqlite = sqlite;
+   post("ready");
+   for (const msg of queue.splice(0)) handle(msg);
+-})();
+\ No newline at end of file
++})();
+diff --git a/packages/kernel-host/fs-server.js b/packages/kernel-host/fs-server.js
+index b4805b2..3ca7d59 100644
+--- a/packages/kernel-host/fs-server.js
++++ b/packages/kernel-host/fs-server.js
+@@ -50,6 +50,7 @@ import {
+   OP_FTRUNCATE,
+   OP_WATCH,
+   OP_UNWATCH,
++  OP_SQLITE,
+ } from "../protocol/syscall.js";
+ 
+ const EMPTY = new Uint8Array(0);
+@@ -132,6 +133,7 @@ export class FsServer {
+   }
+ 
+   unregister(clientId) {
++    this.sqlite?.release(clientId);
+     this.clients.delete(clientId);
+     // Drop any watches this client still held (its process is gone).
+     if (this.watches.size) {
+@@ -208,6 +210,21 @@ export class FsServer {
+     const opcode = Atomics.load(ctrl, I_OPCODE);
+     const { flags, fields } = decodeRequest(data.slice(0, Atomics.load(ctrl, I_REQ_LEN)));
+     try {
++      if (opcode === OP_SQLITE) {
++        if (!this.sqlite) throw new Error("SQLite backend unavailable");
++        this.sqlite.request(clientId, decodeBytes(fields[0])).then(() => {
++          Atomics.store(ctrl, I_RES_LEN, 0);
++          Atomics.store(ctrl, I_STATE, STATE_RESPONSE_OK);
++          Atomics.notify(ctrl, I_STATE);
++        }, err => {
++          const bytes = encodeString(String(err.message || err));
++          data.set(bytes);
++          Atomics.store(ctrl, I_RES_LEN, bytes.length);
++          Atomics.store(ctrl, I_STATE, STATE_RESPONSE_ERR);
++          Atomics.notify(ctrl, I_STATE);
++        });
++        return;
++      }
+       const bytes = this.dispatch(opcode, flags, fields, clientId);
+       if (bytes.length > data.length) {
+         // The response doesn't fit the shared window (e.g. a whole-file read of a
+diff --git a/packages/kernel-host/opfs-persistence.js b/packages/kernel-host/opfs-persistence.js
+index 6198a52..737cadd 100644
+--- a/packages/kernel-host/opfs-persistence.js
++++ b/packages/kernel-host/opfs-persistence.js
+@@ -39,6 +39,17 @@ const enc = new TextEncoder();
+ const dec = new TextDecoder();
+ 
+ export async function createOpfsPersistence({ access, shouldPersist = () => true }) {
++  // The mirror is authoritative for one kernel. A second kernel on this origin
++  // must not overwrite its manifest or database snapshots. Worker termination
++  // releases this browser-owned lease, including on page reload/crash.
++  if (!navigator.locks) throw new Error("OPFS ownership requires Web Locks");
++  await new Promise((resolve, reject) => {
++    navigator.locks.request("vivari-vfs-owner", { ifAvailable: true }, lock => {
++      if (!lock) { reject(new Error("OPFS already owned by another Vivari kernel")); return; }
++      resolve();
++      return new Promise(() => {});
++    }).catch(reject);
++  });
+   const origin = await navigator.storage.getDirectory();
+   const base = await origin.getDirectoryHandle(ROOT_DIR, { create: true });
+   const filesBase = await base.getDirectoryHandle(FILES_DIR, { create: true });
+@@ -49,6 +60,7 @@ export async function createOpfsPersistence({ access, shouldPersist = () => true
+   const pending = new Map();
+   let draining = false;
+   let manifestDirty = false;
++  const errors = new Map();
+ 
+   const parts = (p) => p.split("/").filter(Boolean);
+ 
+@@ -68,13 +80,13 @@ export async function createOpfsPersistence({ access, shouldPersist = () => true
+   async function writeBytes(path, bytes) {
+     const [dir, name] = await parentFor(path, true);
+     const fh = await dir.getFileHandle(name, { create: true });
+-    const ah = await fh.createSyncAccessHandle();
++    const stream = await fh.createWritable();
+     try {
+-      ah.truncate(0);
+-      if (bytes && bytes.length) ah.write(bytes, { at: 0 });
+-      ah.flush();
+-    } finally {
+-      ah.close();
++      await stream.write(bytes);
++      await stream.close(); // atomic replacement; previous bytes survive abort
++    } catch (error) {
++      try { await stream.abort(); } catch { /* retain the original write error */ }
++      throw error;
+     }
+   }
+   async function readBytes(path) {
+@@ -101,14 +113,14 @@ export async function createOpfsPersistence({ access, shouldPersist = () => true
+   async function writeManifest() {
+     const arr = [...meta.entries()];
+     const fh = await base.getFileHandle(MANIFEST, { create: true });
+-    const ah = await fh.createSyncAccessHandle();
++    const stream = await fh.createWritable();
+     try {
+       const bytes = enc.encode(JSON.stringify(arr));
+-      ah.truncate(0);
+-      ah.write(bytes, { at: 0 });
+-      ah.flush();
+-    } finally {
+-      ah.close();
++      await stream.write(bytes);
++      await stream.close();
++    } catch (error) {
++      try { await stream.abort(); } catch { /* retain original error */ }
++      throw error;
+     }
+   }
+ 
+@@ -160,8 +172,9 @@ export async function createOpfsPersistence({ access, shouldPersist = () => true
+             meta.set(path, { k: e.kind, m: e.mode | 0, t: e.target });
+             manifestDirty = true;
+           }
+-        } catch {
+-          /* keep draining; a single bad entry shouldn't wedge the queue */
++          errors.delete(path);
++        } catch (error) {
++          errors.set(path, error);
+         }
+       }
+       if (manifestDirty) {
+@@ -170,8 +183,9 @@ export async function createOpfsPersistence({ access, shouldPersist = () => true
+         try {
+           await writeManifest();
+           manifestDirty = false;
+-        } catch {
+-          /* retry on the next drain */
++          errors.delete(MANIFEST);
++        } catch (error) {
++          errors.set(MANIFEST, error);
+         }
+       }
+     } finally {
+@@ -187,6 +201,7 @@ export async function createOpfsPersistence({ access, shouldPersist = () => true
+       while (draining) await new Promise((r) => setTimeout(r, 0));
+     }
+     if (pending.size || manifestDirty) await drain();
++    if (errors.size) throw new Error("OPFS persistence failed: " + [...errors].map(([p, e]) => `${p}: ${e}`).join("; "));
+   }
+ 
+   // ---- boot restore --------------------------------------------------------
+@@ -208,8 +223,9 @@ export async function createOpfsPersistence({ access, shouldPersist = () => true
+           ah.close();
+         }
+       })()));
+-    } catch {
+-      return 0; // no manifest → first run
++    } catch (error) {
++      if (error.name === "NotFoundError") return 0;
++      throw error;
+     }
+     if (!Array.isArray(arr) || arr.length === 0) return 0;
+ 
+@@ -281,13 +297,13 @@ export async function createOpfsPersistence({ access, shouldPersist = () => true
+         // restore shows a moving count instead of a long silent stall.
+         if (typeof onProgress === "function" && n % Math.max(200, Math.ceil(total / 20)) === 0)
+           onProgress(n, total);
+-      } catch {
+-        /* skip a corrupt entry, keep restoring the rest */
++      } catch (error) {
++        throw new Error(`OPFS restore failed for ${path}: ${error}`);
+       }
+     }
+     if (typeof onProgress === "function") onProgress(n, total);
+     return n;
+   }
+ 
+-  return { onWrite, onDelete, onRename, flush, restore };
+-}
+\ No newline at end of file
++  return { onWrite, onDelete, onRename, flush, restore, shouldPersist };
++}
+diff --git a/packages/kernel-host/sqlite-server.js b/packages/kernel-host/sqlite-server.js
+new file mode 100644
+index 0000000..252e85c
+--- /dev/null
++++ b/packages/kernel-host/sqlite-server.js
+@@ -0,0 +1,155 @@
++// Browser-native SQLite 3.49.1. One live connection per VFS pathname; all SQL
++// executes in the FS worker. Constructors in process workers use the sync SAB.
++import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
++
++export async function createSqliteServer(vfs, persistence, initOptions = {}) {
++  const sqlite = await sqlite3InitModule(initOptions);
++  const { capi, wasm, oo1 } = sqlite;
++  const connections = new Map();
++  const owners = new Map();
++  let sequence = 0;
++  const enc = new TextEncoder();
++  const dec = new TextDecoder();
++  const fail = (message) => { throw new Error(message); };
++  const encode = value => typeof value === "bigint" ? ["i", String(value)]
++    : value instanceof Uint8Array ? ["b", Array.from(value)] : ["v", value];
++  const decode = ([type, value]) => type === "i" ? BigInt(value)
++    : type === "b" ? new Uint8Array(value) : value;
++
++  async function persist(c) {
++    if (c.ioError) throw c.ioError;
++    if (!c.path || !capi.sqlite3_get_autocommit(c.db.pointer)) return;
++    const bytes = capi.sqlite3_js_db_export(c.db.pointer);
++    // Whole-file VFS mutation: the write-behind mirror never sees partial chunks.
++    vfs.write_file(c.path, bytes);
++    persistence.onWrite(c.path);
++    try { await persistence.flush(); }
++    catch (error) { c.poisoned = true; c.ioError = error; throw error; }
++  }
++  function close(id) {
++    const c = connections.get(id);
++    if (!c) return;
++    c.db.close(); // rolls back an unfinished transaction
++    connections.delete(id);
++    if (c.path) owners.delete(c.path);
++  }
++  function release(client) {
++    for (const [id, c] of connections) if (c.client === client) close(id);
++  }
++
++  async function request(client, input) {
++    const req = JSON.parse(dec.decode(vfs.read_file(input)));
++    const output = input + ".out";
++    let result;
++    try {
++      if (req.method === "open") {
++        const path = req.path;
++        if (path && (!path.startsWith("/") || path.split("/").some(p => p === ".." || p === "."))) fail("SQLITE_CANTOPEN: noncanonical path");
++        if (path && owners.has(path)) fail("SQLITE_BUSY: database already has a live connection");
++        if (path && !persistence) fail("SQLITE_CANTOPEN: durable persistence unavailable");
++        if (path && !persistence.shouldPersist(path)) fail("SQLITE_CANTOPEN: path is excluded from persistence");
++        // Path aliases would defeat ownership; require regular files and real directories.
++        if (path) {
++          const parts = path.split("/").filter(Boolean);
++          for (let i = 1; i <= parts.length; i++) {
++            const p = "/" + parts.slice(0, i).join("/");
++            if (!vfs.exists(p)) { if (i !== parts.length) fail("SQLITE_CANTOPEN: missing directory"); continue; }
++            const stat = JSON.parse(vfs.lstat(p));
++            if (stat.kind === "symlink" || (i === parts.length && (stat.kind !== "file" || stat.nlink > 1))) fail("SQLITE_CANTOPEN: path aliases unsupported");
++          }
++        }
++        const db = new oo1.DB(":memory:", "c");
++        const c = { db, client, path, poisoned: false };
++        const id = ++sequence;
++        try {
++          if (path && vfs.exists(path)) {
++            const bytes = vfs.read_file(path);
++            if (bytes.length) {
++              const pointer = wasm.allocFromTypedArray(bytes);
++              const rc = capi.sqlite3_deserialize(db.pointer, "main", pointer, BigInt(bytes.length), BigInt(bytes.length), capi.SQLITE_DESERIALIZE_FREEONCLOSE | capi.SQLITE_DESERIALIZE_RESIZEABLE);
++              if (rc) fail(`SQLITE_DESERIALIZE: ${rc}`); // FREEONCLOSE also frees on failure
++            }
++          }
++          // Deserialize internally uses ATTACH. Install the guest authorizer only
++          // after that trusted initialization has completed.
++          capi.sqlite3_set_authorizer(db.pointer, (_context, action) =>
++            action === capi.SQLITE_ATTACH || action === capi.SQLITE_DETACH ? capi.SQLITE_DENY : capi.SQLITE_OK, 0);
++          db.exec(`PRAGMA foreign_keys=${req.foreignKeys === false ? "OFF" : "ON"}`);
++          connections.set(id, c);
++          if (path) owners.set(path, id);
++          await persist(c);
++          result = { id };
++        } catch (error) { close(id); if (db.pointer) db.close(); throw error; }
++      } else {
++        const c = connections.get(req.id);
++        if (!c || c.client !== client) fail("SQLITE_MISUSE: connection not owned by process");
++        if (req.method === "close") { close(req.id); result = null; }
++        else {
++          if (c.poisoned) fail("SQLITE_IOERR: connection requires close after persistence failure");
++          if (req.method === "serialize") result = { bytes: Array.from(capi.sqlite3_js_db_export(c.db.pointer)) };
++          else if (req.method === "prepare") {
++            const stmt = c.db.prepare(req.sql);
++            try { result = { parameters: stmt.parameterCount }; } finally { stmt.finalize(); }
++          }
++          else if (req.method === "execute") {
++            const args = req.args?.map(decode) ?? [];
++            const rows = [];
++            const columns = [];
++            // ATTACH would bypass VFS persistence/ownership. Native extensions are
++            // absent. Use SQLite's authorizer, not SQL-text pattern matching.
++            const collect = stmt => {
++                if (!columns.length) stmt.getColumnNames(columns);
++                const row = [];
++                for (let i = 0; i < stmt.columnCount; i++) {
++                  row.push(encode(capi.sqlite3_column_type(stmt.pointer, i) === capi.SQLITE_INTEGER
++                    ? capi.sqlite3_column_int64(stmt.pointer, i) : stmt.get(i)));
++                }
++                rows.push(row);
++            };
++            try {
++              if (req.statement) {
++                const stmt = c.db.prepare(req.sql);
++                try {
++                  if (args.length) stmt.bind(args);
++                  while (stmt.step()) collect(stmt);
++                } finally { stmt.finalize(); }
++              } else {
++                // SQLite itself finds statement boundaries (including triggers,
++                // comments and quoted semicolons). Persist each autocommit before
++                // a later BEGIN can hide an already-committed prefix.
++                const text = wasm.allocCString(req.sql);
++                const pointers = wasm.alloc(wasm.ptrSizeof * 2);
++                let cursor = text;
++                try {
++                  while (wasm.peek(cursor, "i8")) {
++                    wasm.pokePtr(pointers, 0);
++                    wasm.pokePtr(pointers + wasm.ptrSizeof, 0);
++                    const rc = capi.sqlite3_prepare_v3(c.db.pointer, cursor, -1, 0, pointers, pointers + wasm.ptrSizeof);
++                    if (rc) fail(capi.sqlite3_errmsg(c.db.pointer));
++                    const statement = wasm.peekPtr(pointers);
++                    cursor = wasm.peekPtr(pointers + wasm.ptrSizeof);
++                    if (!statement) break;
++                    const sql = capi.sqlite3_sql(statement);
++                    capi.sqlite3_finalize(statement);
++                    c.db.exec({ sql, rowMode: "stmt", callback: collect });
++                    await persist(c);
++                  }
++                } finally { wasm.dealloc(pointers); wasm.dealloc(text); }
++              }
++            } finally {
++              // A multi-statement exec can commit a prefix then fail. Preserve
++              // those real commits too, and retain the original SQL exception.
++              try { await persist(c); } catch (error) { c.poisoned = true; throw error; }
++            }
++            result = { columns, rows, changes: String(capi.sqlite3_changes64(c.db.pointer)),
++              lastInsertRowid: String(capi.sqlite3_last_insert_rowid(c.db.pointer)) };
++          } else fail("SQLITE_MISUSE: unsupported method");
++        }
++      }
++      vfs.write_file(output, enc.encode(JSON.stringify({ result })));
++    } catch (error) {
++      vfs.write_file(output, enc.encode(JSON.stringify({ error: String(error.message || error) })));
++    }
++  }
++  return { request, release };
++}
+diff --git a/packages/protocol/syscall.js b/packages/protocol/syscall.js
+index b6b6158..38f1cd4 100644
+--- a/packages/protocol/syscall.js
++++ b/packages/protocol/syscall.js
+@@ -167,6 +167,11 @@ export const OP_PIPE_LISTEN = 31;
+ export const OP_PIPE_CONNECT = 32;
+ export const OP_PIPE_CLOSE_SERVER = 33;
+ 
++// SQLite request/response bodies use temporary VFS files (normal chunked fd IO),
++// so neither large binds nor result sets overflow the SAB. field0=request path;
++// response is written to path+'.out'. ACK is deferred until durable commit.
++export const OP_SQLITE = 34;
++
+ // request flags (bitmask)
+ export const FLAG_RECURSIVE = 1; // mkdir -p
+ 
+@@ -180,6 +185,7 @@ export function isFsOpcode(op) {
+     (op >= OP_READ_FILE && op <= OP_READLINK) ||
+     (op >= OP_OPEN && op <= OP_FTRUNCATE) ||
+     op === OP_LINK ||
++    op === OP_SQLITE ||
+     op === OP_WATCH ||
+     op === OP_UNWATCH
+   );
+diff --git a/packages/runtime/builtins/sqlite.js b/packages/runtime/builtins/sqlite.js
+new file mode 100644
+index 0000000..87da94b
+--- /dev/null
++++ b/packages/runtime/builtins/sqlite.js
+@@ -0,0 +1,92 @@
++// Thin synchronous facades over the shared FS-worker SQLite WASM backend.
++export function createSqlite({ fs, path, process, syscalls, Buffer }) {
++  let sequence = 0;
++  function exchange(req) {
++    const input = `/tmp/vv-sqlite-${process.pid}-${++sequence}`;
++    try {
++      fs.writeFileSync(input, JSON.stringify(req));
++      syscalls.sqlite(input);
++      const response = JSON.parse(fs.readFileSync(input + ".out", "utf8"));
++      if (response.error) throw new Error(response.error);
++      return response.result;
++    } finally {
++      for (const file of [input, input + ".out"]) if (fs.existsSync(file)) fs.unlinkSync(file);
++    }
++  }
++  function encode(v) {
++    if (typeof v === "bigint") {
++      if (v < -(1n << 63n) || v >= 1n << 63n) throw new RangeError("SQLite integer out of range");
++      return ["i", String(v)];
++    }
++    if (v instanceof Uint8Array) return ["b", Array.from(v)];
++    if (v === null || typeof v === "string" || typeof v === "number") return ["v", v];
++    throw new TypeError("Unsupported SQLite parameter type");
++  }
++  function integer(value, big) {
++    const n = BigInt(value);
++    if (big) return n;
++    const num = Number(n);
++    if (!Number.isSafeInteger(num)) throw new RangeError("SQLite integer requires BigInt reads");
++    return num;
++  }
++  class Statement {
++    constructor(db, sql) {
++      this.db = db; this.sql = sql; this.big = false; this.arrays = false;
++      db.request({ method: "prepare", sql });
++    }
++    setReadBigInts(value) { this.big = !!value; }
++    setReturnArrays(value) { this.arrays = !!value; }
++    safeIntegers(value = true) { this.big = !!value; return this; }
++    execute(args) { return this.db.request({ method: "execute", statement: true, sql: this.sql, args: args.map(encode) }); }
++    rows(result, arrays) {
++      return result.rows.map(row => {
++        const values = row.map(([type, value]) => type === "i" ? integer(value, this.big)
++          : type === "b" ? Buffer.from(value) : value);
++        return arrays ? values : Object.assign(Object.create(null), Object.fromEntries(result.columns.map((key, i) => [key, values[i]])));
++      });
++    }
++    all(...args) { return this.rows(this.execute(args), this.arrays); }
++    values(...args) { return this.rows(this.execute(args), true); }
++    get(...args) { return this.all(...args)[0]; }
++    run(...args) {
++      const r = this.execute(args);
++      return { changes: integer(r.changes, this.big), lastInsertRowid: integer(r.lastInsertRowid, this.big) };
++    }
++    finalize() { this.db = null; }
++  }
++  class DatabaseSync {
++    constructor(filename = ":memory:", options = {}) {
++      if (typeof filename !== "string") throw new TypeError("SQLite filename must be a string");
++      for (const key of Object.keys(options)) {
++        if (options[key] === undefined || (key === "open" && options[key] === true)
++          || (key === "readOnly" && options[key] === false) || (key === "timeout" && options[key] === 0)
++          || (key === "allowExtension" && options[key] === false)) continue;
++        if (key !== "enableForeignKeyConstraints") throw new Error(`Unsupported SQLite option: ${key}`);
++      }
++      this.id = exchange({ method: "open", path: filename === ":memory:" ? null : path.resolve(process.cwd(), filename), foreignKeys: options.enableForeignKeyConstraints }).id;
++    }
++    request(req) {
++      if (!this.id) throw new Error("SQLite database is closed");
++      return exchange({ ...req, id: this.id });
++    }
++    prepare(sql) { return new Statement(this, sql); }
++    exec(sql) { this.request({ method: "execute", sql }); }
++    close() { if (this.id) { this.request({ method: "close" }); this.id = null; } }
++    loadExtension() { throw new Error("SQLite native extensions are unsupported"); }
++    [Symbol.dispose]() { this.close(); }
++  }
++  class Database extends DatabaseSync {
++    constructor(filename = ":memory:", options = {}) {
++      for (const [key, value] of Object.entries(options)) {
++        if (value === undefined || (key === "readonly" && value === false)
++          || (["readwrite", "create"].includes(key) && value === true)) continue;
++        throw new Error(`Unsupported bun:sqlite option: ${key}`);
++      }
++      super(filename);
++    }
++    query(sql) { return this.prepare(sql); }
++    run(sql, ...args) { return this.prepare(sql).run(...args); }
++    serialize() { return Buffer.from(this.request({ method: "serialize" }).bytes); }
++  }
++  return { node: { DatabaseSync }, bun: { Database, default: Database } };
++}
+diff --git a/packages/runtime/fs-client.js b/packages/runtime/fs-client.js
+index c6f68b8..8505980 100644
+--- a/packages/runtime/fs-client.js
++++ b/packages/runtime/fs-client.js
+@@ -56,6 +56,7 @@ import {
+   OP_PIPE_LISTEN,
+   OP_PIPE_CONNECT,
+   OP_PIPE_CLOSE_SERVER,
++  OP_SQLITE,
+ } from "../protocol/syscall.js";
+ 
+ // Cap each fd read/write to keep both request and response inside the 1 MiB
+@@ -93,6 +94,7 @@ export function createSyscalls({ ctrl, data, notify }) {
+   }
+ 
+   return {
++    sqlite: (input) => call(OP_SQLITE, encodeRequest([b(input)])),
+     readFile: (p) => call(OP_READ_FILE, encodeRequest([b(p)])),
+     writeFile: (p, content) => {
+       const body = typeof content === "string" ? b(content) : content;
+diff --git a/packages/runtime/index.js b/packages/runtime/index.js
+index af2b08d..938423b 100644
+--- a/packages/runtime/index.js
++++ b/packages/runtime/index.js
+@@ -14,6 +14,7 @@ import { createWebSocket } from "./websocket.js";
+ import { rewriteDynamicImportToGlobal } from "./esm.js";
+ import { isEsbuildInprocActive, esbuildWasmBytes } from "./esbuild-inproc-patch.js";
+ import { createBunRuntime } from "./builtins/bun.js";
++import { createSqlite } from "./builtins/sqlite.js";
+ 
+ function createConsole(process, util) {
+   const toOut = (...a) => process.stdout.write(util.format(...a) + "\n");
+@@ -1121,6 +1122,8 @@ export function createRuntime({
+     diagnostics_channel: diagnosticsChannel,
+     cluster,
+   };
++  const sqlite = createSqlite({ fs, path, process, syscalls, Buffer });
++  builtins.sqlite = sqlite.node;
+ 
+   // Node exposes the posix/win32 path flavors as their own subpath builtins
+   // (`require('node:path/posix')`). We're posix, so `path` already IS posix;
+@@ -1272,6 +1275,7 @@ export function createRuntime({
+   // `typeof Bun !== 'undefined'`. See packages/runtime/builtins/bun.js.
+   const bunRuntime = createBunRuntime({ process, Buffer, require: vvRootRequire });
+   for (const [name, mod] of Object.entries(bunRuntime.modules)) builtins[name] = mod;
++  builtins["bun:sqlite"] = sqlite.bun;
+   globalThis.__ocInstallBun = () => {
+     globalThis.Bun = bunRuntime.Bun;
+     return bunRuntime.Bun;
+@@ -1386,4 +1390,4 @@ export function createRuntime({
+       return finish(code);
+     },
+   };
+-}
+\ No newline at end of file
++}
+diff --git a/roadmap.md b/roadmap.md
+index 3ab02ef..d4b11ac 100644
+--- a/roadmap.md
++++ b/roadmap.md
+@@ -1,5 +1,13 @@
+ # Vivari — Roadmap
+ 
++## Local experiment: SQLite WASM facades (under qualification)
++
++The enclosing browser-container POC adds shared SQLite 3.49.1 execution and
++acknowledged OPFS snapshot persistence. The official SQLite WASM distribution
++exposes exact int64 binds and transaction-state inspection that sql.js 1.13.0's
++prebuilt API lacks. This retains the SQLite engine version while changing its
++JS/WASM distribution. Browser and actual SDK qualification is still required.
++
+ Built on the principle **de-risk the hardest part first**: prove the riskiest
+ primitive (synchronous cross-thread access to a shared kernel) before expanding.
+ 
+@@ -3041,4 +3049,4 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
+ | `Fetcher Worker` | Network/registry worker |
+ | `Node.js Worker PID n` | Process = 1 worker + Node shim |
+ | `[worker n]` | Nested `worker_threads` — real (#16 stage 2b) |
+-| `sw.js` | Service Worker preview |
+\ No newline at end of file
++| `sw.js` | Service Worker preview |
+diff --git a/scripts/fs-worker.mjs b/scripts/fs-worker.mjs
+index c528166..62e2571 100644
+--- a/scripts/fs-worker.mjs
++++ b/scripts/fs-worker.mjs
+@@ -5,14 +5,19 @@
+ 
+ import { parentPort } from "node:worker_threads";
+ import { createRequire } from "node:module";
++import { readFileSync } from "node:fs";
+ import { FsServer } from "../packages/kernel-host/fs-server.js";
+ import { createDepCache } from "../packages/kernel-host/dep-cache.js";
++import { createSqliteServer } from "../packages/kernel-host/sqlite-server.js";
+ 
+ const require = createRequire(import.meta.url);
+ const wasm = require("../packages/vfs/pkg-node/vivari_vfs.js");
+ 
+ const vfs = new wasm.VirtualFileSystem();
+ const server = new FsServer(vfs);
++server.sqlite = await createSqliteServer(vfs, null, {
++  wasmBinary: readFileSync(require.resolve("@sqlite.org/sqlite-wasm/sqlite3.wasm")),
++});
+ 
+ // A vfs-bound facade for the dependency cache (mirror of buildAccess in the
+ // browser fs-worker). Headless has no OPFS, so the snapshot store is an in-memory
