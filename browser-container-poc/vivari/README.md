@@ -14,8 +14,10 @@ Vite forwards `/api/model/*` to this server on loopback port 5194. After
 **Current result: Nemotron 3.5 Lightning Free completed a real browser model/tool
 loop through the proxy.** It streamed text, discovered/read files, observed a
 failing test, edited the implementation, and reran the unchanged test successfully.
-OpenCode reported session success. The stricter probe still exits 1 because the
-model skipped `grep`; full five-tool coverage remains open. Run it with
+**The strict five-tool probe now passes**, including a mandatory `repair-target`
+grep before editing, four signed/zero test cases, and byte-for-byte test preservation.
+The final prompt passed two consecutive runs (eight/seven successful tool calls,
+34/25 text deltas). Run it with
 `probe --model nemotron-3.5-lightning-free`. The proxy also passed local mock streaming/cancellation tests.
 Earlier real browser E2E attempts with the explicitly approved Zen key reached
 upstream through the Bun proxy, but Big Pickle and MiMo V2.5 Free both returned
@@ -25,6 +27,29 @@ generated offline from the pinned SDK catalog during build. Only Zen is enabled.
 The server defaults to public auth; `VIVARI_MODEL_API_KEY` is a server-only opt-in.
 It does not read host OpenCode auth files. See [transport design and setup](../doc/model-transport.md)
 and the [historical model checkpoint](../doc/vivari-model-checkpoint.md).
+
+### Minimal prompt/events UI
+
+```sh
+bun scripts/package-opencode.ts prompt
+# With ripgrep packaged, Vite/relay running, and the Bun proxy started as above:
+```
+
+Boot the page, enter an existing absolute **Guest directory**, a free Zen model
+(defaults to Nemotron), and a **Prompt**, then click **Send prompt**. The response
+streams above an expandable **SDK events** log containing session IDs, tool calls,
+results and execution lifecycle events. **Stop command** terminates the UI-owned
+guest process, including during asset delivery. Errors appear in the prompt status;
+the send button becomes available again after completion or failure.
+
+Each submission creates a fresh in-memory SDK session and closes its host afterward;
+guest files persist in OPFS. This is a single-prompt interface, not conversation
+recovery. Read/edit/shell/glob/grep are enabled; other actions are denied. The UI
+entry enforces catalog-listed zero input/output pricing and disables provider retries.
+The SDK runs in the guest and sends framed JSON events over process stdout to the
+page; the Bun server only proxies model HTTP with server-side credentials.
+Generated SDK packages are served by the development harness, as for the saved
+session demo; `dist` alone does not contain them.
 
 ## OpenCode tool qualification
 

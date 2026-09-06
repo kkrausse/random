@@ -5,8 +5,10 @@ type Asset = { file: string; destination: string; bytes: number; sha256: string 
 type Receipt = { bytes: number; sha256: string; successMarker: string; assets?: Asset[] };
 export async function runOpenCode(vm: Vivari, options: {
   recover?: boolean;
-  entry?: 'host' | 'tools' | 'model';
+  entry?: 'host' | 'tools' | 'model' | 'prompt';
   model?: string;
+  prompt?: { text: string; directory: string };
+  event?: (event: { type: string; data?: Record<string, unknown> }) => void;
   signal: AbortSignal;
   log: (text: string) => void;
   process: (proc: VivariProcess | undefined) => void;
@@ -18,20 +20,31 @@ export async function runOpenCode(vm: Vivari, options: {
   }
   const receipt: Receipt = await response.json();
   let output = "";
-  const log = (text: string) => { output += text; options.log(text); };
+  let pending = "";
+  const log = (text: string) => {
+    output += text;
+    options.log(text);
+    pending += text;
+    let newline;
+    while ((newline = pending.indexOf('\n')) >= 0) {
+      const line = pending.slice(0, newline);
+      pending = pending.slice(newline + 1);
+      if (line.startsWith('sdk-event ')) options.event?.(JSON.parse(line.slice(10)));
+    }
+  };
   async function run(file: string) {
     options.signal.throwIfAborted();
     const proc = await vm.spawn("bun", [file], { cwd: "/opencode-packaged", env: {
       OPENCODE_PROBE_DURABLE: "1", OPENCODE_PROBE_RECOVER: options.recover ? "1" : "0",
       ...(options.model ? { OPENCODE_PROBE_MODEL: options.model } : {}),
-      ...(entry === 'model' ? { OPENCODE_PROBE_BASE_URL: modelBaseURL(location.origin, 'opencode') } : {}),
+      ...(['model', 'prompt'].includes(entry) ? { OPENCODE_PROBE_BASE_URL: modelBaseURL(location.origin, 'opencode') } : {}),
     } });
     options.process(proc);
     const abort = () => proc.kill();
     options.signal.addEventListener("abort", abort, { once: true });
     if (options.signal.aborted) abort();
     let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; proc.kill(); }, entry === 'model' ? 210000 : 90000);
+    const timer = setTimeout(() => { timedOut = true; proc.kill(); }, ['model', 'prompt'].includes(entry) ? 210000 : 90000);
     try {
       const drain = (async () => { for await (const chunk of proc.output) log(chunk); })();
       const code = await proc.exit;
@@ -55,6 +68,10 @@ export async function runOpenCode(vm: Vivari, options: {
     await vm.fs.writeFile("/opencode-packaged/assemble.cjs", `const fs=require('node:fs');const dest=${JSON.stringify(asset.destination)};fs.mkdirSync(require('node:path').dirname(dest),{recursive:true});const fd=fs.openSync(dest,'w');try{for(let i=0;i<${count};i++){const p='/opencode-packaged/part-'+i;fs.writeSync(fd,fs.readFileSync(p));fs.unlinkSync(p);}}finally{fs.closeSync(fd);}if(require('node:crypto').createHash('sha256').update(fs.readFileSync(dest)).digest('hex')!==${JSON.stringify(hash)})throw Error('Guest digest mismatch');`);
     await run("assemble.cjs");
     log(`Verified ${asset.destination} (${bytes.length} bytes)\n`);
+  }
+  if (entry === 'prompt') {
+    if (!options.prompt?.text.trim()) throw Error('Prompt required');
+    await vm.fs.writeFile('/opencode-packaged/prompt-input.json', JSON.stringify(options.prompt));
   }
   await run(`${entry}.cjs`);
   if (!output.includes(receipt.successMarker)) throw Error("Missing SDK completion checkpoint");

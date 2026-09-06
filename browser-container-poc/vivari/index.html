@@ -8,6 +8,9 @@
   button, input { font: inherit; margin: 4px; }
   #output { height: 320px; padding: 8px; background: #000; }
   iframe { width: 100%; height: 500px; border: 1px solid #aaa; }
+  textarea { display: block; width: 100%; box-sizing: border-box; font: inherit; }
+  label[for="model-text"] { display: block; }
+  #model-response, #model-events { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; overflow: auto; }
 </style>
 <h1>Vivari feasibility probe</h1>
 <p id="status">Ready to boot</p>
@@ -20,6 +23,18 @@
 <button id="sdk" disabled>Create saved session</button>
 <button id="recover" disabled>Recover saved session</button>
 <p>Create a session, reload this page, boot again, then recover it. The same session ID should return.</p>
+<h2>OpenCode prompt</h2>
+<p>Each submission creates a fresh session. The five official tools run in the guest workspace.</p>
+<form id="model-prompt">
+  <label>Guest directory <input id="model-directory" value="/workspace" required></label>
+  <label>Free Zen model <input id="model-id" value="nemotron-3.5-lightning-free" required></label>
+  <label for="model-text">Prompt</label>
+  <textarea id="model-text" rows="3" required></textarea>
+  <button id="model-send" disabled>Send prompt</button>
+</form>
+<p id="model-status" role="status">Boot the runtime to send a prompt.</p>
+<pre id="model-response" aria-label="Model response"></pre>
+<details><summary>SDK events</summary><pre id="model-events" aria-label="SDK events"></pre></details>
 <h2>Runtime terminal</h2>
 <p>Open the existing Vivari shell, or launch JSON argv below. Keystrokes (including Ctrl+C) go to the active process; in the shell, Ctrl+C interrupts its foreground job. Stop command terminates the whole process. This is process stdin/stdout, not a PTY.</p>
 <form id="command"><input id="args" aria-label="Command as JSON argv" size="70" value='["node","--version"]'><button disabled>Run command</button></form>

@@ -6,7 +6,7 @@ import ts from "typescript";
 const root = resolve(import.meta.dir, "..");
 const probe = resolve(root, "probes/opencode");
 const entry = process.argv[2] ?? "host";
-if (!["host", "tools", "model", "sqlite-adapter"].includes(entry)) throw Error(`Unknown entry ${entry}`);
+if (!["host", "tools", "model", "prompt", "sqlite-adapter"].includes(entry)) throw Error(`Unknown entry ${entry}`);
 const out = resolve(root, ".runtime/opencode-package");
 const external = ["node:*", "@lydell/node-pty", "@ff-labs/fff-node", "@ff-labs/fff-bun", "bun-pty"];
 const sdk = JSON.parse(await readFile(resolve(probe, "node_modules/@opencode-ai/sdk/package.json"), "utf8"));
@@ -43,7 +43,7 @@ const lowered = ts.transpileModule(await result.outputs[0].text(), {
 const bytes = new TextEncoder().encode(`const __packageRequire = require;\n(async function() {\nconst __packageMeta = { url: require('node:url').pathToFileURL(__filename).href, resolve: s => require('node:url').pathToFileURL(require.resolve(s)).href };\n${lowered}\n})().catch(e => { console.error(e.stack ?? String(e)); process.exitCode = 1; });\n`);
 await writeFile(resolve(out, `${entry}.txt`), bytes);
 const assets: { file: string; destination: string; bytes: number; sha256: string }[] = [];
-if (entry === "host" || entry === "tools" || entry === "model") {
+if (entry === "host" || entry === "tools" || entry === "model" || entry === "prompt") {
   for (const [name, wasm] of [
     ["web-tree-sitter", "tree-sitter.wasm"],
     ["tree-sitter-bash", "tree-sitter-bash.wasm"],
@@ -60,7 +60,7 @@ if (entry === "host" || entry === "tools" || entry === "model") {
     }
   }
 }
-if (entry === 'tools' || entry === 'model') {
+if (entry === 'tools' || entry === 'model' || entry === 'prompt') {
   const rg = JSON.parse(await readFile(resolve(out, 'rg-receipt.json'), 'utf8'));
   assets.push(...rg.assets);
 }
