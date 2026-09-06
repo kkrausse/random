@@ -1,5 +1,31 @@
 # Web app model transport
 
+## Latest result: real inference and browser tool loop succeeded
+
+On 2026-09-06, `nemotron-3.5-lightning-free` (NVIDIA, not Meta) succeeded through
+Vivari's embedded OpenCode → Vite → Bun proxy → Zen using the approved local
+Zen key. The pinned Zen catalog contained no Meta/Llama entry.
+
+- Session: `ses_f88121acaffeOvgJptgJpSSnZd`.
+- Fixture: `/workspace/opencode-model-1788718474370`.
+- Six primary model requests returned HTTP 200; 50 text-delta events streamed.
+- Six successful tool calls: glob, read twice, shell, edit, shell.
+- The first test failed with an assertion; the model changed subtraction to
+  addition; the same test then passed. An independent guest check confirmed
+  the test file remained byte-for-byte unchanged and reran it successfully.
+- OpenCode emitted `session.execution.succeeded` and closed cleanly.
+
+The stricter five-tool qualification still returned exit 1 because the model
+skipped `grep`: `AssertionError: Model did not successfully use grep`. Its
+`failure.json` describes that coverage failure, not an inference failure. The
+probe assertions were not weakened. Full five-tool qualification remains open.
+
+Evidence: ignored `vivari/.runtime/opencode-package/model-e2e-zen-nemotron.log`
+and the guest fixture's `trace.ndjson`/`failure.json`. The credential-bearing
+server was stopped after the run. This successful request establishes that the
+key/proxy combination works for Nemotron; earlier Big Pickle/MiMo 429s do not
+imply a universally broken key or proxy.
+
 ## Decision (2026-09-06)
 
 Use a small Bun/TypeScript HTTP proxy in the web app server. OpenCode SDK,

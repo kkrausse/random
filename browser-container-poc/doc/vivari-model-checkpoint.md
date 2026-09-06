@@ -1,5 +1,11 @@
 # Browser-hosted model loop — paused 2026-09-06
 
+**Latest:** Nemotron 3.5 Lightning Free subsequently completed real streamed
+inference and a browser-executed failing-test → edit → passing-test loop through
+the Bun proxy. The stricter probe failed only because the model omitted `grep`.
+See [current results](model-transport.md) for evidence. Historical no-success
+statements below describe the original breakpoint, not the latest state.
+
 ## Subsequent transport decision and implementation
 
 The discussion after `c7c05a4` selected a deployment-neutral Bun HTTP proxy in
