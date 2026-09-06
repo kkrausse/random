@@ -25,6 +25,12 @@ body {
 .terminal-keys { display: none; flex: 0 0 auto; gap: 4px; overflow-x: auto; padding: 4px 4px calc(4px + env(safe-area-inset-bottom)); border-top: 1px solid var(--muted); }
 .terminal-keys button { flex: 0 0 auto; min-width: 44px; min-height: 44px; border: 1px solid var(--muted); border-radius: 3px; color: var(--foreground); background: var(--background); touch-action: manipulation; }
 .terminal-keys button[aria-pressed="true"] { color: var(--background); background: var(--accent); }
+.terminal-keys button svg { width: 20px; height: 20px; vertical-align: middle; }
+.terminal-keys button:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.terminal-keys button[data-state="error"], .terminal-keys button[data-state="unavailable"] { color: var(--danger); }
+.terminal-keys button span:not(:empty) { margin-left: 4px; }
+.dictation-preview { flex: 0 0 auto; max-height: 25vh; overflow: auto; padding: 4px 8px; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.dictation-preview:empty { display: none; }
 @media (any-pointer: coarse), (max-width: 600px) {
   .terminal-keys { display: flex; }
   #terminal { touch-action: pinch-zoom; }

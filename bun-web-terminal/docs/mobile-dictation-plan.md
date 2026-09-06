@@ -1,6 +1,9 @@
 # Mobile keyboard icons and server-side streaming dictation
 
-Status: proposed implementation plan. Local setup inspected September 6, 2026.
+Status: implemented September 6, 2026. Local model, service lifecycle, automated
+tests, and synthetic-stream browser-to-terminal checks passed. Real-phone and
+active simultaneous Hex dictation checks remain; see
+[verification results](mobile-dictation-verification.md).
 
 ## Goal and recommendation
 

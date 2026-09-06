@@ -14,6 +14,8 @@ export type Session = {
 
 export type Peer = { send(data: string | Uint8Array): unknown; close(code: number, reason: string): void };
 export type Attachment = {
+  readonly id: string;
+  onClose(listener: () => void): () => void;
   input(data: Uint8Array): void;
   resize(cols: number, rows: number): void;
   acknowledge(bytes: number): boolean;
@@ -100,7 +102,10 @@ export class SessionManager {
     let size = { cols, rows };
     let pendingSize = size;
     const flow = new OutputFlow((data) => peer.send(data), () => attachment.close(1013, "Terminal output stalled; reconnecting"));
+    const closeListeners = new Set<() => void>();
     const attachment: Attachment = {
+      id: crypto.randomUUID(),
+      onClose(listener) { closeListeners.add(listener); return () => { closeListeners.delete(listener); }; },
       input(data) { if (!closed) child?.terminal?.write(data); },
       resize(nextCols, nextRows) {
         pendingSize = { cols: nextCols, rows: nextRows };
@@ -115,6 +120,8 @@ export class SessionManager {
       close(code = 1000, reason = "Attachment closed") {
         if (closed) return;
         closed = true;
+        for (const listener of closeListeners) listener();
+        closeListeners.clear();
         clearTimeout(resizeTimer);
         flow.dispose();
         clearTimeout(mouseTimer);
@@ -126,7 +133,7 @@ export class SessionManager {
     };
     session.attachment = attachment;
     // This marks a fresh terminal, never a replay of historical terminal queries.
-    peer.send(JSON.stringify({ type: "ready", cols, rows }));
+    peer.send(JSON.stringify({ type: "ready", cols, rows, attachmentId: attachment.id }));
     try {
       child = Bun.spawn([...this.tmuxCommand(), "attach-session", "-t", session.id], {
         env: this.env,

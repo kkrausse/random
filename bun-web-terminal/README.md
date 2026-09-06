@@ -17,7 +17,7 @@ Terminal pages reconnect automatically after network interruptions or a suspende
 ## Phone controls
 
 - Tap the terminal to click in a mouse-aware application. The click is sent only when you lift your finger without dragging. Swipe vertically to scroll the application or tmux history; gestures use the same wheel encoding and sensitivity as desktop scrolling. A small movement threshold distinguishes taps from drags, and lifting your finger stops scrolling.
-- A horizontally scrollable extra-keys bar appears on touch devices and narrow windows: **Keyboard**, **Esc**, **Tab**, one-shot **Ctrl**, arrows, **Paste**, **Select**, and **Copy**. Tap **Ctrl**, then a letter (for example **C** to interrupt or **U** to clear the shell input). **Keyboard** explicitly opens/closes the software keyboard; terminal taps and extra keys leave keyboard focus alone. Touch devices do not autofocus on page load.
+- A horizontally scrollable extra-keys bar appears on touch devices and narrow windows: **keyboard icon**, **microphone icon**, **Esc**, **Tab**, one-shot **Ctrl**, arrows, **Paste**, **Select**, and **Copy**. Tap **Ctrl**, then a letter (for example **C** to interrupt or **U** to clear the shell input). The keyboard icon explicitly opens/closes the software keyboard; terminal taps and extra keys leave keyboard focus alone. Touch devices do not autofocus on page load.
 - Tap **Select**, then drag across visible terminal text and tap **Copy**. Toggle **Select** off to resume swipe scrolling. Selection gestures stay local instead of clicking the running application.
 - **Paste** uses the browser clipboard and the terminal's bracketed-paste handling. It needs HTTPS (or localhost) and browser clipboard permission; use the phone keyboard's paste action if access is unavailable.
 - The terminal fits the visible viewport above the software keyboard and sends the updated dimensions to tmux. The existing engine handles mobile text/composition input with autocorrect and capitalization disabled.
@@ -25,6 +25,60 @@ Terminal pages reconnect automatically after network interruptions or a suspende
 For a phone check, open the Tailscale HTTPS URL below, try swiping inside a mouse-aware application, open/close the keyboard and rotate the phone, then try **Ctrl+C**, selection/copy, and paste. Actual software-keyboard behavior should be checked on the target phone; desktop touch-event simulation cannot fully reproduce it.
 
 Compact light-blue notices in the top-right show connection status and confirm successful browser selection copies with a brief “Copied” toast. Copy failures show an error instead; application-owned clipboard operations do not trigger this toast.
+
+## Streaming dictation
+
+Build the sibling Swift service once on the hosting Apple Silicon Mac:
+
+```sh
+../dictation-server/build.sh
+bun start
+```
+
+The service reuses the cached English Parakeet Unified 1.1-second model from the
+local Swift Hex app, under `~/Library/Application Support/FluidAudio/Models/parakeet-unified-en-0.6b/`.
+It does not download models. See [service setup](../dictation-server/README.md)
+for the exact required assets and standalone commands. Bun launches the release
+executable on the first status/recording request, keeps the model resident, and
+owns child shutdown. Initial model loading is shown separately from recording.
+
+On your phone, open the terminal through the Tailscale **HTTPS** URL. Tap the mic,
+allow microphone access, wait for **Stop**, and speak. Tap **Stop** to flush the
+last word. A tap during **Loading…** cancels. Starting dictation preserves keyboard
+visibility and clears one-shot Ctrl. Audio comes from the phone; transcription
+runs on the Mac. Only one remote recording can run at once.
+
+Whole words are pasted live at the application's current cursor, with the pending
+word previewed above the bar. Finalization releases the tail once. Dictation
+never sends Enter and removes terminal controls/newlines from dictated text. Stop
+before moving the application's cursor or changing contexts. If the model revises
+an observed prefix, automatic insertion stops and the final transcript remains
+in the selectable preview for recovery.
+
+Disconnect, takeover, navigation, or page suspension cancels capture and releases
+the microphone; already pasted text remains. Dictation never resumes or replays
+automatically after reconnect. Recordings are capped at five minutes, with bounded
+audio queues and explicit overload errors.
+
+| Environment variable | Default / meaning |
+| --- | --- |
+| `DICTATION_EXECUTABLE` | `../dictation-server/.build/release/dictation-server`, resolved relative to this project |
+| `DICTATION_PORT` | `9876`; choose another for independent Bun instances |
+| `DICTATION_MODEL_DIR` | Override the service model cache directory |
+| `DICTATION_URL` | Optional loopback HTTP origin, e.g. `http://127.0.0.1:9876`; externally managed mode, so Bun neither spawns nor terminates it |
+
+The Swift service stays on loopback. The existing Tailscale Serve route covers
+both terminal and dictation WebSockets. Other hosts can use an explicitly
+configured loopback service, while managed mode requires Apple Silicon macOS.
+
+Diagnostics: `GET /api/dictation/status` reports availability/model state without
+paths or transcripts. Service logs go to Bun's stderr. Missing executable/cache
+or model errors show a dictation notice; a fresh tap retries connection failures.
+Restart Bun after building to load the updated routes and client assets.
+
+See [protocol](../dictation-server/docs/protocol.md),
+[verification results and phone checks](docs/mobile-dictation-verification.md),
+and [third-party notices](docs/third-party-notices.md).
 
 ## Session behavior
 
@@ -53,6 +107,13 @@ bun run test
 ```
 
 Tests use isolated tmux servers and the same Ghostty WASM as the browser. They cover live application state across SessionManager shutdown/recreation, existing-session discovery, renames/removal, alternate-screen reattachment, 300 coalesced resize requests, tab takeover, output acknowledgments/stalls, and fractional scrolling.
+
+Dictation tests also cover resampling continuity/filtering, transcript divergence,
+Unicode/spacing/control removal, final deduplication, protocol order, attachment
+ownership, cancellation, and proxy forwarding. To verify managed Swift lifecycle
+with the built executable, run `bun docs/verify-dictation-supervision.ts`. For real
+model/reset/overload checks, run the service's `scripts/verify.ts` as documented
+in its README.
 
 To test alongside a manually used instance on port 3000, use a separate port **and build directory**:
 
