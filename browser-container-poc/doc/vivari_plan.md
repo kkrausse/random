@@ -8,7 +8,13 @@ The subsequent [OpenCode checkpoint](vivari-opencode-checkpoint.md) verifies the
 real Node/Bun SQLite adapters and advances host-packaged SDK import to missing
 tree-sitter WASM assets. Subsequent pinned asset delivery now passes normal
 SDK create/session/readback/close (default in-memory database) and explicit
-file-backed SDK recovery after page reload. Real tool execution is next.
+file-backed SDK recovery after page reload. The local CLI bridge and existing
+shell now pass, and actual SDK file read/list/find works with a packaged real
+ripgrep WASM backend. Official read/edit/shell/glob/grep tools now pass a
+model-free broken-test → edit → passing-test fixture and search negative controls.
+SDK session event streaming passes too. Next is the real model/tool loop.
+See [tool qualification](vivari-tools-qualification.md)
+for the current tool gate and explicit compatibility limits.
 See [result card](vivari-result.md) for the original measurements and
 [runtime audit](vivari-runtime-audit.md) for the follow-up evidence.
 Implementation directory: `../vivari/`.
@@ -26,7 +32,8 @@ Agreed after the manual SDK demo: make routine runtime development possible
 from a local CLI, without Browser Control carrying commands and results.
 **Implemented and qualified 2026-09-06.** See `../vivari/README.md` for CLI setup
 and [handoff](vivari-handoff.md) for evidence. The requirements below describe
-the implemented slice; next is actual OpenCode search/read/edit/command tool coverage.
+the implemented slice; actual OpenCode search/read/edit/command tool coverage now
+passes as documented above, and the next gate is a model-driven loop.
 
 - Add a dev-only local relay to the harness. The browser tab connects and
   exposes named runtime operations; a Bun/TypeScript CLI uses that connection.

@@ -1,6 +1,26 @@
 # Vivari handoff — 2026-09-06
 
-## Resume here: dev bridge + interactive shell
+## Resume here: OpenCode tool qualification
+
+**Latest 2026-09-06:** named `vv probe --tools` packages and exercises the pinned
+SDK in Chrome. Genuine ripgrep 15.1.0 WASM now passes file/JSON/ignore/Unicode and
+exit-code contracts; SDK file read/list/find and session-created event streaming
+pass. The official tool registry also passes a ten-call read → failing shell
+test → edit → readback → passing shell test sequence plus positive/negative
+glob/grep and invalid regex rejection. The normal tree-sitter WASM parser works
+after fixing generated `require` shadowing in host packaging. **Next gate is a
+real model prompt and model-driven tool loop.** Read [tool qualification](vivari-tools-qualification.md) for exact scope,
+packaging, evidence and newly identified chmod/search/watcher limitations.
+The setup and CLI commands are in `../vivari/README.md`.
+
+Latest retained runtime: `7f8aa9fb-debc-4930-a12c-dad43fabb1ae` at
+`http://127.0.0.1:5192/` (recheck `vv status`; reload changes IDs). Browser Control
+again replaced its default target with a blank page; the exact old qualification
+duplicate was identified by its session checkpoint and closed before fresh boot.
+See `../vivari/browser-control.todo.md`. Fresh-page full tool qualification,
+repackaged SDK recovery and patched production build pass. No runtime patch edits.
+
+## Previous milestone: dev bridge + interactive shell
 
 **Update 2026-09-06: implemented.** Routine guest commands/logs/files/probes can
 now use `bun run vv` through the local relay. Start `bun run relay` in `vivari/`,

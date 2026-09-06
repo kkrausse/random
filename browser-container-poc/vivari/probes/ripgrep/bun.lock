@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "vivari-ripgrep-packaging",
+      "dependencies": {
+        "ripgrep": "0.3.1",
+      },
+    },
+  },
+  "packages": {
+    "ripgrep": ["ripgrep@0.3.1", "", { "bin": { "rg": "lib/rg.mjs", "ripgrep": "lib/rg.mjs" } }, "sha512-6bDtNIBh1qPviVIU685/4uv0Ap5t8eS4wiJhy/tR2LdIeIey9CVasENlGS+ul3HnTmGANIp7AjnfsztsRmALfQ=="],
+  }
+}
