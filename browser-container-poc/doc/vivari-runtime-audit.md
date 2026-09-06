@@ -1,6 +1,15 @@
 # Vivari runtime compatibility audit — September 6, 2026
 
-## Continuation checkpoint: source build + experimental SQLite facades
+## Current checkpoint: scoped SQLite qualification passes
+
+The [SQLite qualification report](vivari-sqlite-qualification.md) supersedes the
+paused checkpoint below. Shared local/browser SQL cases, local worker API/restart,
+built-browser API/ownership/page-reload recovery, real OPFS failures/interrupted
+replacements, final upstream verification and patched HMR pass. Failed persistence
+quarantines DB paths until restart. The supported API remains a subset; OpenCode
+installation/import/create and migrations have not advanced.
+
+## Historical continuation checkpoint: source build + experimental SQLite facades
 
 See [handoff](vivari-handoff.md) for exact commands, live sessions, implementation
 ownership model, and remaining work. The original observations below describe

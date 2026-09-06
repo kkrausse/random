@@ -108,6 +108,36 @@ service worker, and npm payload.
 
 ## Pinned source build and SQLite handoff
 
+**Current checkpoint:** [scoped SQLite qualification passes](../doc/vivari-sqlite-qualification.md).
+Run the combined local/browser gate from this directory with a Browser Control
+session and the patched server already listening:
+
+```sh
+bun run qualify:sqlite tidy-otter-432
+```
+
+It rebuilds the patch, runs the shared Bun contract, local Vivari-worker API and
+disk-restart tests, upstream verification, then built-browser API, ownership,
+page-reload recovery and real OPFS failure/interruption tests. It navigates that
+session to `http://localhost:5192/` (an optional URL argument overrides it),
+replaces dedicated probe DBs, and writes a build-linked JSON report under
+`../doc/logs/vivari/`. Browser-only probes require the dev server's source access.
+The supported SQLite API is a subset; pure headless success is not OPFS proof.
+
+Fast standalone checks:
+
+```sh
+bun test scripts/sqlite-server.test.ts
+# Node >=24 required; the pinned Apple Silicon runner is:
+bunx --package node-bin-darwin-arm64@24.18.0 node scripts/sqlite-headless.mjs
+```
+
+The shared contract lives in `probes/sqlite-contract.js`. Real OPFS fault tests
+use unique `vv-sqlite-test-*` roots and remove only those roots afterward. They
+exercise actual exclusive-handle write errors and termination before stream
+close, not quota exhaustion or power-loss simulation. Failed DB paths require a
+kernel restart; an unacknowledged operation may recover old or new data.
+
 See [handoff](../doc/vivari-handoff.md) for the current checkpoint and limitations.
 Source builds run on the Mac; application and SQLite execution run in browser
 workers. Rust is only the existing Vivari VFS/codec/crypto build prerequisite.

@@ -1,5 +1,27 @@
 # Vivari handoff — 2026-09-06
 
+## Resumed SQLite checkpoint (supersedes the paused status below)
+
+See [SQLite qualification](vivari-sqlite-qualification.md) for the current
+passing gate and precise limitations. `bun run qualify:sqlite tidy-otter-432`
+now passes shared local/browser SQL cases, local worker API and restart, built
+Chrome API/ownership, page-reload recovery, and real OPFS failure/interruption
+tests. Final upstream verification and patched Vite/HMR also pass.
+
+The committed-prefix bug is verified fixed in the browser. Persistence failures
+now quarantine the DB pathname until kernel restart. Nonfinite number transport
+and positional-parameter count validation are covered. Current FS worker:
+`fs-worker-BDLnKstk.js`; process worker `process-worker-DU7Me_3K.js`.
+
+SQLite is a qualified subset, not full Node/Bun conformance. Actual quota
+exhaustion/power-loss behavior, large-database performance and OpenCode migrations
+remain open. OpenCode's installation/import/create checkpoint is unchanged.
+`tidy-otter-432` is retained with the patched Vite fixture running on port 5192.
+Inspect sessions/listeners before continuing; the driver twice found that session
+at `about:blank`, recovered by navigating explicitly to the harness URL.
+
+## Historical pause record
+
 **Paused at the user's request to save context. SQLite is an experimental
 implementation, not a completed slice. No new OpenCode host checkpoint passed.**
 

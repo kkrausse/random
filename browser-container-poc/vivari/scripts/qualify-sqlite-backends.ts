@@ -1,7 +1,8 @@
 // Host-side engine qualification only: both engines execute WASM, not native SQL.
 import assert from "node:assert/strict";
-import initSqlJs from "sql.js";
+import { createRequire } from "node:module";
 import initSqlite from "@sqlite.org/sqlite-wasm";
+const initSqlJs = createRequire(import.meta.url)("sql.js");
 
 const legacy = await initSqlJs();
 const old = new legacy.Database();
@@ -24,9 +25,13 @@ assert.equal(stmt.get(0), "integer");
 assert.equal(stmt.get(1), 9007199254740993n);
 stmt.finalize();
 db.exec("CREATE TABLE t(x); BEGIN; INSERT INTO t VALUES(1)");
-assert.equal(sqlite.capi.sqlite3_get_autocommit(db.pointer), 0);
-sqlite.capi.sqlite3_js_db_export(db.pointer);
-assert.equal(sqlite.capi.sqlite3_get_autocommit(db.pointer), 0);
+// This real exported C API is omitted from the package's TypeScript definitions.
+const capi = sqlite.capi as typeof sqlite.capi & { sqlite3_get_autocommit(pointer: number): number };
+const pointer = db.pointer;
+assert.ok(pointer);
+assert.equal(capi.sqlite3_get_autocommit(pointer), 0);
+sqlite.capi.sqlite3_js_db_export(pointer);
+assert.equal(capi.sqlite3_get_autocommit(pointer), 0);
 db.exec("ROLLBACK");
 assert.equal(db.selectValue("SELECT count(*) FROM t"), 0);
 db.close();

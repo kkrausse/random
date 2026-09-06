@@ -1,6 +1,7 @@
 import { test, expect } from "bun:test";
 import { createRequire } from "node:module";
 import { createSqliteServer } from "../.runtime/patched/packages/kernel-host/sqlite-server.js";
+import { sqliteContract, sqliteRequests } from "../probes/sqlite-contract.js";
 const require = createRequire(import.meta.url);
 const { VirtualFileSystem } = require("../.runtime/patched/packages/vfs/pkg-node/vivari_vfs.js");
 
@@ -17,7 +18,7 @@ test("committed exec prefix survives owner termination; failed flush poisons the
   let seq = 0;
   const enc = new TextEncoder();
   const dec = new TextDecoder();
-  async function request(client, req) {
+  async function request(client: number, req: Record<string, unknown>) {
     const path = `/tmp/test-${++seq}`;
     vfs.write_file(path, enc.encode(JSON.stringify(req)));
     await server.request(client, path);
@@ -38,4 +39,13 @@ test("committed exec prefix survives owner termination; failed flush poisons the
   await expect(request(2, { method: "execute", id: second.id, sql: "UPDATE x SET value='failure'" })).rejects.toThrow("injected write failure");
   await expect(request(2, { method: "execute", id: second.id, sql: "SELECT value FROM x" })).rejects.toThrow("requires close");
   server.release(2);
+  await expect(request(3, { method: "open", path: "/test/db" })).rejects.toThrow("kernel restart");
+});
+
+test("shared browser/local SQLite contract", async () => {
+  const vfs = new VirtualFileSystem();
+  vfs.mkdir("/test", true); vfs.mkdir("/tmp", true);
+  const server = await createSqliteServer(vfs, { shouldPersist: () => true, onWrite() {}, async flush() {} });
+  const checks = await sqliteContract(sqliteRequests(server, vfs), server.release);
+  expect(checks.length).toBeGreaterThanOrEqual(12);
 });
