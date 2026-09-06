@@ -1,5 +1,21 @@
 # Browser-control checks
 
+- [x] 2026-09-06, browser-control 0.7.0 / extension 0.0.24, session `amber-walrus-881`,
+  localhost workspace: after connecting the new multiplexed shell, typing a terminal probe and waiting for
+  `TERMINAL_OK` returned `waitFor: Timeout 90000ms exceeded`. A fresh read showed `Shell error: Error: Failed to open PTY`.
+  Expected an interactive shell; the guest image had no `/dev/pts` mount. This was an application prerequisite failure,
+  not a Browser Control transport failure. Mounted devpts through Guest command and verified terminal input, Ctrl-C,
+  resize, and shell exit/reopen. The helper now mounts devpts automatically; an in-guest probe verified that behavior
+  after explicitly unmounting and removing `/dev/pts`. No relay reset was needed.
+
+- [ ] Same follow-up/session: after cold dependency optimization finished, a preview-only reload followed by a
+  heading wait returned `waitFor: Timeout 200000ms exceeded`; a subsequent guest-command result wait returned
+  `waitFor: Timeout 90000ms exceeded`. Expected rendered preview and responsive guest commands. Actual: blank
+  React root despite several HTTP 200 assets, and guest input queued in the browser PTY. Fresh snapshots and
+  page evaluations remained responsive; no relay failure or page replacement occurred. Recovery attempted:
+  waited for dependency metadata, reloaded only the preview, inspected bridge stats and PTY queue lengths.
+  Preserve this as an unresolved guest/runtime stall rather than labeling it a Browser Control defect.
+
 - [x] Profiling continuation, browser-control 0.7.0 / extension 0.0.24, session
   `amber-walrus-881`, localhost workspace: changing only the preview iframe URL
   inside a long `page.evaluate` returned `evaluate: Execution context was destroyed,
