@@ -576,12 +576,16 @@ export function SessionPicker(props: { context: Plugin.Context }) {
       overflow="hidden"
       backgroundColor={props.context.theme.contextual.overlay.background.default}
     >
-      <box height={compact() ? 1 : 3} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1}>
+      <box height={compact() ? (changingLifecycle() ? 1 : 0) : 3} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1}>
         {!compact() ? <text wrapMode="none" fg={props.context.theme.text.subdued}>
           {baseDirectory() ? props.context.ui.format.path(baseDirectory()!) : " "}
         </text> : null}
         {!compact() ? <text wrapMode="none" fg={props.context.theme.text.subdued}>↑/↓/click select  ·  →/enter/double-click open  ·  n new  ·  ←/esc close</text> : null}
-        <text wrapMode="none" fg={props.context.theme.text.subdued}>{changingLifecycle() ? "Updating session…" : compact() ? "Tap to preview, double-tap to open" : "x stop + mark inactive  ·  r restore to active"}</text>
+        {changingLifecycle() ? (
+          <text wrapMode="none" fg={props.context.theme.text.subdued}>Updating session…</text>
+        ) : compact() ? null : (
+          <text wrapMode="none" fg={props.context.theme.text.subdued}>x stop + mark inactive  ·  r restore to active</text>
+        )}
       </box>
       {failure() ? (
         <box paddingLeft={2} paddingRight={2}>
