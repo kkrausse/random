@@ -28,7 +28,7 @@ Compact light-blue notices in the top-right show connection status and confirm s
 
 ## Session behavior
 
-- The sessions menu and terminal tab favicon recognize Emacs (including `emacsclient`) and OpenCode (including `opencode2` and `OC | …` titles) in terminal titles and show their bundled logos. Other programs use generic category icons.
+- The sessions menu and terminal tab favicon recognize Emacs (including `emacsclient`) and show its bundled logo, and recognize OpenCode (including `opencode2` and `OC | …` titles) with a text `OC` badge.
 - Sessions created from a phone or tablet browser (detected via user-agent) are named `web-<uuid>-phone`; API clients can pass `{"label":"phone"}` for the same suffix.
 
 - **Rename** in the sessions menu changes the tmux session name. Names are separate from the short tmux ID used for URLs and attachments, so renaming preserves links and running processes. Names must be unique on the tmux server and contain 1–128 characters without dots, colons, or control characters.
