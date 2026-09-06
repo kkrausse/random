@@ -10,9 +10,17 @@ in Vivari workers. A host PTY is not an acceptable substitute.
 
 Implemented and qualified: four independently owned xterm shell tabs; a bounded
 running-job table with one pipeline followed by `&`, `jobs`, `kill %N`, `fg %N`
-(wait/interrupt only), and `exit`. Vite runs as a guest background job while a
+(foreground stdin/wait/interrupt), and `exit`. Vite runs as a guest background job while a
 second shell edits the shared React fixture; preview HMR preserves its document.
 Stopping a shell kills its descendants without stopping sibling shells.
+
+Latest continuation adds `SpawnOptions.terminal`, SDK `resize`, inherited guest
+stdout/stderr dimensions and real resize/SIGWINCH listeners. `fg` now forwards
+input to a still-open background pipe. SIGINT is catchable and cooperative;
+unhandled SIGINT exits 130, while Stop/SIGTERM/SIGKILL forcibly clean up workers.
+Live on :5197, session `quiet-otter-107`, with Vite `%1` and usable Shell 2.
+Earlier :5196 (`quiet-raven-809`) and :5192 were preserved. Read latest results
+above the historical checkpoint for exact qualification and remaining boundaries.
 
 Read [setup](../vivari/README.md) and [qualification/evidence](vivari-shell-results.md)
 before making claims. The result document records input, lifecycle, output and
@@ -33,13 +41,14 @@ resize coverage, including unsupported behavior.
 
 ## Precise next gates
 
-1. **Terminal contract:** guest dimensions and resize notifications; catchable
-   signals; raw/cooked behavior; foreground ownership/process groups. Current
-   kernel kill finalizes workers immediately, including when called with SIGINT;
-   SIGSTOP/SIGCONT do not suspend/resume. Do not wire Ctrl+Z to that kill path.
+1. **Terminal contract:** kernel foreground ownership/process groups, real fd/TTY
+   identity and raw/cooked behavior. Geometry and cooperative catchable SIGINT
+   now work; SIGTERM/SIGKILL remain forced cleanup. Other signals reject ENOTSUP.
+   `tty.WriteStream` and legacy isTTY detection still need implementation; no PTY.
 2. **Editor/parser:** incremental escape parsing, Unicode grapheme widths,
    bracketed paste, quote-aware comments/escapes, expansion/globs, and broader
-   background-list grammar. Current `fg` does not reopen background stdin.
+   background-list grammar. `fg` now selects the still-open background stdin;
+   chunk-local Ctrl+C handling and sequential batch input/EOF need further work.
 3. **Transport:** worker-side output/input credits and bounds on all worker-side
    queues. Current SDK queue and UI bounds are explicit; browser MessagePort
    queues are not credit-controlled. No silent terminal-byte dropping/replay.
@@ -60,7 +69,8 @@ resize coverage, including unsupported behavior.
   installed packages. The build accepts the exact cumulative source patch.
 - Browser interaction exclusively through the Bun-backed `browser-control` CLI.
   Existing `5192` runtime, active browser work and OPFS were preserved. Shell
-  evidence uses isolated `http://127.0.0.1:5196/`, session `quiet-raven-809`.
+   earlier evidence uses `http://127.0.0.1:5196/`, session `quiet-raven-809`;
+   latest terminal evidence uses :5197, session `quiet-otter-107`.
 - One persistent kernel per origin. Stop only owned jobs; no persistence reset.
   The isolated port is not allowed by the existing dev relay; this is expected.
 - No further delegated agents were needed for this individual implementation.
