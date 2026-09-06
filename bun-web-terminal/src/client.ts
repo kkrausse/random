@@ -301,7 +301,7 @@ type IconKind = "terminal" | "shell" | "code" | "editor" | "server" | "remote" |
 
 function iconKind(title: string): IconKind {
   const value = title.toLowerCase();
-  if (/\bopencode2?\b/.test(value)) return "opencode";
+  if (/\bopencode2?\b/.test(value) || /^\s*oc(\s|[|:—–-]|$)/.test(value)) return "opencode";
   if (/\bemacs(?:client)?\b/.test(value)) return "emacs";
   if (/\b(code|codex)\b/.test(value)) return "code";
   if (/\b(n?vim|nano|emacs|helix|zed)\b/.test(value)) return "editor";

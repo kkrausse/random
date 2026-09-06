@@ -47,7 +47,11 @@ const server = Bun.serve<SocketData>({
     if (url.pathname === "/api/sessions" && request.method === "GET") return Response.json([...sessions.values()].map(publicSession));
     if (url.pathname === "/api/sessions" && request.method === "POST") {
       if (!isSameOrigin(request)) return new Response("Forbidden", { status: 403 });
-      const session = manager.create();
+      let label: unknown;
+      try {
+        label = (await request.json() as { label?: unknown })?.label;
+      } catch {}
+      const session = manager.create(typeof label === "string" ? label : isMobileDevice(request) ? "phone" : undefined);
       return Response.json(publicSession(session), { status: 201 });
     }
     if (url.pathname.startsWith("/api/sessions/") && url.pathname.endsWith("/attachments") && request.method === "POST") {
@@ -83,7 +87,7 @@ const server = Bun.serve<SocketData>({
     if (url.pathname === "/ghostty-vt.wasm") return serveFile(join(dist, "ghostty-vt.wasm"), "application/wasm");
     if (url.pathname === "/" ) return Response.redirect(new URL("/sessions", url), 302);
     if (url.pathname === "/sessions/new" && request.method === "GET") {
-      const session = manager.create();
+      const session = manager.create(isMobileDevice(request) ? "phone" : undefined);
       return Response.redirect(new URL(`/terminal/${session.id}`, url), 303);
     }
     if (url.pathname === "/sessions") return html(sessionsPage());
@@ -215,6 +219,10 @@ function loadGhosttyTheme() {
     fontSize: Number(values.get("font-size")?.at(-1)) || 14,
     scrollSensitivity,
   };
+}
+
+function isMobileDevice(request: Request) {
+  return /mobile|android|iphone|ipad|phone/i.test(request.headers.get("user-agent") ?? "");
 }
 
 function isSameOrigin(request: Request) {
