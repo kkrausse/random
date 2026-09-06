@@ -122,7 +122,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
   // Leave room for the host dialog's margins, including when a phone keyboard opens.
   const height = () => Math.max(1, Math.min(48, dimensions().height - 6))
   const compact = () => dimensions().width < 70 || height() < 32
-  const previewHeight = () => Math.min(permission() ? 19 : 6, Math.max(3, Math.floor(height() * 0.4)))
+  const previewHeight = () => Math.min(permission() ? 19 : 4, Math.max(2, Math.floor(height() * 0.4)))
   const runner = makeRunner((message, cause) => {
     console.error(`[claude.sessions] ${message}\n${Cause.pretty(cause)}`)
   })
@@ -236,10 +236,6 @@ export function SessionPicker(props: { context: Plugin.Context }) {
   const baseDirectory = createMemo(() => (currentSession ?? selectedSession() ?? sessions()[0]?.location.directory) ? (currentSession ?? selectedSession() ?? sessions()[0])!.location.directory : undefined)
   const visiblePreview = createMemo(() => preview()?.sessionID === selectedSession()?.id ? preview() : undefined)
   const permission = createMemo(() => visiblePreview()?.permissions[0])
-  const selectedInactive = createMemo(() => {
-    const session = selectedSession()
-    return session ? !!lifecycle.inactive[session.id] : false
-  })
 
   createEffect(() => {
     const session = selectedSession()
@@ -615,16 +611,13 @@ export function SessionPicker(props: { context: Plugin.Context }) {
       overflow="hidden"
       backgroundColor={props.context.theme.contextual.overlay.background.default}
     >
-      <box height={compact() ? (changingLifecycle() ? 1 : 0) : 3} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1}>
+      <box height={compact() ? (changingLifecycle() ? 1 : 0) : changingLifecycle() ? 2 : 1} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1}>
         {!compact() ? <text wrapMode="none" fg={props.context.theme.text.subdued}>
           {baseDirectory() ? props.context.ui.format.path(baseDirectory()!) : " "}
         </text> : null}
-        {!compact() ? <text wrapMode="none" fg={props.context.theme.text.subdued}>↑/↓/click select  ·  →/enter/double-click open  ·  n new  ·  ←/esc close</text> : null}
         {changingLifecycle() ? (
           <text wrapMode="none" fg={props.context.theme.text.subdued}>Updating session…</text>
-        ) : compact() ? null : (
-          <text wrapMode="none" fg={props.context.theme.text.subdued}>x stop + mark inactive  ·  r restore to active</text>
-        )}
+        ) : null}
       </box>
       {failure() ? (
         <box paddingLeft={2} paddingRight={2}>
@@ -768,23 +761,8 @@ export function SessionPicker(props: { context: Plugin.Context }) {
             <text wrapMode="none" fg={props.context.theme.text.subdued}>
               {previewLoading() ? "Checking for approval requests…" : previewError() ? `Preview unavailable: ${previewError()}` : visiblePreview()?.forms.length ? "Question waiting — open session to answer" : "No permission requested"}
             </text>
-            {!compact() ? <text fg={props.context.theme.text.subdued}>enter open session</text> : null}
           </>
         )}
-        {selectedSession() ? (
-          <box height={1} flexShrink={0} flexDirection="row" justifyContent="space-between">
-            <text wrapMode="none" fg={props.context.theme.text.subdued}>{compact() ? "" : changingLifecycle() ? "Updating session…" : selectedInactive() ? "r restore to active" : "x stop + mark inactive"}</text>
-            <text
-              id="claude-session-inactive"
-              fg={props.context.theme.text.subdued}
-              onMouseDown={(event) => {
-                if (event.button !== 0) return
-                event.stopPropagation()
-                void changeLifecycle(!selectedInactive())
-              }}
-            >{changingLifecycle() ? "Working…" : selectedInactive() ? "[r restore]" : "[x inactive]"}</text>
-          </box>
-        ) : null}
       </box>
       {loading() ? (
         <box paddingLeft={2} paddingRight={2}>

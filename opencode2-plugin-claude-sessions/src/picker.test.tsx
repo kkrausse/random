@@ -215,7 +215,8 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
       assert.ok(preview.y + preview.height <= picker.y + picker.height)
       assert.ok(approve.y + approve.height <= preview.y + preview.height)
     }
-    assert.match(setup.captureCharFrame(), /←\/esc close/)
+    assert.doesNotMatch(setup.captureCharFrame(), /←\/esc close/)
+    assert.doesNotMatch(setup.captureCharFrame(), /mark inactive/)
     setup.resize(36, 24)
     await setup.renderOnce()
     const approve = setup.renderer.root.findDescendantById("claude-session-approve")!
