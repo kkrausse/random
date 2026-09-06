@@ -1,5 +1,26 @@
 # Vivari feasibility POC
 
+## Actual OpenCode TUI: native renderer gate blocked
+
+The actual `@opencode-ai/cli@0.0.0-dev-19167` installer fails in Vivari with
+`OpenCode does not provide a binary for linux-wasm32`. The real OpenTUI 0.4.5
+dependency imports in workers, but `createCliRenderer()` fails on its native
+`linux-wasm32` asset target. A real Zig 0.15.2 WASI cross-build also fails on
+audio/threading, atomics and a wasm32 size conversion. **No actual OpenCode TUI
+frame, task, model response or edit has passed.**
+
+See [exact TUI qualification, pins and smallest backend slice](../doc/vivari-tui-results.md).
+Reproducible host packaging: `bun install --frozen-lockfile --ignore-scripts --cwd
+probes/tui` then `bun scripts/package-tui.ts`. Browser runner:
+`scripts/tui-browser.js`, owned origin :5198; its `complete` status means probes
+finished, not TUI support. `scripts/tui-hmr-browser.js` is the independent guest
+shell edit/HMR control with exact diff, identical iframe Document and restoration.
+
+Live **http://127.0.0.1:5198/**, Browser Control `quiet-raven-411`, retains Vite
+in Shell 1 and usable Shell 2. Preserve that kernel and earlier :5192/:5196/:5197.
+The next renderer gate requires a real OpenTUI WASM/RenderLib backend; changing
+`isTTY` or presenting the already-working SDK prompt UI does not satisfy it.
+
 ## Guest shell workspace (xterm-first)
 
 **Open shell** creates up to four independent guest `sh` sessions sharing

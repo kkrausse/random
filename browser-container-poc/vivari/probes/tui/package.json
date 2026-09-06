@@ -1,0 +1,8 @@
+{
+  "name": "vivari-actual-tui-qualification",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@opentui/core": "0.4.5"
+  }
+}

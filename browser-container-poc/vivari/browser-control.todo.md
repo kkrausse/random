@@ -1,5 +1,15 @@
 # Browser Control observations
 
+- [x] 2026-09-06 TUI audit, CLI 0.7.0, `quiet-raven-411`, owned :5198:
+  evidence-copy code using `fs.copyFileSync('browser-container-poc/vivari/.runtime/patched-build.json', ...)`
+  failed ENOENT because the relay cwd is `browser-container-poc`, not the caller's
+  repo root. Relative JSON writes had landed in a nested `browser-container-poc/`.
+  Expected caller-relative paths; actual paths are relay-relative. Recovery:
+  repeated evidence capture with absolute paths, inspected the screenshot, and
+  removed only the misplaced audit JSON. Browser/kernel state stayed intact;
+  no relay restart or page reload. This is runner path handling, not a browser
+  session failure. Always use absolute host evidence paths in execute code.
+
 - [ ] 2026-09-06 tool qualification, CLI 0.7.0, `tidy-otter-432`: after
   bridge-driven work, `await page.reload(); return page.url()` returned
   `about:blank`, while the original qualification runtime remained connected

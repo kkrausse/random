@@ -2,6 +2,22 @@
 
 Updated 2026-09-06. The filename preserves the original planning link.
 
+## Primary continuation: actual OpenCode TUI
+
+Read [TUI results](vivari-tui-results.md) first. The published dev-19167 CLI
+installer rejects linux-wasm32. Real OpenTUI 0.4.5 imports in Vivari but fails
+`createCliRenderer()` before first frame; its pinned Zig WASI cross-build has nine
+errors. A real OpenTUI WASM/RenderLib backend is the next smallest renderer gate.
+No TUI task or model edit occurred. The independent guest shell/HMR control passed
+with a verified file diff, same iframe Document and source restoration.
+
+Live :5198, Browser Control `quiet-raven-411`, retains Vite `%1` in Shell 1 and
+usable Shell 2. Preserve its kernel/OPFS and earlier :5192/:5196/:5197. Reproducers:
+`scripts/package-tui.ts`, `scripts/tui-browser.js`, `scripts/tui-hmr-browser.js`;
+frozen dependency pin in `probes/tui/`. This qualification made no shared runtime
+source/protocol edits. Exact source/npm pin distinction and native build failures
+are documented; headless SDK evidence is not promoted into TUI success.
+
 ## Current user direction and completed slice
 
 Retain xterm for a minimal UI. Prioritize usable guest shell workflows, backend
