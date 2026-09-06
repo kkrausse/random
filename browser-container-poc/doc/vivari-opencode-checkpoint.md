@@ -1,5 +1,61 @@
 # OpenCode compatibility checkpoint — 2026-09-06
 
+## Update: normal host/session milestone passes
+
+**File-backed host recovery also passes.** After the default-host run, the probe
+used `OpenCode.create({ database: { path: "/opencode-packaged/host.sqlite" } })`,
+created/read a session and closed. After a full page reload and fresh worker boot,
+recovery-only mode fetched the same saved session ID from the reopened database
+and closed successfully. It did not call session creation in recovery mode
+(the shared log labels still say “creating/session created”). Both runs required
+the final success marker and exit 0. Final bundle: 32,447,506 bytes, SHA-256
+`1ab7ce5a369325fa8bb9486133cebf741815c4fb622575d974f3c4ee6032de33`.
+Combined raw evidence: `logs/vivari/host-milestone.json` (ignored).
+
+Set `state.opencodeDurable=true`, `state.opencodeRecover=false` for a file-backed
+write; then reload/boot and set `state.opencodeRecover=true` before rerunning
+the same runner. Default host uses `opencodeDurable=false, opencodeRecover=false`.
+Current retained CLI state selects durable recovery. SDK startup/migrations
+needed for this fresh database are now exercised; legacy-data upgrade migration
+coverage is not established. Next gate is real tool/search/terminal execution.
+
+Read-only delegated audit corrected native dependency prioritization:
+`core/dist/util/process-lock*` has no discovered installed SDK/core/server caller;
+provider locking instead imports directory-based `util/dist/effect-flock.js`.
+Node `filesystem/fff.node.js` catches native import failure, and the official
+filesystem provider can select ripgrep. Bun's FFF adapter has an uncaught static
+import, so Node-conditioned packaging remains a substantive limitation.
+Ordinary PTY loads its native adapter on `Pty.create`; persistent PTY defers daemon
+connection/start until operations (except explicit inherited handoff). Do not
+prioritize generic FFI merely because the unused module exists.
+
+The pinned SDK now imports, completes normal `OpenCode.create()`, creates a
+session at `/workspace`, reads it back via `host.sessions.get`, and completes
+`host.close()` inside Chrome's Vivari `bun` worker. Explicit `host passed`
+checkpoint and exit code 0 are required. This supersedes the missing-assets
+boundary recorded below.
+
+The packager now delivers the four original tree-sitter/photon WASM files,
+package metadata, and license files (12 assets), with browser and guest SHA-256
+verification. Guest package paths are preserved. Successful host bundle:
+32,446,991 bytes, SHA-256
+`b2f7eadb4eaccb3890f6b14f26f5353e0ec32d86cb312a7aa4d903aa06d06683`.
+Same runtime workers as the earlier checkpoint; patched harness build passes.
+
+**Important qualification:** the official SDK defaults to `database.path =
+":memory:"` (`sdk/dist/internal/host.js:16`). This milestone therefore establishes
+normal in-memory host/session behavior, not durable host database recovery or
+file-lock behavior. The separately qualified adapter persistence still stands.
+The follow-up file-backed recovery above passes. WASM delivery alone does not exercise
+shell parsing or image processing. Native locks/search/PTY and unlowered ESM
+remain unqualified.
+
+Retained session is again booted at `http://127.0.0.1:5192/`. It initially pointed
+to about:blank and the development server was stopped; restarting the scoped
+patched server and explicit navigation/boot restored execution. No OPFS reset.
+
+## Historical checkpoint (before asset delivery)
+
 ## Current result
 
 **The real pinned OpenCode Node and Bun SQLite Effect adapters pass in Chrome.**

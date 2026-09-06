@@ -2,6 +2,11 @@
 
 ## Latest continuation: real OpenCode SQLite adapters pass
 
+Update: packaged normal SDK import/create/session/readback/close also passes.
+Its default database is in-memory; explicitly file-backed SDK recovery also
+passes after page reload. Real tool execution remains the next gate.
+The missing tree-sitter asset boundary below is superseded.
+
 See [OpenCode checkpoint](vivari-opencode-checkpoint.md). Both actual pinned
 adapters now pass in Chrome, including reload recovery. A verified `node:sea`
 fix and host packaging advance SDK import to missing tree-sitter WASM assets.
