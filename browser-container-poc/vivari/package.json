@@ -9,7 +9,9 @@
     "qualify:sqlite": "bun scripts/qualify-sqlite.ts"
   },
   "dependencies": {
-    "@vivari/core": "1.0.0"
+    "@vivari/core": "1.0.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0"
   },
   "devDependencies": {
     "@sqlite.org/sqlite-wasm": "3.49.1-build1",

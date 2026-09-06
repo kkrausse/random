@@ -6,7 +6,7 @@
 <style>
   body { font-family: system-ui; margin: 16px; }
   button, input { font: inherit; margin: 4px; }
-  pre { white-space: pre-wrap; height: 240px; overflow: auto; background: #eee; padding: 8px; }
+  #output { height: 320px; padding: 8px; background: #000; }
   iframe { width: 100%; height: 500px; border: 1px solid #aaa; }
 </style>
 <h1>Vivari feasibility probe</h1>
@@ -16,8 +16,14 @@
 <button id="dev" disabled>Start Vite</button>
 <button id="test" disabled>Test</button>
 <button id="stop" disabled>Stop command</button>
+<h2>OpenCode SDK demo</h2>
+<button id="sdk" disabled>Create saved session</button>
+<button id="recover" disabled>Recover saved session</button>
+<p>Create a session, reload this page, boot again, then recover it. The same session ID should return.</p>
+<h2>Runtime terminal</h2>
+<p>Run commands as JSON argv below. Terminal keystrokes go to the active process; Ctrl+C stops it. This connection uses process stdin/stdout, not a PTY.</p>
 <form id="command"><input id="args" aria-label="Command as JSON argv" size="70" value='["node","--version"]'><button disabled>Run command</button></form>
-<pre id="output" aria-label="Terminal output"></pre>
+<div id="output" aria-label="Terminal output"></div>
 <iframe id="preview" title="Fixture preview"></iframe>
 <script type="module" src="/src/main.ts"></script>
 </html>
