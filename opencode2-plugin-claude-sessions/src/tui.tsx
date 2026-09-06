@@ -283,17 +283,23 @@ export function SessionPicker(props: { context: Plugin.Context }) {
     const session = selectedSession()
     if (!session || changingLifecycle() || replying()) return
     const neighbor = sectionNeighbor(options(), session.id) ?? NEW_SESSION_VALUE
+    // Interrupting starts the session's location runtime, which fails for old
+    // sessions whose directory was removed. Idle rows only need the local marker.
+    const needsInterrupt = props.context.data.session.status(session.id) === "running"
+      || attention().has(session.id)
+      || !!visiblePreview()?.permissions.length
+      || !!visiblePreview()?.forms.length
     setChangingLifecycle(true)
     return runner.start(Effect.gen(function* () {
-      if (inactive) yield* operation({ operation: "Interrupt session", sessionID: session.id },
+      if (inactive && needsInterrupt) yield* operation({ operation: "Interrupt session", sessionID: session.id },
         (signal) => props.context.client.session.interrupt({ sessionID: session.id, continue: false }, { signal }))
-      yield* operation({ operation: inactive ? "Persist inactive marker (session already interrupted)" : "Persist active marker", sessionID: session.id }, () => updateLifecycle((draft) => {
+      yield* operation({ operation: inactive ? needsInterrupt ? "Persist inactive marker (session already interrupted)" : "Persist inactive marker" : "Persist active marker", sessionID: session.id }, () => updateLifecycle((draft) => {
         if (inactive) draft.inactive[session.id] = true
         else delete draft.inactive[session.id]
       }))
       // Don't steal selection if the user navigated while the request ran.
       if (selectedValue() === session.id) setSelectedValue(neighbor)
-      props.context.ui.toast.show({ message: inactive ? "Session interrupted and marked inactive" : "Session restored to active", variant: "success" })
+      props.context.ui.toast.show({ message: inactive ? needsInterrupt ? "Session interrupted and marked inactive" : "Session marked inactive" : "Session restored to active", variant: "success" })
     }).pipe(Effect.ensuring(Effect.sync(() => {
       setChangingLifecycle(false)
       void refreshSessionRow(session.id)
