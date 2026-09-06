@@ -9,6 +9,7 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Press `Alt+S` to open the picker globally, including from permission and question prompts.
 - Labeled sections with prominent dividers show **Needs input → Working → Active · ready → Inactive**.
 - Press `x` on a session to interrupt it and mark it inactive; press `r` to restore it to the active section without starting work. These shortcuts keep the picker open.
+- After `x` or `r` succeeds, selection moves to the next row in the original section, or the previous row at the end of that section, while preserving the scroll offset. If the section had only one row, selection falls back to **New session**. Navigating while the request is pending keeps your newer selection.
 - Inactive sessions retain their history, remain selectable below the divider, and use subdued titles. The marker persists across restarts and synchronizes across TUI instances using plugin storage.
 - Permissions/questions always appear in **Needs input**, even for sessions marked inactive. Running sessions likewise remain in **Working** until they stop. Opening an inactive session to inspect it does not restore it; use `r` to keep it active again.
 - Stopping uses OpenCode's `session.interrupt({ continue: false })`. This is a session interrupt, not a guaranteed kill of detached/background processes or child sessions. The shell API has no dedicated session-owner field for reliably identifying all processes to terminate.
