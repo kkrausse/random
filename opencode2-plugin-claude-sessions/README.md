@@ -26,6 +26,31 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Preview loading/errors disable permission actions, replies cannot overlap, and held-key repeat events are ignored. Errors appear as toasts and requests refresh after replying.
 - Older sessions load as you scroll.
 
+## Effect execution and diagnostics
+
+All asynchronous picker work runs through Effect: paging, preview/context loads,
+attention refreshes, permission replies, interrupts, and lifecycle storage.
+The installed TUI API provides a Promise-only connected client, so `src/effects.ts`
+adapts that client with `Effect.tryPromise`, retaining the host's authentication
+and remote-server connection. Cache synchronization and storage use the same
+adapter. Pure grouping, selection, and Solid rendering remain ordinary functions.
+
+Failures carry an operation name, session/request or directory context, and the
+original cause. Action failures show contextual toasts (including HTTP status
+when available); page and preview failures appear inline. All failures, including
+background refresh failures and unexpected defects, are logged with the
+`[claude.sessions]` prefix and Effect cause/trace information. Background refresh
+failures retain the previous data. Interrupt and marker-persistence failures are
+reported as distinct steps, so a storage failure can say the interrupt already
+succeeded.
+
+Closing the picker interrupts its jobs; switching selection cancels obsolete
+preview/context jobs. HTTP calls receive cancellation signals. Host cache and
+storage methods have no cancellation API, so their underlying work may complete,
+but interrupted Effects do not continue with stale results. Mutations are not
+automatically retried. This improves diagnostics; it does not establish the cause
+of the original “Unexpected Status” failure.
+
 ## Local setup
 
 Install dependencies:
