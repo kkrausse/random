@@ -132,9 +132,18 @@ tailscale serve status
 
 Open the reported `https://<machine>.<tailnet>.ts.net/sessions` URL. Tailscale terminates HTTPS and proxies HTTP and WebSocket traffic to `127.0.0.1:3000`. Remove the Serve configuration with `tailscale serve reset`.
 
+Startup prints a scannable QR code and link to the sessions page. It automatically
+detects an existing Tailscale Serve HTTPS root route pointing to this instance's
+port. Scan it with your phone while connected to Tailscale. You can also set
+`TERMINAL_PUBLIC_URL=https://your-host/sessions` to choose the QR link explicitly
+(a bare origin gets `/sessions` appended). Without either, the QR points to
+localhost and is only useful on the hosting machine. The QR currently contains
+just the URL; it does not add a password or change authentication.
+
 Environment variables:
 
 - `PORT`: HTTP port, default `3000`
+- `TERMINAL_PUBLIC_URL`: optional HTTP(S) URL for the startup QR; otherwise detected from Tailscale Serve, falling back to localhost
 - `HOST`: bind address, default `127.0.0.1`; use `0.0.0.0` for LAN access
 - `TERMINAL_CWD`: shell working directory, default is this repository's parent directory
 - `TERMINAL_FONT`: browser terminal font stack, default `ui-monospace, SFMono-Regular, Menlo, Monaco, monospace`
