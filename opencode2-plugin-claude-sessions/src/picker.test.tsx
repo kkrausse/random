@@ -30,6 +30,12 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     cost: 0,
   }))
   const empty = async () => []
+  const handlers = new Map<string, (event: any) => void>()
+  const children = [
+    { ...sessions[0]!, id: "child", parentID: "s0", title: "Child" },
+    { ...sessions[0]!, id: "grandchild", parentID: "child", title: "Grandchild" },
+  ]
+  const activeChildren = new Set(["grandchild"])
   const context: any = {
     storage: {
       store: () => [
@@ -70,20 +76,21 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     },
     keymap: { layer: (fn: any) => commands.push(...fn().commands) },
     data: {
-      session: { status: () => running ? "running" : "idle", message: { list: () => [], sync: empty }, cost: () => 0 },
+      session: { status: (id: string) => running || activeChildren.has(id) ? "running" : "idle", message: { list: () => [], sync: empty }, cost: () => 0 },
       location: { model: { list: () => [], sync: empty } },
-      on: () => () => {},
+      on: (type: string, handler: (event: any) => void) => { handlers.set(type, handler); return () => handlers.delete(type) },
       listen: () => () => {},
     },
     client: {
       session: {
         list: async () => ({ data: sessions, cursor: {} }),
+        active: async () => Object.fromEntries([...activeChildren].map((id) => [id, { type: "running" }])),
         interrupt: async () => {
           interruptCalls++
           if (interruptFailure) throw { message: "Unexpected Status", response: { status: 409 } }
           running = false
         },
-        get: async ({ sessionID }: any) => sessions.find((s) => s.id === sessionID),
+        get: async ({ sessionID }: any) => [...sessions, ...children].find((s) => s.id === sessionID),
       },
       permission: {
         list: async ({ sessionID }: any) => withPermission ? [{ id: "p1", sessionID, action: "shell", resources: ["echo hello\n".repeat(30)] }] : [],
@@ -96,6 +103,34 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
   const setup = await testRender(() => <SessionPicker context={context} />, { width: 100, height: 55 })
   try {
     await new Promise((resolve) => setTimeout(resolve, 20))
+    await setup.renderOnce()
+    // A running grandchild outside the list page activates its idle parent.
+    assert.match(setup.captureCharFrame(), /1 sub-agent running/)
+    assert.doesNotMatch(setup.captureCharFrame(), /Grandchild/)
+    setLifecycle("inactive", { s0: true })
+    await setup.renderOnce()
+    assert.match(setup.captureCharFrame(), /1 sub-agent running/)
+    activeChildren.add("child")
+    handlers.get("session.status")!({ data: { sessionID: "child" } })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await setup.renderOnce()
+    assert.match(setup.captureCharFrame(), /2 sub-agents running/)
+    activeChildren.delete("child")
+    handlers.get("session.idle")!({ data: { sessionID: "child" } })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await setup.renderOnce()
+    assert.match(setup.captureCharFrame(), /1 sub-agent running/)
+    activeChildren.add("child")
+    handlers.get("permission.asked")!({ data: { sessionID: "grandchild" } })
+    await setup.renderOnce()
+    assert.match(setup.captureCharFrame(), /Permission required · 2 sub-agents running/)
+    for (const child of children) {
+      activeChildren.delete(child.id)
+      handlers.get("session.deleted")!({ data: { sessionID: child.id } })
+    }
+    await setup.renderOnce()
+    assert.doesNotMatch(setup.captureCharFrame(), /sub-agents? running/)
+    setLifecycle("inactive", "s0", false)
     await setup.renderOnce()
     const row = setup.renderer.root.findDescendantById("claude-session-row-3")!
     assert.ok(row)

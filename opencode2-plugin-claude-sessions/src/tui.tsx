@@ -161,11 +161,16 @@ export function SessionPicker(props: { context: Plugin.Context }) {
     const visible = visibleSessions(loaded, currentSessionID)
     const effective = propagateAttention(loaded, attention(), currentSessionID)
     return sortRows(
-      visible.map((session) => ({
-        session,
-        state: sessionState(effective.get(session.id),
-          props.context.data.session.status(session.id) === "running", !!lifecycle.inactive[session.id]),
-      })),
+      visible.map((session) => {
+        const ownRunning = props.context.data.session.status(session.id) === "running"
+        const runningChildren = descendantIDs(loaded, session.id)
+          .filter((id) => props.context.data.session.status(id) === "running").length
+        return {
+          session, ownRunning, runningChildren,
+          state: sessionState(effective.get(session.id),
+            ownRunning || runningChildren > 0, !!lifecycle.inactive[session.id]),
+        }
+      }),
     )
   })
 
@@ -177,14 +182,18 @@ export function SessionPicker(props: { context: Plugin.Context }) {
         value: NEW_SESSION_VALUE,
         state: "new" as const,
       },
-      ...rows().map(({ session, state }) => {
-        const status = {
+      ...rows().map(({ session, state, ownRunning, runningChildren }) => {
+        const baseStatus = {
           permission: "Permission required",
           question: "Question waiting",
           running: "Working",
           inactive: "Inactive",
           idle: "Ready",
         }[state]
+        const childStatus = `${runningChildren} sub-agent${runningChildren === 1 ? "" : "s"} running`
+        const status = runningChildren === 0 ? baseStatus
+          : state === "running" && !ownRunning ? childStatus
+          : `${baseStatus} · ${childStatus}`
         const location = shortenLocation(props.context.ui.format.path(session.location.directory))
         const details = [relativeTime(session.time.updated), location]
         if (session.agent) details.push(session.agent)
@@ -368,11 +377,28 @@ export function SessionPicker(props: { context: Plugin.Context }) {
 
   function refreshSessionRow(sessionID: string) {
     return runner.start(Effect.gen(function* () {
-      const fresh = yield* operation({ operation: "Refresh session row", sessionID },
-        (signal) => props.context.client.session.get({ sessionID }, { signal }))
-      setSessions((loaded) => loaded.map((item) => (item.id === fresh.id ? fresh : item)))
+      // Active children may be outside the loaded page. Load their ancestry too
+      // so their activity reaches the correct parent instead of an orphan row.
+      let id: string | undefined = sessionID
+      const seen = new Set<string>()
+      while (id && !seen.has(id)) {
+        seen.add(id)
+        const target: string = id
+        const fresh = yield* operation({ operation: "Refresh session row", sessionID: target },
+          (signal) => props.context.client.session.get({ sessionID: target }, { signal }))
+        setSessions((loaded) => [...loaded.filter((item) => item.id !== fresh.id), fresh])
+        id = fresh.parentID && !sessions().some((item) => item.id === fresh.parentID) ? fresh.parentID : undefined
+      }
       setLiveVersion((version) => version + 1)
     })).done
+  }
+
+  function refreshActiveSessions() {
+    runner.start(Effect.gen(function* () {
+      const active = yield* operation({ operation: "Load active sessions" },
+        (signal) => props.context.client.session.active({ signal }))
+      for (const id of Object.keys(active)) void refreshSessionRow(id)
+    }))
   }
 
   function refreshContextForSession(sessionID: string) {
@@ -517,11 +543,13 @@ export function SessionPicker(props: { context: Plugin.Context }) {
       }))
     }
     void loadMore(true)
+    refreshActiveSessions()
 
     // Live updates while the picker is open. Running/idle also flows through
     // context.data.session.status, but permission/question badges and titles
     // need explicit event handling.
     const unsubscribes = [
+      props.context.data.on("server.connected", refreshActiveSessions),
       props.context.data.listen(({ details }) => {
         if (["permission.asked", "permission.replied", "form.created", "form.replied", "form.cancelled"].includes(details.type)) {
           setReviewVersion((version) => version + 1)
