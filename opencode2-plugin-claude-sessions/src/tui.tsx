@@ -711,20 +711,22 @@ export function SessionPicker(props: { context: Plugin.Context }) {
         </box>
         {permission() ? (
           <>
-            <text wrapMode="none" flexShrink={0} fg={props.context.theme.text.status.permission} attributes={TextAttributes.BOLD}>
-              {`Approval required · 1 of ${visiblePreview()!.permissions.length}`}
-            </text>
+            <box height={1} flexShrink={0} flexDirection="row" justifyContent="space-between">
+              <text wrapMode="none" flexShrink={1} fg={props.context.theme.text.status.permission} attributes={TextAttributes.BOLD}>
+                {`Approval required · 1 of ${visiblePreview()!.permissions.length}`}
+              </text>
+              <box flexShrink={0} flexDirection="row" gap={1}>
+                <text id="claude-session-approve" fg={props.context.theme.text.subdued} onMouseDown={(event) => { if (event.button === 0) { event.stopPropagation(); void replyToPermission("once") } }}>{replying() ? "Sending…" : "[Once]"}</text>
+                <text id="claude-session-always" fg={props.context.theme.text.subdued} onMouseDown={(event) => { if (event.button === 0) { event.stopPropagation(); void replyToPermission("always") } }}>[Always]</text>
+                <text id="claude-session-deny" fg={props.context.theme.text.subdued} onMouseDown={(event) => { if (event.button === 0) { event.stopPropagation(); void replyToPermission("reject") } }}>[Deny]</text>
+              </box>
+            </box>
             <scrollbox ref={previewScroll} flexGrow={1} minHeight={0} scrollY scrollX={false}>
               <text fg={props.context.theme.text.default}>
                 {[permission()!.action, permission()!.message, ...permission()!.resources,
                   permission()!.metadata ? JSON.stringify(permission()!.metadata, null, 2) : undefined].filter(Boolean).join("\n")}
               </text>
             </scrollbox>
-            <box height={1} flexShrink={0} flexDirection="row" gap={1}>
-              <text id="claude-session-approve" fg={props.context.theme.text.subdued} onMouseDown={(event) => { if (event.button === 0) { event.stopPropagation(); void replyToPermission("once") } }}>{replying() ? "Sending…" : "[Once]"}</text>
-              <text fg={props.context.theme.text.subdued} onMouseDown={(event) => { if (event.button === 0) { event.stopPropagation(); void replyToPermission("always") } }}>[Always]</text>
-              <text fg={props.context.theme.text.subdued} onMouseDown={(event) => { if (event.button === 0) { event.stopPropagation(); void replyToPermission("reject") } }}>[Deny]</text>
-            </box>
           </>
         ) : (
           <>
