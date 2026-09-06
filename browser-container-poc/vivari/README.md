@@ -1,18 +1,24 @@
 # Vivari feasibility POC
 
-## Model loop checkpoint (paused for transport design)
+## Model loop and web app proxy
 
 `bun run vv --runtime ID probe --model [MODEL_ID]` submits a real SDK prompt in
 browser workers. Package it with `bun scripts/package-opencode.ts model` after
 packaging ripgrep as below. Default model is Big Pickle; only catalog-listed free
-models are accepted. The dev harness forwards model HTTP through a fixed Vite
-proxy, because direct upstream requests fail Chrome's CORS preflight.
+models are accepted. The browser SDK uses a path-preserving Bun HTTP proxy,
+because direct upstream requests fail Chrome's CORS preflight. Start
+`bun run serve` in another terminal alongside `bun run dev --port 5192`.
+Vite forwards `/api/model/*` to this server on loopback port 5194. After
+`bun run build`, the same Bun server can serve the built UI directly.
 
 **Current result: HTTP 429 from the free endpoint, not a successful model/tool
 loop.** Failure events, receipts and cleanup work; the success path still needs
-qualification. Production proxy architecture and credential ownership are pending
-discussion. See [model checkpoint](../doc/vivari-model-checkpoint.md) before resuming.
-The optional host auth-file setting is unqualified and disabled by default.
+qualification. The proxy has passed local mock streaming/cancellation tests;
+real model calls and credential use have not resumed. Upstream base URLs are
+generated offline from the pinned SDK catalog during build. Only Zen is enabled.
+The server defaults to public auth; `VIVARI_MODEL_API_KEY` is a server-only opt-in.
+It does not read host OpenCode auth files. See [transport design and setup](../doc/model-transport.md)
+and the [historical model checkpoint](../doc/vivari-model-checkpoint.md).
 
 ## OpenCode tool qualification
 

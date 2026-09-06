@@ -1,4 +1,5 @@
 import type { Vivari, VivariProcess } from "@vivari/core";
+import { modelBaseURL } from './model-transport';
 
 type Asset = { file: string; destination: string; bytes: number; sha256: string };
 type Receipt = { bytes: number; sha256: string; successMarker: string; assets?: Asset[] };
@@ -23,7 +24,7 @@ export async function runOpenCode(vm: Vivari, options: {
     const proc = await vm.spawn("bun", [file], { cwd: "/opencode-packaged", env: {
       OPENCODE_PROBE_DURABLE: "1", OPENCODE_PROBE_RECOVER: options.recover ? "1" : "0",
       ...(options.model ? { OPENCODE_PROBE_MODEL: options.model } : {}),
-      ...(entry === 'model' ? { OPENCODE_PROBE_BASE_URL: `${location.origin}/__model/zen` } : {}),
+      ...(entry === 'model' ? { OPENCODE_PROBE_BASE_URL: modelBaseURL(location.origin, 'opencode') } : {}),
     } });
     options.process(proc);
     const abort = () => proc.kill();
