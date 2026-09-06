@@ -104,11 +104,76 @@ Phone microphone
   -> existing terminal WebSocket -> tmux -> current application
 ```
 
-The ASR worker accepts audio and returns text; it has no terminal or desktop
-input side effects. Use length-prefixed frames over child stdin/stdout for audio
-and JSON events, with diagnostics exclusively on stderr. Specify framing and
-maximum lengths before implementing it; parse partial/coalesced pipe reads.
-One active recording per worker initially; return `busy` for another request.
+The ASR service accepts audio and returns text over loopback HTTP/WebSocket.
+Bun launches and supervises it, then connects as an ordinary API client. Logs
+go to stderr; stdin/stdout are not the application transport. One active recording
+per service initially; return `busy` for another request.
+
+## Standalone service boundary
+
+Put the service in a sibling project, provisionally `../dictation-server/`, with
+its own Swift package, dependency lockfile, tests, README, and API documentation:
+
+```text
+random/
+  dictation-server/
+    Package.swift
+    Package.resolved
+    Sources/DictationServer/
+    Tests/
+    README.md
+    docs/protocol.md
+  bun-web-terminal/
+    src/dictation-service.ts    # process supervisor + HTTP/WS client
+    src/dictation-server.ts     # browser routes + terminal ownership
+    src/dictation.ts            # browser recording controller
+```
+
+The service builds and runs independently. Bun calls its executable and API; it
+does not import Swift sources. Keep terminal sessions, tmux, browser focus,
+paste policy, and the append-only insertion pipeline in bun-web-terminal. The
+service owns model loading, decoding, audio validation, recording isolation, and
+ordered cumulative transcript events. Other applications can supply their own
+text insertion policies.
+
+### Local API (proposed v1)
+
+- `GET /healthz`: process liveness, service instance ID, and protocol version.
+  Available while the model warms up.
+- `GET /v1/status`: model ID, loading/ready/busy/error state, supported audio
+  format, and limits. Model readiness is distinct from HTTP liveness.
+- `WS /v1/stream`: one recording per connection. JSON text messages for
+  `start`, `stop`, and `cancel`; binary messages for 16 kHz mono Float32 LE audio.
+  Return `loading`, `ready`, `partial`, `final`, `done`, and structured `error`
+  events using the same ASR schema as the browser protocol below.
+- The local `start` contains protocol version, recording ID, and audio format.
+  Terminal session/attachment fields exist only at the Bun boundary: Bun validates
+  and removes them before forwarding. Bun proxies audio and ASR events without
+  maintaining a second custom binary framing format.
+- A disconnect cancels that connection's recording, drains/cancels outstanding
+  inference, and resets the decoder before another recording can acquire it.
+  A competing recording receives `busy`; it cannot replace the active one.
+- Use an established Swift HTTP/WebSocket server library; select and pin a
+  compatible version during the service spike rather than writing HTTP framing.
+
+### Launch and supervision
+
+- Service CLI accepts `--host` (default `127.0.0.1`), `--port`, and `--model-dir`.
+  Bun configures executable path and local port; runtime does not rebuild Swift.
+- Bun starts one child, waits for `/healthz` with a bounded startup timeout, and
+  reports model warmup separately. Concurrent requests share the same startup.
+- Pass a unique instance ID at launch and verify it in health responses. A port
+  collision must fail startup rather than accidentally adopting another service.
+- Bun owns termination of its child: SIGTERM on shutdown, bounded wait, then
+  forced termination if needed. Use an optional parent-PID watchdog in managed
+  mode to handle abrupt parent death; standalone mode has no parent dependency.
+- A crash fails the active recording. Restart with bounded backoff for a fresh
+  request; never replay audio or resume a recording automatically.
+- Provide an explicit externally managed URL mode for reuse: when configured,
+  Bun connects to that service and does not spawn or terminate it. Managed local
+  mode remains the default. Document this distinction in both projects.
+- Keep the service on loopback for this integration. Phones use Bun's existing
+  HTTPS/WSS origin, so deployment needs only the current Tailscale Serve route.
 
 ## Browser/server protocol (proposed v1)
 
@@ -186,7 +251,7 @@ while the user navigates elsewhere. Stop dictation before changing contexts.
 
 ### 1. Prove local model reuse
 
-- Add `native/dictation-worker/` as a minimal Swift package pinned to FluidAudio
+- Add sibling `../dictation-server/` as a minimal Swift package pinned to FluidAudio
   0.15.5, with an explicit build/run script.
 - Load the cached 1.1-second encoder, feed a known audio fixture in timed chunks,
   and record partials/final output. Confirm no asset re-download is necessary.
@@ -196,8 +261,10 @@ while the user navigates elsewhere. Stop dictation before changing contexts.
 
 ### 2. Add the transport and lifecycle
 
-- Add `src/dictation-server.ts` for worker startup/prewarm, framing, exclusive
-  recording ownership, queue limits, errors, and teardown.
+- Implement the standalone service's HTTP health/status and WebSocket stream API.
+- Add `src/dictation-service.ts` for process startup/prewarm, HTTP/WS connections,
+  queue limits, errors, and teardown; `src/dictation-server.ts` handles browser
+  routing and terminal recording ownership.
 - Extend `src/server.ts` with status and dictation routes plus socket-kind dispatch.
 - Keep the worker resident across recordings; reset after each. On worker crash,
   fail the current recording and allow a fresh worker for the next start.
@@ -213,7 +280,7 @@ while the user navigates elsewhere. Stop dictation before changing contexts.
 
 ### 4. Verify end to end
 
-- Focused tests for audio resampling continuity, worker framing/ordering, decoder
+- Focused tests for audio resampling continuity, WebSocket message ordering, decoder
   reset, prefix divergence, duplicate final callbacks, Unicode/spacing, final
   one-word flush, cancellation, busy handling, and queue limits.
 - Run `bun run typecheck`, `bun run test`, and worker-specific build/tests.
@@ -226,7 +293,8 @@ while the user navigates elsewhere. Stop dictation before changing contexts.
 
 ## Decisions for the first implementation
 
-- Dedicated Bun endpoint plus an independent Swift worker.
+- Dedicated Bun endpoint plus a standalone Swift HTTP/WebSocket service in sibling
+  `dictation-server/`, with Bun supervising its process by default.
 - Existing English Parakeet Unified 1.1-second model and cache.
 - Tap-to-toggle recording with live whole-word insertion and final-tail flush.
 - One active remote recording; clear busy feedback for concurrent requests.
