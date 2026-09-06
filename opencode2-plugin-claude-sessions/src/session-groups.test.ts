@@ -21,6 +21,9 @@ test("input comes first and each tranche is ordered by recency", () => {
   assert.deepEqual(rows.map((row) => row.session.id), [
     "question", "permission", "working-new", "working-old", "ready-new", "ready-old", "inactive-new", "inactive-old",
   ])
-  assert.equal(groupLabel("permission"), groupLabel("question"))
+  for (const state of ["permission", "question", "running", "idle"] as const) {
+    assert.equal(groupLabel(state), "Active")
+  }
   assert.equal(groupLabel("inactive"), "Inactive")
+  assert.equal(groupLabel("new"), undefined)
 })

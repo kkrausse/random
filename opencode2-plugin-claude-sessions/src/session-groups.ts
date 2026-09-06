@@ -19,5 +19,5 @@ export function sortRows<T extends { state: SessionState; session: { id: string;
 
 export function groupLabel(state: SessionState | "new") {
   if (state === "new") return undefined
-  return ["Needs input", "Working", "Active · ready", "Inactive"][stateRank(state)]
+  return state === "inactive" ? "Inactive" : "Active"
 }
