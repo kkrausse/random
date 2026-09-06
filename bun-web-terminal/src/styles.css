@@ -37,7 +37,7 @@ body {
   .terminal-notices { top: calc(env(safe-area-inset-top) + 4px); right: 4px; }
 }
 
-#terminal canvas { display: block; }
+#terminal canvas { display: block; -webkit-touch-callout: none; }
 
 #terminal.renderer-error { display: grid; place-items: center; padding: 24px; color: var(--danger); }
 
