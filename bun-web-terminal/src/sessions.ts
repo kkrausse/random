@@ -165,6 +165,16 @@ export class SessionManager {
     }
   }
 
+  rename(session: Session, name: unknown) {
+    if (typeof name !== "string" || !name.trim() || name.trim().length > 128 || /[.:\x00-\x1f\x7f]/.test(name)) {
+      throw new Error("Use a name of 1–128 characters without dots, colons, or control characters.");
+    }
+    const result = this.command(["rename-session", "-t", session.id, "--", name.trim()]);
+    if (result.exitCode !== 0) throw new Error(result.stderr.toString().trim());
+    this.refresh();
+    return session;
+  }
+
   remove(session: Session) {
     session.attachment?.close(4004, "Session removed");
     this.command(["kill-session", "-t", session.id]);

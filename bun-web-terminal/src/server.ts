@@ -57,6 +57,17 @@ const server = Bun.serve<SocketData>({
       if (!session) return new Response("Session not found", { status: 404 });
       return saveAttachment(request, session);
     }
+    if (url.pathname.startsWith("/api/sessions/") && request.method === "PATCH") {
+      if (!isSameOrigin(request)) return new Response("Forbidden", { status: 403 });
+      const session = sessions.get(url.pathname.slice(14));
+      if (!session) return new Response("Session not found", { status: 404 });
+      try {
+        const body = await request.json();
+        return Response.json(publicSession(manager.rename(session, body?.name)));
+      } catch (error) {
+        return new Response(error instanceof Error ? error.message : "Could not rename session", { status: 400 });
+      }
+    }
     if (url.pathname.startsWith("/api/sessions/") && request.method === "DELETE") {
       if (!isSameOrigin(request)) return new Response("Forbidden", { status: 403 });
       const session = sessions.get(url.pathname.slice(14));
@@ -249,6 +260,7 @@ function html(body: string, status = 200) {
 }
 
 function document(title: string, bodyClass: string, content: string) {
+  title = escapeHtml(title);
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><link id="favicon" rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/styles.css"></head><body class="${bodyClass}">${content}<script type="module" src="/client.js"></script></body></html>`;
 }
 
@@ -257,7 +269,11 @@ function sessionsPage() {
 }
 
 function terminalPage(session: Session) {
-  return document(session.name, "terminal-page", `<main id="terminal" aria-label="${session.name}"></main><aside class="terminal-notices" aria-label="Terminal notifications"><button id="connection-status" class="terminal-notice" type="button" data-status="connecting" title="Refresh terminal connection" aria-live="polite">Connecting...</button><div id="copy-toast" class="terminal-notice" role="status" aria-live="polite" aria-atomic="true"></div></aside>`);
+  return document(session.name, "terminal-page", `<main id="terminal" aria-label="${escapeHtml(session.name)}"></main><aside class="terminal-notices" aria-label="Terminal notifications"><button id="connection-status" class="terminal-notice" type="button" data-status="connecting" title="Refresh terminal connection" aria-live="polite">Connecting...</button><div id="copy-toast" class="terminal-notice" role="status" aria-live="polite" aria-atomic="true"></div></aside>`);
+}
+
+function escapeHtml(value: string) {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 
 function notFoundPage() {
