@@ -20,6 +20,50 @@ Vivari runs JS through the browser engine with Node bindings and Bun API shims;
 it does not execute our stock Bun/OpenCode Linux binaries. Compatibility and
 performance for our workload remain unproven.
 
+## Next implementation slice: local dev bridge and existing shell
+
+Agreed after the manual SDK demo: make routine runtime development possible
+from a local CLI, without Browser Control carrying commands and results.
+**Not implemented yet.** Build this slice before expanding OpenCode tool coverage.
+
+- Add a dev-only local relay to the harness. The browser tab connects and
+  exposes named runtime operations; a Bun/TypeScript CLI uses that connection.
+  All guest execution remains in Vivari browser workers. The relay transports
+  commands/results; it is not a host execution fallback.
+- Give each connected tab/runtime an explicit ID and select it deliberately.
+  Report disconnected/not-booted/busy states and reject stale requests after
+  reconnect. Bind locally and validate bridge clients/origins.
+- Initial operations: status/boot, spawn argv with cwd/env, streamed stdout/stderr,
+  stdin, kill, exit status, bounded log capture, chunked guest file read/write,
+  and named SDK probes with structured success/failure results. Use request and
+  process IDs, timeouts, and disconnect cleanup. Preserve digest verification for
+  large packaged assets and never equate exit zero with a completed probe.
+- Connect xterm AND a CLI shell attachment to Vivari's existing interactive `sh`.
+  Reuse its line editing/history/completion and foreground-job Ctrl+C handling;
+  the current UI intercepts Ctrl+C to kill the whole active process and needs
+  appropriate routing for shell mode. Do not write a replacement shell.
+- Keep diagnostics/file transport outside the shell too, so a broken guest shell
+  does not block investigation. Browser/worker boot errors should reach logs.
+- Qualify CLI command output + exit code, stdin, cancellation, file roundtrip
+  beyond the 1 MiB SAB window, disconnect/reconnect, and explicit runtime selection.
+  Then run the real SDK create/reload/recovery workflow through the bridge.
+- Browser Control remains useful for UI/visual checks, reload/storage lifecycle,
+  and debugging the bridge. Existing headless worker tests remain the fast
+  regression layer; bridge-driven Chrome tests provide real-browser evidence.
+
+Shell references in `.runtime/patched/`: `packages/studio/src/vv/controller.ts`
+(xterm input), `packages/core/src/workers/kernel-worker.ts:922` (`openTerminal`
+launches `sh`), `packages/kernel-host/coreutils.js` (interactive shell), and
+`scripts/probe-term.mjs` (shell verification). This is Vivari's JS shell, not
+GNU Bash or proof of native PTY compatibility.
+
+After this slice: qualify OpenCode's actual file finding/content search,
+read/edit and command tools (including the bash/shell tool), then a model prompt
+with streamed events and a real tool loop. A small prompt UI can precede the
+OpenCode TUI. The actual `opencode2` CLI/HTTP server and TUI have NOT been tested;
+current success is embedded SDK host/session persistence. Treat server launch
+and TUI compatibility as separate gates, not consequences of SDK startup.
+
 ## Implementation defaults
 
 - Pin an upstream Vivari revision and record its license, setup commands, and
