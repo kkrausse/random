@@ -2,3 +2,5 @@ node_modules/
 dist/
 public/vendor/
 .runtime/
+.env.local
+.env.*.local

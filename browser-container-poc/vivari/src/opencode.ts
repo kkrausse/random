@@ -4,7 +4,8 @@ type Asset = { file: string; destination: string; bytes: number; sha256: string 
 type Receipt = { bytes: number; sha256: string; successMarker: string; assets?: Asset[] };
 export async function runOpenCode(vm: Vivari, options: {
   recover?: boolean;
-  entry?: 'host' | 'tools';
+  entry?: 'host' | 'tools' | 'model';
+  model?: string;
   signal: AbortSignal;
   log: (text: string) => void;
   process: (proc: VivariProcess | undefined) => void;
@@ -21,13 +22,15 @@ export async function runOpenCode(vm: Vivari, options: {
     options.signal.throwIfAborted();
     const proc = await vm.spawn("bun", [file], { cwd: "/opencode-packaged", env: {
       OPENCODE_PROBE_DURABLE: "1", OPENCODE_PROBE_RECOVER: options.recover ? "1" : "0",
+      ...(options.model ? { OPENCODE_PROBE_MODEL: options.model } : {}),
+      ...(entry === 'model' ? { OPENCODE_PROBE_BASE_URL: `${location.origin}/__model/zen` } : {}),
     } });
     options.process(proc);
     const abort = () => proc.kill();
     options.signal.addEventListener("abort", abort, { once: true });
     if (options.signal.aborted) abort();
     let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; proc.kill(); }, 90000);
+    const timer = setTimeout(() => { timedOut = true; proc.kill(); }, entry === 'model' ? 210000 : 90000);
     try {
       const drain = (async () => { for await (const chunk of proc.output) log(chunk); })();
       const code = await proc.exit;
@@ -54,9 +57,10 @@ export async function runOpenCode(vm: Vivari, options: {
   }
   await run(`${entry}.cjs`);
   if (!output.includes(receipt.successMarker)) throw Error("Missing SDK completion checkpoint");
-  const resultLine = output.split('\n').find(line => line.startsWith('checkpoint: tools receipt '));
-  if (entry === 'tools' && !resultLine) throw Error('Missing tool qualification receipt');
+  const prefix = `checkpoint: ${entry} receipt `;
+  const resultLine = output.split('\n').find(line => line.startsWith(prefix));
+  if ((entry === 'tools' || entry === 'model') && !resultLine) throw Error('Missing qualification receipt');
   return { output, entry, sha256: receipt.sha256, recover: !!options.recover,
-    ...(resultLine ? { qualification: JSON.parse(resultLine.slice('checkpoint: tools receipt '.length)) } : {}),
+    ...(resultLine ? { qualification: JSON.parse(resultLine.slice(prefix.length)) } : {}),
   };
 }

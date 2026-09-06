@@ -1,6 +1,19 @@
 # Vivari handoff — 2026-09-06
 
-## Resume here: OpenCode tool qualification
+## Resume here: model transport design decision (paused)
+
+**Latest 2026-09-06:** user requested a breakpoint/context reset before deciding
+long-term pluggable model transport and authentication. Read
+[model checkpoint](vivari-model-checkpoint.md) first. A real SDK prompt now reaches
+the free endpoint via an experimental local streaming proxy, but receives HTTP
+429; direct browser access is CORS-blocked. **The model-driven tool loop has not
+passed.** Existing tool/bridge regressions pass. Plain `bun run build` selects the
+patched runtime via project `.env`. Local account credential opt-in is disabled.
+Discuss a small AWS-hosted proxy, optional direct access, and credential ownership
+before continuing implementation or model calls. OpenCode must remain in browser
+workers; production server-side OpenCode is outside the intended architecture.
+
+## Previous checkpoint: OpenCode tool qualification
 
 **Latest 2026-09-06:** named `vv probe --tools` packages and exercises the pinned
 SDK in Chrome. Genuine ripgrep 15.1.0 WASM now passes file/JSON/ignore/Unicode and
