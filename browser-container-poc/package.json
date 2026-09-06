@@ -7,6 +7,7 @@
     "artifacts": "bun scripts/fetch-artifacts.ts",
     "guest:build": "bash scripts/build-guest.sh",
     "runtime:build": "bash scripts/build-runtime.sh",
+    "profile": "bun scripts/profile.ts",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview"

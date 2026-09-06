@@ -6,15 +6,19 @@ async function handle(message: any) {
   const { id, type } = message;
   try {
     if (type === "http") {
+      const started = performance.now();
       const url = new URL(message.path, origin);
       if (url.origin !== origin) throw new Error("Only guest-loopback Vite is available");
       const response = await fetch(url, {
         method: message.method, headers: { accept: message.accept || "*/*" },
         redirect: "manual", signal: AbortSignal.timeout(240_000),
       });
-      const body = Buffer.from(Bun.gzipSync(new Uint8Array(await response.arrayBuffer()))).toString("base64");
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      const fetched = performance.now();
+      const body = Buffer.from(Bun.gzipSync(bytes)).toString("base64");
+      const timing = { fetchMs: fetched - started, gzipMs: performance.now() - fetched, bytes: bytes.length };
       send({ id, type, status: response.status, headers: [...response.headers].filter(([key]) =>
-        !["content-encoding", "content-length", "transfer-encoding", "connection"].includes(key)), body });
+        !["content-encoding", "content-length", "transfer-encoding", "connection"].includes(key)), body, timing });
     } else if (type === "ws-open") {
       const url = new URL(message.path, "ws://127.0.0.1:5173");
       if (url.origin !== "ws://127.0.0.1:5173") throw new Error("Invalid WebSocket destination");

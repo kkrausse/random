@@ -54,3 +54,48 @@ test("serial responses survive arbitrary chunk boundaries and preserve console o
   expect(consoleOutput).toBe("shell output ✨\r\nnext prompt");
   expect(bridge.stats).toMatchObject({ http: 2, errors: 0 });
 });
+
+test("preview caches only versioned immutable dependencies and resets between VMs", async () => {
+  const source = await Bun.file(new URL("../public/preview-sw.js", import.meta.url)).text();
+  const handlers: Record<string, Function> = {};
+  let requests = 0;
+  const owner = {
+    id: "workspace", url: "http://localhost/",
+    postMessage(message: any, ports: MessagePort[]) {
+      requests++;
+      ports[0].postMessage({ status: 200, headers: [
+        ["content-type", "text/javascript"],
+        ["cache-control", message.request.path.includes("mutable") ? "no-cache" : "max-age=31536000, immutable"],
+      ], body: Buffer.from(Bun.gzipSync(new TextEncoder().encode(`module ${requests}`))).toString("base64") });
+      ports[0].close();
+    },
+  };
+  runInNewContext(source, {
+    self: { location: { origin: "http://localhost" }, clients: { matchAll: async () => [owner] },
+      addEventListener: (name: string, handler: Function) => { handlers[name] = handler; } },
+    URL, Response, Headers, MessageChannel, Uint8Array, Blob, TextEncoder, TextDecoder,
+    DecompressionStream, atob, setTimeout, clearTimeout,
+  });
+  const fetch = async (path: string) => {
+    let response!: Promise<Response>;
+    handlers.fetch({ request: new Request(`http://localhost${path}`),
+      respondWith: (value: Promise<Response>) => { response = value; } });
+    return (await response).text();
+  };
+  const dependency = "/node_modules/.vite/deps/react.js?v=abc";
+  expect(await fetch(dependency)).toBe("module 1");
+  expect(await fetch(dependency)).toBe("module 1");
+  expect(requests).toBe(1);
+  await fetch(dependency.replace("abc", "def"));
+  expect(requests).toBe(2);
+  for (const path of ["/src/main.tsx?v=abc", "/node_modules/.vite/deps/react.js", "/node_modules/.vite/deps/mutable.js?v=abc"]) {
+    expect(await fetch(path)).not.toBe(await fetch(path));
+  }
+  const beforeReset = requests;
+  handlers.message({ data: { source: "preview-cache", type: "reset" }, source: { url: "http://localhost/__guest/" }, ports: [] });
+  await fetch(dependency);
+  expect(requests).toBe(beforeReset);
+  handlers.message({ data: { source: "preview-cache", type: "reset" }, source: owner, ports: [] });
+  await fetch(dependency);
+  expect(requests).toBe(beforeReset + 1);
+});

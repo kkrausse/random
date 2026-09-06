@@ -122,6 +122,19 @@ use **Reload preview** to retry with the warm cache; this preserves the VM. The 
 the visible heading in **15.114 seconds**, with a real Vite `js-update` message and no preview-document replacement.
 See the result card for the cold-load timeout and exact HMR evidence.
 
+## Profiling and repeatable feedback
+
+With the working preview connected, run `bun run profile <browser-control-session>`
+to measure preview-only reloads, cached guest HTTP, and edit-to-visible HMR (three
+samples each). It preserves the VM, restores the fixture after every edit, and saves
+JSON reports under `.cache/profiles/`. Use `bun run profile <session> 5 edit` for a
+focused warm-edit comparison. See [`profiling.md`](./profiling.md) for setup,
+measurement boundaries, and the initial finding: repeated edits fell from 4.7–11.2s
+to 2.0–3.7s while cached module delivery took only 0.15–0.20s. Post-reload edits can
+spike again (23.2s observed), so retain sample order when comparing changes. The new
+VM-scoped immutable dependency cache reduced repeat preview reloads from a 40.1s
+cache-filling pass to 13.6–14.0s, with large cached dependencies served in under 1ms.
+
 ## Pinned upstream
 
 - QEMU-Wasm source reviewed at `0ef7b4e2814b231705d8371dd7997f5b72e70baf` (experimental, QEMU licensing applies).
