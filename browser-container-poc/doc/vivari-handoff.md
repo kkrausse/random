@@ -1,5 +1,32 @@
 # Vivari handoff — 2026-09-06
 
+## Resume here: dev bridge + interactive shell
+
+Latest implementation commit: `c1ae0eb` adds xterm output/stdin and manual SDK
+create/recover buttons. Earlier `161b540` qualifies normal SDK host/session/close
+and file-backed same-session recovery after page reload. Manual demo setup and
+walkthrough: `vivari/README.md`. Current xterm has no running shell prompt yet.
+
+**Next agreed step, not implemented:** local Bun/TypeScript CLI ↔ dev relay ↔
+browser runtime bridge, plus attachment to Vivari's EXISTING interactive `sh`.
+Read the “Next implementation slice” section of [the plan](vivari_plan.md) for
+operations, lifecycle handling, qualification, source pointers, and subsequent
+OpenCode tool/model/TUI gates. Do this before more compatibility expansion.
+
+User explicitly permits delegation/subagents when useful. Browser Control is
+CLI-only when needed; routine commands/logs/files should move to the new bridge.
+Keep actual execution in browser workers and SQLite browser-native WASM.
+
+Live environment at last verification: `http://127.0.0.1:5192/`, Browser Control
+session `tidy-otter-432`, patched runtime. Check server/page liveness on resume;
+neither is guaranteed to survive compaction. Use the same origin for OPFS recovery
+and do not reset storage. No model calls, actual `opencode2` CLI/HTTP server,
+OpenCode command tools, or TUI have been qualified yet. Native Bun conformance
+is not established: the SDK package still uses Node conditions and parser lowering.
+
+All sections below are earlier checkpoints; use the newest plan and checkpoint
+updates when their old “missing WASM” or “create/session unverified” text conflicts.
+
 ## Latest: OpenCode adapter/import continuation
 
 **Update:** normal SDK import/create/session/readback/close now passes in the
