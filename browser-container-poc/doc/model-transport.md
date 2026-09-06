@@ -129,3 +129,18 @@ The credential-bearing Bun server was stopped after the attempts. Vite on 5192,
 the relay on 5193, and the browser tab were retained. A new probe needs the Bun
 server started again. The remaining gate is successful inference after the Zen
 limit clears or another explicitly selected provider/model becomes available.
+
+### Credential/routing isolation check
+
+Following the user's question about incorrect header attachment, a loopback
+mock checked that the proxy's outgoing Authorization header exactly matched
+`Bearer <approved local Zen key>` while replacing an incoming `Bearer public`.
+Only the equality boolean was printed; it was true.
+
+The same minimal Big Pickle request (8 output tokens maximum) was then sent
+directly to Zen using that key and through the actual `modelProxy` handler.
+Both returned HTTP 429 with `error.type: FreeUsageLimitError` and the same
+Console rate-limit message; neither supplied Retry-After. This reproduces the
+failure without the proxy and verifies key attachment in the handler. It points
+to Zen's free-usage restriction rather than proxy header loss, but does not
+prove the key's validity or determine the restriction's account/IP scope.
