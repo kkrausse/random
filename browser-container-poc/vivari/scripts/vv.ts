@@ -11,7 +11,7 @@ const usage = `Usage: bun scripts/vv.ts status
        bun scripts/vv.ts --runtime ID logs [--follow]
        bun scripts/vv.ts --runtime ID read PATH [HOST_FILE|-]
        bun scripts/vv.ts --runtime ID write PATH [HOST_FILE|-]
-       bun scripts/vv.ts --runtime ID probe [--recover]
+       bun scripts/vv.ts --runtime ID probe [--recover|--tools]
 File transfers default to host stdout/stdin. All paths are browser-runtime paths
 except HOST_FILE. Global flags before the command: --runtime ID,
 --cwd PATH (default /workspace), --timeout MS, --env KEY=VALUE (repeatable).
@@ -227,8 +227,8 @@ async function main() {
       await (command === 'read' ? readFile : writeFile)(words[0], words[1]);
       break;
     case 'probe':
-      if (words.length > 1 || (words.length && words[0] !== '--recover')) throw new Error(usage);
-      { const { output: _output, ...receipt } = await request('probe', { recover: words[0] === '--recover' }); print(receipt); }
+      if (words.length > 1 || (words.length && !['--recover', '--tools'].includes(words[0]))) throw new Error(usage);
+      { const { output: _output, ...receipt } = await request('probe', { entry: words[0] === '--tools' ? 'tools' : 'host', recover: words[0] === '--recover' }); print(receipt); }
       break;
     default: throw new Error(usage);
   }

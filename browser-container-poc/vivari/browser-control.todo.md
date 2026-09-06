@@ -1,5 +1,17 @@
 # Browser Control observations
 
+- [ ] 2026-09-06 tool qualification, CLI 0.7.0, `tidy-otter-432`: after
+  bridge-driven work, `await page.reload(); return page.url()` returned
+  `about:blank`, while the original qualification runtime remained connected
+  to the dev relay. Explicit navigation restored the harness but produced two
+  harness pages. Expected the retained page to reload; actual default target
+  had changed. Deterministic observation: compare `page.url()`,
+  `context.pages()` and `vv status` before/after the reload; the trigger for
+  target replacement is still unknown. Recovery: uniquely identified the old
+  task-owned page by its saved registry-session checkpoint, closed only that
+  duplicate, and booted the current page. Tool qualification and SDK saved-session
+  recovery passed afterward. No storage reset or relay restart.
+
 - [x] Next continuation, CLI 0.7.0, `tidy-otter-432`: first inspect again
   returned about:blank; explicit 127.0.0.1:5192 navigation returned
   `net::ERR_CONNECTION_REFUSED` because the scoped dev server had stopped.

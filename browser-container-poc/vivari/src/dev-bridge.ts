@@ -56,7 +56,10 @@ export function connectDevBridge(host: {
             return code;
           };
           if (op === 'exec') result = { code: await run(args.argv, output, args.env, args.cwd) };
-          else if (op === 'probe') result = await runOpenCode(vm, { recover: !!args.recover, signal: job.abort.signal, log: output, process: attach });
+          else if (op === 'probe') {
+            if (args.entry !== undefined && !['host', 'tools'].includes(args.entry)) throw Error('Unknown probe entry');
+            result = await runOpenCode(vm, { entry: args.entry, recover: !!args.recover, signal: job.abort.signal, log: output, process: attach });
+          }
           else if (op === 'read' || op === 'write') {
             // Use guest fd I/O: SDK whole-file reads/writes exceed the syscall window.
             if (typeof args.path !== 'string' || !args.path.startsWith('/')) throw Error('Expected absolute guest path');

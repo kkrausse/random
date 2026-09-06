@@ -4,13 +4,15 @@ type Asset = { file: string; destination: string; bytes: number; sha256: string 
 type Receipt = { bytes: number; sha256: string; successMarker: string; assets?: Asset[] };
 export async function runOpenCode(vm: Vivari, options: {
   recover?: boolean;
+  entry?: 'host' | 'tools';
   signal: AbortSignal;
   log: (text: string) => void;
   process: (proc: VivariProcess | undefined) => void;
 }) {
-  const response = await fetch("/.runtime/opencode-package/host-receipt.json", { signal: options.signal });
+  const entry = options.entry ?? 'host';
+  const response = await fetch(`/.runtime/opencode-package/${entry}-receipt.json`, { signal: options.signal });
   if (!response.ok || !response.headers.get("content-type")?.includes("json")) {
-    throw Error("Build the SDK demo first: bun scripts/package-opencode.ts host");
+    throw Error(`Build the SDK probe first: bun scripts/package-opencode.ts ${entry}`);
   }
   const receipt: Receipt = await response.json();
   let output = "";
@@ -35,7 +37,7 @@ export async function runOpenCode(vm: Vivari, options: {
     } finally { clearTimeout(timer); options.signal.removeEventListener("abort", abort); options.process(undefined); }
   }
   await vm.fs.mkdir("/opencode-packaged", { recursive: true });
-  for (const asset of [{ file: "host.txt", destination: "/opencode-packaged/host.cjs", bytes: receipt.bytes, sha256: receipt.sha256 }, ...(receipt.assets ?? [])]) {
+  for (const asset of [{ file: `${entry}.txt`, destination: `/opencode-packaged/${entry}.cjs`, bytes: receipt.bytes, sha256: receipt.sha256 } as Asset, ...(receipt.assets ?? [])]) {
     const response = await fetch(`/.runtime/opencode-package/${asset.file}`, { signal: options.signal });
     if (!response.ok) throw Error(`Asset fetch failed: ${asset.file}`);
     const bytes = new Uint8Array(await response.arrayBuffer());
@@ -50,7 +52,11 @@ export async function runOpenCode(vm: Vivari, options: {
     await run("assemble.cjs");
     log(`Verified ${asset.destination} (${bytes.length} bytes)\n`);
   }
-  await run("host.cjs");
+  await run(`${entry}.cjs`);
   if (!output.includes(receipt.successMarker)) throw Error("Missing SDK completion checkpoint");
-  return { output, sha256: receipt.sha256, recover: !!options.recover };
+  const resultLine = output.split('\n').find(line => line.startsWith('checkpoint: tools receipt '));
+  if (entry === 'tools' && !resultLine) throw Error('Missing tool qualification receipt');
+  return { output, entry, sha256: receipt.sha256, recover: !!options.recover,
+    ...(resultLine ? { qualification: JSON.parse(resultLine.slice('checkpoint: tools receipt '.length)) } : {}),
+  };
 }

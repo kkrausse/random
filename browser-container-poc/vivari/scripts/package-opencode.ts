@@ -6,7 +6,7 @@ import ts from "typescript";
 const root = resolve(import.meta.dir, "..");
 const probe = resolve(root, "probes/opencode");
 const entry = process.argv[2] ?? "host";
-if (!["host", "sqlite-adapter"].includes(entry)) throw Error(`Unknown entry ${entry}`);
+if (!["host", "tools", "sqlite-adapter"].includes(entry)) throw Error(`Unknown entry ${entry}`);
 const out = resolve(root, ".runtime/opencode-package");
 const external = ["node:*", "@lydell/node-pty", "@ff-labs/fff-node", "@ff-labs/fff-bun", "bun-pty"];
 const sdk = JSON.parse(await readFile(resolve(probe, "node_modules/@opencode-ai/sdk/package.json"), "utf8"));
@@ -29,12 +29,21 @@ const lowered = ts.transpileModule(await result.outputs[0].text(), {
     const visit: ts.Visitor = node => ts.isMetaProperty(node) && node.keywordToken === ts.SyntaxKind.ImportKeyword
       ? ts.factory.createIdentifier("__packageMeta") : ts.visitEachChild(node, visit, context);
     return ts.visitNode(source, visit) as ts.SourceFile;
+  }], after: [context => source => {
+    // Emscripten declares a local `var require` after await import('module').
+    // TS's synthesized require('module') would read that hoisted undefined local.
+    // Keep source require calls intact; only generated imports use the outer loader.
+    const visit: ts.Visitor = node => ts.isCallExpression(node) && node.pos === -1 &&
+      ts.isIdentifier(node.expression) && node.expression.text === 'require'
+      ? ts.factory.updateCallExpression(node, ts.factory.createIdentifier('__packageRequire'), node.typeArguments, node.arguments)
+      : ts.visitEachChild(node, visit, context);
+    return ts.visitNode(source, visit) as ts.SourceFile;
   }] },
 }).outputText;
-const bytes = new TextEncoder().encode(`(async function() {\nconst __packageMeta = { url: require('node:url').pathToFileURL(__filename).href, resolve: s => require('node:url').pathToFileURL(require.resolve(s)).href };\n${lowered}\n})().catch(e => { console.error(e.stack ?? String(e)); process.exitCode = 1; });\n`);
+const bytes = new TextEncoder().encode(`const __packageRequire = require;\n(async function() {\nconst __packageMeta = { url: require('node:url').pathToFileURL(__filename).href, resolve: s => require('node:url').pathToFileURL(require.resolve(s)).href };\n${lowered}\n})().catch(e => { console.error(e.stack ?? String(e)); process.exitCode = 1; });\n`);
 await writeFile(resolve(out, `${entry}.txt`), bytes);
 const assets: { file: string; destination: string; bytes: number; sha256: string }[] = [];
-if (entry === "host") {
+if (entry === "host" || entry === "tools") {
   for (const [name, wasm] of [
     ["web-tree-sitter", "tree-sitter.wasm"],
     ["tree-sitter-bash", "tree-sitter-bash.wasm"],
@@ -51,10 +60,14 @@ if (entry === "host") {
     }
   }
 }
+if (entry === 'tools') {
+  const rg = JSON.parse(await readFile(resolve(out, 'rg-receipt.json'), 'utf8'));
+  assets.push(...rg.assets);
+}
 const receipt = {
   sdk: sdk.version, bun: Bun.version, typescript: ts.version, target: "node", external, entry,
-  successMarker: entry === "host" ? "checkpoint: host passed" : "checkpoint: adapters passed",
-  packaging: ["jsonc-parser: published lib/esm/main.js", "TypeScript CommonJS lowering with async module wrapper and bundle-relative import.meta"],
+  successMarker: entry === "tools" ? "checkpoint: tools passed" : entry === "host" ? "checkpoint: host passed" : "checkpoint: adapters passed",
+  packaging: ["jsonc-parser: published lib/esm/main.js", "TypeScript CommonJS lowering with async module wrapper and bundle-relative import.meta", "Synthesized import requires use outer __packageRequire to avoid Emscripten local require shadowing"],
   bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex"),
   lockSha256: createHash("sha256").update(await readFile(resolve(probe, "bun.lock"))).digest("hex"),
   assets,

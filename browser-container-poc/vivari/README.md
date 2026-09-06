@@ -1,5 +1,44 @@
 # Vivari feasibility POC
 
+## OpenCode tool qualification
+
+Package the pinned SDK tool probe and genuine ripgrep WASM, then run in the
+connected browser runtime (requires the patched harness and relay below):
+
+```sh
+bun install --frozen-lockfile --cwd probes/ripgrep
+bun scripts/package-ripgrep.ts
+bun scripts/package-opencode.ts tools
+bun run vv status
+bun run vv --runtime ID boot
+bun run vv --runtime ID probe --tools
+```
+
+The probe uses a fresh `/workspace/opencode-tools-*` fixture. Assets are hashed
+on both sides and transferred in chunks. It verifies SDK read/list/find and
+session event streaming, then calls the official tool registry for read, edit,
+shell, glob and grep. The fixture's test must fail before the edit and pass
+after it. This is a model-free tool qualification; the next gate is a real
+model-driven loop. See [qualification details](../doc/vivari-tools-qualification.md).
+
+`probes/runtime/ripgrep-contract.cjs` also exercises the packaged command independently:
+
+```sh
+bun run vv --runtime ID write /workspace/rg-contract.cjs probes/runtime/ripgrep-contract.cjs
+bun run vv --runtime ID exec -- node /workspace/rg-contract.cjs
+```
+
+Search uses real ripgrep **15.1.0**, distributed as `ripgrep@0.3.1` WASM with its
+published JS WASI shim. Packaging decompresses its WASM on the host and replaces
+only the asset loader. The search runs in a process worker over guest Node fs.
+This build has no PCRE2, and its WASI shim treats stdin as EOF; the qualified
+search path operates on files. Metadata and licenses travel with the WASM.
+
+Vivari currently ignores `chmod`, so normal executable-bit-based PATH discovery
+does not find the delivered `/bin/rg`. The fixture provisions the same genuine
+runner in `Global.Path.bin`, OpenCode's standard binary cache, which its official
+binary resolver accepts. Executable permission semantics remain a runtime gap.
+
 ## Local development bridge
 
 Run the patched Vite harness below and, in another terminal, `bun run relay`.
