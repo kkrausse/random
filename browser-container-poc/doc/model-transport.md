@@ -1,6 +1,57 @@
 # Web app model transport
 
-## Latest result: real inference and browser tool loop succeeded
+## Latest result: strict five-tool qualification passes
+
+Follow-up on 2026-09-06: the revised fixture/prompt passed the strict probe with
+`nemotron-3.5-lightning-free`, exit 0, session
+`ses_f8807a32fffekYnsbvriLaDps7`, fixture `/workspace/opencode-model-1788719160349`.
+Eight successful official tool calls covered glob, grep, read, shell and edit;
+eight primary requests returned 200 and 34 text deltas streamed. The receipt
+records failing shell at index 4 → edit at 5 → passing shell at 6, followed by
+`session.execution.succeeded` and clean host closure.
+
+The fixture now includes a searchable `repair-target` marker and four addition
+cases covering positive, negative and zero inputs. The ordered prompt requires
+actual calls to all five tools and explicitly stops tool use after the passing
+test. Assertions retain the failure/edit/success ordering, unchanged test bytes,
+streaming and real requests, and additionally require grep to find the target
+before editing. An independent guest run reran the test and checked all 441
+integer input pairs from −10 through 10 successfully.
+
+The first revised attempt exercised every tool and repaired the fixture but
+timed out after an unnecessary, permission-blocked `echo "Done"`. The final prompt
+adds a short final response and an explicit no-more-tools instruction. The final
+prompt passed two consecutive strict runs. The repeat used session
+`ses_f8803b733ffeo7gPlMofhxlPr0`, fixture `/workspace/opencode-model-1788719417370`,
+with seven successful tool calls, seven primary requests, 25 text deltas, and
+the same failure/edit/success indices (4/5/6). Both runs exited 0.
+
+Evidence: ignored `vivari/.runtime/opencode-package/model-five-tools-{2,3}.log` and
+the guest `receipt.json`/`trace.ndjson`; the earlier timed-out attempt is retained
+in `model-five-tools.log`.
+
+The minimal prompt/events UI uses a separately packaged `prompt.mjs` entry with
+the same embedded SDK and proxy transport. Each send creates a fresh session in
+an existing guest directory. SDK events are framed on guest stdout and rendered
+as text in the page, including streamed assistant deltas and tool/lifecycle events.
+See the Vivari README for packaging and use.
+
+Browser UI qualification: session `ses_f88058772ffeY5yLLQUgpNCSgQ` read the
+persisted repaired implementation after a same-origin page reload and returned
+“The function returns the sum of two numbers using signed addition.” The event
+view received a successful read, two text deltas, execution success and `ui.closed`.
+Stop during packaging restored the send button; an unavailable model produced
+an explicit free-model assertion and closed its host. Evidence is ignored
+`prompt-ui-events.ndjson` and `prompt-ui.png` beside the probe logs. Build/typecheck
+and all three proxy mock tests (14 assertions) pass.
+
+Handoff: the credential-bearing Bun proxy has been stopped and port 5194 has no
+listener. Vite, relay, and Browser Control session `tidy-otter-432` remain;
+`vv status` reports runtime `64d0179e-6ace-42fa-bd3e-89122bf421f7` after the final
+same-origin reload. OPFS was preserved. The page has the final UI loaded with
+Nemotron selected; restart the server-side proxy before sending another prompt.
+
+## Previous result: real inference and browser tool loop succeeded
 
 On 2026-09-06, `nemotron-3.5-lightning-free` (NVIDIA, not Meta) succeeded through
 Vivari's embedded OpenCode → Vite → Bun proxy → Zen using the approved local
@@ -18,7 +69,8 @@ Zen key. The pinned Zen catalog contained no Meta/Llama entry.
 The stricter five-tool qualification still returned exit 1 because the model
 skipped `grep`: `AssertionError: Model did not successfully use grep`. Its
 `failure.json` describes that coverage failure, not an inference failure. The
-probe assertions were not weakened. Full five-tool qualification remains open.
+probe assertions were not weakened. Full five-tool qualification was still open
+at that checkpoint; the follow-up above closes it.
 
 Evidence: ignored `vivari/.runtime/opencode-package/model-e2e-zen-nemotron.log`
 and the guest fixture's `trace.ndjson`/`failure.json`. The credential-bearing
@@ -153,8 +205,8 @@ Guest fixtures retain their traces. Browser runtime ID at this handoff:
 
 The credential-bearing Bun server was stopped after the attempts. Vite on 5192,
 the relay on 5193, and the browser tab were retained. A new probe needs the Bun
-server started again. The remaining gate is successful inference after the Zen
-limit clears or another explicitly selected provider/model becomes available.
+server started again. At that checkpoint, the remaining gate was successful
+inference; the later Nemotron runs above passed it.
 
 ### Credential/routing isolation check
 

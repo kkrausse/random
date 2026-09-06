@@ -10,8 +10,8 @@ const directory = `/workspace/opencode-model-${Date.now()}`;
 fs.mkdirSync(directory, { recursive: true });
 fs.mkdirSync(Global.Path.bin, { recursive: true });
 fs.copyFileSync('/bin/rg', `${Global.Path.bin}/rg`);
-const original = 'module.exports = (a, b) => a - b;\n';
-const test = "require('node:assert/strict').equal(require('./sum.cjs')(2,3),5);console.log('fixture test passed');\n";
+const original = '// repair-target: signed addition\nmodule.exports = (a, b) => a - b;\n';
+const test = "const assert=require('node:assert/strict');const sum=require('./sum.cjs');for(const [a,b,want] of [[2,3,5],[-4,7,3],[0,9,9],[8,-3,5]])assert.equal(sum(a,b),want);console.log('fixture test passed');\n";
 fs.writeFileSync(`${directory}/sum.cjs`, original);
 fs.writeFileSync(`${directory}/sum.test.cjs`, test);
 const calls = [];
@@ -101,7 +101,14 @@ try {
       if (['session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted'].includes(event.type)) terminalEvent(event);
     }
   })().catch(error => { if (!abort.signal.aborted) streamError = error; });
-  await host.sessions.prompt({ sessionID, text: `Find and fix the bug in this tiny CommonJS fixture. Discover the .cjs files with glob, read the implementation and test, and use grep to locate the implementation expression. Run node sum.test.cjs BEFORE editing to observe its assertion failure. Fix only sum.cjs using the edit tool, then run the same test again and report the result. Use relative file paths and workdir ${directory} for shell calls. Do not change the test. Do not delegate.` }, { signal: abort.signal });
+  await host.sessions.prompt({ sessionID, text: `Repair this CommonJS addition fixture. This is also a qualification of all five official tools; skipping a tool fails the task even if the code is fixed. Execute this checklist in order, with actual tool calls:
+1. glob: discover *.cjs files in ${directory}.
+2. grep: search for the literal repair-target in *.cjs in ${directory} to identify the implementation requiring repair. This search is mandatory; reading a file is not a substitute.
+3. read: inspect the matched implementation and sum.test.cjs.
+4. shell: run exactly node sum.test.cjs with workdir ${directory}, BEFORE any edit. Observe the assertion failure.
+5. edit: fix only sum.cjs so it adds arbitrary signed numbers. Preserve the repair-target comment and do not change the test.
+6. shell: run exactly node sum.test.cjs again with the same workdir and observe success.
+After the passing test, STOP calling tools and finish with one short sentence giving the search match and test results. Only node sum.test.cjs is permitted in shell; do not run echo or other commands. Use relative file paths. Do not delegate.` }, { signal: abort.signal });
   await host.sessions.wait({ sessionID }, { signal: abort.signal });
   const finished = await terminal;
   journal('event-counts', eventCounts);
@@ -116,6 +123,8 @@ try {
   const after = completed.findIndex((call, index) => index > edit && call.tool === 'shell' && call.input.command === 'node sum.test.cjs' && call.result.output?.exit === 0 && call.result.output.output.includes('fixture test passed'));
   assert(before >= 0 && edit > before && after > edit, 'Expected model-driven failing test → edit → passing test');
   for (const tool of ['read', 'edit', 'shell', 'glob', 'grep']) assert(completed.some(call => call.tool === tool), `Model did not successfully use ${tool}`);
+  const search = completed.findIndex(call => call.tool === 'grep' && call.input.pattern === 'repair-target' && JSON.stringify(call.result).includes('sum.cjs'));
+  assert(search >= 0 && search < edit, 'Expected grep to locate the repair target before editing');
   assert(eventCounts['session.text.delta'] > 0, 'Missing streamed model text');
   assert(eventCounts['session.tool.called'] > 0, 'Missing streamed tool calls');
   assert(!eventCounts['session.step.failed'], 'Model step failed');

@@ -96,6 +96,7 @@ async function boot() {
   document.querySelector<HTMLButtonElement>("#boot")!.disabled = true;
   status.textContent = "Runtime ready";
   ready = true;
+  promptStatus.textContent = 'Ready to send a prompt.';
 }
 function action(id: string, fn: () => Promise<unknown>) {
   document.querySelector(id)!.addEventListener("click", () => {
@@ -141,6 +142,36 @@ document.querySelector("#command")!.addEventListener("submit", event => {
     if (!Array.isArray(argv) || !argv.length || !argv.every(value => typeof value === "string")) throw new Error("Expected a nonempty JSON string array");
     await run(argv);
   })().catch(error => log(`\n${error}\n`)).finally(() => { busy = false; });
+});
+const promptStatus = document.querySelector<HTMLElement>('#model-status')!;
+const promptResponse = document.querySelector<HTMLElement>('#model-response')!;
+const promptEvents = document.querySelector<HTMLElement>('#model-events')!;
+const sendPrompt = document.querySelector<HTMLButtonElement>('#model-send')!;
+document.querySelector('#model-prompt')!.addEventListener('submit', event => {
+  event.preventDefault();
+  if (!ready || busy || active) { promptStatus.textContent = 'Boot the runtime and stop the active command first.'; return; }
+  const text = document.querySelector<HTMLTextAreaElement>('#model-text')!.value.trim();
+  const directory = document.querySelector<HTMLInputElement>('#model-directory')!.value.trim();
+  const model = document.querySelector<HTMLInputElement>('#model-id')!.value.trim();
+  if (!text || !directory.startsWith('/') || !model) { promptStatus.textContent = 'Enter a prompt, absolute guest directory, and free model ID.'; return; }
+  busy = true;
+  sendPrompt.disabled = true;
+  demoAbort = new AbortController();
+  promptResponse.textContent = '';
+  promptEvents.textContent = '';
+  promptStatus.textContent = 'Preparing SDK…';
+  let promptError: string | undefined;
+  void runOpenCode(vm, {
+    entry: 'prompt', model, prompt: { text, directory }, signal: demoAbort.signal, log, process: setProcess,
+    event: event => {
+      promptEvents.textContent = (promptEvents.textContent + JSON.stringify(event) + '\n').slice(-1000000);
+      if (event.type === 'ui.session') promptStatus.textContent = `Running ${event.data?.sessionID}`;
+      if (event.type === 'session.text.delta' && typeof event.data?.delta === 'string') promptResponse.textContent += event.data.delta;
+      if (event.type === 'ui.error') promptStatus.textContent = promptError = String(event.data?.message);
+    },
+  }).then(() => { promptStatus.textContent = 'Completed · SDK host closed'; })
+    .catch(error => { promptStatus.textContent = demoAbort?.signal.aborted ? 'Stopped' : promptError ?? String(error); })
+    .finally(() => { busy = false; demoAbort = undefined; sendPrompt.disabled = false; });
 });
 // Browser Control probes use the host clock and real VFS, without a host-side executor.
 Object.assign(window, { probe: { get vm() { return vm; }, get output() { return transcript; }, run, samples, versions: { vivari: "1.0.0", revision: "2629c71097238400c45aefa213ef61df4794c2b7" } } });
