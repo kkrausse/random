@@ -284,3 +284,49 @@ injection and out-of-order, fragmented UTF-8 serial responses); native helper gz
 Handoff: the VM, guest Vite, bridge, and updated adjacent preview remain running in `amber-walrus-881`.
 Use the guest command field while the bridge owns the serial tty. Host Vite runs on port 5173.
 Next milestone: bounded model access and an actual OpenCode multi-file edit producing visible HMR.
+
+## Manual-test follow-up: interactive shell alongside preview — 2026-09-06
+
+The user's failed tab showed `bun dev`, Ctrl-C, then `bun --bun dev`, followed by
+`Uncaught RuntimeError: memory access out of bounds`. Generated artifacts still advertise the ineffective
+`JSC_useFTLJIT=false`; the corrected export is required inside the guest. That is a plausible contributor,
+not a confirmed cause of this Wasm trap. The visible failure was saved as
+`/private/var/folders/t_/x48jtnps7n5_0g_pt9xpvbg00000gn/T/opencode/browser-container-manual-failure.json`.
+
+On the user's next boot, Vite was alive, loopback HTTP returned 200, and the bridge answered commands.
+The displayed `Exit: 0` belonged to the log-reading command, not Vite. It is now labeled `Command exit code`.
+The blank preview coincided with an unfinished `node_modules/.vite/deps_temp_*` directory.
+
+The serial bridge now multiplexes interactive-shell input/output and resize notifications alongside HTTP/HMR.
+The helper starts `sh -i` on a Bun pseudo-terminal in `/workspace`, inherits exported environment variables,
+and keeps the preview bridge alive after shell exit. The browser routes keyboard input, including Ctrl-C,
+to that PTY; Enter after exit starts a new shell. This does not require rebuilt QEMU or guest artifacts.
+The original login shell remains underneath the bridge; its unexported state/history are not transferred.
+
+### Executed checks
+
+Runtime source edits caused a host development reload, discarding the previous overlay. A fresh VM in
+`amber-walrus-881` booted and started Vite with the corrected export and detached stdin (`ready in 65286 ms`).
+The first PTY attempt found `/dev/ptmx` but no `/dev/pts`; the helper now mounts devpts on demand.
+
+- Browser terminal printed `TERMINAL_OK` and `tty` reported `/dev/pts/0` after connection.
+- Ctrl-C interrupted `sleep 60`; the next terminal command printed `CTRL_C_OK` and loopback `HTTP 200`.
+- Resizing the console iframe changed `stty size` from `30 100` to `33 65`; the iframe width was restored.
+- `exit` printed the shell-exit notice without disconnecting the bridge; Enter opened another shell and
+  a command printed `SHELL_REOPEN_OK`.
+- To verify the automatic mount fix without another cold boot, exited the interactive shell, unmounted and
+  removed `/dev/pts`, then ran the updated helper through a bounded guest command with terminal-open/input
+  protocol messages. Its decoded PTY output contained `AUTO_MOUNT_OK/dev/pts/0`; helper and shell exited 0.
+- Host build passes. Four serial/service-worker tests pass, including interleaved terminal/HTTP frames,
+  control bytes, binary terminal output, and resize messages.
+
+### Remaining preview/runtime boundary
+
+Cold React dependency requests timed out with HTTP 502. Optimization subsequently completed (`deps/_metadata.json`
+was present). A preview-only reload fetched the index, Vite client, transformed source, React runtime, and React DOM
+with HTTP 200, but did not render the heading within 200 seconds. A later guest diagnostic command also failed to
+complete within 90 seconds. At inspection, the runtime still reported running, the iframe was visible, the serial
+bridge counted 24 HTTP requests / 1 WebSocket message / zero framing errors, and 653 input bytes remained queued
+in the browser PTY. No new runtime-error banner appeared. Whether this stall is related to the new shell or the
+existing QEMU/workload instability is unresolved; this follow-up is **not a complete preview/HMR pass**.
+The earlier interaction passes establish shell multiplexing behavior before that stall, not long-run reliability.

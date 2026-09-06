@@ -15,6 +15,9 @@ type EmscriptenModule = {
 
 declare global {
   var Module: EmscriptenModule;
+  interface Window {
+    guestBridge?: { resizeTerminal(cols: number, rows: number): void };
+  }
 }
 
 const sendStatus = (status: "loading" | "running" | "error", detail: string) => {
@@ -39,6 +42,7 @@ async function boot() {
 
   const { master, slave } = openpty();
   terminal.loadAddon(master);
+  terminal.onResize(({ cols, rows }) => window.guestBridge?.resizeTerminal(cols, rows));
 
   const assetRoot = `${window.location.origin}/qemu/`;
   const runtimeBuild = await fetch(assetRoot + "runtime-build.txt", { cache: "no-store" });

@@ -7,7 +7,8 @@ window.installSerialBridge = function installSerialBridge(slave, runtime = windo
   const readyPromise = new Promise((resolve) => { resolveReady = resolve; });
   const originalWrite = slave.write.bind(slave);
   const decoder = new TextDecoder();
-  const write = (text) => slave.ldisc.writeFromLower(text);
+  // Keep protocol writes separate from keyboard input once the bridge owns ttyS0.
+  const write = slave.ldisc.writeFromLower.bind(slave.ldisc);
   const send = (message) => write(JSON.stringify(message) + "\n");
   slave.write = (data) => {
     buffer += typeof data === "string" ? data : decoder.decode(Uint8Array.from(data), { stream: true });
@@ -20,7 +21,18 @@ window.installSerialBridge = function installSerialBridge(slave, runtime = windo
       try {
         const message = JSON.parse(line);
         if (message.type === "ready") {
-          ready = true; resolveReady(); originalWrite("\r\nPreview bridge connected. Use the workspace command field while connected.\r\n");
+          ready = true;
+          slave.ldisc.writeFromLower = (data) => send({ type: "terminal-input", data: typeof data === "string" ? data : new TextDecoder().decode(Uint8Array.from(data)) });
+          originalWrite("\r\nPreview bridge connected. Opening an interactive shell in /workspace…\r\n");
+          const size = slave.ioctl?.("TIOCGWINSZ") || [30, 100];
+          send({ type: "terminal-open", rows: size[0], cols: size[1] });
+          resolveReady();
+        } else if (message.type === "terminal-data") {
+          originalWrite(Array.from(atob(message.data), (char) => char.charCodeAt(0)));
+        } else if (message.type === "terminal-exit") {
+          originalWrite(`\r\nShell exited (${message.code}). Press Enter to open a new shell; preview remains connected.\r\n`);
+        } else if (message.type === "terminal-error") {
+          originalWrite(`\r\nShell error: ${message.error}\r\n`);
         } else if (sockets.has(message.id)) {
           if (message.type === "ws-message") {
             stats.wsMessages++;
@@ -58,6 +70,7 @@ window.installSerialBridge = function installSerialBridge(slave, runtime = windo
   });
   runtime.guestBridge = {
     stats, request,
+    resizeTerminal(cols, rows) { if (ready) send({ type: "terminal-resize", cols, rows }); },
     async connect(source) {
       if (ready) return;
       const encoded = btoa(unescape(encodeURIComponent(source)));

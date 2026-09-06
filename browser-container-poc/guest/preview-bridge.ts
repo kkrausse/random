@@ -1,11 +1,46 @@
 // JSON-line transport over ttyS0. Vite execution stays in the guest.
+import { mkdirSync, readFileSync } from "node:fs";
+
 const sockets = new Map<string, WebSocket>();
 const send = (message: object) => process.stdout.write(`\x1e${JSON.stringify(message)}\n`);
 const origin = "http://127.0.0.1:5173";
+let shell: ReturnType<typeof Bun.spawn> | undefined;
+let terminalSize = { cols: 100, rows: 30 };
+function openShell(cols = terminalSize.cols, rows = terminalSize.rows) {
+  if (shell) return;
+  terminalSize = { cols, rows };
+  // The minimal boot image mounts devtmpfs, but not the pseudo-terminal filesystem.
+  if (!readFileSync("/proc/mounts", "utf8").split("\n").some((line) => line.split(" ")[1] === "/dev/pts")) {
+    mkdirSync("/dev/pts", { recursive: true });
+    const mounted = Bun.spawnSync(["mount", "-t", "devpts", "devpts", "/dev/pts"]);
+    if (mounted.exitCode !== 0) throw new Error(`Could not mount /dev/pts: ${mounted.stderr.toString()}`);
+  }
+  const child = Bun.spawn(["sh", "-i"], {
+    cwd: "/workspace", env: { ...process.env, TERM: "xterm-256color" },
+    terminal: {
+      cols, rows,
+      data(_terminal, data) { send({ type: "terminal-data", data: Buffer.from(data).toString("base64") }); },
+    },
+  });
+  shell = child;
+  void child.exited.then((code) => {
+    child.terminal?.close();
+    shell = undefined;
+    send({ type: "terminal-exit", code });
+  });
+}
 async function handle(message: any) {
   const { id, type } = message;
   try {
-    if (type === "http") {
+    if (type === "terminal-open") {
+      openShell(message.cols, message.rows);
+    } else if (type === "terminal-input") {
+      openShell();
+      shell!.terminal!.write(message.data);
+    } else if (type === "terminal-resize") {
+      terminalSize = { cols: message.cols, rows: message.rows };
+      shell?.terminal?.resize(message.cols, message.rows);
+    } else if (type === "http") {
       const started = performance.now();
       const url = new URL(message.path, origin);
       if (url.origin !== origin) throw new Error("Only guest-loopback Vite is available");
@@ -43,7 +78,7 @@ async function handle(message: any) {
     } else if (type === "stop") {
       process.exit(0);
     }
-  } catch (error) { send({ id, type: "error", error: String(error) }); }
+  } catch (error) { send({ id, type: type.startsWith("terminal-") ? "terminal-error" : "error", error: String(error) }); }
 }
 send({ type: "ready" });
 let input = "";

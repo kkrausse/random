@@ -74,7 +74,7 @@ export function App() {
     const channel = new MessageChannel();
     setOutput("Running in guest…");
     channel.port1.onmessage = ({ data }) => {
-      setOutput(data.error || `${data.stdout}${data.stderr}\nExit: ${data.code}`);
+      setOutput(data.error || `${data.stdout}${data.stderr}\nCommand exit code: ${data.code}`);
       channel.port1.close();
     };
     runtime.current?.contentWindow?.postMessage({ source: "preview-bridge", request: { type: "exec", command } }, location.origin, [channel.port2]);

@@ -112,8 +112,12 @@ forwards preview HTTP requests through MessageChannels and the serial transport 
 gzip/base64 encoded over serial; HTML receives a WebSocket adapter before Vite's bootstrap. The adapter forwards text
 messages to a real guest WebSocket, including Vite's HMR token and subprotocol. No host Vite proxy serves guest assets.
 
-While connected, use **Guest command → Run in guest** to edit files or inspect logs; the serial tty is occupied by the
-bridge. Commands run in `/workspace`. Restart VM discards the guest overlay and bridge. The POC supports asset GET/HEAD
+While connected, the terminal opens a new interactive shell in `/workspace` on a guest pseudo-terminal. Its input,
+output, Ctrl-C, and resize events are multiplexed alongside preview traffic, so the bridge stays running while you
+use the shell. Exported environment variables are inherited, but the original shell's local variables and history
+are not transferred. Exiting this shell leaves the preview running; press Enter to open another shell.
+**Guest command → Run in guest** is also available for one-off commands in `/workspace`; its displayed command exit
+code belongs to that command, not the Vite server. Restart VM discards the guest overlay and bridge. The POC supports asset GET/HEAD
 requests and text WebSockets for Vite; request bodies, binary WebSockets, external networking, and multiple workspaces
 on the same origin are outside this bridge's current scope. Preview and workspace share an origin and are trusted POC code.
 

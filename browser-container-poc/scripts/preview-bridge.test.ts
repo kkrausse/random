@@ -99,3 +99,37 @@ test("preview caches only versioned immutable dependencies and resets between VM
   await fetch(dependency);
   expect(requests).toBe(beforeReset + 1);
 });
+
+test("interactive terminal frames share the serial channel with HTTP without leaking input or control bytes", async () => {
+  const source = await Bun.file(new URL("../public/serial-bridge.js", import.meta.url)).text();
+  const output: Buffer[] = [];
+  const input: string[] = [];
+  const host: Record<string, any> = {};
+  const runtime = { parent: host, addEventListener() {} };
+  const slave = {
+    write(data: string | number[]) { output.push(Buffer.from(data)); },
+    ldisc: { writeFromLower(data: string) { input.push(data); } },
+    ioctl() { return [35, 120]; },
+  };
+  runInNewContext(source, { window: host, TextDecoder, Uint8Array, atob, setTimeout, clearTimeout, location: { origin: "http://localhost" } });
+  const bridge = host.installSerialBridge(slave, runtime);
+  slave.write(`\x1e${JSON.stringify({ type: "ready" })}\n`);
+  expect(JSON.parse(input.shift()!)).toEqual({ type: "terminal-open", rows: 35, cols: 120 });
+  slave.ldisc.writeFromLower("echo hello\r\x03");
+  expect(JSON.parse(input.shift()!)).toEqual({ type: "terminal-input", data: "echo hello\r\x03" });
+  bridge.resizeTerminal(90, 25);
+  expect(JSON.parse(input.shift()!)).toEqual({ type: "terminal-resize", cols: 90, rows: 25 });
+  const response = bridge.request({ type: "http", method: "GET", path: "/" });
+  const request = JSON.parse(input.shift()!);
+  const terminalBytes = Buffer.from("\x1b[32mhello ✨\x1e\r\n");
+  // Even a record separator emitted by a shell program stays inside its payload.
+  const wire = `\x1e${JSON.stringify({ type: "terminal-data", data: terminalBytes.toString("base64") })}\n` +
+    `\x1e${JSON.stringify({ id: request.id, status: 200, body: "ok" })}\n`;
+  const before = output.length;
+  for (const byte of Buffer.from(wire)) slave.write([byte]);
+  expect(Buffer.concat(output.slice(before))).toEqual(terminalBytes);
+  expect(await response).toMatchObject({ status: 200, body: "ok" });
+  slave.write(`\x1e${JSON.stringify({ type: "terminal-exit", code: 0 })}\n`);
+  expect(Buffer.concat(output).toString()).toContain("preview remains connected");
+  expect(bridge.stats.errors).toBe(0);
+});
