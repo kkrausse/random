@@ -31,12 +31,20 @@ index bfb9dbd..6a17c54 100644
 \ No newline at end of file
 +- **Background research** → `research.md`
 diff --git a/ARCHITECTURE.md b/ARCHITECTURE.md
-index d88c8f8..622c2a0 100644
+index d88c8f8..a251be1 100644
 --- a/ARCHITECTURE.md
 +++ b/ARCHITECTURE.md
-@@ -1,5 +1,81 @@
+@@ -1,5 +1,89 @@
  # Vivari — Architecture
  
++## Local WASI reactor output continuation
++
++WASI `fd_pwrite` now writes regular-file iovecs at an explicit safe-integer
++offset without advancing sequential position. Standard streams return ESPIPE,
++allowing Zig/libc writers to fall back to fd_write; unknown descriptors return
++EBADF. Reactor loading already uses standard WebAssembly + WASI.initialize.
++OpenTUI's wasm32 build/ABI adapter lives in the enclosing POC, not in the runtime.
++
 +## Local terminal geometry and foreground continuation
 +
 +SDK spawn accepts `terminal: {cols, rows}`; `VivariProcess.resize()` validates
@@ -116,7 +124,7 @@ index d88c8f8..622c2a0 100644
  This document explains how Vivari works end to end: the core constraint it
  solves, the worker topology, the syscall protocol, the filesystem, the process
  model, the Node runtime, networking, native code, and the build. It is the
-@@ -917,4 +993,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
+@@ -917,4 +1001,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
    `GET / → 200` (network-gated, like `verify-express`).
  
  See [`AGENTS.md`](./AGENTS.md) §"Testing & verification" for exactly when to run
@@ -1184,8 +1192,63 @@ index af2b08d..a36cba4 100644
 -}
 \ No newline at end of file
 +}
+diff --git a/packages/runtime/node/lib/wasi.js b/packages/runtime/node/lib/wasi.js
+index 1fc5148..fdeb793 100644
+--- a/packages/runtime/node/lib/wasi.js
++++ b/packages/runtime/node/lib/wasi.js
+@@ -36,6 +36,7 @@ export default function (exports, require, module, process) {
+   const ENOTDIR = 54;
+   const ENOTEMPTY = 55;
+   const EPERM = 63;
++  const ESPIPE = 70;
+   const ENOTCAPABLE = 76;
+ 
+   const FILETYPE_UNKNOWN = 0;
+@@ -371,6 +372,33 @@ export default function (exports, require, module, process) {
+         return ESUCCESS;
+       }
+ 
++      // Positional writes must not advance the descriptor's sequential offset.
++      // In particular, libc/Zig probe stdout with pwrite and fall back on ESPIPE.
++      function fd_pwrite(fd, iovs, iovsLen, offset, nwrittenPtr) {
++        const rec = getFd(fd);
++        if (!rec) return EBADF;
++        if (rec.type === "stdin" || rec.type === "stdout" || rec.type === "stderr") return ESPIPE;
++        if (rec.type !== "file") return EBADF;
++        const pos = Number(offset);
++        if (!Number.isSafeInteger(pos) || pos < 0) return EINVAL;
++        const dv = view(), mem = bytes();
++        if (!Number.isInteger(iovsLen) || iovsLen < 0 || iovs < 0 ||
++            iovs + iovsLen * 8 > mem.length || nwrittenPtr < 0 || nwrittenPtr + 4 > mem.length) return EINVAL;
++        let written = 0;
++        try {
++          for (let i = 0; i < iovsLen; i++) {
++            const p = dv.getUint32(iovs + i * 8, true);
++            const len = dv.getUint32(iovs + i * 8 + 4, true);
++            if (p + len > mem.length || !Number.isSafeInteger(pos + written + len)) return EINVAL;
++            const n = fs.writeSync(rec.hostFd, Buffer.from(mem.slice(p, p + len)), 0, len, pos + written);
++            written += n;
++            if (n < len) break;
++          }
++        } catch (err) { return errnoFor(err); }
++        dv.setUint32(nwrittenPtr, written, true);
++        return ESUCCESS;
++      }
++
+       function fd_seek(fd, offset, whence, newOffsetPtr) {
+         const rec = getFd(fd);
+         if (!rec || rec.type !== "file") return EBADF;
+@@ -698,7 +726,7 @@ export default function (exports, require, module, process) {
+         fd_filestat_set_size: notsup,
+         fd_filestat_set_times: ok,
+         fd_pread: notsup,
+-        fd_pwrite: notsup,
++        fd_pwrite,
+         fd_renumber: notsup,
+         path_open,
+         path_filestat_get,
 diff --git a/roadmap.md b/roadmap.md
-index 3ab02ef..be78e42 100644
+index 3ab02ef..cf02206 100644
 --- a/roadmap.md
 +++ b/roadmap.md
 @@ -1,5 +1,26 @@
@@ -1215,7 +1278,7 @@ index 3ab02ef..be78e42 100644
  Built on the principle **de-risk the hardest part first**: prove the riskiest
  primitive (synchronous cross-thread access to a shared kernel) before expanding.
  
-@@ -3041,4 +3062,21 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
+@@ -3041,4 +3062,26 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
  | `Fetcher Worker` | Network/registry worker |
  | `Node.js Worker PID n` | Process = 1 worker + Node shim |
  | `[worker n]` | Nested `worker_threads` — real (#16 stage 2b) |
@@ -1239,6 +1302,11 @@ index 3ab02ef..be78e42 100644
 +No PTYs/process groups/suspension; geometry follows attached descendants rather
 +than POSIX foreground groups. The enclosing POC shell-headless contract exercises
 +dimensions, notifications, input ownership, catchable interrupts and isolation.
++# Local WASI renderer continuation (2026-09-06)
++
++OpenTUI WASI reactor compilation exposed fd_pwrite returning ENOSYS for stdout.
++Implement positional file writes and ESPIPE for streams so standard Zig writers
++can fall back to fd_write. No native FFI identity spoofing or app-specific loader.
 diff --git a/scripts/fs-worker.mjs b/scripts/fs-worker.mjs
 index c528166..62e2571 100644
 --- a/scripts/fs-worker.mjs

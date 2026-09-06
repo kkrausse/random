@@ -1,6 +1,21 @@
 # Vivari feasibility POC
 
-## Actual OpenCode TUI: native renderer gate blocked
+## Latest: real OpenTUI WASM core runs in workers
+
+The pinned Zig renderer/edit buffer now builds as a WASI reactor and passes real
+browser text rendering, keyboard input, 186×19 → 74×14 resize and destroy back to
+the shell. Generic Vivari `fd_pwrite` support (including ESPIPE for streams)
+unblocks Zig output and independently passes a compiled C/libc reactor probe.
+**TypeScript `createCliRenderer` / `TextRenderable` and the actual OpenCode TUI
+remain the next gate.** This is native-core rendering, not full TUI acceptance.
+
+See [WASM implementation, supported contract and evidence](../doc/vivari-wasm-renderer-results.md).
+Build with `bun scripts/build-opentui-wasm.ts`, then rebuild the patched runtime
+as below. Live isolated origin **http://127.0.0.1:5202/**, Browser Control
+`lucky-falcon-533`, has the passing core probe and idle Shell 1. The software-update
+reboot ended previous in-memory jobs; no OPFS reset was performed during recovery.
+
+## Previous actual OpenCode TUI audit: native renderer gate blocked
 
 The actual `@opencode-ai/cli@0.0.0-dev-19167` installer fails in Vivari with
 `OpenCode does not provide a binary for linux-wasm32`. The real OpenTUI 0.4.5
