@@ -1,5 +1,16 @@
 # Browser Control execution follow-up
 
+- [x] V2 model-response wait, Browser Control v0.7.0, `rapid-raven-074`, :5216:
+  `waitForFunction: Timeout 90000ms exceeded`. Reproduction: launch a prefilled
+  prompt and press Enter as soon as its text first renders, then wait for a
+  terminal row whose trimmed text exactly equals the response marker. First
+  readback showed the prompt still in the input; focusing the terminal and
+  pressing Enter submitted it. A second exact-row wait timed out because the
+  successful response row also contained sidebar context text. Readback confirmed
+  the actual model response and completion timing. Use settled input and match
+  terminal columns/content rather than whole-row equality. No Browser Control
+  malfunction or relay recovery was needed.
+
 - [ ] Browser Control v0.7.0 overlay ID collision, session `rapid-raven-074`,
   `http://127.0.0.1:5216/`: `page.locator('#status').innerText()` fails with
   `strict mode violation` because Playwright finds both the demo status and the
