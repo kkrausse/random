@@ -1,5 +1,11 @@
 # Actual OpenCode TUI qualification — 2026-09-06
 
+**Latest continuation:** [general WASM FFI results](vivari-ffi-results.md).
+An independent C consumer passes both FFI facades in browser workers. Unchanged
+OpenTUI TypeScript now reaches the real WASM artifact via FFI, but initialization
+fails on the absent audio export; measured struct ABI mismatch also blocks it.
+No actual OpenCode TUI acceptance is claimed.
+
 **Implementation continuation:** [real WASM core results](vivari-wasm-renderer-results.md)
 supersede the cross-build blocker below. The real Zig renderer/edit buffer now
 renders, accepts keyboard text, resizes and destroys in a browser worker using

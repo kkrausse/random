@@ -37,11 +37,15 @@ export fn wasmAlloc(len: u32) ?[*]u8 {
 export fn wasmFree(ptr: [*]u8, len: u32) void {
     globalAllocator.free(ptr[0..len]);
 }
+// General Vivari FFI allocator contract, independent of renderer symbols.
+export fn ffi_alloc(len: u32) ?[*]u8 { return wasmAlloc(len); }
+export fn ffi_free(ptr: [*]u8, len: u32) void { wasmFree(ptr, len); }
 `
 await Bun.write(resolve(zig, "wasm-lib.zig"), source)
 const proc = Bun.spawn(["zig", "build", "-Dtarget=wasm32-wasi", "-Doptimize=ReleaseSmall"], { cwd: zig, stdout: "inherit", stderr: "inherit" })
 const code = await proc.exited
 if(code) process.exit(code)
+await Bun.write(resolve(root, '../opentui.ffi.json'), JSON.stringify({abi: 'vivari-wasm32-flat-v1', wasm: 'opentui.wasm'}) + '\n')
 const bytes = await Bun.file(resolve(zig,'zig-out/bin/opentui.wasm')).arrayBuffer()
 const module = new WebAssembly.Module(bytes)
 const hash = (v: string | ArrayBuffer) => createHash('sha256').update(typeof v === 'string' ? v : new Uint8Array(v)).digest('hex')
