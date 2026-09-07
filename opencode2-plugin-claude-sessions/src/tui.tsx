@@ -706,7 +706,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
               return (
                 <>
                 {heading() ? (
-                  <box height={3} flexShrink={0} paddingLeft={2} paddingRight={2}
+                  <box height={3} flexShrink={0} paddingLeft={1} paddingRight={1}
                     border={["top"]} borderColor={props.context.theme.hue.accent[400]}>
                     <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>{heading()}</text>
                   </box>
@@ -717,7 +717,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
                   flexShrink={0}
                    flexDirection="row"
                    paddingLeft={1 + Math.min(option().depth, 4) * 2 - (active() ? 1 : 0)}
-                  paddingRight={2}
+                  paddingRight={1}
                   border={active() ? ["left"] : []}
                   borderColor={props.context.theme.hue.accent[400]}
                   backgroundColor={
