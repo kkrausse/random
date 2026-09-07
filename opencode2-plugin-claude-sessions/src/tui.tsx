@@ -740,23 +740,25 @@ export function SessionPicker(props: { context: Plugin.Context }) {
                 >
                   <box height={1} flexDirection="row" flexGrow={1} minWidth={0} overflow="hidden">
                     <box width={2} flexShrink={0}>
-                      <text fg={cursorColor()}>{active() ? "❯" : " "}</text>
+                      <text fg={cursorColor()}>{active() ? "❯ " : "  "}</text>
                     </box>
-                    <box width={3} flexShrink={0}>
-                      {option().state === "running" ? (
-                        <spinner frames={SPINNER_FRAMES} interval={80} color={iconColor()} />
-                      ) : (
-                        <text fg={iconColor()}>
-                          {option().state === "permission"
-                            ? "!"
-                            : option().state === "question"
-                              ? "?"
-                              : option().state === "new"
-                                ? "+"
-                                : ""}
-                        </text>
-                      )}
-                    </box>
+                    {(() => {
+                      const state = option().state
+                      const icon = state === "running" ? "spinner"
+                        : state === "permission" ? "!"
+                        : state === "question" ? "?"
+                        : state === "new" ? "+" : ""
+                      if (!icon) return null
+                      return (
+                        <box width={2} flexShrink={0}>
+                          {icon === "spinner" ? (
+                            <spinner frames={SPINNER_FRAMES} interval={80} color={iconColor()} />
+                          ) : (
+                            <text fg={iconColor()}>{`${icon} `}</text>
+                          )}
+                        </box>
+                      )
+                    })()}
                     <text wrapMode="none" flexShrink={1} fg={titleColor()} attributes={active() ? TextAttributes.BOLD : undefined}>
                       {option().title}
                     </text>
@@ -764,7 +766,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
                       const row = option()
                       return "status" in row && row.status ? (
                         <>
-                          <text wrapMode="none" fg={iconColor()}>{`  ·  ${row.status}`}</text>
+                          <text wrapMode="none" fg={iconColor()}>{` · ${row.status}`}</text>
                         </>
                       ) : (
                         null
@@ -776,7 +778,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
                       {"value" in option() && rowPercents().get(option().value as string) ? (
                         <text flexShrink={0} fg={descriptionColor()}>{` ${rowPercents().get(option().value as string)}`}</text>
                       ) : null}
-                      <box width={10} flexShrink={0} justifyContent="flex-end">
+                      <box width={8} flexShrink={0} justifyContent="flex-end">
                         <text wrapMode="none" fg={descriptionColor()}>
                           {(option() as { updated?: string }).updated ?? ""}
                         </text>
