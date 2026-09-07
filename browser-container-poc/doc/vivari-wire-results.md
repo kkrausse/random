@@ -1,5 +1,9 @@
 # Compiled OpenTUI wire ABI and actual OpenCode TUI — 2026-09-06
 
+**Later continuation:** [matched V2 TUI → model edit → same-Document Vite HMR
+passed](vivari-v2-results.md). The blocked application status below describes the
+older source pin. This report remains the native ABI qualification reference.
+
 **PASS: unchanged OpenTUI TypeScript renders, accepts input, resizes, destroys and
 recreates in Vivari workers. PASS: the actual full OpenCode CLI reaches its provider
 dialog and returns to the shell. BLOCKED: TUI model response → file edit → Vite HMR.**

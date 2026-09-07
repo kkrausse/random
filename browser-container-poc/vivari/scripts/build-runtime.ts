@@ -1,6 +1,6 @@
 // Build immutable upstream source plus reviewed patches; never edit packaged workers.
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 
 const revision = "2629c71097238400c45aefa213ef61df4794c2b7";
@@ -42,8 +42,16 @@ for (const crate of ["vfs", "codec", "crypto"]) {
 run(["cargo", "build", "--locked", "--release", "--manifest-path", "packages/wasi-demo/Cargo.toml", "--target", "wasm32-wasip1"]);
 mkdirSync(join(source, "packages/wasi-demo/pkg"), { recursive: true });
 copyFileSync(join(source, "packages/wasi-demo/target/wasm32-wasip1/release/wasi_demo.wasm"), join(source, "packages/wasi-demo/pkg/wasi_demo.wasm"));
-run(["bun", "run", "--cwd", "packages/core", "build"]);
 const dist = join(source, "packages/core/dist");
+// Live kernels retain hashed worker URLs across host rebuilds. Archive immutable
+// assets before Vite empties dist, then restore missing hashes for those kernels.
+const retained = join(root, '.runtime', `${mode}-retained-assets`);
+mkdirSync(retained, { recursive: true });
+if (existsSync(join(dist, 'assets'))) cpSync(join(dist, 'assets'), retained, { recursive: true });
+run(["bun", "run", "--cwd", "packages/core", "build"]);
+for (const name of readdirSync(retained)) {
+  if (!existsSync(join(dist, 'assets', name))) copyFileSync(join(retained, name), join(dist, 'assets', name));
+}
 copyFileSync(join(source, "LICENSE"), join(dist, "assets/LICENSE.vivari.txt"));
 if (mode === "patched") copyFileSync(join(root, "LICENSE.sqlite-wasm"), join(dist, "assets/LICENSE.sqlite-wasm.txt"));
 const hash = (file: string) => createHash("sha256").update(readFileSync(file)).digest("hex");

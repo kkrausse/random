@@ -1,6 +1,17 @@
 # Vivari feasibility POC
 
-## Latest: compiled OpenTUI ABI shim and real OpenCode TUI frame
+## Latest: matched V2 TUI → model edit → Vite HMR
+
+**Demo: http://127.0.0.1:5206/** — run **`opencode2`** in its guest shell.
+The actual V2 TUI used Muse Spark Free to edit the guest fixture, and Vite
+hot-updated the preview in the same Document. The fixture has been restored.
+For longer prompts use a fresh `opencode2 --prompt "..."`, wait for the prompt
+to render, then press Enter. Prolonged typing currently hits the FFI pin budget.
+
+[Current results, exact command, source pins and reproduction](../doc/vivari-v2-results.md).
+The older :5205 demo and its direct entry command remain available.
+
+## Previous checkpoint: compiled ABI shim and real TUI frame
 
 Unchanged OpenTUI TypeScript now passes real `createCliRenderer`/`TextRenderable`,
 keyboard input, resize, destruction and recreation in browser workers. A pinned

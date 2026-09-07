@@ -1,10 +1,20 @@
 diff --git a/AGENTS.md b/AGENTS.md
-index bfb9dbd..c2851fd 100644
+index bfb9dbd..7e58db1 100644
 --- a/AGENTS.md
 +++ b/AGENTS.md
-@@ -1,5 +1,37 @@
+@@ -1,5 +1,47 @@
  # AGENTS.md
  
++Inherited child stdin uses the existing byte relay; remove forwarding listeners
++on exit without removing preexisting listeners. process.emitWarning must emit real
++deferred warnings, not silence EventEmitter's listener-limit diagnostics.
++
++`node:stream/consumers` uses Node's collection algorithms over guest async streams
++and the worker's actual Blob/TextDecoder. Qualify split UTF-8, binary bytes, JSON,
++WHATWG streams and propagated errors with the enclosing stream-consumers probe.
++VM evaluated imports must use the guest loader: vm.js shares the existing dynamic
++import rewrite with other eval paths. Keep ordinary script completion values intact
++(the rewrite returns null when no import is present). See the vm-import probe.
 +Local OpenCode continuation: `runtime/builtins/sea.js` implements non-SEA behavior
 +only. Native PTY/FFI remain unsupported. `builtins/ffi.js` provides a bounded
 +WASM-backed bun:ffi/node:ffi subset, selected by explicit .ffi.json artifacts.
@@ -40,7 +50,7 @@ index bfb9dbd..c2851fd 100644
  Guidance for AI agents (and humans) working in this repo. Read this first, then
  read [`ARCHITECTURE.md`](./ARCHITECTURE.md) before touching the runtime, the
  protocol, or networking. [`roadmap.md`](./roadmap.md) is the chronological log of
-@@ -1206,4 +1238,4 @@ the gap can't silently regress.
+@@ -1206,4 +1248,4 @@ the gap can't silently regress.
  
  - **How it works** → [`ARCHITECTURE.md`](./ARCHITECTURE.md)
  - **Why it was built this way / status per feature** → [`roadmap.md`](./roadmap.md)
@@ -48,12 +58,43 @@ index bfb9dbd..c2851fd 100644
 \ No newline at end of file
 +- **Background research** → `research.md`
 diff --git a/ARCHITECTURE.md b/ARCHITECTURE.md
-index d88c8f8..bcc6b10 100644
+index d88c8f8..eda6bf9 100644
 --- a/ARCHITECTURE.md
 +++ b/ARCHITECTURE.md
-@@ -1,5 +1,129 @@
+@@ -1,5 +1,160 @@
  # Vivari — Architecture
  
++Guest process.getBuiltinModule resolves through the same eager/lazy builtin
++registry as require. The browser's network Worker constructor is hidden from guest
++globals; guest threads use node:worker_threads and its kernel-owned lifecycle.
++This prevents libraries from trying to load guest file:// paths as browser URLs.
++
++## Local warning and inherited-input continuation
++
++`process.emitWarning` defers warning events onto nextTick, preserves Error metadata
++and writes diagnostics to stderr. Node's real EventEmitter listener-limit warning
++now reports instead of throwing a missing-method error. CPU metrics stay absent.
++Inherited child stdin forwards the existing byte relay and removes its listeners
++on child exit; no new syscall or worker role is needed. This is a forwarding
++approximation, not POSIX shared-descriptor arbitration between competing readers.
++The interactive shell forwards foreground bytes unchanged (apart from its existing
++Ctrl+C interrupt interception). Rewriting CR to LF turned Return into newline in
++real TUI keymaps. The inherited-input probe launches through the interactive shell
++and checks CR preservation as well as UTF-8 and forwarding cleanup.
++
++## Local stream consumers continuation
++
++`node/lib/stream/consumers.js` supplies Node v24.18.0's collection algorithms via
++the builtin loader. Binary collection uses the worker's actual Blob, exposed by
++internal/blob; UTF-8 text uses streaming TextDecoder. The independent guest probe
++checks split code points, incomplete sequences, binary bytes, web streams, JSON
++and stream errors. No new host service, worker role or syscall is involved.
++
++VM Script/run/compileFunction evaluation rewrites dynamic imports through the
++existing guest __ocImport resolver. This prevents evaluated `import('node:...')`
++from escaping to browser network module loading. Ordinary script completion is
++preserved. Existing VM sandbox limitations and module-hook limitations remain.
++
 +## Local explicit WASM FFI continuation
 +
 +`runtime/loopback-fetch.js` routes HTTP loopback URLs through the existing guest
@@ -181,7 +222,7 @@ index d88c8f8..bcc6b10 100644
  This document explains how Vivari works end to end: the core constraint it
  solves, the worker topology, the syscall protocol, the filesystem, the process
  model, the Node runtime, networking, native code, and the build. It is the
-@@ -917,4 +1041,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
+@@ -917,4 +1072,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
    `GET / → 200` (network-gated, like `verify-express`).
  
  See [`AGENTS.md`](./AGENTS.md) §"Testing & verification" for exactly when to run
@@ -415,7 +456,7 @@ index 8686985..9aa24e0 100644
    else if (type === "fetch-done") control && control.dispatchFetch(event.data);
  };
 diff --git a/packages/kernel-host/coreutils.js b/packages/kernel-host/coreutils.js
-index aa430c1..4fa6e87 100644
+index aa430c1..e31f97d 100644
 --- a/packages/kernel-host/coreutils.js
 +++ b/packages/kernel-host/coreutils.js
 @@ -267,7 +267,7 @@ if (evalCode != null) {
@@ -529,7 +570,21 @@ index aa430c1..4fa6e87 100644
    // Scripting no-ops: still handled by runSimple / installed on /bin (used in
    // shell scripts and \`&&\`||\` chains), but hidden from Tab suggestions since
    // nobody completes them interactively and they only clutter the list.
-@@ -718,4 +776,4 @@ function runInteractive() {
+@@ -665,10 +723,11 @@ function runInteractive() {
+     const s = typeof buf === 'string' ? buf : buf.toString('utf8');
+     // A foreground job owns stdin: Ctrl+C interrupts it (SIGINT to every stage of
+     // a pipeline); otherwise pass keystrokes straight through to the first stage
+-    // (Enter as newline), no line-edit/echo — the program drives the display.
++    // unchanged, no line-edit/echo — the program drives the display. In particular
++    // CR is Return, while LF may be Ctrl+J/newline in an application's keymap.
+     if (currentChild) {
+       if (s.indexOf('\\x03') !== -1) { if (currentKill) currentKill('SIGINT'); else { try { currentChild.kill('SIGINT'); } catch (e) {} } }
+-      else { try { currentChild.stdin.write(s.replace(/\\r/g, '\\n')); } catch (e) {} }
++      else { try { currentChild.stdin.write(buf); } catch (e) {} }
+       return;
+     }
+     for (let i = 0; i < s.length; i++) {
+@@ -718,4 +777,4 @@ function runInteractive() {
  if (argv[2]) runBatch();
  else runInteractive();
  `,
@@ -1081,6 +1136,34 @@ index be7a806..9206d7c 100644
 -}
 \ No newline at end of file
 +}
+diff --git a/packages/runtime/builtins/child_process.js b/packages/runtime/builtins/child_process.js
+index d7695ac..3702e8b 100644
+--- a/packages/runtime/builtins/child_process.js
++++ b/packages/runtime/builtins/child_process.js
+@@ -281,10 +281,23 @@ export function createChildProcess({ sys, process, Buffer, EventEmitter, Readabl
+     // Tools rely on this to surface a nested process's logs (Nest spawns the app
+     // with {stdio:'inherit'}; without this its bootstrap logs never appear).
+     const stdio = n.opts.stdio;
++    const inheritIn = stdio === "inherit" || (Array.isArray(stdio) && stdio[0] === "inherit");
+     const inheritOut = stdio === "inherit" || (Array.isArray(stdio) && stdio[1] === "inherit");
+     const inheritErr = stdio === "inherit" || (Array.isArray(stdio) && stdio[2] === "inherit");
+     if (inheritOut) cp.stdout.on("data", (d) => process.stdout.write(d));
+     if (inheritErr) cp.stderr.on("data", (d) => process.stderr.write(d));
++    if (inheritIn) {
++      const input = chunk => cp.stdin.write(chunk);
++      const end = () => cp.stdin.end();
++      process.stdin.on("data", input);
++      process.stdin.once("end", end);
++      cp.once("exit", () => {
++        process.stdin.removeListener("data", input);
++        process.stdin.removeListener("end", end);
++        if (process.stdin.listenerCount("data") === 0) process.stdin.pause();
++      });
++      if (process.stdin.readableEnded) end();
++    }
+     process.nextTick(() => cp.emit("spawn"));
+     return cp;
+   }
 diff --git a/packages/runtime/builtins/ffi.js b/packages/runtime/builtins/ffi.js
 new file mode 100644
 index 0000000..dab85b2
@@ -1410,6 +1493,37 @@ index 0000000..dab85b2
 +    },
 +  };
 +}
+diff --git a/packages/runtime/builtins/process.js b/packages/runtime/builtins/process.js
+index daabc38..d91450d 100644
+--- a/packages/runtime/builtins/process.js
++++ b/packages/runtime/builtins/process.js
+@@ -224,5 +224,26 @@ export function createProcess({ pid = 1, ppid = 0, argv = [], env = {}, cwd = "/
+     emit: () => false,
+     features: {},
+   };
++  process.emitWarning = (warning, type, code, ctor) => {
++    const options = type && typeof type === "object" ? type : { type, code, ctor };
++    if (typeof warning !== "string" && !(warning instanceof Error)) throw new TypeError('warning must be a string or Error');
++    for (const key of ['type', 'code', 'detail']) {
++      if (options[key] !== undefined && typeof options[key] !== 'string') throw new TypeError(`${key} must be a string`);
++    }
++    if (options.ctor !== undefined && typeof options.ctor !== 'function') throw new TypeError('ctor must be a function');
++    const error = warning instanceof Error ? warning : new Error(warning);
++    if (!(warning instanceof Error)) {
++      error.name = options.type || 'Warning';
++      if (options.code !== undefined) error.code = options.code;
++      if (options.detail !== undefined) error.detail = options.detail;
++      Error.captureStackTrace?.(error, options.ctor || process.emitWarning);
++    }
++    if (error.name === 'DeprecationWarning' && process.noDeprecation) return;
++    process.nextTick(() => {
++      if (error.name === 'DeprecationWarning' && process.throwDeprecation) throw error;
++      process.emit('warning', error);
++      if (!process.noWarnings) process.stderr.write(`(${process.name || 'node'}:${process.pid}) ${error.code ? '[' + error.code + '] ' : ''}${error.name}: ${error.message}\n${error.detail ? error.detail + '\n' : ''}`);
++    });
++  };
+   return process;
+ }
 diff --git a/packages/runtime/builtins/sea.js b/packages/runtime/builtins/sea.js
 new file mode 100644
 index 0000000..ffed890
@@ -1552,7 +1666,7 @@ index c6f68b8..8505980 100644
      writeFile: (p, content) => {
        const body = typeof content === "string" ? b(content) : content;
 diff --git a/packages/runtime/index.js b/packages/runtime/index.js
-index af2b08d..a53e887 100644
+index af2b08d..00f792b 100644
 --- a/packages/runtime/index.js
 +++ b/packages/runtime/index.js
 @@ -14,6 +14,9 @@ import { createWebSocket } from "./websocket.js";
@@ -1627,7 +1741,21 @@ index af2b08d..a53e887 100644
  
    // Node exposes the posix/win32 path flavors as their own subpath builtins
    // (`require('node:path/posix')`). We're posix, so `path` already IS posix;
-@@ -1272,6 +1301,7 @@ export function createRuntime({
+@@ -1230,6 +1259,13 @@ export function createRuntime({
+   // lets `const { Module } = require('module')`, `require('module') === Module`,
+   // and monkey-patching `Module.prototype`/`_load`/`_extensions` all behave.
+   const Module = moduleSystem.Module;
++  process.getBuiltinModule = id => {
++    if (typeof id !== 'string') throw new TypeError('id must be a string');
++    return Module.isBuiltin(id) ? vvRootRequire(id) : undefined;
++  };
++  // Browser worker constructors cannot load guest file:// modules. Guest threads
++  // are exposed through node:worker_threads, never the host network constructor.
++  globalThis.Worker = undefined;
+   // `builtinModules` must be the public list only (no `node:`-prefixed dupes and
+   // no internal names). Snapshot before the node: aliases are added below.
+   Module.builtinModules = Object.keys(builtins).filter((n) => !n.startsWith("node:") && !n.startsWith("_"));
+@@ -1272,6 +1308,7 @@ export function createRuntime({
    // `typeof Bun !== 'undefined'`. See packages/runtime/builtins/bun.js.
    const bunRuntime = createBunRuntime({ process, Buffer, require: vvRootRequire });
    for (const [name, mod] of Object.entries(bunRuntime.modules)) builtins[name] = mod;
@@ -1635,7 +1763,7 @@ index af2b08d..a53e887 100644
    globalThis.__ocInstallBun = () => {
      globalThis.Bun = bunRuntime.Bun;
      return bunRuntime.Bun;
-@@ -1329,6 +1359,7 @@ export function createRuntime({
+@@ -1329,6 +1366,7 @@ export function createRuntime({
      /** External delivery from the kernel: an interactive stdin chunk for THIS
       * process ({type:'stdin', chunk} - chunk null = EOF). Feeds process.stdin. */
      dispatchStdin: (msg) => dispatchStdin(msg),
@@ -1643,7 +1771,7 @@ index af2b08d..a53e887 100644
      /**
       * Run an entry file like `node <entry>`, then drive the event loop until it
       * is quiescent (no pending timers/immediates/nextTicks and no open servers).
-@@ -1386,4 +1417,4 @@ export function createRuntime({
+@@ -1386,4 +1424,4 @@ export function createRuntime({
        return finish(code);
      },
    };
@@ -1724,6 +1852,96 @@ index 0000000..25b9085
 +    req.end();
 +  });
 +}
+diff --git a/packages/runtime/node/internal/blob.js b/packages/runtime/node/internal/blob.js
+index cf0bae5..dffd892 100644
+--- a/packages/runtime/node/internal/blob.js
++++ b/packages/runtime/node/internal/blob.js
+@@ -6,6 +6,7 @@ export default function (exports, require, module, process, internalBinding, pri
+   "use strict";
+ 
+   module.exports = {
++    Blob: globalThis.Blob,
+     createBlobFromFilePath() {
+       throw new Error("Vivari: fs.openAsBlob() is not supported yet");
+     },
+diff --git a/packages/runtime/node/lib/stream/consumers.js b/packages/runtime/node/lib/stream/consumers.js
+new file mode 100644
+index 0000000..4ba265a
+--- /dev/null
++++ b/packages/runtime/node/lib/stream/consumers.js
+@@ -0,0 +1,32 @@
++// Node.js v24.18.0 lib/stream/consumers.js, wrapped for the builtin loader.
++// https://github.com/nodejs/node/blob/v24.18.0/lib/stream/consumers.js
++export default function(exports, require, module, process, internalBinding, primordials) {
++'use strict';
++const { JSONParse, Uint8Array } = primordials;
++const { TextDecoder } = require('internal/encoding');
++const { Blob } = require('internal/blob');
++const { Buffer } = require('buffer');
++async function blob(stream) {
++  const chunks = [];
++  for await (const chunk of stream) chunks.push(chunk);
++  return new Blob(chunks);
++}
++async function arrayBuffer(stream) {
++  const ret = await blob(stream);
++  return ret.arrayBuffer();
++}
++async function buffer(stream) { return Buffer.from(await arrayBuffer(stream)); }
++async function bytes(stream) { return new Uint8Array(await arrayBuffer(stream)); }
++async function text(stream) {
++  const dec = new TextDecoder();
++  let str = '';
++  for await (const chunk of stream) {
++    if (typeof chunk === 'string') str += chunk;
++    else str += dec.decode(chunk, { stream: true });
++  }
++  str += dec.decode(undefined, { stream: false });
++  return str;
++}
++async function json(stream) { return JSONParse(await text(stream)); }
++module.exports = { arrayBuffer, blob, buffer, bytes, text, json };
++}
+diff --git a/packages/runtime/node/lib/vm.js b/packages/runtime/node/lib/vm.js
+index 824559d..1da8606 100644
+--- a/packages/runtime/node/lib/vm.js
++++ b/packages/runtime/node/lib/vm.js
+@@ -14,6 +14,8 @@
+ //
+ // Like the `tty`/`url` shims, this is intentional (browser reality), not a stub.
+ 
++import { rewriteDynamicImportToGlobal } from '../../esm.js';
++
+ export default function (exports, require, module) {
+   const { Buffer } = require("buffer");
+ 
+@@ -52,7 +54,7 @@ export default function (exports, require, module) {
+         return true;
+       },
+     });
+-    const src = String(code);
++    const src = rewriteDynamicImportToGlobal(String(code)) ?? String(code);
+     const filename = filenameOf(options);
+     // Real vm returns the script's *completion value* (the value of a trailing
+     // expression statement), which a `new Function` body can't yield for a
+@@ -78,7 +80,7 @@ export default function (exports, require, module) {
+   const indirectEval = eval;
+ 
+   function runInThisContext(code, options) {
+-    const src = `${String(code)}\n//# sourceURL=${filenameOf(options)}`;
++    const src = `${rewriteDynamicImportToGlobal(String(code)) ?? String(code)}\n//# sourceURL=${filenameOf(options)}`;
+     return indirectEval(src);
+   }
+ 
+@@ -103,7 +105,7 @@ export default function (exports, require, module) {
+   function compileFunction(code, params = [], options = {}) {
+     const args = Array.isArray(params) ? params.map(String) : [];
+     // eslint-disable-next-line no-new-func
+-    return new Function(...args, `${String(code)}\n//# sourceURL=${filenameOf(options)}`);
++    return new Function(...args, `${rewriteDynamicImportToGlobal(String(code)) ?? String(code)}\n//# sourceURL=${filenameOf(options)}`);
+   }
+ 
+   class Script {
 diff --git a/packages/runtime/node/lib/wasi.js b/packages/runtime/node/lib/wasi.js
 index 1fc5148..fdeb793 100644
 --- a/packages/runtime/node/lib/wasi.js
@@ -1779,13 +1997,56 @@ index 1fc5148..fdeb793 100644
          fd_renumber: notsup,
          path_open,
          path_filestat_get,
+diff --git a/packages/runtime/node/loader.js b/packages/runtime/node/loader.js
+index 961f34d..b438775 100644
+--- a/packages/runtime/node/loader.js
++++ b/packages/runtime/node/loader.js
+@@ -53,6 +53,7 @@ import encodingFactory from "./internal/encoding.js";
+ // stream (Phase 2 #6): Node's real lib/stream.js + internal/streams/* verbatim.
+ import streamFactory from "./lib/stream.js";
+ import streamPromisesFactory from "./lib/stream/promises.js";
++import streamConsumersFactory from "./lib/stream/consumers.js";
+ import streamsLegacyFactory from "./internal/streams/legacy.js";
+ import streamsDestroyFactory from "./internal/streams/destroy.js";
+ import streamsStateFactory from "./internal/streams/state.js";
+@@ -215,6 +216,7 @@ const FACTORIES = {
+   "internal/encoding": encodingFactory,
+   stream: streamFactory,
+   "stream/promises": streamPromisesFactory,
++  "stream/consumers": streamConsumersFactory,
+   // `stream/web` = the WHATWG streams, which the host realm provides as globals.
+   // @edge-runtime/primitives (pulled by Next.js) does `require('stream/web')`.
+   "stream/web": (exports, require, module) => {
 diff --git a/roadmap.md b/roadmap.md
-index 3ab02ef..293c764 100644
+index 3ab02ef..639e77d 100644
 --- a/roadmap.md
 +++ b/roadmap.md
-@@ -1,5 +1,48 @@
+@@ -1,5 +1,71 @@
  # Vivari — Roadmap
  
++First matched TUI submission reached the real parser worker and exposed a leaked
++host Worker constructor. Hide it and expose getBuiltinModule through the existing
++guest registry so portable libraries select real guest worker_threads. Package the
++pinned parser worker explicitly; no fake highlighting response is provided.
++
++## Local V2 input and warnings
++
++Actual V2 TUI interaction exposed missing process.emitWarning (EventEmitter limit)
++and inherit-mode input forwarding. Implement deferred warning events/diagnostics
++and child byte forwarding with exit cleanup. Independent worker probes assert
++warning metadata, UTF-8 input and cleanup against preexisting listener counts.
++Return did not submit because the interactive shell rewrote CR to LF. Foreground
++input now preserves bytes, with a shell-to-child CR regression probe.
++
++## Local coherent V2 CLI continuation
++
++The source-matched V2 CLI reaches missing node:stream/consumers. Add Node's
++collection algorithms and expose the real worker Blob through internal/blob.
++VM Script dynamic imports also escaped to browser module loading; use the existing
++guest import rewriter and assert namespaces, completion values and missing imports.
++The enclosing independent guest probe covers observable decoding/collection and
++error propagation; this is reusable Node compatibility, not application logic.
++
 +## Local WASM FFI: native-owned mirror writeback
 +
 +The real source-built OpenCode server listens in a browser worker, but its TUI
@@ -1832,7 +2093,7 @@ index 3ab02ef..293c764 100644
  Built on the principle **de-risk the hardest part first**: prove the riskiest
  primitive (synchronous cross-thread access to a shared kernel) before expanding.
  
-@@ -3041,4 +3084,35 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
+@@ -3041,4 +3107,35 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
  | `Fetcher Worker` | Network/registry worker |
  | `Node.js Worker PID n` | Process = 1 worker + Node shim |
  | `[worker n]` | Nested `worker_threads` — real (#16 stage 2b) |
