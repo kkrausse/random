@@ -93,27 +93,27 @@ function contextStats(
   cost: number,
   syncing: boolean,
 ): { left: string; right: string } {
-  if (!session) return { left: "New session — no context yet", right: "" }
+  if (!session) return { left: "New session", right: "" }
   if (!usage) {
     // Messages for this session aren't synced yet (or it has no assistant
     // usage). Fall back to the session's cumulative totals so the row still
     // shows something useful.
     const tokens = session.tokens
     const total = tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write
-    if (total <= 0) return syncing ? { left: "Context — loading…", right: "" } : { left: "Context — no usage yet", right: "" }
+    if (total <= 0) return syncing ? { left: "…", right: "" } : { left: "no usage yet", right: "" }
     return {
-      left: `Context ≈${formatCompactTokens(total)} total toks · ${formatCost(cost || session.cost)}`,
-      right: syncing ? "loading…" : "",
+      left: `≈${formatCompactTokens(total)} · ${formatCost(cost || session.cost)}`,
+      right: syncing ? "…" : "",
     }
   }
   const leftParts = [
-    `Context ${usage.tokens.toLocaleString()} tokens`,
+    `${formatCompactTokens(usage.tokens)}`,
     usage.model ? `${usage.model.providerID}/${usage.model.id}` : undefined,
-    cost > 0 ? `${formatCost(cost)} spent` : undefined,
+    cost > 0 ? `${formatCost(cost)}` : undefined,
   ]
   return {
-    left: leftParts.filter(Boolean).join("  ·  "),
-    right: usage.percent !== undefined ? `${usage.percent}% used` : syncing ? "loading…" : "",
+    left: leftParts.filter(Boolean).join(" · "),
+    right: usage.percent !== undefined ? `${usage.percent}%` : syncing ? "…" : "",
   }
 }
 
@@ -197,10 +197,9 @@ export function SessionPicker(props: { context: Plugin.Context }) {
         const location = shortenLocation(props.context.ui.format.path(session.location.directory))
         const details = [relativeTime(session.time.updated), location]
         if (session.agent) details.push(session.agent)
-
         return {
           title: session.title?.trim() || "Untitled session",
-          description: details.join("  ·  "),
+          description: details.join(" · "),
           status,
           state,
           value: session.id,
