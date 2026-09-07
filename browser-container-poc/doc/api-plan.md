@@ -178,11 +178,19 @@ registration, new-frame Service Worker control, and HMR until that is verified.
 - Export/import and versioned coherent checkpoints are later storage operations.
 - Stopping a runtime must leave this object usable. A facade over a destroyed
   `vm.fs` does not satisfy that contract.
+- This lifetime also applies to isolated embedding: if an iframe hosts storage
+  and execution, stopping execution must retain the storage host while the
+  workspace remains open. Parent-side access may use a transport-backed facade;
+  preserve one authoritative file tree rather than creating a second copy.
 
 ### Runtime and Execution
 
 - `Runtime.start(...)`: validates distribution/tool compatibility and attaches
   execution to the workspace. Errors and cancellation clean up partial startup.
+- Keep execution hosting behind an internal host/transport boundary so directly
+  hosted workers can later be replaced by an isolated iframe implementation.
+  Preserve the public execution/tool/endpoint contracts across implementations;
+  a public `environment` option need not be settled for the first milestone.
 - `node({ entry, args, cwd, env, signal? })`: explicitly selects the configured
   Node-compatible frontend; module resolution stays inside the runtime.
 - `bun(...)`: expose only with documented, qualified Bun-compatible behavior.
@@ -268,6 +276,12 @@ receipt. Keep consumer-specific FFI layouts outside the generic substrate.
 
 ## Embedding and security boundaries
 
+**Follow-up decision:** the core API plan stands. Permissive and restricted
+deployments use the same workspace, execution, typed-tool, and endpoint APIs.
+Embedding isolation and outbound network policy are separate deployment choices;
+configure them when constructing the execution environment, not on each call.
+No speculative `secure` flag or per-call approval mechanism is needed.
+
 Removing per-call `access` flags does not make endpoints security capabilities.
 The current same-origin unsandboxed preview, parent runtime handle, multiple
 egress paths, and unauthenticated model proxy are POC facts, not isolation.
@@ -282,6 +296,26 @@ Plan the embedding origin layout and storage/SW routing constraints alongside
 endpoint extraction. Implement stronger policy as a separate track rather than
 adding misleading `access` labels to `expose()`. Keep model provider configuration
 in the OpenCode/application recipe; core only supplies generic connectivity.
+
+`expose()` provides inbound browser routing to a guest listener; it does not
+configure outbound network access. The embedding adapter owns preview restrictions
+and connection plumbing so individual `attachPreview()` callers do not have to
+assemble security policy themselves.
+
+A same-origin-connections deployment is a candidate for the security spike:
+browser-enforced CSP `connect-src 'self'` can allow same-origin backend/model
+gateway routes while blocking cross-origin connection APIs. HTTP-delivered
+workers generally require CSP on their own script responses; preview responses
+need their own enforced policy too. This is not a complete exfiltration guarantee:
+subresources, forms, navigation, and backend-mediated sharing/delivery need
+separate qualification. A same-origin fixed reverse proxy is a possible transport;
+not every permitted request must pass through a parent-window message broker.
+
+Restricted behavior requires matching deployment headers, origins, worker assets,
+and gateway enforcement; a JavaScript runtime option alone cannot establish it.
+The security spike should determine exact configuration and guarantees. Proceed
+with the first milestone while preserving the hosting and workspace-lifetime
+boundaries above; stronger enforcement is not a prerequisite for that milestone.
 
 ## First milestone and follow-ons
 
