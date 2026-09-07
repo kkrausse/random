@@ -1,5 +1,12 @@
 # Browser workspace experiments
 
+## Current API design
+
+- [JavaScript workspace API plan](api-plan.md) — filesystem/runtime separation,
+  typed module execution and tools, service endpoints, and current implementation gaps.
+- [API implementation handoff](api-handoff.md) — granular task cards, dependencies,
+  acceptance criteria, source map, and copy-paste agent assignments.
+
 ## Layout
 
 - `../qemu/` — existing QEMU-Wasm app, guest image recipes, runtime patch,
