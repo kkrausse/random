@@ -2,7 +2,8 @@
 // No mock renderer, FFI replacement, test renderer, or host execution.
 console.log('tui: entry', JSON.stringify({ platform: process.platform, arch: process.arch, versions: process.versions, stdinTTY: process.stdin.isTTY, stdoutTTY: process.stdout.isTTY }));
 try {
-  const { createCliRenderer, TextRenderable } = await import('@opentui/core');
+  const { createCliRenderer, TextRenderable, setRenderLibPath } = await import('@opentui/core');
+  if (process.env.VV_TUI_FFI_ARTIFACT) setRenderLibPath(process.env.VV_TUI_FFI_ARTIFACT);
   console.log('tui: imported');
   const renderer = await createCliRenderer({ exitOnCtrlC: false, useKittyKeyboard: {}, autoFocus: false });
   console.log('tui: initialized');

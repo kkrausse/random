@@ -1,6 +1,24 @@
 # Vivari feasibility POC
 
-## Latest: real OpenTUI WASM core runs in workers
+## Latest: general WASM-backed FFI substrate
+
+An independent compiled C library now passes pointer/buffer lifetime, memory
+growth, wasm32 pointer-bearing records and reentrant callbacks through both
+`bun:ffi` and `node:ffi` in real workers. Loading uses explicit `.ffi.json` WASM
+artifacts. The runtime has no OpenTUI-specific symbol handling or TS RenderLib
+replacement. The supported subset has explicit memory/lifetime/signature limits.
+
+The unchanged OpenTUI TypeScript renderer entry reaches that loader, then fails
+on its absent audio export. Its real StyledChunk ABI also differs: TS records
+are 56 bytes, wasm32 Zig records 28. **TypeScript renderer and actual OpenCode
+TUI acceptance remain blocked.** See [FFI contract, proof, exact ABI and next
+native shim](../doc/vivari-ffi-results.md).
+
+Live isolated origin **http://127.0.0.1:5203/**, Browser Control **tidy-tiger-674**,
+has the passing independent FFI probe and idle Shell 1. Run
+`bun /ffi-probe/contract.cjs`. The earlier :5202 kernel was preserved.
+
+## Previous: real OpenTUI WASM core runs in workers
 
 The pinned Zig renderer/edit buffer now builds as a WASI reactor and passes real
 browser text rendering, keyboard input, 186×19 → 74×14 resize and destroy back to

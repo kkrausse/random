@@ -1,5 +1,11 @@
 # Vivari reusable WASI / OpenTUI core slice
 
+**Architectural steering / continuation:** [general WASM FFI results](vivari-ffi-results.md)
+supersede the TypeScript-backend recommendation at the end of this historical
+report. Reusable bun:ffi/node:ffi loading, memory and callbacks now live in the
+runtime. Independent browser proof passes; actual OpenTUI TypeScript remains
+blocked on missing audio and the precisely measured native64/wasm32 struct ABI.
+
 2026-09-06. **PASS: real OpenTUI 0.4.5 Zig renderer and edit buffer execute as a
 WASI reactor in a Vivari process worker.** Real keyboard text, ANSI output into
 xterm, live resize and destroy-to-prompt passed, including after the computer's
