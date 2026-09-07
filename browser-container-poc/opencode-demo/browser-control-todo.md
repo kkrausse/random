@@ -1,5 +1,13 @@
 # Browser Control execution follow-up
 
+- [ ] 2026-09-07 later continuation, CLI v0.7.0, `rapid-raven-074`, :5217:
+  snapshot exposes HTML `summary` as button ref e4, but `ref("e4").click()`
+  constructs `locator('... > summary:nth-of-type(1)').and(getByRole('button'))`
+  and times out (5s bounded reproduction; earlier getByRole click hit outer 25s
+  deadline). Expected the snapshot ref to resolve. Recovery: inspected summary
+  then `page.locator('summary').click()` succeeds; download button and Blob payload
+  inspection succeed. No session/relay reset. Main page remained responsive.
+
 - [ ] 2026-09-07 continuation, v0.7.0 `rapid-raven-074`, :5217: after
   interruption the session page was about:blank and host :5217 stopped. Restarted
   only that host. A replacement page encountered OPFS ownership conflict; early

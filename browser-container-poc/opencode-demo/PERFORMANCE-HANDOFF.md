@@ -1,5 +1,60 @@
 # Terminal performance handoff — 2026-09-07
 
+## Latest continuation — consumer layout/sized-text scratch (read first)
+
+See **[PERFORMANCE-RESULTS.md](PERFORMANCE-RESULTS.md)** for the measured results,
+failed experiments, acceptance evidence, and unresolved qualification. This push
+established a large allocation reduction, **not reliable sustained responsiveness**.
+
+- Final adapter now sizes text scratch to actual UTF-8 byte size and reuses the
+  six-float Yoga layout output. Package output guards require both markers.
+  Real guest regression passes text semantics, changed native layout, independent
+  returned copies/objects and 128 repeated reads without pin/byte growth.
+- 8-key owned pin allocation bytes fell 8,480,968 → 5,975; bytes visited per sync
+  direction fell ~50.7 GB → ~0.35 GB. First valid short run: 122/130 ms median/p95.
+  Later fresh repeat: **571/611 ms**, so do not advertise a stable 4× speedup.
+  Complete 96-key paced sample: 312/1167 ms; later repeat exceeded the 3s key
+  deadline after 78 completed frames. Small pins still accumulate.
+- Generic runtime view-cache experiments were tested and removed for lack of
+  reliable improvement. `patches/0001-sqlite.patch` and upstream checkout match
+  de45400 again. Runtime and demo snapshots rebuilt after removing experiments.
+- Final unpaced test delivered/erased 96 letters, 32-letter batches visible in
+  1619/1819/2866 ms including driver overhead. Coalesced frames are NOT per-key
+  latency. Separate settled 15s idle: pins 4420, bytes 70,664, WASM 32,440,320,
+  unchanged. Whole-tab memory inspection hit its 20s deadline; not qualified.
+- Harness now rejects unexpected trusted keys (including those before typing),
+  missing/unfocused input, missing foreground TUI FFI and profiling-off selection.
+  It distinguishes key count from coalesced rendered keys and captures erased
+  stage before idle. Raw worker stdin arrays also include terminal replies:
+  offset/correlate them before computing key→worker timing.
+- Acceptance PASS two reloads, actual launcher, Ctrl+C recovery, shell restart,
+  first shell Enter, live Vite fixture, actual diagnostics-download Blob payload,
+  viewport and 75 hash entries. Both final-ready and final-enter screenshots read.
+- One settled TUI Enter submitted and reached provider; provider returned HTTP
+  429. Escape sent during retries. Host :5217 subsequently stopped (cause unknown),
+  producing HTTP transport failure. Restarted only host; no workspace clearing.
+  Early-Enter focus/readiness race and successful model reply still need checking.
+- Live host: `PORT=5217 bun serve.ts`, background shell
+  **sh_07ca96d8b001q4zsZkWsfjdLps**, URL http://127.0.0.1:5217/.
+  Browser session **rapid-raven-074**, fresh real TUI at empty prompt, Muse Spark.
+  Current guest PIDs: 44 service wrapper, 45 service CLI, 46 bun dev, 48 Vite sh,
+  49 Vite, **53 interactive shell → 61 launcher → 62 wrapper → 63 TUI**.
+  Last TUI pins 1867 / bytes 31,407 / WASM 32,243,712, profiling off.
+  Reinspect identities before every resumed measurement.
+- User granted an exclusive measurement interval during this push. Coordinate a
+  new interval on resumption rather than assuming that permission stays exclusive.
+- Browser Control `summary` snapshot ref mislabels it as button; ref click hangs.
+  Use inspected `page.locator('summary')`. Recorded in browser-control-todo.md.
+- Full verification and experiment logs are in `../vivari/.runtime/perf-*.log`;
+  detailed receipts/screens under ignored `evidence/`. No subagents were used.
+
+Next push: remaining small consumer allocations + matched-scheduling latency
+qualification, total memory, message correlation, early-Enter readiness and
+successful model-response acceptance. The outer “Launching…” label is stale after
+TUI renders and must not be treated as a readiness signal.
+
+---
+
 ## NEW continuation checkpoint — 2026-09-07 afternoon (read first)
 
 User requested handoff soon due to context size. Task is NOT complete. Changes

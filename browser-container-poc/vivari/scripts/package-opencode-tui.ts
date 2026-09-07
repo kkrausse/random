@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { createHash } from 'node:crypto'
 import ts from 'typescript'
 import { readdirSync, realpathSync } from 'node:fs'
-import { adaptTextRead } from './opentui-text-scratch'
+import { adaptTextRead, adaptLayoutRead } from './opentui-text-scratch'
 const root = resolve(import.meta.dir, '..')
 const v2 = process.argv.includes('--v2')
 const name = v2 ? 'opencode-v2' : 'opencode-tui'
@@ -56,7 +56,7 @@ for (const mode of v2 ? ['cli','parser'] : ['cli','app']) {
         if(realpathSync(dirname(args.path))!==realpathSync(coreDir))return;
         const contents=await Bun.file(args.path).text();
         if(!contents.includes('editBufferGetText(buffer, maxLength)'))return;
-        return {contents:adaptTextRead(contents),loader:'js'};
+        return {contents:adaptLayoutRead(adaptTextRead(contents)),loader:'js'};
       })
     }},createSolidTransformPlugin(), {name:'published-module-selection',setup(build){
       build.onResolve({filter:/^jsonc-parser$/},args=>({path:resolve(dirname(createRequire(args.importer).resolve('jsonc-parser')),'../esm/main.js')}))
@@ -81,7 +81,7 @@ for (const mode of v2 ? ['cli','parser'] : ['cli','app']) {
       continue
     }
     const sourceText=await output.text();
-    if(v2&&mode==='cli'&&!sourceText.includes('vivariTextScratch'))throw Error('Text scratch adapter was not included in CLI output');
+    if(v2&&mode==='cli'&&(!sourceText.includes('vivariTextScratch')||!sourceText.includes('vivariLayoutScratch')))throw Error('Scratch adapters were not included in CLI output');
     const lowered=ts.transpileModule(sourceText,{
       compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true},
       transformers:{before:[context=>source=>{

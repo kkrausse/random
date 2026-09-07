@@ -21,8 +21,8 @@ try{
     window.__perf?.dispose();
     const terminal=demo.terminal,now=()=>performance.timeOrigin+performance.now();
     const screen=()=>Array.from({length:terminal.rows},(_,i)=>terminal.buffer.active.getLine(terminal.buffer.active.viewportY+i)?.translateToString(true)).join('\n');
-    const p=window.__perf={started:now(),keys:[],output:{chunks:0,chars:0,parseMs:[]},messages:{},longTasks:[],renders:0,expected:'',matched:0};
-    const key=e=>{if(e.isTrusted&&p.keys.length<10000)p.keys.push({keyAt:now(),letter:e.key.length===1,focused:document.activeElement===terminal.textarea})};
+    const p=window.__perf={started:now(),keys:[],unexpected:0,armed:null,output:{chunks:0,chars:0,parseMs:[]},messages:{},longTasks:[],renders:0,expected:'',matched:0};
+    const key=e=>{if(!e.isTrusted)return;const expected=p.armed===e.key;p.armed=null;if(!expected)p.unexpected++;if(p.keys.length<10000)p.keys.push({keyAt:now(),expected,letter:e.key.length===1,focused:document.activeElement===terminal.textarea})};
     document.querySelector('#terminal').addEventListener('keydown',key,true);
     const data=terminal.onData(()=>{const k=p.keys.at(-1);if(k)k.dataAt=now()});
     const render=terminal.onRender(()=>{p.renders++;if(p.expected&&screen().includes(p.expected)){const k=p.keys.at(-1);if(k&&!k.renderAt){k.renderAt=now();requestAnimationFrame(()=>{k.frameAt=now();p.matched++})}}});
@@ -35,7 +35,7 @@ try{
     const expiry=setTimeout(p.dispose,180000);
   }));
   for(const w of page.workers().filter(w=>w.url().includes('process-worker'))){
-    const identity=await bounded('identity',()=>w.evaluate(()=>({pid:process.pid,role:process.argv[1],serve:process.argv.includes('serve')})));
+    const identity=await bounded('identity',()=>w.evaluate(()=>({pid:process.pid,role:process.argv[1],serve:process.argv.includes('serve'),hasFfi:!!process.getBuiltinModule('bun:ffi').vivariStats?.()})));
     report.progress.push({identity});if(!report.config.pids.includes(identity.pid))continue;
     workers.push({w,identity});
     await bounded(`install:${identity.pid}`,()=>w.evaluate(()=>{
@@ -56,17 +56,20 @@ try{
     }));
   }
   if(workers.length!==report.config.pids.length)throw Error('Missing requested worker');
+  if(mode==='tui'&&!workers.some(({identity:i})=>i.hasFfi&&!i.serve&&i.role==='/opencode-v2/cli/entry.cjs'))throw Error('No active foreground TUI FFI worker');
   const collect=async name=>{
     const stage={name,main:await bounded(`main:${name}`,()=>page.evaluate(()=>JSON.parse(JSON.stringify({...__perf,heap:performance.memory?.usedJSHeapSize})))),processes:[]};
     report.stages.push(stage);save(`main-saved:${name}`);
     for(const {w,identity} of workers){stage.processes.push({...identity,...await bounded(`read:${identity.pid}:${name}`,()=>w.evaluate(()=>({ffi:process.getBuiltinModule('bun:ffi').vivariStats?.(),input:JSON.parse(JSON.stringify(globalThis.__inputPerf))})))});save(`worker-saved:${identity.pid}:${name}`)}
   };
-  await collect('start');await page.waitForTimeout(report.config.idleMs);await collect('idle');
+  await collect('start');
+  if(mode==='tui'&&!report.stages[0].processes.some(p=>p.hasFfi&&p.ffi?.profiling))throw Error('TUI profiling was not enabled');
+  await page.waitForTimeout(report.config.idleMs);await collect('idle');
   for(let batch=0;batch<report.config.batches;batch++){
     let token='';const start=Date.now();
     for(let i=0;i<report.config.keys;i++){
       token+='abcdefghijklmnopqrstuvwxyz'[i%26];
-      const matched=await bounded(`expect:${batch}:${i}`,()=>page.evaluate(token=>{__perf.expected=token;return __perf.matched},token));
+      const matched=await bounded(`expect:${batch}:${i}`,()=>page.evaluate(token=>{if(__perf.unexpected)throw Error('Unexpected trusted input; discard run');__perf.expected=token;__perf.armed=token.at(-1);return __perf.matched},token));
       await bounded(`key:${batch}:${i}`,()=>page.keyboard.press(token.at(-1)));
       if(report.config.paced)await page.waitForFunction(n=>__perf.matched>n,matched,{timeout:3000});
       save(`key-sent:${batch}:${i}`);
@@ -74,10 +77,14 @@ try{
     await page.waitForFunction(token=>{const t=demo.terminal;return Array.from({length:t.rows},(_,i)=>t.buffer.active.getLine(t.buffer.active.viewportY+i)?.translateToString(true)).join('\n').includes(token)},token,{timeout:5000});
     report.progress.push({batch,typingMs:Date.now()-start});await collect(`typed-${(batch+1)*report.config.keys}`);
     await bounded('clear-expect',()=>page.evaluate(()=>{__perf.expected=''}));
-    for(let i=0;i<report.config.keys;i++)await bounded(`erase:${batch}:${i}`,()=>page.keyboard.press('Backspace'));
+    for(let i=0;i<report.config.keys;i++){await page.evaluate(()=>{__perf.armed='Backspace'});await bounded(`erase:${batch}:${i}`,()=>page.keyboard.press('Backspace'));}
     await page.waitForTimeout(1500);
   }
-  await page.waitForTimeout(report.config.idleMs);await collect('final-idle');report.complete=true;
+  await collect('erased');
+  await page.waitForTimeout(report.config.idleMs);await collect('final-idle');
+  const final=report.stages.at(-1).main;
+  if(final.unexpected||final.keys.length!==report.config.batches*report.config.keys*2||final.keys.some(k=>!k.focused||!k.dataAt))throw Error('Unexpected, missing, or unfocused input; discard run');
+  report.complete=true;
 }catch(e){report.error=String(e);save('failed');
   try{report.stages.push({name:'failure',main:await bounded('failure-main',()=>page.evaluate(()=>JSON.parse(JSON.stringify({...__perf,heap:performance.memory?.usedJSHeapSize})))),processes:[]})}catch{}
 }
@@ -88,6 +95,6 @@ finally{
 }
 const quantiles=a=>{a=a.filter(Number.isFinite).sort((x,y)=>x-y);return a.length?{p50:a[Math.floor(.5*a.length)],p95:a[Math.min(a.length-1,Math.floor(.95*a.length))],max:a.at(-1)}:null};
 const keys=report.stages.at(-1)?.main.keys.filter(k=>k.letter&&k.frameAt)||[];
-const summary={label,mode,complete:!!report.complete,error:report.error,keys:keys.length,latency:Object.fromEntries(['dataAt','outputAt','renderAt','frameAt'].map(s=>[s,quantiles(keys.map(k=>k[s]-k.keyAt))])),stages:report.stages.map(s=>({name:s.name,heap:s.main.heap,output:s.main.output.chars,renders:s.main.renders,ffi:s.processes.map(p=>({pid:p.pid,...p.ffi,symbols:undefined}))}))};
+const summary={label,mode,complete:!!report.complete,error:report.error,keys:report.stages.at(-1)?.main.keys.filter(k=>k.letter).length||0,renderedKeys:keys.length,measurement:report.config.paced?'paced key-to-paint-opportunity':'unpaced batch completion (renders coalesce; not per-key latency)',batches:report.progress.filter(p=>p.batch!==undefined),latency:report.config.paced?Object.fromEntries(['dataAt','outputAt','renderAt','frameAt'].map(s=>[s,quantiles(keys.map(k=>k[s]-k.keyAt))])):null,stages:report.stages.map(s=>({name:s.name,heap:s.main.heap,output:s.main.output.chars,renders:s.main.renders,ffi:s.processes.map(p=>({pid:p.pid,...p.ffi,symbols:undefined}))}))};
 fs.writeFileSync(file.replace('.json','-summary.json'),JSON.stringify(summary,null,2));
 return summary;
