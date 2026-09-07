@@ -70,12 +70,9 @@ body {
 
 .terminal-notice::before { content: ""; flex: 0 0 6px; height: 6px; border-radius: 50%; background: currentColor; }
 #copy-toast:empty { display: none; }
-#copy-toast[data-status="success"]::before,
-#connection-status[data-status="connected"]::before { background: var(--notice-blue); }
+#copy-toast[data-status="success"]::before { background: var(--notice-blue); }
 #connection-status { cursor: pointer; pointer-events: auto; }
-#connection-status[data-status="connected"] { opacity: .5; }
-#connection-status[data-status="connected"]:hover,
-#connection-status[data-status="connected"]:focus-visible { opacity: 1; }
+#connection-status[data-status="connected"] { display: none; }
 #copy-toast[data-status="error"],
 #connection-status[data-status="closed"],
 #connection-status[data-status="detached"],
