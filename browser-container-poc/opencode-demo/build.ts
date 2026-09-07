@@ -8,14 +8,15 @@ const hash = (b: Uint8Array) => new Bun.CryptoHasher('sha256').update(b).digest(
 const uiOnly = process.argv.includes('--ui-only');
 if (!uiOnly) {
 await cp(join(source, '.runtime/patched/packages/core/dist'), join(out, 'runtime'), { recursive: true });
+await cp(join(source, 'public/vendor'), join(out, 'vendor'), { recursive: true });
 for (const name of await readdir(join(out, 'runtime'), { recursive: true })) {
   const f = Bun.file(join(out, 'runtime', name));
   if (await f.exists() && hash(new Uint8Array(await f.arrayBuffer())) !== hash(new Uint8Array(await Bun.file(join(source, '.runtime/patched/packages/core/dist', name)).arrayBuffer()))) throw Error('Runtime changed during snapshot; wait for its build to finish and retry');
 }
-const receipt = await Bun.file(join(source, '.runtime/opencode-tui-package/receipt.json')).json();
+const receipt = await Bun.file(join(source, '.runtime/opencode-v2-package/receipt.json')).json();
 const assets = [];
-for (const a of receipt.assets.filter((a: any) => a.mode === 'cli')) {
-  const bytes = new Uint8Array(await Bun.file(join(source, '.runtime/opencode-tui-package', a.file)).arrayBuffer());
+for (const a of receipt.assets) {
+  const bytes = new Uint8Array(await Bun.file(join(source, '.runtime/opencode-v2-package', a.file)).arrayBuffer());
   if (hash(bytes) !== a.sha256) throw Error(`Source changing: ${a.file}; retry after packaging finishes`);
   await Bun.write(join(out, 'guest', a.file), bytes);
   assets.push(a);
@@ -35,6 +36,7 @@ for (const name of await readdir(join(source, 'fixture'), { recursive: true })) 
   if (await f.exists()) fixture[name] = await f.text();
 }
 await Bun.write(join(out, 'fixture.json'), JSON.stringify(fixture));
+await cp(join(source, 'probes/runtime/install-opencode-launcher.cjs'), join(out, 'install-launcher.cjs'));
 await Bun.write(join(out, 'manifest.json'), JSON.stringify({ revision: receipt.revision, assets }, null, 2));
 console.log(`Snapshot ready: ${assets.length} guest assets; OpenCode ${receipt.revision}`);
 }

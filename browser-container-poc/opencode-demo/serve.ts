@@ -1,10 +1,14 @@
 import { resolve } from 'node:path';
+import { modelProxy } from '../vivari/scripts/model-proxy';
+import catalog from '../vivari/src/provider-upstreams.json';
+const proxy = modelProxy(new Map([['opencode', { baseURL: catalog.upstreams.opencode, headers: { authorization: 'Bearer public' } }]]));
 const root = import.meta.dirname;
 const port = Number(process.env.PORT ?? 5216);
 const headers = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp', 'Cache-Control': 'no-store' };
 if (!await Bun.file(resolve(root, '.snapshot/manifest.json')).exists()) throw Error('Run bun build.ts first');
-Bun.serve({ hostname: '127.0.0.1', port, async fetch(req) {
-   const path = new URL(req.url).pathname;
+Bun.serve({ hostname: '127.0.0.1', port, idleTimeout: 240, async fetch(req) {
+    const path = new URL(req.url).pathname;
+    if (path.startsWith('/api/model/')) return proxy(req);
    if (path === '/api/catalog/api.json') {
      if (req.method !== 'GET') return new Response('Method not allowed', { status: 405, headers });
      try {

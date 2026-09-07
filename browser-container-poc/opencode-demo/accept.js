@@ -1,30 +1,24 @@
-// Browser Control CLI only. This runner owns :5216 and reloads only that page.
+// Run through Browser Control CLI on the dedicated :5216 demo tab.
 if (page.url() !== 'http://127.0.0.1:5216/') throw Error('Select the isolated demo :5216');
 const root = [path.resolve('browser-container-poc/opencode-demo'), path.resolve('opencode-demo'), path.resolve('.')].find(p => fs.existsSync(path.join(p, 'accept.js')));
-if (!root) throw Error('Run from repo root or opencode-demo');
-const dir = path.join(root, 'evidence');
-fs.mkdirSync(dir, { recursive: true });
-await page.reload();
-await page.waitForFunction(() => window.demo?.phase.startsWith('Shell ready'), null, { timeout: 90000 });
-await page.locator('.xterm-helper-textarea').focus();
-await page.keyboard.type('pwd');
-await page.keyboard.press('Enter');
-await page.waitForFunction(() => Array.from({ length: window.demo.terminal.buffer.active.length }, (_, i) => window.demo.terminal.buffer.active.getLine(i)?.translateToString(true)).includes('/workspace'));
-await page.getByRole('button', { name: 'Launch OpenCode', exact: true }).click();
-await page.waitForFunction(() => window.demo.phase.startsWith('TUI provider dialog'), null, { timeout: 90000 });
-await page.locator('.xterm-helper-textarea').focus();
-await page.keyboard.type('nemotron');
-await page.waitForFunction(() => Array.from({ length: window.demo.terminal.rows }, (_, i) => window.demo.terminal.buffer.active.getLine(i)?.translateToString(true)).some(s => s.includes('nemotron')));
-await page.screenshot({ path: dir + '/keyboard.png' });
-await page.keyboard.press('Control+c');
-await page.waitForFunction(() => window.demo.phase.startsWith('Shell ready'));
-await page.getByRole('button', { name: 'Launch OpenCode', exact: true }).click();
-await page.waitForFunction(() => window.demo.phase.startsWith('TUI provider dialog'));
-await page.getByRole('button', { name: 'Stop shell', exact: true }).click();
+const screen = () => page.evaluate(() => Array.from({length: window.demo.terminal.rows}, (_, i) => window.demo.terminal.buffer.active.getLine(i)?.translateToString(true)).join('\n'));
+for (let boot = 0; boot < 2; boot++) {
+  await page.reload();
+  await page.waitForFunction(() => window.demo?.phase.startsWith('Shell ready') || window.demo?.phase.startsWith('Failed'), null, {timeout:180000});
+  if (!(await page.evaluate(() => window.demo.phase)).startsWith('Shell ready')) throw Error(await page.evaluate(() => window.demo.logs));
+  await page.waitForFunction(() => document.querySelector('#preview').contentDocument?.querySelector('h1')?.textContent === 'Ready for an agent edit', null, {timeout:60000});
+  await page.getByRole('button', {name:'Launch OpenCode', exact:true}).click();
+  await page.waitForFunction(() => window.demo.terminal.buffer.active.type === 'alternate' && Array.from({length:window.demo.terminal.rows}, (_,i) => window.demo.terminal.buffer.active.getLine(i)?.translateToString(true)).some(s => s?.includes('Muse Spark')), null, {timeout:60000});
+  await page.locator('.xterm-helper-textarea').focus();
+  await page.keyboard.press('Control+c');
+  await page.waitForFunction(() => window.demo.phase.startsWith('Shell ready') && window.demo.terminal.buffer.active.type === 'normal', null, {timeout:30000});
+}
+await page.getByRole('button', {name:'Stop shell', exact:true}).click();
 await page.waitForFunction(() => window.demo.phase.startsWith('Shell exited'));
-await page.getByRole('button', { name: 'Start shell', exact: true }).click();
+await page.getByRole('button', {name:'Start shell', exact:true}).click();
 await page.waitForFunction(() => window.demo.phase.startsWith('Shell ready'));
-await page.screenshot({ path: dir + '/final.png' });
-const report = await page.evaluate(async () => ({ url: location.href, phase: window.demo.phase, logs: window.demo.logs, hashes: await (await fetch('/hashes.json')).json() }));
-fs.writeFileSync(dir + '/final.json', JSON.stringify({ ...report, reload: true, keyboard: true, ctrlC: true, relaunch: true, forcedStopRecovery: true }, null, 2));
-return { url: report.url, phase: report.phase, shellFirst: true, pwd: true, keyboard: true, ctrlC: true, relaunch: true, forcedStopRecovery: true };
+const report = await page.evaluate(() => window.demo.diagnostics());
+if (!report.processes.server || !report.processes.vite || !report.processes.shell || !report.hashes['manifest.json']) throw Error('Incomplete diagnostics or stopped services');
+fs.mkdirSync(path.join(root, 'evidence'), {recursive:true});
+fs.writeFileSync(path.join(root, 'evidence/shell-v2.json'), JSON.stringify({ ...report, screen:await screen(), reload:true, launcher:true, ctrlC:true, shellRecovery:true }, null, 2));
+return {phase:report.phase, processes:report.processes, preview:report.preview, reload:true, launcher:true, ctrlC:true, shellRecovery:true};
