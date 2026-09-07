@@ -233,7 +233,6 @@ export function SessionPicker(props: { context: Plugin.Context }) {
   const selectedStats = createMemo(() =>
     contextStats(selectedSession(), selectedUsage(), selectedCost(), contextSyncing()),
   )
-  const baseDirectory = createMemo(() => (currentSession ?? selectedSession() ?? sessions()[0]?.location.directory) ? (currentSession ?? selectedSession() ?? sessions()[0])!.location.directory : undefined)
   const visiblePreview = createMemo(() => preview()?.sessionID === selectedSession()?.id ? preview() : undefined)
   const permission = createMemo(() => visiblePreview()?.permissions[0])
 
@@ -611,14 +610,11 @@ export function SessionPicker(props: { context: Plugin.Context }) {
       overflow="hidden"
       backgroundColor={props.context.theme.contextual.overlay.background.default}
     >
-      <box height={compact() ? (changingLifecycle() ? 1 : 0) : changingLifecycle() ? 2 : 1} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1}>
-        {!compact() ? <text wrapMode="none" fg={props.context.theme.text.subdued}>
-          {baseDirectory() ? props.context.ui.format.path(baseDirectory()!) : " "}
-        </text> : null}
-        {changingLifecycle() ? (
+      {changingLifecycle() ? (
+        <box height={1} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1}>
           <text wrapMode="none" fg={props.context.theme.text.subdued}>Updating session…</text>
-        ) : null}
-      </box>
+        </box>
+      ) : null}
       {failure() ? (
         <box paddingLeft={2} paddingRight={2}>
           <text fg={props.context.theme.text.feedback.error.default}>{failure()}</text>
