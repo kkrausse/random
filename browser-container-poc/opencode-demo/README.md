@@ -14,8 +14,11 @@ opencode2 --prompt "Your task here"
 
 For `--prompt`, wait for the TUI input to settle, then press Enter. Ctrl+C
 returns to the shell. Long character-by-character TUI input still has the
-runtime's known FFI memory limitation; the fresh-process `--prompt` workaround
-is recommended for longer tasks.
+runtime's known FFI pin-count/latency limitation; the fresh-process `--prompt`
+workaround is recommended for longer tasks. The audited text/layout scratch
+adapters sharply reduce retained allocations, but sustained responsiveness is
+not qualified. See [performance results](PERFORMANCE-RESULTS.md) for measured
+runs, variability, and remaining work.
 
 ## Diagnostics
 
@@ -42,7 +45,7 @@ in browser workers.
 
 ## Acceptance
 
-Run `accept.js` through the Browser Control CLI on a dedicated :5216 session.
+Run `accept.js` through the Browser Control CLI on a dedicated :5216 or :5217 session.
 It checks two consecutive boots/reloads, the real OpenCode launcher and selected
 Muse Spark model, Ctrl+C, shell stop/restart, live preview and diagnostics.
 The receipt is written to ignored `evidence/shell-v2.json`.
