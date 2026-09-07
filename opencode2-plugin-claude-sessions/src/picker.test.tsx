@@ -85,10 +85,11 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
       session: {
         list: async () => ({ data: sessions, cursor: {} }),
         active: async () => Object.fromEntries([...activeChildren].map((id) => [id, { type: "running" }])),
-        interrupt: async () => {
+        interrupt: async ({ sessionID }: any) => {
           interruptCalls++
           if (interruptFailure) throw { message: "Unexpected Status", response: { status: 409 } }
           running = false
+          activeChildren.delete(sessionID)
         },
         get: async ({ sessionID }: any) => [...sessions, ...children].find((s) => s.id === sessionID),
       },
@@ -128,6 +129,16 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     handlers.get("permission.asked")!({ data: { sessionID: "grandchild" } })
     await setup.renderOnce()
     assert.match(setup.captureCharFrame(), /Permission required · 2 sub-agents running/)
+    commands.find((c) => c.bind === "down").run()
+    await commands.find((c) => c.bind === "x").run()
+    await setup.renderOnce()
+    assert.equal(lifecycle.inactive.s0, true)
+    assert.equal(lifecycle.inactive.child, true)
+    assert.equal(lifecycle.inactive.grandchild, true)
+    assert.equal(activeChildren.size, 0)
+    assert.match(setup.captureCharFrame(), /❯\s+Session 1/)
+    setLifecycle("inactive", "child", false)
+    setLifecycle("inactive", "grandchild", false)
     for (const child of children) {
       activeChildren.delete(child.id)
       handlers.get("session.deleted")!({ data: { sessionID: child.id } })
