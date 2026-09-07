@@ -112,6 +112,8 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     const childRow = setup.renderer.root.findDescendantById("claude-session-row-2")!
     assert.equal(parentRow.height, 1)
     assert.equal(childRow.height, 1)
+    assert.match(setup.captureCharFrame(), /\d+[smhdy] ago|just now/)
+    assert.doesNotMatch(setup.captureCharFrame(), /\[x\]/)
     setLifecycle("inactive", { s0: true })
     await setup.renderOnce()
     assert.match(setup.captureCharFrame(), /1 sub-agent running/)
@@ -177,8 +179,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     assert.match(setup.captureCharFrame(), /❯\s+Session 20/)
     storageFailure = false
     running = true
-    const dismiss = setup.renderer.root.findDescendantById("claude-session-lifecycle-21")!
-    await setup.mockMouse.click(dismiss.x + 2, dismiss.y)
+    await commands.find((c) => c.bind === "x").run()
     await new Promise((resolve) => setTimeout(resolve, 20))
     await setup.renderOnce()
     assert.equal(lifecycle.inactive.s20, true)
