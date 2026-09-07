@@ -3,7 +3,8 @@ import { resolve, basename, dirname } from 'node:path'
 import { createRequire } from 'node:module'
 import { createHash } from 'node:crypto'
 import ts from 'typescript'
-import { readdirSync } from 'node:fs'
+import { readdirSync, realpathSync } from 'node:fs'
+import { adaptTextRead } from './opentui-text-scratch'
 const root = resolve(import.meta.dir, '..')
 const v2 = process.argv.includes('--v2')
 const name = v2 ? 'opencode-v2' : 'opencode-tui'
@@ -50,7 +51,14 @@ for (const mode of v2 ? ['cli','parser'] : ['cli','app']) {
        const password=fs.readFileSync(Global.Path.state+'/password','utf8');
        await Effect.runPromise(runTui({url:process.env.VV_TUI_SERVER || 'http://127.0.0.1:4096',headers:ServerAuth.headers({password})}).pipe(Effect.provide(services.layer)));`))
   const result = await Bun.build({entrypoints:[entry], target:'node', format:'esm',
-    plugins:[createSolidTransformPlugin(), {name:'published-module-selection',setup(build){
+    plugins:[{name:'opentui-text-scratch',setup(build){
+      if(v2)build.onLoad({filter:/chunk-(?:bun|node)-.*\.js$/},async args=>{
+        if(realpathSync(dirname(args.path))!==realpathSync(coreDir))return;
+        const contents=await Bun.file(args.path).text();
+        if(!contents.includes('editBufferGetText(buffer, maxLength)'))return;
+        return {contents:adaptTextRead(contents),loader:'js'};
+      })
+    }},createSolidTransformPlugin(), {name:'published-module-selection',setup(build){
       build.onResolve({filter:/^jsonc-parser$/},args=>({path:resolve(dirname(createRequire(args.importer).resolve('jsonc-parser')),'../esm/main.js')}))
       // The official plugin replaces server.js CONTENT with solid.js, while
       // OpenTUI also imports solid.js directly. Canonicalize the module identity
@@ -72,7 +80,9 @@ for (const mode of v2 ? ['cli','parser'] : ['cli','app']) {
       assets.push({file,destination:`/${name}/${mode}/${basename(output.path)}`,bytes:bytes.length,sha256:hash(bytes),mode})
       continue
     }
-    const lowered=ts.transpileModule(await output.text(),{
+    const sourceText=await output.text();
+    if(v2&&mode==='cli'&&!sourceText.includes('vivariTextScratch'))throw Error('Text scratch adapter was not included in CLI output');
+    const lowered=ts.transpileModule(sourceText,{
       compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true},
       transformers:{before:[context=>source=>{
         const visit:ts.Visitor=node=>ts.isMetaProperty(node)&&node.keywordToken===ts.SyntaxKind.ImportKeyword
@@ -117,7 +127,7 @@ if (v2) {
     }
   }
 }
-const receipt={revision,sourcePatchSha256:sourcePatch?hash(sourcePatch):null,bun:Bun.version,solidVersion,lockSha256:hash(new Uint8Array(await Bun.file(resolve(source,'bun.lock')).arrayBuffer())),assets,
+const receipt={revision,sourcePatchSha256:sourcePatch?hash(sourcePatch):null,adapterSha256:v2?hash(await Bun.file(resolve(import.meta.dir,'opentui-text-scratch.ts')).text()):null,bun:Bun.version,solidVersion,lockSha256:hash(new Uint8Array(await Bun.file(resolve(source,'bun.lock')).arrayBuffer())),assets,
   note:v2?'Matched V2 CLI/server source; reviewed optional-process-metrics source patch, official Solid compiler, pinned public model catalog. Guest-only execution.':'Unmodified pinned source and official Solid compiler plugin; CLI and direct actual runTui entry. App entry needs a guest service for connected behavior; no mock transport or model.'}
 await Bun.write(resolve(out,'receipt.json'),JSON.stringify(receipt,null,2)+'\n')
 console.log(receipt)

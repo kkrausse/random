@@ -1,5 +1,124 @@
 # Terminal performance handoff — 2026-09-07
 
+## NEW continuation checkpoint — 2026-09-07 afternoon (read first)
+
+User requested handoff soon due to context size. Task is NOT complete. Changes
+below are committed with this checkpoint; original historical handoff follows.
+
+### Current state
+
+- Host restarted as `PORT=5217 bun serve.ts`, background shell ID
+  `sh_07c4fa3d0001ZHglFtAFIEr4sF`. URL http://127.0.0.1:5217/.
+- Browser Control CLI v0.7.0 is connected; session `rapid-raven-074` currently
+  shows actual OpenCode TUI at empty prompt, Muse Spark 1.3 Free.
+- During interruption host stopped and session became about:blank. Original
+  :5217 tab remained responsive and retained OPFS lock. Replacement failed boot.
+  Adopt/reload recovery restored original persisted 635-entry workspace. See
+  browser-control-todo.md for odd page-replacement warning. No storage cleared.
+- Current process identities after LAST reload: 45 wrapper serve, 46 CLI serve,
+  47 bun run dev, **48 interactive sh**, 49 Vite sh wrapper, 50 /bin/opencode2,
+  51 Vite, 52 /opencode-v2/run.cjs, **53 actual CLI TUI**. Reinspect individually
+  with bounded reads; do not assume PIDs survive reload/relaunch.
+- Current TUI FFI (profiling OFF): pins 8992, pinnedBytes 1,250,042,
+  wasmBytes 34,734,080. Prompt empty. User may interact with visible tab: coordinate
+  an exclusive typing interval before collecting trusted-key latency.
+
+### Valid new measured evidence (ignored evidence/*.json)
+
+- `perf-qualified-shell`: 96 letters; median/p95 key-to-next-rAF **10.86/15.35 ms**.
+  output arrival 0.380/0.880 ms; xterm render 4.775/7.325 ms. All complete.
+- `perf-short-tui`: fresh original consumer, 8 paced letters then erase.
+  key-to-next-rAF median/p95 **517/690 ms**. First 8 letters: 10,472 FFI calls,
+  syncIn+syncOut **4056 ms**, native **18.975 ms**, ~50.72 GB visited EACH direction.
+  pin bytes 78,880 → 8,560,130 → 16,962,092 after erase. WASM 32.37 → 66.26 MB.
+  No idle FFI activity/growth. No main-thread long tasks; 10 proc-out messages,
+  1013 chars; xterm parse max .095 ms. Dominant CPU cost is synchronization.
+- `perf-aged-tui`: same process next 8 letters; next-rAF **1364/1601 ms**.
+  pins 16.96 → 33.85 MB through typing+erase; idle stable. Copies dominate again.
+- `perf-baseline-final-tui`: fresh original TUI, updated BEFORE-dispatch input
+  probe, 8 keys, next-rAF **479.765/670.515 ms**. pin bytes 72,900 → 8,554,150 →
+  16,956,112. Typing sync 3957 ms vs native 18.635 ms. Best fresh baseline for
+  comparison with the final harness. Worker stage breakdown not yet summarized.
+- Do NOT compare worker arrival timestamps from `short`/`aged`: listener was
+  registered AFTER runtime onmessage, so it could include synchronous work.
+  `baseline-final` wraps onmessage BEFORE dispatch and corrects that attribution.
+- `after-short` is an incomplete run with OLD package (adapter initially missed
+  node chunk). `fixed-short` has adapter but wrong PID selection and unexpected
+  extra trusted events (7 measured letters for 8 requested). Not qualified for
+  comparison. It reports ~2.4s keys, so speed improvement is NOT established.
+  Need investigate current CPU/copy cost with correct TUI PID and controlled input.
+- No model request in any performance sample. Historical 3.3s model response is
+  separate. No valid sustained/unpaced baseline yet; original budget approaches
+  64MiB quickly, so use short bounded samples rather than crash deliberately.
+
+### Implemented changes
+
+1. `profile.js`: bounded 2.5s per-worker evaluation, incremental receipt before
+   each operation/key and each completed main/worker stage, try/finally cleanup,
+   180s auto-dispose backstop, bounded arrays; explicit `state.profilePids` selects
+   foreground chain for instrumentation. Config profileBatches, profileKeys,
+   profileIdleMs, profilePaced. Unique labels avoid overwriting evidence. It wraps
+   worker onmessage before dispatch and samples guest 50ms timer drift.
+   Failure now snapshots main counters; this latest small change not rerun yet.
+   Still needs: assert expected foreground roles/FFI presence, reject unexpected
+   trusted input, stronger per-key receipts, unpaced throughput interpretation.
+   Unpaced render samples coalesce and must NOT be called per-key latency.
+2. `../vivari/scripts/opentui-text-scratch.ts`: exact audited OpenTUI 0.4.5
+   editBufferGetText method transform. Reuses high-water scratch (geometric growth),
+   returns original owned slice/null. Native wasm-lib.zig editBufferGetText only
+   synchronously copies into outPtr; no retention or callbacks. No generic FFI
+   lifetime/budget change; other small transient ptr allocations still grow.
+3. `package-opencode-tui.ts` applies adapter BEFORE Solid onLoad plugin, to BOTH
+   chunk-node and chunk-bun (target node imports chunk-node!). Realpath guard and
+   exact-method drift validation; final CLI build MUST contain vivariTextScratch.
+   Receipt records adapterSha256. Original first build silently missed adapter;
+   now output guard rejects that failure. Latest package and snapshot DO include it.
+4. Real regression: build-text-scratch-probe.ts emits exact original/transformed
+   methods; probes/runtime/text-scratch.cjs executes both against actual renderer
+   in guest worker. UTF-8/zero/truncation/growth/multiple handles/copy independence,
+   **128 repeated 1MiB reads add zero pins/bytes**. ffi-headless --text-scratch runs it.
+5. Runtime optional BootOptions.onLog subscribes before boot; used by main.ts.
+   Preserves logs and exposes concrete startup OPFS failure. This is stored in
+   regenerated patches/0001-sqlite.patch plus upstream docs. No FFI runtime change
+   beyond previously committed counters. Download screen uses viewportY and preview
+   text bounded to 1M chars. Diagnostics still expandable, no DOM batching change.
+
+### Verification completed this continuation
+
+- `bun scripts/build-text-scratch-probe.ts` then real Node 24.13.0
+  `scripts/ffi-headless.mjs --text-scratch`: PASS full FFI/loopback/streams/VM/
+  warnings/inherited-input + TEXT_SCRATCH_PASS, pins 30 / bytes 1,094,794 after
+  regression setup, no growth for repeated reads.
+- `bun scripts/build-runtime.ts patched`: PASS `.runtime/perf-repair-build.log`.
+- Full upstream `scripts/verify-node.mjs`: PASS after resumption, exit 0;
+  `.runtime/perf-repair-verify.log` (first attempted call interrupted before start).
+- `bun scripts/package-opencode-tui.ts --v2`: PASS latest; log
+  `.runtime/perf-repair-package.log`. Earlier rejected builds logged same path.
+- `bun build.ts`: PASS latest snapshot with enforced adapter. Reload + actual TUI
+  launch successful; early log capture also visibly confirmed failure and restore.
+- Final acceptance still pending: corrected short before/after, sustained/idle,
+  shell/CLI input, first Enter focus/readiness, Ctrl+C and service/preview health,
+  screenshot viewed (not just saved), diagnostics download payload, hashes.
+- `accept.js` still hardcodes :5216; parameterize for :5217 and use viewportY.
+- README still warns old FFI limitation; update only after performance qualification.
+
+### Next actions
+
+1. Inspect browser/session/host; preserve attached tabs/workspace. No subagents.
+2. Select CURRENT shell→launcher→wrapper→TUI PIDs (last 48,50,52,53) and run short
+   new label with idle prompt and exclusive typing. Confirm FFI profiling truly on
+   in TUI. Save screenshot/read it. Investigate slow fixed-short result honestly.
+3. If remaining copies dominate, audit consumer's other scratch allocations or
+   avoid synchronizing the 1MiB high-water buffer by sizing read output to actual
+   byte size via existing native editBufferGetTextBuffer/textBufferGetByteSize,
+   with real regression. Do not alter retained-pointer semantics or raise budget.
+4. Establish unpaced throughput, idle pin/WASM stability and total-memory limits;
+   separate inspector deadlines, timer drift, bridge latency, native CPU and xterm.
+5. Complete acceptance, summarize measured evidence/limitations in tracked results,
+   commit only task files. Earlier full handoff below is historical.
+
+---
+
 ## Resume goal
 
 Complete the user's measurement-driven diagnosis/fix of the Vivari OpenCode

@@ -1,5 +1,17 @@
 # Browser Control execution follow-up
 
+- [ ] 2026-09-07 continuation, v0.7.0 `rapid-raven-074`, :5217: after
+  interruption the session page was about:blank and host :5217 stopped. Restarted
+  only that host. A replacement page encountered OPFS ownership conflict; early
+  onLog correctly captured it (evidence/recovery-boot.json). The other attached
+  :5217 page was responsive at Launching OpenCode, holding the original lease.
+  Navigated replacement to about:blank, adopted the sole :5217 target, reloaded.
+  Browser Control then warned “session default page was closed; created a new
+  page” despite successful reload/OPFS restore. No storage reset or relay restart.
+  Subsequent reload succeeded. Inspect session/target identity before continuing.
+  Latest fixed-short profile had unexpected trusted input events and stale PIDs;
+  do not treat it as qualified comparative evidence. Need exclusive typing window.
+
 - [ ] Profiling follow-up, Browser Control v0.7.0, `rapid-raven-074`, :5216:
   inspecting the second same-origin tab with `evaluate` returned `Target crashed`;
   navigating that crashed tab returned `goto: Page crashed`. The selected demo
