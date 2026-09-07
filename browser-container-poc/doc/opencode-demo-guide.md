@@ -1,4 +1,19 @@
-# Open the actual OpenCode TUI — isolated one-button demo
+# OpenCode in Vivari — shell-first demo
+
+## Shell-first update
+
+The page now boots automatically to the guest `/workspace` shell. Use **Launch
+OpenCode**, or type `bun /opencode-tui/cli/entry.cjs`, to open the TUI. Ctrl+C
+returns to the shell. **Stop shell** terminates that shell and its children;
+**Start shell** opens a replacement. The guest OpenCode server is still prepared
+in the background during boot. Model catalog/backend qualification is unchanged.
+
+For UI-only updates, use `bun build.ts --ui-only` to keep the existing pinned
+runtime and guest assets. The acceptance runner now verifies shell-first boot,
+`pwd`, TUI launch/input, Ctrl+C, relaunch, and stop/recovery, leaving a shell ready.
+
+The original qualification record below describes the earlier auto-TUI UI;
+its button labels and final provider-dialog state are historical.
 
 ## Open it now
 

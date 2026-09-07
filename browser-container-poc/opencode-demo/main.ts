@@ -5,6 +5,7 @@ const terminal = new Terminal({ fontSize: 14, convertEol: true });
 const fit = new FitAddon(); terminal.loadAddon(fit); terminal.open(document.querySelector('#terminal')!);
 const start = document.querySelector<HTMLButtonElement>('#start')!;
 const stop = document.querySelector<HTMLButtonElement>('#stop')!;
+const launch = document.querySelector<HTMLButtonElement>('#launch')!;
 let vm: any, server: any, tui: any, writer: any, installed = false;
 let logs = '', phase = 'ready', serverOutput = '';
 function log(s: string) { logs = (logs + s + '\n').slice(-1000000); document.querySelector('#logs')!.textContent = logs; }
@@ -24,7 +25,7 @@ async function run(source: string) {
 start.onclick = async () => {
   start.disabled = true;
   try {
-    if (tui && writer) { status('Launching OpenCode in the existing guest shell…'); await writer.write('bun /opencode-tui/cli/entry.cjs\r'); terminal.focus(); return; }
+    if (tui && writer) { terminal.focus(); return; }
     if (!crossOriginIsolated) throw Error('Isolation headers missing. Use the provided serve.ts URL in Chrome.');
     if (!vm) { status('Booting browser runtime…'); vm = await Vivari.boot(); vm.on('error', (e: any) => log('Kernel: ' + e.message)); }
     if (!installed) {
@@ -55,22 +56,28 @@ start.onclick = async () => {
       const deadline = Date.now() + 60000;
       while (!serverOutput.includes('server listening')) { if (!server || Date.now() > deadline) throw Error('Guest server did not become ready. Inspect server diagnostics, then retry Start.'); await new Promise(r => setTimeout(r, 100)); }
     }
-    status('Launching OpenCode…'); terminal.reset(); fit.fit();
+    status('Opening guest shell…'); terminal.reset(); fit.fit();
     // The interactive shell owns Ctrl+C signal forwarding to its foreground child.
     tui = await vm.spawn('sh', [], { cwd: '/workspace', env: { TERM: 'xterm-256color' }, terminal: { cols: terminal.cols, rows: terminal.rows } });
     writer = tui.input.getWriter(); stop.disabled = false; terminal.focus();
     const owned = tui;
-    let launched = false;
+    let tail = '';
     void (async () => { for await (const t of owned.output) {
       terminal.write(t);
-      if (t.includes('$\x1b[0m ')) {
-        if (!launched) { launched = true; await writer.write('bun /opencode-tui/cli/entry.cjs\r'); }
-        else { status('TUI returned to guest shell. Click Start OpenCode to launch again, or type a guest command.'); start.disabled = false; }
+      tail = (tail + t).slice(-200);
+      if (tail.endsWith('$\x1b[0m ')) {
+        status('Shell ready in /workspace. Type a command, or click Launch OpenCode.'); launch.disabled = false;
       }
     } })().catch(e => log(String(e)));
-    status('TUI process running. Waiting for OpenCode screen; provider/model access is not yet qualified.');
-    void owned.exit.then((code: number) => { writer?.releaseLock(); writer = undefined; tui = undefined; stop.disabled = true; start.disabled = false; status(`TUI exited ${code}. Click Start OpenCode to launch again.`); });
+    status('Shell starting…');
+    void owned.exit.then((code: number) => { writer?.releaseLock(); writer = undefined; tui = undefined; stop.disabled = true; launch.disabled = true; start.disabled = false; status(`Shell exited ${code}. Click Start shell to reopen it.`); });
   } catch (e) { status(`Failed during ${phase}: ${String(e)}. Download diagnostics; retry Start or reload this tab to reboot (files preserved).`); start.disabled = false; }
+};
+launch.onclick = async () => {
+  if (!writer) return;
+  launch.disabled = true;
+  try { status('Launching OpenCode…'); await writer.write('bun /opencode-tui/cli/entry.cjs\r'); terminal.focus(); }
+  catch (e) { log(String(e)); launch.disabled = false; }
 };
 stop.onclick = () => tui?.kill();
 document.querySelector<HTMLButtonElement>('#download')!.onclick = async () => {
@@ -78,3 +85,4 @@ document.querySelector<HTMLButtonElement>('#download')!.onclick = async () => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify({ url: location.href, phase, logs, hashes }, null, 2)], { type: 'application/json' })); a.download = 'opencode-demo-diagnostics.json'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
 Object.assign(window, { demo: { terminal, get vm() { return vm; }, get phase() { return phase; }, get logs() { return logs; } } });
+start.click();
