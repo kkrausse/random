@@ -23,5 +23,11 @@ if (!refresh) await page.evaluate(async ()=>{
   await window.probe.vm.fs.writeFile('/ffi-probe/opencode-app.cjs',`require('/opencode-tui/app/entry.cjs');`);
 });
 const result={url:page.url(),receipt,delivery,runtime:JSON.parse(fs.readFileSync(path.join(root,'.runtime/patched-build.json'),'utf8'))};
+const installer=fs.readFileSync(path.join(root,'probes/runtime/install-opencode-launcher.cjs'),'utf8');
+result.launcher=await page.evaluate(async source=>{
+  const p=await window.probe.vm.spawn('node',['-e',source]);
+  let output='';const drain=(async()=>{for await(const t of p.output)output+=t})();
+  const code=await p.exit;await drain;if(code!==0)throw Error(output);return {code,output};
+},installer);
 fs.writeFileSync(path.join(root,`../doc/logs/vivari/wire-opencode-browser${refresh?'-'+refresh:''}.json`),JSON.stringify(result,null,2));
 return {phase:refresh?'delivered-'+refresh:'delivered-server-started',assets:delivery.length,bytes:delivery.reduce((n,a)=>n+a.bytes,0)};

@@ -23,7 +23,7 @@ const kernel = new Kernel({ fs: bridge.fs, stdout: s => output += s, stderr: s =
   w.on('error', e => { console.error(e); kernel.stop(info.pid); });
   const { port1, port2 } = new MessageChannel();
   fsWorker.postMessage({ type: 'fs-register', client: info.pid, sab: info.sab, port: port2 }, [port2]);
-  w.postMessage({ type: 'init', sab: info.sab, spec: info.spec, fsPort: port1 }, [port1]);
+  w.postMessage({ type: 'init', sab: info.sab, spec: info.spec, fsPort: port1, threadPort: info.threadPort }, info.threadPort ? [port1,info.threadPort] : [port1]);
   return { postMessage: m => w.postMessage(m), terminate() { w.terminate(); workers.delete(w); fsWorker.postMessage({ type: 'fs-unregister', client: info.pid }); } };
 } });
 try {
@@ -33,6 +33,10 @@ try {
     ['ffi-library.ffi.json', '../.runtime/ffi-library.ffi.json'],
     ['contract.cjs', '../probes/runtime/ffi-contract.cjs'],
     ['loopback-fetch.cjs', '../probes/runtime/loopback-fetch.cjs'],
+    ['stream-consumers.cjs', '../probes/runtime/stream-consumers.cjs'],
+    ['vm-import.cjs', '../probes/runtime/vm-import.cjs'],
+    ['inherit-stdin.cjs', '../probes/runtime/inherit-stdin.cjs'],
+    ['process-warning.cjs', '../probes/runtime/process-warning.cjs'],
   ]) kernel.writeFile('/ffi-probe/' + guest, new Uint8Array(readFileSync(new URL(host, import.meta.url))));
   const pid = kernel.launch('bun', ['/ffi-probe/contract.cjs'], {cwd: '/ffi-probe', env: {PATH: '/bin'}});
   while (kernel.procs.has(pid)) await new Promise(r => setTimeout(r, 10));
@@ -42,6 +46,44 @@ try {
   const fetchPid=kernel.launch('node',['/ffi-probe/loopback-fetch.cjs'],{cwd:'/ffi-probe',env:{PATH:'/bin'}});
   while(kernel.procs.has(fetchPid)) await new Promise(r=>setTimeout(r,10));
   console.log(output);assert.match(output,/LOOPBACK_FETCH_PASS/);
+  output='';
+  const consumerPid=kernel.launch('node',['/ffi-probe/stream-consumers.cjs'],{cwd:'/ffi-probe',env:{PATH:'/bin'}});
+  while(kernel.procs.has(consumerPid))await new Promise(r=>setTimeout(r,10));
+  console.log(output);assert.match(output,/STREAM_CONSUMERS_PASS/);
+  output='';
+  const vmPid=kernel.launch('node',['/ffi-probe/vm-import.cjs'],{cwd:'/ffi-probe',env:{PATH:'/bin'}});
+  while(kernel.procs.has(vmPid))await new Promise(r=>setTimeout(r,10));
+  console.log(output);assert.match(output,/VM_IMPORT_PASS/);
+  output='';
+  const warningPid=kernel.launch('node',['/ffi-probe/process-warning.cjs'],{cwd:'/ffi-probe',env:{PATH:'/bin'}});
+  while(kernel.procs.has(warningPid))await new Promise(r=>setTimeout(r,10));
+  console.log(output);assert.match(output,/PROCESS_WARNING_PASS/);
+  output='';
+  const inheritPid=kernel.launch('sh',[],{cwd:'/ffi-probe',env:{PATH:'/bin',VV_RUN:'node /ffi-probe/inherit-stdin.cjs'}});
+  while(!output.includes('INHERIT_READY')&&kernel.procs.has(inheritPid))await new Promise(r=>setTimeout(r,10));
+  kernel.sendStdin(inheritPid,'hello €\r');
+  while(!output.includes('INHERIT_STDIN_PASS')&&kernel.procs.has(inheritPid))await new Promise(r=>setTimeout(r,10));
+  kernel.stop(inheritPid);
+  console.log(output);assert.match(output,/INHERIT_CHILD hello €/);assert.match(output,/INHERIT_STDIN_PASS/);
+  if (process.argv.includes('--v2')) {
+    const receipt=JSON.parse(readFileSync(new URL('../.runtime/opencode-v2-package/receipt.json',import.meta.url),'utf8'));
+    await kernel.writeFilesBatch(receipt.assets.map(a=>({path:a.destination,bytes:new Uint8Array(readFileSync(new URL('../.runtime/opencode-v2-package/'+a.file,import.meta.url)))})));
+    output='';
+    const pid=kernel.launch('bun',['/opencode-v2/cli/entry.cjs','--help'],{cwd:'/workspace',env:{PATH:'/bin',HOME:'/home/user',XDG_CONFIG_HOME:'/home/user/.config',XDG_DATA_HOME:'/home/user/.local/share',XDG_STATE_HOME:'/home/user/.local/state'}});
+    while(kernel.procs.has(pid))await new Promise(r=>setTimeout(r,10));
+    console.log('V2_HELP_GATE\n'+output);
+    assert.doesNotMatch(output,/OPENCODE_SOURCE_FAILED/);
+    assert.match(output,/USAGE/);
+    if(process.argv.includes('--v2-server')) {
+      output='';
+      const server=kernel.launch('bun',['/opencode-v2/cli/entry.cjs','serve','--service','--port','4106'],{cwd:'/workspace',env:{PATH:'/bin',HOME:'/home/user',XDG_CONFIG_HOME:'/home/user/.config',XDG_DATA_HOME:'/home/user/.local/share',XDG_STATE_HOME:'/home/user/.local/state',OPENCODE_DISABLE_MODELS_FETCH:'1',OPENCODE_DISABLE_FFF:'1'}});
+      const deadline=Date.now()+15000;
+      while(kernel.procs.has(server)&&Date.now()<deadline)await new Promise(r=>setTimeout(r,10));
+      console.log('V2_SERVER_DIAGNOSTIC\n'+output);
+      try { console.log(kernel.readFile('/home/user/.local/share/opencode/log/opencode.log').split('\n').filter(l=>/error|failed|starting|database/i.test(l)).join('\n')); } catch {}
+      kernel.stop(server);
+    }
+  }
   if (process.argv.includes('--opentui')) {
     output = '';
     const receipt = JSON.parse(readFileSync(new URL('../.runtime/tui-package/receipt.json', import.meta.url), 'utf8'));
