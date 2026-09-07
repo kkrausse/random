@@ -17,7 +17,7 @@ const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", 
 
 function relativeTime(timestamp: number) {
   const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1_000))
-  if (seconds < 60) return "just now"
+  if (seconds < 60) return "now"
   const minutes = Math.floor(seconds / 60)
   if (minutes < 60) return `${minutes}m ago`
   const hours = Math.floor(minutes / 60)
@@ -667,12 +667,12 @@ export function SessionPicker(props: { context: Plugin.Context }) {
       backgroundColor={props.context.theme.contextual.overlay.background.default}
     >
       {changingLifecycle() ? (
-        <box height={1} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1}>
+        <box height={1} flexShrink={0} flexDirection="column" paddingLeft={0} paddingRight={0}>
           <text wrapMode="none" fg={props.context.theme.text.subdued}>Updating session…</text>
         </box>
       ) : null}
       {failure() ? (
-        <box paddingLeft={2} paddingRight={2}>
+        <box paddingLeft={0} paddingRight={0}>
           <text fg={props.context.theme.text.feedback.error.default}>{failure()}</text>
         </box>
       ) : null}
@@ -706,7 +706,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
               return (
                 <>
                 {heading() ? (
-                  <box height={3} flexShrink={0} paddingLeft={1} paddingRight={1}
+                  <box height={3} flexShrink={0} paddingLeft={0} paddingRight={0}
                     border={["top"]} borderColor={props.context.theme.hue.accent[400]}>
                     <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>{heading()}</text>
                   </box>
@@ -716,8 +716,8 @@ export function SessionPicker(props: { context: Plugin.Context }) {
                    height={1}
                   flexShrink={0}
                    flexDirection="row"
-                   paddingLeft={1 + Math.min(option().depth, 4) * 2 - (active() ? 1 : 0)}
-                  paddingRight={1}
+                   paddingLeft={Math.max(0, Math.min(option().depth, 4) * 2 - (active() ? 1 : 0))}
+                  paddingRight={0}
                   border={active() ? ["left"] : []}
                   borderColor={props.context.theme.hue.accent[400]}
                   backgroundColor={
@@ -732,7 +732,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
                     handleRowClick(option().value)
                   }}
                 >
-                  <box height={1} flexDirection="row" flexGrow={1} minWidth={0} overflow="hidden">
+                  <box height={1} flexDirection="row" flexGrow={1} flexBasis={0} minWidth={0} overflow="hidden">
                     {(() => {
                       const state = option().state
                       const icon = state === "running" ? "spinner"
@@ -757,7 +757,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
                       const row = option()
                       return "status" in row && row.status ? (
                         <>
-                          <text wrapMode="none" fg={iconColor()}>{` · ${row.status}`}</text>
+                          <text wrapMode="none" flexShrink={0} fg={iconColor()}>{` · ${row.status}`}</text>
                         </>
                       ) : (
                         null
@@ -771,7 +771,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
                       ) : null}
                       <box width={8} flexShrink={0} justifyContent="flex-end">
                         <text wrapMode="none" fg={descriptionColor()}>
-                          {(option() as { updated?: string }).updated ?? ""}
+                          {((option() as { updated?: string }).updated ?? "").padStart(8)}
                         </text>
                       </box>
                     </>
@@ -782,7 +782,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
             }}
           </Index>
         </scrollbox>
-      <box id="claude-session-preview" height={previewHeight()} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1}
+      <box id="claude-session-preview" height={previewHeight()} flexShrink={0} flexDirection="column" paddingLeft={0} paddingRight={0}
         border={["top"]} borderColor={permission() ? props.context.theme.text.status.permission : props.context.theme.contextual.overlay.scrollbar.default}>
         <box flexGrow={1} minHeight={0} overflow="hidden" flexDirection="column">
         <text wrapMode="none" fg={props.context.theme.text.subdued}>{options()[selectedIndex()]?.description}</text>
@@ -836,7 +836,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
         </box>
       </box>
       {loading() ? (
-        <box paddingLeft={2} paddingRight={2}>
+        <box paddingLeft={0} paddingRight={0}>
           <text fg={props.context.theme.text.subdued}>
             {sessions().length === 0 ? "Loading sessions…" : "Loading more…"}
           </text>
