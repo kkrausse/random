@@ -1,0 +1,17 @@
+{
+  "session": "gentle-otter-329",
+  "mode": "edit",
+  "label": "recovery-guard",
+  "startedAt": "2026-09-07T04:37:40.832Z",
+  "samples": [],
+  "failure": {
+    "index": 0,
+    "error": {
+      "_tag": "ScriptError",
+      "message": "evaluate: Execution context was destroyed, most likely because of a navigation.\n    at <anonymous> (/Users/kkrausse/.bun/install/global/node_modules/@opencode-ai/browser-control/dist/cli.js:41:27)\n    at anonymous (/Users/kkrausse/.bun/install/global/node_modules/@opencode-ai/browser-control/dist/cli.js:145:3)\n    at runUserCode (/Users/kkrausse/.bun/install/global/node_modules/@opencode-ai/browser-control/dist/cli.js:7610:5)\n    at <anonymous> (/Users/kkrausse/.bun/install/global/node_modules/@opencode-ai/browser-control/dist/cli.js:5830:63)"
+    }
+  },
+  "emergencyRestoration": {
+    "verified": true
+  }
+}

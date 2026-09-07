@@ -1,0 +1,45 @@
+{
+  "ok": true,
+  "isError": false,
+  "text": "{\n  hostMs: 4198.634999997914,\n  id: '168',\n  type: 'exec',\n  stdout: '2026-09-07T04:22:42.453Z vite:deps (client) Hash is consistent. Skipping. Use --force to override.\\n' +\n    '\\n' +\n    '  VITE v7.1.4  ready in 467129 ms\\n' +\n    '\\n' +\n    '  ➜  Local:   http://127.0.0.1:5173/\\n' +\n    '2026-09-07T04:29:59.768Z vite:hmr [file change] src/WelcomeCard.tsx\\n' +\n    '2026-09-07T04:29:59.958Z vite:hmr (client) [no modules matched] src/WelcomeCard.tsx\\n' +\n    '2026-09-07T04:29:59.983Z vite:hmr (ssr) [no modules matched] src/WelcomeCard.tsx\\n' +\n    '2026-09-07T04:30:25.612Z vite:transform 16642.14ms /@react-refresh\\n' +\n    '2026-09-07T04:30:45.145Z vite:transform 322292.74ms /src/main.tsx\\n' +\n    '2026-09-07T04:30:53.917Z vite:transform 4120.01ms /@vite/client\\n' +\n    '2026-09-07T04:31:18.069Z vite:transform 1463.46ms /node_modules/.vite/deps/react_jsx-dev-runtime.js?v=e3fa9b52\\n' +\n    '2026-09-07T04:31:47.913Z vite:hmr [self-accepts] src/styles.css\\n' +\n    '2026-09-07T04:31:48.668Z vite:transform 3191.93ms /src/styles.css\\n' +\n    '2026-09-07T04:31:53.611Z vite:transform 4472.02ms /node_modules/.vite/deps/react-dom_client.js?v=e3fa9b52\\n' +\n    '2026-09-07T04:31:54.654Z vite:transform 19.38ms /node_modules/vite/dist/client/env.mjs\\n' +\n    '2026-09-07T04:31:54.851Z vite:transform 182.98ms [skipped] /node_modules/.vite/deps/chunk-X4QARNC5.js?v=e3fa9b52\\n' +\n    '2026-09-07T04:31:54.965Z vite:transform 96.54ms /node_modules/.vite/deps/chunk-I5HANLAN.js?v=e3fa9b52\\n' +\n    '2026-09-07T04:31:55.335Z vite:hmr [self-accepts] src/WelcomeCard.tsx\\n' +\n    '2026-09-07T04:31:56.096Z vite:transform 37604.09ms /src/WelcomeCard.tsx\\n' +\n    '2026-09-07T04:32:00.593Z vite:transform 116.16ms [skipped] /src/mark.svg\\n' +\n    '2026-09-07T04:32:21.446Z vite:transform 20758.03ms /node_modules/.vite/deps/lucide-react.js?v=e3fa9b52\\n' +\n    '2026-09-07T04:37:52.254Z vite:hmr [file change] src/WelcomeCard.tsx\\n' +\n    '4:38:05 AM [vite] (client) hmr update /src/WelcomeCard.tsx\\n' +\n    '2026-09-07T04:38:05.147Z vite:hmr (ssr) [no modules matched] src/WelcomeCard.tsx\\n' +\n    '2026-09-07T04:38:32.033Z vite:hmr [self-accepts] src/WelcomeCard.tsx\\n' +\n    '2026-09-07T04:38:33.175Z vite:transform 25266.44ms /src/WelcomeCard.tsx\\n' +\n    '2026-09-07T04:38:38.117Z vite:hmr [file change] src/WelcomeCard.tsx\\n' +\n    '4:38:38 AM [vite] (client) hmr update /src/WelcomeCard.tsx\\n' +\n    '2026-09-07T04:38:38.284Z vite:hmr (ssr) [no modules matched] src/WelcomeCard.tsx\\n' +\n    '2026-09-07T04:38:47.454Z vite:hmr [file change] src/WelcomeCard.tsx\\n' +\n    '4:38:47 AM [vite] (client) hmr update /src/WelcomeCard.tsx\\n' +\n    '2026-09-07T04:38:47.566Z vite:hmr (ssr) [no modules matched] src/WelcomeCard.tsx\\n' +\n    '2026-09-07T04:38:49.985Z vite:hmr [self-accepts] src/WelcomeCard.tsx\\n' +\n    '2026-09-07T04:38:50.336Z vite:transform 10218.29ms /src/WelcomeCard.tsx\\n' +\n    '2026-09-07T04:39:00.698Z vite:hmr [self-accepts] src/WelcomeCard.tsx\\n' +\n    '2026-09-07T04:39:00.978Z vite:transform 9522.11ms /src/WelcomeCard.tsx\\n' +\n    '5ff542b3c7f646327c44ba6536f74f8b750b65602bdead19d5c9362f297e0a32  src/WelcomeCard.tsx\\n' +\n    'c69fd8643ec933d7b55c7978223a01d1f772f7a1dfa96a1c42f2f6030402f004  node_modules/.vite/deps/_metadata.json\\n' +\n    ' 1385     2 IW      0  0:04 [kworker/u4:0-ev]\\n' +\n    ' 1437     1 R    113m 16:52 bun node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5173 --strictPort\\n' +\n    ' 1453  1437 S     13m  0:37 /workspace/node_modules/@esbuild/linux-x64/bin/esbuild --service=0.25.12 --ping\\n' +\n    ' 1653     2 IW      0  0:01 [kworker/0:2-mm_]\\n' +\n    ' 1686     2 IW      0  0:01 [kworker/u4:3-ev]\\n' +\n    ' 1724  1093 S     796  0:00 sh -c cat /tmp/perf-vite-prepared.log; sha256sum src/WelcomeCard.tsx node_modules/.vite/deps/_metadata.json; ps -o pid,ppid,stat,rss,time,args | tail -8; kill -KILL 1437; echo OWNED_VITE_STOPPED\\n' +\n    ' 1727  1724 R     924  0:00 ps -o pid,ppid,stat,rss,time,args\\n' +\n    ' 1728  1724 S     744  0:00 tail -8\\n' +\n    'OWNED_VITE_STOPPED\\n',\n  stderr: '',\n  code: 0\n}",
+  "value": {
+    "hostMs": 4198.634999997914,
+    "id": "168",
+    "type": "exec",
+    "stdout": "2026-09-07T04:22:42.453Z vite:deps (client) Hash is consistent. Skipping. Use --force to override.\n\n  VITE v7.1.4  ready in 467129 ms\n\n  ➜  Local:   http://127.0.0.1:5173/\n2026-09-07T04:29:59.768Z vite:hmr [file change] src/WelcomeCard.tsx\n2026-09-07T04:29:59.958Z vite:hmr (client) [no modules matched] src/WelcomeCard.tsx\n2026-09-07T04:29:59.983Z vite:hmr (ssr) [no modules matched] src/WelcomeCard.tsx\n2026-09-07T04:30:25.612Z vite:transform 16642.14ms /@react-refresh\n2026-09-07T04:30:45.145Z vite:transform 322292.74ms /src/main.tsx\n2026-09-07T04:30:53.917Z vite:transform 4120.01ms /@vite/client\n2026-09-07T04:31:18.069Z vite:transform 1463.46ms /node_modules/.vite/deps/react_jsx-dev-runtime.js?v=e3fa9b52\n2026-09-07T04:31:47.913Z vite:hmr [self-accepts] src/styles.css\n2026-09-07T04:31:48.668Z vite:transform 3191.93ms /src/styles.css\n2026-09-07T04:31:53.611Z vite:transform 4472.02ms /node_modules/.vite/deps/react-dom_client.js?v=e3fa9b52\n2026-09-07T04:31:54.654Z vite:transform 19.38ms /node_modules/vite/dist/client/env.mjs\n2026-09-07T04:31:54.851Z vite:transform 182.98ms [skipped] /node_modules/.vite/deps/chunk-X4QARNC5.js?v=e3fa9b52\n2026-09-07T04:31:54.965Z vite:transform 96.54ms /node_modules/.vite/deps/chunk-I5HANLAN.js?v=e3fa9b52\n2026-09-07T04:31:55.335Z vite:hmr [self-accepts] src/WelcomeCard.tsx\n2026-09-07T04:31:56.096Z vite:transform 37604.09ms /src/WelcomeCard.tsx\n2026-09-07T04:32:00.593Z vite:transform 116.16ms [skipped] /src/mark.svg\n2026-09-07T04:32:21.446Z vite:transform 20758.03ms /node_modules/.vite/deps/lucide-react.js?v=e3fa9b52\n2026-09-07T04:37:52.254Z vite:hmr [file change] src/WelcomeCard.tsx\n4:38:05 AM [vite] (client) hmr update /src/WelcomeCard.tsx\n2026-09-07T04:38:05.147Z vite:hmr (ssr) [no modules matched] src/WelcomeCard.tsx\n2026-09-07T04:38:32.033Z vite:hmr [self-accepts] src/WelcomeCard.tsx\n2026-09-07T04:38:33.175Z vite:transform 25266.44ms /src/WelcomeCard.tsx\n2026-09-07T04:38:38.117Z vite:hmr [file change] src/WelcomeCard.tsx\n4:38:38 AM [vite] (client) hmr update /src/WelcomeCard.tsx\n2026-09-07T04:38:38.284Z vite:hmr (ssr) [no modules matched] src/WelcomeCard.tsx\n2026-09-07T04:38:47.454Z vite:hmr [file change] src/WelcomeCard.tsx\n4:38:47 AM [vite] (client) hmr update /src/WelcomeCard.tsx\n2026-09-07T04:38:47.566Z vite:hmr (ssr) [no modules matched] src/WelcomeCard.tsx\n2026-09-07T04:38:49.985Z vite:hmr [self-accepts] src/WelcomeCard.tsx\n2026-09-07T04:38:50.336Z vite:transform 10218.29ms /src/WelcomeCard.tsx\n2026-09-07T04:39:00.698Z vite:hmr [self-accepts] src/WelcomeCard.tsx\n2026-09-07T04:39:00.978Z vite:transform 9522.11ms /src/WelcomeCard.tsx\n5ff542b3c7f646327c44ba6536f74f8b750b65602bdead19d5c9362f297e0a32  src/WelcomeCard.tsx\nc69fd8643ec933d7b55c7978223a01d1f772f7a1dfa96a1c42f2f6030402f004  node_modules/.vite/deps/_metadata.json\n 1385     2 IW      0  0:04 [kworker/u4:0-ev]\n 1437     1 R    113m 16:52 bun node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5173 --strictPort\n 1453  1437 S     13m  0:37 /workspace/node_modules/@esbuild/linux-x64/bin/esbuild --service=0.25.12 --ping\n 1653     2 IW      0  0:01 [kworker/0:2-mm_]\n 1686     2 IW      0  0:01 [kworker/u4:3-ev]\n 1724  1093 S     796  0:00 sh -c cat /tmp/perf-vite-prepared.log; sha256sum src/WelcomeCard.tsx node_modules/.vite/deps/_metadata.json; ps -o pid,ppid,stat,rss,time,args | tail -8; kill -KILL 1437; echo OWNED_VITE_STOPPED\n 1727  1724 R     924  0:00 ps -o pid,ppid,stat,rss,time,args\n 1728  1724 S     744  0:00 tail -8\nOWNED_VITE_STOPPED\n",
+    "stderr": "",
+    "code": 0
+  },
+  "valueUnavailable": false,
+  "logs": [],
+  "warnings": [],
+  "aftermath": {
+    "startUrl": "http://127.0.0.1:5198/",
+    "endUrl": "http://127.0.0.1:5198/",
+    "navigations": [],
+    "consoleErrorCount": 0,
+    "pageErrorCount": 0,
+    "handoffs": 0
+  },
+  "session": {
+    "id": "gentle-otter-329",
+    "createdAt": "2026-09-07T02:27:49.137Z",
+    "updatedAt": "2026-09-07T04:39:16.172Z",
+    "connected": true,
+    "pageUrl": "http://127.0.0.1:5198/",
+    "stateKeys": [
+      "boot",
+      "loginReady",
+      "tuiStart",
+      "tuiRetry",
+      "tuiBound",
+      "tuiOffline",
+      "offlineBound",
+      "viteStart",
+      "previewStart",
+      "previewWarmStart",
+      "profileConfig",
+      "preparedPreviewStart"
+    ]
+  }
+}

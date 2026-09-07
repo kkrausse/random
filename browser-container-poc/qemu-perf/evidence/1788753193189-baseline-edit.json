@@ -1,0 +1,83 @@
+{
+  "session": "gentle-otter-329",
+  "mode": "edit",
+  "label": "baseline",
+  "startedAt": "2026-09-07T03:53:13.189Z",
+  "samples": [
+    {
+      "mode": "edit",
+      "commandMs": 901.6550000011921,
+      "notificationMs": 7471,
+      "visibleMs": 25046.554999999702,
+      "documentPreserved": true,
+      "resources": [
+        {
+          "name": "http://127.0.0.1:5198/src/WelcomeCard.tsx?t=1788753195654",
+          "startMs": 7471.89501953125,
+          "duration": 17537.329999998212
+        }
+      ],
+      "transport": []
+    },
+    {
+      "mode": "edit",
+      "commandMs": 883.1500000022352,
+      "notificationMs": 1085,
+      "visibleMs": 7719.214999999851,
+      "documentPreserved": true,
+      "resources": [
+        {
+          "name": "http://127.0.0.1:5198/src/WelcomeCard.tsx?t=1788753229482",
+          "startMs": 1084.574951171875,
+          "duration": 6605.489999998361
+        }
+      ],
+      "transport": []
+    },
+    {
+      "mode": "edit",
+      "commandMs": 739.429999999702,
+      "notificationMs": 973,
+      "visibleMs": 21202.429999999702,
+      "documentPreserved": true,
+      "resources": [
+        {
+          "name": "http://127.0.0.1:5198/src/WelcomeCard.tsx?t=1788753246707",
+          "startMs": 973.0849609375,
+          "duration": 20194.980000000447
+        }
+      ],
+      "transport": []
+    },
+    {
+      "mode": "edit",
+      "commandMs": 1221.4750000014901,
+      "notificationMs": 2811,
+      "visibleMs": 17148.330000001937,
+      "documentPreserved": true,
+      "resources": [
+        {
+          "name": "http://127.0.0.1:5198/src/WelcomeCard.tsx?t=1788753285598",
+          "startMs": 2810.31982421875,
+          "duration": 14307.910000000149
+        }
+      ],
+      "transport": []
+    },
+    {
+      "mode": "edit",
+      "commandMs": 1586.355000000447,
+      "notificationMs": 1802,
+      "visibleMs": 9390.280000001192,
+      "documentPreserved": true,
+      "resources": [
+        {
+          "name": "http://127.0.0.1:5198/src/WelcomeCard.tsx?t=1788753313616",
+          "startMs": 1801.849853515625,
+          "duration": 7552.375
+        }
+      ],
+      "transport": []
+    }
+  ]
+}

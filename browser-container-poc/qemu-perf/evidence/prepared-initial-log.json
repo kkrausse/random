@@ -1,0 +1,44 @@
+{
+  "ok": true,
+  "isError": false,
+  "text": "{\n  hostMs: 5471.410000000149,\n  id: '127',\n  type: 'exec',\n  stdout: 'c69fd8643ec933d7b55c7978223a01d1f772f7a1dfa96a1c42f2f6030402f004  node_modules/.vite/deps/_metadata.json\\n' +\n    ' 1254     2 IW      0  0:00 [kworker/u4:1-ev]\\n' +\n    ' 1310     2 IW      0  0:00 [kworker/0:0]\\n' +\n    ' 1385     2 IW      0  0:00 [kworker/u4:0-ev]\\n' +\n    ' 1437     1 R     45m  0:25 bun node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5173 --strictPort\\n' +\n    ' 1443  1093 S     796  0:00 sh -c cat /tmp/perf-vite-prepared.log; sha256sum node_modules/.vite/deps/_metadata.json; ps -o pid,ppid,stat,rss,time,args | tail -7\\n' +\n    ' 1446  1443 R     940  0:00 ps -o pid,ppid,stat,rss,time,args\\n' +\n    ' 1447  1443 S     748  0:00 tail -7\\n',\n  stderr: '',\n  code: 0\n}",
+  "value": {
+    "hostMs": 5471.410000000149,
+    "id": "127",
+    "type": "exec",
+    "stdout": "c69fd8643ec933d7b55c7978223a01d1f772f7a1dfa96a1c42f2f6030402f004  node_modules/.vite/deps/_metadata.json\n 1254     2 IW      0  0:00 [kworker/u4:1-ev]\n 1310     2 IW      0  0:00 [kworker/0:0]\n 1385     2 IW      0  0:00 [kworker/u4:0-ev]\n 1437     1 R     45m  0:25 bun node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5173 --strictPort\n 1443  1093 S     796  0:00 sh -c cat /tmp/perf-vite-prepared.log; sha256sum node_modules/.vite/deps/_metadata.json; ps -o pid,ppid,stat,rss,time,args | tail -7\n 1446  1443 R     940  0:00 ps -o pid,ppid,stat,rss,time,args\n 1447  1443 S     748  0:00 tail -7\n",
+    "stderr": "",
+    "code": 0
+  },
+  "valueUnavailable": false,
+  "logs": [],
+  "warnings": [],
+  "aftermath": {
+    "startUrl": "http://127.0.0.1:5198/",
+    "endUrl": "http://127.0.0.1:5198/",
+    "navigations": [],
+    "consoleErrorCount": 0,
+    "pageErrorCount": 0,
+    "handoffs": 0
+  },
+  "session": {
+    "id": "gentle-otter-329",
+    "createdAt": "2026-09-07T02:27:49.137Z",
+    "updatedAt": "2026-09-07T04:15:23.235Z",
+    "connected": true,
+    "pageUrl": "http://127.0.0.1:5198/",
+    "stateKeys": [
+      "boot",
+      "loginReady",
+      "tuiStart",
+      "tuiRetry",
+      "tuiBound",
+      "tuiOffline",
+      "offlineBound",
+      "viteStart",
+      "previewStart",
+      "previewWarmStart",
+      "profileConfig"
+    ]
+  }
+}

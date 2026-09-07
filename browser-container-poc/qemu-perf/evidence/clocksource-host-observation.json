@@ -1,0 +1,44 @@
+{
+  "ok": true,
+  "isError": false,
+  "text": "{\n  firstHpetScreen: {\n    at: 1788753807170,\n    text: 'r\\n' +\n      'timestamp=2026-09-07T03:19:14.573Z level=INFO run=1077c2cf message=\"cli starting\" version=0.0.0\\n' +\n      '-beta-19157 channel=beta local=false args=\"[\\\\\"--standalone\\\\\"]\" role=cli\\n' +\n      'timestamp=2026-09-07T03:22:25.324Z level=INFO run=1077c2cf message=\"spawning process\" command=/\\n' +\n      'usr/local/bin/opencode2 args=\"[\\\\\"serve\\\\\",\\\\\"--stdio\\\\\",\\\\\"--port\\\\\",\\\\\"0\\\\\"]\" cwd=/workspace role=cli\\n' +\n      'timestamp=2026-09-07T03:23:46.234Z level=INFO run=c89b5beb message=\"cli starting\" version=0.0.0\\n' +\n      '-beta-19157 channel=beta local=false args=\"[\\\\\"serve\\\\\",\\\\\"--stdio\\\\\",\\\\\"--port\\\\\",\\\\\"0\\\\\"]\" role=cli\\n' +\n      'timestamp=2026-09-07T03:31:34.425Z level=INFO run=1077c2cf message=\"update check skipped\" reaso\\n' +\n      'n=disabled version=0.0.0-beta-19157 channel=beta role=cli\\n' +\n      'OFFLINE_DIAGNOSTIC\\n' +\n      'demo:/workspace# kill -KILL 1012 1022; echo OFFLINE_STOPPED; BUN_JSC_dumpOptions\\n' +\n      `=2 bun -e 'console.log(\"OPTIONS_ALL_DONE\")' >/tmp/perf-options-all.log 2>&1; gre\\n` +\n      \"p -E 'useJIT=|useDFGJIT=|useFTLJIT=|OPTIONS_ALL_DONE' /tmp/perf-options-all.log\\n\" +\n      'OFFLINE_STOPPED\\n' +\n      '   useJIT=true\\n' +\n      '   useDFGJIT=true\\n' +\n      '   useFTLJIT=false (default: true)\\n' +\n      'OPTIONS_ALL_DONE\\n' +\n      '[2]+  Killed                     opencode2 --standalone\\n' +\n      'demo:/workspace# DEBUG=vite:transform,vite:hmr bun node_modules/vite/bin/vite.js\\n' +\n      ' --host 127.0.0.1 --port 5173 --strictPort </dev/null >/tmp/perf-vite.log 2>&1 &\\n' +\n      ' echo VITE_PID=$!\\n' +\n      'VITE_PID=1089\\n' +\n      'demo:/workspace# stty -echo; : > /tmp/preview-bridge.b64\\n' +\n      \"printf '%s' 'bmcoImJhc2U2NCIpOwogICAgICBjb25zdCB0aW1pbmdemo:/workspace# demo:/workspace# demo:/workspace# demo:/workspace# de \\n\" +\n      'Preview bridge connected. Opening an interactive shell in /workspace…\\n' +\n      '/workspace # [ 5669.189113] clocksource: timekeeping watchdog on CPU0: wd-tsc-wd excessive read-back delay of 2514900ns vs. le\\n' +\n      '[ 5669.236508] tsc: Marking TSC unstable due to clocksource watchdog\\n' +\n      \"[ 5669.277223] TSC found unstable after boot, most likely due to broken BIOS. Use 'tsc=unstable'.\\n\" +\n      '[ 5669.286148] sched_clock: Marking unstable (5669527113485, -250224863)<-(5671079213457, -1802289923)\\n' +\n      \"[ 5669.321488] clocksource: Not enough CPUs to check clocksource 'tsc'.\\n\" +\n      '[ 5669.362543] clocksource: Switched to clocksource hpet\\n' +\n      ' '\n  },\n  latest: 1788753807170\n}",
+  "value": {
+    "firstHpetScreen": {
+      "at": 1788753807170,
+      "text": "r\ntimestamp=2026-09-07T03:19:14.573Z level=INFO run=1077c2cf message=\"cli starting\" version=0.0.0\n-beta-19157 channel=beta local=false args=\"[\\\"--standalone\\\"]\" role=cli\ntimestamp=2026-09-07T03:22:25.324Z level=INFO run=1077c2cf message=\"spawning process\" command=/\nusr/local/bin/opencode2 args=\"[\\\"serve\\\",\\\"--stdio\\\",\\\"--port\\\",\\\"0\\\"]\" cwd=/workspace role=cli\ntimestamp=2026-09-07T03:23:46.234Z level=INFO run=c89b5beb message=\"cli starting\" version=0.0.0\n-beta-19157 channel=beta local=false args=\"[\\\"serve\\\",\\\"--stdio\\\",\\\"--port\\\",\\\"0\\\"]\" role=cli\ntimestamp=2026-09-07T03:31:34.425Z level=INFO run=1077c2cf message=\"update check skipped\" reaso\nn=disabled version=0.0.0-beta-19157 channel=beta role=cli\nOFFLINE_DIAGNOSTIC\ndemo:/workspace# kill -KILL 1012 1022; echo OFFLINE_STOPPED; BUN_JSC_dumpOptions\n=2 bun -e 'console.log(\"OPTIONS_ALL_DONE\")' >/tmp/perf-options-all.log 2>&1; gre\np -E 'useJIT=|useDFGJIT=|useFTLJIT=|OPTIONS_ALL_DONE' /tmp/perf-options-all.log\nOFFLINE_STOPPED\n   useJIT=true\n   useDFGJIT=true\n   useFTLJIT=false (default: true)\nOPTIONS_ALL_DONE\n[2]+  Killed                     opencode2 --standalone\ndemo:/workspace# DEBUG=vite:transform,vite:hmr bun node_modules/vite/bin/vite.js\n --host 127.0.0.1 --port 5173 --strictPort </dev/null >/tmp/perf-vite.log 2>&1 &\n echo VITE_PID=$!\nVITE_PID=1089\ndemo:/workspace# stty -echo; : > /tmp/preview-bridge.b64\nprintf '%s' 'bmcoImJhc2U2NCIpOwogICAgICBjb25zdCB0aW1pbmdemo:/workspace# demo:/workspace# demo:/workspace# demo:/workspace# de \nPreview bridge connected. Opening an interactive shell in /workspace…\n/workspace # [ 5669.189113] clocksource: timekeeping watchdog on CPU0: wd-tsc-wd excessive read-back delay of 2514900ns vs. le\n[ 5669.236508] tsc: Marking TSC unstable due to clocksource watchdog\n[ 5669.277223] TSC found unstable after boot, most likely due to broken BIOS. Use 'tsc=unstable'.\n[ 5669.286148] sched_clock: Marking unstable (5669527113485, -250224863)<-(5671079213457, -1802289923)\n[ 5669.321488] clocksource: Not enough CPUs to check clocksource 'tsc'.\n[ 5669.362543] clocksource: Switched to clocksource hpet\n "
+    },
+    "latest": 1788753807170
+  },
+  "valueUnavailable": false,
+  "logs": [],
+  "warnings": [],
+  "aftermath": {
+    "startUrl": "http://127.0.0.1:5198/",
+    "endUrl": "http://127.0.0.1:5198/",
+    "navigations": [],
+    "consoleErrorCount": 0,
+    "pageErrorCount": 0,
+    "handoffs": 0
+  },
+  "session": {
+    "id": "gentle-otter-329",
+    "createdAt": "2026-09-07T02:27:49.137Z",
+    "updatedAt": "2026-09-07T04:31:26.881Z",
+    "connected": true,
+    "pageUrl": "http://127.0.0.1:5198/",
+    "stateKeys": [
+      "boot",
+      "loginReady",
+      "tuiStart",
+      "tuiRetry",
+      "tuiBound",
+      "tuiOffline",
+      "offlineBound",
+      "viteStart",
+      "previewStart",
+      "previewWarmStart",
+      "profileConfig",
+      "preparedPreviewStart"
+    ]
+  }
+}

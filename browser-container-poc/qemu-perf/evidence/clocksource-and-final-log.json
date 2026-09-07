@@ -1,0 +1,45 @@
+{
+  "ok": true,
+  "isError": false,
+  "text": "{\n  hostMs: 6583.330000001937,\n  id: '145',\n  type: 'exec',\n  stdout: '[   15.147072] clocksource: Switched to clocksource tsc-early\\n' +\n    '[   16.353573] clocksource: acpi_pm: mask: 0xffffff max_cycles: 0xffffff, max_idle_ns: 2085701024 ns\\n' +\n    '[   27.586164] tsc: Refined TSC clocksource calibration: 1000.000 MHz\\n' +\n    '[   27.607312] clocksource: tsc: mask: 0xffffffffffffffff max_cycles: 0x1cd42e4dffb, max_idle_ns: 881590591483 ns\\n' +\n    '[   27.877553] clocksource: Switched to clocksource tsc\\n' +\n    '[  150.332873] clocksource: Long readout interval, skipping watchdog check: cs_nsec: 1267285157 wd_nsec: 1267290040\\n' +\n    '[ 2332.430718] clocksource: Long readout interval, skipping watchdog check: cs_nsec: 3224440185 wd_nsec: 3224429930\\n' +\n    '[ 3001.689608] clocksource: timekeeping watchdog on CPU0: hpet wd-wd read-back delay of 40250000ns\\n' +\n    '[ 3001.924438] clocksource: wd-tsc-wd read-back delay of 51619870ns, clock-skew test skipped!\\n' +\n    '[ 5669.189113] clocksource: timekeeping watchdog on CPU0: wd-tsc-wd excessive read-back delay of 2514900ns vs. limit of 125000ns, wd-wd read-back delay only 189940ns, attempt 2, marking tsc unstable\\n' +\n    '[ 5669.236508] tsc: Marking TSC unstable due to clocksource watchdog\\n' +\n    \"[ 5669.277223] TSC found unstable after boot, most likely due to broken BIOS. Use 'tsc=unstable'.\\n\" +\n    \"[ 5669.321488] clocksource: Not enough CPUs to check clocksource 'tsc'.\\n\" +\n    '[ 5669.362543] clocksource: Switched to clocksource hpet\\n' +\n    '5ff542b3c7f646327c44ba6536f74f8b750b65602bdead19d5c9362f297e0a32  src/WelcomeCard.tsx\\n' +\n    '2026-09-07T04:22:42.453Z vite:deps (client) Hash is consistent. Skipping. Use --force to override.\\n' +\n    '\\n' +\n    '  VITE v7.1.4  ready in 467129 ms\\n' +\n    '\\n' +\n    '  ➜  Local:   http://127.0.0.1:5173/\\n' +\n    '2026-09-07T04:29:59.768Z vite:hmr [file change] src/WelcomeCard.tsx\\n' +\n    '2026-09-07T04:29:59.958Z vite:hmr (client) [no modules matched] src/WelcomeCard.tsx\\n' +\n    '2026-09-07T04:29:59.983Z vite:hmr (ssr) [no modules matched] src/WelcomeCard.tsx\\n' +\n    '2026-09-07T04:30:25.612Z vite:transform 16642.14ms /@react-refresh\\n' +\n    '2026-09-07T04:30:45.145Z vite:transform 322292.74ms /src/main.tsx\\n' +\n    '2026-09-07T04:30:53.917Z vite:transform 4120.01ms /@vite/client\\n',\n  stderr: \"cat: can't open '/sys/devices/system/clocksource/clocksource0/current_clocksource': No such file or directory\\n\" +\n    \"cat: can't open '/sys/devices/system/clocksource/clocksource0/available_clocksource': No such file or directory\\n\",\n  code: 0\n}",
+  "value": {
+    "hostMs": 6583.330000001937,
+    "id": "145",
+    "type": "exec",
+    "stdout": "[   15.147072] clocksource: Switched to clocksource tsc-early\n[   16.353573] clocksource: acpi_pm: mask: 0xffffff max_cycles: 0xffffff, max_idle_ns: 2085701024 ns\n[   27.586164] tsc: Refined TSC clocksource calibration: 1000.000 MHz\n[   27.607312] clocksource: tsc: mask: 0xffffffffffffffff max_cycles: 0x1cd42e4dffb, max_idle_ns: 881590591483 ns\n[   27.877553] clocksource: Switched to clocksource tsc\n[  150.332873] clocksource: Long readout interval, skipping watchdog check: cs_nsec: 1267285157 wd_nsec: 1267290040\n[ 2332.430718] clocksource: Long readout interval, skipping watchdog check: cs_nsec: 3224440185 wd_nsec: 3224429930\n[ 3001.689608] clocksource: timekeeping watchdog on CPU0: hpet wd-wd read-back delay of 40250000ns\n[ 3001.924438] clocksource: wd-tsc-wd read-back delay of 51619870ns, clock-skew test skipped!\n[ 5669.189113] clocksource: timekeeping watchdog on CPU0: wd-tsc-wd excessive read-back delay of 2514900ns vs. limit of 125000ns, wd-wd read-back delay only 189940ns, attempt 2, marking tsc unstable\n[ 5669.236508] tsc: Marking TSC unstable due to clocksource watchdog\n[ 5669.277223] TSC found unstable after boot, most likely due to broken BIOS. Use 'tsc=unstable'.\n[ 5669.321488] clocksource: Not enough CPUs to check clocksource 'tsc'.\n[ 5669.362543] clocksource: Switched to clocksource hpet\n5ff542b3c7f646327c44ba6536f74f8b750b65602bdead19d5c9362f297e0a32  src/WelcomeCard.tsx\n2026-09-07T04:22:42.453Z vite:deps (client) Hash is consistent. Skipping. Use --force to override.\n\n  VITE v7.1.4  ready in 467129 ms\n\n  ➜  Local:   http://127.0.0.1:5173/\n2026-09-07T04:29:59.768Z vite:hmr [file change] src/WelcomeCard.tsx\n2026-09-07T04:29:59.958Z vite:hmr (client) [no modules matched] src/WelcomeCard.tsx\n2026-09-07T04:29:59.983Z vite:hmr (ssr) [no modules matched] src/WelcomeCard.tsx\n2026-09-07T04:30:25.612Z vite:transform 16642.14ms /@react-refresh\n2026-09-07T04:30:45.145Z vite:transform 322292.74ms /src/main.tsx\n2026-09-07T04:30:53.917Z vite:transform 4120.01ms /@vite/client\n",
+    "stderr": "cat: can't open '/sys/devices/system/clocksource/clocksource0/current_clocksource': No such file or directory\ncat: can't open '/sys/devices/system/clocksource/clocksource0/available_clocksource': No such file or directory\n",
+    "code": 0
+  },
+  "valueUnavailable": false,
+  "logs": [],
+  "warnings": [],
+  "aftermath": {
+    "startUrl": "http://127.0.0.1:5198/",
+    "endUrl": "http://127.0.0.1:5198/",
+    "navigations": [],
+    "consoleErrorCount": 0,
+    "pageErrorCount": 0,
+    "handoffs": 0
+  },
+  "session": {
+    "id": "gentle-otter-329",
+    "createdAt": "2026-09-07T02:27:49.137Z",
+    "updatedAt": "2026-09-07T04:31:08.987Z",
+    "connected": true,
+    "pageUrl": "http://127.0.0.1:5198/",
+    "stateKeys": [
+      "boot",
+      "loginReady",
+      "tuiStart",
+      "tuiRetry",
+      "tuiBound",
+      "tuiOffline",
+      "offlineBound",
+      "viteStart",
+      "previewStart",
+      "previewWarmStart",
+      "profileConfig",
+      "preparedPreviewStart"
+    ]
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "ok": true,
+  "isError": false,
+  "text": "{\n  hostMs: 20776.045000001788,\n  id: '123',\n  type: 'exec',\n  stdout: 'c69fd8643ec933d7b55c7978223a01d1f772f7a1dfa96a1c42f2f6030402f004  node_modules/.vite/deps/_metadata.json\\n',\n  stderr: '',\n  code: 1\n}",
+  "value": {
+    "hostMs": 20776.045000001788,
+    "id": "123",
+    "type": "exec",
+    "stdout": "c69fd8643ec933d7b55c7978223a01d1f772f7a1dfa96a1c42f2f6030402f004  node_modules/.vite/deps/_metadata.json\n",
+    "stderr": "",
+    "code": 1
+  },
+  "valueUnavailable": false,
+  "logs": [
+    {
+      "source": "page",
+      "type": "log",
+      "text": "[vite] server connection lost. Polling for restart...",
+      "location": {
+        "url": "http://127.0.0.1:5198/@vite/client",
+        "lineNumber": 864,
+        "columnNumber": 13
+      }
+    }
+  ],
+  "warnings": [],
+  "aftermath": {
+    "startUrl": "http://127.0.0.1:5198/",
+    "endUrl": "http://127.0.0.1:5198/",
+    "navigations": [],
+    "consoleErrorCount": 0,
+    "pageErrorCount": 0,
+    "handoffs": 0
+  },
+  "session": {
+    "id": "gentle-otter-329",
+    "createdAt": "2026-09-07T02:27:49.137Z",
+    "updatedAt": "2026-09-07T04:13:31.088Z",
+    "connected": true,
+    "pageUrl": "http://127.0.0.1:5198/",
+    "stateKeys": [
+      "boot",
+      "loginReady",
+      "tuiStart",
+      "tuiRetry",
+      "tuiBound",
+      "tuiOffline",
+      "offlineBound",
+      "viteStart",
+      "previewStart",
+      "previewWarmStart",
+      "profileConfig"
+    ]
+  }
+}

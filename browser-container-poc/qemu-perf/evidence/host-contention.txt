@@ -1,0 +1,18 @@
+  PID  %CPU %MEM COMM
+51068 163.0  6.9 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/152.1.94.117/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+52155 107.1  9.7 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/152.1.94.117/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+  450  30.3  0.4 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+ 2931  25.0  3.4 /Users/kkrausse/.bun/install/global/node_modules/@opencode-ai/cli/bin/opencode2.exe
+ 6183  10.3  1.7 opencode2
+ 2381   6.1  0.7 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/152.1.94.117/Helpers/Brave Browser Helper.app/Contents/MacOS/Brave Browser Helper
+22643   5.9  0.8 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/152.1.94.117/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+  451   4.4  0.1 /System/Library/PrivateFrameworks/TCC.framework/Support/tccd
+19679   2.3  0.1 /usr/libexec/trustd
+ 2435   2.2  0.3 /Applications/Tailscale.app/Contents/PlugIns/IPNExtension.appex/Contents/MacOS/IPNExtension
+22596   1.7  0.2 bun
+  564   1.6  0.2 /System/Library/DriverExtensions/com.apple.DriverKit-AppleBCMWLAN.dext/com.apple.DriverKit-AppleBCMWLAN
+  583   1.1  0.0 /usr/libexec/sysmond
+ 2382   1.0  0.5 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/152.1.94.117/Helpers/Brave Browser Helper.app/Contents/MacOS/Brave Browser Helper
+12340   1.0  1.1 opencode2
+ 2964   0.9  0.0 tmux
+ 1959   0.8  1.9 /Applications/Brave Browser.app/Contents/MacOS/Brave Browser

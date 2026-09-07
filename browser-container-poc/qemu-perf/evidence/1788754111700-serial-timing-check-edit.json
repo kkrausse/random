@@ -1,0 +1,54 @@
+{
+  "session": "gentle-otter-329",
+  "mode": "edit",
+  "label": "serial-timing-check",
+  "startedAt": "2026-09-07T04:08:31.700Z",
+  "samples": [
+    {
+      "mode": "edit",
+      "commandMs": 838.125,
+      "notificationMs": 986,
+      "visibleMs": 11034.289999999106,
+      "documentPreserved": true,
+      "resources": [
+        {
+          "name": "http://127.0.0.1:5198/src/WelcomeCard.tsx?t=1788754112686",
+          "startMs": 999.44482421875,
+          "duration": 9996.540000002831
+        }
+      ],
+      "transport": [
+        {
+          "type": "exec",
+          "startedAt": 1788754112288,
+          "roundTripMs": 838.0850000008941,
+          "wireBytes": 60
+        }
+      ],
+      "serialResponses": [
+        {
+          "id": "92",
+          "receivedAt": 1788754123269,
+          "status": 200,
+          "wireBytes": 2728,
+          "guest": {
+            "fetchMs": 9321.739990000147,
+            "gzipMs": 141.8801299999468,
+            "bytes": 4360
+          }
+        },
+        {
+          "id": "94",
+          "receivedAt": 1788754131639,
+          "status": 200,
+          "wireBytes": 2748,
+          "guest": {
+            "fetchMs": 6554.939940000186,
+            "gzipMs": 99.42504999996163,
+            "bytes": 4366
+          }
+        }
+      ]
+    }
+  ]
+}

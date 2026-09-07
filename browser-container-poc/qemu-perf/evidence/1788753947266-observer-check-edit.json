@@ -1,0 +1,30 @@
+{
+  "session": "gentle-otter-329",
+  "mode": "edit",
+  "label": "observer-check",
+  "startedAt": "2026-09-07T04:05:47.266Z",
+  "samples": [
+    {
+      "mode": "edit",
+      "commandMs": 882.7249999977648,
+      "notificationMs": 1492,
+      "visibleMs": 26777.83499999717,
+      "documentPreserved": true,
+      "resources": [
+        {
+          "name": "http://127.0.0.1:5198/src/WelcomeCard.tsx?t=1788753949024",
+          "startMs": 1506.625,
+          "duration": 25265.234999999404
+        }
+      ],
+      "transport": [
+        {
+          "type": "exec",
+          "startedAt": 1788753948176,
+          "roundTripMs": 882.4549999982119,
+          "wireBytes": 60
+        }
+      ]
+    }
+  ]
+}

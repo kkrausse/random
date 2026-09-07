@@ -1,0 +1,249 @@
+{
+  "session": "gentle-otter-329",
+  "mode": "edit",
+  "label": "serial-baseline",
+  "startedAt": "2026-09-07T04:09:36.045Z",
+  "samples": [
+    {
+      "mode": "edit",
+      "commandMs": 797.144999999553,
+      "notificationMs": 1174,
+      "visibleMs": 6163.059999998659,
+      "documentPreserved": true,
+      "resources": [
+        {
+          "name": "http://127.0.0.1:5198/src/WelcomeCard.tsx?t=1788754177429",
+          "startMs": 1188.050048828125,
+          "duration": 4955.220000002533
+        }
+      ],
+      "transport": [
+        {
+          "type": "exec",
+          "startedAt": 1788754176920,
+          "roundTripMs": 797.1000000014901,
+          "wireBytes": 60
+        }
+      ],
+      "serialResponses": [
+        {
+          "id": "97",
+          "receivedAt": 1788754183048,
+          "status": 200,
+          "wireBytes": 2729,
+          "guest": {
+            "fetchMs": 4327.790040000109,
+            "gzipMs": 149.68504999997094,
+            "bytes": 4360
+          }
+        },
+        {
+          "id": "99",
+          "receivedAt": 1788754189894,
+          "status": 200,
+          "wireBytes": 2750,
+          "guest": {
+            "fetchMs": 4508.2800300000235,
+            "gzipMs": 298.05004999996163,
+            "bytes": 4366
+          }
+        }
+      ]
+    },
+    {
+      "mode": "edit",
+      "commandMs": 1113.2099999971688,
+      "notificationMs": 1459,
+      "visibleMs": 5626.099999997765,
+      "documentPreserved": true,
+      "resources": [
+        {
+          "name": "http://127.0.0.1:5198/src/WelcomeCard.tsx?t=1788754191615",
+          "startMs": 1472.375,
+          "duration": 4146.454999998212
+        }
+      ],
+      "transport": [
+        {
+          "type": "exec",
+          "startedAt": 1788754190858,
+          "roundTripMs": 1113.1100000031292,
+          "wireBytes": 61
+        }
+      ],
+      "serialResponses": [
+        {
+          "id": "102",
+          "receivedAt": 1788754196462,
+          "status": 200,
+          "wireBytes": 2730,
+          "guest": {
+            "fetchMs": 3488.3798800001387,
+            "gzipMs": 98.51000999985263,
+            "bytes": 4360
+          }
+        },
+        {
+          "id": "104",
+          "receivedAt": 1788754200258,
+          "status": 200,
+          "wireBytes": 2750,
+          "guest": {
+            "fetchMs": 2617.590089999838,
+            "gzipMs": 149.17993000010028,
+            "bytes": 4366
+          }
+        }
+      ]
+    },
+    {
+      "mode": "edit",
+      "commandMs": 964.5999999977648,
+      "notificationMs": 851,
+      "visibleMs": 5922.779999997467,
+      "documentPreserved": true,
+      "resources": [
+        {
+          "name": "http://127.0.0.1:5198/src/WelcomeCard.tsx?t=1788754201055",
+          "startMs": 865.31982421875,
+          "duration": 5045.985000003129
+        }
+      ],
+      "transport": [
+        {
+          "type": "exec",
+          "startedAt": 1788754201040,
+          "roundTripMs": 964.5599999986589,
+          "wireBytes": 61
+        }
+      ],
+      "serialResponses": [
+        {
+          "id": "107",
+          "receivedAt": 1788754206936,
+          "status": 200,
+          "wireBytes": 2726,
+          "guest": {
+            "fetchMs": 3681.4499500000384,
+            "gzipMs": 591.0300299997907,
+            "bytes": 4360
+          }
+        },
+        {
+          "id": "108",
+          "receivedAt": 1788754209756,
+          "status": 200,
+          "wireBytes": 2726,
+          "guest": {
+            "fetchMs": 1564.7448700000532,
+            "gzipMs": 559.2199699999765,
+            "bytes": 4360
+          }
+        },
+        {
+          "id": "110",
+          "receivedAt": 1788754214203,
+          "status": 200,
+          "wireBytes": 2749,
+          "guest": {
+            "fetchMs": 3506.759769999888,
+            "gzipMs": 101.4902300001122,
+            "bytes": 4366
+          }
+        }
+      ]
+    },
+    {
+      "mode": "edit",
+      "commandMs": 736.375,
+      "notificationMs": 1028,
+      "visibleMs": 8367.925000000745,
+      "documentPreserved": true,
+      "resources": [
+        {
+          "name": "http://127.0.0.1:5198/src/WelcomeCard.tsx?t=1788754215151",
+          "startMs": 1042.25,
+          "duration": 7311.489999998361
+        }
+      ],
+      "transport": [
+        {
+          "type": "exec",
+          "startedAt": 1788754214922,
+          "roundTripMs": 736.3249999992549,
+          "wireBytes": 61
+        }
+      ],
+      "serialResponses": [
+        {
+          "id": "113",
+          "receivedAt": 1788754223260,
+          "status": 200,
+          "wireBytes": 2730,
+          "guest": {
+            "fetchMs": 6709.785149999894,
+            "gzipMs": 195.01490000030026,
+            "bytes": 4360
+          }
+        },
+        {
+          "id": "115",
+          "receivedAt": 1788754233971,
+          "status": 200,
+          "wireBytes": 2740,
+          "guest": {
+            "fetchMs": 8949.75,
+            "gzipMs": 293.93995000002906,
+            "bytes": 4366
+          }
+        }
+      ]
+    },
+    {
+      "mode": "edit",
+      "commandMs": 747.3999999985099,
+      "notificationMs": 1255,
+      "visibleMs": 9731.954999998212,
+      "documentPreserved": true,
+      "resources": [
+        {
+          "name": "http://127.0.0.1:5198/src/WelcomeCard.tsx?t=1788754235230",
+          "startMs": 1268.454833984375,
+          "duration": 8449.050000000745
+        }
+      ],
+      "transport": [
+        {
+          "type": "exec",
+          "startedAt": 1788754234738,
+          "roundTripMs": 747.355000000447,
+          "wireBytes": 61
+        }
+      ],
+      "serialResponses": [
+        {
+          "id": "118",
+          "receivedAt": 1788754244440,
+          "status": 200,
+          "wireBytes": 2730,
+          "guest": {
+            "fetchMs": 7335.589850000106,
+            "gzipMs": 113.85009999992326,
+            "bytes": 4360
+          }
+        },
+        {
+          "id": "120",
+          "receivedAt": 1788754251077,
+          "status": 200,
+          "wireBytes": 2751,
+          "guest": {
+            "fetchMs": 4994.1750500001945,
+            "gzipMs": 102.61010999977589,
+            "bytes": 4366
+          }
+        }
+      ]
+    }
+  ]
+}
