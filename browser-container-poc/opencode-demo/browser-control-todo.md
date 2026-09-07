@@ -1,5 +1,30 @@
 # Browser Control execution follow-up
 
+- [ ] Profiling follow-up, Browser Control v0.7.0, `rapid-raven-074`, :5216:
+  inspecting the second same-origin tab with `evaluate` returned `Target crashed`;
+  navigating that crashed tab returned `goto: Page crashed`. The selected demo
+  still evaluated normally. Closing only the crashed duplicate succeeded; reload
+  of the selected tab still encountered unavailable guest persistence. No storage
+  reset. Investigate the stale origin owner separately from keyboard latency.
+- [ ] Worker CDP profiling: `Target.attachToTarget` followed by
+  `Target.sendMessageToTarget` on the returned non-flattened session failed with
+  `No session with given id`. Expected routing to that worker. Recovery: use
+  Playwright `page.workers()` evaluation for worker counters; main-page CDP works.
+  Same version/session/origin as above; no relay restart.
+
+- [ ] TUI profiling harness stall on :5217, same version/session: shell profile
+  completed (96 keys), then Launch OpenCode rendered Muse Spark. `profile.js`
+  TUI execution exceeded its 240-second outer shell timeout without a receipt;
+  a subsequent simple page evaluation also exceeded 15 seconds. Do not count
+  this as measured keyboard latency: the blocked stage was not recorded.
+  `session reset rapid-raven-074` released the owned tab. Two minimal execute
+  retries then failed `connectOverCDP: Timeout 15000ms exceeded` after WS connect.
+  Doctor showed compatible CLI/relay/extension and eight preexisting crashed
+  user targets. User explicitly authorized a relay restart (other connected
+  session `tidy-walrus-391`); restart succeeded. Subsequent execute twice reported
+  `Browser Control extension is not connected`. Need extension reconnection
+  before further browser profiling. Do not restart/close unrelated user tabs.
+
 - [x] V2 model-response wait, Browser Control v0.7.0, `rapid-raven-074`, :5216:
   `waitForFunction: Timeout 90000ms exceeded`. Reproduction: launch a prefilled
   prompt and press Enter as soon as its text first renders, then wait for a

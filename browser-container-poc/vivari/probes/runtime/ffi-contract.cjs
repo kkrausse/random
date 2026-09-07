@@ -21,6 +21,9 @@ assert.throws(() => ffi.dlopen(path, {bad: {args: ['napi_value']}}), /unsupporte
 assert.throws(() => ffi.dlopen(path, {missing: {}}), /missing export/);
 assert.throws(() => ffi.dlopen(path, {wide: {args: ['u32'], returns: 'u32'}}), /type|signature|import/i);
 const lib = ffi.dlopen(path, definitions), s = lib.symbols;
+// Run the pointer/callback/growth contract through the instrumented branch too.
+assert.equal(ffi.vivariStats().profiling, false);
+ffi.vivariProfile(true);
 assert.throws(() => ffi.dlopen(path, definitions), /one open/);
 const bytes = new Uint8Array([1,2,3,4]);
 const p = ffi.ptr(bytes);
@@ -76,7 +79,16 @@ const epoch = new Uint32Array(ffi.toArrayBuffer(epochPtr, 0, 4));
 const beforeAllocation = epoch[0];
 ffi.ptr(new Uint8Array(32));
 assert.equal(ffi.read.u32(epochPtr), beforeAllocation + 1);
+const measured = ffi.vivariStats();
+assert.ok(measured.calls > 0 && measured.pins > 0 && measured.pinnedBytes > 0);
+assert.ok(measured.syncInBytes > 0 && measured.syncOutBytes > 0);
+assert.ok(measured.symbols.call_callback.calls > 0);
+ffi.vivariProfile(false);
+assert.equal(ffi.vivariStats().calls, 0);
+assert.equal(ffi.vivariStats().pinnedBytes, measured.pinnedBytes);
+assert.equal(s.retained_value(), bytes[0]);
 lib.close(); lib.close();
+assert.equal(ffi.vivariStats(), null);
 assert.throws(() => s.retained_value(), /closed/);
 assert.throws(() => ffi.ptr(bytes), /no open/);
 const nodeFfi = require('node:ffi');
