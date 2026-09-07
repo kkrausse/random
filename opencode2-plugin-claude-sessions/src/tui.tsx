@@ -119,10 +119,10 @@ function contextStats(
 
 export function SessionPicker(props: { context: Plugin.Context }) {
   const dimensions = useTerminalDimensions()
-  // Leave room for the host dialog's margins, including when a phone keyboard opens.
-  const height = () => Math.max(1, Math.min(48, dimensions().height - 6))
-  const compact = () => dimensions().width < 70 || height() < 32
-  const previewHeight = () => Math.min(permission() ? 19 : 4, Math.max(2, Math.floor(height() * 0.4)))
+  // Use nearly all available height on phones, including with the keyboard open.
+  const mobile = () => dimensions().width < 70
+  const height = () => Math.max(1, mobile() ? dimensions().height - 2 : Math.min(48, dimensions().height - 6))
+  const previewHeight = () => Math.min(permission() ? 20 : 6, Math.max(5, Math.floor(height() * 0.4)))
   const runner = makeRunner((message, cause) => {
     console.error(`[claude.sessions] ${message}\n${Cause.pretty(cause)}`)
   })
@@ -733,8 +733,9 @@ export function SessionPicker(props: { context: Plugin.Context }) {
         </scrollbox>
       <box id="claude-session-preview" height={previewHeight()} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1}
         border={["top"]} borderColor={permission() ? props.context.theme.text.status.permission : props.context.theme.contextual.overlay.scrollbar.default}>
+        <box flexGrow={1} minHeight={0} overflow="hidden" flexDirection="column">
         <text wrapMode="none" fg={props.context.theme.text.subdued}>{options()[selectedIndex()]?.description}</text>
-        <box height={1} flexDirection="row" justifyContent="space-between">
+        <box height={1} flexShrink={0} flexDirection="row" justifyContent="space-between">
            <text wrapMode="none" fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
             {selectedStats().left}
           </text>
@@ -768,6 +769,20 @@ export function SessionPicker(props: { context: Plugin.Context }) {
             </text>
           </>
         )}
+        </box>
+        <box height={1} flexShrink={0} flexDirection="row">
+          {selectedSession() ? (
+            <text id="claude-session-preview-lifecycle" wrapMode="none" fg={props.context.theme.text.default}
+              onMouseDown={(event) => {
+                if (event.button !== 0) return
+                event.stopPropagation()
+                event.preventDefault()
+                void changeLifecycle(options()[selectedIndex()]?.state !== "inactive")
+              }}>
+              {changingLifecycle() ? "[Updating…]" : options()[selectedIndex()]?.state === "inactive" ? "[Restore to active]" : "[Mark inactive]"}
+            </text>
+          ) : null}
+        </box>
       </box>
       {loading() ? (
         <box paddingLeft={2} paddingRight={2}>

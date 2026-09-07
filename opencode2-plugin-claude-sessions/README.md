@@ -18,6 +18,7 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Indicators use the active theme's semantic status colors.
 - Active sessions prioritize needs input, then working, then ready, ordered by latest interaction within each status. Inactive sessions are ordered by latest interaction.
 - Each session occupies one line with its title, status, and lifecycle button. The selected session's location, agent, and last-interaction time appear in the preview.
+- The preview has a pinned **Mark inactive / Restore to active** button, reachable on narrow phones even when row controls are clipped. Phone-sized terminals use nearly the full screen height.
 - The current session is selected initially; from Home, `New session` is selected.
 - Use `Up`/`Down` to select, `Right` or `Enter` to open, and `Left` or `Escape` to close.
 - Press `N` from the picker to start a new session.
