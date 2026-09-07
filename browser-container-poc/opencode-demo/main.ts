@@ -30,8 +30,7 @@ start.onclick = async () => {
     if (tui && writer) { terminal.focus(); return; }
     if (!crossOriginIsolated) throw Error('Isolation headers missing. Use the provided serve.ts URL in Chrome.');
     if (!vm) {
-      status('Booting browser runtime…'); vm = await Vivari.boot(); vm.on('error', (e: any) => log('Kernel: ' + e.message));
-      vm.bridge.on('log', (event: any) => log('[kernel] ' + event.line));
+      status('Booting browser runtime…'); vm = await Vivari.boot({ onLog: line => log('[kernel] ' + line) }); vm.on('error', (e: any) => log('Kernel: ' + e.message));
       for (const type of ['vv-ws', 'vv-sse']) vm.bridge.on(type, (event: any) => preview.contentWindow?.postMessage({ ...event.msg, type, dir: 'in' }, location.origin));
       vm.on('server-ready', (port: number, url: string) => { if (port === 5173) preview.src = url; });
     }
@@ -108,7 +107,7 @@ launch.onclick = async () => {
 stop.onclick = () => tui?.kill();
 async function diagnostics() {
   const hashes = await (await fetch('/hashes.json')).json();
-  return { time: new Date().toISOString(), url: location.href, phase, logs, hashes, serverOutput, shellOutput, processes: { installed, server: !!server, shell: !!tui, vite: !!vite }, browser: { userAgent: navigator.userAgent, crossOriginIsolated, online: navigator.onLine }, terminal: { cols: terminal.cols, rows: terminal.rows, screen: Array.from({length:terminal.rows}, (_,i) => terminal.buffer.active.getLine(i)?.translateToString(true)).join('\n') }, preview: { url: preview.src, text: preview.contentDocument?.body?.innerText } };
+  return { time: new Date().toISOString(), url: location.href, phase, logs, hashes, serverOutput, shellOutput, processes: { installed, server: !!server, shell: !!tui, vite: !!vite }, browser: { userAgent: navigator.userAgent, crossOriginIsolated, online: navigator.onLine }, terminal: { cols: terminal.cols, rows: terminal.rows, viewportY: terminal.buffer.active.viewportY, screen: Array.from({length:terminal.rows}, (_,i) => terminal.buffer.active.getLine(terminal.buffer.active.viewportY+i)?.translateToString(true)).join('\n') }, preview: { url: preview.src, text: preview.contentDocument?.body?.innerText?.slice(-1000000) } };
 }
 document.querySelector<HTMLButtonElement>('#download')!.onclick = async () => {
   const report = await diagnostics();

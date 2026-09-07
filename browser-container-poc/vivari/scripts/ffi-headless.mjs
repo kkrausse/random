@@ -65,6 +65,17 @@ try {
   while(!output.includes('INHERIT_STDIN_PASS')&&kernel.procs.has(inheritPid))await new Promise(r=>setTimeout(r,10));
   kernel.stop(inheritPid);
   console.log(output);assert.match(output,/INHERIT_CHILD hello €/);assert.match(output,/INHERIT_STDIN_PASS/);
+  if(process.argv.includes('--text-scratch')){
+    for(const [guest,host] of [
+      ['opentui.wasm','../.runtime/opentui-source/packages/core/src/zig/zig-out/bin/opentui.wasm'],
+      ['opentui.ffi.json','../.runtime/opentui.ffi.json'],
+      ['text-scratch.cjs','../probes/runtime/text-scratch.cjs'],
+      ['text-scratch-adapters.cjs','../.runtime/text-scratch-adapters.cjs'],
+    ])await kernel.writeFilesBatch([{path:'/ffi-probe/'+guest,bytes:new Uint8Array(readFileSync(new URL(host,import.meta.url)))}]);
+    output='';const pid=kernel.launch('bun',['/ffi-probe/text-scratch.cjs'],{cwd:'/ffi-probe',env:{PATH:'/bin'}});
+    while(kernel.procs.has(pid))await new Promise(r=>setTimeout(r,10));
+    console.log(output);assert.match(output,/TEXT_SCRATCH_PASS/);
+  }
   if (process.argv.includes('--v2')) {
     const receipt=JSON.parse(readFileSync(new URL('../.runtime/opencode-v2-package/receipt.json',import.meta.url),'utf8'));
     await kernel.writeFilesBatch(receipt.assets.map(a=>({path:a.destination,bytes:new Uint8Array(readFileSync(new URL('../.runtime/opencode-v2-package/'+a.file,import.meta.url)))})));
