@@ -8,6 +8,7 @@ import { descendantIDs, groupLabel, inheritLifecycle, lifecycleOwner, nestRows, 
 import { sectionNeighbor } from "./picker-selection"
 import { Cause, Effect } from "effect"
 import { makeRunner, operation } from "./effects"
+import { archiveSession, fileArchiveStore, restoreSession, type Archive, type ArchiveStore } from "./archive"
 
 const PAGE_SIZE = 100
 const LOAD_MORE_THRESHOLD = 10
@@ -117,7 +118,7 @@ function contextStats(
   }
 }
 
-export function SessionPicker(props: { context: Plugin.Context }) {
+export function SessionPicker(props: { context: Plugin.Context; archiveStore?: ArchiveStore }) {
   const dimensions = useTerminalDimensions()
   // Use nearly all available height on phones, including with the keyboard open.
   const mobile = () => dimensions().width < 70
@@ -137,12 +138,24 @@ export function SessionPicker(props: { context: Plugin.Context }) {
   const route = props.context.ui.router.current()
   const currentSessionID = route.type === "session" ? route.sessionID : undefined
   const currentSession = currentSessionID ? props.context.data.session.get(currentSessionID) : undefined
-  const [sessions, setSessions] = createSignal<SessionInfo[]>(currentSession ? [currentSession] : [])
+  const archiveStore = props.archiveStore ?? fileArchiveStore()
+  const [archives, setArchives] = createSignal<Archive[]>([])
+  const [archivesReady, setArchivesReady] = createSignal(false)
+  const deletedIDs = new Set<string>()
+  const [liveSessions, setSessions] = createSignal<SessionInfo[]>(currentSession ? [currentSession] : [])
+  const archived = (id: string) => archives().find((item) => item.transcript.info.id === id)
+  const isArchived = (id: string) => !!archived(id) && !liveSessions().some((session) => session.id === id)
+  const sessions = createMemo(() => {
+    const merged = new Map(archives().map((item) => [item.transcript.info.id, item.transcript.info]))
+    for (const session of liveSessions()) merged.set(session.id, session)
+    return [...merged.values()]
+  })
   const [attention, setAttention] = createSignal(new Map<string, "permission" | "question">())
   const [cursor, setCursor] = createSignal<string>()
   const [loading, setLoading] = createSignal(false)
   const [failure, setFailure] = createSignal<string>()
   const [selectedValue, setSelectedValue] = createSignal(currentSessionID ?? NEW_SESSION_VALUE)
+  const [search, setSearch] = createSignal("")
   const [tick, setTick] = createSignal(0)
   const [liveVersion, setLiveVersion] = createSignal(0)
   const [reviewVersion, setReviewVersion] = createSignal(0)
@@ -161,12 +174,12 @@ export function SessionPicker(props: { context: Plugin.Context }) {
     const effective = propagateAttention(loaded, attention(), currentSessionID)
     return nestRows(sortRows(inheritLifecycle(
       loaded.map((session) => {
-        const ownRunning = props.context.data.session.status(session.id) === "running"
+        const ownRunning = !isArchived(session.id) && props.context.data.session.status(session.id) === "running"
         const runningChildren = descendantIDs(loaded, session.id)
           .filter((id) => props.context.data.session.status(id) === "running").length
         return {
           session, ownRunning, runningChildren,
-          state: sessionState(attention().get(session.id) ?? effective.get(session.id),
+           state: isArchived(session.id) ? "inactive" as const : sessionState(attention().get(session.id) ?? effective.get(session.id),
             ownRunning || runningChildren > 0, !!lifecycle.inactive[session.id]),
         }
       }),
@@ -182,7 +195,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
         state: "new" as const,
         depth: 0,
       },
-      ...rows().map(({ session, state, ownRunning, runningChildren, depth }) => {
+      ...rows().filter(({ session }) => !search() || `${session.title ?? "Untitled session"} ${session.location.directory}`.toLowerCase().includes(search().toLowerCase())).map(({ session, state, ownRunning, runningChildren, depth }) => {
         const baseStatus = {
           permission: "Permission required",
           question: "Question waiting",
@@ -216,7 +229,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
   const [contextVersion, setContextVersion] = createSignal(0)
   const selectedMessages = createMemo(() => {
     const sessionID = selectedSession()?.id
-    return sessionID ? props.context.data.session.message.list(sessionID) : undefined
+    return sessionID ? isArchived(sessionID) ? archived(sessionID)?.transcript.messages : props.context.data.session.message.list(sessionID) : undefined
   })
   const selectedModels = createMemo(() => {
     const session = selectedSession()
@@ -261,7 +274,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
       .filter(({ state, session }) =>
         session.id === selectedValue() || state === "running" || state === "permission" || state === "question")
       .map(({ session }) => session)
-      .filter((session) => !rowPercents().has(session.id) && !rowFetching.has(session.id))
+       .filter((session) => !isArchived(session.id) && !rowPercents().has(session.id) && !rowFetching.has(session.id))
       .slice(0, 8)
     for (const session of targets) {
       rowFetching.add(session.id)
@@ -289,7 +302,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
     contextVersion()
     let cancelled = false
     onCleanup(() => { cancelled = true })
-    if (!session) {
+    if (!session || isArchived(session.id)) {
       setContextSyncing(false)
       return
     }
@@ -315,8 +328,8 @@ export function SessionPicker(props: { context: Plugin.Context }) {
     onCleanup(() => { cancelled = true })
     setPreview(undefined)
     setPreviewError(undefined)
-    setPreviewLoading(!!sessionID)
-    if (!sessionID) return
+    setPreviewLoading(!!sessionID && !isArchived(sessionID))
+    if (!sessionID || isArchived(sessionID)) return
     // Include subagent descendants so their approval requests are
     // still actionable from the parent preview.
     const related = [sessionID, ...descendantIDs(sessions(), sessionID)]
@@ -350,37 +363,38 @@ export function SessionPicker(props: { context: Plugin.Context }) {
 
   function changeLifecycle(inactive: boolean) {
     const selected = selectedSession()
-    if (!selected || changingLifecycle() || replying()) return
+    if (!selected || changingLifecycle() || replying() || !archivesReady()) return
     const session = lifecycleOwner(sessions(), selected)
     const family = [session.id, ...descendantIDs(sessions(), session.id)]
     const affected = new Set(family)
     const neighbor = sectionNeighbor(options().filter((option) => option.value === session.id || !affected.has(option.value)), session.id) ?? NEW_SESSION_VALUE
-    // Interrupting starts the session's location runtime, which fails for old
-    // sessions whose directory was removed. Idle rows only need the local marker.
-    const interruptIDs = family.filter((id) => props.context.data.session.status(id) === "running"
-      || attention().has(id)
-      || visiblePreview()?.permissions.some((request) => request.sessionID === id)
-      || visiblePreview()?.forms.some((form) => form.sessionID === id))
-    const needsInterrupt = interruptIDs.length > 0
+    if (inactive && isArchived(session.id)) return
     setChangingLifecycle(true)
     return runner.start(Effect.gen(function* () {
       if (inactive) {
-        for (const id of interruptIDs) yield* operation({ operation: "Interrupt session", sessionID: id },
-          (signal) => props.context.client.session.interrupt({ sessionID: id, continue: false }, { signal }))
+        const saved = yield* operation({ operation: "Archive session", sessionID: session.id },
+          () => archiveSession(props.context.client, archiveStore, session))
+        for (const id of saved.familyIDs) affected.add(id)
+        for (const id of affected) deletedIDs.add(id)
+        setArchives((items) => [...items.filter((item) => item.transcript.info.id !== session.id), saved])
+        setSessions((items) => items.filter((item) => !affected.has(item.id)))
+        setAttention((current) => new Map([...current].filter(([id]) => !affected.has(id))))
+      } else if (isArchived(session.id)) {
+        const restored = yield* operation({ operation: "Restore archived session", sessionID: session.id },
+          () => restoreSession(props.context.client, archiveStore, archived(session.id)!))
+        deletedIDs.delete(restored.id)
+        setSessions((items) => [...items.filter((item) => item.id !== restored.id), restored])
+        setArchives((items) => items.filter((item) => item.transcript.info.id !== session.id))
       }
-      yield* operation({ operation: inactive ? needsInterrupt ? "Persist inactive marker (session already interrupted)" : "Persist inactive marker" : "Persist active marker", sessionID: session.id }, () => updateLifecycle((draft) => {
+      yield* operation({ operation: "Update lifecycle marker", sessionID: session.id }, () => updateLifecycle((draft) => {
         if (inactive) draft.inactive[session.id] = true
         else delete draft.inactive[session.id]
       }))
       // Don't steal selection if the user navigated while the request ran.
       if (selectedValue() === selected.id) setSelectedValue(neighbor)
-      props.context.ui.toast.show({ message: inactive ? needsInterrupt ? "Session interrupted and marked inactive" : "Session marked inactive" : "Session restored to active", variant: "success" })
+      props.context.ui.toast.show({ message: inactive ? "Session archived; family deleted" : "Session restored to active", variant: "success" })
     }).pipe(Effect.ensuring(Effect.sync(() => {
       setChangingLifecycle(false)
-      for (const id of family) {
-        void refreshSessionRow(id)
-        refreshLocationForSession(id)
-      }
       setReviewVersion((version) => version + 1)
     }))), showFailure).done
   }
@@ -437,6 +451,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
         const target: string = id
         const fresh = yield* operation({ operation: "Refresh session row", sessionID: target },
           (signal) => props.context.client.session.get({ sessionID: target }, { signal }))
+        if (deletedIDs.has(target)) break
         setSessions((loaded) => [...loaded.filter((item) => item.id !== fresh.id), fresh])
         id = fresh.parentID && !sessions().some((item) => item.id === fresh.parentID) ? fresh.parentID : undefined
       }
@@ -473,8 +488,8 @@ export function SessionPicker(props: { context: Plugin.Context }) {
         order: "desc",
         ...(initial ? {} : { cursor: cursor() }),
       }, { signal }))
-      const known = new Map(sessions().map((session) => [session.id, session]))
-      for (const session of result.data) known.set(session.id, session)
+      const known = new Map(liveSessions().map((session) => [session.id, session]))
+      for (const session of result.data) if (!deletedIDs.has(session.id)) known.set(session.id, session)
       const loaded = [...known.values()]
       setSessions(loaded)
       setCursor(result.cursor.next ?? undefined)
@@ -483,6 +498,10 @@ export function SessionPicker(props: { context: Plugin.Context }) {
   }
 
   function open(sessionID: string) {
+    if (isArchived(sessionID)) {
+      props.context.ui.toast.show({ message: "Archived session — press r to import and restore", variant: "info" })
+      return
+    }
     props.context.ui.dialog.clear()
     props.context.ui.router.navigate({ type: "session", sessionID })
   }
@@ -558,6 +577,12 @@ export function SessionPicker(props: { context: Plugin.Context }) {
       { bind: "up", run: () => moveSelection(-1) },
       { bind: "k", run: () => moveSelection(-1) },
       { bind: "down", run: () => moveSelection(1) },
+      { bind: "/", run: async () => {
+        const value = await props.context.ui.dialog.prompt({ title: "Search sessions (including archives)", placeholder: "Title or directory; empty clears filter" })
+        if (value === undefined) return
+        setSearch(value ?? "")
+        setSelectedValue(NEW_SESSION_VALUE)
+      } },
       { bind: "j", run: () => moveSelection(1) },
       { bind: "shift+up", run: () => moveSelection(-8) },
       { bind: "shift+down", run: () => moveSelection(8) },
@@ -584,6 +609,9 @@ export function SessionPicker(props: { context: Plugin.Context }) {
   })
 
   onMount(() => {
+    runner.start(operation({ operation: "Load session archives" }, () => archiveStore.list()).pipe(
+      Effect.map((items) => { setArchives(items); setArchivesReady(true) }),
+    ), showFailure)
     // Applying this after the dialog exists reliably overrides its default 60-column width.
     props.context.ui.dialog.set({ size: "xlarge", centered: true })
     if (currentSessionID && !currentSession) {
@@ -630,6 +658,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
         refreshContextForSession(event.data.sessionID)
       }),
       props.context.data.on("session.created", (event) => {
+        deletedIDs.delete(event.data.sessionID)
         void refreshSessionRow(event.data.sessionID)
       }),
       props.context.data.on("session.renamed", (event) => {
@@ -639,7 +668,8 @@ export function SessionPicker(props: { context: Plugin.Context }) {
         )
       }),
       props.context.data.on("session.deleted", (event) => {
-        if (selectedValue() === event.data.sessionID) setSelectedValue(NEW_SESSION_VALUE)
+        deletedIDs.add(event.data.sessionID)
+        if (!changingLifecycle() && selectedValue() === event.data.sessionID) setSelectedValue(NEW_SESSION_VALUE)
         setSessions((loaded) => loaded.filter((item) => item.id !== event.data.sessionID))
         setAttention((current) => {
           if (!current.has(event.data.sessionID)) return current
@@ -816,8 +846,18 @@ export function SessionPicker(props: { context: Plugin.Context }) {
         ) : (
           <>
             <text wrapMode="none" fg={props.context.theme.text.subdued}>
-              {previewLoading() ? "Checking for approval requests…" : previewError() ? `Preview unavailable: ${previewError()}` : visiblePreview()?.forms.length ? "Question waiting — open session to answer" : "No permission requested"}
+              {selectedSession() && isArchived(selectedSession()!.id)
+                ? `Archived · ${selectedMessages()?.length ?? 0} messages · r to restore`
+                : previewLoading() ? "Checking for approval requests…" : previewError() ? `Preview unavailable: ${previewError()}` : visiblePreview()?.forms.length ? "Question waiting — open session to answer" : "No permission requested"}
             </text>
+            {selectedSession() && isArchived(selectedSession()!.id) ? (
+              <scrollbox flexGrow={1} minHeight={0} scrollY scrollX={false}>
+                <text fg={props.context.theme.text.default}>{(selectedMessages() ?? []).flatMap((message) =>
+                  message.type === "user" ? [`User: ${message.text}`]
+                    : message.type === "assistant" ? message.content.filter((part) => part.type === "text").map((part) => `Assistant: ${part.text}`) : [],
+                ).join("\n\n")}</text>
+              </scrollbox>
+            ) : null}
           </>
         )}
         </box>
@@ -830,9 +870,10 @@ export function SessionPicker(props: { context: Plugin.Context }) {
                 event.preventDefault()
                 void changeLifecycle(options()[selectedIndex()]?.state !== "inactive")
               }}>
-              {changingLifecycle() ? "[Updating…]" : options()[selectedIndex()]?.state === "inactive" ? "[Restore to active]" : "[Mark inactive]"}
+              {changingLifecycle() ? "[Updating…]" : options()[selectedIndex()]?.state === "inactive" ? "[Restore to active]" : "[Archive]"}
             </text>
           ) : null}
+          <text fg={props.context.theme.text.subdued}>{search() ? ` · / filter: ${search()}` : " · / search"}</text>
         </box>
       </box>
       {loading() ? (
