@@ -186,14 +186,14 @@ export function SessionPicker(props: { context: Plugin.Context }) {
         const baseStatus = {
           permission: "Permission required",
           question: "Question waiting",
-          running: "Working",
           inactive: "Inactive",
           idle: "Ready",
-        }[state]
+        }[state as "permission" | "question" | "inactive" | "idle"]
         const childStatus = `${runningChildren} sub-agent${runningChildren === 1 ? "" : "s"} running`
-        const status = runningChildren === 0 ? baseStatus
-          : state === "running" && !ownRunning ? childStatus
-          : `${baseStatus} · ${childStatus}`
+        // Running is indicated by the spinner icon, so it gets no text status.
+        const status = runningChildren > 0
+          ? state === "running" ? childStatus : `${baseStatus} · ${childStatus}`
+          : state === "running" ? undefined : baseStatus
         const location = shortenLocation(props.context.ui.format.path(session.location.directory))
         const details = [relativeTime(session.time.updated), location]
         if (session.agent) details.push(session.agent)
@@ -205,6 +205,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
           state,
           value: session.id,
           depth,
+          updated: relativeTime(session.time.updated),
         }
       }),
     ]
@@ -234,8 +235,55 @@ export function SessionPicker(props: { context: Plugin.Context }) {
   const selectedStats = createMemo(() =>
     contextStats(selectedSession(), selectedUsage(), selectedCost(), contextSyncing()),
   )
+  const [rowPercents, setRowPercents] = createSignal(new Map<string, string>())
+  const rowFetching = new Set<string>()
   const visiblePreview = createMemo(() => preview()?.sessionID === selectedSession()?.id ? preview() : undefined)
   const permission = createMemo(() => visiblePreview()?.permissions[0])
+
+  createEffect(() => {
+    // Mirror the selected row's synced percent into the row cache so the
+    // list shows % without syncing every row.
+    const session = selectedSession()
+    const usage = selectedUsage()
+    if (session && usage?.percent !== undefined) {
+      const label = `${usage.percent}%`
+      setRowPercents((current) => {
+        if (current.get(session.id) === label) return current
+        return new Map(current).set(session.id, label)
+      })
+    }
+  })
+
+  createEffect(() => {
+    // Only sync context for rows that need attention (running / permission /
+    // question) plus the selected row — syncing all rows would be expensive.
+    const loaded = sessions()
+    const targets = rows()
+      .filter(({ state, session }) =>
+        session.id === selectedValue() || state === "running" || state === "permission" || state === "question")
+      .map(({ session }) => session)
+      .filter((session) => !rowPercents().has(session.id) && !rowFetching.has(session.id))
+      .slice(0, 8)
+    for (const session of targets) {
+      rowFetching.add(session.id)
+      runner.start(Effect.all([
+        operation({ operation: "Sync row context messages", sessionID: session.id }, () => props.context.data.session.message.sync(session.id)),
+        operation({ operation: "Sync row models", directory: session.location.directory }, () => props.context.data.location.model.sync(session.location)),
+      ], { concurrency: "unbounded" }).pipe(
+        Effect.ensuring(Effect.sync(() => { rowFetching.delete(session.id) })),
+      ), () => { rowFetching.delete(session.id) }).done.then(() => {
+        const byID = new Map(loaded.map((item) => [item.id, item]))
+        const fresh = byID.get(session.id) ?? session
+        const messages = props.context.data.session.message.list(session.id)
+        const models = props.context.data.location.model.list(fresh.location)
+        const usage = contextUsage(messages, models, fresh.revert?.messageID)
+        if (usage?.percent !== undefined) {
+          const label = `${usage.percent}%`
+          setRowPercents((current) => new Map(current).set(session.id, label))
+        }
+      })
+    }
+  })
 
   createEffect(() => {
     const session = selectedSession()
@@ -714,7 +762,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
                     </text>
                     {(() => {
                       const row = option()
-                      return "status" in row ? (
+                      return "status" in row && row.status ? (
                         <>
                           <text wrapMode="none" fg={iconColor()}>{`  ·  ${row.status}`}</text>
                         </>
@@ -724,14 +772,16 @@ export function SessionPicker(props: { context: Plugin.Context }) {
                     })()}
                   </box>
                   {option().state !== "new" ? (
-                    <text id={`claude-session-lifecycle-${index}`} flexShrink={0} fg={descriptionColor()}
-                      onMouseDown={(event) => {
-                        if (event.button !== 0) return
-                        event.stopPropagation()
-                        event.preventDefault()
-                        setSelectedValue(option().value)
-                        void changeLifecycle(option().state !== "inactive")
-                      }}>{option().state === "inactive" ? " [Restore]" : " [x]"}</text>
+                    <>
+                      {"value" in option() && rowPercents().get(option().value as string) ? (
+                        <text flexShrink={0} fg={descriptionColor()}>{` ${rowPercents().get(option().value as string)}`}</text>
+                      ) : null}
+                      <box width={10} flexShrink={0} justifyContent="flex-end">
+                        <text wrapMode="none" fg={descriptionColor()}>
+                          {(option() as { updated?: string }).updated ?? ""}
+                        </text>
+                      </box>
+                    </>
                   ) : null}
                 </box>
                 </>
