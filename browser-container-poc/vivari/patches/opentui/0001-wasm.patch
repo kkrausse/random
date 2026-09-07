@@ -1,5 +1,5 @@
 diff --git a/packages/core/src/zig/build.zig b/packages/core/src/zig/build.zig
-index 0c82ba3d..92625d93 100644
+index 0c82ba3d..e9425514 100644
 --- a/packages/core/src/zig/build.zig
 +++ b/packages/core/src/zig/build.zig
 @@ -205,7 +205,7 @@ fn addYogaDependencies(b: *std.Build, artifact: *std.Build.Step.Compile) void {
@@ -11,7 +11,7 @@ index 0c82ba3d..92625d93 100644
      });
  }
  
-@@ -478,13 +478,25 @@ fn buildTarget(
+@@ -478,13 +478,26 @@ fn buildTarget(
      }
  
      const module = b.createModule(.{
@@ -28,6 +28,7 @@ index 0c82ba3d..92625d93 100644
 +        wasm.entry = .disabled;
 +        wasm.wasi_exec_model = .reactor;
 +        wasm.rdynamic = true;
++        wasm.import_table = true;
 +        wasm.root_module.single_threaded = true;
 +        wasm.linkLibC();
 +        addYogaDependencies(b, wasm);

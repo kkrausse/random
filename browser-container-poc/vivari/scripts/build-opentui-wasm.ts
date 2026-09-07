@@ -1,6 +1,7 @@
 import { resolve } from "node:path"
 import { existsSync } from "node:fs"
 import { createHash } from "node:crypto"
+import { adaptWire, unavailableAudio } from './opentui-wire'
 const root = resolve(import.meta.dir, "../.runtime/opentui-source")
 const zig = resolve(root, "packages/core/src/zig")
 const revision = '0c8c4f7cff2927e3df63a9757a45eff9a343611c'
@@ -20,14 +21,15 @@ const expected = await Bun.file(patch).text()
 if(diff && diff !== expected) throw Error('Unrecognized OpenTUI source changes')
 if(!diff) run(['git','apply',patch])
 if(run(['zig','version']).trim() !== '0.15.2') throw Error('Requires Zig 0.15.2')
-// Explicit source adapter: the native audio ABI is absent, never a successful stub.
+// Explicit source profile: audio symbols link, engine creation fails honestly.
 let source = await Bun.file(resolve(zig, "lib.zig")).text()
 const start = source.indexOf("export fn createAudioEngine(")
 const end = source.indexOf("export fn getArenaAllocatedBytes()", start)
 if (start < 0 || end < start) throw new Error("OpenTUI audio source boundary drift")
-source = source.slice(0, start) + source.slice(end)
+source = source.slice(0, start) + unavailableAudio(source.slice(start, end)) + source.slice(end)
 source = source.replace('const native_audio = @import("audio.zig");', '').replace('    _ = native_audio;', '')
 source = source.replace(/fn acquireAudioEngine\(handle: NativeHandle\) \?\*native_audio.Engine \{[^}]+\}/, '')
+source = adaptWire(source, await Bun.file(resolve(zig, 'text-buffer.zig')).text())
 source += `
 // WASM offsets refer only to this instance's linear memory. Caller owns each allocation.
 export fn wasmAlloc(len: u32) ?[*]u8 {
@@ -45,7 +47,7 @@ await Bun.write(resolve(zig, "wasm-lib.zig"), source)
 const proc = Bun.spawn(["zig", "build", "-Dtarget=wasm32-wasi", "-Doptimize=ReleaseSmall"], { cwd: zig, stdout: "inherit", stderr: "inherit" })
 const code = await proc.exited
 if(code) process.exit(code)
-await Bun.write(resolve(root, '../opentui.ffi.json'), JSON.stringify({abi: 'vivari-wasm32-flat-v1', wasm: 'opentui.wasm'}) + '\n')
+await Bun.write(resolve(root, '../opentui.ffi.json'), JSON.stringify({abi: 'vivari-wasm32-flat-v1', wasm: 'opentui.wasm', tableInitial: 4096}) + '\n')
 const bytes = await Bun.file(resolve(zig,'zig-out/bin/opentui.wasm')).arrayBuffer()
 const module = new WebAssembly.Module(bytes)
 const hash = (v: string | ArrayBuffer) => createHash('sha256').update(typeof v === 'string' ? v : new Uint8Array(v)).digest('hex')

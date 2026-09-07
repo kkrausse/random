@@ -34,10 +34,14 @@ export async function runOpenCode(vm: Vivari, options: {
   };
   async function run(file: string) {
     options.signal.throwIfAborted();
+    // Guest localhost is its own network. The model HTTP proxy lives on the
+    // harness host, addressed through Vivari's explicit host alias.
+    const hostOrigin = new URL(location.origin);
+    hostOrigin.hostname = 'host.vivari.internal';
     const proc = await vm.spawn("bun", [file], { cwd: "/opencode-packaged", env: {
       OPENCODE_PROBE_DURABLE: "1", OPENCODE_PROBE_RECOVER: options.recover ? "1" : "0",
       ...(options.model ? { OPENCODE_PROBE_MODEL: options.model } : {}),
-      ...(['model', 'prompt'].includes(entry) ? { OPENCODE_PROBE_BASE_URL: modelBaseURL(location.origin, 'opencode') } : {}),
+      ...(['model', 'prompt'].includes(entry) ? { OPENCODE_PROBE_BASE_URL: modelBaseURL(hostOrigin.origin, 'opencode') } : {}),
     } });
     options.process(proc);
     const abort = () => proc.kill();

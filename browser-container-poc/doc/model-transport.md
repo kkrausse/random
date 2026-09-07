@@ -1,5 +1,11 @@
 # Web app model transport
 
+Transport update (compiled TUI continuation): guest HTTP loopback fetch now reaches
+guest services. The harness supplies model proxy URLs using `host.vivari.internal`
+with the harness port and `/api/model/...` path, so model egress still reaches the
+host proxy. The production build passes; the historical model results below are
+not a new TUI model qualification. See [current TUI gates](vivari-wire-results.md).
+
 ## Latest result: strict five-tool qualification passes
 
 Follow-up on 2026-09-06: the revised fixture/prompt passed the strict probe with
