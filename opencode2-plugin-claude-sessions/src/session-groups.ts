@@ -108,3 +108,26 @@ export function groupLabel(state: SessionState | "new") {
   if (state === "new") return undefined
   return state === "inactive" ? "Inactive" : "Active"
 }
+
+// Keep children beside their parent within each lifecycle section. A child in
+// another section (or with an unloaded parent) remains independently reachable.
+export function nestRows<T extends { state: SessionState; session: { id: string; parentID?: string | null } }>(rows: T[]): (T & { depth: number })[] {
+  const result: (T & { depth: number })[] = []
+  const seen = new Set<string>()
+  const visit = (row: T, depth: number) => {
+    if (seen.has(row.session.id)) return
+    seen.add(row.session.id)
+    result.push({ ...row, depth })
+    for (const child of rows) {
+      if (child.session.parentID === row.session.id && groupLabel(child.state) === groupLabel(row.state)) visit(child, depth + 1)
+    }
+  }
+  for (const section of ["Active", "Inactive"]) {
+    const members = rows.filter((row) => groupLabel(row.state) === section)
+    for (const row of members) {
+      if (!members.some((parent) => parent.session.id === row.session.parentID)) visit(row, row.session.parentID ? 1 : 0)
+    }
+    for (const row of members) visit(row, 0)
+  }
+  return result
+}

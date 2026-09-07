@@ -1,6 +1,18 @@
 import { strict as assert } from "node:assert"
 import { test } from "node:test"
-import { descendantIDs, groupLabel, propagateAttention, sessionState, sortRows, visibleSessions, type SessionState } from "./session-groups"
+import { descendantIDs, groupLabel, nestRows, propagateAttention, sessionState, sortRows, visibleSessions, type SessionState } from "./session-groups"
+
+test("children nest under parents while lifecycle sections stay contiguous", () => {
+  const row = (id: string, state: SessionState, parentID?: string) => ({ state, session: { id, parentID } })
+  const rows = nestRows([
+    row("grandchild", "running", "child"), row("other", "idle"),
+    row("child", "idle", "parent"), row("parent", "idle"),
+    row("orphan", "idle", "unloaded"), row("retired-child", "inactive", "parent"),
+  ])
+  assert.deepEqual(rows.map(({ session, depth }) => [session.id, depth]), [
+    ["other", 0], ["parent", 0], ["child", 1], ["grandchild", 2], ["orphan", 1], ["retired-child", 1],
+  ])
+})
 
 test("attention and running override an inactive marker", () => {
   assert.equal(sessionState("permission", true, true), "permission")
