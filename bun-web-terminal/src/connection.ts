@@ -13,6 +13,7 @@ export class TerminalConnection {
   private retry?: ReturnType<typeof setTimeout>;
   private heartbeat: ReturnType<typeof setInterval>;
   private pongTimeout?: ReturnType<typeof setTimeout>;
+  private connectTimeout?: ReturnType<typeof setTimeout>;
   private frame?: number;
   private queue: Uint8Array[] = [];
   private attempt = 0;
@@ -69,12 +70,17 @@ export class TerminalConnection {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const socket = new WebSocket(`${protocol}//${location.host}/ws/${this.id}?cols=${cols}&rows=${rows}`);
     this.socket = socket;
+    this.connectTimeout = setTimeout(() => {
+      if (this.socket === socket) this.reconnect();
+    }, 8_000);
     socket.binaryType = "arraybuffer";
     socket.onmessage = (event) => {
       if (socket !== this.socket) return;
       if (typeof event.data === "string") {
         const message = JSON.parse(event.data);
         if (message.type === "ready") {
+          clearTimeout(this.connectTimeout);
+          this.attempt = 0;
           // Keep the WASM instance: ghostty-web.reset() leaves some input/mouse
           // helpers pointing at the freed instance. RIS resets it in place.
           this.view.reset();
@@ -98,16 +104,22 @@ export class TerminalConnection {
     };
     socket.onclose = (event) => {
       if (socket !== this.socket) return;
-      this.disconnect();
       if (event.code === 4002 || event.code === 4004 || event.code === 1000 || event.code === 1008) {
+        this.disconnect();
         this.stopped = true;
         this.view.status(event.code === 4002 ? "detached" : "closed");
         return;
       }
-      this.view.status(navigator.onLine ? "reconnecting" : "offline");
-      this.retry = setTimeout(() => this.connect(), Math.min(10_000, 750 * 2 ** this.attempt++));
+      this.reconnect();
     };
-    socket.onerror = () => socket.close();
+    socket.onerror = () => { if (socket === this.socket) this.reconnect(); };
+  }
+
+  private reconnect() {
+    this.disconnect();
+    if (this.stopped) return;
+    this.view.status(navigator.onLine ? "reconnecting" : "offline");
+    this.retry = setTimeout(() => this.connect(), Math.min(5_000, 250 * 2 ** this.attempt++));
   }
 
   private scheduleWrite() {
@@ -130,7 +142,8 @@ export class TerminalConnection {
     if (this.pongTimeout || this.socket?.readyState !== WebSocket.OPEN) return;
     const socket = this.socket;
     this.control({ type: "ping" });
-    this.pongTimeout = setTimeout(() => { if (this.socket === socket) socket.close(4000, "Connection timed out"); }, 8_000);
+    // Don't wait for a close handshake on a connection we already know is dead.
+    this.pongTimeout = setTimeout(() => { if (this.socket === socket) this.reconnect(); }, 3_000);
   }
 
   private disconnect() {
@@ -141,6 +154,7 @@ export class TerminalConnection {
     for (const listener of this.attachmentListeners) listener();
     socket?.close();
     clearTimeout(this.retry);
+    clearTimeout(this.connectTimeout);
     clearTimeout(this.pongTimeout);
     this.pongTimeout = undefined;
     if (this.frame !== undefined) cancelAnimationFrame(this.frame);
