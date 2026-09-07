@@ -2,6 +2,16 @@
 
 ## Shell-first update
 
+Catalog proxy follow-up: `/api/catalog/api.json` now forwards to the fixed public
+`https://models.opencode.ai/api.json` endpoint. Both the guest server and shell
+receive `OPENCODE_MODELS_URL=http://host.vivari.internal:5216/api/catalog` (using
+the actual page port). This does not proxy inference requests. Browser verification
+returned HTTP 200 with 213 providers and 102 Zen model entries; the guest server
+wrote its URL-specific catalog cache containing Zen, and the startup fetch error
+did not recur. The TUI still displayed only **Other Custom provider**, consistent
+with the separately recorded legacy/API route mismatch. Catalog connectivity alone
+does not resolve the picker or qualify inference.
+
 The page now boots automatically to the guest `/workspace` shell. Use **Launch
 OpenCode**, or type `bun /opencode-tui/cli/entry.cjs`, to open the TUI. Ctrl+C
 returns to the shell. **Stop shell** terminates that shell and its children;

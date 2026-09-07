@@ -6,6 +6,8 @@ const fit = new FitAddon(); terminal.loadAddon(fit); terminal.open(document.quer
 const start = document.querySelector<HTMLButtonElement>('#start')!;
 const stop = document.querySelector<HTMLButtonElement>('#stop')!;
 const launch = document.querySelector<HTMLButtonElement>('#launch')!;
+// Guest loopback addresses reach guest services; this alias reaches the host proxy.
+const guestEnv = { TERM: 'xterm-256color', OPENCODE_MODELS_URL: `http://host.vivari.internal:${location.port}/api/catalog` };
 let vm: any, server: any, tui: any, writer: any, installed = false;
 let logs = '', phase = 'ready', serverOutput = '';
 function log(s: string) { logs = (logs + s + '\n').slice(-1000000); document.querySelector('#logs')!.textContent = logs; }
@@ -49,7 +51,7 @@ start.onclick = async () => {
     }
     if (!server) {
       status('Starting real guest OpenCode server on guest port 4096…'); serverOutput = '';
-      server = await vm.spawn('node', ['/opencode-tui/cli/entry.cjs', 'serve', '--port', '4096', '--register'], { cwd: '/workspace' });
+      server = await vm.spawn('node', ['/opencode-tui/cli/entry.cjs', 'serve', '--port', '4096', '--register'], { cwd: '/workspace', env: guestEnv });
       const owned = server;
       void (async () => { for await (const t of owned.output) { serverOutput += t; log('[server] ' + t); } })();
       void owned.exit.then((code: number) => { server = undefined; log('Server exited ' + code); });
@@ -58,7 +60,7 @@ start.onclick = async () => {
     }
     status('Opening guest shell…'); terminal.reset(); fit.fit();
     // The interactive shell owns Ctrl+C signal forwarding to its foreground child.
-    tui = await vm.spawn('sh', [], { cwd: '/workspace', env: { TERM: 'xterm-256color' }, terminal: { cols: terminal.cols, rows: terminal.rows } });
+    tui = await vm.spawn('sh', [], { cwd: '/workspace', env: guestEnv, terminal: { cols: terminal.cols, rows: terminal.rows } });
     writer = tui.input.getWriter(); stop.disabled = false; terminal.focus();
     const owned = tui;
     let tail = '';
