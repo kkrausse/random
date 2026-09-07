@@ -723,8 +723,10 @@ export function SessionPicker(props: { context: Plugin.Context }) {
                    height={1}
                   flexShrink={0}
                    flexDirection="row"
-                   paddingLeft={1 + Math.min(option().depth, 4) * 2}
+                   paddingLeft={1 + Math.min(option().depth, 4) * 2 - (active() ? 1 : 0)}
                   paddingRight={2}
+                  border={active() ? ["left"] : []}
+                  borderColor={props.context.theme.hue.accent[400]}
                   backgroundColor={
                     active()
                       ? props.context.theme.contextual.overlay.background.surface.offset
