@@ -1,6 +1,23 @@
 import { strict as assert } from "node:assert"
 import { test } from "node:test"
-import { descendantIDs, groupLabel, nestRows, propagateAttention, sessionState, sortRows, visibleSessions, type SessionState } from "./session-groups"
+import { descendantIDs, groupLabel, inheritLifecycle, lifecycleOwner, nestRows, propagateAttention, sessionState, sortRows, visibleSessions, type SessionState } from "./session-groups"
+
+test("parent lifecycle governs descendants at read time, including stale markers and late-loaded children", () => {
+  const parent = { id: "parent" }
+  const child = { id: "child", parentID: "parent" }
+  const grandchild = { id: "grandchild", parentID: "child" }
+  const rows = [
+    { session: parent, state: "inactive" as SessionState },
+    { session: child, state: "idle" as SessionState },
+    { session: grandchild, state: "permission" as SessionState },
+  ]
+  assert.deepEqual(inheritLifecycle(rows).map((row) => row.state), ["inactive", "inactive", "inactive"])
+  rows[0]!.state = "idle"
+  rows[1]!.state = "inactive"
+  assert.deepEqual(inheritLifecycle(rows).map((row) => row.state), ["idle", "idle", "permission"])
+  assert.equal(lifecycleOwner([parent, child, grandchild], grandchild), parent)
+  assert.equal(lifecycleOwner([grandchild], grandchild), grandchild)
+})
 
 test("children nest under parents while lifecycle sections stay contiguous", () => {
   const row = (id: string, state: SessionState, parentID?: string) => ({ state, session: { id, parentID } })

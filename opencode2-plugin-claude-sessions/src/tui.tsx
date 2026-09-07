@@ -4,7 +4,7 @@ import { Plugin } from "@opencode-ai/plugin/tui"
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { Index, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
-import { descendantIDs, groupLabel, nestRows, propagateAttention, sessionState, sortRows } from "./session-groups"
+import { descendantIDs, groupLabel, inheritLifecycle, lifecycleOwner, nestRows, propagateAttention, sessionState, sortRows } from "./session-groups"
 import { sectionNeighbor } from "./picker-selection"
 import { Cause, Effect } from "effect"
 import { makeRunner, operation } from "./effects"
@@ -159,7 +159,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
     liveVersion()
     const loaded = sessions()
     const effective = propagateAttention(loaded, attention(), currentSessionID)
-    return nestRows(sortRows(
+    return nestRows(sortRows(inheritLifecycle(
       loaded.map((session) => {
         const ownRunning = props.context.data.session.status(session.id) === "running"
         const runningChildren = descendantIDs(loaded, session.id)
@@ -170,7 +170,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
             ownRunning || runningChildren > 0, !!lifecycle.inactive[session.id]),
         }
       }),
-    ))
+    )))
   })
 
   const options = createMemo(() => {
@@ -302,9 +302,10 @@ export function SessionPicker(props: { context: Plugin.Context }) {
   }
 
   function changeLifecycle(inactive: boolean) {
-    const session = selectedSession()
-    if (!session || changingLifecycle() || replying()) return
-    const family = inactive ? [session.id, ...descendantIDs(sessions(), session.id)] : [session.id]
+    const selected = selectedSession()
+    if (!selected || changingLifecycle() || replying()) return
+    const session = lifecycleOwner(sessions(), selected)
+    const family = [session.id, ...descendantIDs(sessions(), session.id)]
     const affected = new Set(family)
     const neighbor = sectionNeighbor(options().filter((option) => option.value === session.id || !affected.has(option.value)), session.id) ?? NEW_SESSION_VALUE
     // Interrupting starts the session's location runtime, which fails for old
@@ -321,11 +322,11 @@ export function SessionPicker(props: { context: Plugin.Context }) {
           (signal) => props.context.client.session.interrupt({ sessionID: id, continue: false }, { signal }))
       }
       yield* operation({ operation: inactive ? needsInterrupt ? "Persist inactive marker (session already interrupted)" : "Persist inactive marker" : "Persist active marker", sessionID: session.id }, () => updateLifecycle((draft) => {
-        if (inactive) for (const id of family) draft.inactive[id] = true
+        if (inactive) draft.inactive[session.id] = true
         else delete draft.inactive[session.id]
       }))
       // Don't steal selection if the user navigated while the request ran.
-      if (selectedValue() === session.id) setSelectedValue(neighbor)
+      if (selectedValue() === selected.id) setSelectedValue(neighbor)
       props.context.ui.toast.show({ message: inactive ? needsInterrupt ? "Session interrupted and marked inactive" : "Session marked inactive" : "Session restored to active", variant: "success" })
     }).pipe(Effect.ensuring(Effect.sync(() => {
       setChangingLifecycle(false)
