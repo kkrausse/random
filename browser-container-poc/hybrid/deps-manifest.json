@@ -1,0 +1,80 @@
+{
+  "format": "hybrid-vivari-deps-v1",
+  "workspace": "/workspace",
+  "generatedIn": "browser-vivari-worker",
+  "fileCount": 6196,
+  "logicalBytes": 104990455,
+  "compressedBytes": 26324873,
+  "sha256": "699decd21a10eee28eb8f50cb3cab5d1f8069e1eff9d63cedaec2a1079761b98",
+  "packageLockSha256": "5a8be404c955197069509c15827d3e4a28a8c21de487b9aaea060cf536a72d29",
+  "fixturePackageSha256": "e7eae57a0f9cae9bc75e6031feee06aab370cd9fce2d9e44d2cae6c4f9f7f9dc",
+  "vite": "7.1.4",
+  "esbuild": {
+    "name": "esbuild-wasm",
+    "version": "0.25.12",
+    "description": "The cross-platform WebAssembly binary for esbuild, a JavaScript bundler.",
+    "repository": {
+      "type": "git",
+      "url": "git+https://github.com/evanw/esbuild.git"
+    },
+    "license": "MIT",
+    "engines": {
+      "node": ">=18"
+    },
+    "main": "lib/main.js",
+    "browser": "lib/browser.js",
+    "types": "lib/main.d.ts",
+    "directories": {
+      "bin": "bin"
+    }
+  },
+  "runtimeBuild": {
+    "revision": "2629c71097238400c45aefa213ef61df4794c2b7",
+    "base": "../vivari/.runtime/baseline",
+    "fix": "Recheck syscall state after late/spurious notification",
+    "inputs": [
+      {
+        "path": "packages/runtime/fs-client.js",
+        "originalSha256": "41542fc42cfecdcd45ab27d24ff778c6b647b338fd88f5ccd56ba712d680571e",
+        "patchedSha256": "28e90d031e9780bfeb6a00b8e7001746130216ec3bc4666183fb388a0f87e1fc"
+      },
+      {
+        "path": "packages/kernel-host/kernel-fs.js",
+        "originalSha256": "99cc45ff0400a3cf0881384cd9ff1e8bd7d8d50f20787b5bd5e0711bdc4f2e51",
+        "patchedSha256": "42693912d44ce93d3cfbb48a39af22454a256470f17422c03b35f20e6e707fbd"
+      }
+    ],
+    "files": [
+      {
+        "name": "index.js",
+        "bytes": 14295,
+        "sha256": "e40ae224e714d56b89b215119727db2b4aa6487ebc09709f4c1298ef91d08a57"
+      },
+      {
+        "name": "assets/kernel-worker-C2LklNSp.js",
+        "bytes": 1187536,
+        "sha256": "5e5a7cb76c358c68755a4f25c78d76ce35378a3121eeb9c5c25d5c124c030d04"
+      },
+      {
+        "name": "assets/process-worker-BupKD3E8.js",
+        "bytes": 2929475,
+        "sha256": "f7a3e22feab90c102ee57f1401c62c61f4ae76dfd44a9c7ed3aeada892a4b96a"
+      },
+      {
+        "name": "assets/fetcher-worker-wojYLY_2.js",
+        "bytes": 8292,
+        "sha256": "e90dc248df2378af00d2fe90570111417d139dc42880d5aca807a49e9c904420"
+      },
+      {
+        "name": "assets/fs-worker-s-Sg5HqV.js",
+        "bytes": 434122,
+        "sha256": "ff519a68aa7e3354b5f25726004d47b39c33c4148ab7b511bd0d44619577057f"
+      },
+      {
+        "name": "assets/sw.js",
+        "bytes": 48005,
+        "sha256": "2a8092b3697a12f0e1d5a52a6c36de126c962b5a776509833858de4861e78e6e"
+      }
+    ]
+  }
+}
