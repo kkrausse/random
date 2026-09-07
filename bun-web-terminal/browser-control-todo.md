@@ -1,5 +1,17 @@
 # Browser verification blocker
 
+- 2026-09-06, Browser Control 0.7.0, session `quiet-otter-585`, disposable local
+  auth test instance: navigate to `/sessions` (redirects to `/login`), then navigate
+  to the startup fragment-bearing sign-in URL. `waitForURL(.../sessions)` timed
+  out at 30 seconds. Expected sign-in; actual page remained on `/login` because
+  fragment-only navigation does not rerun the page script. Doctor was healthy.
+  Fixed the app to handle `hashchange` as well as initial page load; this was an
+  application bug, not a Browser Control failure. No sign-in values retained here.
+- Same session/version: `locator('#status').innerText()` failed strict mode on the
+  sign-in page because Browser Control's shadow-DOM status badge also has that ID.
+  Expected the page paragraph; actual two matches. Recovered with the inspected
+  `p#status` locator; the app's native `document.getElementById` is unaffected.
+
 - 2026-09-06, Browser Control 0.7.0, session `lucky-panda-617`: navigating to the
   disposable `http://127.0.0.1:13007/sessions` before Bun finished its initial build
   returned `net::ERR_CONNECTION_REFUSED`. Expected the sessions page; actual was

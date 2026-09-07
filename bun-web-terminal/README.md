@@ -10,7 +10,37 @@ bun install
 bun run dev
 ```
 
-Open <http://127.0.0.1:3000/sessions>. Sessions keep running when the browser disconnects. The effective local Ghostty palette and font are loaded with `ghostty +show-config --default` at startup.
+Open the **Mac sign-in** link printed at startup, or scan the QR on your phone
+through Tailscale. After signing in, you can open <http://127.0.0.1:3000/sessions>
+normally. Sessions keep running when the browser disconnects. The effective local Ghostty palette and font are loaded with `ghostty +show-config --default` at startup.
+
+## Sign-in and access
+
+Every startup generates a cryptographically random 256-bit access secret. The
+printed sign-in links and QR contain it in a URL fragment (`/login#key=…`). The
+sign-in page immediately removes the fragment from the address bar and exchanges
+the secret for a signed, HttpOnly, SameSite=Strict cookie. HTTPS cookies are also
+Secure; direct localhost HTTP uses a separate cookie restricted by the server to
+loopback connections. Phone/Tailscale and localhost require separate initial
+sign-ins. Cookies last up to 30 days, or until Bun restarts.
+
+**Restart Bun to rotate the secret and revoke all existing sign-ins.** This also
+applies to `bun --watch` reloads. Running tmux sessions survive, but browsers must
+use the newly printed link. No password or session keys are saved to disk.
+
+All application pages, assets, APIs, terminal WebSockets, and dictation WebSockets
+require authentication. Direct unauthenticated API requests receive `401`;
+browser page visits go to the sign-in instructions. Only configured hosts are
+accepted, and browser Origin checks use the configured origins rather than
+trusting forwarded headers. Remote access requires the configured HTTPS origin;
+plain HTTP sign-in is only supported over loopback.
+
+Anyone with a sign-in link and network access can sign in, so treat the startup
+output/QR as a password. A compromised tailnet device cannot sign in merely by
+being on Tailscale: it also needs the secret or a valid browser cookie. Keep those
+off other tailnet devices, and restrict Tailscale access to this service where
+possible. HTTPS protects traffic; this authentication adds a separate access
+check. It does not protect a compromised hosting Mac or authenticated browser.
 
 Terminal pages reconnect automatically after network interruptions or a suspended tab. Use the connection indicator in the top-right corner to force a fresh attachment and redraw.
 
@@ -121,7 +151,7 @@ To test alongside a manually used instance on port 3000, use a separate port **a
 PORT=3107 TERMINAL_DIST="$(mktemp -d)" bun start
 ```
 
-Open `http://127.0.0.1:3107/sessions`, start `btop`, repeatedly resize the window, then click the connection indicator and reload the page. Confirm that btop remains usable and the same process survives. Open the same session URL in another tab to check takeover. Test shell history scrolling and application scrolling separately. Restart Bun or edit source under `dev` (`--watch`) and confirm that the browser reconnects to the same running application. Parallel app instances share the standard tmux sessions.
+Open the printed Mac sign-in link, start `btop`, repeatedly resize the window, then click the connection indicator and reload the page. Confirm that btop remains usable and the same process survives. Open the same session URL in another tab to check takeover. Test shell history scrolling and application scrolling separately. Restart Bun or edit source under `dev` (`--watch`), sign in with the new link, and confirm that the same running application is available. Parallel app instances share the standard tmux sessions.
 
 To expose it only to devices permitted by your tailnet policy, keep the app bound to its default loopback address and run Tailscale Serve in another terminal:
 
@@ -132,27 +162,28 @@ tailscale serve status
 
 Open the reported `https://<machine>.<tailnet>.ts.net/sessions` URL. Tailscale terminates HTTPS and proxies HTTP and WebSocket traffic to `127.0.0.1:3000`. Remove the Serve configuration with `tailscale serve reset`.
 
-Startup prints a scannable QR code and link to the sessions page. It automatically
+Startup prints a scannable QR code and sign-in links. It automatically
 detects an existing Tailscale Serve HTTPS root route pointing to this instance's
 port. Scan it with your phone while connected to Tailscale. You can also set
 `TERMINAL_PUBLIC_URL=https://your-host/sessions` to choose the QR link explicitly
 (a bare origin gets `/sessions` appended). Without either, the QR points to
-localhost and is only useful on the hosting machine. The QR currently contains
-just the URL; it does not add a password or change authentication.
+localhost and is only useful on the hosting machine. Configure Serve before
+starting Bun so the HTTPS origin is discovered and accepted for sign-in.
 
 Environment variables:
 
 - `PORT`: HTTP port, default `3000`
-- `TERMINAL_PUBLIC_URL`: optional HTTP(S) URL for the startup QR; otherwise detected from Tailscale Serve, falling back to localhost
-- `HOST`: bind address, default `127.0.0.1`; use `0.0.0.0` for LAN access
+- `TERMINAL_PUBLIC_URL`: optional HTTPS origin or `/sessions` URL for remote sign-in; otherwise detected from Tailscale Serve, falling back to localhost
+- `HOST`: bind address, default `127.0.0.1`; `0.0.0.0` permits a remote HTTPS reverse proxy (authentication still required)
 - `TERMINAL_CWD`: shell working directory, default is this repository's parent directory
 - `TERMINAL_FONT`: browser terminal font stack, default `ui-monospace, SFMono-Regular, Menlo, Monaco, monospace`
 - `TERMINAL_SCROLL_SENSITIVITY`: wheel scroll multiplier, default `0.5` (was `0.35`)
 - `TERMINAL_DIST`: client build output directory, default `dist`; use a separate directory for parallel test instances
 - `SHELL`: shell executable, default `/bin/zsh`
 
-`HOST=0.0.0.0` exposes the terminal to the network without authentication. Every client that can reach the port receives direct access to the local shell, so only use it on a trusted network or behind an authenticated reverse proxy.
-
-Tailscale Serve also grants direct shell access to every tailnet identity allowed to reach this machine and port. Restrict it with your tailnet access policy when the entire tailnet should not have access.
+Tailscale Serve terminates HTTPS; keep Bun bound to loopback for this setup. App
+authentication is required in addition to tailnet access. For another reverse
+proxy, preserve the original Host header and set `TERMINAL_PUBLIC_URL` to its
+HTTPS origin.
 
 `vendor/ghostty-web` is a Git submodule pinned to the WebGL renderer branch. The app requests `rendererType: "webgl"` and shows an error instead of silently falling back to Canvas2D when WebGL2 is unavailable.
