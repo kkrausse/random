@@ -1,0 +1,4035 @@
+{
+  "source": "opentui-v2-source/packages/core/src/zig.ts",
+  "sha256": "243813a9efbfcb4d3da4f67cb02e2376848ee06bc83c551eb2d42bf3ea94d0a9",
+  "total": 423,
+  "pointerArgs": 184,
+  "bufferArgs": 39,
+  "pointerReturns": 13,
+  "signatures": [
+    {
+      "name": "setLogCallback",
+      "line": 387,
+      "args": [
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "createEventSink",
+      "line": 392,
+      "args": [
+        "ptr"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "destroyEventSink",
+      "line": 396,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "createNativeRenderable",
+      "line": 400,
+      "args": [],
+      "returns": "u32"
+    },
+    {
+      "name": "destroyNativeRenderable",
+      "line": 404,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "nativeRenderableAttachYogaNode",
+      "line": 408,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "nativeRenderableSetMeasureTarget",
+      "line": 412,
+      "args": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "createEmbeddedTerminal",
+      "line": 416,
+      "args": [
+        "u16",
+        "u16",
+        "u32",
+        "ptr"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "destroyEmbeddedTerminal",
+      "line": 420,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "embeddedTerminalWrite",
+      "line": 424,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "embeddedTerminalResize",
+      "line": 428,
+      "args": [
+        "u32",
+        "u16",
+        "u16"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "embeddedTerminalInvalidate",
+      "line": 432,
+      "args": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "embeddedTerminalScroll",
+      "line": 436,
+      "args": [
+        "u32",
+        "i32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "embeddedTerminalSetSelection",
+      "line": 440,
+      "args": [
+        "u32",
+        "u16",
+        "u16",
+        "u16",
+        "u16"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "embeddedTerminalClearSelection",
+      "line": 444,
+      "args": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "embeddedTerminalGetSelectedText",
+      "line": 448,
+      "args": [
+        "u32",
+        "buffer",
+        "u32",
+        "buffer"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "embeddedTerminalCompose",
+      "line": 452,
+      "args": [
+        "u32",
+        "u32",
+        "i32",
+        "i32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "embeddedTerminalCursor",
+      "line": 456,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "embeddedTerminalEncodeKey",
+      "line": 460,
+      "args": [
+        "u32",
+        "ptr",
+        "ptr",
+        "u32",
+        "ptr",
+        "u32",
+        "ptr",
+        "u32",
+        "ptr"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "embeddedTerminalEncodeMouse",
+      "line": 464,
+      "args": [
+        "u32",
+        "u8",
+        "i8",
+        "u16",
+        "f32",
+        "f32",
+        "u8",
+        "ptr",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "embeddedTerminalEncodePaste",
+      "line": 468,
+      "args": [
+        "u32",
+        "ptr",
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "embeddedTerminalEncodeFocus",
+      "line": 472,
+      "args": [
+        "u32",
+        "u8",
+        "ptr",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "embeddedTerminalDrainResponses",
+      "line": 476,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "createRenderer",
+      "line": 481,
+      "args": [
+        "u32",
+        "u32",
+        "u8",
+        "u8",
+        "ptr"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "setTerminalEnvVar",
+      "line": 485,
+      "args": [
+        "u32",
+        "ptr",
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "destroyRenderer",
+      "line": 489,
+      "args": [
+        "u32",
+        "bool"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "setUseThread",
+      "line": 493,
+      "args": [
+        "u32",
+        "bool"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "setClearOnShutdown",
+      "line": 497,
+      "args": [
+        "u32",
+        "bool"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "setBackgroundColor",
+      "line": 501,
+      "args": [
+        "u32",
+        "buffer"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "setRenderOffset",
+      "line": 505,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "resetSplitScrollback",
+      "line": 509,
+      "args": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "syncSplitScrollback",
+      "line": 513,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "getSplitOutputOffset",
+      "line": 517,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "setPendingSplitFooterTransition",
+      "line": 521,
+      "args": [
+        "u32",
+        "u8",
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "clearPendingSplitFooterTransition",
+      "line": 525,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "updateStats",
+      "line": 529,
+      "args": [
+        "u32",
+        "f64",
+        "u32",
+        "f64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "updateMemoryStats",
+      "line": 533,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "getRenderStats",
+      "line": 537,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "render",
+      "line": 541,
+      "args": [
+        "u32",
+        "bool"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "repaintSplitFooter",
+      "line": 545,
+      "args": [
+        "u32",
+        "u32",
+        "bool"
+      ],
+      "returns": "u64"
+    },
+    {
+      "name": "commitSplitFooterSnapshot",
+      "line": 552,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "u8",
+        "u32"
+      ],
+      "returns": "u64"
+    },
+    {
+      "name": "getNextBuffer",
+      "line": 556,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "getCurrentBuffer",
+      "line": 560,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "rendererSetPaletteState",
+      "line": 564,
+      "args": [
+        "u32",
+        "buffer",
+        "u32",
+        "buffer",
+        "buffer",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "queryPixelResolution",
+      "line": 569,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "queryThemeColors",
+      "line": 573,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "createOptimizedBuffer",
+      "line": 578,
+      "args": [
+        "u32",
+        "u32",
+        "u8",
+        "u8",
+        "buffer",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "destroyOptimizedBuffer",
+      "line": 582,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "drawFrameBuffer",
+      "line": 587,
+      "args": [
+        "u32",
+        "i32",
+        "i32",
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "getBufferWidth",
+      "line": 591,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "getBufferHeight",
+      "line": 595,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "getBufferWidthMethod",
+      "line": 599,
+      "args": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "bufferClear",
+      "line": 603,
+      "args": [
+        "u32",
+        "buffer"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferGetCharPtr",
+      "line": 607,
+      "args": [
+        "u32"
+      ],
+      "returns": "ptr"
+    },
+    {
+      "name": "bufferGetFgPtr",
+      "line": 611,
+      "args": [
+        "u32"
+      ],
+      "returns": "ptr"
+    },
+    {
+      "name": "bufferGetBgPtr",
+      "line": 615,
+      "args": [
+        "u32"
+      ],
+      "returns": "ptr"
+    },
+    {
+      "name": "bufferGetAttributesPtr",
+      "line": 619,
+      "args": [
+        "u32"
+      ],
+      "returns": "ptr"
+    },
+    {
+      "name": "bufferGetRespectAlpha",
+      "line": 623,
+      "args": [
+        "u32"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "bufferSetRespectAlpha",
+      "line": 627,
+      "args": [
+        "u32",
+        "bool"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferGetId",
+      "line": 631,
+      "args": [
+        "u32",
+        "buffer",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "bufferGetRealCharSize",
+      "line": 635,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "bufferWriteResolvedChars",
+      "line": 639,
+      "args": [
+        "u32",
+        "ptr",
+        "u32",
+        "bool"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "bufferDrawText",
+      "line": 644,
+      "args": [
+        "u32",
+        "ptr",
+        "u32",
+        "u32",
+        "u32",
+        "buffer",
+        "ptr",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferSetCellWithAlphaBlending",
+      "line": 648,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "buffer",
+        "buffer",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferSetCell",
+      "line": 652,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "buffer",
+        "buffer",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferFillRect",
+      "line": 656,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "buffer"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferColorMatrix",
+      "line": 660,
+      "args": [
+        "u32",
+        "ptr",
+        "ptr",
+        "u32",
+        "f32",
+        "u8"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferColorMatrixUniform",
+      "line": 664,
+      "args": [
+        "u32",
+        "ptr",
+        "f32",
+        "u8"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferResize",
+      "line": 668,
+      "args": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "linkAlloc",
+      "line": 674,
+      "args": [
+        "ptr",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "linkGetUrl",
+      "line": 678,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "attributesWithLink",
+      "line": 682,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "attributesGetLinkId",
+      "line": 686,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "resizeRenderer",
+      "line": 691,
+      "args": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "setCursorPosition",
+      "line": 697,
+      "args": [
+        "u32",
+        "i32",
+        "i32",
+        "bool"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "setCursorColor",
+      "line": 701,
+      "args": [
+        "u32",
+        "buffer"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "getCursorState",
+      "line": 705,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "setCursorStyleOptions",
+      "line": 711,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "setDebugOverlay",
+      "line": 717,
+      "args": [
+        "u32",
+        "u8",
+        "u8"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "clearTerminal",
+      "line": 723,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "setTerminalTitle",
+      "line": 727,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "copyToClipboardOSC52",
+      "line": 731,
+      "args": [
+        "u32",
+        "u8",
+        "ptr",
+        "u32"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "clearClipboardOSC52",
+      "line": 735,
+      "args": [
+        "u32",
+        "u8"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "clipboardServiceCreate",
+      "line": 739,
+      "args": [
+        "u32",
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "clipboardServiceBeginShutdown",
+      "line": 743,
+      "args": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "clipboardServicePollShutdown",
+      "line": 747,
+      "args": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "clipboardServiceDestroy",
+      "line": 751,
+      "args": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "clipboardServiceDrain",
+      "line": 755,
+      "args": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "clipboardReadOperationStart",
+      "line": 759,
+      "args": [
+        "u32",
+        "ptr",
+        "u32",
+        "u8",
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "ptr"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "clipboardWriteOperationStart",
+      "line": 763,
+      "args": [
+        "u32",
+        "ptr",
+        "u32",
+        "u8",
+        "u32",
+        "ptr"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "clipboardClearOperationStart",
+      "line": 767,
+      "args": [
+        "u32",
+        "u8",
+        "u32",
+        "ptr"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "clipboardOperationPoll",
+      "line": 771,
+      "args": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "clipboardOperationCancel",
+      "line": 775,
+      "args": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "clipboardOperationResultMimeLength",
+      "line": 779,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "clipboardOperationResultMimeCopy",
+      "line": 783,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "clipboardOperationResultDataLength",
+      "line": 787,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "clipboardOperationResultDataCopy",
+      "line": 791,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "clipboardOperationResultErrorCode",
+      "line": 795,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "clipboardOperationResultDiagnosticLength",
+      "line": 799,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "clipboardOperationResultDiagnosticCopy",
+      "line": 803,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "clipboardOperationDestroy",
+      "line": 807,
+      "args": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "triggerNotification",
+      "line": 811,
+      "args": [
+        "u32",
+        "ptr",
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "bufferDrawSuperSampleBuffer",
+      "line": 816,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "ptr",
+        "u32",
+        "u8",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferDrawImage",
+      "line": 820,
+      "args": [
+        "u32",
+        "u32",
+        "ptr"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "bufferDrawPackedBuffer",
+      "line": 824,
+      "args": [
+        "u32",
+        "ptr",
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferDrawGrayscaleBuffer",
+      "line": 828,
+      "args": [
+        "u32",
+        "i32",
+        "i32",
+        "ptr",
+        "u32",
+        "u32",
+        "ptr",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferDrawGrayscaleBufferSupersampled",
+      "line": 832,
+      "args": [
+        "u32",
+        "i32",
+        "i32",
+        "ptr",
+        "u32",
+        "u32",
+        "ptr",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferDrawGrid",
+      "line": 836,
+      "args": [
+        "u32",
+        "buffer",
+        "buffer",
+        "buffer",
+        "buffer",
+        "u32",
+        "buffer",
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferDrawBox",
+      "line": 840,
+      "args": [
+        "u32",
+        "i32",
+        "i32",
+        "u32",
+        "u32",
+        "buffer",
+        "u32",
+        "buffer",
+        "buffer",
+        "buffer",
+        "ptr",
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferPushScissorRect",
+      "line": 859,
+      "args": [
+        "u32",
+        "i32",
+        "i32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferPopScissorRect",
+      "line": 863,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferClearScissorRects",
+      "line": 867,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferPushOpacity",
+      "line": 871,
+      "args": [
+        "u32",
+        "f32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferPopOpacity",
+      "line": 875,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferGetCurrentOpacity",
+      "line": 879,
+      "args": [
+        "u32"
+      ],
+      "returns": "f32"
+    },
+    {
+      "name": "bufferClearOpacity",
+      "line": 883,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "addToHitGrid",
+      "line": 888,
+      "args": [
+        "u32",
+        "i32",
+        "i32",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "clearCurrentHitGrid",
+      "line": 892,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "hitGridPushScissorRect",
+      "line": 896,
+      "args": [
+        "u32",
+        "i32",
+        "i32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "hitGridPopScissorRect",
+      "line": 900,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "hitGridClearScissorRects",
+      "line": 904,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "addToCurrentHitGridClipped",
+      "line": 908,
+      "args": [
+        "u32",
+        "i32",
+        "i32",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "checkHit",
+      "line": 912,
+      "args": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "getHitGridDirty",
+      "line": 916,
+      "args": [
+        "u32"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "dumpHitGrid",
+      "line": 920,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "dumpBuffers",
+      "line": 924,
+      "args": [
+        "u32",
+        "i64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "dumpOutputBuffer",
+      "line": 928,
+      "args": [
+        "u32",
+        "i64"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "restoreTerminalModes",
+      "line": 932,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "enableMouse",
+      "line": 936,
+      "args": [
+        "u32",
+        "bool"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "disableMouse",
+      "line": 940,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "enableKittyKeyboard",
+      "line": 944,
+      "args": [
+        "u32",
+        "u8"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "disableKittyKeyboard",
+      "line": 948,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "setKittyKeyboardFlags",
+      "line": 952,
+      "args": [
+        "u32",
+        "u8"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "getKittyKeyboardFlags",
+      "line": 956,
+      "args": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "setupTerminal",
+      "line": 960,
+      "args": [
+        "u32",
+        "bool"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "suspendRenderer",
+      "line": 964,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "resumeRenderer",
+      "line": 968,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "writeOut",
+      "line": 972,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "createTextBuffer",
+      "line": 978,
+      "args": [
+        "u8"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "destroyTextBuffer",
+      "line": 982,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferGetLength",
+      "line": 986,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "textBufferGetByteSize",
+      "line": 990,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "textBufferReset",
+      "line": 995,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferClear",
+      "line": 999,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferSetDefaultFg",
+      "line": 1003,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferSetDefaultBg",
+      "line": 1007,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferSetDefaultAttributes",
+      "line": 1011,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferResetDefaults",
+      "line": 1015,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferGetTabWidth",
+      "line": 1019,
+      "args": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "textBufferSetTabWidth",
+      "line": 1023,
+      "args": [
+        "u32",
+        "u8"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferRegisterMemBuffer",
+      "line": 1027,
+      "args": [
+        "u32",
+        "ptr",
+        "u32",
+        "bool"
+      ],
+      "returns": "u16"
+    },
+    {
+      "name": "textBufferReplaceMemBuffer",
+      "line": 1031,
+      "args": [
+        "u32",
+        "u8",
+        "ptr",
+        "u32",
+        "bool"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "textBufferClearMemRegistry",
+      "line": 1035,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferSetTextFromMem",
+      "line": 1039,
+      "args": [
+        "u32",
+        "u8"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferAppend",
+      "line": 1043,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferAppendFromMemId",
+      "line": 1047,
+      "args": [
+        "u32",
+        "u8"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferLoadFile",
+      "line": 1051,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "textBufferSetStyledText",
+      "line": 1055,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferGetLineCount",
+      "line": 1059,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "textBufferGetPlainText",
+      "line": 1063,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "textBufferAddHighlightByCharRange",
+      "line": 1067,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferAddHighlight",
+      "line": 1071,
+      "args": [
+        "u32",
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferRemoveHighlightsByRef",
+      "line": 1075,
+      "args": [
+        "u32",
+        "u16"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferClearLineHighlights",
+      "line": 1079,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferClearAllHighlights",
+      "line": 1083,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferSetSyntaxStyle",
+      "line": 1087,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "textBufferGetLineHighlightsPtr",
+      "line": 1091,
+      "args": [
+        "u32",
+        "u32",
+        "ptr"
+      ],
+      "returns": "ptr"
+    },
+    {
+      "name": "textBufferFreeLineHighlights",
+      "line": 1095,
+      "args": [
+        "ptr",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferGetHighlightCount",
+      "line": 1099,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "textBufferGetTextRange",
+      "line": 1103,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "textBufferGetTextRangeByCoords",
+      "line": 1107,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "createTextBufferView",
+      "line": 1113,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "destroyTextBufferView",
+      "line": 1117,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferViewSetSelection",
+      "line": 1121,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "ptr",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferViewResetSelection",
+      "line": 1125,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferViewGetSelectionInfo",
+      "line": 1129,
+      "args": [
+        "u32"
+      ],
+      "returns": "u64"
+    },
+    {
+      "name": "textBufferViewSetLocalSelection",
+      "line": 1133,
+      "args": [
+        "u32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "ptr",
+        "ptr",
+        "u8"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "textBufferViewUpdateSelection",
+      "line": 1137,
+      "args": [
+        "u32",
+        "u32",
+        "ptr",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferViewUpdateLocalSelection",
+      "line": 1141,
+      "args": [
+        "u32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "ptr",
+        "ptr",
+        "u8"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "textBufferViewResetLocalSelection",
+      "line": 1145,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferViewSetSelectionOccupancy",
+      "line": 1149,
+      "args": [
+        "u32",
+        "u8"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferViewGetSelectionOccupancy",
+      "line": 1153,
+      "args": [
+        "u32"
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "textBufferViewSetWrapWidth",
+      "line": 1157,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferViewSetWrapMode",
+      "line": 1161,
+      "args": [
+        "u32",
+        "u8"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferViewSetFirstLineOffset",
+      "line": 1165,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferViewSetViewportSize",
+      "line": 1169,
+      "args": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferViewSetViewport",
+      "line": 1173,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferViewGetVirtualLineCount",
+      "line": 1177,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "textBufferViewGetLineInfoDirect",
+      "line": 1181,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferViewGetLogicalLineInfoDirect",
+      "line": 1185,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferViewGetSelectedText",
+      "line": 1189,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "textBufferViewGetPlainText",
+      "line": 1193,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "textBufferViewSetTabIndicator",
+      "line": 1197,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferViewSetTabIndicatorColor",
+      "line": 1201,
+      "args": [
+        "u32",
+        "buffer"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferViewSetTruncate",
+      "line": 1205,
+      "args": [
+        "u32",
+        "bool"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "textBufferViewMeasureForDimensions",
+      "line": 1209,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "ptr"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "bufferDrawTextBufferView",
+      "line": 1213,
+      "args": [
+        "u32",
+        "u32",
+        "i32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferDrawEditorView",
+      "line": 1217,
+      "args": [
+        "u32",
+        "u32",
+        "i32",
+        "i32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "createEditorView",
+      "line": 1223,
+      "args": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "destroyEditorView",
+      "line": 1227,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewSetViewportSize",
+      "line": 1231,
+      "args": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewSetViewport",
+      "line": 1235,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "bool"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewGetViewport",
+      "line": 1239,
+      "args": [
+        "u32",
+        "buffer",
+        "buffer",
+        "buffer",
+        "buffer"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "editorViewSetScrollMargin",
+      "line": 1243,
+      "args": [
+        "u32",
+        "f32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewSetWrapMode",
+      "line": 1247,
+      "args": [
+        "u32",
+        "u8"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewGetVirtualLineCount",
+      "line": 1251,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "editorViewGetTotalVirtualLineCount",
+      "line": 1255,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "editorViewGetTextBufferView",
+      "line": 1259,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "editorViewGetLineInfoDirect",
+      "line": 1263,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewGetLogicalLineInfoDirect",
+      "line": 1267,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "createEditBuffer",
+      "line": 1273,
+      "args": [
+        "u8",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "destroyEditBuffer",
+      "line": 1277,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferSetText",
+      "line": 1281,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferSetTextFromMem",
+      "line": 1285,
+      "args": [
+        "u32",
+        "u8"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferReplaceText",
+      "line": 1289,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferReplaceTextFromMem",
+      "line": 1293,
+      "args": [
+        "u32",
+        "u8"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferGetText",
+      "line": 1297,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "editBufferInsertChar",
+      "line": 1301,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferInsertText",
+      "line": 1305,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferDeleteChar",
+      "line": 1309,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferDeleteCharBackward",
+      "line": 1313,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferDeleteRange",
+      "line": 1317,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferNewLine",
+      "line": 1321,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferDeleteLine",
+      "line": 1325,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferMoveCursorLeft",
+      "line": 1329,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferMoveCursorRight",
+      "line": 1333,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferMoveCursorUp",
+      "line": 1337,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferMoveCursorDown",
+      "line": 1341,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferGotoLine",
+      "line": 1345,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferSetCursor",
+      "line": 1349,
+      "args": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferSetCursorToLineCol",
+      "line": 1353,
+      "args": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferSetCursorByOffset",
+      "line": 1357,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferGetCursorPosition",
+      "line": 1361,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferGetId",
+      "line": 1365,
+      "args": [
+        "u32"
+      ],
+      "returns": "u16"
+    },
+    {
+      "name": "editBufferGetTextBuffer",
+      "line": 1369,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "editBufferSetTabWidth",
+      "line": 1373,
+      "args": [
+        "u32",
+        "u8"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferDebugLogRope",
+      "line": 1377,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferUndo",
+      "line": 1381,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "editBufferRedo",
+      "line": 1385,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "editBufferCanUndo",
+      "line": 1389,
+      "args": [
+        "u32"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "editBufferCanRedo",
+      "line": 1393,
+      "args": [
+        "u32"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "editBufferClearHistory",
+      "line": 1397,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferClear",
+      "line": 1401,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferGetNextWordBoundary",
+      "line": 1405,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferGetPrevWordBoundary",
+      "line": 1409,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferGetEOL",
+      "line": 1413,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editBufferOffsetToPosition",
+      "line": 1417,
+      "args": [
+        "u32",
+        "u32",
+        "ptr"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "editBufferPositionToOffset",
+      "line": 1421,
+      "args": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "editBufferGetLineStartOffset",
+      "line": 1425,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "editBufferGetTextRange",
+      "line": 1429,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "editBufferGetTextRangeByCoords",
+      "line": 1433,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "editorViewSetSelection",
+      "line": 1439,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "ptr",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewResetSelection",
+      "line": 1443,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewGetSelection",
+      "line": 1447,
+      "args": [
+        "u32"
+      ],
+      "returns": "u64"
+    },
+    {
+      "name": "editorViewSetLocalSelection",
+      "line": 1451,
+      "args": [
+        "u32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "ptr",
+        "ptr",
+        "u8"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "editorViewUpdateSelection",
+      "line": 1455,
+      "args": [
+        "u32",
+        "u32",
+        "ptr",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewUpdateLocalSelection",
+      "line": 1459,
+      "args": [
+        "u32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "ptr",
+        "ptr",
+        "u8"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "editorViewResetLocalSelection",
+      "line": 1463,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewConvertSelectionToCell",
+      "line": 1467,
+      "args": [
+        "u32"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "editorViewSetSelectionOccupancy",
+      "line": 1471,
+      "args": [
+        "u32",
+        "u8"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewSetSelectionInclusive",
+      "line": 1475,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "ptr",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewSetSelectionColors",
+      "line": 1479,
+      "args": [
+        "u32",
+        "ptr",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewGetSelectedTextBytes",
+      "line": 1483,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "editorViewGetCursor",
+      "line": 1487,
+      "args": [
+        "u32",
+        "buffer",
+        "buffer"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewGetText",
+      "line": 1491,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "editorViewGetVisualCursor",
+      "line": 1497,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewMoveUpVisual",
+      "line": 1502,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewMoveDownVisual",
+      "line": 1506,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewDeleteSelectedText",
+      "line": 1510,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewSetCursorByOffset",
+      "line": 1514,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewGetNextWordBoundary",
+      "line": 1518,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewGetPrevWordBoundary",
+      "line": 1522,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewGetEOL",
+      "line": 1526,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewGetVisualSOL",
+      "line": 1530,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewGetVisualEOL",
+      "line": 1534,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewGotoVisualLineEnd",
+      "line": 1538,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewSetPlaceholderStyledText",
+      "line": 1542,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewSetTabIndicator",
+      "line": 1546,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "editorViewSetTabIndicatorColor",
+      "line": 1550,
+      "args": [
+        "u32",
+        "buffer"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "getArenaAllocatedBytes",
+      "line": 1555,
+      "args": [],
+      "returns": "u64"
+    },
+    {
+      "name": "getBuildOptions",
+      "line": 1559,
+      "args": [
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "getAllocatorStats",
+      "line": 1563,
+      "args": [
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "createSyntaxStyle",
+      "line": 1569,
+      "args": [],
+      "returns": "u32"
+    },
+    {
+      "name": "destroySyntaxStyle",
+      "line": 1573,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "syntaxStyleRegister",
+      "line": 1577,
+      "args": [
+        "u32",
+        "ptr",
+        "u32",
+        "ptr",
+        "ptr",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "syntaxStyleResolveByName",
+      "line": 1581,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "syntaxStyleGetStyleCount",
+      "line": 1585,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "imageInfo",
+      "line": 1590,
+      "args": [
+        "ptr",
+        "u32",
+        "ptr"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "imageRetainIccCache",
+      "line": 1591,
+      "args": [],
+      "returns": "void"
+    },
+    {
+      "name": "imageReleaseIccCache",
+      "line": 1592,
+      "args": [],
+      "returns": "void"
+    },
+    {
+      "name": "imageTestFailIccProfileCopyAllocationOnce",
+      "line": 1593,
+      "args": [],
+      "returns": "void"
+    },
+    {
+      "name": "imageDecode",
+      "line": 1594,
+      "args": [
+        "ptr",
+        "u32",
+        "buffer"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "imageCreateFromRgba",
+      "line": 1595,
+      "args": [
+        "ptr",
+        "u64",
+        "u32",
+        "u32",
+        "u32",
+        "buffer"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "imageCreateFromPixels",
+      "line": 1596,
+      "args": [
+        "buffer",
+        "u64",
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "buffer"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "imageUpdatePixels",
+      "line": 1597,
+      "args": [
+        "u32",
+        "buffer",
+        "u64",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "imageDestroy",
+      "line": 1598,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "imageRetain",
+      "line": 1599,
+      "args": [
+        "u32",
+        "buffer"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "imageGetInfo",
+      "line": 1600,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "imageMaterialize",
+      "line": 1601,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "imageEnsureEncodedPng",
+      "line": 1602,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "imageGetPixelsPtr",
+      "line": 1603,
+      "args": [
+        "u32"
+      ],
+      "returns": "ptr"
+    },
+    {
+      "name": "imageClone",
+      "line": 1604,
+      "args": [
+        "u32",
+        "buffer"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "imageCopyPixels",
+      "line": 1605,
+      "args": [
+        "u32",
+        "ptr",
+        "u64",
+        "u32",
+        "u8"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "imageResize",
+      "line": 1606,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "buffer"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "imageExtract",
+      "line": 1607,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "buffer"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "imageExtend",
+      "line": 1608,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "buffer",
+        "buffer"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "imageTransform",
+      "line": 1609,
+      "args": [
+        "u32",
+        "u32",
+        "buffer"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "imageComposite",
+      "line": 1610,
+      "args": [
+        "u32",
+        "u32",
+        "i32",
+        "i32",
+        "u32",
+        "u8",
+        "buffer"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "getTerminalCapabilities",
+      "line": 1613,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "processCapabilityResponse",
+      "line": 1617,
+      "args": [
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "setKittyImageTransport",
+      "line": 1621,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "getKittyImageTransport",
+      "line": 1622,
+      "args": [
+        "u32",
+        "buffer"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "pollKittyImageTransport",
+      "line": 1623,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "cancelKittyImageTransport",
+      "line": 1624,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "processKittyImageReply",
+      "line": 1625,
+      "args": [
+        "u32",
+        "buffer",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "encodeUnicode",
+      "line": 1628,
+      "args": [
+        "ptr",
+        "u32",
+        "ptr",
+        "ptr",
+        "u8"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "freeUnicode",
+      "line": 1632,
+      "args": [
+        "ptr",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "bufferDrawChar",
+      "line": 1636,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "u32",
+        "buffer",
+        "buffer",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaConfigCreate",
+      "line": 1642,
+      "args": [],
+      "returns": "ptr"
+    },
+    {
+      "name": "yogaConfigFree",
+      "line": 1646,
+      "args": [
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaConfigSetUseWebDefaults",
+      "line": 1650,
+      "args": [
+        "ptr",
+        "bool"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaConfigGetUseWebDefaults",
+      "line": 1654,
+      "args": [
+        "ptr"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "yogaConfigSetPointScaleFactor",
+      "line": 1658,
+      "args": [
+        "ptr",
+        "f32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaConfigGetPointScaleFactor",
+      "line": 1662,
+      "args": [
+        "ptr"
+      ],
+      "returns": "f32"
+    },
+    {
+      "name": "yogaConfigSetErrata",
+      "line": 1666,
+      "args": [
+        "ptr",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaConfigGetErrata",
+      "line": 1670,
+      "args": [
+        "ptr"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "yogaConfigSetExperimentalFeatureEnabled",
+      "line": 1674,
+      "args": [
+        "ptr",
+        "u32",
+        "bool"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaConfigIsExperimentalFeatureEnabled",
+      "line": 1678,
+      "args": [
+        "ptr",
+        "u32"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "yogaNodeCreate",
+      "line": 1682,
+      "args": [],
+      "returns": "ptr"
+    },
+    {
+      "name": "yogaNodeCreateForOpenTUI",
+      "line": 1686,
+      "args": [],
+      "returns": "ptr"
+    },
+    {
+      "name": "yogaNodeCreateWithConfig",
+      "line": 1690,
+      "args": [
+        "ptr"
+      ],
+      "returns": "ptr"
+    },
+    {
+      "name": "yogaNodeFree",
+      "line": 1694,
+      "args": [
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaNodeFreeRecursive",
+      "line": 1698,
+      "args": [
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaNodeReset",
+      "line": 1702,
+      "args": [
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaNodeCopyStyle",
+      "line": 1706,
+      "args": [
+        "ptr",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaNodeInsertChild",
+      "line": 1710,
+      "args": [
+        "ptr",
+        "ptr",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaNodeRemoveChild",
+      "line": 1714,
+      "args": [
+        "ptr",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaNodeRemoveAllChildren",
+      "line": 1718,
+      "args": [
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaNodeGetChild",
+      "line": 1722,
+      "args": [
+        "ptr",
+        "u32"
+      ],
+      "returns": "ptr"
+    },
+    {
+      "name": "yogaNodeGetChildCount",
+      "line": 1726,
+      "args": [
+        "ptr"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "yogaNodeGetParent",
+      "line": 1730,
+      "args": [
+        "ptr"
+      ],
+      "returns": "ptr"
+    },
+    {
+      "name": "yogaNodeCalculateLayout",
+      "line": 1734,
+      "args": [
+        "ptr",
+        "f32",
+        "f32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaNodeIsDirty",
+      "line": 1738,
+      "args": [
+        "ptr"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "yogaNodeMarkDirty",
+      "line": 1742,
+      "args": [
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaNodeGetHasNewLayout",
+      "line": 1746,
+      "args": [
+        "ptr"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "yogaNodeSetHasNewLayout",
+      "line": 1750,
+      "args": [
+        "ptr",
+        "bool"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaNodeSetIsReferenceBaseline",
+      "line": 1754,
+      "args": [
+        "ptr",
+        "bool"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaNodeIsReferenceBaseline",
+      "line": 1758,
+      "args": [
+        "ptr"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "yogaNodeSetAlwaysFormsContainingBlock",
+      "line": 1762,
+      "args": [
+        "ptr",
+        "bool"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaNodeGetAlwaysFormsContainingBlock",
+      "line": 1766,
+      "args": [
+        "ptr"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "yogaNodeGetComputedLayout",
+      "line": 1770,
+      "args": [
+        "ptr",
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaNodeLayoutGetEdge",
+      "line": 1774,
+      "args": [
+        "ptr",
+        "u32",
+        "u32"
+      ],
+      "returns": "f32"
+    },
+    {
+      "name": "yogaNodeStyleSetEnum",
+      "line": 1778,
+      "args": [
+        "ptr",
+        "u32",
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaNodeStyleGetEnum",
+      "line": 1782,
+      "args": [
+        "ptr",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "yogaNodeStyleSetFloat",
+      "line": 1786,
+      "args": [
+        "ptr",
+        "u32",
+        "f32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaNodeStyleGetFloat",
+      "line": 1790,
+      "args": [
+        "ptr",
+        "u32"
+      ],
+      "returns": "f32"
+    },
+    {
+      "name": "yogaNodeStyleSetBorder",
+      "line": 1794,
+      "args": [
+        "ptr",
+        "u32",
+        "f32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaNodeStyleGetBorder",
+      "line": 1798,
+      "args": [
+        "ptr",
+        "u32"
+      ],
+      "returns": "f32"
+    },
+    {
+      "name": "yogaNodeStyleSetValue",
+      "line": 1802,
+      "args": [
+        "ptr",
+        "u32",
+        "u32",
+        "u32",
+        "f32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaNodeStyleGetValue",
+      "line": 1806,
+      "args": [
+        "ptr",
+        "u32",
+        "u32"
+      ],
+      "returns": "u64"
+    },
+    {
+      "name": "yogaNodeSetMeasureFunc",
+      "line": 1810,
+      "args": [
+        "ptr",
+        "bool"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaNodeUnsetMeasureFunc",
+      "line": 1814,
+      "args": [
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaNodeHasMeasureFunc",
+      "line": 1818,
+      "args": [
+        "ptr"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "yogaNodeSetDirtiedFunc",
+      "line": 1822,
+      "args": [
+        "ptr",
+        "bool"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaNodeUnsetDirtiedFunc",
+      "line": 1826,
+      "args": [
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaStoreMeasureResult",
+      "line": 1830,
+      "args": [
+        "f32",
+        "f32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaSetMeasureCallback",
+      "line": 1834,
+      "args": [
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "yogaSetDirtiedCallback",
+      "line": 1838,
+      "args": [
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "createAudioEngine",
+      "line": 1844,
+      "args": [
+        "ptr"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "destroyAudioEngine",
+      "line": 1848,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "audioRefreshPlaybackDevices",
+      "line": 1852,
+      "args": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioGetPlaybackDeviceCount",
+      "line": 1856,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "audioGetPlaybackDeviceName",
+      "line": 1860,
+      "args": [
+        "u32",
+        "u32",
+        "buffer",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "audioIsPlaybackDeviceDefault",
+      "line": 1864,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "audioSelectPlaybackDevice",
+      "line": 1868,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioClearPlaybackDeviceSelection",
+      "line": 1872,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "audioRefreshCaptureDevices",
+      "line": 1876,
+      "args": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioGetCaptureDeviceCount",
+      "line": 1880,
+      "args": [
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "audioGetCaptureDeviceName",
+      "line": 1884,
+      "args": [
+        "u32",
+        "u32",
+        "buffer",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "audioIsCaptureDeviceDefault",
+      "line": 1888,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "audioSelectCaptureDevice",
+      "line": 1892,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioClearCaptureDeviceSelection",
+      "line": 1896,
+      "args": [
+        "u32"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "audioStartCapture",
+      "line": 1900,
+      "args": [
+        "u32",
+        "ptr",
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioStopCapture",
+      "line": 1904,
+      "args": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioIsCaptureRunning",
+      "line": 1908,
+      "args": [
+        "u32"
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "audioReadCapture",
+      "line": 1912,
+      "args": [
+        "u32",
+        "buffer",
+        "u32",
+        "u32",
+        "ptr"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioGetCaptureStats",
+      "line": 1916,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioStart",
+      "line": 1920,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioStartMixer",
+      "line": 1924,
+      "args": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioStop",
+      "line": 1928,
+      "args": [
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioCreateStream",
+      "line": 1932,
+      "args": [
+        "u32",
+        "ptr",
+        "ptr"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioWriteStream",
+      "line": 1936,
+      "args": [
+        "u32",
+        "u32",
+        "ptr",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioEndStream",
+      "line": 1940,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioRestartStream",
+      "line": 1944,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioSetStreamVolume",
+      "line": 1948,
+      "args": [
+        "u32",
+        "u32",
+        "f32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioSetStreamPan",
+      "line": 1952,
+      "args": [
+        "u32",
+        "u32",
+        "f32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioSetStreamGroup",
+      "line": 1956,
+      "args": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioGetStreamStats",
+      "line": 1960,
+      "args": [
+        "u32",
+        "u32",
+        "ptr"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioCloseStream",
+      "line": 1964,
+      "args": [
+        "u32",
+        "u32",
+        "u32",
+        "ptr"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioLoad",
+      "line": 1968,
+      "args": [
+        "u32",
+        "buffer",
+        "u32",
+        "ptr"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioUnload",
+      "line": 1972,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioPlay",
+      "line": 1976,
+      "args": [
+        "u32",
+        "u32",
+        "ptr",
+        "ptr"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioStopVoice",
+      "line": 1980,
+      "args": [
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioSetVoiceGroup",
+      "line": 1984,
+      "args": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioCreateGroup",
+      "line": 1988,
+      "args": [
+        "u32",
+        "buffer",
+        "u32",
+        "ptr"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioSetGroupVolume",
+      "line": 1992,
+      "args": [
+        "u32",
+        "u32",
+        "f32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioSetMasterVolume",
+      "line": 1996,
+      "args": [
+        "u32",
+        "f32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioMixToBuffer",
+      "line": 2000,
+      "args": [
+        "u32",
+        "buffer",
+        "u32",
+        "u8"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioEnableTap",
+      "line": 2004,
+      "args": [
+        "u32",
+        "u8",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioReadTap",
+      "line": 2008,
+      "args": [
+        "u32",
+        "buffer",
+        "u32",
+        "u8",
+        "ptr"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "audioGetStats",
+      "line": 2012,
+      "args": [
+        "u32",
+        "ptr"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "createNativeSpanFeed",
+      "line": 2018,
+      "args": [
+        "ptr"
+      ],
+      "returns": "ptr"
+    },
+    {
+      "name": "attachNativeSpanFeed",
+      "line": 2022,
+      "args": [
+        "ptr"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "destroyNativeSpanFeed",
+      "line": 2026,
+      "args": [
+        "ptr"
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "streamWrite",
+      "line": 2030,
+      "args": [
+        "ptr",
+        "ptr",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "streamCommit",
+      "line": 2034,
+      "args": [
+        "ptr"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "streamDrainSpans",
+      "line": 2038,
+      "args": [
+        "ptr",
+        "buffer",
+        "u32"
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "streamClose",
+      "line": 2042,
+      "args": [
+        "ptr"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "streamReserve",
+      "line": 2046,
+      "args": [
+        "ptr",
+        "u32",
+        "ptr"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "streamCommitReserved",
+      "line": 2050,
+      "args": [
+        "ptr",
+        "u32"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "streamSetOptions",
+      "line": 2054,
+      "args": [
+        "ptr",
+        "ptr"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "streamGetStats",
+      "line": 2058,
+      "args": [
+        "ptr",
+        "ptr"
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "streamSetCallback",
+      "line": 2062,
+      "args": [
+        "ptr",
+        "ptr"
+      ],
+      "returns": "void"
+    }
+  ]
+}
