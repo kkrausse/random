@@ -5,6 +5,7 @@ import { extend, testRender } from "@opentui/solid"
 import { createStore, reconcile } from "solid-js/store"
 import { TextRenderable, type ScrollBoxRenderable } from "@opentui/core"
 import { SessionPicker } from "./tui"
+import type { Archive, ArchiveStore } from "./archive"
 
 // The host registers its spinner; the standalone renderer only needs a row placeholder.
 extend({ spinner: TextRenderable })
@@ -36,6 +37,13 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     { ...sessions[0]!, id: "grandchild", parentID: "child", title: "Grandchild" },
   ]
   const activeChildren = new Set(["grandchild"])
+  const deleted = new Set<string>()
+  const saved = new Map<string, Archive>()
+  const archiveStore: ArchiveStore = {
+    list: async () => [...saved.values()],
+    save: async (archive) => { if (storageFailure) throw new Error("disk unavailable"); saved.set(archive.transcript.info.id, archive) },
+    remove: async (id) => { saved.delete(id) },
+  }
   const context: any = {
     storage: {
       store: () => [
@@ -70,7 +78,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
           opened = route.sessionID
         },
       },
-      dialog: { set() {}, clear() { closed++ } },
+      dialog: { set() {}, clear() { closed++ }, prompt: async () => "Session 20" },
       toast: { show: (toast: any) => toasts.push(toast) },
       format: { path: (s: string) => s },
     },
@@ -83,7 +91,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     },
     client: {
       session: {
-        list: async () => ({ data: sessions, cursor: {} }),
+        list: async ({ parentID }: any = {}) => ({ data: (parentID ? children.filter((s) => s.parentID === parentID) : sessions).filter((s) => !deleted.has(s.id)), cursor: {} }),
         active: async () => Object.fromEntries([...activeChildren].map((id) => [id, { type: "running" }])),
         interrupt: async ({ sessionID }: any) => {
           interruptCalls++
@@ -91,8 +99,14 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
           running = false
           activeChildren.delete(sessionID)
         },
-        get: async ({ sessionID }: any) => [...sessions, ...children].find((s) => s.id === sessionID),
+        get: async ({ sessionID }: any) => { if (deleted.has(sessionID)) throw { response: { status: 404 } }; return [...sessions, ...children].find((s) => s.id === sessionID) },
+        export: async ({ sessionID }: any) => ({ info: sessions.find((s) => s.id === sessionID), messages: [] }),
+        remove: async ({ sessionID }: any) => {
+          for (const id of sessionID === "s0" ? [sessionID, "child", "grandchild"] : [sessionID]) deleted.add(id)
+        },
+        import: async ({ info }: any) => { deleted.delete(info.id); return info },
       },
+      shell: { list: async () => ({ data: [] }), remove: empty },
       permission: {
         list: async ({ sessionID }: any) => withPermission ? [{ id: "p1", sessionID, action: "shell", resources: ["echo hello\n".repeat(30)] }] : [],
         reply: async () => { approved = true },
@@ -101,7 +115,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
       form: { list: empty, request: { list: async () => ({ data: [] }) } },
     },
   }
-  const setup = await testRender(() => <SessionPicker context={context} />, { width: 100, height: 55 })
+  const setup = await testRender(() => <SessionPicker context={context} archiveStore={archiveStore} />, { width: 100, height: 55 })
   try {
     await new Promise((resolve) => setTimeout(resolve, 20))
     await setup.renderOnce()
@@ -149,6 +163,12 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     await setup.renderOnce()
     assert.doesNotMatch(setup.captureCharFrame(), /sub-agents? running/)
     setLifecycle("inactive", "s0", false)
+    // Restore the archived root; children intentionally remain deleted.
+    const archivedRoot = saved.get("s0")!
+    await context.client.session.import(archivedRoot.transcript)
+    await archiveStore.remove("s0")
+    handlers.get("session.created")!({ data: { sessionID: "s0" } })
+    await new Promise((resolve) => setTimeout(resolve, 20))
     await setup.renderOnce()
     const row = setup.renderer.root.findDescendantById("claude-session-row-3")!
     assert.ok(row)
@@ -167,7 +187,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     running = true
     await commands.find((c) => c.bind === "x").run()
     await setup.renderOnce()
-    assert.match(toasts.at(-1)!.message, /Interrupt session \(s20\).*HTTP 409/)
+    assert.match(toasts.at(-1)!.message, /Archive session \(s20\).*HTTP 409/)
     assert.equal(toasts.at(-1)!.variant, "error")
     assert.equal(lifecycle.inactive.s20, undefined)
     assert.match(setup.captureCharFrame(), /Session 20/)
@@ -175,7 +195,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     storageFailure = true
     await commands.find((c) => c.bind === "x").run()
     await setup.renderOnce()
-    assert.match(toasts.at(-1)!.message, /Persist inactive marker \(session already interrupted\).*s20.*disk unavailable/)
+    assert.match(toasts.at(-1)!.message, /Archive session.*s20.*disk unavailable/)
     assert.equal(lifecycle.inactive.s20, undefined)
     assert.match(setup.captureCharFrame(), /Session 20/)
     storageFailure = false
@@ -205,9 +225,9 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     await setup.mockMouse.doubleClick(previous.x + 8, previous.y)
     assert.equal(opened, "s19")
 
-    // Idle sessions must remain markable when their location runtime cannot start.
+    // Archiving idle sessions also performs API cleanup.
     running = false
-    interruptFailure = true
+    interruptFailure = false
     const callsBeforeIdle = interruptCalls
     // Stop every remaining active session, including the last row in its section.
     for (let i = 0; i < 50; i++) commands.find((c) => c.bind === "up").run()
@@ -217,8 +237,8 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
       await setup.renderOnce()
     }
     assert.equal(Object.values(lifecycle.inactive).filter(Boolean).length, 40)
-    assert.equal(interruptCalls, callsBeforeIdle)
-    assert.equal(toasts.at(-1)!.message, "Session marked inactive")
+    assert.ok(interruptCalls > callsBeforeIdle)
+    assert.equal(toasts.at(-1)!.message, "Session archived; family deleted")
     assert.match(setup.captureCharFrame(), /\+\s+New session/)
     assert.match(setup.captureCharFrame(), /New session/)
 
@@ -239,6 +259,9 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
 
     // A keyboard-sized phone viewport must retain a usable list and tap actions.
     withPermission = true
+    commands.find((c) => c.bind === "down").run()
+    await commands.find((c) => c.bind === "r").run()
+    for (let i = 0; i < 50; i++) commands.find((c) => c.bind === "up").run()
     commands.find((c) => c.bind === "down").run()
     await new Promise((resolve) => setTimeout(resolve, 20))
     for (const [width, height] of [[36, 24], [36, 16], [100, 55]]) {
@@ -268,6 +291,16 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     const beforeClose = closed
     commands.find((c) => c.bind === "left").run()
     assert.equal(closed, beforeClose + 1)
+    await commands.find((c) => c.bind === "/").run()
+    await setup.renderOnce()
+    assert.match(setup.captureCharFrame(), /Session 20/)
+    assert.doesNotMatch(setup.captureCharFrame(), /Session 19/)
+    commands.find((c) => c.bind === "down").run()
+    commands.find((c) => c.bind === "return").run()
+    assert.match(toasts.at(-1)!.message, /press r to import/)
+    await commands.find((c) => c.bind === "r").run()
+    assert.equal(deleted.has("s20"), false)
+    assert.equal(saved.has("s20"), false)
   } finally {
     setup.renderer.destroy()
   }
