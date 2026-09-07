@@ -109,8 +109,30 @@ export function groupLabel(state: SessionState | "new") {
   return state === "inactive" ? "Inactive" : "Active"
 }
 
-// Keep children beside their parent within each lifecycle section. A child in
-// another section (or with an unloaded parent) remains independently reachable.
+export function lifecycleOwner<T extends { id: string; parentID?: string | null }>(sessions: readonly T[], session: T): T {
+  const byID = new Map(sessions.map((item) => [item.id, item]))
+  const seen = new Set([session.id])
+  let owner = session
+  while (owner.parentID) {
+    const parent = byID.get(owner.parentID)
+    if (!parent || seen.has(parent.id)) break
+    seen.add(parent.id)
+    owner = parent
+  }
+  return owner
+}
+
+export function inheritLifecycle<T extends { state: SessionState; session: { id: string; parentID?: string | null } }>(rows: T[]): T[] {
+  const sessions = rows.map((row) => row.session)
+  const byID = new Map(rows.map((row) => [row.session.id, row]))
+  return rows.map((row) => {
+    const owner = byID.get(lifecycleOwner(sessions, row.session).id)!
+    if (owner === row) return row
+    return { ...row, state: owner.state === "inactive" ? "inactive" : row.state === "inactive" ? "idle" : row.state }
+  })
+}
+
+// Keep children beside their parent; unloaded parents leave reachable orphan rows.
 export function nestRows<T extends { state: SessionState; session: { id: string; parentID?: string | null } }>(rows: T[]): (T & { depth: number })[] {
   const result: (T & { depth: number })[] = []
   const seen = new Set<string>()
