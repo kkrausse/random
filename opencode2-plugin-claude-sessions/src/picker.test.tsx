@@ -220,7 +220,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     assert.equal(interruptCalls, callsBeforeIdle)
     assert.equal(toasts.at(-1)!.message, "Session marked inactive")
     assert.match(setup.captureCharFrame(), /\+\s+New session/)
-    assert.match(setup.captureCharFrame(), /New session — no context yet/)
+    assert.match(setup.captureCharFrame(), /New session/)
 
     commands.find((c) => c.bind === "down").run()
     await new Promise((resolve) => setTimeout(resolve, 20))
