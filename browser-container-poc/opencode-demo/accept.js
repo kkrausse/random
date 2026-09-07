@@ -1,0 +1,25 @@
+// Browser Control CLI only. This runner owns :5216 and reloads only that page.
+if (page.url() !== 'http://127.0.0.1:5216/') throw Error('Select the isolated demo :5216');
+const root = [path.resolve('browser-container-poc/opencode-demo'), path.resolve('opencode-demo'), path.resolve('.')].find(p => fs.existsSync(path.join(p, 'accept.js')));
+if (!root) throw Error('Run from repo root or opencode-demo');
+const dir = path.join(root, 'evidence');
+fs.mkdirSync(dir, { recursive: true });
+await page.reload();
+await page.getByRole('button', { name: 'Start OpenCode', exact: true }).click();
+await page.waitForFunction(() => window.demo.phase.startsWith('TUI provider dialog'), null, { timeout: 90000 });
+await page.locator('.xterm-helper-textarea').focus();
+await page.keyboard.type('nemotron');
+await page.waitForFunction(() => Array.from({ length: window.demo.terminal.rows }, (_, i) => window.demo.terminal.buffer.active.getLine(i)?.translateToString(true)).some(s => s.includes('nemotron')));
+await page.screenshot({ path: dir + '/keyboard.png' });
+await page.keyboard.press('Control+c');
+await page.waitForFunction(() => window.demo.phase.startsWith('TUI returned'));
+await page.getByRole('button', { name: 'Start OpenCode', exact: true }).click();
+await page.waitForFunction(() => window.demo.phase.startsWith('TUI provider dialog'));
+await page.getByRole('button', { name: 'Stop TUI', exact: true }).click();
+await page.waitForFunction(() => window.demo.phase.startsWith('TUI exited'));
+await page.getByRole('button', { name: 'Start OpenCode', exact: true }).click();
+await page.waitForFunction(() => window.demo.phase.startsWith('TUI provider dialog'));
+await page.screenshot({ path: dir + '/final.png' });
+const report = await page.evaluate(async () => ({ url: location.href, phase: window.demo.phase, logs: window.demo.logs, hashes: await (await fetch('/hashes.json')).json() }));
+fs.writeFileSync(dir + '/final.json', JSON.stringify({ ...report, reload: true, keyboard: true, ctrlC: true, relaunch: true, forcedStopRecovery: true }, null, 2));
+return { url: report.url, phase: report.phase, keyboard: true, ctrlC: true, relaunch: true, forcedStopRecovery: true };
