@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { dimensions, SessionManager, type Attachment, type Session } from "./sessions";
 import { DictationService } from "./dictation-service";
 import { DictationProxy } from "./dictation-server";
-import { printStartupLink } from "./startup";
+import { printStartupLink, publicSessionsUrl } from "./startup";
+import { TerminalAuth } from "./auth";
 
 type SocketData = { kind: "terminal"; sessionId: string; cols: number; rows: number; attachment?: Attachment }
   | { kind: "dictation"; proxy?: DictationProxy };
@@ -19,9 +20,8 @@ const attachmentRoot = join(tmpdir(), "bun-web-terminal");
 if (host !== "127.0.0.1" && host !== "::1" && host !== "localhost" && host !== "0.0.0.0") {
   throw new Error("HOST must be a loopback address or 0.0.0.0.");
 }
-if (host === "0.0.0.0") {
-  console.warn("WARNING: The web terminal is available to the network without authentication and provides direct shell access.");
-}
+const publicUrl = await publicSessionsUrl(port);
+const auth = new TerminalAuth(port, publicUrl);
 
 await buildClient();
 const theme = loadGhosttyTheme();
@@ -37,6 +37,8 @@ const server = Bun.serve<SocketData>({
   hostname: host,
   port,
   async fetch(request, server) {
+    const denied = await auth.guard(request, server.requestIP(request)?.address);
+    if (denied) return denied;
     const url = new URL(request.url);
 
     if (url.pathname === "/api/dictation/status" && request.method === "GET") {
@@ -147,7 +149,7 @@ const server = Bun.serve<SocketData>({
   },
 });
 
-void printStartupLink(host, server.port!);
+void printStartupLink(host, server.port!, auth.secret, publicUrl);
 
 async function saveAttachment(request: Request, session: Session) {
   const declaredSize = Number(request.headers.get("content-length"));
@@ -245,21 +247,7 @@ function isMobileDevice(request: Request) {
 }
 
 function isSameOrigin(request: Request) {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-
-  const requestUrl = new URL(request.url);
-  if (host !== "0.0.0.0") {
-    const forwardedProto = request.headers.get("x-forwarded-proto");
-    const forwardedHost = request.headers.get("x-forwarded-host");
-    if ((forwardedProto === "http" || forwardedProto === "https") && forwardedHost) {
-      try {
-        return origin === new URL(`${forwardedProto}://${forwardedHost}`).origin;
-      } catch {}
-    }
-  }
-
-  return origin === requestUrl.origin;
+  return auth.isSameOrigin(request, server.requestIP(request)?.address);
 }
 
 function parsePort(value: string) {
@@ -283,7 +271,13 @@ function serveFile(path: string, type: string) {
 }
 
 function html(body: string, status = 200) {
-  return new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8", "x-content-type-options": "nosniff" } });
+  return new Response(body, { status, headers: {
+    "content-type": "text/html; charset=utf-8",
+    "x-content-type-options": "nosniff",
+    "cache-control": "no-store",
+    "referrer-policy": "no-referrer",
+    "content-security-policy": "frame-ancestors 'none'",
+  } });
 }
 
 function document(title: string, bodyClass: string, content: string) {
