@@ -704,7 +704,6 @@ export function SessionPicker(props: { context: Plugin.Context }) {
                  return label !== groupLabel(options()[index - 1]?.state ?? "new") ? label : undefined
                }
               const descriptionColor = () => props.context.theme.text.subdued
-              const cursorColor = () => props.context.theme.hue.accent[400]
               const iconColor = () => {
                 if (option().state === "permission") return props.context.theme.text.status.permission
                 if (option().state === "question") return props.context.theme.text.status.question
@@ -739,9 +738,6 @@ export function SessionPicker(props: { context: Plugin.Context }) {
                   }}
                 >
                   <box height={1} flexDirection="row" flexGrow={1} minWidth={0} overflow="hidden">
-                    <box width={2} flexShrink={0}>
-                      <text fg={cursorColor()}>{active() ? "❯ " : "  "}</text>
-                    </box>
                     {(() => {
                       const state = option().state
                       const icon = state === "running" ? "spinner"
