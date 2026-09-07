@@ -106,7 +106,11 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     await setup.renderOnce()
     // A running grandchild outside the list page activates its idle parent.
     assert.match(setup.captureCharFrame(), /1 sub-agent running/)
-    assert.doesNotMatch(setup.captureCharFrame(), /Grandchild/)
+    assert.match(setup.captureCharFrame(), /Grandchild/)
+    const parentRow = setup.renderer.root.findDescendantById("claude-session-row-1")!
+    const childRow = setup.renderer.root.findDescendantById("claude-session-row-2")!
+    assert.equal(parentRow.height, 1)
+    assert.equal(childRow.height, 1)
     setLifecycle("inactive", { s0: true })
     await setup.renderOnce()
     assert.match(setup.captureCharFrame(), /1 sub-agent running/)
@@ -137,6 +141,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     await setup.mockMouse.click(row.x + 8, row.y)
     await setup.renderOnce()
     assert.match(setup.captureCharFrame(), /❯\s+Session 2/)
+    setup.resize(100, 30)
     for (let i = 0; i < 18; i++) {
       commands.find((c) => c.bind === "down").run()
       await setup.renderOnce()
@@ -161,15 +166,19 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     assert.match(setup.captureCharFrame(), /❯\s+Session 20/)
     storageFailure = false
     running = true
-    await commands.find((c) => c.bind === "x").run()
+    const dismiss = setup.renderer.root.findDescendantById("claude-session-lifecycle-21")!
+    await setup.mockMouse.click(dismiss.x + 2, dismiss.y)
+    await new Promise((resolve) => setTimeout(resolve, 20))
     await setup.renderOnce()
+    assert.equal(lifecycle.inactive.s20, true)
+    assert.equal(opened, undefined)
     assert.equal(scroll.scrollTop, before)
     assert.match(setup.captureCharFrame(), /❯\s+Session 21/)
     commands.find((c) => c.bind === "up").run()
     await setup.renderOnce()
     // Index reuses this renderable for Session 21 after Session 20 moves away.
     const moved = setup.renderer.root.findDescendantById("claude-session-row-21")!
-    await setup.mockMouse.click(moved.x + 8, moved.y + 1)
+    await setup.mockMouse.click(moved.x + 8, moved.y)
     await setup.renderOnce()
     assert.match(setup.captureCharFrame(), /❯\s+Session 21/)
     assert.equal(scroll.scrollTop, before)

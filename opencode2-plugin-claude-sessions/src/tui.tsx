@@ -4,7 +4,7 @@ import { Plugin } from "@opencode-ai/plugin/tui"
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { Index, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
-import { descendantIDs, groupLabel, propagateAttention, sessionState, sortRows, visibleSessions } from "./session-groups"
+import { descendantIDs, groupLabel, nestRows, propagateAttention, sessionState, sortRows } from "./session-groups"
 import { sectionNeighbor } from "./picker-selection"
 import { Cause, Effect } from "effect"
 import { makeRunner, operation } from "./effects"
@@ -158,20 +158,19 @@ export function SessionPicker(props: { context: Plugin.Context }) {
     tick()
     liveVersion()
     const loaded = sessions()
-    const visible = visibleSessions(loaded, currentSessionID)
     const effective = propagateAttention(loaded, attention(), currentSessionID)
-    return sortRows(
-      visible.map((session) => {
+    return nestRows(sortRows(
+      loaded.map((session) => {
         const ownRunning = props.context.data.session.status(session.id) === "running"
         const runningChildren = descendantIDs(loaded, session.id)
           .filter((id) => props.context.data.session.status(id) === "running").length
         return {
           session, ownRunning, runningChildren,
-          state: sessionState(effective.get(session.id),
+          state: sessionState(attention().get(session.id) ?? effective.get(session.id),
             ownRunning || runningChildren > 0, !!lifecycle.inactive[session.id]),
         }
       }),
-    )
+    ))
   })
 
   const options = createMemo(() => {
@@ -181,8 +180,9 @@ export function SessionPicker(props: { context: Plugin.Context }) {
         description: "Start with a blank prompt",
         value: NEW_SESSION_VALUE,
         state: "new" as const,
+        depth: 0,
       },
-      ...rows().map(({ session, state, ownRunning, runningChildren }) => {
+      ...rows().map(({ session, state, ownRunning, runningChildren, depth }) => {
         const baseStatus = {
           permission: "Permission required",
           question: "Question waiting",
@@ -204,6 +204,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
           status,
           state,
           value: session.id,
+          depth,
         }
       }),
     ]
@@ -269,7 +270,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
     setPreviewError(undefined)
     setPreviewLoading(!!sessionID)
     if (!sessionID) return
-    // Include hidden subagent descendants so their approval requests are
+    // Include subagent descendants so their approval requests are
     // still actionable from the parent preview.
     const related = [sessionID, ...descendantIDs(sessions(), sessionID)]
     const job = runner.start(Effect.gen(function* () {
@@ -664,10 +665,10 @@ export function SessionPicker(props: { context: Plugin.Context }) {
                 ) : null}
                 <box
                   id={`claude-session-row-${index}`}
-                  height={2}
+                   height={1}
                   flexShrink={0}
-                  flexDirection="column"
-                  paddingLeft={1}
+                   flexDirection="row"
+                   paddingLeft={1 + Math.min(option().depth, 4) * 2}
                   paddingRight={2}
                   backgroundColor={
                     active()
@@ -681,7 +682,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
                     handleRowClick(option().value)
                   }}
                 >
-                  <box height={1} flexDirection="row">
+                  <box height={1} flexDirection="row" flexGrow={1} minWidth={0} overflow="hidden">
                     <box width={2} flexShrink={0}>
                       <text fg={cursorColor()}>{active() ? "❯" : " "}</text>
                     </box>
@@ -700,23 +701,30 @@ export function SessionPicker(props: { context: Plugin.Context }) {
                         </text>
                       )}
                     </box>
-                    <text wrapMode="none" fg={titleColor()} attributes={active() ? TextAttributes.BOLD : undefined}>
+                    <text wrapMode="none" flexShrink={1} fg={titleColor()} attributes={active() ? TextAttributes.BOLD : undefined}>
                       {option().title}
                     </text>
-                  </box>
-                  <box height={1} flexDirection="row" paddingLeft={5}>
                     {(() => {
                       const row = option()
                       return "status" in row ? (
                         <>
-                          <text fg={iconColor()}>{row.status}</text>
-                          <text wrapMode="none" fg={descriptionColor()}>{`  ·  ${row.description}`}</text>
+                          <text wrapMode="none" fg={iconColor()}>{`  ·  ${row.status}`}</text>
                         </>
                       ) : (
-                        <text fg={descriptionColor()}>{row.description}</text>
+                        null
                       )
                     })()}
                   </box>
+                  {option().state !== "new" ? (
+                    <text id={`claude-session-lifecycle-${index}`} flexShrink={0} fg={descriptionColor()}
+                      onMouseDown={(event) => {
+                        if (event.button !== 0) return
+                        event.stopPropagation()
+                        event.preventDefault()
+                        setSelectedValue(option().value)
+                        void changeLifecycle(option().state !== "inactive")
+                      }}>{option().state === "inactive" ? " [Restore]" : " [x]"}</text>
+                  ) : null}
                 </box>
                 </>
               )
@@ -725,6 +733,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
         </scrollbox>
       <box id="claude-session-preview" height={previewHeight()} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1}
         border={["top"]} borderColor={permission() ? props.context.theme.text.status.permission : props.context.theme.contextual.overlay.scrollbar.default}>
+        <text wrapMode="none" fg={props.context.theme.text.subdued}>{options()[selectedIndex()]?.description}</text>
         <box height={1} flexDirection="row" justifyContent="space-between">
            <text wrapMode="none" fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
             {selectedStats().left}

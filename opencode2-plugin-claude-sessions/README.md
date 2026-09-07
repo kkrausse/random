@@ -8,7 +8,7 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Press `Left` while the prompt contains text to move the cursor normally.
 - Press `Alt+S` to open the picker globally, including from permission and question prompts.
 - Labeled sections with prominent dividers show **Active → Inactive**.
-- Press `x` on a session to interrupt it and mark it inactive; press `r` to restore it to the active section without starting work. These shortcuts keep the picker open.
+- Click `[x]` or press `x` on a session to interrupt it and mark it inactive; click `[Restore]` or press `r` to restore it to the active section without starting work. These actions keep the picker open.
 - Idle sessions with no known pending permission/question are marked inactive directly. This lets you retire old sessions whose project directory no longer exists; running sessions and known pending requests still require a successful interrupt.
 - After `x` or `r` succeeds, selection moves to the next row in the original section, or the previous row at the end of that section, while preserving the scroll offset. If the section had only one row, selection falls back to **New session**. Navigating while the request is pending keeps your newer selection.
 - Inactive sessions retain their history, remain selectable below the divider, and use subdued titles. The marker persists across restarts and synchronizes across TUI instances using plugin storage.
@@ -17,13 +17,14 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Status indicators match OpenCode V2 tabs: `!` for permissions, `?` for questions, and a Braille spinner for running sessions.
 - Indicators use the active theme's semantic status colors.
 - Active sessions prioritize needs input, then working, then ready, ordered by latest interaction within each status. Inactive sessions are ordered by latest interaction.
-- The wide, two-line picker leaves room for session titles, locations, agents, and status details.
+- Each session occupies one line with its title, status, and lifecycle button. The selected session's location, agent, and last-interaction time appear in the preview.
 - The current session is selected initially; from Home, `New session` is selected.
 - Use `Up`/`Down` to select, `Right` or `Enter` to open, and `Left` or `Escape` to close.
 - Press `N` from the picker to start a new session.
 - Click a row or use the arrow keys to preview it below the list without changing the session behind the dialog. Hovering does not change selection, so you can move the mouse to the taller preview and scroll long commands without switching requests.
 - Pending permissions show the action, message, resources, and any metadata in a scrollable preview. Press `a` to approve **once**, `A` (shift) to always approve, or `d` to deny the displayed request. The picker stays open; multiple requests are handled one at a time, never as a bulk approval.
-- Subagent (child) sessions are hidden from the list and folded into their parent: a child's pending permission/question lights up the parent row, and the parent preview aggregates the child's requests so approve/deny still works from there. A child whose parent isn't loaded yet stays visible so its requests can't disappear.- Pending questions show their title and field details; open the session to answer them. Approval shortcuts do not answer or dismiss questions.
+- Subagents appear beneath their parent with a small indent, with further nesting for descendants. Active and inactive sections stay separate; children whose parent is unloaded or in another section remain independently selectable. Parent previews still aggregate descendant requests for approval.
+- Pending questions show their title and field details; open the session to answer them. Approval shortcuts do not answer or dismiss questions.
 - Preview loading/errors disable permission actions, replies cannot overlap, and held-key repeat events are ignored. Errors appear as toasts and requests refresh after replying.
 - Older sessions load as you scroll.
 - The picker resizes with the terminal, including phone keyboard/rotation changes. Narrow or short terminals use a compact header and a smaller scrollable approval preview.
