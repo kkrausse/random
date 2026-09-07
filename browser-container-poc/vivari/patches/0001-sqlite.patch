@@ -1,8 +1,8 @@
 diff --git a/AGENTS.md b/AGENTS.md
-index bfb9dbd..7e58db1 100644
+index bfb9dbd..2842f32 100644
 --- a/AGENTS.md
 +++ b/AGENTS.md
-@@ -1,5 +1,47 @@
+@@ -1,5 +1,50 @@
  # AGENTS.md
  
 +Inherited child stdin uses the existing byte relay; remove forwarding listeners
@@ -22,6 +22,9 @@ index bfb9dbd..7e58db1 100644
 +the enclosing POC's ffi-contract.cjs in workers and browsers. Buffers are pinned
 +until library.close (64 MiB process budget); external mirrors require stable
 +native allocations until close. Overlapping external ArrayBuffers reject.
++Opt-in `bun:ffi.vivariProfile()` counters contain only timings/counts; use
++`vivariStats()` for pin/linear-memory growth, not worker `performance.memory`
++(unavailable in Chrome workers). Do not log FFI arguments or buffer contents.
 +Never count an exit-zero import as host
 +success: the enclosing POC requires explicit create/session checkpoint output.
 +Native-owned FFI mirrors synchronize only JS-changed bytes back to WASM. Never
@@ -50,7 +53,7 @@ index bfb9dbd..7e58db1 100644
  Guidance for AI agents (and humans) working in this repo. Read this first, then
  read [`ARCHITECTURE.md`](./ARCHITECTURE.md) before touching the runtime, the
  protocol, or networking. [`roadmap.md`](./roadmap.md) is the chronological log of
-@@ -1206,4 +1248,4 @@ the gap can't silently regress.
+@@ -1206,4 +1251,4 @@ the gap can't silently regress.
  
  - **How it works** → [`ARCHITECTURE.md`](./ARCHITECTURE.md)
  - **Why it was built this way / status per feature** → [`roadmap.md`](./roadmap.md)
@@ -58,10 +61,10 @@ index bfb9dbd..7e58db1 100644
 \ No newline at end of file
 +- **Background research** → `research.md`
 diff --git a/ARCHITECTURE.md b/ARCHITECTURE.md
-index d88c8f8..eda6bf9 100644
+index d88c8f8..be594eb 100644
 --- a/ARCHITECTURE.md
 +++ b/ARCHITECTURE.md
-@@ -1,5 +1,160 @@
+@@ -1,5 +1,166 @@
  # Vivari — Architecture
  
 +Guest process.getBuiltinModule resolves through the same eager/lazy builtin
@@ -96,6 +99,12 @@ index d88c8f8..eda6bf9 100644
 +preserved. Existing VM sandbox limitations and module-hook limitations remain.
 +
 +## Local explicit WASM FFI continuation
++
++`bun:ffi.vivariProfile(enabled)` enables/reset aggregate timing counters;
++`vivariStats()` reads pin count/bytes, linear-memory capacity, synchronization
++bytes/time and per-symbol call/native time. Profiling is off by default and records
++no argument/buffer contents. Timings are inclusive across reentrant callbacks;
++sync byte counters are bytes visited, not hardware memory-bandwidth measurements.
 +
 +`runtime/loopback-fetch.js` routes HTTP loopback URLs through the existing guest
 +Node HTTP/TCP cross-process byte relay instead of the browser host's network.
@@ -222,7 +231,7 @@ index d88c8f8..eda6bf9 100644
  This document explains how Vivari works end to end: the core constraint it
  solves, the worker topology, the syscall protocol, the filesystem, the process
  model, the Node runtime, networking, native code, and the build. It is the
-@@ -917,4 +1072,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
+@@ -917,4 +1078,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
    `GET / → 200` (network-gated, like `verify-express`).
  
  See [`AGENTS.md`](./AGENTS.md) §"Testing & verification" for exactly when to run
@@ -1166,10 +1175,10 @@ index d7695ac..3702e8b 100644
    }
 diff --git a/packages/runtime/builtins/ffi.js b/packages/runtime/builtins/ffi.js
 new file mode 100644
-index 0000000..dab85b2
+index 0000000..eb3034b
 --- /dev/null
 +++ b/packages/runtime/builtins/ffi.js
-@@ -0,0 +1,323 @@
+@@ -0,0 +1,352 @@
 +// A bounded bun:ffi facade for explicitly built wasm32 reactors. No native loader.
 +// ABI declarations belong to the artifact; this module knows no consumer symbols.
 +const aliases = {
@@ -1255,6 +1264,9 @@ index 0000000..dab85b2
 +
 +export function makeWasmFfi({ require }) {
 +  let active = null;
++  // Explicit, opt-in profiling. No arguments, buffer contents or prompts recorded.
++  let profiling = false;
++  const clock = () => performance.now();
 +  const current = () => active || fail('no open library (ptr requires an explicit memory owner)');
 +  const FFIType = Object.fromEntries([...kinds, ...Object.keys(aliases)].map(t => [t, numericTypes.indexOf(type(t))]));
 +  Object.assign(FFIType, {char: 0, i8: 1, int8_t: 1, function: 17, callback: 17});
@@ -1342,9 +1354,14 @@ index 0000000..dab85b2
 +    wasi.initialize(instance);
 +    const pins = new Map(), owners = new WeakMap();
 +    let pinnedBytes = 0;
++    let metrics;
++    const resetMetrics = () => { metrics = { calls: 0, syncInMs: 0, syncOutMs: 0, syncInBytes: 0, syncOutBytes: 0, nativeMs: 0, allocations: 0, allocatedBytes: 0, symbols: {} }; };
++    resetMetrics();
 +    let closed = false, depth = 0;
 +    const lib = {
 +      memory: e.memory, table: e.__indirect_function_table || imports.env?.__indirect_function_table, callbacks: new Set(),
++      stats: () => ({ profiling, pins: pins.size, pinnedBytes, wasmBytes: e.memory.buffer.byteLength, ...JSON.parse(JSON.stringify(metrics)) }),
++      resetMetrics,
 +      mirror(p, offset, length) {
 +        const at = lib.range(p, offset, length);
 +        if (!length) fail('empty external buffer');
@@ -1381,11 +1398,13 @@ index 0000000..dab85b2
 +          lib.range(p, 0, bytes.byteLength);
 +          record = { p, bytes };
 +          pinnedBytes += bytes.byteLength;
++          if (profiling) { metrics.allocations++; metrics.allocatedBytes += bytes.byteLength; }
 +          owners.set(view.buffer, record); pins.set(p, record);
 +        }
 +        return record.p + view.byteOffset + offset;
 +      },
 +      syncIn() {
++        const start = profiling ? clock() : 0;
 +        for (const {p, bytes, borrowed, baseline} of pins.values()) {
 +          if (!bytes.byteLength) fail('pinned buffer was detached');
 +          const memory = new Uint8Array(e.memory.buffer, p, bytes.byteLength);
@@ -1396,12 +1415,15 @@ index 0000000..dab85b2
 +            baseline.set(bytes);
 +          } else memory.set(bytes);
 +        }
++        if (profiling) { metrics.syncInMs += clock() - start; metrics.syncInBytes += pinnedBytes; }
 +      },
 +      syncOut() {
++        const start = profiling ? clock() : 0;
 +        for (const {p, bytes, baseline} of pins.values()) {
 +          bytes.set(new Uint8Array(e.memory.buffer, p, bytes.byteLength));
 +          baseline?.set(bytes);
 +        }
++        if (profiling) { metrics.syncOutMs += clock() - start; metrics.syncOutBytes += pinnedBytes; }
 +      },
 +      input(v, t) {
 +        if (t === 'void') return undefined;
@@ -1425,6 +1447,20 @@ index 0000000..dab85b2
 +      const sig = sigs[name];
 +      if (args.length !== sig.args.length) fail(`${name} expects ${sig.args.length} arguments`);
 +      const input = args.map((v, i) => lib.input(v, sig.args[i]));
++      if (profiling) {
++        const start = clock();
++        lib.syncIn(); depth++;
++        const nativeStart = clock();
++        let nativeMs;
++        try { return lib.output(fn(...input), sig.returns); }
++        finally {
++          nativeMs = clock() - nativeStart;
++          depth--; lib.syncOut();
++          const row = metrics.symbols[name] ||= { calls: 0, totalMs: 0, nativeMs: 0 };
++          row.calls++; row.totalMs += clock() - start; row.nativeMs += nativeMs;
++          metrics.calls++; metrics.nativeMs += nativeMs;
++        }
++      }
 +      lib.syncIn(); depth++;
 +      try { return lib.output(fn(...input), sig.returns); }
 +      finally { depth--; lib.syncOut(); }
@@ -1439,6 +1475,8 @@ index 0000000..dab85b2
 +    } };
 +  }
 +  return { dlopen, ptr, toArrayBuffer, JSCallback, FFIType, read, suffix: 'wasm',
++    vivariStats: () => active?.stats() ?? null,
++    vivariProfile(enabled = true) { profiling = !!enabled; active?.resetMetrics(); },
 +    CString: class CString { constructor() { fail('CString is unsupported'); } },
 +    linkSymbols() { fail('linkSymbols is unsupported'); },
 +    cc() { fail('runtime C compilation is unsupported'); },
@@ -2018,10 +2056,10 @@ index 961f34d..b438775 100644
    // @edge-runtime/primitives (pulled by Next.js) does `require('stream/web')`.
    "stream/web": (exports, require, module) => {
 diff --git a/roadmap.md b/roadmap.md
-index 3ab02ef..639e77d 100644
+index 3ab02ef..be9b22d 100644
 --- a/roadmap.md
 +++ b/roadmap.md
-@@ -1,5 +1,71 @@
+@@ -1,5 +1,76 @@
  # Vivari — Roadmap
  
 +First matched TUI submission reached the real parser worker and exposed a leaked
@@ -2048,6 +2086,11 @@ index 3ab02ef..639e77d 100644
 +error propagation; this is reusable Node compatibility, not application logic.
 +
 +## Local WASM FFI: native-owned mirror writeback
++
++Profiling continuation: opt-in aggregate FFI counters distinguish synchronization
++from native symbol time and expose retained pin bytes versus linear-memory
++capacity. The enclosing demo compares paced typing, sustained input and idle
++cycles. The 64 MiB budget and pointer-lifetime contract are unchanged.
 +
 +The real source-built OpenCode server listens in a browser worker, but its TUI
 +fetches localhost through host fetch and therefore cannot reach that guest server.
@@ -2093,7 +2136,7 @@ index 3ab02ef..639e77d 100644
  Built on the principle **de-risk the hardest part first**: prove the riskiest
  primitive (synchronous cross-thread access to a shared kernel) before expanding.
  
-@@ -3041,4 +3107,35 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
+@@ -3041,4 +3112,35 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
  | `Fetcher Worker` | Network/registry worker |
  | `Node.js Worker PID n` | Process = 1 worker + Node shim |
  | `[worker n]` | Nested `worker_threads` — real (#16 stage 2b) |
