@@ -2,7 +2,7 @@
 import { strict as assert } from "node:assert"
 import { test } from "node:test"
 import { extend, testRender } from "@opentui/solid"
-import { createStore } from "solid-js/store"
+import { createStore, reconcile } from "solid-js/store"
 import { TextRenderable, type ScrollBoxRenderable } from "@opentui/core"
 import { SessionPicker } from "./tui"
 
@@ -44,7 +44,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
           if (storageFailure) throw new Error("disk unavailable")
           const draft = { inactive: { ...lifecycle.inactive } }
           update(draft)
-          setLifecycle("inactive", draft.inactive)
+          setLifecycle("inactive", reconcile(draft.inactive))
         },
       ],
     },
@@ -209,6 +209,21 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     assert.match(setup.captureCharFrame(), /❯\s+\+\s+New session/)
     assert.match(setup.captureCharFrame(), /New session — no context yet/)
 
+    commands.find((c) => c.bind === "down").run()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await setup.renderOnce()
+    const restore = setup.renderer.root.findDescendantById("claude-session-preview-lifecycle")!
+    await setup.mockMouse.click(restore.x + 2, restore.y)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(lifecycle.inactive.s0, undefined)
+    for (let i = 0; i < 50; i++) commands.find((c) => c.bind === "up").run()
+    commands.find((c) => c.bind === "down").run()
+    await setup.renderOnce()
+    const markInactive = setup.renderer.root.findDescendantById("claude-session-preview-lifecycle")!
+    await setup.mockMouse.click(markInactive.x + 2, markInactive.y)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(lifecycle.inactive.s0, true)
+
     // A keyboard-sized phone viewport must retain a usable list and tap actions.
     withPermission = true
     commands.find((c) => c.bind === "down").run()
@@ -219,13 +234,16 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
       const picker = setup.renderer.root.findDescendantById("claude-session-picker")!
       const preview = setup.renderer.root.findDescendantById("claude-session-preview")!
       const approve = setup.renderer.root.findDescendantById("claude-session-approve")!
-      assert.ok(picker.height <= height! - 6)
+      assert.equal(picker.height, width! < 70 ? height! - 2 : Math.min(48, height! - 6))
       assert.ok(scroll.height >= 2, `list remains usable at ${width}x${height}`)
       assert.ok(preview.y + preview.height <= picker.y + picker.height)
       assert.ok(approve.y + approve.height <= preview.y + preview.height)
+      const lifecycleButton = setup.renderer.root.findDescendantById("claude-session-preview-lifecycle")!
+      assert.ok(lifecycleButton.x >= preview.x)
+      assert.ok(lifecycleButton.x + lifecycleButton.width <= preview.x + preview.width)
+      assert.equal(lifecycleButton.y + lifecycleButton.height, preview.y + preview.height)
     }
     assert.doesNotMatch(setup.captureCharFrame(), /←\/esc close/)
-    assert.doesNotMatch(setup.captureCharFrame(), /mark inactive/)
     setup.resize(36, 24)
     await setup.renderOnce()
     const approve = setup.renderer.root.findDescendantById("claude-session-approve")!
