@@ -686,13 +686,7 @@ export function SessionPicker(props: { context: Plugin.Context }) {
           scrollX={false}
           viewportCulling
           contentOptions={{ flexDirection: "column" }}
-          verticalScrollbarOptions={{
-            visible: true,
-            trackOptions: {
-              backgroundColor: props.context.theme.contextual.overlay.background.default,
-              foregroundColor: props.context.theme.contextual.overlay.scrollbar.default,
-            },
-          }}
+          verticalScrollbarOptions={{ visible: false }}
         >
           <Index each={options()}>
             {(option, index) => {
