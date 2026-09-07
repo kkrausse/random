@@ -1,0 +1,111 @@
+{
+  "vivariRevision": "2629c71097238400c45aefa213ef61df4794c2b7",
+  "opentuiRevision": "f6673a04ccb671b9207da358c57152bfd27c781f",
+  "inputs": [
+    {
+      "path": "../qemu/public/qemu/load-rootfs.data",
+      "sha256": "ce07d7d08490d14a6c2c9cbe3ffd5c64a554c55963f366207e4e1ce83901bd08",
+      "verified": true
+    },
+    {
+      "path": "../qemu/public/qemu/out.js",
+      "sha256": "78fa6e568d7e54bb883bfa9531185ad37ad3eb63b57f4ef8f76d5c40e8a0c74a",
+      "verified": true
+    },
+    {
+      "path": "../qemu/public/qemu/load-rom.data",
+      "sha256": "15de099e1363ceb13a31b9d11836337bab974f9460836449330b20c0534d06c9",
+      "verified": true
+    },
+    {
+      "path": "../qemu/public/qemu/load-initramfs.js",
+      "sha256": "0770426ea18ed24f4736d9dcf75fda29519cccb5cd7efdd0d9e15fe3f7e9d07c",
+      "verified": true
+    },
+    {
+      "path": "../qemu/public/qemu/guest-build.txt",
+      "sha256": "7bd53c0bfe41ff45a17d65716f8b561733ac52f9f6cd84abf412f2e2bd3ba072",
+      "verified": true
+    },
+    {
+      "path": "../qemu/public/qemu/load-rom.js",
+      "sha256": "617e4dc685cb2cedada4844f097eb18a56cf0f8bbd4c4e2e9231b4f07d0d8a88",
+      "verified": true
+    },
+    {
+      "path": "../qemu/public/qemu/load-kernel.data",
+      "sha256": "1dff47560d0626bd8d968ceada25fff4f5b62b89c7611b5a48d5b45a20c417cd",
+      "verified": true
+    },
+    {
+      "path": "../qemu/public/qemu/runtime-build.txt",
+      "sha256": "2a757284b3feb357426a23a26e17653a4fc74b5e8d41a8538788802e08c50166",
+      "verified": true
+    },
+    {
+      "path": "../qemu/public/qemu/load-rootfs.js",
+      "sha256": "362fa22f3a0cecd6d4f11f906733fea91ad4ba3f9a3f55bdb8334c859a51c166",
+      "verified": true
+    },
+    {
+      "path": "../qemu/public/qemu/popcnt-test",
+      "sha256": "922f2794cbcf20c6574cbe0ab888e059b61224008be4d56b4dbcc67f6457f20e",
+      "verified": true
+    },
+    {
+      "path": "../qemu/public/qemu/load-initramfs.data",
+      "sha256": "a17f2c19b4841b9b562f54b0564fd6d03b7102cc882fb538c1d12ba5cdedc69f",
+      "verified": true
+    },
+    {
+      "path": "../qemu/public/qemu/qemu-system-x86_64.wasm",
+      "sha256": "af53c7b7739f38826e59a0edfa0a4dd814e228da53002cf50158ff61325b8093",
+      "verified": true
+    },
+    {
+      "path": "../qemu/public/qemu/qemu-system-x86_64.worker.js",
+      "sha256": "8efab02a9cb5ee63ced22e9853bce74cbb895d15a5fb3d5139fef855c50f62ea",
+      "verified": true
+    },
+    {
+      "path": "../qemu/public/qemu/load-kernel.js",
+      "sha256": "1e552a5018623db3a77dda2186e74a53f2a4294ca84dd030c875589c0255e19d",
+      "verified": true
+    },
+    {
+      "path": ".artifacts/fixed-runtime/index.js",
+      "sha256": "e40ae224e714d56b89b215119727db2b4aa6487ebc09709f4c1298ef91d08a57",
+      "verified": true
+    },
+    {
+      "path": ".artifacts/fixed-runtime/assets/LICENSE.vivari.txt",
+      "sha256": "30a6c0cfc55b5c36932f8438db7925460283f72c75b5f7d32efbeaadb9b75d73",
+      "verified": true
+    },
+    {
+      "path": ".artifacts/fixed-runtime/assets/kernel-worker-C2LklNSp.js",
+      "sha256": "5e5a7cb76c358c68755a4f25c78d76ce35378a3121eeb9c5c25d5c124c030d04",
+      "verified": true
+    },
+    {
+      "path": ".artifacts/fixed-runtime/assets/process-worker-BupKD3E8.js",
+      "sha256": "f7a3e22feab90c102ee57f1401c62c61f4ae76dfd44a9c7ed3aeada892a4b96a",
+      "verified": true
+    },
+    {
+      "path": ".artifacts/fixed-runtime/assets/fetcher-worker-wojYLY_2.js",
+      "sha256": "e90dc248df2378af00d2fe90570111417d139dc42880d5aca807a49e9c904420",
+      "verified": true
+    },
+    {
+      "path": ".artifacts/fixed-runtime/assets/fs-worker-s-Sg5HqV.js",
+      "sha256": "ff519a68aa7e3354b5f25726004d47b39c33c4148ab7b511bd0d44619577057f",
+      "verified": true
+    },
+    {
+      "path": ".artifacts/fixed-runtime/assets/sw.js",
+      "sha256": "2a8092b3697a12f0e1d5a52a6c36de126c962b5a776509833858de4861e78e6e",
+      "verified": true
+    }
+  ]
+}
