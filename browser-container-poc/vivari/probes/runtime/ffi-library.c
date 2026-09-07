@@ -2,7 +2,9 @@
 #include <stdlib.h>
 #include <stddef.h>
 
-void *ffi_alloc(uint32_t n) { return malloc(n); }
+static uint32_t allocation_epoch;
+void *ffi_alloc(uint32_t n) { allocation_epoch++; return malloc(n); }
+uint32_t *allocation_epoch_pointer(void) { return &allocation_epoch; }
 void ffi_free(void *p, uint32_t n) { (void)n; free(p); }
 uint32_t mutate(uint8_t *p, uint32_t n) {
   uint32_t sum = 0;

@@ -1,5 +1,8 @@
 const assert = require('assert');
 const ffi = require('bun:ffi');
+const bunModule = require('bun');
+assert.equal(bunModule.hash('module-contract'), Bun.hash('module-contract'));
+assert.equal(bunModule.fileURLToPath(bunModule.pathToFileURL('/ffi-probe/contract.cjs')), '/ffi-probe/contract.cjs');
 const path = process.argv[2] || '/ffi-probe/ffi-library.ffi.json';
 const definitions = {
   mutate: {args: ['ptr', 'u32'], returns: 'u32'},
@@ -11,6 +14,7 @@ const definitions = {
   fractional: {args: ['f32'], returns: 'f32'},
   record_sum: {args: ['ptr'], returns: 'u32'},
   result_pointer: {args: [], returns: 'ptr'},
+  allocation_epoch_pointer: {args: [], returns: 'ptr'},
 };
 assert.throws(() => ffi.dlopen('/lib/native.so', {}), /explicit/);
 assert.throws(() => ffi.dlopen(path, {bad: {args: ['napi_value']}}), /unsupported type/);
@@ -65,6 +69,13 @@ assert.throws(() => new ffi.JSCallback(() => {}, {threadsafe: true}), /threadsaf
 assert.equal(ffi.toArrayBuffer(p, 0, bytes.length), bytes.buffer);
 assert.throws(() => ffi.toArrayBuffer(p, 0, 1), /overlapping external/);
 assert.throws(() => ffi.read.u32(0xffffffff), /outside linear memory/);
+// ffi_alloc is compiled native code too: it may modify native-owned memory
+// between symbol calls. An unchanged mirror must not overwrite those writes.
+const epochPtr = s.allocation_epoch_pointer();
+const epoch = new Uint32Array(ffi.toArrayBuffer(epochPtr, 0, 4));
+const beforeAllocation = epoch[0];
+ffi.ptr(new Uint8Array(32));
+assert.equal(ffi.read.u32(epochPtr), beforeAllocation + 1);
 lib.close(); lib.close();
 assert.throws(() => s.retained_value(), /closed/);
 assert.throws(() => ffi.ptr(bytes), /no open/);

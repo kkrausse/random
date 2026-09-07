@@ -1,5 +1,15 @@
 # Vivari general WASM FFI continuation — 2026-09-06
 
+**Superseded checkpoint:** [compiled wire shim and real TUI results](vivari-wire-results.md).
+The renderer gate now passes. The 56-byte TS finding below measured the host:
+the actual wasm32 guest packs StyledChunk into **40 bytes**, versus Zig's 28.
+The compiled boundary converts that mixed-width layout and outbound capabilities;
+audio creation returns an explicit invalid handle. Native mirror writeback now
+copies only JS-changed bytes, preserving native allocator mutations. The remaining
+model/edit blocker is the pinned OpenCode TUI/server API mismatch. This report
+retains the earlier contract and investigation; its blocked gates and live-state
+instructions describe that earlier run.
+
 **PASS: an independently compiled C library runs through both `bun:ffi` and
 `node:ffi` in real Vivari browser workers.** The implementation is a general
 runtime substrate, with no OpenTUI symbol names or TypeScript RenderLib adapter.

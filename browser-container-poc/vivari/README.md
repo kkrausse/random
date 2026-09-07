@@ -1,6 +1,24 @@
 # Vivari feasibility POC
 
-## Latest: general WASM-backed FFI substrate
+## Latest: compiled OpenTUI ABI shim and real OpenCode TUI frame
+
+Unchanged OpenTUI TypeScript now passes real `createCliRenderer`/`TextRenderable`,
+keyboard input, resize, destruction and recreation in browser workers. A pinned
+native build converts the actual **40-byte guest StyledChunk** into Zig's 28-byte
+internal record and converts outbound capabilities. The earlier 56-byte finding
+measured the host packer, not the wasm32 guest. Optional audio fails explicitly.
+
+The full source-pinned OpenCode CLI renders its real provider dialog, accepts
+search input, resizes and exits to the shell. **Model → edit → HMR remains blocked**:
+the pinned TUI requests legacy API paths while its server exposes `/api/...`.
+See [current shim, gates and reproduction](../doc/vivari-wire-results.md).
+
+Live isolated origins: **http://127.0.0.1:5204/** (`gentle-tiger-571`) retains the
+OpenTUI proof; **http://127.0.0.1:5205/** (`lucky-panda-152`) retains the real guest
+server on guest port 4096 and idle Shell 1. Launch `bun /opencode-tui/cli/entry.cjs`
+there. Earlier :5202/:5203 runtimes and OPFS were preserved.
+
+## Previous: general WASM-backed FFI substrate
 
 An independent compiled C library now passes pointer/buffer lifetime, memory
 growth, wasm32 pointer-bearing records and reentrant callbacks through both
@@ -8,11 +26,11 @@ growth, wasm32 pointer-bearing records and reentrant callbacks through both
 artifacts. The runtime has no OpenTUI-specific symbol handling or TS RenderLib
 replacement. The supported subset has explicit memory/lifetime/signature limits.
 
-The unchanged OpenTUI TypeScript renderer entry reaches that loader, then fails
+At that checkpoint, the unchanged OpenTUI TypeScript renderer entry reached that loader, then failed
 on its absent audio export. Its real StyledChunk ABI also differs: TS records
-are 56 bytes, wasm32 Zig records 28. **TypeScript renderer and actual OpenCode
-TUI acceptance remain blocked.** See [FFI contract, proof, exact ABI and next
-native shim](../doc/vivari-ffi-results.md).
+were reported as 56 bytes, wasm32 Zig records 28. The guest layout correction and
+resolved renderer gate are documented above. See [FFI contract and historical
+proof](../doc/vivari-ffi-results.md).
 
 Live isolated origin **http://127.0.0.1:5203/**, Browser Control **tidy-tiger-674**,
 has the passing independent FFI probe and idle Shell 1. Run

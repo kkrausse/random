@@ -1,8 +1,8 @@
 diff --git a/AGENTS.md b/AGENTS.md
-index bfb9dbd..17be890 100644
+index bfb9dbd..c2851fd 100644
 --- a/AGENTS.md
 +++ b/AGENTS.md
-@@ -1,5 +1,26 @@
+@@ -1,5 +1,37 @@
  # AGENTS.md
  
 +Local OpenCode continuation: `runtime/builtins/sea.js` implements non-SEA behavior
@@ -14,6 +14,17 @@ index bfb9dbd..17be890 100644
 +native allocations until close. Overlapping external ArrayBuffers reject.
 +Never count an exit-zero import as host
 +success: the enclosing POC requires explicit create/session checkpoint output.
++Native-owned FFI mirrors synchronize only JS-changed bytes back to WASM. Never
++blindly copy an unchanged mirror in: even ffi_alloc may have changed native data
++between symbol calls. Baselines refresh on copy-out. The independent allocator-
++epoch regression in ffi-contract.cjs guards this; it is not native liveness tracking.
++`require('bun')` exports the same supported shim methods as the lazy Bun global.
++Importing the module does not install the global or change process.versions.
++HTTP fetch to localhost/127.0.0.1/::1 uses the guest Node HTTP byte relay, including
++streaming response bodies and aborts. Host-machine HTTP requires the existing
++host.vivari.internal alias. Keep this routing before alias rewriting; otherwise
++the alias accidentally loops back into the guest. Automatic loopback redirects
++currently reject explicitly (manual is supported), and uploads are buffered.
 +
 +Local SQLite experiment: `kernel-host/sqlite-server.js` owns the shared WASM
 +engine; `runtime/builtins/sqlite.js` provides the synchronous facades. Keep the
@@ -29,7 +40,7 @@ index bfb9dbd..17be890 100644
  Guidance for AI agents (and humans) working in this repo. Read this first, then
  read [`ARCHITECTURE.md`](./ARCHITECTURE.md) before touching the runtime, the
  protocol, or networking. [`roadmap.md`](./roadmap.md) is the chronological log of
-@@ -1206,4 +1227,4 @@ the gap can't silently regress.
+@@ -1206,4 +1238,4 @@ the gap can't silently regress.
  
  - **How it works** → [`ARCHITECTURE.md`](./ARCHITECTURE.md)
  - **Why it was built this way / status per feature** → [`roadmap.md`](./roadmap.md)
@@ -37,13 +48,26 @@ index bfb9dbd..17be890 100644
 \ No newline at end of file
 +- **Background research** → `research.md`
 diff --git a/ARCHITECTURE.md b/ARCHITECTURE.md
-index d88c8f8..9c384e8 100644
+index d88c8f8..bcc6b10 100644
 --- a/ARCHITECTURE.md
 +++ b/ARCHITECTURE.md
-@@ -1,5 +1,112 @@
+@@ -1,5 +1,129 @@
  # Vivari — Architecture
  
 +## Local explicit WASM FFI continuation
++
++`runtime/loopback-fetch.js` routes HTTP loopback URLs through the existing guest
++Node HTTP/TCP cross-process byte relay instead of the browser host's network.
++Response bodies remain streaming (SSE included), with ReadableStream pull/cancel
++and AbortSignal propagated to Node request/response destruction. Request bodies
++are buffered. Redirect responses work with `redirect: manual`; automatic redirects
++explicitly reject. External URLs retain host fetch, and host.vivari.internal is
++rewritten only after guest-loopback selection. There is no host service substitution.
++
++The explicit `bun` module now aliases the existing Bun shim namespace, matching
++its supported URL/hash/file/etc. methods. Merely importing it does not install
++the Bun global or fabricate a Bun process version. Both node:ffi and bun:ffi
++remain backed by the same generic per-process WASM owner.
 +
 +`runtime/builtins/ffi.js` owns synchronous `.ffi.json` loading over guest fs,
 +WASI reactor initialization, typed WASM signature checking, scalar conversion,
@@ -58,7 +82,11 @@ index d88c8f8..9c384e8 100644
 +does not guess pointer fields from arbitrary bytes or recognize application symbols.
 +
 +Pinned backing buffers preserve overlapping typed-array aliasing and are copied
-+in/out at every call and callback boundary. All views of memory are reacquired
++in/out at every call and callback boundary. Native-owned mirrors track a baseline
++and write back only JS-changed bytes; this preserves native allocator side effects
++between symbol calls. A mirror baseline costs one extra copy of its byte range.
++This does not establish whether a raw native allocation remains live: consumers
++must not access a mirror after freeing its native owner. All memory views are reacquired
 +after growth. A 64 MiB process pin budget and library.close bound retention.
 +toArrayBuffer uses synchronized mirrors for stable native allocations; identical
 +ranges reuse the same buffer, overlapping distinct ranges reject. These are not
@@ -153,7 +181,7 @@ index d88c8f8..9c384e8 100644
  This document explains how Vivari works end to end: the core constraint it
  solves, the worker topology, the syscall protocol, the filesystem, the process
  model, the Node runtime, networking, native code, and the build. It is the
-@@ -917,4 +1024,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
+@@ -917,4 +1041,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
    `GET / → 200` (network-gated, like `verify-express`).
  
  See [`AGENTS.md`](./AGENTS.md) §"Testing & verification" for exactly when to run
@@ -991,7 +1019,7 @@ index eb3334d..ee7d708 100644
        memStats: runtime.memStats,
      });
 diff --git a/packages/runtime/builtins/bun.js b/packages/runtime/builtins/bun.js
-index be7a806..04be809 100644
+index be7a806..9206d7c 100644
 --- a/packages/runtime/builtins/bun.js
 +++ b/packages/runtime/builtins/bun.js
 @@ -14,11 +14,12 @@
@@ -1008,12 +1036,13 @@ index be7a806..04be809 100644
  
  export function createBunRuntime({ process, Buffer, require }) {
    const lazy = (name) => require(name);
-@@ -617,10 +618,12 @@ export function createBunRuntime({ process, Buffer, require }) {
+@@ -617,10 +618,13 @@ export function createBunRuntime({ process, Buffer, require }) {
    };
  
    // ---- bun:* modules ---------------------------------------------------------
 +  const ffi = makeWasmFfi({ require });
    const modules = {
++    "bun": Bun,
      "bun:test": makeBunTest({ process }),
      "bun:jsc": makeBunJsc(),
 -    "bun:ffi": makeBunFfi(),
@@ -1022,7 +1051,7 @@ index be7a806..04be809 100644
      "bun:sqlite": makeBunSqlite({ require }),
    };
  
-@@ -800,21 +803,7 @@ function makeBunJsc() {
+@@ -800,21 +804,7 @@ function makeBunJsc() {
    };
  }
  
@@ -1045,7 +1074,7 @@ index be7a806..04be809 100644
  
  // bun:sqlite — API surface backed by a project-installed wasm SQLite when present
  // (e.g. a `sql.js`/`@sqlite.org/sqlite-wasm` drop-in). Without a backend it throws
-@@ -992,4 +981,4 @@ function guessMime(p) {
+@@ -992,4 +982,4 @@ function guessMime(p) {
      gif: "image/gif", webp: "image/webp", wasm: "application/wasm",
    };
    return map[ext] || "application/octet-stream";
@@ -1054,10 +1083,10 @@ index be7a806..04be809 100644
 +}
 diff --git a/packages/runtime/builtins/ffi.js b/packages/runtime/builtins/ffi.js
 new file mode 100644
-index 0000000..f49e01e
+index 0000000..dab85b2
 --- /dev/null
 +++ b/packages/runtime/builtins/ffi.js
-@@ -0,0 +1,314 @@
+@@ -0,0 +1,323 @@
 +// A bounded bun:ffi facade for explicitly built wasm32 reactors. No native loader.
 +// ABI declarations belong to the artifact; this module knows no consumer symbols.
 +const aliases = {
@@ -1242,7 +1271,7 @@ index 0000000..f49e01e
 +        }
 +        if (pinnedBytes + length > 64 * 1024 * 1024) fail('process pin budget exceeds 64 MiB');
 +        const bytes = new Uint8Array(e.memory.buffer, at, length).slice();
-+        const record = {p: at, bytes, borrowed: true};
++        const record = {p: at, bytes, borrowed: true, baseline: bytes.slice()};
 +        pins.set(at, record); owners.set(bytes.buffer, record); pinnedBytes += length;
 +        return bytes.buffer;
 +      },
@@ -1274,13 +1303,22 @@ index 0000000..f49e01e
 +        return record.p + view.byteOffset + offset;
 +      },
 +      syncIn() {
-+        for (const {p, bytes} of pins.values()) {
++        for (const {p, bytes, borrowed, baseline} of pins.values()) {
 +          if (!bytes.byteLength) fail('pinned buffer was detached');
-+          new Uint8Array(e.memory.buffer, p, bytes.byteLength).set(bytes);
++          const memory = new Uint8Array(e.memory.buffer, p, bytes.byteLength);
++          // An unchanged native-owned mirror is never an instruction to write.
++          // Native code may have freed/reused its allocation since the last call.
++          if (borrowed) {
++            for (let i = 0; i < bytes.length; i++) if (bytes[i] !== baseline[i]) memory[i] = bytes[i];
++            baseline.set(bytes);
++          } else memory.set(bytes);
 +        }
 +      },
 +      syncOut() {
-+        for (const {p, bytes} of pins.values()) bytes.set(new Uint8Array(e.memory.buffer, p, bytes.byteLength));
++        for (const {p, bytes, baseline} of pins.values()) {
++          bytes.set(new Uint8Array(e.memory.buffer, p, bytes.byteLength));
++          baseline?.set(bytes);
++        }
 +      },
 +      input(v, t) {
 +        if (t === 'void') return undefined;
@@ -1514,19 +1552,20 @@ index c6f68b8..8505980 100644
      writeFile: (p, content) => {
        const body = typeof content === "string" ? b(content) : content;
 diff --git a/packages/runtime/index.js b/packages/runtime/index.js
-index af2b08d..a36cba4 100644
+index af2b08d..a53e887 100644
 --- a/packages/runtime/index.js
 +++ b/packages/runtime/index.js
-@@ -14,6 +14,8 @@ import { createWebSocket } from "./websocket.js";
+@@ -14,6 +14,9 @@ import { createWebSocket } from "./websocket.js";
  import { rewriteDynamicImportToGlobal } from "./esm.js";
  import { isEsbuildInprocActive, esbuildWasmBytes } from "./esbuild-inproc-patch.js";
  import { createBunRuntime } from "./builtins/bun.js";
++import { isGuestLoopback, loopbackFetch } from "./loopback-fetch.js";
 +import { createSqlite } from "./builtins/sqlite.js";
 +import { createSea } from "./builtins/sea.js";
  
  function createConsole(process, util) {
    const toOut = (...a) => process.stdout.write(util.format(...a) + "\n");
-@@ -61,6 +63,7 @@ export function createRuntime({
+@@ -61,6 +64,7 @@ export function createRuntime({
    ppid = 0,
    argv = [],
    env = {},
@@ -1534,7 +1573,7 @@ index af2b08d..a36cba4 100644
    cwd = "/",
    stdout = () => {},
    stderr = () => {},
-@@ -289,6 +292,15 @@ export function createRuntime({
+@@ -289,6 +293,15 @@ export function createRuntime({
    const Buffer = bufferModule.Buffer;
    const path = nodeModules.require("path");
    const EventEmitter = nodeModules.require("events");
@@ -1550,7 +1589,7 @@ index af2b08d..a36cba4 100644
    const util = nodeModules.require("util");
    const fs = nodeModules.require("fs");
    const stream = nodeModules.require("stream");
-@@ -495,7 +507,19 @@ export function createRuntime({
+@@ -495,7 +508,19 @@ export function createRuntime({
    // enqueues; drainStdin (a loop turn) pushes into the Readable so 'data' fires in
    // a controlled turn. A null chunk is stdin EOF (Ctrl+D / closed terminal).
    const stdinQueue = [];
@@ -1570,7 +1609,15 @@ index af2b08d..a36cba4 100644
      while (stdinQueue.length) {
        const chunk = stdinQueue.shift();
        if (chunk === null) stdin.push(null);
-@@ -1121,6 +1145,9 @@ export function createRuntime({
+@@ -974,6 +999,7 @@ export function createRuntime({
+     const hostFetch = globalThis.fetch;
+     if (!hostFetch.__ocHostWrapped) {
+       const wrappedFetch = function (input, init) {
++        if (isGuestLoopback(input)) return trackHost(loopbackFetch(vvRootRequire, input, init));
+         return trackHost(hostFetch.call(this, rewriteHostAlias(input), init));
+       };
+       wrappedFetch.__ocHostWrapped = true;
+@@ -1121,6 +1147,9 @@ export function createRuntime({
      diagnostics_channel: diagnosticsChannel,
      cluster,
    };
@@ -1580,7 +1627,7 @@ index af2b08d..a36cba4 100644
  
    // Node exposes the posix/win32 path flavors as their own subpath builtins
    // (`require('node:path/posix')`). We're posix, so `path` already IS posix;
-@@ -1272,6 +1299,7 @@ export function createRuntime({
+@@ -1272,6 +1301,7 @@ export function createRuntime({
    // `typeof Bun !== 'undefined'`. See packages/runtime/builtins/bun.js.
    const bunRuntime = createBunRuntime({ process, Buffer, require: vvRootRequire });
    for (const [name, mod] of Object.entries(bunRuntime.modules)) builtins[name] = mod;
@@ -1588,7 +1635,7 @@ index af2b08d..a36cba4 100644
    globalThis.__ocInstallBun = () => {
      globalThis.Bun = bunRuntime.Bun;
      return bunRuntime.Bun;
-@@ -1329,6 +1357,7 @@ export function createRuntime({
+@@ -1329,6 +1359,7 @@ export function createRuntime({
      /** External delivery from the kernel: an interactive stdin chunk for THIS
       * process ({type:'stdin', chunk} - chunk null = EOF). Feeds process.stdin. */
      dispatchStdin: (msg) => dispatchStdin(msg),
@@ -1596,12 +1643,86 @@ index af2b08d..a36cba4 100644
      /**
       * Run an entry file like `node <entry>`, then drive the event loop until it
       * is quiescent (no pending timers/immediates/nextTicks and no open servers).
-@@ -1386,4 +1415,4 @@ export function createRuntime({
+@@ -1386,4 +1417,4 @@ export function createRuntime({
        return finish(code);
      },
    };
 -}
 \ No newline at end of file
++}
+diff --git a/packages/runtime/loopback-fetch.js b/packages/runtime/loopback-fetch.js
+new file mode 100644
+index 0000000..25b9085
+--- /dev/null
++++ b/packages/runtime/loopback-fetch.js
+@@ -0,0 +1,68 @@
++// HTTP loopback belongs to the guest network, not the browser's host machine.
++// Use the existing Node HTTP/TCP byte relay, including streaming responses.
++export function isGuestLoopback(input) {
++  try {
++    const url = new URL(input instanceof Request ? input.url : String(input));
++    return url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
++  } catch { return false; }
++}
++
++export async function loopbackFetch(require, input, init) {
++  const request = new Request(input, init);
++  if (request.signal.aborted) throw request.signal.reason;
++  const url = new URL(request.url);
++  const http = require('http');
++  // Uploads are buffered here; response bodies (including SSE) remain streaming.
++  const bytes = request.body ? new Uint8Array(await request.arrayBuffer()) : null;
++  if (request.signal.aborted) throw request.signal.reason;
++  return new Promise((resolve, reject) => {
++    let incoming, controller, settled = false, ended = false;
++    const cleanup = () => request.signal.removeEventListener('abort', abort);
++    const fail = error => {
++      if (ended) return;
++      ended = true;
++      cleanup();
++      if (!settled) reject(error);
++      else controller?.error(error);
++    };
++    const req = http.request({hostname:url.hostname === '[::1]' ? '127.0.0.1' : url.hostname,
++      port:Number(url.port || 80), path:url.pathname + url.search, method:request.method,
++      headers:Object.fromEntries(request.headers),
++    }, response => {
++      incoming = response;
++      const status = response.statusCode;
++      if ([301,302,303,307,308].includes(status) && response.headers.location && request.redirect !== 'manual') {
++        fail(new TypeError('Guest loopback fetch redirects are unsupported; use redirect: manual'));
++        response.destroy(); req.destroy(); return;
++      }
++      const headers = new Headers();
++      for (const [name,value] of Object.entries(response.headers)) {
++        for (const item of Array.isArray(value) ? value : [value]) if (item !== undefined) headers.append(name,String(item));
++      }
++      const stream = new ReadableStream({
++        start(c) { controller = c; },
++        pull() { response.resume(); },
++        cancel() { ended = true; cleanup(); response.destroy(); req.destroy(); },
++      });
++      response.on('data', chunk => {
++        if (ended) return;
++        controller.enqueue(new Uint8Array(chunk).slice());
++        if (controller.desiredSize <= 0) response.pause();
++      });
++      response.on('end', () => { if (!ended) { ended = true; cleanup(); controller.close(); } });
++      response.on('error', fail);
++      response.on('aborted', () => fail(new TypeError('Guest HTTP response aborted')));
++      const noBody = request.method === 'HEAD' || [204,205,304].includes(status);
++      const result = new Response(noBody ? null : stream, {status, statusText:response.statusMessage || '', headers});
++      Object.defineProperty(result, 'url', {value:request.url});
++      settled = true;
++      resolve(result);
++    });
++    const abort = () => { fail(request.signal.reason); incoming?.destroy(); req.destroy(); };
++    request.signal.addEventListener('abort', abort, {once:true});
++    req.on('error', fail);
++    if (request.signal.aborted) { abort(); return; }
++    if (bytes) req.write(bytes);
++    req.end();
++  });
 +}
 diff --git a/packages/runtime/node/lib/wasi.js b/packages/runtime/node/lib/wasi.js
 index 1fc5148..fdeb793 100644
@@ -1659,12 +1780,34 @@ index 1fc5148..fdeb793 100644
          path_open,
          path_filestat_get,
 diff --git a/roadmap.md b/roadmap.md
-index 3ab02ef..94ff0f8 100644
+index 3ab02ef..293c764 100644
 --- a/roadmap.md
 +++ b/roadmap.md
-@@ -1,5 +1,26 @@
+@@ -1,5 +1,48 @@
  # Vivari — Roadmap
  
++## Local WASM FFI: native-owned mirror writeback
++
++The real source-built OpenCode server listens in a browser worker, but its TUI
++fetches localhost through host fetch and therefore cannot reach that guest server.
++Add general HTTP loopback fetch over the existing Node HTTP byte relay: buffered
++request bodies, streaming responses, abort/cancel and explicit redirect limits.
++An independent two-process HTTP fixture checks binary POST, headers/status, an
++unending SSE stream's first chunk, cancellation, and manual/rejected redirects.
++
++Actual OpenCode source packaging also reached `import ... from 'bun'`. Expose
++the existing supported Bun namespace as that builtin, without installing the
++global during Node startup. Independent URL/hash namespace assertions cover it.
++
++The compiled OpenTUI boundary continuation adds no renderer symbols to Vivari.
++One general correctness fix: unchanged external mirrors must not overwrite
++native mutations made by ffi_alloc between symbol calls. Copy only JS deltas,
++refreshing baselines on native copy-out. The independent C fixture exposes an
++allocator epoch and verifies it survives creation of another pinned JS buffer.
++This remains a bounded synchronized-mirror API, not a zero-copy ArrayBuffer or
++native allocation liveness detector. Build-time record adaptation belongs to
++the consuming compiled library in the enclosing POC.
++
 +## Local OpenCode continuation: non-SEA detection
 +
 +Host-packaged official SDK execution reached missing `node:sea`. Add the actual
@@ -1689,7 +1832,7 @@ index 3ab02ef..94ff0f8 100644
  Built on the principle **de-risk the hardest part first**: prove the riskiest
  primitive (synchronous cross-thread access to a shared kernel) before expanding.
  
-@@ -3041,4 +3062,35 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
+@@ -3041,4 +3084,35 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
  | `Fetcher Worker` | Network/registry worker |
  | `Node.js Worker PID n` | Process = 1 worker + Node shim |
  | `[worker n]` | Nested `worker_threads` — real (#16 stage 2b) |

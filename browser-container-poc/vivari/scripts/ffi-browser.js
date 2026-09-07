@@ -1,4 +1,4 @@
-if (page.url() !== 'http://127.0.0.1:5203/') throw Error('Use isolated :5203');
+if (page.url() !== (state.ffiOrigin || 'http://127.0.0.1:5204/')) throw Error('Use the explicitly selected isolated origin');
 const root = state.ffiRoot || [path.resolve('browser-container-poc/vivari'), path.resolve('vivari'), path.resolve('.')].find(p => fs.existsSync(path.join(p, 'scripts/ffi-browser.js')));
 if (!root) throw Error('Set state.ffiRoot to the Vivari checkout');
 const receipt = JSON.parse(fs.readFileSync(path.join(root, '.runtime/tui-package/receipt.json'), 'utf8'));
@@ -8,6 +8,8 @@ const assets = [
   ['/ffi-probe/contract.cjs', 'probes/runtime/ffi-contract.cjs'],
   ['/ffi-probe/opentui.wasm', '.runtime/opentui-source/packages/core/src/zig/zig-out/bin/opentui.wasm'],
   ['/ffi-probe/opentui.ffi.json', '.runtime/opentui.ffi.json'],
+  ['/ffi-probe/reject.cjs', 'probes/runtime/opentui-wire-reject.cjs'],
+  ['/ffi-probe/loopback-fetch.cjs', 'probes/runtime/loopback-fetch.cjs'],
   ...receipt.assets.filter(x => x.target === 'node').map(x => [x.destination, '.runtime/tui-package/' + x.file]),
 ];
 const delivery = [];
@@ -34,8 +36,11 @@ const cases = await page.evaluate(async () => {
     try { const code = await proc.exit; await drain; return {code, output}; } finally { clearTimeout(timer); }
   }
   const contract = await run('bun', ['/ffi-probe/contract.cjs']);
-  const opentui = await run('node', ['/tui-probe/node/renderer.cjs'], {VV_TUI_FFI_ARTIFACT:'/ffi-probe/opentui.ffi.json'});
-  return {contract, opentui};
+  const loopback = await run('node', ['/ffi-probe/loopback-fetch.cjs']);
+  const rejection = [];
+  for (const mode of ['wide','range','audio']) rejection.push(await run('node', ['/ffi-probe/reject.cjs', mode]));
+  await window.probe.vm.fs.writeFile('/ffi-probe/tui.cjs', 'process.env.VV_TUI_FFI_ARTIFACT="/ffi-probe/opentui.ffi.json";require("/tui-probe/node/renderer.cjs");');
+  return {contract, loopback, rejection};
 });
 const result = {
   url: page.url(), delivery, cases,
@@ -43,10 +48,11 @@ const result = {
   opentuiBuild: JSON.parse(fs.readFileSync(path.join(root, '.runtime/opentui-wasm-build.json'), 'utf8')),
   layout: JSON.parse(fs.readFileSync(path.join(root, '.runtime/ffi-layout-report.json'), 'utf8')),
   ffiPass: cases.contract.code === 0 && cases.contract.output.includes('FFI_CONTRACT_PASS'),
-  opentuiGate: 'BLOCKED: missing audio export; native64 struct ABI also differs',
+  opentuiGate: 'Delivered; awaiting visible renderer acceptance',
 };
 await page.evaluate(r => window.ffiQualification = r, result);
-fs.writeFileSync(path.join(root, '../doc/logs/vivari/ffi-browser.json'), JSON.stringify(result, null, 2) + '\n');
+fs.writeFileSync(path.join(root, '../doc/logs/vivari/wire-browser.json'), JSON.stringify(result, null, 2) + '\n');
 if (!result.ffiPass) throw Error(JSON.stringify(cases.contract));
-if (cases.opentui.code !== 1 || !cases.opentui.output.includes('missing export createAudioEngine')) throw Error(JSON.stringify(cases.opentui));
+if (cases.loopback.code!==0 || !cases.loopback.output.includes('LOOPBACK_FETCH_PASS')) throw Error(JSON.stringify(cases.loopback));
+if (cases.rejection.some(r=>r.code!==0 || !r.output.includes('WIRE_REJECTION_PASS'))) throw Error(JSON.stringify(cases.rejection));
 return {ffiPass: result.ffiPass, opentuiGate: result.opentuiGate, cases};
