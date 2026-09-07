@@ -1,0 +1,45 @@
+{
+  "ok": true,
+  "isError": false,
+  "text": "{\n  hostMs: 2481.1049999967217,\n  id: '169',\n  type: 'exec',\n  stdout: ' 1385 IW   [kworker/u4:0-ev]\\n' +\n    ' 1653 IW   [kworker/0:2-eve]\\n' +\n    ' 1686 IW   [kworker/u4:3-ev]\\n' +\n    ' 1729 S    sh -c ps -o pid,stat,args | tail -6; sha256sum src/WelcomeCard.tsx\\n' +\n    ' 1730 R    ps -o pid,stat,args\\n' +\n    ' 1731 S    tail -6\\n' +\n    '5ff542b3c7f646327c44ba6536f74f8b750b65602bdead19d5c9362f297e0a32  src/WelcomeCard.tsx\\n',\n  stderr: '',\n  code: 0\n}",
+  "value": {
+    "hostMs": 2481.1049999967217,
+    "id": "169",
+    "type": "exec",
+    "stdout": " 1385 IW   [kworker/u4:0-ev]\n 1653 IW   [kworker/0:2-eve]\n 1686 IW   [kworker/u4:3-ev]\n 1729 S    sh -c ps -o pid,stat,args | tail -6; sha256sum src/WelcomeCard.tsx\n 1730 R    ps -o pid,stat,args\n 1731 S    tail -6\n5ff542b3c7f646327c44ba6536f74f8b750b65602bdead19d5c9362f297e0a32  src/WelcomeCard.tsx\n",
+    "stderr": "",
+    "code": 0
+  },
+  "valueUnavailable": false,
+  "logs": [],
+  "warnings": [],
+  "aftermath": {
+    "startUrl": "http://127.0.0.1:5198/",
+    "endUrl": "http://127.0.0.1:5198/",
+    "navigations": [],
+    "consoleErrorCount": 0,
+    "pageErrorCount": 0,
+    "handoffs": 0
+  },
+  "session": {
+    "id": "gentle-otter-329",
+    "createdAt": "2026-09-07T02:27:49.137Z",
+    "updatedAt": "2026-09-07T04:40:24.788Z",
+    "connected": true,
+    "pageUrl": "http://127.0.0.1:5198/",
+    "stateKeys": [
+      "boot",
+      "loginReady",
+      "tuiStart",
+      "tuiRetry",
+      "tuiBound",
+      "tuiOffline",
+      "offlineBound",
+      "viteStart",
+      "previewStart",
+      "previewWarmStart",
+      "profileConfig",
+      "preparedPreviewStart"
+    ]
+  }
+}

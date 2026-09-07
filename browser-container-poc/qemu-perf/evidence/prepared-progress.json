@@ -1,0 +1,44 @@
+{
+  "ok": true,
+  "isError": false,
+  "text": "{\n  hostMs: 5883.990000002086,\n  id: '134',\n  type: 'exec',\n  stdout: '2026-09-07T04:22:42.453Z vite:deps (client) Hash is consistent. Skipping. Use --force to override.\\n' +\n    '\\n' +\n    '  VITE v7.1.4  ready in 467129 ms\\n' +\n    '\\n' +\n    '  ➜  Local:   http://127.0.0.1:5173/\\n' +\n    ' 1437 R     65m  7:00 bun node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5173 --strictPort\\n' +\n    ' 1453 S     11m  0:14 /workspace/node_modules/@esbuild/linux-x64/bin/esbuild --service=0.25.12 --ping\\n' +\n    ' 1615 S     792  0:00 sh -c cat /tmp/perf-vite-prepared.log; ps -o pid,stat,rss,time,args | tail -5\\n' +\n    ' 1617 R     792  0:01 ps -o pid,stat,rss,time,args\\n' +\n    ' 1618 S     884  0:00 tail -5\\n',\n  stderr: '',\n  code: 0\n}",
+  "value": {
+    "hostMs": 5883.990000002086,
+    "id": "134",
+    "type": "exec",
+    "stdout": "2026-09-07T04:22:42.453Z vite:deps (client) Hash is consistent. Skipping. Use --force to override.\n\n  VITE v7.1.4  ready in 467129 ms\n\n  ➜  Local:   http://127.0.0.1:5173/\n 1437 R     65m  7:00 bun node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5173 --strictPort\n 1453 S     11m  0:14 /workspace/node_modules/@esbuild/linux-x64/bin/esbuild --service=0.25.12 --ping\n 1615 S     792  0:00 sh -c cat /tmp/perf-vite-prepared.log; ps -o pid,stat,rss,time,args | tail -5\n 1617 R     792  0:01 ps -o pid,stat,rss,time,args\n 1618 S     884  0:00 tail -5\n",
+    "stderr": "",
+    "code": 0
+  },
+  "valueUnavailable": false,
+  "logs": [],
+  "warnings": [],
+  "aftermath": {
+    "startUrl": "http://127.0.0.1:5198/",
+    "endUrl": "http://127.0.0.1:5198/",
+    "navigations": [],
+    "consoleErrorCount": 0,
+    "pageErrorCount": 0,
+    "handoffs": 0
+  },
+  "session": {
+    "id": "gentle-otter-329",
+    "createdAt": "2026-09-07T02:27:49.137Z",
+    "updatedAt": "2026-09-07T04:24:24.624Z",
+    "connected": true,
+    "pageUrl": "http://127.0.0.1:5198/",
+    "stateKeys": [
+      "boot",
+      "loginReady",
+      "tuiStart",
+      "tuiRetry",
+      "tuiBound",
+      "tuiOffline",
+      "offlineBound",
+      "viteStart",
+      "previewStart",
+      "previewWarmStart",
+      "profileConfig"
+    ]
+  }
+}

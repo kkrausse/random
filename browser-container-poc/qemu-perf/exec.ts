@@ -1,0 +1,10 @@
+const [session, command] = process.argv.slice(2);
+if (!session || !command) throw new Error('Usage: bun qemu-perf/exec.ts <session> <guest-command>');
+const code = `return await page.frames()[1].evaluate(async(command)=>{const started=performance.now();const result=await guestBridge.request({type:'exec',command});return {hostMs:performance.now()-started,...result}},${JSON.stringify(command)})`;
+const child = Bun.spawn(['browser-control', 'execute', '--session', session, '--json', code], { stdout: 'pipe', stderr: 'inherit' });
+const text = await new Response(child.stdout).text();
+const status = await child.exited;
+console.log(text.trimEnd());
+if (status) process.exit(status);
+const result = JSON.parse(text);
+process.exit(result.ok && result.value?.code === 0 ? 0 : 1);

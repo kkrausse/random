@@ -1,0 +1,44 @@
+{
+  "ok": true,
+  "isError": false,
+  "text": "{\n  hostMs: 2442.855000000447,\n  id: '132',\n  type: 'exec',\n  stdout: '',\n  stderr: '',\n  code: 0\n}",
+  "value": {
+    "hostMs": 2442.855000000447,
+    "id": "132",
+    "type": "exec",
+    "stdout": "",
+    "stderr": "",
+    "code": 0
+  },
+  "valueUnavailable": false,
+  "logs": [],
+  "warnings": [],
+  "aftermath": {
+    "startUrl": "http://127.0.0.1:5198/",
+    "endUrl": "http://127.0.0.1:5198/",
+    "navigations": [],
+    "consoleErrorCount": 0,
+    "pageErrorCount": 0,
+    "handoffs": 0
+  },
+  "session": {
+    "id": "gentle-otter-329",
+    "createdAt": "2026-09-07T02:27:49.137Z",
+    "updatedAt": "2026-09-07T04:19:21.216Z",
+    "connected": true,
+    "pageUrl": "http://127.0.0.1:5198/",
+    "stateKeys": [
+      "boot",
+      "loginReady",
+      "tuiStart",
+      "tuiRetry",
+      "tuiBound",
+      "tuiOffline",
+      "offlineBound",
+      "viteStart",
+      "previewStart",
+      "previewWarmStart",
+      "profileConfig"
+    ]
+  }
+}

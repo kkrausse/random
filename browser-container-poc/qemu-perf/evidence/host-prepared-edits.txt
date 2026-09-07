@@ -1,0 +1,18 @@
+  PID  %CPU %MEM COMM
+53977 108.4  1.8 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/152.1.94.117/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+79344 107.1  2.7 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/152.1.94.117/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+57862  97.0  5.0 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/152.1.94.117/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+53376  93.0  3.9 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/152.1.94.117/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+51068  82.8  2.8 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/152.1.94.117/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+  450  45.2  0.2 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+53272  40.9  3.8 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/152.1.94.117/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+ 2931  11.0  2.8 /Users/kkrausse/.bun/install/global/node_modules/@opencode-ai/cli/bin/opencode2.exe
+ 2381   8.1  0.6 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/152.1.94.117/Helpers/Brave Browser Helper.app/Contents/MacOS/Brave Browser Helper
+22643   5.6  0.7 /Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/152.1.94.117/Helpers/Brave Browser Helper (Renderer).app/Contents/MacOS/Brave Browser Helper (Renderer)
+12340   5.6  0.8 opencode2
+  451   3.7  0.1 /System/Library/PrivateFrameworks/TCC.framework/Support/tccd
+  564   3.0  0.2 /System/Library/DriverExtensions/com.apple.DriverKit-AppleBCMWLAN.dext/com.apple.DriverKit-AppleBCMWLAN
+ 5686   2.1  0.7 /opt/homebrew/Cellar/bun/1.3.9/bin/bun
+56539   1.8  0.2 bun
+ 6183   1.7  1.4 opencode2
+19679   1.7  0.0 /usr/libexec/trustd

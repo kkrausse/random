@@ -1,0 +1,63 @@
+{
+  "session": "gentle-otter-329",
+  "mode": "http",
+  "label": "baseline",
+  "startedAt": "2026-09-07T03:59:13.792Z",
+  "samples": [
+    {
+      "mode": "http",
+      "roundTripMs": 975.0949999988079,
+      "loopbackSecondsAndBytes": "1.082975 4366",
+      "base64Bytes": 2408,
+      "guest": {
+        "fetchMs": 639.1650390001014,
+        "gzipMs": 129.1599119999446,
+        "bytes": 4366
+      }
+    },
+    {
+      "mode": "http",
+      "roundTripMs": 1631.324999999255,
+      "loopbackSecondsAndBytes": "0.581185 4366",
+      "base64Bytes": 2408,
+      "guest": {
+        "fetchMs": 1118.094970999984,
+        "gzipMs": 226.17480499995872,
+        "bytes": 4366
+      }
+    },
+    {
+      "mode": "http",
+      "roundTripMs": 1287.234999999404,
+      "loopbackSecondsAndBytes": "1.121820 4366",
+      "base64Bytes": 2408,
+      "guest": {
+        "fetchMs": 621.8449709999841,
+        "gzipMs": 327.35498100006953,
+        "bytes": 4366
+      }
+    },
+    {
+      "mode": "http",
+      "roundTripMs": 650.980000000447,
+      "loopbackSecondsAndBytes": "0.327015 4366",
+      "base64Bytes": 2408,
+      "guest": {
+        "fetchMs": 302.3950199999381,
+        "gzipMs": 138.82006800011732,
+        "bytes": 4366
+      }
+    },
+    {
+      "mode": "http",
+      "roundTripMs": 527.945000000298,
+      "loopbackSecondsAndBytes": "0.144650 4366",
+      "base64Bytes": 2408,
+      "guest": {
+        "fetchMs": 243.20996100013144,
+        "gzipMs": 99.34008799982257,
+        "bytes": 4366
+      }
+    }
+  ]
+}

@@ -1,0 +1,118 @@
+{
+  "session": "gentle-otter-329",
+  "mode": "edit",
+  "label": "instrumented-baseline",
+  "startedAt": "2026-09-07T04:00:55.609Z",
+  "samples": [
+    {
+      "mode": "edit",
+      "commandMs": 956.9900000020862,
+      "notificationMs": 1556,
+      "visibleMs": 7946.785000000149,
+      "documentPreserved": true,
+      "resources": [
+        {
+          "name": "http://127.0.0.1:5198/src/WelcomeCard.tsx?t=1788753657181",
+          "startMs": 1569.69482421875,
+          "duration": 6371.464999999851
+        }
+      ],
+      "transport": [
+        {
+          "type": "exec",
+          "startedAt": 1788753656399,
+          "roundTripMs": 956.765000000596,
+          "wireBytes": 60
+        }
+      ]
+    },
+    {
+      "mode": "edit",
+      "commandMs": 754.5149999968708,
+      "notificationMs": 1058,
+      "visibleMs": 6882.719999998808,
+      "documentPreserved": true,
+      "resources": [
+        {
+          "name": "http://127.0.0.1:5198/src/WelcomeCard.tsx?t=1788753674413",
+          "startMs": 1071.5,
+          "duration": 5796.409999996424
+        }
+      ],
+      "transport": [
+        {
+          "type": "exec",
+          "startedAt": 1788753673910,
+          "roundTripMs": 754.4149999991059,
+          "wireBytes": 60
+        }
+      ]
+    },
+    {
+      "mode": "edit",
+      "commandMs": 864.6500000022352,
+      "notificationMs": 1170,
+      "visibleMs": 6204.085000000894,
+      "documentPreserved": true,
+      "resources": [
+        {
+          "name": "http://127.0.0.1:5198/src/WelcomeCard.tsx?t=1788753691291",
+          "startMs": 1184.309814453125,
+          "duration": 5014.745000001043
+        }
+      ],
+      "transport": [
+        {
+          "type": "exec",
+          "startedAt": 1788753690729,
+          "roundTripMs": 864.5649999976158,
+          "wireBytes": 60
+        }
+      ]
+    },
+    {
+      "mode": "edit",
+      "commandMs": 869.320000000298,
+      "notificationMs": 1272,
+      "visibleMs": 7363.855000000447,
+      "documentPreserved": true,
+      "resources": [
+        {
+          "name": "http://127.0.0.1:5198/src/WelcomeCard.tsx?t=1788753704554",
+          "startMs": 1286.0400390625,
+          "duration": 6071.869999997318
+        }
+      ],
+      "transport": [
+        {
+          "type": "exec",
+          "startedAt": 1788753704179,
+          "roundTripMs": 869.230000000447,
+          "wireBytes": 60
+        }
+      ]
+    },
+    {
+      "mode": "edit",
+      "commandMs": 901.7749999985099,
+      "notificationMs": 778,
+      "visibleMs": 6858.339999999851,
+      "documentPreserved": true,
+      "resources": [
+        {
+          "name": "http://127.0.0.1:5198/src/WelcomeCard.tsx?t=1788753718758",
+          "startMs": 792.514892578125,
+          "duration": 6058.745000001043
+        }
+      ],
+      "transport": [
+        {
+          "type": "exec",
+          "startedAt": 1788753718573,
+          "roundTripMs": 901.7049999982119,
+          "wireBytes": 60
+        }
+      ]
+    }
+  ]
+}
