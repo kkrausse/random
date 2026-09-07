@@ -5,6 +5,8 @@ const source = resolve(root, '../vivari');
 const out = join(root, '.snapshot');
 await mkdir(out, { recursive: true });
 const hash = (b: Uint8Array) => new Bun.CryptoHasher('sha256').update(b).digest('hex');
+const uiOnly = process.argv.includes('--ui-only');
+if (!uiOnly) {
 await cp(join(source, '.runtime/patched/packages/core/dist'), join(out, 'runtime'), { recursive: true });
 for (const name of await readdir(join(out, 'runtime'), { recursive: true })) {
   const f = Bun.file(join(out, 'runtime', name));
@@ -34,6 +36,8 @@ for (const name of await readdir(join(source, 'fixture'), { recursive: true })) 
 }
 await Bun.write(join(out, 'fixture.json'), JSON.stringify(fixture));
 await Bun.write(join(out, 'manifest.json'), JSON.stringify({ revision: receipt.revision, assets }, null, 2));
+console.log(`Snapshot ready: ${assets.length} guest assets; OpenCode ${receipt.revision}`);
+}
 const result = await Bun.build({ entrypoints: [join(root, 'main.ts')], outdir: out, target: 'browser', plugins: [{ name: 'runtime', setup(b) { b.onResolve({ filter: /^@vivari\/core$/ }, () => ({ path: join(out, 'runtime/index.js') })); } }] });
 if (!result.success) throw Error(result.logs.join('\n'));
 await cp(join(source, 'node_modules/@xterm/xterm/css/xterm.css'), join(out, 'xterm.css'));
@@ -44,4 +48,4 @@ for (const name of await readdir(out, { recursive: true })) {
   if (await f.exists()) hashes[name] = hash(new Uint8Array(await f.arrayBuffer()));
 }
 await Bun.write(join(out, 'hashes.json'), JSON.stringify(hashes, null, 2));
-console.log(`Snapshot ready: ${assets.length} guest assets; OpenCode ${receipt.revision}`);
+console.log(uiOnly ? 'UI rebuilt using the existing runtime/guest snapshot' : 'UI built');
