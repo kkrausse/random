@@ -1,0 +1,252 @@
+{
+  "created": "2026-09-07T02:41:53.313Z",
+  "vivariRevision": "2629c71097238400c45aefa213ef61df4794c2b7",
+  "buildReceipt": {
+    "revision": "2629c71097238400c45aefa213ef61df4794c2b7",
+    "license": "MIT",
+    "mode": "baseline",
+    "bun": "1.4.0",
+    "rust": "1.93.0",
+    "wasmPack": "0.13.1",
+    "npmLockSha256": "ab9b80732069b18dbc7c33d2acd482cb0e77112bf28e5694db001abe00095275",
+    "patches": [],
+    "assets": [
+      {
+        "name": "index.js",
+        "sha256": "fcb71a6f7f9057344ee18b94fa0956e8e6e01647d9250416a2e3c95060909119"
+      },
+      {
+        "name": "assets/process-worker-BGsnlvE5.js",
+        "sha256": "af86b2501de3911c1dc92d5554c66d7ba44d4a9ec98c2946003f687a02234ce2"
+      },
+      {
+        "name": "assets/fetcher-worker-CxT7BEmg.js",
+        "sha256": "c91652614cf1a79594dec5cbfc7b286f76cc6b73a3549d6da9b63bc09e291ac6"
+      },
+      {
+        "name": "assets/fs-worker-CAMeiv_S.js",
+        "sha256": "033d9cd72748d83d139f10273a1965fd569c85e99930f8c3573f31e1ddb395d7"
+      },
+      {
+        "name": "assets/kernel-worker-DFVI85ar.js",
+        "sha256": "f75d42f3dd05f3657b1622666dd515c51cf068d5f6c262a164342960102d277b"
+      },
+      {
+        "name": "assets/sw.js",
+        "sha256": "2a8092b3697a12f0e1d5a52a6c36de126c962b5a776509833858de4861e78e6e"
+      }
+    ]
+  },
+  "entries": [
+    {
+      "source": "../vivari/.runtime/baseline/packages/core/dist/index.js",
+      "target": "vivari/index.js",
+      "bytes": 14043,
+      "sha256": "fcb71a6f7f9057344ee18b94fa0956e8e6e01647d9250416a2e3c95060909119"
+    },
+    {
+      "source": "../vivari/.runtime/baseline/packages/core/dist/assets/process-worker-BGsnlvE5.js",
+      "target": "vivari/assets/process-worker-BGsnlvE5.js",
+      "bytes": 2924977,
+      "sha256": "af86b2501de3911c1dc92d5554c66d7ba44d4a9ec98c2946003f687a02234ce2"
+    },
+    {
+      "source": "../vivari/.runtime/baseline/packages/core/dist/assets/fetcher-worker-CxT7BEmg.js",
+      "target": "vivari/assets/fetcher-worker-CxT7BEmg.js",
+      "bytes": 8216,
+      "sha256": "c91652614cf1a79594dec5cbfc7b286f76cc6b73a3549d6da9b63bc09e291ac6"
+    },
+    {
+      "source": "../vivari/.runtime/baseline/packages/core/dist/assets/fs-worker-CAMeiv_S.js",
+      "target": "vivari/assets/fs-worker-CAMeiv_S.js",
+      "bytes": 433944,
+      "sha256": "033d9cd72748d83d139f10273a1965fd569c85e99930f8c3573f31e1ddb395d7"
+    },
+    {
+      "source": "../vivari/.runtime/baseline/packages/core/dist/assets/kernel-worker-DFVI85ar.js",
+      "target": "vivari/assets/kernel-worker-DFVI85ar.js",
+      "bytes": 1187152,
+      "sha256": "f75d42f3dd05f3657b1622666dd515c51cf068d5f6c262a164342960102d277b"
+    },
+    {
+      "source": "../vivari/.runtime/baseline/packages/core/dist/assets/sw.js",
+      "target": "vivari/assets/sw.js",
+      "bytes": 48005,
+      "sha256": "2a8092b3697a12f0e1d5a52a6c36de126c962b5a776509833858de4861e78e6e"
+    },
+    {
+      "source": "../qemu/public/qemu/load-rootfs.data",
+      "target": "qemu/load-rootfs.data",
+      "bytes": 338807702,
+      "sha256": "ce07d7d08490d14a6c2c9cbe3ffd5c64a554c55963f366207e4e1ce83901bd08"
+    },
+    {
+      "source": "../qemu/public/qemu/out.js",
+      "target": "qemu/out.js",
+      "bytes": 244148,
+      "sha256": "78fa6e568d7e54bb883bfa9531185ad37ad3eb63b57f4ef8f76d5c40e8a0c74a"
+    },
+    {
+      "source": "../qemu/public/qemu/load-rom.data",
+      "target": "qemu/load-rom.data",
+      "bytes": 473088,
+      "sha256": "15de099e1363ceb13a31b9d11836337bab974f9460836449330b20c0534d06c9"
+    },
+    {
+      "source": "../qemu/public/qemu/load-initramfs.js",
+      "target": "qemu/load-initramfs.js",
+      "bytes": 7045,
+      "sha256": "0770426ea18ed24f4736d9dcf75fda29519cccb5cd7efdd0d9e15fe3f7e9d07c"
+    },
+    {
+      "source": "../qemu/public/qemu/guest-build.txt",
+      "target": "qemu/guest-build.txt",
+      "bytes": 373,
+      "sha256": "7bd53c0bfe41ff45a17d65716f8b561733ac52f9f6cd84abf412f2e2bd3ba072"
+    },
+    {
+      "source": "../qemu/public/qemu/load-rom.js",
+      "target": "qemu/load-rom.js",
+      "bytes": 7307,
+      "sha256": "617e4dc685cb2cedada4844f097eb18a56cf0f8bbd4c4e2e9231b4f07d0d8a88"
+    },
+    {
+      "source": "../qemu/public/qemu/load-kernel.data",
+      "target": "qemu/load-kernel.data",
+      "bytes": 11715584,
+      "sha256": "1dff47560d0626bd8d968ceada25fff4f5b62b89c7611b5a48d5b45a20c417cd"
+    },
+    {
+      "source": "../qemu/public/qemu/runtime-build.txt",
+      "target": "qemu/runtime-build.txt",
+      "bytes": 88,
+      "sha256": "2a757284b3feb357426a23a26e17653a4fc74b5e8d41a8538788802e08c50166"
+    },
+    {
+      "source": "../qemu/public/qemu/load-rootfs.js",
+      "target": "qemu/load-rootfs.js",
+      "bytes": 6205151,
+      "sha256": "362fa22f3a0cecd6d4f11f906733fea91ad4ba3f9a3f55bdb8334c859a51c166"
+    },
+    {
+      "source": "../qemu/public/qemu/popcnt-test",
+      "target": "qemu/popcnt-test",
+      "bytes": 632,
+      "sha256": "922f2794cbcf20c6574cbe0ab888e059b61224008be4d56b4dbcc67f6457f20e"
+    },
+    {
+      "source": "../qemu/public/qemu/load-initramfs.data",
+      "target": "qemu/load-initramfs.data",
+      "bytes": 9719450,
+      "sha256": "a17f2c19b4841b9b562f54b0564fd6d03b7102cc882fb538c1d12ba5cdedc69f"
+    },
+    {
+      "source": "../qemu/public/qemu/qemu-system-x86_64.wasm",
+      "target": "qemu/qemu-system-x86_64.wasm",
+      "bytes": 41350146,
+      "sha256": "af53c7b7739f38826e59a0edfa0a4dd814e228da53002cf50158ff61325b8093"
+    },
+    {
+      "source": "../qemu/public/qemu/qemu-system-x86_64.worker.js",
+      "target": "qemu/qemu-system-x86_64.worker.js",
+      "bytes": 6000,
+      "sha256": "8efab02a9cb5ee63ced22e9853bce74cbb895d15a5fb3d5139fef855c50f62ea"
+    },
+    {
+      "source": "../qemu/public/qemu/load-kernel.js",
+      "target": "qemu/load-kernel.js",
+      "bytes": 7027,
+      "sha256": "1e552a5018623db3a77dda2186e74a53f2a4294ca84dd030c875589c0255e19d"
+    },
+    {
+      "source": "../qemu/src/runtime.ts",
+      "target": "references/runtime.ts",
+      "bytes": 3559,
+      "sha256": "62047823d32dd50b73564a202da73d86fe8cc1ad6c7a0223ad115ee7e2fe18b6"
+    },
+    {
+      "source": "../qemu/src/runtime.css",
+      "target": "references/runtime.css",
+      "bytes": 219,
+      "sha256": "99db8f8042b664e3fadc57b4e1b3eead6f198d1715430f56d1bfa14cce7dd28b"
+    },
+    {
+      "source": "../qemu/public/serial-bridge.js",
+      "target": "references/serial-bridge.js",
+      "bytes": 5092,
+      "sha256": "1dc6541220d8afe43b57f191e0d81345a67282bea296a1c965b8f197aca366ea"
+    },
+    {
+      "source": "../qemu/guest/preview-bridge.ts",
+      "target": "references/preview-bridge.ts",
+      "bytes": 4512,
+      "sha256": "dbd71a4eb1f4bae5cd44c8597aac4093df1271d20086d42476c88c413ce5b9de"
+    },
+    {
+      "source": "../vivari/public/vendor/npm-pack.bin",
+      "target": "vendor/npm-pack.bin",
+      "bytes": 2786525,
+      "sha256": "325d23b8b1e017a81a531bd0f9a211463df2b1a7068ee087331c9335343be200"
+    },
+    {
+      "source": "../qemu/guest/fixture/index.html",
+      "target": "fixture/index.html",
+      "bytes": 263,
+      "sha256": "11e66e4326f9a18b49fa75be3aa9afb3e88628f5b92a1c76748b6ecd5e5620bd"
+    },
+    {
+      "source": "../qemu/guest/fixture/bun.lock",
+      "target": "fixture/bun.lock",
+      "bytes": 29411,
+      "sha256": "990bafac681a6ce9898dedcb6279669ee4cc17a0761e70066bdcd4d1cb6a63ac"
+    },
+    {
+      "source": "../qemu/guest/fixture/package.json",
+      "target": "fixture/package.json",
+      "bytes": 475,
+      "sha256": "e7eae57a0f9cae9bc75e6031feee06aab370cd9fce2d9e44d2cae6c4f9f7f9dc"
+    },
+    {
+      "source": "../qemu/guest/fixture/tsconfig.json",
+      "target": "fixture/tsconfig.json",
+      "bytes": 331,
+      "sha256": "93f1a4d7143269883ad7ff5eb7c19f02bec854415836db473277f8a9777b78fe"
+    },
+    {
+      "source": "../qemu/guest/fixture/vite.config.ts",
+      "target": "fixture/vite.config.ts",
+      "bytes": 133,
+      "sha256": "23ccfdc62a166532ddfdbf8fbf538ebc6ca39d1865589d666364db1fb3dea46a"
+    },
+    {
+      "source": "../qemu/guest/fixture/src/main.tsx",
+      "target": "fixture/src/main.tsx",
+      "bytes": 186,
+      "sha256": "d17f6dd880e9c664263d5e8b388701fe29e0a7a6e6f5e34f198eb3fb86e22c05"
+    },
+    {
+      "source": "../qemu/guest/fixture/src/styles.css",
+      "target": "fixture/src/styles.css",
+      "bytes": 501,
+      "sha256": "2925111ffeb6190215833b09985996bb1b17fd078d801902d5898e576bde06c8"
+    },
+    {
+      "source": "../qemu/guest/fixture/src/WelcomeCard.tsx",
+      "target": "fixture/src/WelcomeCard.tsx",
+      "bytes": 334,
+      "sha256": "5ff542b3c7f646327c44ba6536f74f8b750b65602bdead19d5c9362f297e0a32"
+    },
+    {
+      "source": "../qemu/guest/fixture/src/vite-env.d.ts",
+      "target": "fixture/src/vite-env.d.ts",
+      "bytes": 38,
+      "sha256": "65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5"
+    },
+    {
+      "source": "../qemu/guest/fixture/src/mark.svg",
+      "target": "fixture/src/mark.svg",
+      "bytes": 286,
+      "sha256": "d855ab75c6ef9cb3ef55dce894b958df73dd6f4825745300b4f3bdee0a7280e6"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "browser-linux-vivari-hybrid",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "setup": "bun run prepare && bun run runtime:build",
+    "prepare": "bun scripts/artifacts.ts",
+    "build": "bun scripts/build.ts",
+    "runtime:build": "bun scripts/build-runtime.ts",
+    "dev": "bun scripts/server.ts",
+    "test": "bun test scripts/*.test.ts"
+  }
+}

@@ -1,0 +1,14 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Linux + browser-native Vite</title>
+<style>body{font:14px system-ui;margin:16px}button,input{font:inherit;padding:6px}section{display:grid;grid-template-columns:1fr 1fr;gap:12px}iframe{width:100%;height:430px;border:1px solid #aaa}pre{white-space:pre-wrap;max-height:180px;overflow:auto}input{width:70%}</style>
+<h1>Linux terminal + explicit Vite accelerator</h1>
+<p>Linux owns /workspace. “Sync Linux save” copies one verified file to a separate worker filesystem.</p>
+<p><button id="linux">Start Linux</button> <button id="connect">Connect Linux PTY bridge</button>
+<button id="boot">Boot accelerator</button> <button id="deps">Load prebaked worker dependencies</button> <button id="install">Install worker dependencies</button>
+<button id="start">accel start vite</button> <button id="stop">accel stop</button> <button id="sync">Sync Linux save</button></p>
+<p id="status">Ready. Start Linux; log in as root; wait for the /workspace prompt before connecting.</p>
+<section><div><h2>QEMU Linux serial / PTY</h2><iframe id="linux-frame" title="Linux terminal"></iframe></div>
+<div><h2>Vivari worker preview</h2><iframe id="preview" title="Accelerated Vite preview"></iframe></div></section>
+<form id="command"><label>Linux shell command <input id="cmd" value="sed -i 's/Ready for an agent edit/Hello from Linux/' src/WelcomeCard.tsx"></label> <button>Run in Linux</button></form>
+<p id="service">Accelerator: stopped</p><pre id="log"></pre>
+<script src="/serial-bridge.js"></script><script type="module" src="/main.js"></script></html>
