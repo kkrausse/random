@@ -1,0 +1,20 @@
+import {test,expect} from 'bun:test';
+import {EventEmitter} from 'node:events';
+import {patchPoll} from './poll-watch';
+const source=await Bun.file(new URL('../../vivari/.runtime/baseline/packages/runtime/node/internal/fs/watchers.js',import.meta.url)).text();
+test('mounted StatWatcher polls metadata, suppresses unchanged values, sees replacement/deletion/recreation, and stops',()=>{
+  let stat:any={mtimeMs:1,size:3,ino:7},tick:any,cleared=false,registered=0;
+  const timers={setInterval(fn:any,interval:number){tick=fn;expect(interval).toBe(2000);return {unref(){}};},clearInterval(){cleared=true;}};
+  const fs={statSync(){if(!stat)throw Error('ENOENT');return stat;},Stats:class {}};
+  const module:any={exports:{}};
+  const factory=new Function('return (\n'+patchPoll(source).replace('export default ','')+'\n)')();
+  factory({},(name:string)=>({events:EventEmitter,buffer:{Buffer},timers,fs})[name],module,{__fsWatch:{register(){registered++;},add(){}}});
+  const {StatWatcher,kFSStatWatcherStart}=module.exports,w=new StatWatcher(false),events:any[]=[];
+  w.on('change',(curr:any,prev:any)=>events.push({curr,prev}));w[kFSStatWatcherStart]('/workspace/source',true,2000);
+  expect(registered).toBe(0);tick();expect(events).toHaveLength(0);
+  stat={mtimeMs:1,size:3,ino:8};tick();expect(events).toHaveLength(1);expect(events[0].prev.ino).toBe(7);
+  stat=null;tick();expect(events[1].curr.size).toBe(0);expect(events[1].curr.mtimeMs).toBe(0);
+  stat={mtimeMs:2,size:4,ino:9};tick();expect(events[2].prev.size).toBe(0);
+  w.stop();expect(cleared).toBe(true);
+  const local=new StatWatcher(false);local[kFSStatWatcherStart]('/workspace/node_modules/pkg/a',true,2000);expect(registered).toBe(1);
+});

@@ -1,0 +1,191 @@
+{
+  "origin": "http://127.0.0.1:5220",
+  "browserControl": {
+    "session": "tidy-walrus-391",
+    "version": "0.7.0"
+  },
+  "isolated": true,
+  "receipts": [
+    {
+      "name": "acceptance.json",
+      "sha256": "659646fc4eafe90aa950b2a9a07edf2d3244a8490b67de9741cd33e7fc790f6f",
+      "bytes": 13445
+    },
+    {
+      "name": "acceptance-poll-runtime.json",
+      "sha256": "b3d9bd548e4a1e01bfa3276e71d413faca5ad3fb502aa86d4c40068d748b72f8",
+      "bytes": 13431
+    },
+    {
+      "name": "hmr-before-poll-fix.json",
+      "sha256": "6839822f22e5bdfb88b8e7bb34d3c83f3208be2947ac25dc5b414254dce2a577",
+      "bytes": 645
+    },
+    {
+      "name": "hmr-pass.json",
+      "sha256": "1330e091e51c3e7d93e1b2633e30b62ae968468c6601cdee7b23a2576cd1c121",
+      "bytes": 3153
+    }
+  ],
+  "beforePollRuntime": {
+    "phase": "pass",
+    "basic": {
+      "ms": 1056.660000000149,
+      "roundtrips": 21,
+      "linux": " 00 ff 0a 80\nlXYux-first\n"
+    },
+    "extended": {
+      "ms": 18202.644999999553,
+      "roundtrips": 53,
+      "linux": "70000\nreplacement",
+      "output": "LINUX_ENTRY linux module\n"
+    },
+    "warm": [
+      {
+        "ms": 252.67999999970198,
+        "roundtrips": 4
+      },
+      {
+        "ms": 216.0300000011921,
+        "roundtrips": 4
+      },
+      {
+        "ms": 220.49500000104308,
+        "roundtrips": 4
+      },
+      {
+        "ms": 266.5600000023842,
+        "roundtrips": 4
+      },
+      {
+        "ms": 221.41999999806285,
+        "roundtrips": 4
+      }
+    ],
+    "warmRpc": {
+      "n": 20,
+      "median": 25.28999999910593,
+      "p95": 36.08999999985099,
+      "max": 40.21999999880791
+    }
+  },
+  "finalPollRuntime": {
+    "phase": "pass",
+    "basic": {
+      "ms": 13006.865000002086,
+      "roundtrips": 21,
+      "linux": " 00 ff 0a 80\nlXYux-first\n"
+    },
+    "extended": {
+      "ms": 113552.41500000283,
+      "roundtrips": 53,
+      "linux": "70000\nreplacement",
+      "output": "LINUX_ENTRY linux module\n"
+    },
+    "warm": [
+      {
+        "ms": 1768.570000000298,
+        "roundtrips": 4
+      },
+      {
+        "ms": 1026.984999999404,
+        "roundtrips": 4
+      },
+      {
+        "ms": 1169.4949999973178,
+        "roundtrips": 4
+      },
+      {
+        "ms": 1953.9949999973178,
+        "roundtrips": 4
+      },
+      {
+        "ms": 1090.4199999980628,
+        "roundtrips": 4
+      }
+    ],
+    "warmRpc": {
+      "n": 20,
+      "median": 165.73499999940395,
+      "p95": 277.089999999851,
+      "max": 415.0949999988079
+    }
+  },
+  "hmrNegativeControl": {
+    "phase": "fail",
+    "samples": [],
+    "error": "Error: HMR timeout: Ready for an agent edit"
+  },
+  "hmr": {
+    "phase": "pass",
+    "samples": [
+      {
+        "edit": 0,
+        "ms": 9164.509999997914,
+        "linuxMs": 1856.8899999968708,
+        "roundtrips": 65,
+        "sameDocument": true
+      },
+      {
+        "restore": 0,
+        "ms": 7189.244999997318,
+        "roundtrips": 47,
+        "sameDocument": true
+      },
+      {
+        "edit": 1,
+        "ms": 8940.285000000149,
+        "linuxMs": 1605.960000000894,
+        "roundtrips": 62,
+        "sameDocument": true
+      },
+      {
+        "restore": 1,
+        "ms": 6372.239999998361,
+        "roundtrips": 48,
+        "sameDocument": true
+      },
+      {
+        "edit": 2,
+        "ms": 6702.960000000894,
+        "linuxMs": 1596.515000000596,
+        "roundtrips": 49,
+        "sameDocument": true
+      },
+      {
+        "restore": 2,
+        "ms": 12200.290000002831,
+        "roundtrips": 69,
+        "sameDocument": true
+      }
+    ],
+    "restored": true
+  },
+  "vite": {
+    "phase": "serving",
+    "logs": [
+      "\n  \u001b[32m\u001b[1mVITE\u001b[22m v7.1.4\u001b[39m  \u001b[2mready in \u001b[0m\u001b[1m29754\u001b[22m\u001b[2m\u001b[0m ms\u001b[22m\n\n",
+      "\u001b[2m\u001b[32m  ➜\u001b[39m\u001b[22m\u001b[2m  press \u001b[22m\u001b[1mh + enter\u001b[22m\u001b[2m to show help\u001b[22m\n",
+      "\u001b[2m9:42:02 PM\u001b[22m \u001b[36m\u001b[1m[vite]\u001b[22m\u001b[39m \u001b[90m\u001b[2m(client)\u001b[22m\u001b[39m \u001b[32mhmr update \u001b[39m\u001b[2m/src/WelcomeCard.tsx\u001b[22m\n",
+      "\u001b[2m9:42:09 PM\u001b[22m \u001b[36m\u001b[1m[vite]\u001b[22m\u001b[39m \u001b[90m\u001b[2m(client)\u001b[22m\u001b[39m \u001b[32mhmr update \u001b[39m\u001b[2m/src/WelcomeCard.tsx\u001b[22m\n",
+      "\u001b[2m9:42:19 PM\u001b[22m \u001b[36m\u001b[1m[vite]\u001b[22m\u001b[39m \u001b[90m\u001b[2m(client)\u001b[22m\u001b[39m \u001b[32mhmr update \u001b[39m\u001b[2m/src/WelcomeCard.tsx\u001b[22m\n",
+      "\u001b[2m9:42:25 PM\u001b[22m \u001b[36m\u001b[1m[vite]\u001b[22m\u001b[39m \u001b[90m\u001b[2m(client)\u001b[22m\u001b[39m \u001b[32mhmr update \u001b[39m\u001b[2m/src/WelcomeCard.tsx\u001b[22m\n",
+      "\u001b[2m9:42:31 PM\u001b[22m \u001b[36m\u001b[1m[vite]\u001b[22m\u001b[39m \u001b[90m\u001b[2m(client)\u001b[22m\u001b[39m \u001b[32mhmr update \u001b[39m\u001b[2m/src/WelcomeCard.tsx\u001b[22m\n",
+      "\u001b[2m9:42:42 PM\u001b[22m \u001b[36m\u001b[1m[vite]\u001b[22m\u001b[39m \u001b[90m\u001b[2m(client)\u001b[22m\u001b[39m \u001b[32mhmr update \u001b[39m\u001b[2m/src/WelcomeCard.tsx\u001b[22m\n",
+      "\u001b[2m9:42:50 PM\u001b[22m \u001b[36m\u001b[1m[vite]\u001b[22m\u001b[39m \u001b[90m\u001b[2m(client)\u001b[22m\u001b[39m \u001b[32mhmr update \u001b[39m\u001b[2m/src/WelcomeCard.tsx\u001b[22m\n"
+    ],
+    "serverReadyMs": 48661.3200000003,
+    "dependencies": {
+      "files": 6195,
+      "sha256": "699decd21a10eee28eb8f50cb3cab5d1f8069e1eff9d63cedaec2a1079761b98"
+    }
+  },
+  "idle": {
+    "ms": 10001.52499999851,
+    "roundtrips": 8,
+    "opcodes": {
+      "6": 8
+    },
+    "rpcMs": 5209.749999996275
+  }
+}
