@@ -177,8 +177,8 @@ async function startTerminalPage() {
       if (!connectionStatus) return;
       connectionStatus.dataset.status = status;
       connectionStatus.textContent = {
-        connecting: "Connecting...", connected: "Connected", reconnecting: "Reconnecting...",
-        offline: "Offline", detached: "Active in another tab · Take over", closed: "Disconnected · Reattach",
+        connecting: "Connecting… · Retry now", connected: "Connected · Refresh", reconnecting: "Reconnecting… · Reconnect now",
+        offline: "Offline · Retry", detached: "Active in another tab · Take over", closed: "Disconnected · Reattach",
       }[status];
     },
   });
