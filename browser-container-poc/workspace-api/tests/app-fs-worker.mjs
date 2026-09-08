@@ -42,6 +42,11 @@ parentPort.on("message", msg => {
       else server.writeBatch(msg.entries, msg.buffer);
       parentPort.postMessage({ type: msg.type + "-ok", id: msg.id });
     } catch (error) { parentPort.postMessage({ type: msg.type + "-err", id: msg.id, error: String(error) }); }
+  } else if (msg.type === "test-flush") {
+    persistence.flush().then(
+      () => parentPort.postMessage({ type: "vv-reply", reqId: msg.reqId, ok: true }),
+      error => parentPort.postMessage({ type: "vv-reply", reqId: msg.reqId, ok: false, error: String(error) }),
+    );
   }
 });
 parentPort.postMessage({ type: "ready" });

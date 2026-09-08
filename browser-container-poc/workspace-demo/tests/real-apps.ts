@@ -6,9 +6,10 @@ import { Runtime, type Workspace, type Distribution, type Execution } from "../.
 import { loadPrepared, preparedApps, openCodeLaunch, waitForOpenCode } from "../src/prepared";
 import { OpenCodeAPI } from "../../opencode-client-demo/src/api";
 
-export async function testPreparedApps({ workspace, distribution, kernel }: {
+export async function testPreparedApps({ workspace, distribution, kernel, restore = false, flush }: {
   workspace: Workspace; distribution: Distribution;
-  kernel: { mkdirp(path: string): void; writeFile(path: string, text: string): void; procs: Map<unknown, unknown>; listeners: Map<unknown, unknown>;
+  restore?: boolean; flush(): Promise<void>;
+  kernel: { mkdirp(path: string): void; writeFile(path: string, text: string): void; readFile(path: string): string; exists(path: string): boolean; procs: Map<unknown, unknown>; listeners: Map<unknown, unknown>;
     onWsSend: ((message: { sub: string; data?: string }) => void) | null;
     handleWsClient(message: Record<string, unknown>): void;
   };
@@ -35,9 +36,33 @@ export async function testPreparedApps({ workspace, distribution, kernel }: {
   try {
     const manifest = await loadPrepared("http://prepared.invalid/");
     console.log(`Prepared distribution ${manifest.runtimeVersion}, OpenCode ${manifest.openCodeVersion}`);
+    const saved = restore ? JSON.parse(kernel.readFile("/workspace/.integration-session.json")) as { id: string; source: string } : undefined;
+    if (saved) {
+      assert.equal(kernel.readFile("/workspace/src/App.tsx"), saved.source, "Fresh FS worker restored exact edited source");
+      assert.ok(!kernel.exists("/workspace/node_modules"), "Dependencies are excluded from durable snapshots");
+      assert.ok(!kernel.exists("/opencode-v2"), "Prepared OpenCode must be explicitly restored");
+      console.log("PASS fresh FS worker restored source with both prepared dependency trees absent (test-only disk persistence)");
+    }
     const apps = await Runtime.start({ workspace, distribution, tools: { apps: preparedApps(manifest, console.log, "http://prepared.invalid/") } });
     runtime = apps;
     await apps.tools.apps();
+    if (saved) {
+      const vite = await runtime.node(manifest.vite); drain(vite, "Vite fresh worker");
+      const preview = await runtime.expose(5173, { signal: AbortSignal.timeout(30000) });
+      assert.equal((await preview.fetch("/")).status, 200);
+      const transformed = await preview.fetch("/src/App.tsx");
+      assert.equal(transformed.status, 200);
+      assert.match(await transformed.text(), /Prepared OpenCode edit|Edited through shared VFS/);
+      const connection = openCodeLaunch(manifest.opencode);
+      const server = await runtime.node(connection.options); drain(server, "OpenCode fresh worker");
+      const endpoint = await runtime.expose(4096, { signal: AbortSignal.timeout(60000) });
+      await waitForOpenCode(endpoint, connection.headers);
+      const history = await endpoint.fetch(`/api/session/${saved.id}/message`, { headers: connection.headers });
+      assert.equal(history.status, 200);
+      assert.ok((await history.json()).data.some((message: { type: string }) => message.type === "user"));
+      console.log("PASS fresh FS/process workers: explicit dependency restoration, Vite transformed retained source, authenticated OpenCode retained session history");
+      return;
+    }
     for (const [path, content] of Object.entries(manifest.project)) {
       const destination = "/workspace" + path;
       kernel.mkdirp(destination.slice(0, destination.lastIndexOf("/")));
@@ -105,6 +130,7 @@ export async function testPreparedApps({ workspace, distribution, kernel }: {
     const connected = new Promise<void>(resolve => { ready = resolve; });
     let terminal = false;
     let providerError: unknown;
+    let changed = false;
     const live = api.events(subscription.signal, ready, event => {
       if (event.data.sessionID !== id) return;
       eventTypes.push(event.type);
@@ -125,7 +151,7 @@ export async function testPreparedApps({ workspace, distribution, kernel }: {
       assert.ok(history.some(message => message.type === "user"), "Prompt promoted into real durable history");
       console.log("PASS actual chat adapter model selection, prompt admission/history, live events, interrupt", [...new Set(eventTypes)]);
       const result = await preview.fetch("/src/App.tsx?t=2", { signal: AbortSignal.timeout(15000) });
-      const changed = (await result.text()).includes("Prepared OpenCode edit");
+      changed = (await result.text()).includes("Prepared OpenCode edit");
       console.log(changed ? "PASS real provider edit reached Vite transformed source" : "PROVIDER GATE INCOMPLETE: no verified model edit", { terminal, providerError });
       if (changed) {
         await waitFor(() => frames.some(frame => frame.includes('"type":"update"')));
@@ -152,6 +178,11 @@ export async function testPreparedApps({ workspace, distribution, kernel }: {
     assert.equal(historyAgain.status, 200);
     assert.ok((await historyAgain.json()).data.some((message: { type: string }) => message.type === "user"));
     console.log("PASS stop cleans all processes/ports; Vite + OpenCode restart with session history retained");
+    await runtime.stop(); runtime = undefined;
+    kernel.writeFile("/workspace/.integration-session.json", JSON.stringify({ id, source: kernel.readFile("/workspace/src/App.tsx") }));
+    await flush();
+    console.log("PASS explicit disk snapshot flush; ready for APP_RESTORE=1 in a fresh Node/FS worker");
+    assert.ok(changed, `Real provider edit is required for app acceptance: ${JSON.stringify(providerError ?? "no edit observed")}`);
   } finally {
     await runtime?.stop(); await Promise.allSettled(drains); globalThis.fetch = originalFetch;
   }

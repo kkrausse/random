@@ -15,10 +15,11 @@ dependencies after reopen, verifies hashes, rejects conflicting existing files,
 and starts no applications. `guest/` owns its frozen dependency install.
 
 See [current integration handoff](../workspace-api/INTEGRATION-HANDOFF.md) for exact
-evidence and remaining failure: real provider edits and HTTP/SSE work headlessly,
-but model-edit HMR currently needs verification/fixing. The latest official React
-plugin packaging is untested in execution. Browser Control remains disconnected;
-there is no browser acceptance claim. The older fixture remains explicit opt-in.
+evidence: real provider edits, HTTP/SSE, manual/model-edit HMR frames, active-prompt
+interruption, and fresh-worker disk snapshot/dependency restoration pass headlessly.
+The pinned official React plugin has been execution-tested. Browser Control remains
+disconnected; OPFS and same-iframe-Document acceptance remain unverified. The older
+fixture remains explicit opt-in. See [real-app receipt](tests/REAL-APPS-EVIDENCE.md).
 
 A small Bun + TypeScript browser shell consuming the public exports of
 `../workspace-api/src/index.ts`. No local duplicate API contracts or kernel

@@ -1,9 +1,9 @@
 # Real-demo integration checkpoint — ownership released
 
-2026-09-07, session `ses_f817055aeffecHHfYsMiyH2SbT`. User requested an immediate
-fresh-context checkpoint. **Integration is incomplete; do not call this browser
-acceptance.** I release exclusive workspace-api/workspace-demo/client/runtime
-ownership on completion. Coordinator: `ses_f8156bc4fffeWaJD7dOeuCH4t6`.
+2026-09-07, replacement session `ses_f814d0710ffeif21SAWfQ2WDQG`, following
+predecessor commit `31d01ee`. **Headless integration passes; browser acceptance
+is incomplete.** Ownership is released on completion. Correct parent/coordinator:
+`ses_f8193563bffecnVesGFwJGHrrp` (the previous coordinator ID was mistaken).
 
 ## Implemented
 
@@ -32,13 +32,13 @@ ownership on completion. Coordinator: `ses_f8156bc4fffeWaJD7dOeuCH4t6`.
   `Buffer.from(String(chunk))` (which produced CSV numbers). Independent public
   worker regression checks all 256 stdout bytes plus binary stderr.
 
-## Evidence and exact current failure
+## Evidence and remaining browser gate
 
 **Passed:** full real-Node runtime `verify-node.mjs` (90 processes); rebuilt runtime;
 distribution packaging; combined workspace-demo typecheck (latest tree); demo
 fixture tests 2/2; client tests 6/6; HTTP 200/isolation headers on 4311 and 43917.
 
-Real app test previously reached **RESULT PASS** with the new distribution:
+Current strict real app test reached **RESULT PASS** with the new distribution:
 actual guest Vite HTML/TSX, shared-source edit, genuine HMR WebSocket update through
 kernel tunnel; authenticated OpenCode health, 31 models after activation, sessions,
 history, SSE reader cancellation, client model switch and prompt admission;
@@ -48,26 +48,28 @@ same session's user history survived. Provider/network succeeded on these runs.
 This uses real Rust VFS/process workers plus explicit **test-only disk persistence**
 (`tests/app-fs-worker.mjs`); it is not browser OPFS or same-Document evidence.
 
-**Latest stricter test fails:** after manual edit the tunnel gives HMR update,
-but after the model edit Vite logs `page reload src/App.tsx`, not an `update`
-frame. `workspace-demo/tests/real-apps.ts` now asserts the model's HMR update and
-fails `AssertionError: Expected actual Vite websocket frame`. Model edit itself
-still succeeds. Re-fetching main/App and pinning optimizeDeps include/noDiscovery
-did not fix it. Tried awaitWriteFinish briefly; it also lost the manual update,
-so reverted that experiment. Do not weaken the new assertion to claim success.
+**Resolved headless model-HMR failure:** official `@vitejs/plugin-react@5.0.2`
+preparation is now execution-tested. Manual and real Muse file-tool edits both
+generated genuine Vite `update` frames; model edit logged
+`hmr update /src/App.tsx, /src/App.tsx?t=1`. The strict assertion was preserved.
+Current prepared manifest: **2291 files, 98,019,988 bytes**.
 
-**Last atomic change, NOT EXECUTION-TESTED:** added official
-`@vitejs/plugin-react@5.0.2` to guest dependencies and Vite config (Fast Refresh),
-then updated lock/prepared output and passed typecheck. Current prepared manifest:
-**2291 files, 98,019,988 bytes**. Previous passing/failing runs used 334 files,
-86,583,020 bytes, manual `import.meta.hot.accept` in main.tsx and no React plugin.
-The new active-prompt interrupt assertion is after the failing HMR assertion;
-it has **not run**. Idle interrupt and SSE reader cancellation have passed.
+**Active-prompt interrupt passed:** execution.started followed by the client's
+interrupt and execution.interrupted. First attempt encountered provider HTTP 429
+before editing; it exposed a false-positive RESULT PASS path, now fixed by requiring
+the real edit for final success. The next full run passed with no provider error.
+
+**Fresh-worker persistence passed:** explicit final disk flush, then a separate
+Node invocation using `APP_RESTORE=1` and the same `APP_STATE_DIR`. Exact source
+bytes restored; both excluded dependency trees were absent, explicitly re-delivered,
+and both real guest services launched. The previous session's user history survived.
+Receipt: `../workspace-demo/tests/REAL-APPS-EVIDENCE.md`. No runtime rebuild/change
+was needed. Both workspace-api and workspace-demo typechecks passed.
 
 ## Browser and running servers
 
 CLI exclusively: `browser-control execute 'return { url: page.url(), title: await page.title() }'`
-failed before creating a page: `Browser Control extension is not connected. Load
+failed again in the replacement session before creating a page: `Browser Control extension is not connected. Load
 extension/dist in Chromium; it reconnects automatically after relay or browser startup.`
 `doctor`: CLI/relay 0.7.0 build 2026-09-05T19:03:42.828Z match; extension disconnected,
 zero targets, no competing connections. **No browser session/page is owned.** No
@@ -94,24 +96,28 @@ bun workspace-api/scripts/distribution.ts
 bun run --cwd workspace-demo prepare
 PORT=4311 RUNTIME_DIR="$PWD/workspace-api/dist/runtime" bun run --cwd workspace-demo dev
 bun workspace-api/scripts/serve-contract.ts
-PREPARED_APPS="$PWD/workspace-demo/dist/prepared" bun run --cwd workspace-api test:workers
+export APP_STATE_DIR="$(mktemp -d)"
+export PREPARED_APPS="$PWD/workspace-demo/dist/prepared"
+bun run --cwd workspace-api test:workers
+APP_RESTORE=1 bun run --cwd workspace-api test:workers
 bun run --cwd workspace-demo typecheck
 bun test --cwd workspace-demo
 bun test --cwd opencode-client-demo
 ```
 App test makes real free-provider requests; outbound provider URL is direct in
 headless test, same-origin model proxy in browser. Ordinary `test:workers` without
-PREPARED_APPS remains the offline backend gate. Optional APP_STATE_DIR names a disk
-snapshot directory; fresh FS-worker restart from those files is not yet tested.
+PREPARED_APPS remains the offline backend gate. APP_STATE_DIR names the test-only
+disk snapshot directory; APP_RESTORE requires that same directory and skips provider
+requests. Full strict run and separate fresh-worker restore both exited 0.
 
 ## Next three actions
 
 1. Check Browser Control. If connected, run `window.contract.run()` and
    `window.contract.search()` at 43917 before demo. Verify reload/lease/OPFS failures.
-2. Run the app command against **current React-plugin preparation**. Diagnose
-   model edit → full-reload instead of HMR if still failing. Inspect actual watch
-   events/module graph; avoid framework special cases in core. Complete active
-   prompt interruption test and dependency restoration/fresh-worker persistence.
+2. Headless app/model-HMR, active interrupt and fresh-worker restoration now pass.
+   No further provider calls or runtime rebuild are needed unless new changes or
+   browser findings justify them. Provider 429 is an external transient gate;
+   a missing edit now fails rather than printing acceptance.
 3. Browser demo: open → seed → runtime → deliver → Vite → OpenCode. Prove same
    iframe Document across manual edit/restore and model edit; stop/flush/close/reopen,
    restore dependencies, restart. Update receipts and commit scoped paths only.
