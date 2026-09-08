@@ -64,10 +64,10 @@ index bfb9dbd..671c540 100644
 \ No newline at end of file
 +- **Background research** → `research.md`
 diff --git a/ARCHITECTURE.md b/ARCHITECTURE.md
-index d88c8f8..c12909c 100644
+index d88c8f8..4fc1614 100644
 --- a/ARCHITECTURE.md
 +++ b/ARCHITECTURE.md
-@@ -1,5 +1,200 @@
+@@ -1,5 +1,203 @@
  # Vivari — Architecture
  
 +## Workspace API continuation (workspace-v1)
@@ -99,6 +99,9 @@ index d88c8f8..c12909c 100644
 +and reports `proc-output-error`. Pulling/cancelling a host channel returns credit.
 +This is fail-on-overflow, not blocking Writable backpressure; guest child capture
 +and child-to-parent stream queues retain their existing separate semantics.
++ChildProcess stdout/stderr preserve raw Uint8Array messages when a byte-mode
++parent inherits its mode into children. Converting those messages with String
++would corrupt bytes into comma-separated decimal text before stream decoding.
 +
 +SDK `BootOptions.onLog` subscribes before service-worker registration and kernel
 +boot, retaining early OPFS ownership/persistence failures for embedders. It stays
@@ -268,7 +271,7 @@ index d88c8f8..c12909c 100644
  This document explains how Vivari works end to end: the core constraint it
  solves, the worker topology, the syscall protocol, the filesystem, the process
  model, the Node runtime, networking, native code, and the build. It is the
-@@ -917,4 +1112,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
+@@ -917,4 +1115,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
    `GET / → 200` (network-gated, like `verify-express`).
  
  See [`AGENTS.md`](./AGENTS.md) §"Testing & verification" for exactly when to run
@@ -1451,7 +1454,7 @@ index be7a806..9206d7c 100644
 \ No newline at end of file
 +}
 diff --git a/packages/runtime/builtins/child_process.js b/packages/runtime/builtins/child_process.js
-index d7695ac..3702e8b 100644
+index d7695ac..2f425aa 100644
 --- a/packages/runtime/builtins/child_process.js
 +++ b/packages/runtime/builtins/child_process.js
 @@ -281,10 +281,23 @@ export function createChildProcess({ sys, process, Buffer, EventEmitter, Readabl
@@ -1478,6 +1481,18 @@ index d7695ac..3702e8b 100644
      process.nextTick(() => cp.emit("spawn"));
      return cp;
    }
+@@ -304,9 +317,9 @@ export function createChildProcess({ sys, process, Buffer, EventEmitter, Readabl
+       const cp = registry.get(m.childPid);
+       if (!cp) continue;
+       if (m.type === "child-stdout") {
+-        cp.stdout.push(m.chunk == null ? null : Buffer.from(String(m.chunk), "utf8"));
++        cp.stdout.push(m.chunk == null ? null : Buffer.from(m.chunk));
+       } else if (m.type === "child-stderr") {
+-        cp.stderr.push(m.chunk == null ? null : Buffer.from(String(m.chunk), "utf8"));
++        cp.stderr.push(m.chunk == null ? null : Buffer.from(m.chunk));
+       } else if (m.type === "child-exit") {
+         registry.delete(m.childPid);
+         if (childLiveness.active > 0) childLiveness.active--;
 diff --git a/packages/runtime/builtins/ffi.js b/packages/runtime/builtins/ffi.js
 new file mode 100644
 index 0000000..eb3034b
@@ -2418,12 +2433,20 @@ index bc250b6..2277add 100644
 \ No newline at end of file
 +}
 diff --git a/roadmap.md b/roadmap.md
-index 3ab02ef..aafd5d2 100644
+index 3ab02ef..d1059f8 100644
 --- a/roadmap.md
 +++ b/roadmap.md
-@@ -1,5 +1,82 @@
+@@ -1,5 +1,90 @@
  # Vivari — Roadmap
  
++## Workspace application integration: child output bytes
++
++Prepared Vite and the matched OpenCode V2 CLI now run through the enclosing
++public API's real-worker harness. OpenCode's wrapper exposed child stdout/stderr
++stringification: inherited VV_BYTE_STDIO produces Uint8Array messages, whose
++String conversion emitted CSV numbers. Preserve bytes in ChildProcess Readables;
++the public headless contract covers all 256 values over both child channels.
++
 +## Early SDK boot diagnostics
 +
 +`BootOptions.onLog` subscribes before kernel boot, exposing the concrete OPFS
@@ -2504,7 +2527,7 @@ index 3ab02ef..aafd5d2 100644
  Built on the principle **de-risk the hardest part first**: prove the riskiest
  primitive (synchronous cross-thread access to a shared kernel) before expanding.
  
-@@ -3041,4 +3118,46 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
+@@ -3041,4 +3126,46 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
  | `Fetcher Worker` | Network/registry worker |
  | `Node.js Worker PID n` | Process = 1 worker + Node shim |
  | `[worker n]` | Nested `worker_threads` — real (#16 stage 2b) |

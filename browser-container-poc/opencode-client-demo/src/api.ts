@@ -1,7 +1,7 @@
 import type { Endpoint } from "../../workspace-api/src/types";
 
 export type ClientEndpoint = Pick<Endpoint, "url"> & { fetch: typeof fetch };
-export interface ModelRef { providerID: string; modelID: string }
+export interface ModelRef { providerID: string; id: string }
 export interface ModelInfo extends ModelRef { id: string; name: string; enabled: boolean }
 export interface SessionInfo { id: string; title?: string; model?: ModelRef }
 export interface Message { id: string; type: string; text?: string; content?: { type: string; text?: string; name?: string }[]; error?: unknown }
@@ -12,7 +12,10 @@ interface Page<T> { data: T[]; cursor: { next?: string | null } }
 export class OpenCodeAPI {
   constructor(readonly endpoint: ClientEndpoint, readonly directory = "/workspace") {}
   async response(path: string, init: RequestInit = {}) {
-    const response = await this.endpoint.fetch(`${this.endpoint.url.replace(/\/$/, "")}/api/${path}`, init);
+    const base = new URL(this.endpoint.url);
+    base.search = ""; base.hash = "";
+    base.pathname = base.pathname.replace(/\/$/, "") + "/";
+    const response = await this.endpoint.fetch(new URL(`api/${path}`, base).href, init);
     if (!response.ok) throw new Error(`OpenCode HTTP ${response.status}: ${(await response.text()).slice(0, 1500)}`);
     return response;
   }
@@ -38,7 +41,13 @@ export class OpenCodeAPI {
   }
   list(signal?: AbortSignal) { return this.pages<SessionInfo>(`session?directory=${encodeURIComponent(this.directory)}&order=desc`, signal); }
   history(id: string, signal?: AbortSignal) { return this.pages<Message>(`session/${encodeURIComponent(id)}/message?order=asc`, signal); }
-  async models(signal?: AbortSignal) { return (await this.request<{ data: ModelInfo[] }>(`model?location[directory]=${encodeURIComponent(this.directory)}`, signal)).data; }
+  async models(signal?: AbortSignal) {
+    const location = `location[directory]=${encodeURIComponent(this.directory)}`;
+    // Matched V2 model.default awaits catalog activation; model.list alone can
+    // return an empty catalog immediately after the first Location is created.
+    await this.request(`model/default?${location}`, signal);
+    return (await this.request<{ data: ModelInfo[] }>(`model?${location}`, signal)).data;
+  }
   async create(title: string, signal?: AbortSignal) { return (await this.request<{ data: SessionInfo }>("session", signal, { title: title || undefined, location: { directory: this.directory } })).data; }
   model(id: string, model: ModelRef, signal?: AbortSignal) { return this.request(`session/${encodeURIComponent(id)}/model`, signal, { model }); }
   prompt(id: string, text: string, signal?: AbortSignal) { return this.request(`session/${encodeURIComponent(id)}/prompt`, signal, { text }); }

@@ -4,7 +4,7 @@ import type { ClientEndpoint, Message, ModelInfo, NativeEvent, SessionInfo } fro
 export function createMockEndpoint(): ClientEndpoint {
   const sessions: SessionInfo[] = [{ id: "ses_fixture", title: "Fixture conversation" }];
   const history = new Map<string, Message[]>([["ses_fixture", [{ id: "msg_welcome", type: "assistant", content: [{ type: "text", text: "Explicit mock mode. Messages are deterministic fixtures; no model or runtime is running." }] }]]]);
-  const models: ModelInfo[] = [{ id: "fixture/demo", providerID: "fixture", modelID: "demo", name: "Demo fixture", enabled: true }];
+  const models: ModelInfo[] = [{ id: "demo", providerID: "fixture", name: "Demo fixture", enabled: true }];
   const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
   const jobs = new Map<string, ReturnType<typeof setInterval>>();
   let serial = 0;
@@ -23,7 +23,7 @@ export function createMockEndpoint(): ClientEndpoint {
       const abort = () => { cleanup(); controller.close(); };
       return new Response(new ReadableStream<Uint8Array>({ start(c) { controller = c; streams.add(c); c.enqueue(encode({ type: "server.connected", data: {} })); init?.signal?.addEventListener("abort", abort, { once: true }); }, cancel: cleanup }), { headers: { "Content-Type": "text/event-stream" } });
     }
-    if (path[0] === "model") return json({ data: models });
+    if (path[0] === "model") return json({ data: path[1] === "default" ? models[0] : models });
     if (path[0] !== "session") return new Response("Unknown fixture route", { status: 404 });
     if (!path[1]) {
       if (init?.method !== "POST") return json({ data: sessions, cursor: {} });

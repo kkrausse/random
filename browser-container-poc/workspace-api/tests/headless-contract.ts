@@ -3,7 +3,8 @@
 // browser OPFS/SW qualification. Public Runtime/execution/tool/fetch code is used.
 import assert from "node:assert/strict";
 import { Worker, MessageChannel } from "node:worker_threads";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { Runtime, defineRipgrepTool } from "../src/index.ts";
@@ -18,8 +19,10 @@ import { createKernelFs } from "../../vivari/.runtime/patched/packages/kernel-ho
 assert.ok(!process.versions.bun, "Use real Node 24 (Bun workers are not this gate)");
 const root = resolve(import.meta.dirname, "../../vivari/.runtime/patched");
 const workers = new Set<Worker>();
-const timeout = setTimeout(() => { console.error("headless contract timeout"); process.exit(1); }, 90_000);
-const fsWorker = new Worker(pathToFileURL(resolve(root, "scripts/fs-worker.mjs")));
+const timeout = setTimeout(() => { console.error("headless contract timeout"); process.exit(1); }, process.env.PREPARED_APPS ? 240_000 : 90_000);
+const fsWorker = new Worker(pathToFileURL(process.env.PREPARED_APPS ? resolve(import.meta.dirname, "app-fs-worker.mjs") : resolve(root, "scripts/fs-worker.mjs")), {
+  workerData: { directory: process.env.APP_STATE_DIR ?? mkdtempSync(resolve(tmpdir(), "workspace-app-state-")) },
+});
 workers.add(fsWorker);
 const fsRequests = new Map<number, { resolve: (m: Message) => void; reject: (e: Error) => void }>();
 const changes: string[] = [];
@@ -138,6 +141,11 @@ if(process.argv[2]!=='argument with spaces'||process.cwd()!=='/workspace'||proce
   stdin.writeStdin(Uint8Array.from({ length: 256 }, (_, i) => i)); stdin.closeStdin();
   assert.deepEqual([...(await stdinOutput).stdout], Array.from({ length: 256 }, (_,i) => i));
   console.log("PASS raw stdin and EOF");
+  kernel.writeFile("/workspace/child-bytes.cjs", `const child=require('child_process').spawn('node',['-e',"process.stdout.write(Buffer.from(Array.from({length:256},(_,i)=>i)));process.stderr.write(Buffer.from([0,255,128]))"],{stdio:['ignore','pipe','pipe']});child.stdout.on('data',b=>process.stdout.write(b));child.stderr.on('data',b=>process.stderr.write(b));`);
+  const childBytes = await output(await runtime.node({ entry: "/workspace/child-bytes.cjs" }));
+  assert.deepEqual([...childBytes.stdout], Array.from({ length: 256 }, (_,i) => i));
+  assert.deepEqual([...childBytes.stderr], [0,255,128]);
+  console.log("PASS child-process stdout/stderr preserve arbitrary bytes");
   kernel.writeFile("/workspace/server.cjs", `
 const http=require('node:http');const fs=require('node:fs');const server=http.createServer((req,res)=>{
 if(req.url==='/stream'){res.setHeader('content-type','text/event-stream');res.write('data: first\\n\\n');const timer=setInterval(()=>res.write('data: later\\n\\n'),50);res.on('close',()=>{clearInterval(timer);fs.writeFileSync('/workspace/cancelled','yes')});return;}
@@ -198,5 +206,9 @@ res.statusCode=418;res.setHeader('x-probe','real');res.end(Buffer.from([0,255,12
     assert.equal((await tools.tools.ripgrep({ pattern: "TODO", paths: ["/workspace/search"], glob: ["!*.txt"] })).matches.length,0);
     console.log("PASS real ripgrep WASM positive/no-match/invalid-regex/Unicode/ignore/glob/truncation and shadowed CLI");
   } finally { await tools.stop(); globalThis.fetch=originalFetch; }
+  if (process.env.PREPARED_APPS) {
+    const { testPreparedApps } = await import("../../workspace-demo/tests/real-apps.ts");
+    await testPreparedApps({ workspace, distribution, kernel });
+  }
   console.log("RESULT PASS (real headless workers; browser-only gates remain separate)");
 } finally { await runtime?.stop(); for (const worker of workers) await worker.terminate(); clearTimeout(timeout); }

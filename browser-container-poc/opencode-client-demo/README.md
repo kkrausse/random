@@ -1,5 +1,14 @@
 # Reusable OpenCode 2 browser chat
 
+**Integration update:** the actual matched bundle uses `{model:{providerID,id}}`
+for model selection. This supersedes the published-spec assumption below.
+Model listing first awaits `/api/model/default` to initialize the Location catalog.
+Endpoint URL composition handles reserved listener queries. These paths, sessions,
+history, streaming text/tool events, and a real provider file edit passed through
+the public Endpoint.fetch in real workers. Parent supplies server authentication.
+Browser UI acceptance and active-prompt interruption remain pending; see
+[integration checkpoint](../workspace-api/INTEGRATION-HANDOFF.md).
+
 `src/client.ts` has no top-level DOM effects. Its shadow-root styles are self-contained.
 
 ```ts

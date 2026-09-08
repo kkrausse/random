@@ -84,7 +84,7 @@ export function mountOpenCodeClient(container: HTMLElement, options: { endpoint?
       if (!sessions.some(s => s.id === current)) current = sessions[0]?.id ?? "";
       sessionsEl.replaceChildren(...sessions.map(s => new Option(s.title || s.id, s.id, false, s.id === current)));
       const model = sessions.find(s => s.id === current)?.model;
-      modelsEl.replaceChildren(new Option("Server default", ""), ...models.filter(m => m.enabled).map(m => new Option(`${m.name} (${m.providerID})`, JSON.stringify({ providerID: m.providerID, modelID: m.modelID }), false, m.providerID === model?.providerID && m.modelID === model?.modelID)));
+      modelsEl.replaceChildren(new Option("Server default", ""), ...models.filter(m => m.enabled).map(m => new Option(`${m.name} (${m.providerID})`, JSON.stringify({ providerID: m.providerID, id: m.id }), false, m.providerID === model?.providerID && m.id === model?.id)));
       live.clear(); await history();
     } catch (e) { if (controller === connection) { connected = false; controller.abort(); status("Connection failed — reconnect to retry"); } throw e; }
     finally { if (controller === connection) { loading = false; buttons(); } }
