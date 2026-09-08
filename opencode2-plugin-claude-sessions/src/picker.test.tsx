@@ -78,6 +78,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
         current: () => ({ type: "home" }),
         navigate: (route: any) => {
           opened = route.sessionID
+          if (route.type === "home") closed++
         },
       },
       dialog: { set() {}, clear() { closed++ }, prompt: async () => "Session 20" },
@@ -278,7 +279,10 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
       const picker = setup.renderer.root.findDescendantById("claude-session-picker")!
       const preview = setup.renderer.root.findDescendantById("claude-session-preview")!
       const approve = setup.renderer.root.findDescendantById("claude-session-approve")!
-      assert.equal(picker.height, width! < 70 ? height! - 2 : Math.min(48, height! - 6))
+      assert.equal(picker.height, height)
+      assert.equal(picker.width, width)
+      assert.equal(picker.x, 0)
+      assert.equal(picker.y, 0)
       assert.ok(scroll.height >= 2, `list remains usable at ${width}x${height}`)
       assert.ok(preview.y + preview.height <= picker.y + picker.height)
       assert.ok(approve.y + approve.height <= preview.y + preview.height)
