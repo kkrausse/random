@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "types": ["bun"] },
-  "include": ["serve.ts", "build.ts", "prepare.ts", "tests"]
+  "include": ["serve.ts", "build.ts", "prepare.ts", "demo.ts", "setup.ts", "tests"]
 }

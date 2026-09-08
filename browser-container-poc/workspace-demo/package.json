@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "demo": "bun demo.ts",
     "prepare": "bun install --frozen-lockfile --ignore-scripts --cwd guest && bun prepare.ts",
     "dev": "bun --watch serve.ts",
     "build": "bun build.ts",
@@ -11,7 +12,20 @@
     "test": "bun test"
   },
   "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
     "@types/bun": "latest",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.8.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.42.0",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "tailwind-merge": "^3.6.0"
   }
 }

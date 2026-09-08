@@ -1,7 +1,7 @@
 import { OpenCodeAPI, type ClientEndpoint, type Message, type ModelInfo, type NativeEvent, type SessionInfo } from "./api";
 import { createMockEndpoint } from "./mock";
 
-export function mountOpenCodeClient(container: HTMLElement, options: { endpoint?: ClientEndpoint; mock?: boolean; directory?: string } = {}): { dispose(): void } {
+export function mountOpenCodeClient(container: HTMLElement, options: { endpoint?: ClientEndpoint; mock?: boolean; directory?: string; autoCreateSession?: boolean } = {}): { ready: Promise<void>; dispose(): void } {
   const root = document.createElement("section");
   // Shadow styles keep multiple mounts independent, with no stylesheet dependency.
   const ui = root.attachShadow({ mode: "open" });
@@ -21,6 +21,7 @@ export function mountOpenCodeClient(container: HTMLElement, options: { endpoint?
   const status = (text: string) => { $("status").textContent = text; };
   const error = (e: unknown) => { if (!disposed) $("error").textContent = e instanceof Error ? e.message : String(e); };
   function buttons() {
+    $<HTMLButtonElement>("connect").disabled = loading;
     for (const id of ["create", "send"]) $<HTMLButtonElement>(id).disabled = !connected || busy || loading || (id === "send" && !current);
     $<HTMLButtonElement>("abort").disabled = !current || !api;
     sessionsEl.disabled = busy || loading;
@@ -77,18 +78,25 @@ export function mountOpenCodeClient(container: HTMLElement, options: { endpoint?
     connection.abort(); connection = new AbortController(); const controller = connection;
     connected = false; busy = false; loading = true; status("Connecting…"); buttons();
     $("error").textContent = "";
+    let markConnected!: () => void;
+    const eventReady = new Promise<void>((resolve, reject) => {
+      markConnected = resolve;
+      controller.signal.addEventListener("abort", () => reject(new Error("Chat connection aborted; reconnect to retry")), { once: true });
+    });
+    void eventReady.catch(() => {});
     const handshake = setTimeout(() => { if (!connected && !controller.signal.aborted) { controller.abort(); status("Disconnected — event handshake timed out"); error("No server.connected marker received. Check the browser endpoint and reconnect."); buttons(); } }, 15000);
     controller.signal.addEventListener("abort", () => clearTimeout(handshake), { once: true });
-    const stream = api.events(controller.signal, () => { if (controller !== connection) return; clearTimeout(handshake); connected = true; status(options.mock ? "Connected to fixture" : "Connected to browser server"); buttons(); }, e => { if (controller === connection && !controller.signal.aborted) event(e); });
-    void stream.catch(e => { clearTimeout(handshake); if (controller.signal.aborted) return; connected = false; busy = false; error(e); status("Disconnected — reconnect to recover history"); buttons(); });
+    const stream = api.events(controller.signal, () => { if (controller !== connection) return; clearTimeout(handshake); connected = true; markConnected(); status(options.mock ? "Connected to fixture" : "Connected to browser server"); buttons(); }, e => { if (controller === connection && !controller.signal.aborted) event(e); });
+    void stream.catch(e => { clearTimeout(handshake); if (controller.signal.aborted) return; connected = false; busy = false; controller.abort(); error(e); status("Disconnected — reconnect to recover history"); buttons(); });
     try {
       [sessions, models] = await Promise.all([api.list(controller.signal), api.models(controller.signal)]);
       if (controller !== connection || disposed) return;
+      if (!sessions.length && options.autoCreateSession) sessions = [await api.create("Sample workspace", controller.signal)];
       if (!sessions.some(s => s.id === current)) current = sessions[0]?.id ?? "";
       sessionsEl.replaceChildren(...sessions.map(s => new Option(s.title || s.id, s.id, false, s.id === current)));
       const model = sessions.find(s => s.id === current)?.model;
       modelsEl.replaceChildren(new Option("Server default", ""), ...models.filter(m => m.enabled).map(m => new Option(`${m.name} (${m.providerID})`, JSON.stringify({ providerID: m.providerID, id: m.id }), false, m.providerID === model?.providerID && m.id === model?.id)));
-      live.clear(); await history();
+      live.clear(); await history(); await eventReady;
     } catch (e) { if (controller === connection) { connected = false; controller.abort(); status("Connection failed — reconnect to retry"); } throw e; }
     finally { if (controller === connection) { loading = false; buttons(); } }
   }
@@ -109,6 +117,7 @@ export function mountOpenCodeClient(container: HTMLElement, options: { endpoint?
   };
   $("abort").onclick = () => run(async () => { status("Interrupt requested"); send?.abort(); await api!.interrupt(current, connection.signal); busy = false; await history(); });
   status(api ? "Connecting…" : "Waiting for parent to supply an in-browser endpoint, or mount with mock: true."); buttons();
-  if (api) run(connect);
-  return { dispose() { disposed = true; generation++; connection.abort(); send?.abort(); root.remove(); } };
+  const ready = api ? connect() : Promise.resolve();
+  void ready.catch(e => { if (!disposed) error(e); }).finally(buttons);
+  return { ready, dispose() { disposed = true; generation++; connection.abort(); send?.abort(); root.remove(); } };
 }

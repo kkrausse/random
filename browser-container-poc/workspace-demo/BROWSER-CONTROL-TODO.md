@@ -1,5 +1,29 @@
 # Browser Control verification follow-up
 
+## Sample UX follow-up (2026-09-07)
+
+After the vanilla one-click flow passed, user requested a React host/provider.
+Before reloading into that implementation, both explicit sessions
+`tidy-badger-184` (localhost:4311) and `brisk-wombat-706` (127.0.0.1:4311)
+failed with “Browser Control extension is not connected. Load extension/dist
+in Chromium; it reconnects automatically after relay or browser startup.”
+Doctor: matching 0.7.0 relay reachable, extension disconnected, zero targets,
+zero connected sessions, no competing connection. Expected stop/flush/close via
+the existing UI; calls failed before page access. No workspace was reset and no
+relay restart attempted. User was asked to reattach the local tab. React-host
+browser acceptance needs a fresh pass; prior vanilla results do not prove it.
+
+CLI/relay 0.7.0, build 2026-09-05T19:03:42.828Z; session `brisk-wombat-706`,
+user-owned local demo 4311. A one-shot `--target-url 4311` execute inspected the
+correct tab; the next execute without that selector read the session's blank
+default and timed out looking for Activity log. Adoption subsequently warned
+“The session default page was closed; created a new page” despite returning the
+user page's content. Expected stable adopted target. Recovery: consistently pass
+both `--session brisk-wombat-706 --target-url 4311`; no relay restart or user-tab
+closure. Also use DOM-scoped IDs: unscoped Playwright `#status` crosses the relay's
+overlay shadow root and matches two elements. These locator/target problems are
+separate from the demo's preexisting workspace-open timeout.
+
 ## Resolved: connected browser acceptance
 
 2026-09-07: explicit CLI session `tidy-raven-945` successfully drove contract
