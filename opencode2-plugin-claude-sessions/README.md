@@ -21,7 +21,7 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Active sessions prioritize needs input, then working, then ready, ordered by latest interaction within each status. Inactive sessions are ordered by latest interaction.
 - Each session occupies one line with its title, status, and lifecycle button. The selected session's location, agent, and last-interaction time appear in the preview.
 - The preview has a pinned **Archive / Restore** button. On phones, a compact touch footer adds **Open / New** and **Close**. Phone-sized terminals use nearly the full screen height.
-- Below 70 columns, rows prioritize the title and short time; status icons remain, while text status and context usage move to the preview. The selected title wraps to two lines, section headers tighten, and approvals get a dedicated compact action row. During approvals, model/usage details give way to the request.
+- Below 70 columns, rows prioritize the title and short time; status icons remain, while text status and context usage move to the preview. The selected title wraps to two lines and section headers tighten. During approvals, model/usage details give way to the request.
 - The current session is selected initially; from Home, `New session` is selected.
 - Use `Up`/`Down` to select, `Right` or `Enter` to open, and `Left` or `Escape` to close.
 - Press `N` from the picker to start a new session.
@@ -32,7 +32,7 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Preview loading/errors disable permission actions, replies cannot overlap, and held-key repeat events are ignored. Errors appear as toasts and requests refresh after replying.
 - Older sessions load as you scroll.
 - The picker resizes with the terminal, including phone keyboard/rotation changes. Narrow or short terminals use a compact header and a smaller scrollable approval preview.
-- Tap/click a row to preview, double-tap or press `→`/`Enter` to enter it. Approval previews have **Once**, **Always**, and **Deny** buttons floated right at the top of the preview alongside the existing keyboard shortcuts. On phones, the approval heading is just the request count, keeping all three buttons visible.
+- Tap/click a row to preview, double-tap or press `→`/`Enter` to enter it. Approval previews show the action and request count above a scrollable request, with a pinned **Allow / Deny / Always** bar below. **Allow** approves once. Equal-width cells are fully clickable, with three-line tap targets on phones when height permits; short keyboard-open layouts use one line. The chosen action shows **Sending…** in place and all approval cells disable during reply/refresh. Refresh retains the current request layout until the next result arrives.
 - In `bun-web-terminal`, use its **Keyboard** button to explicitly show/hide the phone keyboard. Taps select TUI controls without opening it, and swipes scroll without clicking.
 
 ## Archive storage and API sequence

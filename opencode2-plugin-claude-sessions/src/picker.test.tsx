@@ -17,6 +17,8 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
   let closed = 0
   let withPermission = false
   let approved = false
+  let finishReply: (() => void) | undefined
+  const replies: string[] = []
   let interruptFailure = false
   let storageFailure = false
   let running = false
@@ -109,7 +111,11 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
       shell: { list: async () => ({ data: [] }), remove: empty },
       permission: {
         list: async ({ sessionID }: any) => withPermission ? [{ id: "p1", sessionID, action: "shell", resources: ["echo hello\n".repeat(30)] }] : [],
-        reply: async () => { approved = true },
+        reply: async ({ reply }: any) => {
+          replies.push(reply)
+          await new Promise<void>((resolve) => { finishReply = resolve })
+          approved = true
+        },
         request: { list: async () => ({ data: [] }) },
       },
       form: { list: empty, request: { list: async () => ({ data: [] }) } },
@@ -287,16 +293,33 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
       if (width! < 70) {
         assert.doesNotMatch(setup.captureCharFrame(), /Approval required/)
         assert.match(setup.captureCharFrame(), /echo hello/)
-        assert.match(setup.captureCharFrame(), /1\/1\s+\[Once\]\s+\[Always\]\s+\[Deny\]/)
+        assert.match(setup.captureCharFrame(), /shell · 1\/1/)
+        assert.match(setup.captureCharFrame(), /Allow\s+Deny\s+Always/)
         assert.match(setup.captureCharFrame(), /\[Open\] \[Archive\] \[Close\]/)
       }
+      const request = setup.renderer.root.findDescendantById("claude-session-request")!
+      assert.ok(request.height >= 1)
+      assert.equal(request.y + request.height, approve.y)
+      assert.equal(approve.height, width! < 70 && height! >= 20 ? 3 : 1)
+      assert.equal(approve.y + approve.height, lifecycleButton.y)
     }
     assert.doesNotMatch(setup.captureCharFrame(), /←\/esc close/)
     setup.resize(36, 24)
     await setup.renderOnce()
     const approve = setup.renderer.root.findDescendantById("claude-session-approve")!
+    const bounds = [approve.x, approve.y, approve.width, approve.height]
+    // Tap the padded edge, outside the text, then try another action while pending.
     await setup.mockMouse.click(approve.x + 1, approve.y)
     await new Promise((resolve) => setTimeout(resolve, 20))
+    await setup.renderOnce()
+    assert.match(setup.captureCharFrame(), /Sending…/)
+    assert.deepEqual([approve.x, approve.y, approve.width, approve.height], bounds)
+    const deny = setup.renderer.root.findDescendantById("claude-session-deny")!
+    await setup.mockMouse.click(deny.x + 1, deny.y)
+    assert.deepEqual(replies, ["once"])
+    finishReply!()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await setup.renderOnce()
     assert.equal(approved, true)
     const openButton = setup.renderer.root.findDescendantById("claude-session-open")!
     await setup.mockMouse.click(openButton.x + 1, openButton.y)
