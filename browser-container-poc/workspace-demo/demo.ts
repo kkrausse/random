@@ -1,5 +1,6 @@
 import { root, runtimeRoot, sourceRoot, preparedRoot, checkAssets } from "./setup";
 import { diagnosticLog } from "./diagnostic-log";
+import { checkLocalPackages } from "./local-packages";
 const diagnostics = diagnosticLog(`${root}/.diagnostics`);
 const run = crypto.randomUUID();
 
@@ -14,6 +15,7 @@ async function command(args: string[]) {
 }
 async function main() {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw Error("PORT must be an integer between 1 and 65535");
+  await checkLocalPackages();
   if (!await Bun.file(`${runtimeRoot}/distribution.json`).exists()) {
     console.log("Runtime distribution missing; packaging the existing compiled runtime (no automatic runtime rebuild).");
     try { await command(["../workspace-api/scripts/distribution.ts"]); }

@@ -1,7 +1,17 @@
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { checkLocalPackages } from "./local-packages";
 
 export const root = import.meta.dir;
+// Bun file dependencies are symlinks: resolve optional peers from the app,
+// not each package's development node_modules (which would duplicate React).
+export const reactPeerPlugin: import("bun").BunPlugin = {
+  name: "app-owned-react-peers",
+  setup(build) {
+    build.onResolve({ filter: /^react(?:-dom)?(?:\/.*)?$/ }, ({ path }) => ({ path: fileURLToPath(import.meta.resolve(path)) }));
+  },
+};
 export async function diagnosticBundle() {
   const result = await Bun.build({ entrypoints: [resolve(root, "src/diagnostics.ts")], target: "browser", format: "iife" });
   if (!result.success) throw new Error(result.logs.map(String).join("\n"));
@@ -11,7 +21,8 @@ export async function bundle() {
   return (await browserAssets()).main;
 }
 export async function browserAssets() {
-  const result = await Bun.build({ entrypoints: [resolve(root, "src/main.tsx")], target: "browser", format: "esm", splitting: true, outdir: resolve(root, "dist/assets"), publicPath: "/assets/", minify: false });
+  await checkLocalPackages();
+  const result = await Bun.build({ entrypoints: [resolve(root, "src/main.tsx")], target: "browser", format: "esm", splitting: true, plugins: [reactPeerPlugin], outdir: resolve(root, "dist/assets"), publicPath: "/assets/", minify: false });
   if (!result.success) throw new Error(result.logs.map(String).join("\n"));
   const files = new Map<string, string>();
   for (const output of result.outputs) files.set("/assets/" + output.path.split("/").at(-1), await output.text());

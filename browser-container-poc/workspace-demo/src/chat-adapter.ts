@@ -1,11 +1,35 @@
-import { mountOpenCodeClient } from "../../opencode-client-demo/src/client";
+import { createChatController, type ChatController } from "@vivari/opencode-chat";
+import type { Service, WorkspaceController } from "@vivari/workspace-api/react";
 
-/** Interim replaceable chat slot. The standalone @vivari/opencode-chat package
- * can replace this mount after its independent owner finishes. Keep endpoint,
- * caller directory and ready/dispose ownership here, never in workspace React/core.
- * Types currently come directly from the existing component's export. */
-export type ChatOptions = NonNullable<Parameters<typeof mountOpenCodeClient>[1]>;
-export type ChatMount = ReturnType<typeof mountOpenCodeClient>;
-export async function mountChat(container: HTMLElement, options: ChatOptions): Promise<ChatMount> {
-  return mountOpenCodeClient(container, options);
+// Endpoint lifetime, not React/panel lifetime. The recipe attaches once; views
+// only subscribe. Workspace release/reset disposes the client before the server.
+const chats = new WeakMap<Service, ChatController>();
+export function chatFor(service: Service): ChatController | undefined { return chats.get(service); }
+export async function attachChat(owner: WorkspaceController, service: Service) {
+  owner.signal.throwIfAborted();
+  let chat = chats.get(service);
+  if (!chat) {
+    chat = createChatController({
+      endpoint: { url: service.connection.url, fetch: (input, init) => service.connection.fetch(input, init) },
+      directory: "/workspace",
+      autoCreateSession: false,
+    });
+    chats.set(service, chat);
+    const current = chat;
+    const signal = owner.signal;
+    const release = owner.registerAttachment("chat", () => {
+      signal.removeEventListener("abort", aborted);
+      chats.delete(service); current.dispose();
+    });
+    function aborted() { release(); }
+    signal.addEventListener("abort", aborted, { once: true });
+  }
+  try {
+    await chat.ready;
+    owner.signal.throwIfAborted();
+    if (chats.get(service) === chat) owner.clientReady("chat");
+  } catch (error) {
+    if (chats.get(service) === chat) owner.clientFailed("chat", error);
+    throw error;
+  }
 }

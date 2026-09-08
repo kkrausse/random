@@ -1,5 +1,13 @@
 # Normal / editing implementation — ownership released
 
+## Latest integration checkpoint
+
+Fresh integration `ses_f808cf774ffebOrr0RRAle1t2z` replaced the interim client with
+the built public chat package. See [QA receipt](tests/integration-qa/README.md) for
+endpoint lifecycle/auth/query and React peer fixes, current checks and browser gates.
+Build **both** sibling packages before demo install/start (README commands).
+4311 remains the original non-admin owner; deliberate QA admin server is 4312.
+
 Owner `ses_f80adc345ffehktRIDsTSnqYzk`, September 7, 2026. No subagents spawned.
 This implements handoff points 1–6; **real browser acceptance remains fresh QA's job**.
 The independent optional chat package is owned by `ses_f80a3c533ffeAdBIIOtwzOmTG4`;
@@ -108,9 +116,8 @@ Dependency/package changes can need manual repair beyond source reset. Same-orig
 editing is trusted code, not isolation. Unload flush is best-effort. Browser behavior
 above is unverified while disconnected, not inferred from host/unit tests.
 
-Chat seam: `src/chat-adapter.ts` + `Chat` in `editor-components.tsx` currently mount
-the existing client. Replace there with public `@vivari/opencode-chat` controller
-and optional `/react` view after its owner's completion. The sample supplies
-service.connection and directory, owns ready/dispose and runtime lifecycle. Keep
-that integration outside generic workspace React/core. Parent coordinates follow-up;
-this session releases its source/runtime/server/browser ownership after scoped commit.
+Chat seam is now integrated: `src/chat-adapter.ts` creates one public package
+controller in the recipe's service scope. `Chat` renders optional `/react` `ChatView`.
+The sample injects authenticated string/init Fetch and hidden directory, awaits
+ready, and disposes on endpoint release. Views never own server lifetime. New
+sessions require explicit New chat. Generic workspace React/core remains independent.
