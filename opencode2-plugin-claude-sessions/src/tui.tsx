@@ -164,6 +164,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
   const [reviewVersion, setReviewVersion] = createSignal(0)
   const [preview, setPreview] = createSignal<{ sessionID: string; permissions: PermissionRequest[]; forms: FormInfo[] }>()
   const [inboxSessions, setInboxSessions] = createSignal<SessionInfo[]>([])
+  const [inboxErrors, setInboxErrors] = createSignal<string[]>([])
   const answeredRequests = new Set<string>()
   const [previewLoading, setPreviewLoading] = createSignal(false)
   const [previewError, setPreviewError] = createSignal<string>()
@@ -343,6 +344,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
       const job = runner.start(loadInbox(props.context.client).pipe(Effect.tap((inbox) => Effect.sync(() => {
         if (cancelled) return
         setInboxSessions(inbox.sessions)
+        setInboxErrors(inbox.errors)
         setPreview((current) => ({
           sessionID,
           permissions: pendingOrder(current?.sessionID === sessionID ? current.permissions : [], inbox.permissions.filter((request) => !answeredRequests.has(requestKey(request)))),
@@ -880,7 +882,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
         {permission() ? (
           <>
             <text height={1} flexShrink={0} wrapMode="none" fg={props.context.theme.text.status.permission} attributes={TextAttributes.BOLD}>
-              {previewError() ? `Preview unavailable: ${previewError()}` : `${permission()!.action} · 1/${visiblePreview()!.permissions.length}${isInbox() && visiblePreview()!.forms.length ? ` · ?${visiblePreview()!.forms.length}` : ""}`}
+              {previewError() ? `Preview unavailable: ${previewError()}` : `${permission()!.action} · 1/${visiblePreview()!.permissions.length}${isInbox() && visiblePreview()!.forms.length ? ` · ?${visiblePreview()!.forms.length}` : ""}${isInbox() && inboxErrors().length ? ` · ${inboxErrors().length} unavailable` : ""}`}
             </text>
             <scrollbox id="claude-session-request" ref={previewScroll} flexGrow={1} minHeight={0} scrollY scrollX={false}>
               <text fg={props.context.theme.text.default}>
@@ -925,7 +927,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
             <text wrapMode="none" fg={props.context.theme.text.subdued}>
               {selectedSession() && isArchived(selectedSession()!.id)
                 ? `Archived · ${selectedMessages()?.length ?? 0} messages`
-                : previewLoading() ? "Checking for approval requests…" : previewError() ? `Preview unavailable: ${previewError()}` : visiblePreview()?.forms.length ? `Question · ${visiblePreview()!.forms[0]!.title}` : selectedSession() ? (options()[selectedIndex()] as { status?: string })?.status ?? "" : ""}
+                : previewLoading() ? "Checking for approval requests…" : previewError() ? `Preview unavailable: ${previewError()}` : visiblePreview()?.forms.length ? `Question · ${visiblePreview()!.forms[0]!.title}` : isInbox() && inboxErrors().length ? `${inboxErrors().length} location${inboxErrors().length === 1 ? "" : "s"} unavailable` : selectedSession() ? (options()[selectedIndex()] as { status?: string })?.status ?? "" : ""}
             </text>
             {isInbox() && visiblePreview()?.forms.length ? (
               <scrollbox flexGrow={1} minHeight={0} scrollY scrollX={false}>

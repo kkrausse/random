@@ -3,7 +3,7 @@ import type { FormInfo, PermissionRequest, SessionInfo } from "@opencode-ai/clie
 import { Effect } from "effect"
 import { operation } from "./effects"
 
-export type Inbox = { sessions: SessionInfo[]; permissions: PermissionRequest[]; forms: FormInfo[] }
+export type Inbox = { sessions: SessionInfo[]; permissions: PermissionRequest[]; forms: FormInfo[]; errors: string[] }
 
 // Discover every live location, not just the picker's loaded/filtered rows.
 export function loadInbox(client: Plugin.Context["client"]) {
@@ -26,15 +26,21 @@ export function loadInbox(client: Plugin.Context["client"]) {
         client.permission.request.list({ location: { directory: location.directory, workspace: location.workspaceID } }, { signal })),
       operation({ operation: "Load inbox questions", directory: location.directory }, (signal) =>
         client.form.request.list({ location: { directory: location.directory, workspace: location.workspaceID } }, { signal })),
-    ], { concurrency: 2 })), { concurrency: 4 })
-    const permissions = pendingOrder([], requests.flatMap(([permissions]) => permissions.data))
-    const forms = pendingOrder([], requests.flatMap(([, forms]) => forms.data))
+    ], { concurrency: 2 }).pipe(
+      Effect.map(([permissions, forms]) => ({ permissions: permissions.data, forms: forms.data, error: undefined as string | undefined })),
+      Effect.catch((error) => Effect.sync(() => {
+        console.error(`[claude.sessions] ${error.message}`, error)
+        return { permissions: [] as PermissionRequest[], forms: [] as FormInfo[], error: error.message }
+      })),
+    )), { concurrency: 4 })
+    const permissions = pendingOrder([], requests.flatMap((result) => result.permissions))
+    const forms = pendingOrder([], requests.flatMap((result) => result.forms))
     // Location request lists can include children absent from the session pages.
     const missing = [...new Set([...permissions, ...forms].map((request) => request.sessionID))]
       .filter((id) => !sessions.has(id))
     yield* Effect.all(missing.map((sessionID) => operation({ operation: "Load inbox owner", sessionID }, (signal) =>
       client.session.get({ sessionID }, { signal })).pipe(Effect.tap((session) => Effect.sync(() => { sessions.set(session.id, session) })))), { concurrency: 4 })
-    return { sessions: [...sessions.values()], permissions, forms } satisfies Inbox
+    return { sessions: [...sessions.values()], permissions, forms, errors: requests.flatMap((result) => result.error ? [result.error] : []) } satisfies Inbox
   })
 }
 
