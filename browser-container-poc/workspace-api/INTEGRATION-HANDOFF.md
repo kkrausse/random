@@ -1,8 +1,9 @@
-# Real-demo integration checkpoint — ownership released
+# Real-demo integration checkpoint — browser acceptance passed
 
-2026-09-07, replacement session `ses_f814d0710ffeif21SAWfQ2WDQG`, following
-predecessor commit `31d01ee`. **Headless integration passes; browser acceptance
-is incomplete.** Ownership is released on completion. Correct parent/coordinator:
+2026-09-07, browser integration session `ses_f811fd780ffeFOeeaJhTQaPufW`.
+**Headless integration and actual browser acceptance pass.** Browser Control
+connection was restored; browser session `tidy-raven-945` used exclusively.
+Ownership is released on completion. Correct parent/coordinator:
 `ses_f8193563bffecnVesGFwJGHrrp` (the previous coordinator ID was mistaken).
 
 ## Implemented
@@ -68,12 +69,31 @@ was needed. Both workspace-api and workspace-demo typechecks passed.
 
 ## Browser and running servers
 
-CLI exclusively: `browser-control execute 'return { url: page.url(), title: await page.title() }'`
-failed again in the replacement session before creating a page: `Browser Control extension is not connected. Load
-extension/dist in Chromium; it reconnects automatically after relay or browser startup.`
-`doctor`: CLI/relay 0.7.0 build 2026-09-05T19:03:42.828Z match; extension disconnected,
-zero targets, no competing connections. **No browser session/page is owned.** No
-alternate driver used. Contract must be run FIRST when extension connects.
+Contract ran FIRST at 43917. Browser boot exposed root-absolute nested worker
+URLs (`/assets/` instead of the mounted `/runtime/assets/`). Fixed the authored
+core Vite config with `base: "./"`, regenerated the durable patch and rebuilt.
+Distribution now rejects this root-absolute kernel-worker shape before delivery.
+Both `window.contract.run()` and `.search()` passed. Real Web Locks contention
+rejected with `STORAGE_BUSY`; release + page reload recovered and contract passed.
+
+At 4311, passed files without runtime, explicit 2,291-file prepared delivery,
+actual Vite, authenticated guest OpenCode sessions/catalog/history/SSE, real Muse
+file edit, manual edit/restore and model-edit HMR preserving the exact iframe
+Document. Active prompts interrupted before and after reload. Stop/flush/close/
+page reload restored exact model-edited OPFS source; explicit dependency redelivery
+restarted both apps and restored the same chat session's user/assistant/tool history.
+The browser retains `/opencode-v2` non-node_modules files; its dependencies still
+require redelivery (unlike the headless adapter, which excludes the entire tree).
+
+Chat fixes: discard live overlays when completed history becomes authoritative
+(prevents duplicate text); show interrupt-request status before awaiting the RPC
+(preserves the terminal interrupted event). Fresh browser prompt verified a single
+`RESTORED_BROWSER_OK` response and terminal `interrupted` on active cancellation.
+Durable receipt/screenshots: `../workspace-demo/tests/browser-evidence/`.
+No provider 429 occurred. Quota exhaustion/forced OPFS write failure was not tested.
+Cleanup: stopped both services, acknowledged final OPFS flush, closed workspace,
+closed the extra owned contract page, deleted Browser Control session
+`tidy-raven-945`. No unrelated tab was selected, closed or modified.
 
 Servers left running (HTTP smoke confirmed):
 - real demo `http://127.0.0.1:4311`, shell `sh_07eab5654001FHnhlCDnOHqQaS`;
@@ -83,9 +103,9 @@ Servers left running (HTTP smoke confirmed):
 ## Durable/generated state and run commands
 
 Nested authored diff **exactly equals** durable `vivari/patches/0001-sqlite.patch`;
-SHA-256/version `7c14a75d21b27d6c2f2bfdc7b0b9d9ba47a1cc3379708bbab8721b8e7c4d274f`.
-Built kernel `kernel-worker-BqrEBNhW.js`, process `process-worker-CeEKXAhY.js`,
-FS `fs-worker-B8csCiFB.js`. Ignored runtime build/distribution/prepared assets are
+SHA-256/version `5b9e2d83dddb85eb5e09c482418a19779c7235ce5b42ff0376e52872f9d4ba50`.
+Built kernel `kernel-worker-2JABPruE.js`, process `process-worker-CeEKXAhY.js`,
+FS `fs-worker-BtO1enKF.js`. Ignored runtime build/distribution/prepared assets are
 current. Never edit emitted workers. Preserve the existing nested untracked
 `bun.lock`. Outer unrelated hybrid-exec/hybrid-mount and .DS_Store files untouched.
 
@@ -110,14 +130,10 @@ PREPARED_APPS remains the offline backend gate. APP_STATE_DIR names the test-onl
 disk snapshot directory; APP_RESTORE requires that same directory and skips provider
 requests. Full strict run and separate fresh-worker restore both exited 0.
 
-## Next three actions
+## Verification after browser fixes
 
-1. Check Browser Control. If connected, run `window.contract.run()` and
-   `window.contract.search()` at 43917 before demo. Verify reload/lease/OPFS failures.
-2. Headless app/model-HMR, active interrupt and fresh-worker restoration now pass.
-   No further provider calls or runtime rebuild are needed unless new changes or
-   browser findings justify them. Provider 429 is an external transient gate;
-   a missing edit now fails rather than printing acceptance.
-3. Browser demo: open → seed → runtime → deliver → Vite → OpenCode. Prove same
-   iframe Document across manual edit/restore and model edit; stop/flush/close/reopen,
-   restore dependencies, restart. Update receipts and commit scoped paths only.
+Full real-Node `verify-node.mjs`, offline workspace worker contract, API unit tests
+(3), client tests (6), and combined demo typecheck passed. Browser contract and
+search passed on the rebuilt runtime; the real app flow passed as detailed above.
+Use 4311: open → start runtime → deliver prepared apps → launch Vite/OpenCode.
+The browser's retained default workspace contains the acceptance edit and session.
