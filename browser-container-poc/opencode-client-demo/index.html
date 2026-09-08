@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenCode chat client demo (placeholder)</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 1rem; }
+      .row { display: flex; gap: 1rem; }
+      .col { flex: 1; min-width: 0; }
+      #transcript { white-space: pre-wrap; border: 1px solid #999; padding: 0.5rem; height: 300px; overflow: auto; }
+      #sessions { width: 100%; height: 120px; }
+      #prompt { width: 100%; height: 80px; font-family: monospace; }
+      #logs { white-space: pre-wrap; background: #111; color: #eee; padding: 0.5rem; height: 200px; overflow: auto; }
+      button { margin-right: 0.5rem; margin-bottom: 0.5rem; }
+    </style>
+  </head>
+  <body>
+    <h1>OpenCode chat client demo (placeholder)</h1>
+    <p>Status: <span id="status">stopped</span> | Endpoint: <span id="endpoint">—</span></p>
+    <div>
+      <button id="start-server">Start server</button>
+      <button id="stop-server" disabled>Stop server</button>
+      <button id="health" disabled>Check health</button>
+      <button id="refresh" disabled>Refresh sessions</button>
+    </div>
+    <div class="row">
+      <div class="col">
+        <h2>Sessions</h2>
+        <select id="sessions" size="6"></select>
+        <div>
+          <input id="title" placeholder="New session title (optional)" />
+          <button id="create" disabled>Create session</button>
+        </div>
+        <h2>Prompt</h2>
+        <textarea id="prompt" placeholder="Type a prompt, then Send"></textarea>
+        <div>
+          <button id="send" disabled>Send</button>
+          <button id="abort" disabled>Stop / abort</button>
+        </div>
+      </div>
+      <div class="col">
+        <h2>Transcript</h2>
+        <div id="transcript"></div>
+      </div>
+    </div>
+    <h2>Logs</h2>
+    <div id="logs"></div>
+    <p><small>Restart preserves durable workspace state (files persist; processes do not resume). NOT the TUI demo — see opencode-demo/ for the shell-first TUI.</small></p>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
