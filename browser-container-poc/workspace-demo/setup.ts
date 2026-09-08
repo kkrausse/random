@@ -7,7 +7,7 @@ export const preparedRoot = resolve(process.env.PREPARED_DIR ?? `${root}/dist/pr
 export const sourceRoot = resolve(process.env.OPENCODE_PACKAGE_DIR ?? `${root}/../vivari/.runtime/opencode-v2-package`);
 const hash = (bytes: Uint8Array) => new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
 export async function preparationFingerprint() {
-  const files = [`${root}/prepare.ts`, `${root}/src/sample.ts`, `${root}/guest/package.json`, `${root}/guest/bun.lock`, `${runtimeRoot}/distribution.json`, `${sourceRoot}/receipt.json`];
+  const files = [`${root}/prepare.ts`, `${root}/src/SampleApp.tsx`, `${root}/guest/package.json`, `${root}/guest/bun.lock`, `${runtimeRoot}/distribution.json`, `${sourceRoot}/receipt.json`];
   return hash(new TextEncoder().encode((await Promise.all(files.map(async file => hash(new Uint8Array(await Bun.file(file).arrayBuffer()))))).join("\n")));
 }
 /** Startup verifies hashes; HTTP preflight checks presence before opening storage. */

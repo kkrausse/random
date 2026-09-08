@@ -1,4 +1,7 @@
-import { bundle, diagnosticBundle, root, styles } from "./build";
+import { bundle, browserAssets, diagnosticBundle, root, styles } from "./build";
+import { authorizeEditorRequest } from "@vivari/workspace-api/server";
+import { authorizeEditing } from "./server-policy";
+import { createBackend } from "./backend";
 import { resolve, sep } from "node:path";
 import { modelProxy } from "../vivari/scripts/model-proxy";
 import catalog from "../vivari/src/provider-upstreams.json";
@@ -7,6 +10,7 @@ import { diagnosticLog } from "./diagnostic-log";
 const diagnostics = diagnosticLog(`${root}/.diagnostics`);
 const serverRun = crypto.randomUUID();
 const proxy = modelProxy(new Map([["opencode", { baseURL: catalog.upstreams.opencode, headers: { authorization: "Bearer public" } }]]));
+const backend = createBackend();
 
 const headers = {
   "Cache-Control": "no-store",
@@ -23,6 +27,18 @@ function serve() { try { return Bun.serve({
     const started = performance.now();
     const record = (event: string, data: unknown) => { void diagnostics.write({ time: new Date().toISOString(), run: serverRun, event, data }); };
     try {
+      if (path === "/editing-policy") return Response.json({ allowed: await authorizeEditing(request), fixture: "local admin; app-owned policy" }, { headers });
+      if (path.startsWith("/assets/")) {
+        const assets = await browserAssets();
+        if (!assets.publicPaths.has(path)) { const denied = await authorizeEditorRequest(request, authorizeEditing); if (denied) return denied; }
+        const contents = assets.files.get(path);
+        return new Response(contents ?? "Not found", { status: contents ? 200 : 404, headers: { ...headers, "Content-Type": "text/javascript" } });
+      }
+      if (["/runtime/", "/prepared/", "/api/model/"].some(prefix => path.startsWith(prefix)) || ["/setup-check", "/diagnostics"].includes(path)) {
+        const denied = await authorizeEditorRequest(request, authorizeEditing); if (denied) return denied;
+      }
+      const appResponse = await backend(request);
+      if (appResponse) { for (const [key, value] of Object.entries(headers)) appResponse.headers.set(key, value); return appResponse; }
       if (path === "/diagnostics" && request.method === "POST") {
         if (request.headers.get("origin") && request.headers.get("origin") !== new URL(request.url).origin) return new Response("Origin mismatch", { status: 403, headers });
         const reader = request.body?.getReader();
@@ -55,7 +71,7 @@ function serve() { try { return Bun.serve({
           async cancel() { record("proxy.cancelled", { requestID, bytes, elapsedMs: Math.round(performance.now() - started) }); await reader.cancel(); },
         }), { status: response.status, statusText: response.statusText, headers: response.headers });
       }
-      if (path === "/demo-info") return Response.json({ name: "workspace-react-demo", root, runtimeRoot, preparedRoot }, { headers });
+      if (path === "/demo-info") return Response.json({ name: "workspace-react-demo", root, runtimeRoot, preparedRoot, localEditorAdmin: process.env.LOCAL_EDITOR_ADMIN === "1" }, { headers });
       if (path === "/setup-check") {
         const result = await checkAssets();
         if (!result.ok) record("setup.failed", result);
@@ -80,7 +96,7 @@ function serve() { try { return Bun.serve({
 const server = serve();
 void diagnostics.write({ time: new Date().toISOString(), run: serverRun, event: "server.start", port: server.port });
 console.log(`Local diagnostics: ${diagnostics.file} (download /diagnostics)`);
-console.log(`Workspace React demo + local model proxy: ${server.url}\nOpen the URL and click Start workspace. Ctrl-C stops this server.`);
+console.log(`Workspace React demo + local model proxy: ${server.url}\nNormal app is the default. LOCAL_EDITOR_ADMIN=1 exposes Enable editing. Ctrl-C stops this server.`);
 const stop = () => { server.stop(true); process.exit(0); };
 process.once("SIGINT", stop); process.once("SIGTERM", stop);
 const setup = await checkAssets();

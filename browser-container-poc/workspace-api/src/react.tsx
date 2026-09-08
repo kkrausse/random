@@ -25,6 +25,8 @@ export class WorkspaceController {
   private distribution?: Distribution;
   private lifetime = new AbortController();
   private operation?: Promise<void>;
+  private closing?: Promise<void>;
+  private disposal?: Promise<void>;
   private disposed = false;
   private stage = -1;
   getSnapshot = () => this.snapshot;
@@ -35,12 +37,13 @@ export class WorkspaceController {
   private publish(patch: Partial<WorkspaceSnapshot>) { this.snapshot = { ...this.snapshot, ...patch }; for (const listener of this.listeners) listener(); }
   log = (line: string) => { this.diagnostics.record("activity", { message: line }); this.publish({ logs: [...this.snapshot.logs, `${new Date().toLocaleTimeString()} ${safeText(line)}`].slice(-160) }); };
   status = (status: string) => { this.publish({ status }); this.log(status); };
+  reportError = (error: unknown) => { this.publish({ error: message(error) }); this.log(message(error)); };
   notifyPersistence = () => this.publish({ persistence: this.workspace?.persistence.status ?? "closed" });
 
   /** A synchronous lock excludes double clicks and competing lifecycle actions. */
   run(label: string, task: () => Promise<void>): Promise<void> {
     const diagnostics = this.diagnostics;
-    if (this.operation || this.disposed) return this.operation ?? Promise.resolve();
+    if (this.closing || this.operation || this.disposed) return this.closing ?? this.operation ?? Promise.resolve();
     diagnostics.begin();
     const started = performance.now();
     diagnostics.record("operation.start", { label });
@@ -79,7 +82,7 @@ export class WorkspaceController {
       onPersistenceChange: state => { this.publish({ persistence: state.status }); diagnostics.record("persistence", state); },
       onDiagnostic: event => { if (event.stage !== "open.failed") lastStage = event.stage; diagnostics.record("workspace.open", event); },
     }).catch(error => { this.publish({ persistence: "closed" }); throw new Error(`Workspace.open: ${message(error)}; last stage ${lastStage}, elapsed ${Math.round(performance.now() - started)}ms`, { cause: error }); }).finally(() => clearInterval(heartbeat));
-    if (this.disposed) { await workspace.close(); throw Error("Workspace provider unmounted"); }
+    if (this.signal.aborted) { await workspace.close(); this.signal.throwIfAborted(); }
     this.distribution = distribution;
     this.publish({ workspace, persistence: workspace.persistence.status });
     return workspace;
@@ -171,15 +174,25 @@ export class WorkspaceController {
     finally { this.distribution = undefined; this.publish({ workspace: undefined, persistence: "closed" }); }
     this.status("Workspace flushed and closed. Start workspace restores it.");
   }
-  async dispose() {
-    if (this.disposed) return;
+  /** Cancel current work immediately, then close serially. Retry after cleanup failure.
+   * Recipes must observe signal and await all work they start. Do not call inside run(). */
+  cancelAndClose(): Promise<void> {
+    if (this.closing) return this.closing;
+    this.lifetime.abort(new Error("Editing stopped"));
+    this.closing = (async () => {
+      await this.operation;
+      for (const dispose of this.attachments.values()) dispose();
+      await this.close();
+      if (!this.disposed) this.lifetime = new AbortController();
+    })().finally(() => { this.closing = undefined; });
+    return this.closing;
+  }
+  dispose(): Promise<void> {
+    if (this.disposal) return this.disposal;
     this.diagnostics.record("provider.dispose");
-    this.disposed = true; this.lifetime.abort();
-    for (const dispose of this.attachments.values()) dispose();
-    await this.runtime?.stop();
-    await this.operation;
-    await this.close();
-    this.listeners.clear();
+    this.disposed = true;
+    this.disposal = this.cancelAndClose().then(() => { this.listeners.clear(); }, error => { this.disposal = undefined; throw error; });
+    return this.disposal;
   }
 }
 
@@ -208,3 +221,48 @@ export function useWorkspace() {
   return value;
 }
 export type { ControllerDiagnosticOptions, ControllerDiagnosticEvent } from "./react-diagnostics.js";
+
+export type WorkspaceEditingProps = WorkspaceProviderProps & {
+  /** UI permission only. The application's server must independently authorize assets/tools. */
+  allowed: boolean;
+  enabled: boolean;
+  start(controller: WorkspaceController): Promise<void>;
+  /** Increment to retry a failed start, retaining the mounted normal application. */
+  retryKey?: number;
+  /** Recipe-specific readiness; hides (does not unmount) the normal app once true. */
+  isPreviewReady?(state: WorkspaceSnapshot): boolean;
+  renderEditor(context: { controller: WorkspaceController; state: WorkspaceSnapshot; active: boolean }): ReactNode;
+};
+/** Optional controlled boundary. Children retain identity in normal, boot and editing modes.
+ * The recipe/editor decide preview readiness and presentation; no runtime or recipe is implicit. */
+export function WorkspaceEditing({ onDiagnostic, ...props }: WorkspaceEditingProps) {
+  return <WorkspaceProvider onDiagnostic={onDiagnostic}><EditingLifecycle {...props} /></WorkspaceProvider>;
+}
+function EditingLifecycle({ allowed, enabled, start, retryKey, children, renderEditor, isPreviewReady }: Omit<WorkspaceEditingProps, "onDiagnostic">) {
+  const { controller, state } = useWorkspace();
+  const desired = allowed && enabled;
+  const generation = useRef(0);
+  const recipe = useRef(start); recipe.current = start;
+  const [active, setActive] = useState(false);
+  useEffect(() => {
+    const current = ++generation.current;
+    let cancelled = false;
+    // Deferred admission avoids opening/closing storage during StrictMode effect replay.
+    queueMicrotask(() => {
+      if (cancelled) return;
+      if (!desired) {
+        setActive(false);
+        void controller.cancelAndClose().catch(error => controller.reportError(`Cleanup failed; retry Exit: ${message(error)}`));
+        return;
+      }
+      void (async () => {
+        await controller.cancelAndClose();
+        if (cancelled || current !== generation.current) return;
+        setActive(true);
+        await controller.run("Enable editing", () => recipe.current(controller));
+      })().catch(error => controller.reportError(`Editing lifecycle failed: ${message(error)}`));
+    });
+    return () => { cancelled = true; };
+  }, [controller, desired, retryKey]);
+  return <><div hidden={active && desired && !!isPreviewReady?.(state)}>{children}</div>{renderEditor({ controller, state, active: active && desired })}</>;
+}

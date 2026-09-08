@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "..");
 await rm(resolve(root, "dist/lib"), { recursive: true, force: true });
-for (const [entry, target] of [["index.ts", "browser"], ["react.tsx", "browser"], ["assets.ts", "node"]] as const) {
+for (const [entry, target] of [["index.ts", "browser"], ["react.tsx", "browser"], ["assets.ts", "node"], ["server.ts", "node"]] as const) {
   const result = await Bun.build({ entrypoints: [resolve(root, "src", entry)], outdir: resolve(root, "dist/lib"),
     target, format: "esm", external: ["react", "react/jsx-runtime", "@vivari/workspace-api"], sourcemap: "external" });
   if (!result.success) throw new AggregateError(result.logs, `Build failed: ${entry}`);

@@ -1,10 +1,10 @@
 # Workspace React demo
 
-A realistic **React library consumer**, with a separate React guest application.
-The host's `WorkspaceProvider` wraps public `workspace-api` exports. Its editor,
-preview, status and OpenCode chat consume typed React context. Guest Vite and
-guest OpenCode run inside the browser runtime; the host never substitutes a
-native Vite/OpenCode process.
+A **normal interactive React app by default**, with caller-controlled optional
+editing through public `WorkspaceEditing`. `src/SampleApp.tsx` is both the deployed
+app and the exact known-good source seeded into guest Vite. Both use the same
+application-owned `/api` backend. Vite/OpenCode run inside the browser only after
+Enable editing. The original React tree remains mounted and visible during boot.
 
 ## Run
 
@@ -17,21 +17,21 @@ bun install --frozen-lockfile --ignore-scripts
 bun run build
 cd ../workspace-demo
 bun install --ignore-scripts
-bun run demo
+LOCAL_EDITOR_ADMIN=1 bun run demo
 ```
 
 The demo uses `@vivari/workspace-api` and its `/react` subpath through a local
 file dependency. See [local package delivery](../workspace-api/LOCAL-PACKAGES.md)
-for independent tarball installation and runtime asset copying. This checkpoint
-retains the existing Start workspace flow; the production editing toggle and
-backend passthrough remain pending.
+for independent tarball installation and runtime asset copying. Omit
+`LOCAL_EDITOR_ADMIN=1` for normal non-admin mode: no toggle, and direct editor
+asset/model requests return 403. This flag is a **local admin fixture**, not identity.
 
-Open **http://127.0.0.1:4311** and click **Start workspace**. That single action:
+Open **http://127.0.0.1:4311** and click **Enable editing**. That single action:
 
 1. Checks asset availability before opening persistent storage.
 2. Opens/restores the origin's workspace and adds only missing guest source/config.
 3. Starts the real browser runtime and hash-verifies/delivers 2,291 prepared files.
-4. Launches guest Vite, attaches the preview, and waits for its Document to load.
+4. Launches guest Vite, attaches the preview, and waits for its React root to render.
 5. Launches authenticated guest OpenCode and waits for health, event connection,
    models and session history. An empty server gets one “Sample workspace” session.
 
@@ -47,7 +47,7 @@ user-owned. Model calls require a reachable provider and may hit provider limits
 missing/stale apps. It packages an existing compiled runtime if its distribution
 is missing; it does **not** rebuild the large runtime on every start. A compatible
 already-running demo is reused. Other port owners are reported, never killed.
-`PORT=4312 bun run demo` selects another port (and therefore another origin store).
+`PORT=4312 LOCAL_EDITOR_ADMIN=1 bun run demo` selects another port (and origin store).
 Ctrl-C stops the server owned by that terminal.
 
 The one Bun server serves the React host, `/runtime/`, `/prepared/`, isolation
@@ -85,38 +85,60 @@ host after source changes. Missing/stale assets produce an early actionable erro
 
 ## Library-consumer structure
 
-- `src/workspace-provider.tsx`: reusable React boundary around **public API only**.
-  Owns workspace/runtime/services, serializes actions, reports progress/errors,
-  and disposes registered UI attachments before stopping their processes. The
-  `useWorkspace()` hook exposes state and a controller; wrap mutations in
-  `controller.run(...)`. Provider unmount aborts pending startup and closes resources.
+- `@vivari/workspace-api/react`: generic controlled lifecycle and provider.
+  `src/workspace-provider.tsx` is only the demo diagnostics adapter.
 - `src/sample-recipe.ts`: application-specific startup stages, missing-file seeds,
   prepared delivery, guest ports, health checks and endpoint Fetch adaptation.
   These are deliberately outside the core API and generic React provider.
-- `src/main.tsx`: host React components consuming context. Preview attaches in an
-  effect; chat wraps `mountOpenCodeClient` through `mountChat` with effect cleanup.
+- `src/main.tsx`: normal app, app-owned permission/enable state and lazy editor load.
+  `src/editor.tsx` / `editor-components.tsx`: full-window preview, stable host corner
+  controls, chat overlay, expandable source editor, Reset source, Exit/retry.
+  Chat wraps `mountOpenCodeClient` through replaceable `mountChat` with effect cleanup.
   Host controls use minimal Base UI/shadcn-style buttons, Tailwind and Lucide.
-- `src/sample.ts`, `prepare.ts`, `guest/`: **separate guest React application** and
+- `src/SampleApp.tsx`, `prepare.ts`, `guest/`: **shared normal/guest source** and
   pinned dependencies. Host React is bundled into `/app.js`; guest React is served
   by in-browser Vite from the persistent workspace.
 - `serve.ts`, `demo.ts`, `setup.ts`: host HTTP/proxy process and explicit asset setup.
 
 ## Lifecycle and retries
 
-Startup disables conflicting controls and rejects duplicate actions. A failed
-stage retains completed work; fix its reported issue and **Retry Start workspace**.
-Delivery is resumable and rejects conflicting existing dependency bytes. Existing
-project files are never replaced by the seed. Unsaved editor changes must be saved
-before another start or close.
+Conflicting actions are excluded. **Exit** also works during boot: it aborts,
+waits for current work, stops services and closes/releases the lease. Cleanup errors
+offer Retry Exit; a failed start offers Retry editing. Re-entry preserves saved
+source/chat and redelivers excluded dependencies. Unsaved editor text is discarded
+on Exit. Explicit Exit acknowledges cleanup; unload is best-effort. Only one tab per
+origin may own OPFS; `localhost` and `127.0.0.1` are independent stores.
 
-Under **Advanced**, Stop runtime detaches services while leaving files editable;
-Close workspace stops services, acknowledges a flush and releases storage. Start
-workspace reopens and restores excluded dependencies automatically. Use explicit
-Close for acknowledged persistence before ending a browser session: page-unload
-cleanup is best-effort, not a durable-flush guarantee. Only one workspace tab per
-origin can hold the OPFS lease. `localhost` and `127.0.0.1` have independent stores.
-The opt-in fixture is labelled memory/localStorage/static HTML and proves no real
-runtime or model behavior.
+**Reset source** is intentional: restore only `/index.html`, `/src/main.tsx`,
+`/src/App.tsx`, `/vite.config.mjs` from the prepared recipe snapshot, flush, restart
+Vite and reconnect OpenCode (paused to prevent concurrent agent writes). No path
+deletion, package/config replacement or unknown-file cleanup. Chat/session/backend
+state survives. Dependency/package.json changes can still require manual repair.
+Guest React state remounts; the original normal React state remains underneath.
+
+## Server policy and backend routing
+
+`server-policy.ts` owns authorization. Replace its loopback + explicit env fixture
+with the app's existing session/role check. `serve.ts` calls public `/server`
+`authorizeEditorRequest` before runtime, prepared and lazy editor assets, diagnostics,
+and model proxy routes. The public normal static dependency graph is determined at
+build time; editor code is split and fetched only on entry. Production hosts must
+apply equivalent policy when serving artifacts; simply publishing all `dist` files
+on an unguarded static server bypasses authorization.
+
+`backend.ts` owns a server-lifetime counter, native stream, and local request echo
+fixture. Backend state is independent of workspace resets, but restarting this tiny
+server resets it. Real apps supply their existing durable backend. The echo route
+is a local request-test fixture, not an application production endpoint.
+
+The recipe opts into `attachPreview(..., {hostPaths:["/api"]})`. Matching iframe
+requests use native Fetch, not guest Vite: original cookies/credentials, methods,
+headers, upload bytes, response status and streams. Root-absolute paths are required;
+relative `api/...` resolves under `/preview/PORT/`. Routers need a prefix-aware base
+and must retain `__vv_listener`/`__vv_host_paths` query identity across navigation/SW
+revival. OAuth callbacks, top navigation and URL semantics need app integration;
+there is no automatic seamless identity with the deployed URL. Guest and normal
+React roots do not share memory. Same-origin trusted editing is not code isolation.
 
 ## Checks and evidence
 

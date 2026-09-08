@@ -1,7 +1,16 @@
 import type { Endpoint } from "../types.js";
 import { endpointInternals } from "./endpoint.js";
 export interface PreviewAttachment { dispose(): void }
-export function attachPreview(iframe: HTMLIFrameElement, endpoint: Endpoint): PreviewAttachment {
+export interface PreviewOptions {
+  /** Root-absolute same-origin paths (segment prefixes) sent natively to the host backend.
+   * Example: ["/api"]. This is routing, never server authorization. */
+  hostPaths?: readonly string[];
+}
+export function attachPreview(iframe: HTMLIFrameElement, endpoint: Endpoint, options: PreviewOptions = {}): PreviewAttachment {
+  const paths = options.hostPaths ?? [];
+  if (paths.length > 32 || paths.some(path => !/^\/[A-Za-z0-9_/-]+$/.test(path) || path.includes("//") || path.endsWith("/"))) throw Error("hostPaths must be up to 32 root-absolute segment prefixes, without trailing slash");
+  const previewUrl = new URL(endpoint.url);
+  if (paths.length) previewUrl.searchParams.set("__vv_host_paths", JSON.stringify(paths));
   const internal = endpointInternals.get(endpoint);
   if (!internal) throw new Error("Expected a workspace-api Endpoint");
   internal.check();
@@ -43,7 +52,7 @@ export function attachPreview(iframe: HTMLIFrameElement, endpoint: Endpoint): Pr
   window.addEventListener("message", receive);
   // Caller mounts the frame first; SW control is established by expose().
   iframe.src = "about:blank";
-  queueMicrotask(() => { if (!disposed) iframe.src = endpoint.url; });
+  queueMicrotask(() => { if (!disposed) iframe.src = previewUrl.href; });
   void endpoint.closed.then(dispose);
   return { dispose };
 }
