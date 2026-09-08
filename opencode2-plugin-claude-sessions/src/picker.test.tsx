@@ -278,6 +278,15 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
       assert.ok(lifecycleButton.x >= preview.x)
       assert.ok(lifecycleButton.x + lifecycleButton.width <= preview.x + preview.width)
       assert.equal(lifecycleButton.y + lifecycleButton.height, preview.y + preview.height)
+      for (const id of ["claude-session-approve", "claude-session-always", "claude-session-deny", ...(width! < 70 ? ["claude-session-open", "claude-session-close"] : [])]) {
+        const button = setup.renderer.root.findDescendantById(id)!
+        assert.ok(button.x >= preview.x && button.x + button.width <= preview.x + preview.width, `${id} fits at ${width}x${height}`)
+      }
+      if (width! < 70) {
+        assert.doesNotMatch(setup.captureCharFrame(), /Approval required/)
+        assert.match(setup.captureCharFrame(), /echo hello/)
+        assert.match(setup.captureCharFrame(), /\[Open\] \[Archive\] \[Close\]/)
+      }
     }
     assert.doesNotMatch(setup.captureCharFrame(), /←\/esc close/)
     setup.resize(36, 24)
@@ -286,10 +295,12 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     await setup.mockMouse.click(approve.x + 1, approve.y)
     await new Promise((resolve) => setTimeout(resolve, 20))
     assert.equal(approved, true)
-    commands.find((c) => c.bind === "return").run()
+    const openButton = setup.renderer.root.findDescendantById("claude-session-open")!
+    await setup.mockMouse.click(openButton.x + 1, openButton.y)
     assert.equal(opened, "s0")
     const beforeClose = closed
-    commands.find((c) => c.bind === "left").run()
+    const closeButton = setup.renderer.root.findDescendantById("claude-session-close")!
+    await setup.mockMouse.click(closeButton.x + 1, closeButton.y)
     assert.equal(closed, beforeClose + 1)
     await commands.find((c) => c.bind === "/").run()
     await setup.renderOnce()

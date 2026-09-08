@@ -53,7 +53,7 @@ test("input comes first and each tranche is ordered by recency", () => {
   for (const state of ["permission", "question", "running", "idle"] as const) {
     assert.equal(groupLabel(state), "Active")
   }
-  assert.equal(groupLabel("inactive"), "Inactive")
+  assert.equal(groupLabel("inactive"), "Archived")
   assert.equal(groupLabel("new"), undefined)
 })
 

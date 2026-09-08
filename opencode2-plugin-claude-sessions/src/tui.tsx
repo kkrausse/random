@@ -123,7 +123,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
   // Use nearly all available height on phones, including with the keyboard open.
   const mobile = () => dimensions().width < 70
   const height = () => Math.max(1, mobile() ? dimensions().height - 2 : Math.min(48, dimensions().height - 6))
-  const previewHeight = () => Math.min(permission() ? 20 : 6, Math.max(5, Math.floor(height() * 0.4)))
+  const previewHeight = () => Math.min(permission() ? 20 : mobile() ? 8 : 6, Math.max(5, Math.floor(height() * (mobile() ? 0.5 : 0.4))))
   const runner = makeRunner((message, cause) => {
     console.error(`[claude.sessions] ${message}\n${Cause.pretty(cause)}`)
   })
@@ -199,7 +199,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
         const baseStatus = {
           permission: "Permission required",
           question: "Question waiting",
-          inactive: "Inactive",
+          inactive: "Archived",
           idle: "Ready",
         }[state as "permission" | "question" | "inactive" | "idle"]
         const childStatus = `${runningChildren} sub-agent${runningChildren === 1 ? "" : "s"} running`
@@ -736,7 +736,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
               return (
                 <>
                 {heading() ? (
-                  <box height={3} flexShrink={0} paddingLeft={0} paddingRight={0}
+                  <box height={mobile() ? 2 : 3} flexShrink={0} paddingLeft={0} paddingRight={0}
                     border={["top"]} borderColor={props.context.theme.hue.accent[400]}>
                     <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>{heading()}</text>
                   </box>
@@ -789,7 +789,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
                     </text>
                     {(() => {
                       const row = option()
-                      return "status" in row && row.status ? (
+                      return !mobile() && "status" in row && row.status ? (
                         <>
                           <text wrapMode="none" flexShrink={0} fg={iconColor()}>{` · ${row.status}`}</text>
                         </>
@@ -800,12 +800,14 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
                   </box>
                   {option().state !== "new" ? (
                     <>
-                      {"value" in option() && rowPercents().get(option().value as string) ? (
+                      {!mobile() && "value" in option() && rowPercents().get(option().value as string) ? (
                         <text flexShrink={0} fg={descriptionColor()}>{` ${rowPercents().get(option().value as string)}`}</text>
                       ) : null}
-                      <box width={8} flexShrink={0} justifyContent="flex-end">
+                      <box width={mobile() ? 5 : 8} flexShrink={0} justifyContent="flex-end">
                         <text wrapMode="none" fg={descriptionColor()}>
-                          {((option() as { updated?: string }).updated ?? "").padStart(8)}
+                          {mobile()
+                            ? ((option() as { updated?: string }).updated ?? "").replace(" ago", "").padStart(5)
+                            : ((option() as { updated?: string }).updated ?? "").padStart(8)}
                         </text>
                       </box>
                     </>
@@ -819,20 +821,27 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
       <box id="claude-session-preview" height={previewHeight()} flexShrink={0} flexDirection="column" paddingLeft={0} paddingRight={0}
         border={["top"]} borderColor={permission() ? props.context.theme.text.status.permission : props.context.theme.contextual.overlay.scrollbar.default}>
         <box flexGrow={1} minHeight={0} overflow="hidden" flexDirection="column">
+        {mobile() && selectedSession() ? (
+          <text id="claude-session-preview-title" maxHeight={2} flexShrink={0} fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
+            {options()[selectedIndex()]?.title}
+          </text>
+        ) : null}
         <text wrapMode="none" fg={props.context.theme.text.subdued}>{options()[selectedIndex()]?.description}</text>
+        {!mobile() || !permission() ? (
         <box height={1} flexShrink={0} flexDirection="row" justifyContent="space-between">
-           <text wrapMode="none" fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
+           <text wrapMode="none" flexShrink={1} fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
             {selectedStats().left}
           </text>
-          <text fg={props.context.theme.text.subdued} attributes={TextAttributes.BOLD}>
+          <text flexShrink={0} fg={props.context.theme.text.subdued} attributes={TextAttributes.BOLD}>
             {selectedStats().right}
           </text>
         </box>
+        ) : null}
         {permission() ? (
           <>
             <box height={1} flexShrink={0} flexDirection="row" justifyContent="space-between">
               <text wrapMode="none" flexShrink={1} fg={props.context.theme.text.status.permission} attributes={TextAttributes.BOLD}>
-                {`Approval required · 1 of ${visiblePreview()!.permissions.length}`}
+                {mobile() ? `1/${visiblePreview()!.permissions.length}` : `Approval required · 1 of ${visiblePreview()!.permissions.length}`}
               </text>
               <box flexShrink={0} flexDirection="row" gap={1}>
                 <text id="claude-session-approve" fg={props.context.theme.text.subdued} onMouseDown={(event) => { if (event.button === 0) { event.stopPropagation(); void replyToPermission("once") } }}>{replying() ? "Sending…" : "[Once]"}</text>
@@ -851,8 +860,8 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
           <>
             <text wrapMode="none" fg={props.context.theme.text.subdued}>
               {selectedSession() && isArchived(selectedSession()!.id)
-                ? `Archived · ${selectedMessages()?.length ?? 0} messages · r to restore`
-                : previewLoading() ? "Checking for approval requests…" : previewError() ? `Preview unavailable: ${previewError()}` : visiblePreview()?.forms.length ? "Question waiting — open session to answer" : "No permission requested"}
+                ? `Archived · ${selectedMessages()?.length ?? 0} messages`
+                : previewLoading() ? "Checking for approval requests…" : previewError() ? `Preview unavailable: ${previewError()}` : visiblePreview()?.forms.length ? "Question waiting" : selectedSession() ? (options()[selectedIndex()] as { status?: string })?.status ?? "" : ""}
             </text>
             {selectedSession() && isArchived(selectedSession()!.id) ? (
               <scrollbox flexGrow={1} minHeight={0} scrollY scrollX={false}>
@@ -865,7 +874,15 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
           </>
         )}
         </box>
-        <box height={1} flexShrink={0} flexDirection="row">
+        <box height={1} flexShrink={0} flexDirection="row" gap={mobile() ? 1 : 0}>
+          {mobile() && (!selectedSession() || !isArchived(selectedSession()!.id)) ? (
+            <text id="claude-session-open" fg={props.context.theme.text.default} onMouseDown={(event) => {
+              if (event.button !== 0) return
+              event.stopPropagation()
+              event.preventDefault()
+              selectCurrent()
+            }}>{selectedSession() ? "[Open]" : "[New]"}</text>
+          ) : null}
           {selectedSession() ? (
             <text id="claude-session-preview-lifecycle" wrapMode="none" fg={props.context.theme.text.default}
               onMouseDown={(event) => {
@@ -874,10 +891,17 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
                 event.preventDefault()
                 void changeLifecycle(options()[selectedIndex()]?.state !== "inactive")
               }}>
-              {changingLifecycle() ? "[Updating…]" : options()[selectedIndex()]?.state === "inactive" ? "[Restore to active]" : "[Archive]"}
+              {changingLifecycle() ? "[Updating…]" : options()[selectedIndex()]?.state === "inactive" ? "[Restore]" : "[Archive]"}
             </text>
           ) : null}
-          <text fg={props.context.theme.text.subdued}>{search() ? ` · / filter: ${search()}` : " · / search"}</text>
+          {mobile() ? (
+            <text id="claude-session-close" fg={props.context.theme.text.subdued} onMouseDown={(event) => {
+              if (event.button !== 0) return
+              event.stopPropagation()
+              event.preventDefault()
+              props.context.ui.dialog.clear()
+            }}>[Close]</text>
+          ) : <text fg={props.context.theme.text.subdued}>{search() ? ` · / filter: ${search()}` : " · / search"}</text>}
         </box>
       </box>
       {loading() ? (

@@ -106,7 +106,7 @@ export function sortRows<T extends { state: SessionState; session: { id: string;
 
 export function groupLabel(state: SessionState | "new") {
   if (state === "new") return undefined
-  return state === "inactive" ? "Inactive" : "Active"
+  return state === "inactive" ? "Archived" : "Active"
 }
 
 export function lifecycleOwner<T extends { id: string; parentID?: string | null }>(sessions: readonly T[], session: T): T {
@@ -144,7 +144,7 @@ export function nestRows<T extends { state: SessionState; session: { id: string;
       if (child.session.parentID === row.session.id && groupLabel(child.state) === groupLabel(row.state)) visit(child, depth + 1)
     }
   }
-  for (const section of ["Active", "Inactive"]) {
+  for (const section of ["Active", "Archived"]) {
     const members = rows.filter((row) => groupLabel(row.state) === section)
     for (const row of members) {
       if (!members.some((parent) => parent.session.id === row.session.parentID)) visit(row, row.session.parentID ? 1 : 0)
