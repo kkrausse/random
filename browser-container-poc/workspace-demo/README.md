@@ -8,13 +8,23 @@ native Vite/OpenCode process.
 
 ## Run
 
-With the pinned runtime and OpenCode package already prepared in this checkout:
+With the pinned runtime and OpenCode package already prepared in this checkout,
+build the local library first (also required after changing library source):
 
 ```sh
-cd browser-container-poc/workspace-demo
+cd browser-container-poc/workspace-api
+bun install --frozen-lockfile --ignore-scripts
+bun run build
+cd ../workspace-demo
 bun install --ignore-scripts
 bun run demo
 ```
+
+The demo uses `@vivari/workspace-api` and its `/react` subpath through a local
+file dependency. See [local package delivery](../workspace-api/LOCAL-PACKAGES.md)
+for independent tarball installation and runtime asset copying. This checkpoint
+retains the existing Start workspace flow; the production editing toggle and
+backend passthrough remain pending.
 
 Open **http://127.0.0.1:4311** and click **Start workspace**. That single action:
 

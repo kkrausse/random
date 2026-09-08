@@ -1,4 +1,4 @@
-import type { Distribution, Runtime, Workspace, Endpoint } from "../../workspace-api/src/index";
+import type { Distribution, Runtime, Workspace, Endpoint } from "@vivari/workspace-api";
 import { loadPrepared, preparedApps, openCodeLaunch, waitForOpenCode, type PreparedManifest } from "./prepared";
 import type { Connection, WorkspaceController } from "./workspace-provider";
 import { diagnostics } from "./diagnostics";

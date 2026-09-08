@@ -75,3 +75,9 @@ bun scripts/serve-contract.ts
 
 `test:workers` uses real Rust VFS and process workers with a small headless Host
 adapter. It is not proof of browser Worker startup, OPFS, Service Worker or HMR.
+# Local package delivery
+
+For compiled ESM/declarations, the reusable `/react` integration, server-only
+`/assets` API, independent tarball install and explicit versioned runtime delivery,
+see [LOCAL-PACKAGES.md](./LOCAL-PACKAGES.md). Existing source-oriented examples below
+describe the core API; consumers should use `@vivari/workspace-api` public imports.

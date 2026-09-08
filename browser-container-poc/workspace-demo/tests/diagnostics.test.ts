@@ -5,14 +5,14 @@ import { join } from "node:path";
 import { diagnosticLog } from "../diagnostic-log";
 import { safeData } from "../src/diagnostic-data";
 import { diagnostics } from "../src/diagnostics";
-import { WorkspaceController } from "../src/workspace-provider";
+import { WorkspaceController, recordControllerDiagnostic } from "../src/workspace-provider";
 import { diagnosticReporter } from "../../workspace-api/src/diagnostics";
 
 test("failed startup retains correlated cause/stack and last timed milestone on disk", async () => {
   const directory = await mkdtemp(join(tmpdir(), "workspace-diagnostics-"));
   try {
     const log = diagnosticLog(directory);
-    const controller = new WorkspaceController();
+    const controller = new WorkspaceController({ onDiagnostic: recordControllerDiagnostic });
     await controller.run("QA injected startup", () => controller.steps([["Open", async () => {
       const reporter = diagnosticReporter(event => diagnostics.record("workspace.open", event));
       reporter.emit("worker.init.sent", { version: "qa-version" });

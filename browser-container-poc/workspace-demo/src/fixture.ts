@@ -1,4 +1,4 @@
-import type { Workspace, WorkspaceFs } from "../../workspace-api/src/index";
+import type { Workspace, WorkspaceFs } from "@vivari/workspace-api";
 
 const key = "workspace-demo.fixture.v1";
 const encoder = new TextEncoder();

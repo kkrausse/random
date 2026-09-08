@@ -1,5 +1,5 @@
 import { WorkspaceError, type Distribution } from "./types.js";
-import type { diagnosticReporter } from "./diagnostics";
+import type { diagnosticReporter } from "./diagnostics.js";
 
 // Private transport boundary. Worker protocol never escapes to consumers.
 export type Message = { type: string; [key: string]: unknown };
