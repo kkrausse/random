@@ -1,4 +1,4 @@
-import { FitAddon, init, Terminal, type ITheme } from "../vendor/ghostty-web/lib/index";
+import { init, Terminal, type ITheme } from "../vendor/ghostty-web/lib/index";
 import { TerminalConnection } from "./connection";
 import { installScrolling } from "./scroll";
 import { installMobileControls } from "./mobile";
@@ -118,8 +118,6 @@ async function startTerminalPage() {
     theme: theme.terminal,
     rendererType: "webgl",
   });
-  const fit = new FitAddon();
-  terminal.loadAddon(fit);
   await terminal.open(container);
   const rendererName = terminal.renderer?.constructor.name;
   if (rendererName !== "WebglRenderer") {
@@ -129,7 +127,7 @@ async function startTerminalPage() {
     throw new Error(`Expected WebglRenderer, got ${rendererName ?? "no renderer"}`);
   }
   container.dataset.renderer = "webgl";
-  fit.fit();
+  fitTerminal();
   if (!matchMedia("(any-pointer: coarse)").matches) terminal.focus();
   terminal.onTitleChange(updateTitle);
   // Ctrl+Tab / Ctrl+Shift+Tab switch browser tabs. The emulator would encode
@@ -201,12 +199,20 @@ async function startTerminalPage() {
     }
   }, { capture: true });
   let layoutTimer: ReturnType<typeof setTimeout> | undefined;
+  function fitTerminal() {
+    const metrics = terminal.renderer?.getMetrics();
+    if (!metrics?.width || !metrics.height || !container?.clientWidth || !container.clientHeight) return;
+    // This container has no padding or scrollbar. Allow at most one CSS pixel
+    // of right-edge clipping instead of reserving FitAddon's 15px scrollbar gap.
+    const cols = Math.max(2, Math.min(500, Math.floor((container.clientWidth + 1) / metrics.width)));
+    const rows = Math.max(2, Math.min(300, Math.floor(container.clientHeight / metrics.height)));
+    if (cols !== terminal.cols || rows !== terminal.rows) terminal.resize(cols, rows);
+  }
   function scheduleLayout() {
     clearTimeout(layoutTimer);
     layoutTimer = setTimeout(() => {
       if (document.hidden) return;
-      const size = fit.proposeDimensions();
-      if (size) terminal.resize(Math.max(2, Math.min(500, size.cols)), Math.max(2, Math.min(300, size.rows)));
+      fitTerminal();
     }, 150);
   }
   const observer = new ResizeObserver(scheduleLayout);
