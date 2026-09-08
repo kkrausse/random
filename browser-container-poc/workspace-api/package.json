@@ -1,9 +1,13 @@
 {
   "name": "@vivari/workspace-api",
-  "version": "0.0.0-a0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
+  "exports": "./src/index.ts",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test tests/*.test.ts",
+    "test:workers": "bun scripts/test-workers.ts",
+    "distribution": "bun scripts/distribution.ts"
   }
 }

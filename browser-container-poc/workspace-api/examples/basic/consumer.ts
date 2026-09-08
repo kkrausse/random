@@ -1,8 +1,7 @@
-import { Runtime, Workspace } from "../../src/index.js";
+import { Runtime, Workspace, opfsStore } from "../../src/index.js";
 import type { RipgrepTool } from "../../src/index.js";
 
-// Small intended-usage consumer (api-plan.md §Proposed usage, trimmed to A0).
-// Must typecheck; every call rejects with BackendUnavailableError until A1+.
+// Dependencies are prepared separately; opening launches no project applications.
 
 export async function runBasic(opts: {
   workspaceId: string;
@@ -11,7 +10,7 @@ export async function runBasic(opts: {
 }) {
   const workspace = await Workspace.open({
     id: opts.workspaceId,
-    storage: { kind: "opfs" },
+    storage: opfsStore(opts.distribution),
   });
   await workspace.fs.writeFile("/src/App.tsx", "export default {}");
   const runtime = await Runtime.start({
@@ -19,7 +18,7 @@ export async function runBasic(opts: {
     workspace,
     tools: { ripgrep: opts.ripgrep },
   });
-  const matches = await runtime.tools.ripgrep.invoke({
+  const matches = await runtime.tools.ripgrep({
     pattern: "TODO",
     paths: ["/workspace/src"],
   });
@@ -29,9 +28,12 @@ export async function runBasic(opts: {
     cwd: "/workspace",
     env: {},
   });
+  const drain = async (stream: AsyncIterable<Uint8Array>) => { for await (const _chunk of stream) { /* application logging */ } };
+  const output = Promise.all([drain(vite.stdout), drain(vite.stderr)]);
   const endpoint = await runtime.expose(5173);
   void matches;
   await vite.stop();
+  await output;
   endpoint.dispose();
   await runtime.stop();
   await workspace.flush();

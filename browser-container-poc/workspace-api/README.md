@@ -1,0 +1,77 @@
+# Workspace API v0
+
+Real Vivari worker-backed files, explicit execution, typed tools and endpoints.
+Browser-only acceptance remains pending; see [V0-HANDOFF.md](V0-HANDOFF.md).
+
+```ts
+import { Workspace, Runtime, opfsStore, defineRipgrepTool, attachPreview } from './src';
+
+const manifest = await fetch('/runtime/distribution.json').then(r => r.json());
+const distribution = { name: 'vivari', version: manifest.version, assetBaseUrl: '/runtime/' };
+const workspace = await Workspace.open({ id: 'default', storage: opfsStore(distribution) });
+await workspace.fs.writeFile('/hello.cjs', `console.log('guest worker');`);
+const runtime = await Runtime.start({ workspace, distribution, tools: {} });
+const execution = await runtime.node({ entry: '/workspace/hello.cjs' });
+const drain = async (stream: AsyncIterable<Uint8Array>) => {
+  for await (const bytes of stream) console.log(bytes);
+};
+await Promise.all([drain(execution.stdout), drain(execution.stderr), execution.exited]);
+await runtime.stop();
+await workspace.fs.writeFile('/after-stop.txt', 'filesystem still alive');
+await workspace.flush();
+await workspace.close();
+```
+
+## Contracts
+
+- Only `id: 'default'` and one origin's existing OPFS lease. Opening requires
+  persistent storage; failed initialization/ownership rejects instead of silently
+  using a different in-memory tree. Files map to `/workspace` for guest code.
+- Runtime starts no project applications. Runtime stop kills its executions and
+  descendants; storage remains alive. Workspace close rejects while attached,
+  flushes, then releases workers even if flushing fails (and propagates failure).
+- Flush acknowledges preceding accepted persisted mutations, not a checkpoint.
+  **`node_modules` remains excluded from the existing OPFS mirror** and requires
+  explicit dependency preparation/cache restoration on reopen.
+- `runtime.node` uses the configured Node-compatible frontend by absolute path.
+  This does not run native Node/Bun. No public Bun or shell-spawn method is claimed.
+- stdout/stderr have one reader each; drain concurrently. Each channel allows
+  1 MiB unread bytes including worker transit, split into at most 64 KiB frames.
+  Overflow errors that channel and forcibly stops the process tree; it does not
+  silently truncate. Cancellation of a channel discards it without killing the
+  execution. Guest child-to-parent and synchronous capture queues are separate
+  legacy channels, not covered by the top-level host byte budget.
+- `exited` resolves `{exitCode, signal, forced}` once. Buffered final output precedes
+  EOF. `stop()` is idempotent, forced subtree cleanup. stdin accepts bytes and EOF.
+- `expose(port,{signal})` waits for a listener; `Endpoint.closed` reports loss.
+  Handles do not retarget numeric-port replacements. Preview URLs carry reserved
+  listener identity; SW/iframe behavior still needs real-browser qualification.
+- `endpoint.fetch('/path',init)` uses a generic real guest HTTP relay process per
+  request, streams response bytes, preserves status/headers/binary bodies, and
+  closes the guest connection on abort/cancel. Uploads buffer (8 MiB limit),
+  response headers cap at 64 KiB. Redirect responses are returned manually;
+  automatic following, cookie-jar integration, and browser-native Response URL/
+  redirected metadata are not implemented. SW preview HTTP itself stays buffered.
+- `attachPreview` validates sender window/origin and namespaces connection IDs
+  per attachment. Detach closes its WS/SSE tunnels and clears the frame, not the
+  listening server. Same-origin trusted embedding is not deployment isolation.
+- `defineRipgrepTool({receiptUrl})` binds a callable `runtime.tools.ripgrep(options)`
+  backed by verified JS/WASM artifacts. It does not install `/bin/rg`. Result limits
+  default to 1,000 matching lines/1 MiB JSON output; truncation is explicit. Exit 1
+  means no-match; regex/other failures throw `TOOL_FAILED`. Default ripgrep binary
+  detection/ignore behavior applies; JSON base64 fields decode with UTF-8 replacement.
+  Partial downloads are verified before install and conflicting existing bytes
+  reject. General atomic bundle upgrades and application delivery are follow-ons.
+
+## Checks
+
+```sh
+bun run typecheck
+bun test
+bun run test:workers  # real Node 24.18.0 worker_threads; macOS arm64 runner
+bun run distribution
+bun scripts/serve-contract.ts
+```
+
+`test:workers` uses real Rust VFS and process workers with a small headless Host
+adapter. It is not proof of browser Worker startup, OPFS, Service Worker or HMR.

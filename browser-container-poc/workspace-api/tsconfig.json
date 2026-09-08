@@ -8,5 +8,6 @@
     "noEmit": true,
     "types": []
   },
-  "include": ["src/**/*.ts", "examples/**/*.ts", "tests/**/*.ts"]
+  "include": ["src/**/*.ts", "examples/**/*.ts", "tests/**/*.ts"],
+  "exclude": ["tests/*.test.ts", "tests/headless-contract.ts"]
 }

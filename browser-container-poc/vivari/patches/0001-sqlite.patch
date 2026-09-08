@@ -64,12 +64,42 @@ index bfb9dbd..671c540 100644
 \ No newline at end of file
 +- **Background research** → `research.md`
 diff --git a/ARCHITECTURE.md b/ARCHITECTURE.md
-index d88c8f8..6015016 100644
+index d88c8f8..c12909c 100644
 --- a/ARCHITECTURE.md
 +++ b/ARCHITECTURE.md
-@@ -1,5 +1,170 @@
+@@ -1,5 +1,200 @@
  # Vivari — Architecture
  
++## Workspace API continuation (workspace-v1)
++
++The enclosing workspace-api owns a storage/supervisor worker lifetime separately
++from runtime execution ownership. Runtime stop kills its tracked process trees;
++only workspace close terminates the supervisor and its authoritative FS worker.
++New `workspace-write` RPC uses the existing batch transfer (binary/large files).
++`workspace-read` returns bytes directly from the FS worker, bypassing the 1 MiB
++SAB response limit; the headless FS worker implements the same byte-read RPC.
++`workspace-flush` travels to the FS worker and acknowledges OPFS flush or returns
++its concrete failure; `workspace-persistence` reports initialization state. Existing
++node_modules exclusions and SQLite quarantine semantics remain in force.
++FS `onMutation` relays guest and host watch notifications to the embedding API.
++
++`VV_BYTE_STDIO=1` selects raw byte writes before process output loses encoding;
++legacy terminal output stays text. `proc-exit` now includes forced signal metadata.
++`onCloseServer` observes explicit close and process finalization. Each browser
++listener carries a random supervisor generation plus monotonic listener sequence.
++The workspace preview URL's reserved `__vv_listener` query binds initial navigation
++and iframe subrequests to that listener, checked in the kernel before routing.
++The embedding adapter owns validated iframe WS/SSE messages and connection cleanup.
++Streaming endpoint Fetch runs a generic Node HTTP relay module in an owned guest
++process; output bytes stream through the execution channel, abort kills the relay
++and closes its real guest connection. Uploads are buffered. Legacy SW HTTP remains
++buffered. An optional `stdioCredits` SAB counts each channel's unread bytes,
++including messages in transit. Worker output splits at 64 KiB and fails with
++`stdio-overflow` above 1 MiB outstanding per channel; the kernel kills that subtree
++and reports `proc-output-error`. Pulling/cancelling a host channel returns credit.
++This is fail-on-overflow, not blocking Writable backpressure; guest child capture
++and child-to-parent stream queues retain their existing separate semantics.
++
 +SDK `BootOptions.onLog` subscribes before service-worker registration and kernel
 +boot, retaining early OPFS ownership/persistence failures for embedders. It stays
 +subscribed for the instance lifetime and uses the existing log message channel.
@@ -238,7 +268,7 @@ index d88c8f8..6015016 100644
  This document explains how Vivari works end to end: the core constraint it
  solves, the worker topology, the syscall protocol, the filesystem, the process
  model, the Node runtime, networking, native code, and the build. It is the
-@@ -917,4 +1082,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
+@@ -917,4 +1112,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
    `GET / → 200` (network-gated, like `verify-express`).
  
  See [`AGENTS.md`](./AGENTS.md) §"Testing & verification" for exactly when to run
@@ -367,7 +397,7 @@ index a8e4d8f..b56d363 100644
  
      if (options.serviceWorkerUrl !== false) {
 diff --git a/packages/core/src/workers/fs-worker.ts b/packages/core/src/workers/fs-worker.ts
-index 533d855..9e7540a 100644
+index 533d855..6c307c1 100644
 --- a/packages/core/src/workers/fs-worker.ts
 +++ b/packages/core/src/workers/fs-worker.ts
 @@ -21,6 +21,7 @@ import initKernel, { VirtualFileSystem } from "../../../vfs/pkg/vivari_vfs.js";
@@ -378,7 +408,45 @@ index 533d855..9e7540a 100644
  
  const post = (type, extra) => self.postMessage({ type, ...extra });
  
-@@ -71,7 +72,7 @@ function handle(msg) {
+@@ -30,6 +31,7 @@ let depCache = null; // lockfile-keyed node_modules snapshot cache (P1)
+ let accessRef = null; // the vfs-bound facade, shared by persistence + dep cache
+ let compressionOn = false; // whole-file lazy compression gate (URL ?compress=1)
+ const queue = []; // messages that arrive before the VFS finishes booting
++let persistenceState = { status: "opening" };
+ 
+ // Apply the current compression gate to the VFS. Guarded so an older wasm build
+ // without set_compression simply ignores the flag instead of throwing.
+@@ -45,6 +47,29 @@ function applyCompression() {
+ 
+ function handle(msg) {
+   switch (msg.type) {
++    case "workspace-read":
++      try {
++        post("vv-reply", { reqId: msg.reqId, ok: true, bytes: server.vfs.read_file(msg.path) });
++      } catch (error) {
++        post("vv-reply", { reqId: msg.reqId, ok: false, error: String(error?.message || error) });
++      }
++      break;
++    case "workspace-flush":
++      (async () => {
++        try {
++          if (!server.persistence) throw new Error(persistenceState.error || "OPFS is unavailable");
++          await server.persistence.flush();
++          post("vv-reply", { reqId: msg.reqId, ok: true });
++        } catch (error) {
++          persistenceState = { status: "failed", error: String(error?.message || error) };
++          post("workspace-persistence", persistenceState);
++          post("vv-reply", { reqId: msg.reqId, ok: false, error: persistenceState.error });
++        }
++      })();
++      break;
++    case "workspace-persistence":
++      post("vv-reply", { reqId: msg.reqId, ok: true, persistence: persistenceState });
++      break;
+     case "fs-register":
+       server.register(msg.client, msg.sab, msg.port || null);
+       break;
+@@ -71,7 +96,7 @@ function handle(msg) {
        }
        break;
      case "fs-flush": // page is hiding — best-effort force the mirror to disk
@@ -387,7 +455,7 @@ index 533d855..9e7540a 100644
        break;
      case "fs-mem": {
        // Diagnostic: report the VFS's in-RAM content footprint (see the studio's
-@@ -193,11 +194,7 @@ function buildAccess(vfs) {
+@@ -193,11 +218,7 @@ function buildAccess(vfs) {
        }
      },
      writeFile(path, bytes) {
@@ -400,12 +468,31 @@ index 533d855..9e7540a 100644
      },
      symlink(target, path) {
        try {
-@@ -342,7 +339,9 @@ async function createOpfsDepStorage() {
+@@ -317,6 +338,7 @@ async function createOpfsDepStorage() {
+           post("log", { line: `  [opfs] restoring… ${done}/${total}`, cls: "muted" });
+         }
+       });
++      persistenceState = { status: "durable" };
+       if (n > 0)
+         post("log", {
+           line: `  [opfs] restored ${n} entries from a previous session (${Date.now() - t0}ms)`,
+@@ -325,6 +347,7 @@ async function createOpfsDepStorage() {
+     }
+   } catch (err) {
+     post("log", { line: "  [opfs] persistence unavailable: " + (err?.message || err), cls: "muted" });
++    persistenceState = { status: "failed", error: String(err?.message || err) };
+     persistence = null;
+   }
+ 
+@@ -342,7 +365,12 @@ async function createOpfsDepStorage() {
      depCache = null;
    }
  
 +  const sqlite = await createSqliteServer(vfs, persistence);
    server = new FsServer(vfs, persistence);
++  if (persistenceState.status === "opening") persistenceState = { status: "ephemeral", reason: "OPFS unavailable" };
++  server.onMutation = (path) => post("vv-fs-changed", { path });
++  post("workspace-persistence", persistenceState);
 +  server.sqlite = sqlite;
    post("ready");
    for (const msg of queue.splice(0)) handle(msg);
@@ -413,37 +500,113 @@ index 533d855..9e7540a 100644
 \ No newline at end of file
 +})();
 diff --git a/packages/core/src/workers/kernel-worker.ts b/packages/core/src/workers/kernel-worker.ts
-index 23caf3d..6bc8859 100644
+index 23caf3d..6e91632 100644
 --- a/packages/core/src/workers/kernel-worker.ts
 +++ b/packages/core/src/workers/kernel-worker.ts
-@@ -895,7 +895,7 @@ function baseProcEnv(dir) {
+@@ -894,8 +894,11 @@ function baseProcEnv(dir) {
+ // hooks (below), so this coexists with the terminal (termByPid) routing.
  const execByPid = new Map(); // pid -> execId
  const pidByExec = new Map(); // execId -> pid
++const listenerIds = new Map();
++let listenerSeq = 0;
++const listenerGeneration = crypto.randomUUID();
  
 -async function spawnProcess(execId, command, args, cwd, extraEnv) {
-+async function spawnProcess(execId, command, args, cwd, extraEnv, terminal) {
++async function spawnProcess(execId, command, args, cwd, extraEnv, terminal, stdioCredits) {
    if (!kernel) {
      post("proc-exit", { execId, code: 127, error: "kernel not ready" });
      return;
-@@ -909,7 +909,7 @@ async function spawnProcess(execId, command, args, cwd, extraEnv) {
+@@ -909,7 +912,7 @@ async function spawnProcess(execId, command, args, cwd, extraEnv) {
    // which the kernel gates itself), so the gate has to run here.
    await kernel.ensureCommandLoaded(command);
    if (!kernel) return;
 -  const pid = kernel.launch(command, Array.isArray(args) ? args : [], { cwd: dir, env });
-+  const pid = kernel.launch(command, Array.isArray(args) ? args : [], { cwd: dir, env, terminal });
++  const pid = kernel.launch(command, Array.isArray(args) ? args : [], { cwd: dir, env, terminal, stdioCredits });
    if (pid < 0) {
      post("proc-exit", { execId, code: 127, error: command + ": not found" });
      return;
-@@ -1985,7 +1985,7 @@ self.onmessage = async (event) => {
+@@ -1120,7 +1123,7 @@ async function boot() {
+     fsWorker.onmessage = (event) => {
+       if (event.data.type === "ready") resolve();
+       // The FS worker logs OPFS restore status; relay it to the host UI.
+-      else if (event.data.type === "log") post("log", event.data);
++      else if (["log", "workspace-persistence", "vv-reply", "vv-fs-changed"].includes(event.data.type)) post(event.data.type, event.data);
+       // Structured boot progress (OPFS restore done/total) — relay for the UI.
+       else if (event.data.type === "boot-progress")
+         post("boot-progress", {
+@@ -1308,6 +1311,7 @@ async function boot() {
+       } else post("stderr", { chunk });
+     },
+   });
++  kernel.onStdioOverflow = (pid, channel) => post("proc-output-error", { execId: execByPid.get(pid), channel });
+   kernel.onProcExit = (pid, res) => {
+     // Persistent dependency cache (P1): a package-manager install that just
+     // finished cleanly is our signal to snapshot node_modules. Keying off the
+@@ -1322,7 +1326,7 @@ async function boot() {
+     if (eid !== undefined) {
+       execByPid.delete(pid);
+       pidByExec.delete(eid);
+-      post("proc-exit", { execId: eid, code: res.code });
++      post("proc-exit", { execId: eid, code: res.code, signal: res.signal });
+       return;
+     }
+     const tid = termByPid.get(pid);
+@@ -1365,9 +1369,17 @@ async function boot() {
+       post("exit", { pid, code: res.code });
+     }
+   };
++  kernel.onCloseServer = (port, pid) => {
++    const listenerId = listenerIds.get(port);
++    listenerIds.delete(port);
++    listening.delete(port);
++    post("unlisten", { port, pid, listenerId });
++  };
+   kernel.onListen = (port, pid) => {
+     listening.add(port);
+-    post("listen", { port, pid });
++    const listenerId = listenerGeneration + ":" + (++listenerSeq);
++    listenerIds.set(port, listenerId);
++    post("listen", { port, pid, listenerId });
+     // Created/opened project attribution FIRST (by pid chain), so a project's
+     // dev server is matched to *its* run-shell regardless of the port it picked
+     // (and never confused with a hard-coded DEMO that shares e.g. 5173/3000).
+@@ -1910,6 +1922,22 @@ async function runSearch(m) {
+ self.onmessage = async (event) => {
+   const m = event.data;
+ 
++  if (m.type === "workspace-flush" || m.type === "workspace-persistence" || m.type === "workspace-read") {
++    fsWorkerRef.postMessage(m);
++    return;
++  }
++  if (m.type === "workspace-listeners") {
++    post("vv-reply", { reqId: m.reqId, ok: true, listeners: [...listenerIds].map(([port, listenerId]) => ({ port, listenerId })) });
++    return;
++  }
++  if (m.type === "workspace-write") {
++    try {
++      await kernel.writeFilesBatch([{ path: m.path, bytes: m.bytes }]);
++      post("vv-reply", { reqId: m.reqId, ok: true });
++    } catch (error) { post("vv-reply", { reqId: m.reqId, ok: false, error: String(error) }); }
++    return;
++  }
++
+   if (m.type === "init") {
+     // Default on: only an explicit `compress: false` (BootOptions.compress) disables it.
+     vfsCompression = m.compress !== false;
+@@ -1985,7 +2013,11 @@ self.onmessage = async (event) => {
    // Run one command directly (no wrapping shell) and stream its output/exit back
    // by `execId`. See spawnProcess + the execByPid routing in boot().
    if (m.type === "proc-spawn") {
 -    void spawnProcess(m.execId, m.command, m.args, m.cwd, m.env).catch((err) =>
-+    void spawnProcess(m.execId, m.command, m.args, m.cwd, m.env, m.terminal).catch((err) =>
++    if (m.listenerId && listenerIds.get(m.port) !== m.listenerId) {
++      post("proc-exit", { execId: m.execId, code: 127, error: "listener closed" });
++      return;
++    }
++    void spawnProcess(m.execId, m.command, m.args, m.cwd, m.env, m.terminal, m.stdioCredits).catch((err) =>
        post("proc-exit", { execId: m.execId, code: 127, error: (err && err.message) || String(err) }),
      );
      return;
-@@ -1996,6 +1996,11 @@ self.onmessage = async (event) => {
+@@ -1996,6 +2028,11 @@ self.onmessage = async (event) => {
      if (pid != null && kernel) kernel.sendStdin(pid, m.chunk == null ? null : m.chunk);
      return;
    }
@@ -455,7 +618,27 @@ index 23caf3d..6bc8859 100644
    // Kill a spawned process (its exit is still reported via onProcExit → proc-exit).
    if (m.type === "proc-kill") {
      const pid = pidByExec.get(m.execId);
-@@ -2320,4 +2325,4 @@ self.onmessage = async (event) => {
+@@ -2068,7 +2105,7 @@ self.onmessage = async (event) => {
+     try {
+       if (!kernel.exists(m.path)) { post("vv-reply", { reqId: m.reqId, ok: true, exists: false, isDir: false }); return; }
+       const st = kernel.stat(m.path);
+-      post("vv-reply", { reqId: m.reqId, ok: true, exists: true, isDir: st.kind === "dir" });
++      post("vv-reply", { reqId: m.reqId, ok: true, exists: true, isDir: st.kind === "dir", size: st.size });
+     } catch {
+       post("vv-reply", { reqId: m.reqId, ok: true, exists: false, isDir: false });
+     }
+@@ -2301,6 +2338,10 @@ self.onmessage = async (event) => {
+   // port was transferred to us, so we answer it directly.
+   if (m.type === "vv-http") {
+     const port = event.ports[0];
++    if (m.req.listenerId && listenerIds.get(m.req.port) !== m.req.listenerId) {
++      port.postMessage({ status: 410, headers: {}, body: "workspace listener closed\n" });
++      return;
++    }
+     if (!kernel) {
+       port.postMessage({ status: 503, headers: {}, body: "kernel not ready\n" });
+       return;
+@@ -2320,4 +2361,4 @@ self.onmessage = async (event) => {
      port.postMessage(resp);
      return;
    }
@@ -630,7 +813,7 @@ index aa430c1..e31f97d 100644
 \ No newline at end of file
 +};
 diff --git a/packages/kernel-host/fs-server.js b/packages/kernel-host/fs-server.js
-index b4805b2..3ca7d59 100644
+index b4805b2..ac0bad2 100644
 --- a/packages/kernel-host/fs-server.js
 +++ b/packages/kernel-host/fs-server.js
 @@ -50,6 +50,7 @@ import {
@@ -649,7 +832,15 @@ index b4805b2..3ca7d59 100644
      this.clients.delete(clientId);
      // Drop any watches this client still held (its process is gone).
      if (this.watches.size) {
-@@ -208,6 +210,21 @@ export class FsServer {
+@@ -173,6 +175,7 @@ export class FsServer {
+   // (or the basename for a single-file watch). 'rename' = add/remove/rename,
+   // 'change' = contents changed; chokidar (Vite's watcher) re-stats either way.
+   notifyWatch(path, event) {
++    if (this.onMutation) this.onMutation(path, event);
+     if (this.watches.size === 0) return;
+     // Only watches sharing this path's top segment (or a root "/" watch) can
+     // possibly cover it — scan just those buckets, not every registration.
+@@ -208,6 +211,21 @@ export class FsServer {
      const opcode = Atomics.load(ctrl, I_OPCODE);
      const { flags, fields } = decodeRequest(data.slice(0, Atomics.load(ctrl, I_REQ_LEN)));
      try {
@@ -671,8 +862,17 @@ index b4805b2..3ca7d59 100644
        const bytes = this.dispatch(opcode, flags, fields, clientId);
        if (bytes.length > data.length) {
          // The response doesn't fit the shared window (e.g. a whole-file read of a
+@@ -273,7 +291,7 @@ export class FsServer {
+       const existed = this.couldNotify(e.path) ? this.vfs.exists(e.path) : false;
+       this.vfs.write_file(e.path, bytes);
+       if (p) p.onWrite(e.path);
+-      if (this.watches.size) this.notifyWatch(e.path, existed ? "change" : "rename");
++      this.notifyWatch(e.path, existed ? "change" : "rename");
+     }
+     return entries.length;
+   }
 diff --git a/packages/kernel-host/kernel.js b/packages/kernel-host/kernel.js
-index 2628e01..fa983ba 100644
+index 2628e01..23b9eef 100644
 --- a/packages/kernel-host/kernel.js
 +++ b/packages/kernel-host/kernel.js
 @@ -307,12 +307,14 @@ export class Kernel {
@@ -699,16 +899,48 @@ index 2628e01..fa983ba 100644
        // #16 stage 2b: a spawned thread gets its creator's MessageChannel end as a
        // transferable, delivered to the worker as parentPort at init.
        threadPort,
-@@ -501,7 +503,7 @@ export class Kernel {
+@@ -349,6 +351,10 @@ export class Kernel {
+         syscall: () => this.serviceSyscall(pid),
+         stdout: (m) => this.onOutput(pid, m.chunk, false),
+         stderr: (m) => this.onOutput(pid, m.chunk, true),
++        "stdio-overflow": (m) => {
++          if (this.onStdioOverflow) this.onStdioOverflow(pid, m.channel);
++          this.finalize(pid, 143, "SIGTERM");
++        },
+         exit: (m) => this.finalize(pid, m.code | 0),
+         // #16 stage 2b: this process' worker_threads asks the kernel to spawn /
+         // terminate a nested thread worker.
+@@ -392,7 +398,7 @@ export class Kernel {
+     const proc = this.procs.get(pid);
+     if (!proc) return;
+     if (proc.capture) {
+-      (isErr ? proc.errBuf : proc.outBuf).push(chunk);
++      (isErr ? proc.errBuf : proc.outBuf).push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
+       return;
+     }
+     if (proc.stream) {
+@@ -435,7 +441,10 @@ export class Kernel {
+     // Drop any ports this process was serving and fail its in-flight requests,
+     // so a fetch that was waiting on a now-dead server does not hang forever.
+     for (const [port, owner] of this.listeners) {
+-      if (owner === pid) this.listeners.delete(port);
++      if (owner === pid) {
++        this.listeners.delete(port);
++        if (this.onCloseServer) this.onCloseServer(port, pid);
++      }
+     }
+     for (const [reqId, pend] of this.pendingHttp) {
+       if (pend.pid === pid) {
+@@ -501,7 +510,7 @@ export class Kernel {
      const programPath = this.resolveProgram(command, cwd, opts.env || {});
      if (!programPath) return -1;
      return this.createProcess(
 -      { programPath, args, cwd, env: opts.env || {} },
-+      { programPath, args, cwd, env: opts.env || {}, terminal: opts.terminal },
++      { programPath, args, cwd, env: opts.env || {}, terminal: opts.terminal, stdioCredits: opts.stdioCredits },
        { capture: !!opts.capture },
      );
    }
-@@ -521,7 +523,7 @@ export class Kernel {
+@@ -521,7 +530,7 @@ export class Kernel {
          return;
        }
        const pid = this.createProcess(
@@ -717,7 +949,19 @@ index 2628e01..fa983ba 100644
          { capture: !!opts.capture },
        );
        this.procs.get(pid).onExit = resolve;
-@@ -930,10 +932,38 @@ export class Kernel {
+@@ -607,7 +616,10 @@ export class Kernel {
+     }
+     // OP_CLOSE_SERVER
+     const port = msg.port | 0;
+-    if (this.listeners.get(port) === proc.pid) this.listeners.delete(port);
++    if (this.listeners.get(port) === proc.pid) {
++      this.listeners.delete(port);
++      if (this.onCloseServer) this.onCloseServer(port, proc.pid);
++    }
+     this.respondOk(proc, EMPTY);
+   }
+ 
+@@ -930,10 +942,38 @@ export class Kernel {
        return;
      }
      const signal = msg.signal || "SIGTERM";
@@ -1092,18 +1336,50 @@ index b6b6158..38f1cd4 100644
      op === OP_UNWATCH
    );
 diff --git a/packages/runtime/boot.js b/packages/runtime/boot.js
-index eb3334d..ee7d708 100644
+index eb3334d..089975f 100644
 --- a/packages/runtime/boot.js
 +++ b/packages/runtime/boot.js
-@@ -52,6 +52,7 @@ export function bootProcess({
+@@ -38,6 +38,26 @@ export function bootProcess({
+   // transferred port is an IPC channel (process.send / 'message'), not parentPort.
+   const isFork = !!spec.isFork;
+   const isThread = !!spec.isThread && !isFork;
++  // Optional SDK credits include bytes still in MessagePort transit. Overflow
++  // fails the execution rather than queueing unbounded worker output. A single
++  // chunk is split so even one large write cannot bypass the transport bound.
++  const credits = spec.stdioCredits ? new Int32Array(spec.stdioCredits) : null;
++  let outputFailed = false;
++  const output = (type, chunk, channel) => {
++    if (!credits) { send(type, { chunk }); return; }
++    if (outputFailed) return;
++    const bytes = typeof chunk === "string" ? new TextEncoder().encode(chunk) : chunk;
++    for (let offset = 0; offset < bytes.length; offset += 65536) {
++      const part = bytes.slice(offset, offset + 65536);
++      if (Atomics.add(credits, channel, part.length) + part.length > 1048576) {
++        Atomics.sub(credits, channel, part.length);
++        outputFailed = true;
++        send("stdio-overflow", { channel });
++        throw new Error("SDK unread output exceeded 1048576 bytes");
++      }
++      send(type, { chunk: part });
++    }
++  };
+   const runtime = createRuntime({
+     ctrl,
+     data,
+@@ -52,9 +72,10 @@ export function bootProcess({
      // process.argv becomes ['node', programPath, ...args]
      argv: [spec.programPath, ...(spec.args || [])],
      env: spec.env || {},
 +    terminal: spec.terminal,
      cwd: spec.cwd || "/",
-     stdout: (chunk) => send("stdout", { chunk }),
-     stderr: (chunk) => send("stderr", { chunk }),
-@@ -91,6 +92,7 @@ export function bootProcess({
+-    stdout: (chunk) => send("stdout", { chunk }),
+-    stderr: (chunk) => send("stderr", { chunk }),
++    stdout: (chunk) => output("stdout", chunk, 0),
++    stderr: (chunk) => output("stderr", chunk, 1),
+     postRaw,
+     // fork mode: the transferred port is the process IPC channel, not parentPort.
+     ipcPort: isFork ? threadPort : null,
+@@ -91,6 +112,7 @@ export function bootProcess({
        dispatchSse: runtime.dispatchSse,
        dispatchPipe: runtime.dispatchPipe,
        dispatchStdin: runtime.dispatchStdin,
@@ -1561,10 +1837,24 @@ index 0000000..eb3034b
 +  };
 +}
 diff --git a/packages/runtime/builtins/process.js b/packages/runtime/builtins/process.js
-index daabc38..d91450d 100644
+index daabc38..4f67445 100644
 --- a/packages/runtime/builtins/process.js
 +++ b/packages/runtime/builtins/process.js
-@@ -224,5 +224,26 @@ export function createProcess({ pid = 1, ppid = 0, argv = [], env = {}, cwd = "/
+@@ -16,6 +16,13 @@ export function createProcess({ pid = 1, ppid = 0, argv = [], env = {}, cwd = "/
+   // so byte writes (e.g. Go's wasm_exec writing to fd 1) must be decoded, not
+   // stringified. Honour a string encoding arg (Node's write(chunk, encoding)).
+   const decodeChunk = (chunk, encoding) => {
++    // Opt-in SDK byte channel; legacy terminals continue receiving text.
++    if (env.VV_BYTE_STDIO === "1") {
++      if (typeof chunk === "string") return globalThis.Buffer.from(chunk, typeof encoding === "string" ? encoding : "utf8");
++      if (ArrayBuffer.isView(chunk)) return new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength).slice();
++      if (chunk instanceof ArrayBuffer) return new Uint8Array(chunk.slice(0));
++      throw new TypeError("stdio expects a string or byte buffer");
++    }
+     if (typeof chunk === "string") return chunk;
+     const enc = typeof encoding === "string" ? encoding : "utf8";
+     const B = globalThis.Buffer;
+@@ -224,5 +231,26 @@ export function createProcess({ pid = 1, ppid = 0, argv = [], env = {}, cwd = "/
      emit: () => false,
      features: {},
    };
@@ -2084,8 +2374,51 @@ index 961f34d..b438775 100644
    // `stream/web` = the WHATWG streams, which the host realm provides as globals.
    // @edge-runtime/primitives (pulled by Next.js) does `require('stream/web')`.
    "stream/web": (exports, require, module) => {
+diff --git a/packages/studio/public/sw.js b/packages/studio/public/sw.js
+index bc250b6..2277add 100644
+--- a/packages/studio/public/sw.js
++++ b/packages/studio/public/sw.js
+@@ -839,6 +839,7 @@ async function routeByClient(event, url) {
+   return handlePreview(event, parseInt(m[1], 10), url.pathname + url.search);
+ }
+ 
++const workspaceListenersByClient = new Map();
+ async function handlePreview(event, port, path, keepPrefix) {
+   if (!Number.isInteger(port)) {
+     return new Response("Bad preview URL\n", { status: 400 });
+@@ -864,7 +865,22 @@ async function handlePreview(event, port, path, keepPrefix) {
+   const headers = {};
+   for (const [k, v] of event.request.headers) headers[k] = v;
+ 
+-  const req = { port, method, url: path, headers, body };
++  // Workspace endpoints bind a URL and its resulting iframe client to one
++  // listener incarnation. Relative and root-absolute subrequests inherit it.
++  const requestUrl = new URL(event.request.url);
++  let listenerId = requestUrl.searchParams.get("__vv_listener");
++  const clientId = event.clientId || event.resultingClientId;
++  if (!listenerId && clientId) {
++    listenerId = workspaceListenersByClient.get(clientId);
++    if (!listenerId) {
++      const client = await self.clients.get(clientId);
++      if (client) listenerId = new URL(client.url).searchParams.get("__vv_listener");
++    }
++  }
++  if (listenerId && event.resultingClientId) workspaceListenersByClient.set(event.resultingClientId, listenerId);
++  const guestUrl = new URL(path, self.location.origin);
++  guestUrl.searchParams.delete("__vv_listener");
++  const req = { port, method, url: guestUrl.pathname + guestUrl.search, headers, body, listenerId };
+ 
+   const resp = await new Promise((resolve) => {
+     const mc = new MessageChannel();
+@@ -904,4 +920,4 @@ async function handlePreview(event, port, path, keepPrefix) {
+   }
+ 
+   return new Response(outBody, { status: resp.status || 200, headers: respHeaders });
+-}
+\ No newline at end of file
++}
 diff --git a/roadmap.md b/roadmap.md
-index 3ab02ef..5abc85d 100644
+index 3ab02ef..aafd5d2 100644
 --- a/roadmap.md
 +++ b/roadmap.md
 @@ -1,5 +1,82 @@
@@ -2171,7 +2504,7 @@ index 3ab02ef..5abc85d 100644
  Built on the principle **de-risk the hardest part first**: prove the riskiest
  primitive (synchronous cross-thread access to a shared kernel) before expanding.
  
-@@ -3041,4 +3118,35 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
+@@ -3041,4 +3118,46 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
  | `Fetcher Worker` | Network/registry worker |
  | `Node.js Worker PID n` | Process = 1 worker + Node shim |
  | `[worker n]` | Nested `worker_threads` — real (#16 stage 2b) |
@@ -2209,11 +2542,22 @@ index 3ab02ef..5abc85d 100644
 +POC. Native FFI and automatic native64-to-wasm32 struct conversion remain outside
 +the contract. This follows the runtime-first direction rather than replacing
 +OpenTUI's TypeScript RenderLib; actual renderer acceptance remains a separate gate.
++# Local workspace-v1 API continuation — September 2026
++
++Added acknowledged FS flush/state and binary batch-write RPCs, host-visible guest
++mutations, opt-in byte stdio, forced-exit metadata and listener close/incarnation
++events. The enclosing workspace-api retains the storage supervisor across runtime
++stop, and supplies a generic per-request guest HTTP stream adapter. This is a real
++worker backend, not a host filesystem copy. Browser acceptance and remaining
++limitations are recorded in the enclosing workspace-api README/handoff.
++SDK stdio now optionally counts in-transit bytes over an 8-byte shared credit
++buffer, splits output chunks and terminates on bounded overflow; plain terminal
++and headless legacy channels keep their existing behavior.
 diff --git a/scripts/fs-worker.mjs b/scripts/fs-worker.mjs
-index c528166..62e2571 100644
+index c528166..aafeb1a 100644
 --- a/scripts/fs-worker.mjs
 +++ b/scripts/fs-worker.mjs
-@@ -5,14 +5,19 @@
+@@ -5,14 +5,20 @@
  
  import { parentPort } from "node:worker_threads";
  import { createRequire } from "node:module";
@@ -2227,12 +2571,24 @@ index c528166..62e2571 100644
  
  const vfs = new wasm.VirtualFileSystem();
  const server = new FsServer(vfs);
++server.onMutation = (path) => parentPort.postMessage({ type: "vv-fs-changed", path });
 +server.sqlite = await createSqliteServer(vfs, null, {
 +  wasmBinary: readFileSync(require.resolve("@sqlite.org/sqlite-wasm/sqlite3.wasm")),
 +});
  
  // A vfs-bound facade for the dependency cache (mirror of buildAccess in the
  // browser fs-worker). Headless has no OPFS, so the snapshot store is an in-memory
+@@ -67,6 +73,10 @@ const depCacheReady = (async () => {
+ 
+ parentPort.on("message", (msg) => {
+   switch (msg.type) {
++    case "workspace-read":
++      try { parentPort.postMessage({ type: "vv-reply", reqId: msg.reqId, ok: true, bytes: vfs.read_file(msg.path) }); }
++      catch (error) { parentPort.postMessage({ type: "vv-reply", reqId: msg.reqId, ok: false, error: String(error) }); }
++      break;
+     case "fs-register":
+       server.register(msg.client, msg.sab, msg.port || null);
+       break;
 diff --git a/scripts/process-worker.mjs b/scripts/process-worker.mjs
 index 24e3045..9043340 100644
 --- a/scripts/process-worker.mjs
