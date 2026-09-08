@@ -27,11 +27,17 @@ export class OpenCodeAPI {
   ) {}
   async response(path: string, init: RequestInit = {}) {
     const base = new URL(this.endpoint.url);
-    base.search = "";
     base.hash = "";
     base.pathname = base.pathname.replace(/\/$/, "") + "/";
+    const url = new URL(`api/${path}`, base);
+    // Preserve caller routing/auth query values while allowing API pagination
+    // and filters to supply their own values. Fetch remains caller-owned.
+    for (const key of new Set(base.searchParams.keys())) {
+      if (!url.searchParams.has(key))
+        for (const value of base.searchParams.getAll(key)) url.searchParams.append(key, value);
+    }
     const response = await this.endpoint.fetch(
-      new URL(`api/${path}`, base).href,
+      url.href,
       init,
     );
     if (!response.ok)

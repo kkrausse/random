@@ -1,5 +1,17 @@
 # Integration handoff
 
+## Fresh integration follow-up
+
+Workspace demo now consumes built root, `/react`, `/styles.css` through its local
+file dependency. Integration QA fixed API URL construction dropping caller endpoint
+query parameters; transport tests now preserve routing/auth query values, repeated
+values, request filters and string/init Fetch. Updated package typecheck/build and
+**22 tests / 82 assertions** pass. No public export changes. The demo resolves its
+own React peers when bundling file symlinks; an independent bundled SSR consumer
+reproduced the prior invalid-hook-call and passed with that app-side fix.
+See `../workspace-demo/tests/integration-qa/README.md`: real guest/browser checks
+remain blocked by the disconnected Browser Control extension.
+
 Owned scope: only `browser-container-poc/opencode-chat/`.
 
 Package is `@vivari/opencode-chat@0.1.0`, ESM, locally packable with Bun. It has
