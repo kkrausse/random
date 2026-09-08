@@ -1,5 +1,16 @@
 # FieldCut
 
+## Local configuration
+
+Copy the example and set the three storage paths for your machine:
+
+```sh
+cp video-editor.config.example.json video-editor.config.json
+```
+
+`video-editor.config.json` is ignored by Git. Keep personal paths in that local
+file; commit only the example. `VIDEO_EDITOR_CONFIG` can select another config file.
+
 ## Storage Rules
 
 `video-editor.config.json` defines three non-overlapping storage roots:
@@ -47,11 +58,11 @@ Project exports are created with `POST /api/projects/:id/export` and served with
 
 Project JSON is versioned and stores ordered timeline items plus project-wide output width, height, and FPS. Each item owns its trim or photo duration, stabilization choice, and normalized crop. The editor locks item crops to the project frame aspect ratio and autosaves project revisions under `savedProjectsRoot`.
 
-The current configured destinations are:
+Example destinations (replace with your local paths):
 
 ```text
-derivedRoot:       /Volumes/Photos/iphone-uploads/video-editor-project/derived
-savedProjectsRoot: /Volumes/Photos/iphone-uploads/video-editor-project/projects
+derivedRoot:       /path/to/fieldcut/derived
+savedProjectsRoot: /path/to/fieldcut/projects
 ```
 
 Before adding a write path, classify its contents first. Reproducible output belongs under `derivedRoot`; durable user intent belongs under `savedProjectsRoot`.

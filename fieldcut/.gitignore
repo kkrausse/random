@@ -3,3 +3,4 @@ dist/
 data/
 .DS_Store
 *.tmp
+video-editor.config.json
