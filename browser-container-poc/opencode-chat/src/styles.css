@@ -1,0 +1,284 @@
+.oc-chat {
+  --oc-border: #dce1e7;
+  --oc-muted: #667085;
+  --oc-accent: #3157c8;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 320px;
+  min-width: 0;
+  background: #fff;
+  color: #182230;
+  font:
+    14px/1.55 system-ui,
+    sans-serif;
+  border: 1px solid var(--oc-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.oc-chat * {
+  box-sizing: border-box;
+}
+.oc-chat button,
+.oc-chat input,
+.oc-chat select,
+.oc-chat textarea {
+  font: inherit;
+}
+.oc-chat button {
+  cursor: pointer;
+  background: #fff;
+  color: inherit;
+  border: 1px solid var(--oc-border);
+  border-radius: 7px;
+  padding: 5px 10px;
+}
+.oc-chat button:hover:not(:disabled) {
+  background: #f0f3fa;
+}
+.oc-chat button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.oc-chat :focus-visible {
+  outline: 2px solid var(--oc-accent);
+  outline-offset: 2px;
+}
+.oc-toolbar,
+.oc-controls,
+.oc-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.oc-toolbar {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--oc-border);
+}
+.oc-toolbar span {
+  font-size: 12px;
+  color: var(--oc-muted);
+  flex: 1;
+}
+.oc-controls {
+  padding: 10px 16px;
+  background: #f8fafc;
+}
+.oc-controls label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  font-size: 12px;
+}
+.oc-chat select {
+  min-width: 0;
+  max-width: 240px;
+  border: 1px solid var(--oc-border);
+  border-radius: 6px;
+  background: #fff;
+  padding: 5px;
+}
+.oc-transcript-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 100px;
+  overflow: hidden;
+}
+.oc-transcript {
+  height: 100%;
+  overflow: auto;
+  padding: 16px;
+  scrollbar-gutter: stable;
+  overflow-anchor: none;
+}
+.oc-message {
+  margin: 0 auto 22px;
+  max-width: 850px;
+  overflow-wrap: anywhere;
+}
+.oc-role {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--oc-muted);
+  margin-bottom: 6px;
+}
+.oc-message-user {
+  background: #f3f5fa;
+  border-radius: 10px;
+  padding: 12px 16px;
+}
+.oc-markdown p {
+  margin: 8px 0;
+}
+.oc-heading {
+  font-size: 1.1em;
+  font-weight: 650;
+}
+.oc-chat pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: auto;
+  font:
+    12px/1.6 ui-monospace,
+    monospace;
+  max-height: 360px;
+}
+.oc-chat code {
+  font-family: ui-monospace, monospace;
+  background: #f1f3f7;
+  border-radius: 3px;
+  padding: 1px 3px;
+}
+.oc-chat pre code {
+  background: none;
+  padding: 0;
+}
+.oc-code {
+  background: #f6f8fb;
+  border: 1px solid var(--oc-border);
+  border-radius: 8px;
+  margin: 12px 0;
+  overflow: hidden;
+}
+.oc-code header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--oc-border);
+  font-size: 12px;
+}
+.oc-code header span:first-child {
+  flex: 1;
+}
+.oc-code pre {
+  padding: 10px;
+  margin: 0;
+  white-space: pre;
+}
+.oc-tool,
+.oc-reasoning {
+  border: 1px solid var(--oc-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 8px 0;
+}
+.oc-tool summary,
+.oc-reasoning summary {
+  cursor: pointer;
+}
+.oc-tool summary span {
+  margin-left: 12px;
+  font-size: 12px;
+  color: var(--oc-muted);
+}
+.oc-tool h4 {
+  margin: 8px 0;
+  font-size: 12px;
+}
+.oc-chat a {
+  color: var(--oc-accent);
+}
+.oc-chat blockquote {
+  border-left: 3px solid var(--oc-border);
+  margin-left: 0;
+  padding-left: 12px;
+}
+.oc-table {
+  overflow: auto;
+}
+.oc-chat th,
+.oc-chat td {
+  padding: 5px 9px;
+  border-bottom: 1px solid var(--oc-border);
+  text-align: left;
+}
+.oc-empty {
+  text-align: center;
+  color: var(--oc-muted);
+  padding: 36px 12px;
+}
+.oc-empty h3 {
+  color: #344054;
+}
+.oc-latest {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 2px 10px #0001;
+}
+.oc-error {
+  display: flex;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 16px;
+  background: #fff1ef;
+  color: #9d271b;
+  overflow-wrap: anywhere;
+}
+.oc-error span {
+  flex: 1;
+}
+.oc-requests {
+  max-height: 45%;
+  overflow: auto;
+}
+.oc-request {
+  margin: 8px 16px;
+  padding: 12px;
+  background: #fffcf2;
+  border: 1px solid #e9d799;
+  border-radius: 8px;
+}
+.oc-request fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0 0 12px;
+}
+.oc-option {
+  display: flex;
+  gap: 8px;
+  padding: 5px 0;
+}
+.oc-option small {
+  display: block;
+  color: var(--oc-muted);
+}
+.oc-request input:not([type="radio"]):not([type="checkbox"]) {
+  display: block;
+  width: 100%;
+  padding: 6px;
+  border: 1px solid var(--oc-border);
+  border-radius: 5px;
+}
+.oc-composer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--oc-border);
+}
+.oc-composer textarea {
+  width: 100%;
+  min-height: 80px;
+  max-height: 220px;
+  resize: vertical;
+  padding: 10px;
+  border: 1px solid var(--oc-border);
+  border-radius: 8px;
+  background: #fafbfc;
+  color: inherit;
+}
+.oc-composer .oc-actions {
+  margin-top: 8px;
+  justify-content: space-between;
+}
+.oc-composer small {
+  font-size: 11px;
+  color: var(--oc-muted);
+}
+.oc-composer button[type="submit"] {
+  background: var(--oc-accent);
+  color: #fff;
+  border-color: var(--oc-accent);
+}
