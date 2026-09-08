@@ -32,7 +32,8 @@ async function main() {
     const response = await fetch(`${url}/demo-info`, { signal: AbortSignal.timeout(1000) });
     const existing = response.ok && response.headers.get("content-type")?.includes("application/json") ? await response.json() : undefined;
     if (existing?.name === "workspace-react-demo" && existing.root === root && existing.runtimeRoot === runtimeRoot && existing.preparedRoot === preparedRoot) {
-      console.log(`Reusing Workspace React demo and local model proxy: ${url}\nOpen the URL and click Start workspace. Stop the owning terminal to stop that server.`);
+      if (existing.localEditorAdmin !== (process.env.LOCAL_EDITOR_ADMIN === "1")) throw Error(`Port ${port} has a different local editor policy. Restart its owning terminal with the intended LOCAL_EDITOR_ADMIN flag. No existing process was stopped.`);
+      console.log(`Reusing Workspace React demo and local model proxy: ${url}\nNormal app is the default; authorized local admins can Enable editing. Stop the owning terminal to stop that server.`);
       await diagnostics.write({ time: new Date().toISOString(), run, event: "command.reused", port });
       return;
     }

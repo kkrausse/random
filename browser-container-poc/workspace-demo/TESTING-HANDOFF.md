@@ -1,5 +1,35 @@
 # Fresh React demo QA handoff — implementation ownership released
 
+## Current product-mode implementation (supersedes older UX notes below)
+
+Owner `ses_f80adc345ffehktRIDsTSnqYzk` implemented controlled normal/editing mode,
+source-only reset, server policy and native backend passthrough. See the concise
+[IMPLEMENTATION-HANDOFF.md](./IMPLEMENTATION-HANDOFF.md) for exact features/run,
+runtime patch version, evidence and fresh acceptance matrix. Default route now shows
+the normal counter. Use `LOCAL_EDITOR_ADMIN=1 bun run demo` for the local admin
+fixture's Enable editing toggle; direct editor/model routes deny without that flag.
+The existing 4311 server owner/environment was not changed. A policy mismatch needs
+parent/QA to restart that owning terminal deliberately; new ports are new stores.
+
+Focused API checks 4 tests/17 assertions; demo suite 12 tests/84 assertions passed,
+then final focused product checks passed 5 tests/55 assertions (combined coverage
+12 tests/89 assertions). Demo browser/server typecheck and build passed. Runtime full build and
+real-Node verification passed; consumer tarball check passed with new `/react` and
+`/server` APIs and 36 hash-identical runtime files. Latest runtime version:
+`fd0c1c8769ed2ab52fca10ccbdfdb9beebda5a31e1c1985d7a24f83ae6a39003`.
+
+One observational Browser Control doctor remains disconnected (0.7.0 matching relay,
+zero targets). No browser navigation or state mutation occurred. Retained origins,
+tabs, original source headings and chat session IDs in §Browser ownership below
+remain authoritative. Explicit Reset source must be tested on a QA-owned source
+snapshot/origin, not silently over those retained headings. Source reset preserves
+unknown files/chat/backend; ordinary entry always preserves edits.
+
+The standalone optional chat package is independently owned in `opencode-chat/`;
+the existing chat adapter remains a replaceable interim integration. Parent owns
+final public-package integration and fresh independent real-browser QA. Historical
+Start workspace / Advanced UI descriptions below no longer describe the current shell.
+
 ## Local package checkpoint (2026-09-07)
 
 See [IMPLEMENTATION-HANDOFF.md](./IMPLEMENTATION-HANDOFF.md) for the newer public

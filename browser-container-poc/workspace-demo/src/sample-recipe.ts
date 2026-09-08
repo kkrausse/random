@@ -21,6 +21,16 @@ export async function seedMissing(workspace: Workspace, project: Record<string, 
   }
   await workspace.flush();
 }
+/** Explicit recipe ownership: no directory deletion, config/state or unknown files. */
+export const resetSourcePaths = ["/index.html", "/src/main.tsx", "/src/App.tsx", "/vite.config.mjs"] as const;
+export async function resetSource(workspace: Workspace, project: Record<string, string>) {
+  for (const path of resetSourcePaths) if (typeof project[path] !== "string") throw Error(`Snapshot missing ${path}`);
+  for (const path of resetSourcePaths) {
+    await workspace.fs.mkdir(path.slice(0, path.lastIndexOf("/")) || "/");
+    await workspace.fs.writeFile(path, project[path]!);
+  }
+  await workspace.flush();
+}
 /** Native Fetch adapter for the public endpoint, including per-launch guest auth. */
 function connection(endpoint: Endpoint, extraHeaders?: HeadersInit): Connection {
   return { url: endpoint.url, fetch: async (input, init) => {
@@ -83,6 +93,16 @@ export function createSampleRecipe() {
         });
         await controller.waitForClient("chat");
       } catch (error) { try { await controller.stopService("chat"); } catch (cleanupError) { diagnostics.record("service.cleanup.failed", { name: "chat", error: cleanupError }); } throw error; }
+    },
+    async reset(controller: WorkspaceController) {
+      if (!controller.workspace || !controller.runtime) throw Error("Enable editing before resetting source");
+      // Pause the agent too, preventing concurrent source writes; its persistent sessions remain.
+      await controller.stopService("chat");
+      await controller.stopService("vite");
+      await resetSource(controller.workspace, manifest.project);
+      await this.vite(controller);
+      await this.chat(controller);
+      controller.status("Known-good source restored. Backend, chat history and unknown files retained.");
     },
     async start(controller: WorkspaceController) {
       await controller.steps([

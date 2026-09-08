@@ -1,91 +1,116 @@
-# Local package checkpoint — ownership released
+# Normal / editing implementation — ownership released
 
-Owner: `ses_f80b87aabffecxahTVNNLC30bT`, September 7, 2026. No agents spawned.
-This is an intentionally bounded **package increment**, not completion of the
-requested production editable-app milestone. Parent should resume implementation
-of the concrete remaining work below before asking fresh QA to accept product mode.
+Owner `ses_f80adc345ffehktRIDsTSnqYzk`, September 7, 2026. No subagents spawned.
+This implements handoff points 1–6; **real browser acceptance remains fresh QA's job**.
+The independent optional chat package is owned by `ses_f80a3c533ffeAdBIIOtwzOmTG4`;
+this session did not edit `opencode-chat/` or the completed audit directory.
 
 ## Delivered
 
-- Existing `workspace-api` is a private locally packable package: browser `.`,
-  reusable `/react`, server/build-only `/assets` entrypoints. ESM JS and `.d.ts`
-  built with Bun + TypeScript. Optional React 18/19 peer; core has no React import.
-- Moved the existing provider/controller into `workspace-api/src/react.tsx`.
-  Demo retains a small diagnostics adapter; source/launch/client recipe remains
-  demo-owned. No generic-library demo diagnostic URL. Optional redacted event
-  observer, run IDs/stage timings, payload bounds, existing bounded activity log.
-  SSR initial snapshot supported; provider mount/import starts no services.
-- Version-pinned standalone runtime delivery via `readRuntimeAssets` and
-  `copyRuntimeAssets`. Installed package consumes an explicitly delivered asset
-  tree; does not reach into POC `.runtime` or sibling dependencies. Durable build
-  preparation stays in the existing POC script. No runtime source/patch changes.
-- Demo application imports public package entries via a local file dependency.
-  Historical diagnostics transport regression test still directly exercises the
-  internal diagnostic reporter; that is not a consumer entrypoint/example.
-- `workspace-api/scripts/consumer-smoke.ts`: actual separate tarball install,
-  independent dependencies, strict NodeNext declaration check, React browser
-  build, SSR/import worker/fetch laziness, diagnostics redaction, runtime relocation
-  through installed public API and SHA256 comparison of every delivered file.
+- Public `/react` `WorkspaceEditing`: caller-owned allowed/enabled/start/retryKey,
+  readiness predicate and editor render slot. Original children stay mounted and
+  visible during boot, hidden only once caller readiness passes. No startup on
+  import/mount. Generic API has no Vite/OpenCode recipe or diagnostic upload URL.
+- Controller `cancelAndClose`: abort immediately, await in-flight operation, close
+  services/runtime/workspace serially; repeated calls share cleanup. Signal renews
+  after success. Failed cleanup can be retried. Provider disposal shares this path;
+  effect replay defers admission/disposal. Recipes must await work and observe signal.
+- Concrete normal interactive `SampleApp.tsx`; its exact source is delivered into
+  guest Vite. Counter Save/Refresh and streamed `/api` response work against the same
+  application-owned backend. Normal React state stays mounted; guest is a new root.
+- Demo lazy-loads editor/recipe chunks only after Enable editing. Full-window guest
+  preview waits for a populated React root. Host corner shell survives broken guest:
+  Chat toggle, expandable Editor, Reset source, Exit/cancel and retry. Saved source
+  and chat survive ordinary re-entry; Exit explicitly discards unsaved editor text.
+- Recipe reset allowlist: `/index.html`, `/src/main.tsx`, `/src/App.tsx`,
+  `/vite.config.mjs`. Restore known-good prepared bytes, flush and restart Vite;
+  pause/reconnect OpenCode to prevent concurrent agent writes. Never delete paths,
+  unknown files, backend or session state; package.json/opencode.json remain owned.
+- Public server-only `/server` authorization adapter: app callback permits or 403;
+  callback failures deny. Demo uses **explicit LOCAL_EDITOR_ADMIN=1 loopback fixture**,
+  not production identity. Without it, no toggle and direct editor assets/model
+  routes deny. Runtime/prepared/lazy editor graph/diagnostics are guarded in serve.ts.
+  Replace `server-policy.ts` with existing app session/role policy for deployment.
+- Public `attachPreview(...,{hostPaths:["/api"]})` routing policy. Reserved
+  `__vv_host_paths` query travels with `__vv_listener`. Authored SW native-fetches
+  matching root-absolute iframe requests with the original Request/Response stream;
+  host WS/EventSource stays native too. Default policy empty; no OpenCode routes in VM.
 
-Exact install/build/asset commands and API/limitations:
-[`../workspace-api/LOCAL-PACKAGES.md`](../workspace-api/LOCAL-PACKAGES.md).
-Demo startup: build `workspace-api` first, then `bun install --ignore-scripts`
-and `bun run demo` in `workspace-demo`. Runtime and prepared app prerequisites
-remain those in README / TESTING-HANDOFF. Runtime patch version unchanged:
-`5b9e2d83dddb85eb5e09c482418a19779c7235ce5b42ff0376e52872f9d4ba50`.
-Generated package JS/types, runtime and prepared output remain ignored.
+## Exact local run / consumption
 
-## Checks / retained receipts
+```sh
+cd browser-container-poc/workspace-api
+bun run build
+cd ../workspace-demo
+bun install --ignore-scripts
+LOCAL_EDITOR_ADMIN=1 bun run demo
+# http://127.0.0.1:4311 → normal counter → Enable editing
+# Omit LOCAL_EDITOR_ADMIN for non-admin direct-route-denial mode.
+```
 
-- Core typecheck and build passed; core tests **4 / 17 assertions** passed.
-- Demo browser/server typecheck and host build passed.
-- Demo tests **7 / 34 assertions** passed after injecting its own diagnostics sink.
-- External smoke passed: **36 runtime files, 55,141,902 bytes**, all hashes equal.
-  Retained `/private/var/folders/t_/x48jtnps7n5_0g_pt9xpvbg00000gn/T/opencode/workspace-consumer-V4IeZn/`:
-  `workspace.tgz`, `runtime.tgz`, isolated `consumer/`, delivered assets, receipt.json.
-  Initial failed smoke `.../T/workspace-consumer-KV2DGl` exposed extensionless
-  declaration imports; fixed and rechecked successfully. Demo typecheck initially
-  raced the package rebuild removing declarations; sequential recheck passed.
-- Browser CLI smoke blocked before page access; matching 0.7.0 relay, disconnected
-  extension, zero targets. See BROWSER-CONTROL-TODO. No browser/runtime boot or
-  DOM StrictMode acceptance inferred from SSR/build checks.
-- No server started/stopped, lease acquired, storage reset, tab navigated, browser
-  session reset/deleted or durable runtime patch edited. Existing 4311 owner and
-  retained browser sessions from TESTING-HANDOFF remain with parent/QA.
+If 4311 already has a different policy, `demo` reports it and preserves that owner.
+Parent/QA must deliberately restart its owning terminal with the intended env.
+Changing ports changes persistent origin; do so only intentionally.
 
-## Remaining implementation (required before full product QA)
+Independent tarball install and asset delivery: `../workspace-api/LOCAL-PACKAGES.md`.
+New exports remain independently consumable; build before installing/rechecking the
+demo. Never run consumer checks concurrently with package rebuild deleting dist/lib.
+Runtime source/patch workflow remains `../workspace-api/V0-HANDOFF.md` §215–227.
 
-1. Controlled production React wrapper: caller-owned `isAdmin`/enable state;
-   normal concrete interactive app by default; lazy-load editor code where possible;
-   no workers/services until enabled. Keep original React tree mounted/visible until
-   edited preview is ready, then full-window iframe. Host recovery shell stays
-   outside iframe; floating chat toggle, expandable file/preview controls, Exit.
-2. Exit/start/abort/StrictMode/unmount lifecycle: cancel pending recipe safely,
-   await close/release lease, retain user source/chat, retry failed cleanup. Current
-   controller comes from prior implementation and needs real DOM race coverage.
-3. Explicit known-good **source** snapshot and reset ownership policy. Reset only
-   declared source paths, restart relevant app; never wipe backend/chat/state or
-   silently replace unknown files on normal entry/reopen.
-4. Real server authorization adapter/hook for editor assets and model proxy,
-   application-owned policy. Clearly labeled local admin fixture, no invented auth.
-5. Required `/api/...` passthrough from guest iframe to existing same-origin backend
-   with native request/response streaming/cookies/headers/method/body/status. Inspect
-   listener query propagation and SW routing (`src/browser/preview.ts`, `host.ts`,
-   canonical `studio/public/sw.js` in durable runtime source). Apply changes through
-   `vivari/patches/0001-sqlite.patch` + established build-runtime workflow in
-   V0-HANDOFF; never edit emitted worker/SW assets. Repackage/reprepare as needed.
-6. Add same tiny backend and same concrete interactive app in normal and guest
-   modes. Document relative URLs, routing, OAuth, iframe navigation and React
-   remount-state limits without asserting identical URL semantics.
+## Runtime / generated assets
 
-## Fresh QA after next increment
+Authored SW: `vivari/.runtime/patched/packages/studio/public/sw.js`; updated nested
+ARCHITECTURE/roadmap. Full nested `git diff --binary HEAD` exported to durable
+`vivari/patches/0001-sqlite.patch`; retained previous sections and untracked bun.lock.
+Full runtime build, distribution and demo preparation completed; emitted assets
+were never hand-edited. Runtime version now:
+`fd0c1c8769ed2ab52fca10ccbdfdb9beebda5a31e1c1985d7a24f83ae6a39003`.
+Prepared apps: 2,291 files / 98,019,988 bytes. Output remains ignored.
 
-Normal lazy startup → authorized Enable editing → original app stays visible during
-boot → iframe ready → floating chat/editor → same-origin backend request (both app
-modes, including streamed response and cookie/header/body/status checks) → known-good
-source-only reset → Exit and lease release → reopen with source/chat preserved.
-Include non-admin direct editor-route denial, duplicate enable, exit during boot,
-missing asset/start failure/retry, broken guest recovery from host shell, StrictMode
-and unmount. Preserve both existing origins and chat/source edits listed in
-TESTING-HANDOFF; no storage deletion. Parent owns next implementation and independent
-QA assignment; this session releases all file/server/browser/runtime ownership.
+## Checks / evidence
+
+- API typecheck/build + 4 unit tests / 17 assertions passed.
+- Demo browser/server typecheck, build, and tests passed: suite 12/84, final focused
+  product 5/55 (combined coverage 12/89). Source reset/reopen, cancellation/cleanup retry,
+  lazy public/private graph, real server policy denial/allow and native SW request
+  passthrough are covered. Real PATCH binary upload/header/cookie/status, counter
+  state, Set-Cookie and two live stream chunks tested against a Bun HTTP backend.
+  SW VM harness executes authored routing; it is not a real browser cookie jar.
+- Full pinned real-Node `scripts/verify-node.mjs` passed after SW change; full runtime
+  rebuild passed. Logs: `.../T/opencode/product-runtime-{build,verify}.log`.
+- External consumer smoke passed: 36 runtime files / 55,143,643 bytes hash-equal;
+  NodeNext declarations, browser build, SSR lazy wrapper and server adapter tested.
+  Receipt: `.../T/opencode/workspace-consumer-iw19Gm/receipt.json`; log
+  `.../T/opencode/product-consumer.log`. No packaging audit repeated.
+- Initial product reset test missed fixture parent mkdir; fixed. One test run raced
+  consumer prepack's dist/lib replacement (HTTP bundle 500); sequential rerun passed.
+
+## Ownership / remaining acceptance
+
+One `browser-control doctor`: matching CLI/relay 0.7.0, extension disconnected, zero
+targets. No browser page/storage/tab/session touched; see BROWSER-CONTROL-TODO.
+No existing server started/stopped. Two test-owned ephemeral-port servers were
+started and stopped for route checks. Existing watch server may have reloaded source;
+its flag/environment was not changed. Preserved tabs/origins/source/session IDs
+remain listed in TESTING-HANDOFF. No model provider calls made.
+
+Fresh QA: normal no-workers/network-lazy check → enable/boot original DOM retained →
+full-window guest → chat/editor/HMR → backend cookie/method/body/status/live stream →
+explicit source-only reset on a test-owned snapshot/origin → Exit lease release →
+reopen saved source/chat. Include duplicate enable, cancel during boot/import, failure
+retry, broken guest recovery, StrictMode/unmount and policy revocation/direct denial.
+Do not Reset source on retained user headings without preserving/restoring their bytes.
+
+Known limitations: relative api paths resolve under preview prefix; router/query
+identity, OAuth/top navigation and SW revival need application integration. Guest
+React remount state is not normal state. Backend sample is server-lifetime memory.
+Dependency/package changes can need manual repair beyond source reset. Same-origin
+editing is trusted code, not isolation. Unload flush is best-effort. Browser behavior
+above is unverified while disconnected, not inferred from host/unit tests.
+
+Chat seam: `src/chat-adapter.ts` + `Chat` in `editor-components.tsx` currently mount
+the existing client. Replace there with public `@vivari/opencode-chat` controller
+and optional `/react` view after its owner's completion. The sample supplies
+service.connection and directory, owns ready/dispose and runtime lifecycle. Keep
+that integration outside generic workspace React/core. Parent coordinates follow-up;
+this session releases its source/runtime/server/browser ownership after scoped commit.

@@ -1,5 +1,16 @@
 # Browser Control verification follow-up
 
+## Product mode implementation (2026-09-07)
+
+Session `ses_f80adc345ffehktRIDsTSnqYzk` made one observational
+`browser-control doctor` call. Exit 1: matching CLI/relay 0.7.0, build
+2026-09-05T19:03:42.828Z; extension disconnected; zero targets and zero connected
+sessions. No execute/navigation/reset/restart attempted. Expected connected targets
+for product-mode smoke; actual setup remains blocked. Recovery still requires
+reconnecting the unpacked extension and attaching the intended preserved tab.
+Fresh QA owns browser product acceptance; real HTTP/SW-harness checks are not a
+browser cookie-jar, iframe, HMR or StrictMode acceptance claim.
+
 ## Package checkpoint (2026-09-07)
 
 Session `ses_f80b87aabffecxahTVNNLC30bT` retried the Bun-backed CLI:

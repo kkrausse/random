@@ -1,10 +1,10 @@
 import { readdir, realpath, stat } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import type { PreparedManifest } from "./src/prepared";
-import { sampleApp } from "./src/sample";
 import { preparationFingerprint, preparedRoot } from "./setup";
 
 const root = import.meta.dirname;
+const sampleApp = await Bun.file(join(root, "src/SampleApp.tsx")).text();
 const out = preparedRoot;
 const runtime = resolve(process.env.RUNTIME_DIR ?? resolve(root, "../workspace-api/dist/runtime"));
 const source = resolve(process.env.OPENCODE_PACKAGE_DIR ?? resolve(root, "../vivari/.runtime/opencode-v2-package"));

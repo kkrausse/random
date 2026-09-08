@@ -67,7 +67,7 @@ index bfb9dbd..c7f5354 100644
 \ No newline at end of file
 +- **Background research** → `research.md`
 diff --git a/ARCHITECTURE.md b/ARCHITECTURE.md
-index d88c8f8..343f44c 100644
+index d88c8f8..d5812e8 100644
 --- a/ARCHITECTURE.md
 +++ b/ARCHITECTURE.md
 @@ -1,5 +1,207 @@
@@ -278,7 +278,23 @@ index d88c8f8..343f44c 100644
  This document explains how Vivari works end to end: the core constraint it
  solves, the worker topology, the syscall protocol, the filesystem, the process
  model, the Node runtime, networking, native code, and the build. It is the
-@@ -917,4 +1119,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
+@@ -430,6 +632,15 @@ UTF-8; binary (images/fonts/wasm) crosses base64 with `bodyEncoding: 'base64'`
+ 
+ ### 8.3 Browser preview (Service Worker)
+ 
++Workspace embedders can supply `__vv_host_paths` (JSON segment-prefix array) on
++the preview URL, alongside `__vv_listener`. Root-absolute matching requests use
++native `fetch(event.request)` before guest routing, preserving cookies, bodies,
++headers, status, streams and cancellation. WS/EventSource shims likewise retain
++native host connections for matching paths. Default is no host routes; no app or
++OpenCode path is built in. This is routing, not authorization. Server policy owns
++access. Relative `api/...` resolves below `/preview/<port>/`, not `/api/...`;
++routers must retain reserved query identity (including after SW revival).
++
+ `packages/studio/public/sw.js` is a preview proxy scoped to the whole origin (needs
+ `Service-Worker-Allowed: /`). It intercepts the preview iframe's `fetch`
+ (`/preview/<port>/…` and root-absolute subresources like `/@vite/client`,
+@@ -917,4 +1128,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
    `GET / → 200` (network-gated, like `verify-express`).
  
  See [`AGENTS.md`](./AGENTS.md) §"Testing & verification" for exactly when to run
@@ -2410,10 +2426,66 @@ index 961f34d..b438775 100644
    // @edge-runtime/primitives (pulled by Next.js) does `require('stream/web')`.
    "stream/web": (exports, require, module) => {
 diff --git a/packages/studio/public/sw.js b/packages/studio/public/sw.js
-index bc250b6..2277add 100644
+index bc250b6..02b702c 100644
 --- a/packages/studio/public/sw.js
 +++ b/packages/studio/public/sw.js
-@@ -839,6 +839,7 @@ async function routeByClient(event, url) {
+@@ -11,6 +11,25 @@
+ 
+ const PREVIEW_MARKER = "/preview/";
+ 
++// Optional embedding policy travels with the listener URL and survives SW revival.
++// Routing only: the actual host server MUST independently authorize every request.
++function hostPathsFromUrl(url) {
++  try {
++    const paths = JSON.parse(new URL(url).searchParams.get("__vv_host_paths") || "[]");
++    return Array.isArray(paths) && paths.length <= 32 ? paths.filter(p => typeof p === "string" && /^\/[A-Za-z0-9_/-]+$/.test(p) && !p.includes("//") && !p.endsWith("/")) : [];
++  } catch { return []; }
++}
++function matchesHostPath(path, paths) { return paths.some(prefix => path === prefix || path.startsWith(prefix + "/")); }
++const HOST_ROUTING_SHIM = `(${function () {
++  const paths = hostPathsFromUrl(location.href);
++  const nativeWS = window.WebSocket, nativeSSE = window.EventSource;
++  window.__vvNativeRoute = function (kind, input, options) {
++    const url = new URL(input, location.href);
++    if (url.host !== location.host || !matchesHostPath(url.pathname, paths)) return null;
++    return kind === "ws" ? new nativeWS(input, options) : new nativeSSE(input, options);
++  };
++}})();`;
++
+ // Client ids of pages that host a Vivari kernel (announced via `vv-kernel-host`;
+ // see bridge.registerServiceWorker). handlePreview routes each preview HTTP
+ // request to one of these — NOT simply the top-level window — because Vivari can
+@@ -344,6 +363,7 @@ window.addEventListener('pagehide', function(){
+   for (var k in conns){ try { conns[k].close(1001, 'unload'); } catch(e){} }
+ });
+ function VVWebSocket(url, protocols){
++  var native = window.__vvNativeRoute && window.__vvNativeRoute('ws', url, protocols); if (native) return native;
+   this.url = String(url); this.readyState = 0; this.protocol = ''; this.binaryType = 'blob';
+   this._id = tok + '-' + (nextId++); this._l = { open:[], message:[], close:[], error:[] };
+   conns[this._id] = this;
+@@ -478,6 +498,7 @@ window.addEventListener('pagehide', function(){
+   for (var k in conns){ try { conns[k].close(); } catch(e){} }
+ });
+ function VVEventSource(url, cfg){
++  var native = window.__vvNativeRoute && window.__vvNativeRoute('sse', url, cfg); if (native) return native;
+   this.url = String(url); this.readyState = 0; this.withCredentials = !!(cfg && cfg.withCredentials);
+   this.lastEventId = ''; this.onopen = null; this.onmessage = null; this.onerror = null;
+   this._id = tok + '-' + (nextId++); this._l = {}; this._buf = '';
+@@ -680,6 +701,7 @@ function injectWsShim(html, keepPrefix, devtools) {
+   // doesn't host /vv-devtools/chobitsu.js gets clean previews (no per-page 404).
+   const tag =
+     flag +
++    "<script>" + hostPathsFromUrl.toString() + ";" + matchesHostPath.toString() + ";" + HOST_ROUTING_SHIM + "<\/script>" +
+     "<script>" + NET_SHIM + "<\/script>" +
+     "<script>" + TITLE_SHIM + "<\/script>" +
+     "<script>" + WS_SHIM + "<\/script>" +
+@@ -836,9 +858,13 @@ async function routeByClient(event, url) {
+   }
+   const m = clientUrl.match(/\/preview\/(\d+)\//);
+   if (!m) return fetch(event.request);
++  // Preserve the actual Request object: cookies/credentials, method, headers,
++  // upload bytes, redirect policy, cancellation and streamed Response stay native.
++  if (matchesHostPath(url.pathname, hostPathsFromUrl(clientUrl))) return fetch(event.request);
    return handlePreview(event, parseInt(m[1], 10), url.pathname + url.search);
  }
  
@@ -2421,7 +2493,7 @@ index bc250b6..2277add 100644
  async function handlePreview(event, port, path, keepPrefix) {
    if (!Number.isInteger(port)) {
      return new Response("Bad preview URL\n", { status: 400 });
-@@ -864,7 +865,22 @@ async function handlePreview(event, port, path, keepPrefix) {
+@@ -864,7 +890,23 @@ async function handlePreview(event, port, path, keepPrefix) {
    const headers = {};
    for (const [k, v] of event.request.headers) headers[k] = v;
  
@@ -2441,11 +2513,12 @@ index bc250b6..2277add 100644
 +  if (listenerId && event.resultingClientId) workspaceListenersByClient.set(event.resultingClientId, listenerId);
 +  const guestUrl = new URL(path, self.location.origin);
 +  guestUrl.searchParams.delete("__vv_listener");
++  guestUrl.searchParams.delete("__vv_host_paths");
 +  const req = { port, method, url: guestUrl.pathname + guestUrl.search, headers, body, listenerId };
  
    const resp = await new Promise((resolve) => {
      const mc = new MessageChannel();
-@@ -904,4 +920,4 @@ async function handlePreview(event, port, path, keepPrefix) {
+@@ -904,4 +946,4 @@ async function handlePreview(event, port, path, keepPrefix) {
    }
  
    return new Response(outBody, { status: resp.status || 200, headers: respHeaders });
@@ -2453,10 +2526,10 @@ index bc250b6..2277add 100644
 \ No newline at end of file
 +}
 diff --git a/roadmap.md b/roadmap.md
-index 3ab02ef..422e2ac 100644
+index 3ab02ef..539b72a 100644
 --- a/roadmap.md
 +++ b/roadmap.md
-@@ -1,5 +1,97 @@
+@@ -1,5 +1,104 @@
  # Vivari — Roadmap
  
 +## Browser distribution relocation
@@ -2465,6 +2538,13 @@ index 3ab02ef..422e2ac 100644
 +while the consumer serves the distribution under `/runtime/`. Set the library
 +build base to `./`; generated workers now resolve their siblings relative to
 +themselves, including SQLite's optional OPFS helper. No emitted worker rewriting.
++
++## Optional workspace host-backend routing
++
++Added caller-declared root-absolute segment prefixes carried in preview URL query.
++Matching iframe requests bypass buffered guest HTTP via native Fetch; host WS/SSE
++stay native too. The application owns server authorization. No default backend
++paths or OpenCode route exceptions; relative/router URL limitations remain explicit.
 +
 +## Workspace application integration: child output bytes
 +
@@ -2554,7 +2634,7 @@ index 3ab02ef..422e2ac 100644
  Built on the principle **de-risk the hardest part first**: prove the riskiest
  primitive (synchronous cross-thread access to a shared kernel) before expanding.
  
-@@ -3041,4 +3133,46 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
+@@ -3041,4 +3140,46 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
  | `Fetcher Worker` | Network/registry worker |
  | `Node.js Worker PID n` | Process = 1 worker + Node shim |
  | `[worker n]` | Nested `worker_threads` — real (#16 stage 2b) |

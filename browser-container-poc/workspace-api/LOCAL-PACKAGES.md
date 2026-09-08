@@ -8,8 +8,9 @@ Nothing is published. Generated JS/declarations and runtime payloads are ignored
 | Import | Environment / contract |
 | --- | --- |
 | `@vivari/workspace-api` | Browser Workspace, Runtime, storage, endpoints, previews and tools |
-| `@vivari/workspace-api/react` | React 18/19 peer; WorkspaceProvider, useWorkspace, WorkspaceController, snapshot/connection/service/progress and diagnostic types |
+| `@vivari/workspace-api/react` | React 18/19 peer; WorkspaceEditing controlled boundary, WorkspaceProvider, useWorkspace, WorkspaceController and types |
 | `@vivari/workspace-api/assets` | Bun/Node build/server only; readRuntimeAssets, copyRuntimeAssets, RuntimeAssetManifest |
+| `@vivari/workspace-api/server` | Server-only authorizeEditorRequest(Request, appPolicy); denial Response or undefined |
 
 The React entry imports the public core entry, keeping runtime class identity shared.
 Core imports do not load React. No entry starts workers on import. Provider mount
@@ -72,7 +73,7 @@ export function App() {
 ## Explicit runtime delivery
 
 Runtime version is the durable patch SHA, separate from package semver. Current
-verified version is `5b9e2d83dddb85eb5e09c482418a19779c7235ce5b42ff0376e52872f9d4ba50`.
+verified version is `fd0c1c8769ed2ab52fca10ccbdfdb9beebda5a31e1c1985d7a24f83ae6a39003`.
 Workers, WASM and SW must travel together as a separate versioned directory/archive.
 The npm package does not find a sibling `.runtime` directory or build your runtime.
 
@@ -96,7 +97,7 @@ await mkdir("public/editor", { recursive: true });
 const manifest = await copyRuntimeAssets({
   source: "/absolute/unpacked-runtime-VERSION",
   destination: "public/editor/runtime-VERSION", // must not exist
-  expectedVersion: "5b9e2d83dddb85eb5e09c482418a19779c7235ce5b42ff0376e52872f9d4ba50",
+  expectedVersion: "fd0c1c8769ed2ab52fca10ccbdfdb9beebda5a31e1c1985d7a24f83ae6a39003",
 });
 console.log(manifest.version);
 ```
@@ -139,13 +140,49 @@ runtime boot, DOM StrictMode lifecycle, service-worker routing or product UX.
 
 ## Product-mode boundary
 
-The requested optional production editing wrapper is not implemented in this
-checkpoint. The demo still presents its existing editor host and Start workspace
-flow. Controlled admin enable/exit, original-app retention, floating chat shell,
-known-good source-only reset, server authorization integration and same-origin
-backend passthrough need the next increment. Existing preview SW can route iframe
-requests to guest Vite; do not assume `/api` reaches your backend yet. Root scope,
-iframe URLs/query identity, router/OAuth/navigation and guest React remount state
-still require explicit policy and browser evidence. Hidden buttons are not server
-authorization. Use this checkpoint for local integration development, not as
-acceptance of those deployment requirements.
+`WorkspaceEditing` is optional and controlled: `allowed`, `enabled`, `start`,
+`retryKey`, `isPreviewReady(state)` and `renderEditor(context)`. Its children remain
+mounted; the boundary hides them only after the caller's readiness predicate passes.
+No recipe, ports, workers or services start on import/mount. `start(controller)` runs
+only while allowed+enabled. The demo dynamically imports editor/recipe then; the
+generic package does not import Vite or OpenCode. `renderEditor` stays host-owned.
+
+```tsx
+<WorkspaceEditing allowed={isAdmin} enabled={editing}
+  start={controller => recipe.start(controller)} retryKey={retry}
+  isPreviewReady={state => state.clients.preview === "ready"}
+  renderEditor={({ controller, state, active }) => active
+    ? <Editor state={state} onExit={() => {
+        setEditing(false);
+        void controller.cancelAndClose().catch(showCleanupError);
+      }} /> : null}>
+  <DeployedApp />
+</WorkspaceEditing>
+```
+
+Call `cancelAndClose()` **outside** `run()` to abort immediately, await the current
+operation and close/release resources serially. Repeated calls share cleanup;
+failed cleanup can be retried. Recipes must observe `controller.signal` and await
+all launched work. The controller's signal renews after successful close. StrictMode
+effect replay defers admission/disposal. DOM acceptance remains with fresh QA.
+
+Server policy is independent: call `authorizeEditorRequest(request, yourSessionRolePolicy)`
+before serving every editor asset or model/tool request. Undefined permits; otherwise
+return its 403 Response. Hook errors deny. `/server` is not imported by browser/core/
+React entries. The local demo's `LOCAL_EDITOR_ADMIN=1` loopback fixture is explicitly
+not a production identity system; replace it with existing application authorization.
+
+`attachPreview(iframe, endpoint, { hostPaths: ["/api"] })` uses caller-selected
+root-absolute segment prefixes. With the matching rebuilt runtime SW, `/api` and
+`/api/...` from that iframe use native Fetch with the original Request and streamed
+Response. `/apix` remains guest traffic; the default policy is empty. Native host
+WS/EventSource is retained for matching paths too. Policy travels in reserved
+`__vv_host_paths`, alongside listener query identity. It is routing, not security.
+
+Relative `api/...` resolves under `/preview/PORT/`; use root-absolute backend paths.
+Routers must account for the preview prefix and retain reserved query metadata;
+removing it can lose routing after SW revival. OAuth callbacks/top navigation need
+application integration and are not automatically equivalent to normal mode. The
+guest is a separate React root: normal in-memory state is retained underneath, not
+transferred into the guest. Source reset/restart remounts the guest, while backend
+state remains external. Same-origin trusted editing is not hostile-code isolation.
