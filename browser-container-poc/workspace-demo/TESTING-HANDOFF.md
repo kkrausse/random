@@ -1,5 +1,33 @@
 # Fresh React demo QA handoff — implementation ownership released
 
+## Independent QA checkpoint + diagnostics (2026-09-07)
+
+Fresh QA `ses_f80e84bf7ffe5wHuln4yAnScDi` could not acquire any browser page:
+explicit retained-session execute failed twice; matching 0.7.0 relay remains
+reachable, extension disconnected, zero targets. Browser acceptance and new
+screenshots remain blocked. User was asked to reconnect/attach the 4311 tab.
+All preserved state and browser sessions below remain untouched.
+
+Implemented local bounded diagnostics at `.diagnostics/events.jsonl` (+ `.1`),
+early browser handlers, run IDs/download UI, timed open/worker/persistence and
+service/client milestones, server command/proxy failures, redacted errors/causes/
+stacks. See README and `tests/REACT-QA-EVIDENCE.md` for limits and actual receipts.
+Fixed a transport-reproduced post-worker-ready cancellation gap in Workspace.open;
+this is **not an established cause** of the old 120-second timeout.
+
+Actual one-command preparation into a temporary test-owned prepared directory,
+missing prerequisite, occupied port preservation, existing server reuse, diagnostic
+POST/disk/download/redaction/limits and targeted regression checks passed. Temporary
+servers/artifacts were cleaned up. 4311 remains the original terminal's watch
+server/proxy, now serving the updated host and diagnostic routes.
+Latest listener observation: PID **17262**, command `bun --watch serve.ts`
+(the historical PID 86252 below is stale after watch restarts).
+
+**Next concrete action:** reconnect Browser Control, then inspect retained tabs
+with explicit target selection before close/reload. Run QA cases 1–5 below and
+verify new diagnostics in the browser. Do not treat the new host/transport tests
+or injected `qa-http-no-browser` log record as React/runtime acceptance.
+
 Owner handing off: `ses_f81074389ffe32i7lVNm6xCRKm`. No further agents spawned.
 Please own the real-browser React acceptance pass and fix defects you find.
 

@@ -1,6 +1,7 @@
 import type { Distribution, Runtime, Workspace, Endpoint } from "../../workspace-api/src/index";
 import { loadPrepared, preparedApps, openCodeLaunch, waitForOpenCode, type PreparedManifest } from "./prepared";
 import type { Connection, WorkspaceController } from "./workspace-provider";
+import { diagnostics } from "./diagnostics";
 
 export async function sourcePaths(workspace: Workspace, directory = "/"): Promise<string[]> {
   const paths: string[] = [];
@@ -47,6 +48,7 @@ export function createSampleRecipe() {
       if (!responseRuntime.ok) throw Error("Runtime manifest missing. From workspace-demo run bun run demo");
       const runtimeManifest = await responseRuntime.json();
       distribution = { name: "vivari", version: runtimeManifest.version, assetBaseUrl: "/runtime/" };
+      diagnostics.record("assets.versions", { runtimeVersion: distribution.version, openCodeVersion: manifest.openCodeVersion, files: manifest.assets.length });
       if (manifest.runtimeVersion !== distribution.version) throw Error("Prepared apps/runtime mismatch. Run bun run demo again to prepare matching assets");
     },
     async open(controller: WorkspaceController) { await this.setup(controller.signal); await controller.open(distribution); },
@@ -70,7 +72,7 @@ export function createSampleRecipe() {
           return connection(endpoint);
         });
         await controller.waitForClient("vite");
-      } catch (error) { await controller.stopService("vite"); throw error; }
+      } catch (error) { try { await controller.stopService("vite"); } catch (cleanupError) { diagnostics.record("service.cleanup.failed", { name: "vite", error: cleanupError }); } throw error; }
     },
     async chat(controller: WorkspaceController) {
       const launch = openCodeLaunch(manifest.opencode);
@@ -80,7 +82,7 @@ export function createSampleRecipe() {
           return connection(endpoint, launch.headers);
         });
         await controller.waitForClient("chat");
-      } catch (error) { await controller.stopService("chat"); throw error; }
+      } catch (error) { try { await controller.stopService("chat"); } catch (cleanupError) { diagnostics.record("service.cleanup.failed", { name: "chat", error: cleanupError }); } throw error; }
     },
     async start(controller: WorkspaceController) {
       await controller.steps([

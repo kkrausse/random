@@ -110,6 +110,48 @@ runtime or model behavior.
 
 ## Checks and evidence
 
+### Local diagnostics
+
+Run the same `bun run demo` command. Diagnostics go to
+**`browser-container-poc/workspace-demo/.diagnostics/events.jsonl`**, with the
+previous generation in `events.jsonl.1` (gitignored). The server prints the
+absolute path. The header shows the current operation/run ID and **Download local
+diagnostics** (`http://127.0.0.1:4311/diagnostics`); Activity shows recent progress.
+For live inspection from `workspace-demo`:
+
+```sh
+tail -f .diagnostics/events.jsonl
+```
+
+Records include page/run IDs, server/request IDs, timestamps, operation/stage
+durations, runtime/application versions, worker creation/init/readiness and
+persistence milestones, service/client readiness/exits, and proxy HTTP status,
+stream byte counts/completion/cancellation/failure. Errors retain a redacted
+message, stack and cause. Browser initialization installs error/rejection handlers
+before loading the React bundle. The startup command also records prerequisite
+and port-conflict failures before the server starts.
+
+For another `Workspace.open` timeout, find `operation.failed` for the displayed
+run ID, then the preceding `workspace.open` and `workspace.open.waiting` records.
+The UI error includes elapsed time and the last milestone. Ten-second wait records
+and visibility changes help distinguish a stalled stage from gaps in browser
+execution. Boot log categories are observed hints, not proof of completed work.
+The previous unexplained 120-second timeout's cause remains unproven.
+
+Two approximately 2 MiB disk generations are retained. Browser recent/pending
+buffers hold at most 160/100 bounded events; uploads are small batches with a
+three-second deadline. Upload failure is silently retried from the bounded buffer
+and cannot fail startup. Disk logging is best-effort too. Already-uploaded records
+survive reload; pending records during abrupt unload can be lost. Proxy records
+correlate by server/request ID and time, not by inspecting guest prompts.
+
+No request bodies, prompts, editor source, headers, launch environments or raw
+guest stdout/stderr are intentionally recorded. Guest output is represented by
+first-output and drained-byte summaries. Known credential fields/patterns and URL
+credentials/query strings are redacted again at the disk boundary. This is
+pragmatic redaction, not a guarantee for arbitrary secrets embedded in free-form
+exception text. No external telemetry is sent.
+
 ```sh
 bun run typecheck
 bun test
@@ -124,3 +166,5 @@ and original failure diagnosis. Prior real browser/model/OPFS acceptance remains
 in [real-app evidence](tests/REAL-APPS-EVIDENCE.md) and `tests/browser-evidence/`.
 The React host requires its own browser pass; do not equate fixture or headless
 tests with OPFS, guest rendering or same-Document HMR.
+See [independent QA and diagnostics receipt](tests/REACT-QA-EVIDENCE.md) for the
+current browser blocker, host startup checks, and diagnostic failure-path tests.

@@ -1,4 +1,5 @@
 export type WorkspaceId = string;
+export type DiagnosticEvent = { stage: string; elapsedMs: number; detail?: Record<string, unknown> };
 
 /** One persistent origin store, currently mounted at /workspace. */
 export interface WorkspaceStorage {
@@ -11,6 +12,8 @@ export interface WorkspaceOpenOptions {
   storage: WorkspaceStorage;
   signal?: AbortSignal;
   onPersistenceChange?: (state: PersistenceState) => void;
+  /** Best-effort structured startup milestones; contains no filesystem or guest output. */
+  onDiagnostic?: (event: DiagnosticEvent) => void;
 }
 export interface WorkspaceFs {
   readFile(path: string): Promise<Uint8Array>;

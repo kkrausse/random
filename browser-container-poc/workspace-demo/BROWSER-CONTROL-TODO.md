@@ -1,5 +1,20 @@
 # Browser Control verification follow-up
 
+## Independent React QA recheck (2026-09-07)
+
+Session `ses_f80e84bf7ffe5wHuln4yAnScDi` ran
+`browser-control execute --session brisk-wombat-706 --target-url 127.0.0.1:4311
+'return { url: page.url(), snapshot: await snapshot() }'` twice, initially and
+after independent host QA. Both exited 1 with the same extension-disconnected
+error below, before page access. Doctor reports reachable matching CLI/relay
+0.7.0 / build 2026-09-05T19:03:42.828Z, extension disconnected, zero targets,
+zero connected sessions, no competing connection observed. Expected inspection
+of the retained user tab; no page could be selected. Recovery attempted: the
+relay-backed call and a short follow-up; user asked to reconnect the unpacked
+extension and attach the normal 4311 tab. No restart, reset, tab closure or
+alternate driver. Both transferred browser sessions remain retained untouched.
+See `tests/REACT-QA-EVIDENCE.md`; no React browser screenshots/acceptance available.
+
 ## Sample UX follow-up (2026-09-07)
 
 After the vanilla one-click flow passed, user requested a React host/provider.

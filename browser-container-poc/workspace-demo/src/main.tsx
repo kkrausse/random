@@ -7,6 +7,7 @@ import { createSampleRecipe, sourcePaths } from "./sample-recipe";
 import { mountChat } from "./chat-adapter";
 import { openFixture } from "./fixture";
 import { Button } from "./components/ui/button";
+import { diagnostics } from "./diagnostics";
 
 const decoder = new TextDecoder();
 function FileEditor({ dirty, setDirty }: { dirty: boolean; setDirty(value: boolean): void }) {
@@ -131,6 +132,7 @@ function App() {
       <Button id="start-sample" variant="default" disabled={state.busy || ready} onClick={() => void start()}>{state.busy ? <LoaderCircle className="animate-spin" /> : <Play />}{state.busy ? "Starting / working…" : ready ? "Workspace running" : state.error ? "Retry Start workspace" : "Start workspace"}</Button>
       <p className="text-sm text-neutral-600">First start seeds a counter into an empty workspace. Later starts preserve your guest files and chat sessions. Keep this tab visible during startup.</p>
       <p id="status" role="status">{state.status}</p>
+      <p className="text-sm">Diagnostic run: <code>{diagnostics.run}</code> · <a href="/diagnostics" download>Download local diagnostics</a> · <code>workspace-demo/.diagnostics/events.jsonl</code></p>
       {state.error && <p role="alert" className="border border-red-300 bg-red-50 p-3 whitespace-pre-wrap">{state.error}</p>}
       {!!state.progress.length && <ol aria-label="Startup progress" className="list-decimal pl-6 text-sm space-y-1">{state.progress.map(step => <li key={step.label}>{step.label} — {step.state}</li>)}</ol>}
       <p id="lifecycle" className="text-sm">Workspace: {state.workspace ? `open · ${state.persistence}` : "closed"} | Runtime: {state.runtime ? "active" : "stopped"}</p>

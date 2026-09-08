@@ -15,7 +15,7 @@ export async function waitForOpenCode(endpoint: Endpoint, headers: HeadersInit, 
       const response = await endpoint.fetch("/api/health", { headers, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(3000)]) : AbortSignal.timeout(3000) });
       const body = await response.text();
       if (response.ok) return body;
-      failure = Error(`OpenCode health HTTP ${response.status}: ${body}`);
+       failure = Error(`OpenCode health HTTP ${response.status}`);
     } catch (error) { failure = error; }
     await new Promise(resolve => setTimeout(resolve, 100));
   }
