@@ -1,4 +1,5 @@
 import { WorkspaceError, type Distribution } from "./types.js";
+import type { diagnosticReporter } from "./diagnostics";
 
 // Private transport boundary. Worker protocol never escapes to consumers.
 export type Message = { type: string; [key: string]: unknown };
@@ -27,28 +28,40 @@ export class Host {
     };
     this.worker.onerror = (event) => this.destroy(new Error(event.message));
   }
-  static async open(distribution: Distribution, signal?: AbortSignal): Promise<Host> {
+  static async open(distribution: Distribution, signal?: AbortSignal, diagnostics?: ReturnType<typeof diagnosticReporter>): Promise<Host> {
     signal?.throwIfAborted();
     if (!globalThis.crossOriginIsolated) throw new WorkspaceError("BACKEND_UNAVAILABLE", "Workspace requires COOP same-origin and COEP require-corp");
     const base = new URL(distribution.assetBaseUrl.replace(/\/?$/, "/"), location.href);
+    diagnostics?.emit("manifest.fetch", { version: distribution.version });
     const response = await fetch(new URL("distribution.json", base), { signal });
     if (!response.ok) throw new Error(`Distribution manifest: HTTP ${response.status}`);
     const manifest = await response.json() as { abi: string; version: string; kernelWorker: string; serviceWorker: string };
     if (manifest.abi !== "workspace-v1" || manifest.version !== distribution.version) throw new WorkspaceError("DISTRIBUTION_MISMATCH", "Distribution ABI/version mismatch");
+    diagnostics?.emit("worker.create");
     const host = new Host(new URL(manifest.kernelWorker, base).href, new URL(manifest.serviceWorker, base).href);
     try {
       await new Promise<void>((resolve, reject) => {
+        const milestones = new Set<string>();
         const timer = setTimeout(() => done(new Error("Workspace boot timed out")), 120_000);
         const abort = () => done(signal?.reason ?? new Error("Aborted"));
         const off = host.on(m => {
+          // Classify boot output without forwarding arbitrary worker text or paths.
+          if (m.type === "log") {
+            const category = /\b(opfs|restore|wasm|kernel|mount|snapshot)\b/i.exec(String(m.line))?.[1]?.toLowerCase();
+            if (category && !milestones.has(category)) { milestones.add(category); diagnostics?.emit(`worker.log.${category}`); }
+          }
+          if (m.type === "workspace-persistence") diagnostics?.emit("worker.persistence", { status: m.status });
           if (m.type === "ready") done();
           if (m.type === "host-error") done(new Error(String(m.error)));
           if (m.type === "log" && String(m.line).startsWith("kernel worker boot failed:")) done(new Error(String(m.line)));
         });
         function done(error?: Error) { clearTimeout(timer); off(); signal?.removeEventListener("abort", abort); error ? reject(error) : resolve(); }
         signal?.addEventListener("abort", abort, { once: true });
+        if (signal?.aborted) { abort(); return; }
+        diagnostics?.emit("worker.init.sent");
         host.post("init", { compress: true });
       });
+      diagnostics?.emit("worker.ready");
       return host;
     } catch (error) { host.destroy(); throw error; }
   }

@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Workspace, Runtime, opfsStore, type Distribution, type Endpoint, type Execution, type NodeLaunchOptions, type ToolSet } from "../../workspace-api/src/index";
+import { diagnostics } from "./diagnostics";
+import { safeText } from "./diagnostic-data";
 
 /** Reusable React boundary: public API ownership, serialization and subscriptions.
  * No sample source, package paths, provider configuration or application ports here. */
@@ -12,7 +14,7 @@ type Snapshot = {
   progress: Progress[]; logs: string[]; persistence: string;
 };
 const initial = (): Snapshot => ({ services: {}, clients: {}, busy: false, status: "Ready", error: "", progress: [], logs: [], persistence: "closed" });
-const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+const message = (error: unknown) => safeText(error instanceof Error ? error.message : String(error));
 
 export class WorkspaceController {
   private snapshot = initial();
@@ -30,22 +32,26 @@ export class WorkspaceController {
   get workspace() { return this.snapshot.workspace; }
   get runtime() { return this.snapshot.runtime; }
   private publish(patch: Partial<Snapshot>) { this.snapshot = { ...this.snapshot, ...patch }; for (const listener of this.listeners) listener(); }
-  log = (line: string) => this.publish({ logs: [...this.snapshot.logs, `${new Date().toLocaleTimeString()} ${line}`].slice(-160) });
+  log = (line: string) => { diagnostics.record("activity", { message: line }); this.publish({ logs: [...this.snapshot.logs, `${new Date().toLocaleTimeString()} ${safeText(line)}`].slice(-160) }); };
   status = (status: string) => { this.publish({ status }); this.log(status); };
   notifyPersistence = () => this.publish({ persistence: this.workspace?.persistence.status ?? "closed" });
 
   /** A synchronous lock excludes double clicks and competing lifecycle actions. */
   run(label: string, task: () => Promise<void>): Promise<void> {
     if (this.operation || this.disposed) return this.operation ?? Promise.resolve();
+    diagnostics.begin();
+    const started = performance.now();
+    diagnostics.record("operation.start", { label });
     this.stage = -1;
     this.publish({ busy: true, error: "", status: label });
     this.operation = Promise.resolve().then(task).catch(error => {
       const progress = this.snapshot.progress.map((step, index) => index === this.stage ? { ...step, state: "failed" as const } : step);
       const reason = message(error);
-      const hint = /timed out|timeout/i.test(reason) ? " Keep this tab visible and retry. Opening storage can take up to two minutes; existing files are retained." : "";
+      diagnostics.record("operation.failed", { label, stage: this.snapshot.progress[this.stage]?.label, elapsedMs: Math.round(performance.now() - started), error });
+      const hint = /timed out|timeout/i.test(reason) ? " Keep this tab visible and retry; existing files are retained. Download diagnostics for the timed stage and last observed milestone." : "";
       const detail = `${this.stage >= 0 ? this.snapshot.progress[this.stage]?.label + ": " : ""}${reason}${hint}`;
       this.publish({ error: detail, progress }); this.status("Startup/action failed. Fix the reported issue, then retry; completed stages and files are retained.");
-    }).finally(() => { this.operation = undefined; this.publish({ busy: false }); });
+    }).finally(() => { diagnostics.record("operation.end", { label, elapsedMs: Math.round(performance.now() - started), failed: !!this.snapshot.error }); void diagnostics.flush(); this.operation = undefined; this.publish({ busy: false }); });
     return this.operation;
   }
   async steps(steps: [string, () => Promise<void>][]) {
@@ -54,14 +60,21 @@ export class WorkspaceController {
       this.signal.throwIfAborted(); this.stage = index;
       this.publish({ progress: this.snapshot.progress.map((step, i) => i === index ? { ...step, state: "running" } : step) });
       this.status(`${index + 1}/${steps.length} · ${label}…`);
+      const started = performance.now(); diagnostics.record("stage.start", { label });
       await task(); this.signal.throwIfAborted();
+      diagnostics.record("stage.ready", { label, elapsedMs: Math.round(performance.now() - started) });
       this.publish({ progress: this.snapshot.progress.map((step, i) => i === index ? { ...step, state: "done" } : step) });
     }
     this.stage = -1;
   }
   async open(distribution: Distribution) {
     if (this.workspace) return this.workspace;
-    const workspace = await Workspace.open({ id: "default", storage: opfsStore(distribution), signal: AbortSignal.any([this.signal, AbortSignal.timeout(120000)]), onPersistenceChange: this.notifyPersistence });
+    const started = performance.now(); let lastStage = "open.requested";
+    const heartbeat = setInterval(() => diagnostics.record("workspace.open.waiting", { lastStage, elapsedMs: Math.round(performance.now() - started) }), 10000);
+    const workspace = await Workspace.open({ id: "default", storage: opfsStore(distribution), signal: AbortSignal.any([this.signal, AbortSignal.timeout(120000)]),
+      onPersistenceChange: state => { this.publish({ persistence: state.status }); diagnostics.record("persistence", state); },
+      onDiagnostic: event => { if (event.stage !== "open.failed") lastStage = event.stage; diagnostics.record("workspace.open", event); },
+    }).catch(error => { this.publish({ persistence: "closed" }); throw new Error(`Workspace.open: ${message(error)}; last stage ${lastStage}, elapsed ${Math.round(performance.now() - started)}ms`, { cause: error }); }).finally(() => clearInterval(heartbeat));
     if (this.disposed) { await workspace.close(); throw Error("Workspace provider unmounted"); }
     this.distribution = distribution;
     this.publish({ workspace, persistence: workspace.persistence.status });
@@ -74,13 +87,15 @@ export class WorkspaceController {
     this.publish({ runtime }); return runtime;
   }
   private async drain(stream: AsyncIterable<Uint8Array>, label: string) {
-    const decoder = new TextDecoder();
-    try { for await (const bytes of stream) this.log(`[${label}] ${decoder.decode(bytes, { stream: true })}`); }
+    let totalBytes = 0;
+    try { for await (const bytes of stream) { if (!totalBytes) diagnostics.record("guest.first-output", { label, bytes: bytes.length }); totalBytes += bytes.length; } }
     catch (error) { this.log(`[${label}] ${message(error)}`); }
+    finally { this.log(`[${label}] drained ${totalBytes} bytes (raw output omitted from diagnostics)`); }
   }
   async launch(name: string, options: NodeLaunchOptions, port: number, connect: (endpoint: Endpoint) => Promise<Connection>) {
     if (this.snapshot.services[name]) return this.snapshot.services[name]!;
     if (!this.runtime) throw Error("Start the runtime before launching services");
+    diagnostics.record("service.launch", { name, port });
     const execution = await this.runtime.node({ ...options, signal: this.signal });
     const drained = Promise.all([this.drain(execution.stdout, `${name}:stdout`), this.drain(execution.stderr, `${name}:stderr`)]).then(() => {});
     const controller = new AbortController();
@@ -91,6 +106,7 @@ export class WorkspaceController {
         execution.exited.then(result => { throw Error(`${name} exited before listening (${JSON.stringify(result)}). Check Activity and launch configuration`); }),
       ]);
       const connection = await connect(endpoint);
+      diagnostics.record("service.healthy", { name, port });
       this.signal.throwIfAborted();
       let resolve!: () => void, reject!: (error: Error) => void;
       const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
@@ -106,7 +122,7 @@ export class WorkspaceController {
       };
       void execution.exited.then(exited, error => exited(message(error)));
       return service;
-    } catch (error) { endpoint?.dispose(); await execution.stop(); await drained; throw error; }
+    } catch (error) { diagnostics.record("service.failed", { name, error }); endpoint?.dispose(); try { await execution.stop(); await drained; } catch (cleanupError) { diagnostics.record("service.cleanup.failed", { name, error: cleanupError }); } throw error; }
     finally { controller.abort(); }
   }
   registerAttachment(name: string, dispose: () => void) {
@@ -114,8 +130,8 @@ export class WorkspaceController {
     const once = () => { if (disposed) return; disposed = true; dispose(); if (this.attachments.get(name) === once) this.attachments.delete(name); };
     this.attachments.get(name)?.(); this.attachments.set(name, once); return once;
   }
-  clientReady(name: string) { this.clients.get(name)?.resolve(); this.publish({ clients: { ...this.snapshot.clients, [name]: "ready" } }); }
-  clientFailed(name: string, error: unknown) { this.clients.get(name)?.reject(new Error(message(error))); this.publish({ clients: { ...this.snapshot.clients, [name]: message(error) } }); }
+  clientReady(name: string) { diagnostics.record("client.ready", { name }); this.clients.get(name)?.resolve(); this.publish({ clients: { ...this.snapshot.clients, [name]: "ready" } }); }
+  clientFailed(name: string, error: unknown) { diagnostics.record("client.failed", { name, error }); this.clients.get(name)?.reject(new Error(message(error))); this.publish({ clients: { ...this.snapshot.clients, [name]: message(error) } }); }
   async waitForClient(name: string) {
     this.signal.throwIfAborted();
     const client = this.clients.get(name);
@@ -151,6 +167,7 @@ export class WorkspaceController {
   }
   async dispose() {
     if (this.disposed) return;
+    diagnostics.record("provider.dispose");
     this.disposed = true; this.lifetime.abort();
     for (const dispose of this.attachments.values()) dispose();
     await this.runtime?.stop();
@@ -167,7 +184,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   useEffect(() => {
     mounts.current++;
-    const cleanup = () => { void controller.dispose().catch(error => console.error("Workspace cleanup failed", error)); };
+    const cleanup = () => { void controller.dispose().catch(error => { diagnostics.record("provider.cleanup.failed", { error }); console.error("Workspace cleanup failed; see local diagnostics"); }); };
     window.addEventListener("pagehide", cleanup);
     return () => {
       mounts.current--; window.removeEventListener("pagehide", cleanup);

@@ -1,4 +1,5 @@
 import { Host } from "./host.js";
+import { diagnosticReporter } from "./diagnostics";
 import { WorkspaceError, type Distribution, type PersistenceState, type WorkspaceFs, type WorkspaceOpenOptions, type WorkspaceStorage } from "./types.js";
 
 export function opfsStore(distribution: Distribution): WorkspaceStorage { return { kind: "opfs", distribution }; }
@@ -23,12 +24,20 @@ export namespace Workspace {
     opening = true;
     options.onPersistenceChange?.({ status: "opening" });
     let host: Host | undefined;
+    const aborted = () => host?.destroy(options.signal?.reason instanceof Error ? options.signal.reason : new Error("Workspace open aborted"));
+    const diagnostics = diagnosticReporter(options.onDiagnostic);
+    diagnostics.emit("open.requested", { version: options.storage.distribution.version });
     try {
-      host = await Host.open(options.storage.distribution, options.signal);
+      host = await Host.open(options.storage.distribution, options.signal, diagnostics);
+      options.signal?.addEventListener("abort", aborted, { once: true });
+      if (options.signal?.aborted) { aborted(); options.signal.throwIfAborted(); }
       const h = host;
+      diagnostics.emit("persistence.query");
       let persistence = (await h.request("workspace-persistence")).persistence as PersistenceState;
+      diagnostics.emit("persistence.result", { status: persistence.status });
       // A failed lease/init never silently opens someone else's store in RAM.
       if (persistence.status !== "durable") throw new WorkspaceError("STORAGE_BUSY", persistence.status === "failed" ? persistence.error : "Persistent storage unavailable");
+      diagnostics.emit("workspace.directory");
       await h.request("vv-mkdirp", { path: "/workspace" });
       const state = { host: h, distribution: options.storage.distribution, attached: false, closed: false };
       let closing: Promise<void> | undefined;
@@ -73,7 +82,9 @@ export namespace Workspace {
       };
       workspaceInternals.set(workspace, state);
       options.onPersistenceChange?.(persistence);
+      diagnostics.emit("open.ready");
       return workspace;
-    } catch (error) { host?.destroy(); opening = false; throw error; }
+    } catch (error) { host?.destroy(); opening = false; diagnostics.failure(error); throw error; }
+    finally { options.signal?.removeEventListener("abort", aborted); }
   }
 }
