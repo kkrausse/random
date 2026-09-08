@@ -1,6 +1,44 @@
 # Vivari API implementation handoff
 
-Status: September 7, 2026. Planning only; all tasks below are **not started**.
+Status: September 7, 2026. **Real backend v0 checkpoint implemented**; see
+[`workspace-api/V0-HANDOFF.md`](../workspace-api/V0-HANDOFF.md) for code layout,
+exact distribution commands/hashes, passing real-worker results, browser blockers
+and ownership transfer to the fresh integration agent. Task cards below retain
+their acceptance criteria. A1/A2/B1/C1/D1 have a working v0 backend slice in
+`workspace-api` and the Vivari patch/build seam, with browser-only qualification
+remaining. Runtime ownership is released to the parent's fresh integration agent.
+Consumer commits are `196aec1` (workspace-demo) and `b02ac70` (OpenCode chat).
+
+### Active public contract for parallel consumers
+
+```ts
+import { Workspace, Runtime, opfsStore, defineRipgrepTool, attachPreview }
+  from "../workspace-api/src/index";
+const manifest = await fetch('/runtime/distribution.json').then(r => r.json());
+const distribution = { name: 'vivari', version: manifest.version, assetBaseUrl: '/runtime/' };
+const workspace = await Workspace.open({ id: 'default', storage: opfsStore(distribution) });
+const runtime = await Runtime.start({ workspace, distribution, tools: {
+  ripgrep: defineRipgrepTool({ receiptUrl: '/tools/rg-receipt.json' }),
+} });
+await runtime.tools.ripgrep({ pattern: 'TODO', paths: ['/workspace'] });
+// node({entry,args,cwd,env,signal}) / expose(port,{signal}) / attachPreview(frame,endpoint)
+// Endpoint.fetch('/path', RequestInit) supplies real streaming Fetch responses.
+// Stop runtime, then workspace.flush()/close(); same Workspace stays usable after stop.
+```
+
+Only workspace ID `default` is supported, with the existing one-origin OPFS lease.
+Opening files needs the distribution for internal FS/supervisor workers, so it is
+carried by `opfsStore(distribution)`. `Runtime.start` validates the same distribution.
+Configured tools are **callable methods**, correcting A0's descriptor `.invoke`.
+`Execution.exited` adds `{signal,forced}` to `exitCode`; separate single-reader byte
+streams and `writeStdin`/`closeStdin` are supplied. `Endpoint.closed` resolves a reason.
+No Bun method is advertised. Distribution delivery command (after patched build):
+`bun workspace-api/scripts/distribution.ts <consumer-public-runtime-dir>`.
+The command writes immutable assets and `distribution.json`; serve SW script with
+`Service-Worker-Allowed: /`, COOP same-origin and COEP require-corp. Ripgrep delivery
+uses the existing package-ripgrep receipt and all referenced assets. Browser gates
+remain blocked by the disconnected Browser Control extension. Real-worker API and
+complete upstream verification pass; this is not F1/F2 browser acceptance.
 Read [api-plan.md](api-plan.md) first. It records the user's API direction and
 separates existing implementation from proposed behavior.
 

@@ -1,19 +1,17 @@
-// A0 public type skeleton. Proposed API only — no backend wired yet.
-// See MAPPING.md for the backend-gap analysis.
-
 export type WorkspaceId = string;
 
-/** Opaque storage descriptor supplied by the consumer (e.g. OPFS store). */
+/** One persistent origin store, currently mounted at /workspace. */
 export interface WorkspaceStorage {
-  readonly kind: string;
+  readonly kind: "opfs";
+  readonly distribution: Distribution;
 }
-
 export interface WorkspaceOpenOptions {
+  /** Only "default" is supported until backend store namespaces exist. */
   id: WorkspaceId;
   storage: WorkspaceStorage;
+  signal?: AbortSignal;
+  onPersistenceChange?: (state: PersistenceState) => void;
 }
-
-/** Minimal filesystem surface (subset of plan §Workspace). */
 export interface WorkspaceFs {
   readFile(path: string): Promise<Uint8Array>;
   writeFile(path: string, data: string | Uint8Array): Promise<void>;
@@ -22,32 +20,30 @@ export interface WorkspaceFs {
   mkdir(path: string): Promise<void>;
   rename(from: string, to: string): Promise<void>;
   remove(path: string): Promise<void>;
-  /** Subscribe to change events; returns unsubscribe. */
   watch(listener: (event: { paths: string[] }) => void): () => void;
 }
-
 export type PersistenceState =
   | { status: "opening" }
   | { status: "durable" }
   | { status: "ephemeral"; reason: string }
   | { status: "failed"; error: string };
-
 export interface Distribution {
-  /** Identity of the runtime build consumed (worker/WASM/SW asset set). */
   readonly name: string;
   readonly version: string;
-  /** Base URL the consumer resolves worker/WASM/SW assets from. */
+  /** Directory containing distribution.json and immutable assets. */
   readonly assetBaseUrl: string;
 }
-
-/** A statically configured tool descriptor supplied to Runtime.start. */
+export interface ToolContext {
+  node(options: NodeLaunchOptions): Promise<Execution>;
+  /** Runtime filesystem, including private installed tool payloads. */
+  readFile(path: string): Promise<Uint8Array>;
+  installFile(path: string, bytes: Uint8Array): Promise<void>;
+}
 export interface ToolDescriptor<TOptions, TResult> {
   readonly name: string;
   readonly version: string;
-  /** Typed invocation bound to the configured implementation. */
-  invoke(options: TOptions): Promise<TResult>;
+  bind(context: ToolContext): Promise<(options: TOptions) => Promise<TResult>>;
 }
-
 export interface NodeLaunchOptions {
   entry: string;
   args?: string[];
@@ -55,22 +51,26 @@ export interface NodeLaunchOptions {
   env?: Record<string, string>;
   signal?: AbortSignal;
 }
-
 export interface Execution {
+  /** Single-reader, byte-preserving channels. Drain concurrently. */
   readonly stdout: AsyncIterable<Uint8Array>;
   readonly stderr: AsyncIterable<Uint8Array>;
-  readonly exited: Promise<{ exitCode: number }>;
+  readonly exited: Promise<{ exitCode: number; signal: string | null; forced: boolean }>;
+  writeStdin(bytes: Uint8Array): void;
+  closeStdin(): void;
   stop(): Promise<void>;
 }
-
 export interface Endpoint {
   readonly url: string;
   readonly port: number;
+  readonly closed: Promise<{ reason: string }>;
+  /** Streaming response; buffered upload (8 MiB). Manual redirect behavior. */
   fetch(input: string, init?: RequestInit): Promise<Response>;
   dispose(): void;
 }
-
-export type ErrorCode =
-  | "ENTRY_NOT_FOUND"
-  | "LAUNCH_REJECTED"
-  | "BACKEND_UNAVAILABLE";
+export type ErrorCode = "ENTRY_NOT_FOUND" | "LAUNCH_REJECTED" | "BACKEND_UNAVAILABLE"
+  | "CLOSED" | "ATTACHED" | "STORAGE_BUSY" | "UNSUPPORTED_WORKSPACE"
+  | "DISTRIBUTION_MISMATCH" | "OUTPUT_OVERFLOW" | "TOOL_FAILED";
+export class WorkspaceError extends Error {
+  constructor(readonly code: ErrorCode, message: string) { super(message); this.name = "WorkspaceError"; }
+}

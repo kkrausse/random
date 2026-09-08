@@ -12,7 +12,7 @@ async function configured() {
   });
   // Configured tool resolves to the typed descriptor.
   const ok: Promise<{ matches: unknown[]; truncated: boolean }> =
-    runtime.tools.ripgrep.invoke({ pattern: "x", paths: ["/workspace"] });
+    runtime.tools.ripgrep({ pattern: "x", paths: ["/workspace"] });
   void ok;
 }
 
@@ -23,11 +23,11 @@ async function missing() {
     tools: {},
   });
   // @ts-expect-error - ripgrep not configured: must not typecheck
-  await runtime.tools.ripgrep.invoke({ pattern: "x", paths: ["/workspace"] });
+  await runtime.tools.ripgrep({ pattern: "x", paths: ["/workspace"] });
 }
 
 async function wrongShape() {
-  const bad = defineRipgrepTool({ name: "ripgrep", version: "1" });
+  const bad = defineRipgrepTool({ name: "ripgrep", version: "1", receiptUrl: "/rg/rg-receipt.json" });
   void bad;
   const notATool = { nope: true };
   await Runtime.start({
