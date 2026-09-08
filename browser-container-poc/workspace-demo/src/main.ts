@@ -1,6 +1,7 @@
 import { Workspace, Runtime, opfsStore, attachPreview, type Distribution, type Execution, type Endpoint, type PreviewAttachment, type NodeLaunchOptions } from "../../workspace-api/src/index";
 import { openFixture, starterFiles } from "./fixture";
 import { mountChat, type ChatMount } from "./chat-adapter";
+import { loadPrepared, preparedApps, openCodeLaunch, waitForOpenCode, type PreparedManifest } from "./prepared";
 
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const input = (id: string) => element<HTMLInputElement>(id);
@@ -10,7 +11,8 @@ const editor = element<HTMLTextAreaElement>("editor");
 const mode = element<HTMLSelectElement>("mode");
 const frame = element<HTMLIFrameElement>("preview");
 let workspace: Workspace | undefined;
-let runtime: Runtime<{}> | undefined;
+let runtime: Runtime<{ apps: ReturnType<typeof preparedApps> }> | undefined;
+let prepared: PreparedManifest | undefined;
 let placeholderRuntime = false;
 let placeholderPreview = false;
 let attachment: PreviewAttachment | undefined;
@@ -32,6 +34,7 @@ function update() {
   mode.disabled = busy || !!workspace;
   const enabled: Record<string, boolean> = {
     open: !workspace, "start-runtime": !!workspace && !running(), "stop-runtime": running(),
+    prepare: !!runtime && !vite && !chatServer,
     flush: !!workspace, close: !!workspace && !running(), save: !!workspace, readback: !!workspace, seed: !!workspace,
     search: !!workspace, "start-vite": running() && !vite && !placeholderPreview, "stop-vite": !!vite || placeholderPreview,
     "start-chat": running() && !chat && !chatServer, "stop-chat": !!chat || !!chatServer,
@@ -39,7 +42,7 @@ function update() {
   for (const [id, on] of Object.entries(enabled)) element<HTMLButtonElement>(id).disabled = busy || !on;
   text("mode-note", fixture()
     ? "FIXTURE / PLACEHOLDER MODE — files are an editable in-memory fixture with explicit localStorage snapshots. Runtime controls simulate UI state only. Preview renders /index.html directly, without Vite or HMR. Chat uses the component’s mock mode."
-    : "SHARED API MODE — calls workspace-api directly. No automatic fixture fallback. Runtime distribution, dependencies, routing and OpenCode server must be supplied; unsupported operations report their actual error.");
+    : "SHARED API MODE — open files, add missing example files, start runtime, deliver prepared apps, then launch Vite or OpenCode. Dependencies are restored explicitly after reopen. No fixture fallback.");
   text("lifecycle", `Workspace: ${workspace ? fixture() ? "fixture open · localStorage snapshots" : "open · " + workspace.persistence.status : "closed"} | Runtime: ${placeholderRuntime ? "placeholder active (no execution)" : runtime ? "active" : "stopped"}`);
   text("start-runtime", fixture() ? "Start placeholder runtime" : "Start runtime");
   text("start-vite", fixture() ? "Show static fixture preview" : "Launch Vite");
@@ -59,7 +62,7 @@ async function paths(directory = "/"): Promise<string[]> {
   for (const name of await workspace!.fs.readdir(directory)) {
     const path = `${directory === "/" ? "" : directory}/${name}`;
     // Project dependencies are not useful in this small source editor.
-    if (name === "node_modules" || name === ".git") continue;
+    if (name === "node_modules" || name === ".git" || name === ".opencode-state") continue;
     const stat = await workspace!.fs.stat(path);
     if (stat.isDirectory) found.push(...await paths(path)); else found.push(path);
   }
@@ -110,6 +113,12 @@ async function stopChat() {
   text("chat-status", "Detached"); text("chat", "Chat detached.");
 }
 action("open", async () => {
+  if (!fixture() && JSON.parse(input("distribution").value).version === "unconfigured") {
+    const response = await fetch("/runtime/distribution.json");
+    if (!response.ok) throw Error(`Runtime manifest HTTP ${response.status}; build workspace-api distribution first`);
+    const manifest = await response.json();
+    input("distribution").value = JSON.stringify({ name: "vivari", version: manifest.version, assetBaseUrl: "/runtime/" });
+  }
   distribution = JSON.parse(input("distribution").value) as Distribution;
   workspace = fixture() ? openFixture() : await Workspace.open({ id: "default", storage: opfsStore(distribution), signal: AbortSignal.timeout(120000), onPersistenceChange: () => update() });
   await refreshFiles();
@@ -119,8 +128,17 @@ action("open", async () => {
 });
 action("start-runtime", async () => {
   if (fixture()) { placeholderRuntime = true; status("Placeholder runtime active — no backend execution started"); }
-  else { runtime = await Runtime.start({ workspace: workspace!, distribution: distribution!, tools: {} }); status("Runtime started; no project programs launched"); }
+  else {
+    prepared = await loadPrepared();
+    if (prepared.runtimeVersion !== distribution!.version) throw Error("Prepared apps target a different runtime; rerun bun run prepare");
+    runtime = await Runtime.start({ workspace: workspace!, distribution: distribution!, tools: { apps: preparedApps(prepared, log) } });
+    input("vite-entry").value = prepared.vite.entry;
+    input("chat-entry").value = prepared.opencode.entry;
+    input("chat-args").value = JSON.stringify(prepared.opencode.args);
+    status("Runtime started; no project programs launched");
+  }
 });
+action("prepare", async () => { await runtime!.tools.apps(); status("Prepared dependencies and OpenCode delivered; launch services separately"); });
 action("stop-runtime", async () => {
   const detached = await Promise.allSettled([stopPreview(), stopChat()]);
   await runtime?.stop(); runtime = undefined; placeholderRuntime = false;
@@ -144,7 +162,8 @@ element<HTMLSelectElement>("files").onchange = () => { input("file-path").value 
 action("seed", async () => {
   const existing = new Set(await paths());
   await workspace!.fs.mkdir("/src");
-  for (const [path, content] of Object.entries(starterFiles)) if (!existing.has(path)) await workspace!.fs.writeFile(path, content);
+  const files = fixture() ? starterFiles : (await loadPrepared()).project;
+  for (const [path, content] of Object.entries(files)) if (!existing.has(path)) await workspace!.fs.writeFile(path, content.replaceAll("__MODEL_PROXY__", `http://host.vivari.internal:${location.port}/api/model/opencode`));
   await refreshFiles(); status("Added missing example files; dependencies still need explicit preparation");
 });
 action("search", async () => {
@@ -165,7 +184,7 @@ action("search", async () => {
 action("start-vite", async () => {
   if (fixture()) { frame.setAttribute("sandbox", "allow-scripts"); placeholderPreview = true; try { await refreshPreview(); } catch (error) { placeholderPreview = false; throw error; } status("Static fixture preview shown; Vite is not running"); return; }
   frame.removeAttribute("sandbox"); // Current public preview transport is a trusted same-origin adapter.
-  vite = await launch({ entry: input("vite-entry").value, args: ["--host", "0.0.0.0", "--port", "5173", "--strictPort"], cwd: "/workspace", env: {} }, 5173, "Vite");
+  vite = await launch({ ...prepared!.vite, entry: input("vite-entry").value }, 5173, "Vite");
   try { attachment = attachPreview(frame, vite.endpoint); text("preview-status", `Vite attached: ${vite.endpoint.url} · HMR requires transport support`); }
   catch (error) { await stopPreview(); throw error; }
 });
@@ -173,11 +192,17 @@ action("stop-vite", stopPreview);
 action("start-chat", async () => {
   element("chat").replaceChildren();
   if (fixture()) { chat = await mountChat(element("chat"), { mock: true, directory: "/workspace" }); text("chat-status", "Chat fixture · no OpenCode server or model request"); return; }
-  chatServer = await launch({ entry: input("chat-entry").value, args: JSON.parse(input("chat-args").value), cwd: "/workspace", env: {} }, 4096, "OpenCode");
+  const connection = openCodeLaunch({ ...prepared!.opencode, entry: input("chat-entry").value, args: JSON.parse(input("chat-args").value) });
+  chatServer = await launch(connection.options, 4096, "OpenCode");
   try {
     const endpoint = chatServer.endpoint;
+    log(`Guest OpenCode health: ${await waitForOpenCode(endpoint, connection.headers)}`);
     // Workspace Endpoint accepts a URL string; the chat component accepts native Fetch inputs.
     const fetchAdapter: typeof fetch = async (input, init) => {
+      const headers = new Headers(input instanceof Request ? input.headers : undefined);
+      new Headers(init?.headers).forEach((value, key) => headers.set(key, value));
+      headers.set("authorization", connection.headers.authorization);
+      init = { ...init, headers };
       if (input instanceof Request) {
         const request = new Request(input, init);
         return endpoint.fetch(request.url, { method: request.method, headers: request.headers, body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(), signal: request.signal, credentials: request.credentials, cache: request.cache, redirect: request.redirect });

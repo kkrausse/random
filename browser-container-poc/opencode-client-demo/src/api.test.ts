@@ -23,8 +23,8 @@ test("V2 routes, envelopes, location, pagination and model switching", async () 
   expect(calls[1].url.searchParams.has("order")).toBe(false);
   expect((await api.create("Title")).id).toBe("ses_new");
   expect(JSON.parse(String(calls.at(-1)!.init!.body))).toEqual({ title: "Title", location: { directory: "/workspace/a b" } });
-  await api.model("ses_new", { providerID: "p", modelID: "m" });
-  expect(JSON.parse(String(calls.at(-1)!.init!.body))).toEqual({ model: { providerID: "p", modelID: "m" } });
+  await api.model("ses_new", { providerID: "p", id: "m" });
+  expect(JSON.parse(String(calls.at(-1)!.init!.body))).toEqual({ model: { providerID: "p", id: "m" } });
   await api.prompt("ses_new", "hello");
   expect(JSON.parse(String(calls.at(-1)!.init!.body))).toEqual({ text: "hello" });
   await api.interrupt("ses_new");

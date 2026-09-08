@@ -1,5 +1,11 @@
 # Browser Control verification follow-up
 
+Integration recheck 2026-09-07: bare CLI execute still fails with the same exact
+extension-disconnected error below. Doctor confirms matching 0.7.0 relay, zero
+targets, no competing connections. No session/page was acquired. Real demo is now
+4311; contract is 43917. Run the contract first after reconnect, then follow
+`../workspace-api/INTEGRATION-HANDOFF.md`. No relay restart or alternate driver.
+
 - Date: 2026-09-07.
 - CLI/package/relay: `@opencode-ai/browser-control` 0.7.0,
   build `2026-09-05T19:03:42.828Z`; relay and CLI match.

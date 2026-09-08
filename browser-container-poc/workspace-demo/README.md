@@ -1,5 +1,25 @@
 # Workspace API demo
 
+## Integration checkpoint (supersedes older walkthrough defaults below)
+
+The demo now defaults to **Shared workspace-api**. Run from `browser-container-poc/`:
+```sh
+bun run --cwd workspace-demo prepare
+PORT=4311 RUNTIME_DIR="$PWD/workspace-api/dist/runtime" bun run --cwd workspace-demo dev
+```
+Prepare consumes an already-built runtime distribution and the existing matched
+V2 POC application receipt. Open workspace → Add missing example files → Start
+runtime → Deliver prepared apps → Launch Vite / Launch OpenCode server + chat.
+Opening discovers the runtime manifest automatically. Delivery restores excluded
+dependencies after reopen, verifies hashes, rejects conflicting existing files,
+and starts no applications. `guest/` owns its frozen dependency install.
+
+See [current integration handoff](../workspace-api/INTEGRATION-HANDOFF.md) for exact
+evidence and remaining failure: real provider edits and HTTP/SSE work headlessly,
+but model-edit HMR currently needs verification/fixing. The latest official React
+plugin packaging is untested in execution. Browser Control remains disconnected;
+there is no browser acceptance claim. The older fixture remains explicit opt-in.
+
 A small Bun + TypeScript browser shell consuming the public exports of
 `../workspace-api/src/index.ts`. No local duplicate API contracts or kernel
 protocol glue. Default mode is an explicitly labelled, usable **fixture**.

@@ -1,0 +1,7 @@
+{
+  "name": "workspace-prepared-project",
+  "private": true,
+  "type": "module",
+  "dependencies": { "vite": "7.1.4", "@vitejs/plugin-react": "5.0.2", "react": "19.1.1", "react-dom": "19.1.1" },
+  "overrides": { "esbuild": "npm:esbuild-wasm@0.25.12", "rollup": "npm:@rollup/wasm-node@4.63.1" }
+}

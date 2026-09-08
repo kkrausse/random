@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prepare": "bun install --frozen-lockfile --ignore-scripts --cwd guest && bun prepare.ts",
     "dev": "bun --watch serve.ts",
     "build": "bun build.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",

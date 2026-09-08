@@ -17,17 +17,18 @@
 </head>
 <body>
   <h1>Workspace API demo</h1>
-  <label>Backend <select id="mode"><option value="fixture">Fixture / placeholder</option><option value="api">Shared workspace-api</option></select></label>
+  <label>Backend <select id="mode"><option value="api">Shared workspace-api</option><option value="fixture">Fixture / placeholder</option></select></label>
   <p id="mode-note"></p>
   <p role="status" id="status">Ready</p>
   <p id="lifecycle"></p>
   <button id="open">Open workspace</button><button id="start-runtime">Start runtime</button><button id="stop-runtime">Stop runtime</button><button id="flush">Save snapshot / flush</button><button id="close">Close workspace</button>
-  <details><summary>Real API launch configuration (dependencies must already be installed)</summary>
+  <button id="prepare">Deliver prepared apps</button>
+  <details><summary>Real API launch configuration</summary>
     <p>Shared API uses <code>Workspace.open({ id: "default", storage: opfsStore(distribution) })</code>. Only one persistent origin store is currently supported.</p>
     <p><label>Distribution JSON<br><input id="distribution" value='{"name":"vivari","version":"unconfigured","assetBaseUrl":"/runtime/"}'></label></p>
     <p><label>Vite module entry<br><input id="vite-entry" value="/workspace/node_modules/vite/bin/vite.js"></label></p>
-    <p><label>OpenCode server module entry<br><input id="chat-entry" value="/workspace/node_modules/opencode/bin/opencode.js"></label></p>
-    <p><label>OpenCode launch args JSON<br><input id="chat-args" value='["serve","--hostname","0.0.0.0","--port","4096"]'></label></p>
+    <p><label>OpenCode server module entry<br><input id="chat-entry" value="/opencode-v2/run.cjs"></label></p>
+    <p><label>OpenCode launch args JSON<br><input id="chat-args" value='["serve","--port","4096"]'></label></p>
   </details>
   <div class="row">
     <section class="col"><h2>Filesystem editor</h2>
