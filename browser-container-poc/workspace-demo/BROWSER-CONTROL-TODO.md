@@ -1,5 +1,28 @@
 # Browser Control verification follow-up
 
+## Fresh verification attempt after user enabled a tab
+
+2026-09-07, session `ses_f8141b0d9ffejLl9746UvFfL4m`, after commit `11b06b0`:
+
+- Loaded browser-control skill first. Bare `browser-control execute 'return
+  {url:page.url(),title:await page.title()}'` exited 1 with the exact
+  extension-disconnected error below.
+- After doctor/status, reproduced once with `browser-control execute --target-url
+  127.0.0.1 'return {url:page.url(),title:await page.title()}'`: identical error,
+  exit 1. Expected access to the user's enabled local tab; actual failure occurs
+  before selection or page access. No session/page acquired or tabs altered.
+- Doctor: endpoint `http://127.0.0.1:19989` reachable; CLI/relay 0.7.0, matching
+  build `2026-09-05T19:03:42.828Z`; extension disconnected, protocol unknown,
+  active/child/relay-owned/unhealthy targets all zero, connected sessions zero.
+  Status: `connected:false`, `rejectedConnections:0`, empty target inventory.
+- Recovery needed: load or reload the installed `extension/dist` unpacked
+  extension in Chromium, then click its Browser Control toolbar button on the
+  intended normal web tab. The relay-backed initial call and one retry did not
+  recover the connection. No relay restart or alternate driver was used.
+- HTTP checks passed: demo 4311 and contract 43917 both returned 200; no restart
+  needed. Contract run/search and all browser lifecycle gates remain unexecuted.
+
+
 Integration recheck 2026-09-07, replacement session `ses_f814d0710ffeif21SAWfQ2WDQG`:
 `browser-control execute 'return { url: page.url(), title: await page.title() }'`
 still fails with the same exact
