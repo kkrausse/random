@@ -1,0 +1,9 @@
+{
+  "name": "@vivari/workspace-api",
+  "version": "0.0.0-a0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}
