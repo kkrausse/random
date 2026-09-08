@@ -24,6 +24,7 @@ test("New session drains a stable cross-location inbox without selecting its own
   let finish: (() => void) | undefined
   let failReply = false
   let failRefresh = false
+  let failFirstLocation = false
   let destination: any
   const empty = async () => []
   const context: any = {
@@ -52,7 +53,7 @@ test("New session drains a stable cross-location inbox without selecting its own
       permission: {
         list: async ({ sessionID }: any) => requests.filter((request) => request.sessionID === sessionID),
         request: { list: async ({ location }: any) => {
-          if (failRefresh) throw new Error("inbox unavailable")
+          if (failRefresh || (failFirstLocation && location.directory === "/first")) throw new Error("inbox unavailable")
           // The inbox must pass the workspace selector for locations on later pages.
           return { data: requests.filter((request) => request.sessionID === "s0" ? location.directory === "/first" : location.workspace === "ws2") }
         } },
@@ -104,6 +105,13 @@ test("New session drains a stable cross-location inbox without selecting its own
     assert.match(setup.captureCharFrame(), /child command/)
     assert.deepEqual(replies.at(-1), { sessionID: "s0", requestID: "p1", reply: "once" })
     assert.equal(destination, undefined)
+
+    failFirstLocation = true
+    changed()
+    await settle()
+    assert.match(setup.captureCharFrame(), /child command/, "an unavailable location does not hide reachable requests")
+    assert.match(setup.captureCharFrame(), /1 unavailable/)
+    failFirstLocation = false
 
     failRefresh = true
     changed()
