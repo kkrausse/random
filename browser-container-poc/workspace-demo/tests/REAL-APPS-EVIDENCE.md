@@ -72,3 +72,20 @@ Pending: real OPFS reload/lease/failure checks, SW preview routing, same iframe
 Document across manual and model edits, browser chat streaming/interrupt, and
 browser stop/flush/close/reopen/dependency restoration. Headless success does not
 establish any of those browser results.
+
+### Fresh browser recheck after tab enablement
+
+2026-09-07, verification session `ses_f8141b0d9ffejLl9746UvFfL4m`, baseline
+`11b06b0`: initial CLI execute and one explicit local-tab selection retry both
+exited 1 before page access. Doctor still reports matching CLI/relay 0.7.0 build
+`2026-09-05T19:03:42.828Z`, disconnected extension, zero targets, no competing
+connections. Full compact reproduction/recovery receipt:
+`../BROWSER-CONTROL-TODO.md`.
+
+Passed this attempt: HTTP 200 from demo 4311 and contract 43917.
+Blocked/unexecuted: contract run/search, browser OPFS/lease/failure checks,
+workspace-only files, explicit prepared delivery, real guest Vite/OpenCode UI,
+model edit and same-Document HMR, active cancellation, SW routing/fresh iframe/
+detach, stop/flush/close/reopen and retained source/session/dependency restoration.
+No browser screenshot could be captured; no provider request was made, so this
+attempt supplies neither provider-429 nor application-failure evidence.
