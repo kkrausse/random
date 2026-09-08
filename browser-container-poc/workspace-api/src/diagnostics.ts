@@ -1,4 +1,4 @@
-import type { DiagnosticEvent } from "./types";
+import type { DiagnosticEvent } from "./types.js";
 
 /** Observers are optional and must never affect storage/runtime correctness. */
 export function diagnosticReporter(observer?: (event: DiagnosticEvent) => void) {

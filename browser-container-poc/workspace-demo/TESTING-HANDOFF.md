@@ -1,5 +1,14 @@
 # Fresh React demo QA handoff — implementation ownership released
 
+## Local package checkpoint (2026-09-07)
+
+See [IMPLEMENTATION-HANDOFF.md](./IMPLEMENTATION-HANDOFF.md) for the newer public
+package layout, isolated consumer proof and exact remaining product-mode work.
+The provider is now imported from `@vivari/workspace-api/react`; build that local
+package before running the demo. The production editable-app shell/backend
+passthrough are not implemented yet. Existing browser acceptance gates below
+remain pending; the CLI still reports the disconnected extension.
+
 ## Independent QA checkpoint + diagnostics (2026-09-07)
 
 Fresh QA `ses_f80e84bf7ffe5wHuln4yAnScDi` could not acquire any browser page:

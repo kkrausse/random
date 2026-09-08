@@ -1,5 +1,17 @@
 # Browser Control verification follow-up
 
+## Package checkpoint (2026-09-07)
+
+Session `ses_f80b87aabffecxahTVNNLC30bT` retried the Bun-backed CLI:
+`browser-control execute --session brisk-wombat-706 --target-url 127.0.0.1:4311
+'return { url: page.url(), title: await page.title() }'`.
+Expected retained page inspection; actual exit 1: "Browser Control extension is
+not connected. Load extension/dist in Chromium; it reconnects automatically after
+relay or browser startup." Doctor: matching CLI/relay 0.7.0, build
+2026-09-05T19:03:42.828Z, compatible protocol 2, extension disconnected, zero
+targets. Recovery was the relay-backed call plus doctor only. No session/tab or
+relay changes. Browser startup with the newly packaged React provider is pending.
+
 ## Independent React QA recheck (2026-09-07)
 
 Session `ses_f80e84bf7ffe5wHuln4yAnScDi` ran

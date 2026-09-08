@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Play, RotateCcw, Save, Square, LoaderCircle } from "lucide-react";
-import { attachPreview, type Workspace } from "../../workspace-api/src/index";
+import { attachPreview, type Workspace } from "@vivari/workspace-api";
 import { WorkspaceProvider, useWorkspace } from "./workspace-provider";
 import { createSampleRecipe, sourcePaths } from "./sample-recipe";
 import { mountChat } from "./chat-adapter";

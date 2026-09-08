@@ -1,4 +1,4 @@
-import type { ToolDescriptor, NodeLaunchOptions, Endpoint } from "../../workspace-api/src/index";
+import type { ToolDescriptor, NodeLaunchOptions, Endpoint } from "@vivari/workspace-api";
 
 export function openCodeLaunch(options: NodeLaunchOptions) {
   const password = crypto.randomUUID() + crypto.randomUUID();

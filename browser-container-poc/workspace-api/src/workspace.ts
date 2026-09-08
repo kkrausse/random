@@ -1,5 +1,5 @@
 import { Host } from "./host.js";
-import { diagnosticReporter } from "./diagnostics";
+import { diagnosticReporter } from "./diagnostics.js";
 import { WorkspaceError, type Distribution, type PersistenceState, type WorkspaceFs, type WorkspaceOpenOptions, type WorkspaceStorage } from "./types.js";
 
 export function opfsStore(distribution: Distribution): WorkspaceStorage { return { kind: "opfs", distribution }; }

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { Runtime, type Workspace, type Distribution, type Execution } from "../../workspace-api/src/index";
+import { Runtime, type Workspace, type Distribution, type Execution } from "@vivari/workspace-api";
 import { loadPrepared, preparedApps, openCodeLaunch, waitForOpenCode } from "../src/prepared";
 import { OpenCodeAPI } from "../../opencode-client-demo/src/api";
 
