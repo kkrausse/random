@@ -6,12 +6,13 @@ export function openCodeLaunch(options: NodeLaunchOptions) {
     headers: { authorization: "Basic " + btoa("opencode:" + password) } };
 }
 
-export async function waitForOpenCode(endpoint: Endpoint, headers: HeadersInit) {
+export async function waitForOpenCode(endpoint: Endpoint, headers: HeadersInit, signal?: AbortSignal) {
   const deadline = Date.now() + 30000;
   let failure: unknown;
   while (Date.now() < deadline) {
+    signal?.throwIfAborted();
     try {
-      const response = await endpoint.fetch("/api/health", { headers, signal: AbortSignal.timeout(3000) });
+      const response = await endpoint.fetch("/api/health", { headers, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(3000)]) : AbortSignal.timeout(3000) });
       const body = await response.text();
       if (response.ok) return body;
       failure = Error(`OpenCode health HTTP ${response.status}: ${body}`);
@@ -33,9 +34,9 @@ export interface PreparedManifest {
 export async function sha256(bytes: Uint8Array): Promise<string> {
   return [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes as Uint8Array<ArrayBuffer>))].map(b => b.toString(16).padStart(2, "0")).join("");
 }
-export async function loadPrepared(base = "/prepared/"): Promise<PreparedManifest> {
-  const response = await fetch(base + "manifest.json");
-  if (!response.ok) throw Error(`Prepared apps unavailable (${response.status}); run bun run prepare`);
+export async function loadPrepared(base = "/prepared/", signal?: AbortSignal): Promise<PreparedManifest> {
+  const response = await fetch(base + "manifest.json", { signal });
+  if (!response.ok) throw Error(`Prepared apps unavailable (HTTP ${response.status}). From browser-container-poc run: bun run --cwd workspace-demo prepare, then retry Start workspace`);
   const manifest = await response.json() as PreparedManifest;
   if (manifest.format !== "workspace-apps-v1" || manifest.openCodeVersion !== "0.0.0-dev-19167") throw Error("Unsupported prepared application manifest");
   const destinations = new Set<string>();
@@ -51,15 +52,16 @@ export async function loadPrepared(base = "/prepared/"): Promise<PreparedManifes
 }
 
 /** Application-owned explicit delivery, using the public installer seam. No programs start here. */
-export function preparedApps(manifest: PreparedManifest, report: (message: string) => void = () => {}, base = "/prepared/"): ToolDescriptor<void, void> {
+export function preparedApps(manifest: PreparedManifest, report: (message: string) => void = () => {}, base = "/prepared/", signal?: AbortSignal): ToolDescriptor<void, void> {
   return {
     name: "prepared-apps", version: manifest.runtimeVersion,
     async bind(context) {
       return async () => {
         let done = 0;
         for (const asset of manifest.assets) {
-          const response = await fetch(base + asset.file);
-          if (!response.ok) throw Error(`Asset HTTP ${response.status}: ${asset.file}`);
+          signal?.throwIfAborted();
+          const response = await fetch(base + asset.file, { signal });
+          if (!response.ok) throw Error(`Prepared asset HTTP ${response.status}: ${asset.file}. From browser-container-poc run: bun run --cwd workspace-demo prepare, then retry Start workspace`);
           const bytes = new Uint8Array(await response.arrayBuffer());
           if (bytes.length !== asset.bytes || await sha256(bytes) !== asset.sha256) throw Error(`Asset hash mismatch: ${asset.destination}`);
           await context.installFile(asset.destination, bytes);

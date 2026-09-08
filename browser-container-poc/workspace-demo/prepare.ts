@@ -1,9 +1,11 @@
 import { readdir, realpath, stat } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import type { PreparedManifest } from "./src/prepared";
+import { sampleApp } from "./src/sample";
+import { preparationFingerprint, preparedRoot } from "./setup";
 
 const root = import.meta.dirname;
-const out = resolve(root, "dist/prepared");
+const out = preparedRoot;
 const runtime = resolve(process.env.RUNTIME_DIR ?? resolve(root, "../workspace-api/dist/runtime"));
 const source = resolve(process.env.OPENCODE_PACKAGE_DIR ?? resolve(root, "../vivari/.runtime/opencode-v2-package"));
 const hash = (bytes: Uint8Array) => new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
@@ -50,10 +52,10 @@ const manifest: PreparedManifest = {
     "/package.json": JSON.stringify(projectPackage, null, 2),
     "/index.html": '<!doctype html><html><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>',
     "/src/main.tsx": 'import React from "react"; import {createRoot} from "react-dom/client"; import App from "./App"; const root=createRoot(document.getElementById("root")!); root.render(<App/>); if(import.meta.hot) import.meta.hot.accept("./App", module=>{if(module) root.render(React.createElement(module.default))});',
-    "/src/App.tsx": 'import React from "react"; export default function App(){return <h1>Hello from real Vite</h1>}',
+    "/src/App.tsx": sampleApp,
     "/vite.config.mjs": 'import react from "@vitejs/plugin-react"; export default {plugins:[react()],optimizeDeps:{include:["react","react-dom/client","react/jsx-dev-runtime","react/jsx-runtime"],noDiscovery:true},server:{host:"0.0.0.0",port:5173,strictPort:true}};',
   },
 };
 await Bun.write(join(out, "manifest.json"), JSON.stringify(manifest));
-await Bun.write(join(out, "source-receipt.json"), JSON.stringify({ openCode: receipt, guestLockSha256: hash(new Uint8Array(await Bun.file(join(root, "guest/bun.lock")).arrayBuffer())) }, null, 2));
+await Bun.write(join(out, "source-receipt.json"), JSON.stringify({ preparationFingerprint: await preparationFingerprint(), openCode: receipt, guestLockSha256: hash(new Uint8Array(await Bun.file(join(root, "guest/bun.lock")).arrayBuffer())) }, null, 2));
 console.log(`Prepared ${assets.length} files (${assets.reduce((n,a)=>n+a.bytes,0)} bytes), runtime ${distribution.version}`);

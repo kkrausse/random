@@ -3,57 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Workspace API demo</title>
-  <style>
-    body { font-family: system-ui, sans-serif; margin: 1rem auto; padding: 0 1rem; max-width: 1400px; }
-    .row { display: flex; gap: 1rem; flex-wrap: wrap; } .col { flex: 1 1 360px; min-width: 0; }
-    textarea { box-sizing: border-box; width: 100%; height: 240px; font-family: monospace; }
-    button, select, input { padding: .35rem; margin: .2rem 0; } button { margin-right: .35rem; }
-    iframe { box-sizing: border-box; width: 100%; height: 300px; border: 1px solid #999; }
-    pre { white-space: pre-wrap; overflow-wrap: anywhere; } #logs { background: #eee; padding: .5rem; max-height: 220px; overflow: auto; }
-    #mode-note { border: 1px solid #999; padding: .75rem; } details input { width: min(95%, 650px); }
-    #file-path { width: min(80%, 400px); } #chat { border: 1px solid #999; padding: .75rem; }
-  </style>
+  <title>Workspace React demo</title>
+  <link rel="stylesheet" href="/app.css" />
 </head>
 <body>
-  <h1>Workspace API demo</h1>
-  <label>Backend <select id="mode"><option value="api">Shared workspace-api</option><option value="fixture">Fixture / placeholder</option></select></label>
-  <p id="mode-note"></p>
-  <p role="status" id="status">Ready</p>
-  <p id="lifecycle"></p>
-  <button id="open">Open workspace</button><button id="start-runtime">Start runtime</button><button id="stop-runtime">Stop runtime</button><button id="flush">Save snapshot / flush</button><button id="close">Close workspace</button>
-  <button id="prepare">Deliver prepared apps</button>
-  <details><summary>Real API launch configuration</summary>
-    <p>Shared API uses <code>Workspace.open({ id: "default", storage: opfsStore(distribution) })</code>. Only one persistent origin store is currently supported.</p>
-    <p><label>Distribution JSON<br><input id="distribution" value='{"name":"vivari","version":"unconfigured","assetBaseUrl":"/runtime/"}'></label></p>
-    <p><label>Vite module entry<br><input id="vite-entry" value="/workspace/node_modules/vite/bin/vite.js"></label></p>
-    <p><label>OpenCode server module entry<br><input id="chat-entry" value="/opencode-v2/run.cjs"></label></p>
-    <p><label>OpenCode launch args JSON<br><input id="chat-args" value='["serve","--port","4096"]'></label></p>
-  </details>
-  <div class="row">
-    <section class="col"><h2>Filesystem editor</h2>
-      <label>Files <select id="files"><option>No workspace open</option></select></label><br>
-      <label>Path <input id="file-path" value="/index.html"></label>
-      <textarea id="editor" aria-label="File contents" spellcheck="false"></textarea>
-      <button id="save">Write file</button><button id="readback">Read file</button><button id="seed">Add missing example files</button>
-      <p id="editor-status">Writes modify the open workspace; saving a snapshot / flushing is separate.</p>
-    </section>
-    <section class="col"><h2>Filesystem search</h2>
-      <label>Literal text <input id="query" value="TODO"></label><button id="search">Search files</button>
-      <p>Small host-side text scan, capped at 100 matches. This is not the runtime ripgrep tool.</p><pre id="matches"></pre>
-    </section>
-  </div>
-  <div class="row">
-    <section class="col"><h2>Vite preview</h2>
-      <button id="start-vite">Start preview</button><button id="stop-vite">Stop preview</button>
-      <p id="preview-status">Detached</p><iframe id="preview" title="Workspace preview" sandbox="allow-scripts"></iframe>
-    </section>
-    <section class="col"><h2>OpenCode chat</h2>
-      <button id="start-chat">Open chat fixture</button><button id="stop-chat">Stop chat</button>
-      <p id="chat-status">Detached</p><div id="chat">Open the runtime, then attach chat.</div>
-    </section>
-  </div>
-  <h2>Activity</h2><pre id="logs" aria-label="Activity log"></pre>
+  <div id="root"></div>
   <script type="module" src="/app.js"></script>
 </body>
 </html>
