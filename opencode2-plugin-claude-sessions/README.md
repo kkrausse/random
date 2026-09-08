@@ -7,6 +7,7 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Press `Left` while the focused prompt is empty to open a status-aware session picker.
 - Press `Left` while the prompt contains text to move the cursor normally.
 - Press `Alt+S` to open the picker globally, including from permission and question prompts.
+- The picker is a full-screen plugin page, using the available width and height without dialog margins or a width cap. **Close**, `Left`, or `Escape` returns to the originating session (or Home).
 - Labeled sections with prominent dividers show **Active → Archived** (including legacy inactive markers).
 - Click **Archive** or press `x` to stop the session family, archive the parent's transcript locally, and delete the live family. Click **Restore to active** or press `r` to import the parent without starting work. These actions keep the picker open.
 - Cleanup interrupts every family member, including idle sessions. An unavailable location/runtime or failed cleanup stops archival before deletion and shows an error.
@@ -20,12 +21,12 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Indicators use the active theme's semantic status colors.
 - Active sessions prioritize needs input, then working, then ready, ordered by latest interaction within each status. Inactive sessions are ordered by latest interaction.
 - Each session occupies one line with its title, status, and lifecycle button. The selected session's location, agent, and last-interaction time appear in the preview.
-- The preview has a pinned **Archive / Restore** button. On phones, a compact touch footer adds **Open / New** and **Close**. Phone-sized terminals use nearly the full screen height.
+- The preview has a pinned **Archive / Restore** button. On phones, a compact touch footer adds **Open / New** and **Close**.
 - Below 70 columns, rows prioritize the title and short time; status icons remain, while text status and context usage move to the preview. The selected title wraps to two lines and section headers tighten. During approvals, model/usage details give way to the request.
 - The current session is selected initially; from Home, `New session` is selected.
 - Use `Up`/`Down` to select, `Right` or `Enter` to open, and `Left` or `Escape` to close.
 - Press `N` from the picker to start a new session.
-- Click a row or use the arrow keys to preview it below the list without changing the session behind the dialog. Hovering does not change selection, so you can move the mouse to the taller preview and scroll long commands without switching requests.
+- Click a row or use the arrow keys to preview it below the list before opening it. Hovering does not change selection, so you can move the mouse to the taller preview and scroll long commands without switching requests.
 - Pending permissions show the action, message, resources, and any metadata in a scrollable preview. Press `a` to approve **once**, `A` (shift) to always approve, or `d` to deny the displayed request. The picker stays open; multiple requests are handled one at a time, never as a bulk approval.
 - Subagents appear beneath their parent in the same section with a small indent, with further nesting for descendants. Children whose parent is unloaded remain independently selectable until it loads. Parent previews still aggregate descendant requests for approval.
 - Pending questions show their title and field details; open the session to answer them. Approval shortcuts do not answer or dismiss questions.

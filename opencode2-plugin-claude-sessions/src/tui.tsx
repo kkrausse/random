@@ -13,6 +13,7 @@ import { archiveSession, fileArchiveStore, restoreSession, type Archive, type Ar
 const PAGE_SIZE = 100
 const LOAD_MORE_THRESHOLD = 10
 const NEW_SESSION_VALUE = "__claude_sessions_new__"
+const PICKER_PAGE = "sessions"
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
@@ -118,11 +119,11 @@ function contextStats(
   }
 }
 
-export function SessionPicker(props: { context: Plugin.Context; archiveStore?: ArchiveStore }) {
+export function SessionPicker(props: { context: Plugin.Context; archiveStore?: ArchiveStore; returnSessionID?: string }) {
   const dimensions = useTerminalDimensions()
-  // Use nearly all available height on phones, including with the keyboard open.
+  // The page owns the available viewport, including phone keyboard/rotation changes.
   const mobile = () => dimensions().width < 70
-  const height = () => Math.max(1, mobile() ? dimensions().height - 2 : Math.min(48, dimensions().height - 6))
+  const height = () => Math.max(1, dimensions().height)
   const previewHeight = () => Math.min(permission() ? 20 : mobile() ? 8 : 6, Math.max(mobile() && permission() ? 9 : 5, Math.floor(height() * (mobile() ? 0.5 : 0.4))))
   const approvalButtonHeight = () => mobile() && dimensions().height >= 20 ? 3 : 1
   const runner = makeRunner((message, cause) => {
@@ -137,7 +138,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
   })
   const [changingLifecycle, setChangingLifecycle] = createSignal(false)
   const route = props.context.ui.router.current()
-  const currentSessionID = route.type === "session" ? route.sessionID : undefined
+  const currentSessionID = props.returnSessionID ?? (route.type === "session" ? route.sessionID : undefined)
   const currentSession = currentSessionID ? props.context.data.session.get(currentSessionID) : undefined
   const archiveStore = props.archiveStore ?? fileArchiveStore()
   const [archives, setArchives] = createSignal<Archive[]>([])
@@ -509,6 +510,12 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
     props.context.ui.router.navigate({ type: "session", sessionID })
   }
 
+  function close() {
+    props.context.ui.router.navigate(currentSessionID && !deletedIDs.has(currentSessionID)
+      ? { type: "session", sessionID: currentSessionID }
+      : { type: "home" })
+  }
+
   function newSession() {
     props.context.ui.dialog.clear()
     props.context.ui.router.navigate({ type: "home" })
@@ -571,8 +578,9 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
     commands: [
       {
         bind: "left",
-        run: () => props.context.ui.dialog.clear(),
+        run: close,
       },
+      { bind: "escape", run: close },
       {
         bind: "n",
         run: newSession,
@@ -615,8 +623,6 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
     runner.start(operation({ operation: "Load session archives" }, () => archiveStore.list()).pipe(
       Effect.map((items) => { setArchives(items); setArchivesReady(true) }),
     ), showFailure)
-    // Applying this after the dialog exists reliably overrides its default 60-column width.
-    props.context.ui.dialog.set({ size: "xlarge", centered: true })
     if (currentSessionID && !currentSession) {
       runner.start(Effect.gen(function* () {
         const session = yield* operation({ operation: "Load current session", sessionID: currentSessionID },
@@ -695,7 +701,10 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
     <box
       flexDirection="column"
       id="claude-session-picker"
-      height={height()}
+      width="100%"
+      height="100%"
+      flexGrow={1}
+      minHeight={0}
       overflow="hidden"
       backgroundColor={props.context.theme.contextual.overlay.background.default}
     >
@@ -928,7 +937,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
               if (event.button !== 0) return
               event.stopPropagation()
               event.preventDefault()
-              props.context.ui.dialog.clear()
+              close()
             }}>[Close]</text>
           ) : <text fg={props.context.theme.text.subdued}>{search() ? ` · / filter: ${search()}` : " · / search"}</text>}
         </box>
@@ -949,8 +958,9 @@ function EmptyPromptBinding(props: { context: Plugin.Context }) {
     const route = props.context.ui.router.current()
     if (route.type !== "home" && route.type !== "session") return false
 
-    props.context.ui.dialog.set({ size: "xlarge", centered: true })
-    props.context.ui.dialog.show(() => <SessionPicker context={props.context} />)
+    props.context.ui.dialog.clear()
+    props.context.ui.router.navigate({ type: "plugin", name: PICKER_PAGE,
+      data: { returnSessionID: route.type === "session" ? route.sessionID : undefined } })
   }
 
   props.context.keymap.layer(() => ({
@@ -992,9 +1002,17 @@ function EmptyPromptBinding(props: { context: Plugin.Context }) {
 export default Plugin.define({
   id: "claude.sessions",
   setup(context) {
-    return context.ui.slot({
+    const unregisterPage = context.ui.router.register({
+      name: PICKER_PAGE,
+      render: ({ data }) => <SessionPicker context={context} returnSessionID={typeof data?.returnSessionID === "string" ? data.returnSessionID : undefined} />,
+    })
+    const unregisterSlot = context.ui.slot({
       append: "app",
       render: () => <EmptyPromptBinding context={context} />,
     })
+    return () => {
+      unregisterSlot()
+      unregisterPage()
+    }
   },
 })
