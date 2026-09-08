@@ -7,11 +7,11 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Press `Left` while the focused prompt is empty to open a status-aware session picker.
 - Press `Left` while the prompt contains text to move the cursor normally.
 - Press `Alt+S` to open the picker globally, including from permission and question prompts.
-- Labeled sections with prominent dividers show **Active → Inactive**.
+- Labeled sections with prominent dividers show **Active → Archived** (including legacy inactive markers).
 - Click **Archive** or press `x` to stop the session family, archive the parent's transcript locally, and delete the live family. Click **Restore to active** or press `r` to import the parent without starting work. These actions keep the picker open.
 - Cleanup interrupts every family member, including idle sessions. An unavailable location/runtime or failed cleanup stops archival before deletion and shows an error.
 - After `x` or `r` succeeds, selection moves to the next row in the original section, or the previous row at the end of that section, while preserving the scroll offset. If the section had only one row, selection falls back to **New session**. Navigating while the request is pending keeps your newer selection.
-- Archived parents appear under **Inactive** with subdued titles, a message count, and a scrollable user/assistant transcript preview. `Enter` reminds you to restore with `r` before opening the session in OpenCode.
+- Archived parents appear under **Archived** with subdued titles, a message count, and a scrollable user/assistant transcript preview. `Enter` reminds you to restore with `r` before opening the session in OpenCode.
 - Press `/` to filter loaded live sessions and all archived parents by title or directory; submit an empty filter to clear it.
 - Legacy inactive markers remain readable. They still describe live sessions, so running/attention status takes precedence. Press `x` to archive one, or `r` to clear its old marker. Existing markers are not automatically converted into deleted sessions.
 - Archiving a child acts on its highest loaded parent. Cleanup discovers descendants through the paginated API, including children outside the picker's loaded pages. Children are deleted but **not archived or restored**.
@@ -20,7 +20,8 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Indicators use the active theme's semantic status colors.
 - Active sessions prioritize needs input, then working, then ready, ordered by latest interaction within each status. Inactive sessions are ordered by latest interaction.
 - Each session occupies one line with its title, status, and lifecycle button. The selected session's location, agent, and last-interaction time appear in the preview.
-- The preview has a pinned **Archive / Restore to active** button, reachable on narrow phones even when row controls are clipped. Phone-sized terminals use nearly the full screen height.
+- The preview has a pinned **Archive / Restore** button. On phones, a compact touch footer adds **Open / New** and **Close**. Phone-sized terminals use nearly the full screen height.
+- Below 70 columns, rows prioritize the title and short time; status icons remain, while text status and context usage move to the preview. The selected title wraps to two lines, section headers tighten, and approvals get a dedicated compact action row. During approvals, model/usage details give way to the request.
 - The current session is selected initially; from Home, `New session` is selected.
 - Use `Up`/`Down` to select, `Right` or `Enter` to open, and `Left` or `Escape` to close.
 - Press `N` from the picker to start a new session.
@@ -31,7 +32,7 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Preview loading/errors disable permission actions, replies cannot overlap, and held-key repeat events are ignored. Errors appear as toasts and requests refresh after replying.
 - Older sessions load as you scroll.
 - The picker resizes with the terminal, including phone keyboard/rotation changes. Narrow or short terminals use a compact header and a smaller scrollable approval preview.
-- Tap/click a row to preview, double-tap or press `→`/`Enter` to enter it. Approval previews have **Once**, **Always**, and **Deny** buttons floated right at the top of the preview alongside the existing keyboard shortcuts.
+- Tap/click a row to preview, double-tap or press `→`/`Enter` to enter it. Approval previews have **Once**, **Always**, and **Deny** buttons floated right at the top of the preview alongside the existing keyboard shortcuts. On phones, the approval heading is just the request count, keeping all three buttons visible.
 - In `bun-web-terminal`, use its **Keyboard** button to explicitly show/hide the phone keyboard. Taps select TUI controls without opening it, and swipes scroll without clicking.
 
 ## Archive storage and API sequence
