@@ -123,7 +123,8 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
   // Use nearly all available height on phones, including with the keyboard open.
   const mobile = () => dimensions().width < 70
   const height = () => Math.max(1, mobile() ? dimensions().height - 2 : Math.min(48, dimensions().height - 6))
-  const previewHeight = () => Math.min(permission() ? 20 : mobile() ? 8 : 6, Math.max(5, Math.floor(height() * (mobile() ? 0.5 : 0.4))))
+  const previewHeight = () => Math.min(permission() ? 20 : mobile() ? 8 : 6, Math.max(mobile() && permission() ? 9 : 5, Math.floor(height() * (mobile() ? 0.5 : 0.4))))
+  const approvalButtonHeight = () => mobile() && dimensions().height >= 20 ? 3 : 1
   const runner = makeRunner((message, cause) => {
     console.error(`[claude.sessions] ${message}\n${Cause.pretty(cause)}`)
   })
@@ -163,6 +164,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
   const [previewLoading, setPreviewLoading] = createSignal(false)
   const [previewError, setPreviewError] = createSignal<string>()
   const [replying, setReplying] = createSignal(false)
+  const [replyChoice, setReplyChoice] = createSignal<"once" | "always" | "reject">()
   const queriedLocations = new Set<string>()
   let scroll: ScrollBoxRenderable | undefined
   let previewScroll: ScrollBoxRenderable | undefined
@@ -326,7 +328,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
     reviewVersion()
     let cancelled = false
     onCleanup(() => { cancelled = true })
-    setPreview(undefined)
+    setPreview((current) => current?.sessionID === sessionID ? current : undefined)
     setPreviewError(undefined)
     setPreviewLoading(!!sessionID && !isArchived(sessionID))
     if (!sessionID || isArchived(sessionID)) return
@@ -348,7 +350,8 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
 
   function replyToPermission(reply: "once" | "always" | "reject") {
     const request = permission()
-    if (!request || replying() || changingLifecycle() || previewLoading()) return
+    if (!request || replying() || changingLifecycle() || previewLoading() || previewError()) return
+    setReplyChoice(reply)
     setReplying(true)
     return runner.start(Effect.gen(function* () {
       yield* operation({ operation: `Reply to permission (${reply})`, sessionID: request.sessionID, requestID: request.id },
@@ -841,22 +844,46 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
         ) : null}
         {permission() ? (
           <>
-            <box height={1} flexShrink={0} flexDirection="row" justifyContent="space-between">
-              <text wrapMode="none" flexShrink={1} fg={props.context.theme.text.status.permission} attributes={TextAttributes.BOLD}>
-                {mobile() ? `1/${visiblePreview()!.permissions.length}` : `Approval required · 1 of ${visiblePreview()!.permissions.length}`}
-              </text>
-              <box flexShrink={0} flexDirection="row" gap={1}>
-                <text id="claude-session-approve" fg={props.context.theme.text.subdued} onMouseDown={(event) => { if (event.button === 0) { event.stopPropagation(); void replyToPermission("once") } }}>{replying() ? "Sending…" : "[Once]"}</text>
-                <text id="claude-session-always" fg={props.context.theme.text.subdued} onMouseDown={(event) => { if (event.button === 0) { event.stopPropagation(); void replyToPermission("always") } }}>[Always]</text>
-                <text id="claude-session-deny" fg={props.context.theme.text.subdued} onMouseDown={(event) => { if (event.button === 0) { event.stopPropagation(); void replyToPermission("reject") } }}>[Deny]</text>
-              </box>
-            </box>
-            <scrollbox ref={previewScroll} flexGrow={1} minHeight={0} scrollY scrollX={false}>
+            <text height={1} flexShrink={0} wrapMode="none" fg={props.context.theme.text.status.permission} attributes={TextAttributes.BOLD}>
+              {previewError() ? `Preview unavailable: ${previewError()}` : `${permission()!.action} · 1/${visiblePreview()!.permissions.length}`}
+            </text>
+            <scrollbox id="claude-session-request" ref={previewScroll} flexGrow={1} minHeight={0} scrollY scrollX={false}>
               <text fg={props.context.theme.text.default}>
-                {[permission()!.action, permission()!.message, ...permission()!.resources,
+                {[permission()!.message, ...permission()!.resources,
                   permission()!.metadata ? JSON.stringify(permission()!.metadata, null, 2) : undefined].filter(Boolean).join("\n")}
               </text>
             </scrollbox>
+            <box id="claude-session-approval-actions" height={approvalButtonHeight()} flexShrink={0} flexDirection="row" gap={1}>
+              <Index each={[
+                { id: "approve", reply: "once" as const, label: "Allow" },
+                { id: "deny", reply: "reject" as const, label: "Deny" },
+                { id: "always", reply: "always" as const, label: "Always" },
+              ]}>
+                {(action) => {
+                  const disabled = () => replying() || previewLoading() || !!previewError() || changingLifecycle()
+                  return (
+                    <box id={`claude-session-${action().id}`} flexGrow={1} flexBasis={0} minWidth={0}
+                      height={approvalButtonHeight()} justifyContent="center" alignItems="center"
+                      backgroundColor={action().reply === "once" && !disabled()
+                        ? props.context.theme.hue.accent[400]
+                        : props.context.theme.contextual.overlay.background.surface.offset}
+                      onMouseDown={(event) => {
+                        if (event.button !== 0) return
+                        event.stopPropagation()
+                        event.preventDefault()
+                        if (!disabled()) void replyToPermission(action().reply)
+                      }}>
+                      <text wrapMode="none" fg={action().reply === "once" && !disabled()
+                        ? props.context.theme.contextual.overlay.background.default
+                        : action().reply === "always" || disabled() ? props.context.theme.text.subdued : props.context.theme.text.default}
+                        attributes={action().reply === "once" ? TextAttributes.BOLD : undefined}>
+                        {replying() && replyChoice() === action().reply ? "Sending…" : action().label}
+                      </text>
+                    </box>
+                  )
+                }}
+              </Index>
+            </box>
           </>
         ) : (
           <>
