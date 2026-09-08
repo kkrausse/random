@@ -24,6 +24,7 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - The preview has a pinned **Archive / Restore** button. On phones, a compact touch footer adds **Open / New** and **Close**.
 - Below 70 columns, rows prioritize the title and short time; status icons remain, while text status and context usage move to the preview. The selected title wraps to two lines and section headers tighten. During approvals, model/usage details give way to the request.
 - The current session is selected initially; from Home, `New session` is selected.
+- While **New session** is selected, the preview acts as a cross-session inbox: **Allow / Deny / Always** handles the first pending permission and advances without moving selection. It shows the owning session and directory, retains request order while new requests arrive, and includes live locations beyond the loaded or filtered rows plus their children. Permissions come first; pending questions are counted and shown afterward with **Open** to answer in their session. **New** / `Enter` still starts a new session. Empty inboxes return to the blank-prompt preview.
 - Use `Up`/`Down` to select, `Right` or `Enter` to open, and `Left` or `Escape` to close.
 - Press `N` from the picker to start a new session.
 - Click a row or use the arrow keys to preview it below the list before opening it. Hovering does not change selection, so you can move the mouse to the taller preview and scroll long commands without switching requests.
