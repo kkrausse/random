@@ -41,3 +41,19 @@
 !dictation-server/
 !dictation-server/**
 node_modules/
+
+# Local machine files and credentials, including inside opted-in projects.
+.DS_Store
+.env
+.env.*
+!.env.example
+!.env.*.example
+# This checked-in file contains only a non-secret relative build path.
+!browser-container-poc/vivari/.env
+*.pem
+*.key
+*.p12
+*.pfx
+.netrc
+.npmrc.local
+*.har

@@ -23,6 +23,16 @@ workspace are ignored until they are reviewed and explicitly imported.
 
 ## Importing another repository with history
 
+This repository is public. Before importing a project, review both its files and
+its history for credentials, personal data, and material that cannot be published.
+Local environment files, private keys, and browser network archives are ignored
+by default; use sanitized `.env.example` files for setup instructions. Keep
+photos, activity exports, databases, and machine-specific configuration in ignored
+project-local paths. Review screenshots and logs before committing them.
+
+Ignore rules do not remove already tracked files or earlier commits. If a real
+credential is published, revoke or rotate it and remove it from Git history.
+
 From this repository's root, move the existing checkout out of the way and use
 Git subtree without `--squash`:
 
