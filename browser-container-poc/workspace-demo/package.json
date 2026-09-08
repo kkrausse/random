@@ -4,11 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --hot serve.ts",
-    "build": "bun build ./src/main.ts --outdir dist --target browser",
-    "typecheck": "tsc --noEmit"
+    "dev": "bun --watch serve.ts",
+    "build": "bun build.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
+    "test": "bun test"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "typescript": "^5.9.3"
   }
 }
