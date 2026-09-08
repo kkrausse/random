@@ -59,7 +59,50 @@ workspace-demo and workspace-api typechecks; `git diff --check`.
 Local full logs: approved temp directory `opencode/integration-apps-strict.log`
 and `opencode/integration-apps-restore.log` (not durable source artifacts).
 
-## Remaining external browser gate
+## Browser acceptance — passed after connection restoration
+
+Browser Control CLI 0.7.0, explicit session `tidy-raven-945`, actual Chromium
+pages at 43917 (contract FIRST) and 4311 (real mode). Runtime rebuilt to
+`5b9e2d83dddb85eb5e09c482418a19779c7235ce5b42ff0376e52872f9d4ba50`.
+
+- Found and fixed real browser packaging failure: nested worker URLs were
+  `/assets/...` while distribution was mounted at `/runtime/`. Authored core
+  Vite `base: "./"` fixes relocation; durable patch regenerated, no emitted edits.
+- `window.contract.run()` **RESULT PASS** and `.search()` **SEARCH PASS**:
+  real OPFS, >1 MiB binary bytes, guest I/O/watch/exit, HTTP/SSE/cancel, fresh
+  iframe SW preview, detach without server shutdown, stale listener 410,
+  stop/reattach and durable close/reopen, actual WASM ripgrep.
+- Held real `vivari-vfs-owner` Web Lock: open rejected with `STORAGE_BUSY`,
+  `OPFS already owned by another Vivari kernel`. Release + reload recovered;
+  complete contract passed again.
+- Demo: filesystem-only open/seed/read, then runtime start without project launch,
+  explicit prepared delivery (2,291 files), actual guest Vite and authenticated
+  guest OpenCode health/catalog (31 models), sessions, model selection and SSE UI.
+- Manual heading edit **and restore** preserved `iframe.contentDocument` identity.
+- Muse actually used read/edit tools to write `Browser Muse HMR verified` into
+  `/workspace/src/App.tsx`; Vite HMR updated the rendered heading while preserving
+  the **same iframe Document**. Independent editor readback confirmed source bytes.
+- Active second prompt reached Running before abort; persisted assistant error
+  was `{type:"aborted",message:"Step interrupted"}`. No provider 429 occurred.
+- Stop → flush acknowledged → close → page reload → open restored exact edited
+  OPFS source with runtime stopped. Vite entry was absent until explicit redelivery.
+  OpenCode's non-node_modules files survived but its excluded dependencies needed
+  redelivery; both apps then restarted. Same session's full history survived:
+  `ses_f81172f68ffejN3an9WuDa9DW4`.
+- Fixed client completed-history duplication by clearing live overlays; moved
+  interrupt-request status before the RPC so terminal events remain visible.
+  After reload, another active prompt ended at **interrupted**, and a successful
+  streamed prompt rendered exactly one `RESTORED_BROWSER_OK` assistant response.
+
+Evidence: [`browser-evidence/receipt.json`](browser-evidence/receipt.json),
+[`contract.png`](browser-evidence/contract.png),
+[`restored-demo.png`](browser-evidence/restored-demo.png).
+Also passed after changes: full runtime verify-node, offline API worker contract,
+API tests 3/3, client tests 6/6, combined demo typecheck.
+Quota exhaustion/forced OPFS flush-write failure was not exercised; ownership
+failure, release, durable flush and reload were exercised with real browser storage.
+
+## Historical browser blocker (resolved above)
 
 Browser Control CLI/relay 0.7.0 build `2026-09-05T19:03:42.828Z` match, but the
 extension is disconnected and zero targets are attached. Execute fails before

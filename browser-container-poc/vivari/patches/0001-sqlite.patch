@@ -1,10 +1,13 @@
 diff --git a/AGENTS.md b/AGENTS.md
-index bfb9dbd..671c540 100644
+index bfb9dbd..c7f5354 100644
 --- a/AGENTS.md
 +++ b/AGENTS.md
-@@ -1,5 +1,53 @@
+@@ -1,5 +1,56 @@
  # AGENTS.md
  
++Keep the core library Vite base relative (`./`): consumers can mount the runtime
++under `/runtime/`; root-absolute nested worker URLs hang FS boot in browsers.
++
 +Embedders needing startup logs must use BootOptions.onLog; subscribing after
 +await Vivari.boot misses early OPFS persistence failures. Keep callbacks cheap.
 +
@@ -56,7 +59,7 @@ index bfb9dbd..671c540 100644
  Guidance for AI agents (and humans) working in this repo. Read this first, then
  read [`ARCHITECTURE.md`](./ARCHITECTURE.md) before touching the runtime, the
  protocol, or networking. [`roadmap.md`](./roadmap.md) is the chronological log of
-@@ -1206,4 +1254,4 @@ the gap can't silently regress.
+@@ -1206,4 +1257,4 @@ the gap can't silently regress.
  
  - **How it works** → [`ARCHITECTURE.md`](./ARCHITECTURE.md)
  - **Why it was built this way / status per feature** → [`roadmap.md`](./roadmap.md)
@@ -64,13 +67,17 @@ index bfb9dbd..671c540 100644
 \ No newline at end of file
 +- **Background research** → `research.md`
 diff --git a/ARCHITECTURE.md b/ARCHITECTURE.md
-index d88c8f8..4fc1614 100644
+index d88c8f8..343f44c 100644
 --- a/ARCHITECTURE.md
 +++ b/ARCHITECTURE.md
-@@ -1,5 +1,203 @@
+@@ -1,5 +1,207 @@
  # Vivari — Architecture
  
 +## Workspace API continuation (workspace-v1)
++
++The core library build uses a relative Vite base so nested worker and SQLite
++helper URLs remain inside the consumer's distribution mount (e.g. `/runtime/`).
++Root-absolute `/assets/` URLs strand nested FS workers before readiness.
 +
 +The enclosing workspace-api owns a storage/supervisor worker lifetime separately
 +from runtime execution ownership. Runtime stop kills its tracked process trees;
@@ -271,7 +278,7 @@ index d88c8f8..4fc1614 100644
  This document explains how Vivari works end to end: the core constraint it
  solves, the worker topology, the syscall protocol, the filesystem, the process
  model, the Node runtime, networking, native code, and the build. It is the
-@@ -917,4 +1115,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
+@@ -917,4 +1119,4 @@ No browser is needed to validate the runtime — the same runtime runs under Nod
    `GET / → 200` (network-gated, like `verify-express`).
  
  See [`AGENTS.md`](./AGENTS.md) §"Testing & verification" for exactly when to run
@@ -679,6 +686,19 @@ index 8686985..9aa24e0 100644
    // An async fetch result relayed by the kernel (parallel downloads).
    else if (type === "fetch-done") control && control.dispatchFetch(event.data);
  };
+diff --git a/packages/core/vite.config.ts b/packages/core/vite.config.ts
+index 0e4d128..41c84c2 100644
+--- a/packages/core/vite.config.ts
++++ b/packages/core/vite.config.ts
+@@ -33,6 +33,8 @@ function bundleServiceWorker(): Plugin {
+ // consumer's bundler resolves the workers/wasm relative to node_modules, no
+ // separate asset-hosting step required.
+ export default defineConfig({
++  // Nested worker URLs must resolve beside their parent under any asset mount.
++  base: "./",
+   plugins: [bundleServiceWorker()],
+   build: {
+     target: "es2022",
 diff --git a/packages/kernel-host/coreutils.js b/packages/kernel-host/coreutils.js
 index aa430c1..e31f97d 100644
 --- a/packages/kernel-host/coreutils.js
@@ -2433,12 +2453,19 @@ index bc250b6..2277add 100644
 \ No newline at end of file
 +}
 diff --git a/roadmap.md b/roadmap.md
-index 3ab02ef..d1059f8 100644
+index 3ab02ef..422e2ac 100644
 --- a/roadmap.md
 +++ b/roadmap.md
-@@ -1,5 +1,90 @@
+@@ -1,5 +1,97 @@
  # Vivari — Roadmap
  
++## Browser distribution relocation
++
++Real-browser workspace qualification found nested worker URLs rooted at `/assets/`
++while the consumer serves the distribution under `/runtime/`. Set the library
++build base to `./`; generated workers now resolve their siblings relative to
++themselves, including SQLite's optional OPFS helper. No emitted worker rewriting.
++
 +## Workspace application integration: child output bytes
 +
 +Prepared Vite and the matched OpenCode V2 CLI now run through the enclosing
@@ -2527,7 +2554,7 @@ index 3ab02ef..d1059f8 100644
  Built on the principle **de-risk the hardest part first**: prove the riskiest
  primitive (synchronous cross-thread access to a shared kernel) before expanding.
  
-@@ -3041,4 +3126,46 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
+@@ -3041,4 +3133,46 @@ previewed live in the iframe — with the Path A hand-written builtins deleted.
  | `Fetcher Worker` | Network/registry worker |
  | `Node.js Worker PID n` | Process = 1 worker + Node shim |
  | `[worker n]` | Nested `worker_threads` — real (#16 stage 2b) |

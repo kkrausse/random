@@ -64,6 +64,9 @@ export function mountOpenCodeClient(container: HTMLElement, options: { endpoint?
     if (/^session\.execution\.(succeeded|failed|interrupted)$/.test(e.type)) {
       busy = false; status(e.type.split(".").at(-1)!);
       if (d.error) error(JSON.stringify(d.error));
+      // Completed history is authoritative. Live event ordinals need not be
+      // content-array offsets in the server's persisted representation.
+      live.clear();
       void history().catch(error);
     }
     buttons();
@@ -104,7 +107,7 @@ export function mountOpenCodeClient(container: HTMLElement, options: { endpoint?
       } catch (e) { busy = false; throw e; }
     });
   };
-  $("abort").onclick = () => run(async () => { send?.abort(); await api!.interrupt(current, connection.signal); busy = false; status("Interrupt requested"); await history(); });
+  $("abort").onclick = () => run(async () => { status("Interrupt requested"); send?.abort(); await api!.interrupt(current, connection.signal); busy = false; await history(); });
   status(api ? "Connecting…" : "Waiting for parent to supply an in-browser endpoint, or mount with mock: true."); buttons();
   if (api) run(connect);
   return { dispose() { disposed = true; generation++; connection.abort(); send?.abort(); root.remove(); } };

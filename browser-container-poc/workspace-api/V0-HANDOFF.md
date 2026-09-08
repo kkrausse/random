@@ -1,6 +1,12 @@
 # Workspace API v0 — integration handoff
 
 September 7, 2026. **Real backend checkpoint, not first-milestone browser acceptance.**
+
+**Superseded browser status:** subsequent integration completed real-browser
+contract/search, OPFS reload/ownership rejection, Vite same-Document manual/model
+HMR, authenticated OpenCode streaming/cancel and dependency/history restoration.
+See `INTEGRATION-HANDOFF.md` and `../workspace-demo/tests/REAL-APPS-EVIDENCE.md`.
+Current runtime version is `5b9e2d83dddb85eb5e09c482418a19779c7235ce5b42ff0376e52872f9d4ba50`.
 The parent requested this checkpoint and will launch a fresh integration agent.
 This owner releases the runtime seam after the checkpoint commit.
 

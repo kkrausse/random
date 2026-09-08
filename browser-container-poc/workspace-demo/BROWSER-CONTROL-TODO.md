@@ -1,5 +1,15 @@
 # Browser Control verification follow-up
 
+## Resolved: connected browser acceptance
+
+2026-09-07: explicit CLI session `tidy-raven-945` successfully drove contract
+43917 first, then demo 4311. Browser runtime packaging and client UI defects
+were fixed and verified. Real OPFS restoration, authenticated guest chat, actual
+Muse edit with same-Document HMR, and active interruption passed. See
+`tests/REAL-APPS-EVIDENCE.md` and `tests/browser-evidence/receipt.json`.
+The remaining sections are historical disconnected attempts. An initial
+execution-context error and recovery are recorded in the API sibling's todo.
+
 ## Recheck after user reloaded the extension
 
 2026-09-07, parent session: targeted execute from the reproduction below still

@@ -11,6 +11,9 @@ const kernelWorker = index.match(/assets\/kernel-worker-[\w-]+\.js/)?.[0];
 if (!kernelWorker) throw new Error("Cannot locate active kernel worker in built SDK");
 const kernelBytes = await readFile(resolve(source, kernelWorker));
 if (!kernelBytes.includes(Buffer.from("workspace-flush"))) throw new Error("Runtime output lacks workspace-v1; rebuild patched source first");
+if (/new URL\(\s*["']\/assets\//.test(kernelBytes.toString())) {
+  throw new Error("Runtime nested workers are root-absolute; rebuild core with a relative Vite base before delivery");
+}
 const patch = await readFile(resolve(root, "vivari/patches/0001-sqlite.patch"));
 const version = createHash("sha256").update(patch).digest("hex");
 await mkdir(destination, { recursive: true });
