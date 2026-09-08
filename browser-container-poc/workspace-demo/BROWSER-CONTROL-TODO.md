@@ -1,5 +1,14 @@
 # Browser Control verification follow-up
 
+## Recheck after user reloaded the extension
+
+2026-09-07, parent session: targeted execute from the reproduction below still
+exits 1 with the same extension-disconnected error. Doctor confirms the daemon is
+reachable at `127.0.0.1:19989`, matching CLI/relay 0.7.0 build, zero targets and
+zero connected sessions. Installed extension artifact is version 0.0.24; the
+browser's actual loaded extension version remains unknown. User-reported reload
+has not restored the connection. No page was acquired or modified.
+
 ## Fresh verification attempt after user enabled a tab
 
 2026-09-07, session `ses_f8141b0d9ffejLl9746UvFfL4m`, after commit `11b06b0`:
