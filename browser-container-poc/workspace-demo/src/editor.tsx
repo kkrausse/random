@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { RotateCcw } from "lucide-react";
 import { useWorkspace } from "@vivari/workspace-api/react";
-import { FileEditor, Preview, Chat } from "./editor-components";
+import { FileEditor, Preview, Chat, type FileRequest } from "./editor-components";
 import { Button } from "./components/ui/button";
 import type { createSampleRecipe } from "./sample-recipe";
 
 export default function Editor({ exit, retry, recipe }: { exit(): void; retry(): void; recipe: ReturnType<typeof createSampleRecipe> }) {
   const { controller, state } = useWorkspace();
   const [dirty, setDirty] = useState(false);
+  const [fileRequest, setFileRequest] = useState<FileRequest>();
   const [expanded, setExpanded] = useState(false), [chatOpen, setChatOpen] = useState(true);
   return <>
     <Preview />
@@ -21,8 +22,12 @@ export default function Editor({ exit, retry, recipe }: { exit(): void; retry():
       <p id="status" role="status">{state.status}</p>
       {state.error && <><p role="alert" className="border border-red-300 bg-red-50 p-3 whitespace-pre-wrap">{state.error}</p><Button disabled={state.busy} onClick={retry}>Retry editing</Button></>}
       <p id="lifecycle" className="text-sm">Workspace: {state.workspace ? `open · ${state.persistence}` : "closed"} | Runtime: {state.runtime ? "active" : "stopped"}</p>
-      <div hidden={!chatOpen}><Chat /></div>
-      <div hidden={!expanded}><FileEditor dirty={dirty} setDirty={setDirty} />
+      <div hidden={!chatOpen}><Chat onOpenFile={(path, selection) => {
+        setExpanded(true);
+        if (dirty) { controller.status("Save current editor changes before opening a chat file."); return; }
+        setFileRequest({ path: path.startsWith("/workspace/") ? path.slice("/workspace".length) : path.startsWith("/") ? path : `/${path}`, selection });
+      }} /></div>
+      <div hidden={!expanded}><FileEditor dirty={dirty} setDirty={setDirty} request={fileRequest} />
         <p className="text-sm">Reset source intentionally replaces index.html, src/main.tsx, src/App.tsx and vite.config.mjs. Exit discards unsaved editor text; saved source and chat are retained.</p>
         <details><summary>Activity</summary><pre id="logs" className="max-h-80 overflow-auto whitespace-pre-wrap text-xs">{state.logs.join("\n")}</pre><a href="/diagnostics" download>Download diagnostics</a></details>
       </div>

@@ -1,0 +1,40 @@
+{
+  "date": "2026-09-08T05:25:28.161Z",
+  "run": "7b1eb880-f704-490b-9433-44d6e6c89a18",
+  "scope": "Host HTTP only; no browser cookie jar, guest runtime, Vite or OpenCode acceptance",
+  "checks": {
+    "server": {
+      "url": "http://127.0.0.1:4312",
+      "localEditorAdmin": true
+    },
+    "assets": {
+      "normal": 200,
+      "editing": 200,
+      "runtime": 200,
+      "prepared": 200,
+      "setup": true,
+      "chatStyles": true
+    },
+    "backend": {
+      "method": "PATCH",
+      "status": 207,
+      "binaryBody": true,
+      "cookieHeader": true,
+      "setCookie": true,
+      "customHeaders": true,
+      "counter": 23,
+      "stream": {
+        "firstMs": 0,
+        "secondMs": 303
+      }
+    }
+  },
+  "browser": {
+    "cli": "0.7.0",
+    "relay": "0.7.0",
+    "build": "2026-09-05T19:03:42.828Z",
+    "extension": "disconnected",
+    "targets": 0
+  },
+  "providerCalls": 0
+}

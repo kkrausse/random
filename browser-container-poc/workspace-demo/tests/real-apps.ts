@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Runtime, type Workspace, type Distribution, type Execution } from "@vivari/workspace-api";
 import { loadPrepared, preparedApps, openCodeLaunch, waitForOpenCode } from "../src/prepared";
-import { OpenCodeAPI } from "../../opencode-client-demo/src/api";
+import { createChatController, type ChatController } from "@vivari/opencode-chat";
 
 export async function testPreparedApps({ workspace, distribution, kernel, restore = false, flush }: {
   workspace: Workspace; distribution: Distribution;
@@ -27,10 +27,11 @@ export async function testPreparedApps({ workspace, distribution, kernel, restor
     return originalFetch(input, init);
   }) as typeof fetch;
   let runtime: Runtime | undefined;
+  let chat: ChatController | undefined;
   const drains: Promise<void>[] = [];
   function drain(execution: Execution, label: string) {
     for (const [channel, stream] of [["stdout", execution.stdout], ["stderr", execution.stderr]] as const) {
-      drains.push((async () => { for await (const chunk of stream) console.log(`[${label}:${channel}] ${new TextDecoder().decode(chunk)}`); })());
+      drains.push((async () => { let bytes = 0; for await (const chunk of stream) bytes += chunk.length; console.log(`[${label}:${channel}] drained ${bytes} bytes`); })());
     }
   }
   try {
@@ -86,7 +87,7 @@ export async function testPreparedApps({ workspace, distribution, kernel, restor
     };
     await waitFor(() => frames.some(frame => frame.includes('"type":"connected"')));
     const app = await preview.fetch("/src/App.tsx", { signal: AbortSignal.timeout(15000) });
-    assert.equal(app.status, 200); assert.match(await app.text(), /Hello from real Vite/);
+    assert.equal(app.status, 200); assert.match(await app.text(), /My browser counter/);
     kernel.writeFile("/workspace/src/App.tsx", 'import React from "react"; export default function App(){return <h1>Edited through shared VFS</h1>}');
     const edited = await preview.fetch("/src/App.tsx?t=1", { signal: AbortSignal.timeout(15000) });
     assert.equal(edited.status, 200); assert.match(await edited.text(), /Edited through shared VFS/);
@@ -97,59 +98,49 @@ export async function testPreparedApps({ workspace, distribution, kernel, restor
     const server = await runtime.node(connection.options); drain(server, "OpenCode");
     const endpoint = await runtime.expose(4096, { signal: AbortSignal.timeout(60000) });
     console.log("Guest health", await waitForOpenCode(endpoint, connection.headers));
-    const api = new OpenCodeAPI({ url: endpoint.url, fetch: (async (input, init) => {
+    const api = createChatController({ directory: "/workspace", endpoint: { url: endpoint.url, fetch: async (input, init) => {
       const headers = new Headers(init?.headers);
       headers.set("authorization", connection.headers.authorization);
-      return endpoint.fetch(String(input), { ...init, headers });
-    }) as typeof fetch });
-    const models = await api.models(AbortSignal.timeout(15000));
+      return endpoint.fetch(input, { ...init, headers });
+    } } });
+    chat = api;
+    await api.ready;
+    const models = api.getSnapshot().models;
     assert.ok(Array.isArray(models));
-    const session = await api.create("Prepared worker integration", AbortSignal.timeout(15000));
-    const id = session.id; assert.ok(id);
-    assert.ok((await api.list()).some(s => s.id === id));
-    await api.history(id);
-    const events = await endpoint.fetch("/api/event", { headers: connection.headers, signal: AbortSignal.timeout(15000) });
-    assert.equal(events.status, 200);
-    const reader = events.body!.getReader();
-    const first = new TextDecoder().decode((await reader.read()).value);
-    assert.match(first, /server.connected/);
-    await reader.cancel();
-    await api.interrupt(id);
-    console.log("PASS guest OpenCode health/models/session/history/live SSE + cancellation/interrupt");
+    const id = await api.createSession("Prepared worker integration"); assert.ok(id);
+    assert.ok(api.getSnapshot().sessions.some(s => s.id === id));
+    assert.equal(api.getSnapshot().connection, "connected");
+    console.log("PASS public controller guest health/models/session/history and live SSE handshake");
     const model = models.find(m => m.providerID === "opencode" && m.id === "muse-spark-1.3-contributor-free");
     assert.ok(model, "Prepared free model is available after catalog activation");
-    await api.model(id, { providerID: model.providerID, id: model.id });
+    await api.selectModel({ providerID: model.providerID, id: model.id });
     // The browser reloads modules after Vite's first dependency optimization.
     // Re-establish that graph before asking the model to edit its child module.
     await (await preview.fetch("/src/main.tsx")).text();
     await (await preview.fetch("/src/App.tsx")).text();
     frames.length = 0;
-    const subscription = new AbortController();
-    const eventTypes: string[] = [];
-    let ready!: () => void;
-    const connected = new Promise<void>(resolve => { ready = resolve; });
     let terminal = false;
     let providerError: unknown;
     let changed = false;
-    const live = api.events(subscription.signal, ready, event => {
-      if (event.data.sessionID !== id) return;
-      eventTypes.push(event.type);
-      if (/^session\.execution\.(succeeded|failed|interrupted)$/.test(event.type)) terminal = true;
-      if (event.data.error) providerError = event.data.error;
+    let sawRunning = false;
+    const observations = new Set<string>();
+    const unsubscribe = api.subscribe(() => {
+      const snapshot = api.getSnapshot();
+      observations.add(snapshot.execution);
+      if (snapshot.execution === "running" || snapshot.execution === "retrying") sawRunning = true;
+      terminal = sawRunning && snapshot.execution === "idle";
+      if (snapshot.error) providerError = snapshot.error;
     });
-    // Attach a rejection handler immediately; transport failure is always a test failure.
-    let streamError: unknown;
-    const streamed = live.catch(error => { if (!subscription.signal.aborted) streamError = error; });
-    await Promise.race([connected, new Promise<never>((_, reject) => setTimeout(() => reject(Error("Client SSE ready timeout")), 15000).unref())]);
     try {
-      await api.prompt(id, 'Edit only /workspace/src/App.tsx so its heading reads "Prepared OpenCode edit". Use read/edit tools, no shell and no delegation. Keep the React component valid. Then stop.', AbortSignal.timeout(30000));
+      await api.send({ text: 'Edit only /workspace/src/App.tsx so its heading reads "Prepared OpenCode edit". Use read/edit tools, no shell and no delegation. Keep the React component valid. Then stop.' });
       const until = Date.now() + 60000;
-      while (!terminal && !providerError && !streamError && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 100));
-      await api.interrupt(id, AbortSignal.timeout(10000));
-      assert.equal(streamError, undefined);
-      const history = await api.history(id, AbortSignal.timeout(15000));
+      while (!terminal && !providerError && api.getSnapshot().connection === "connected" && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 100));
+      assert.equal(api.getSnapshot().connection, "connected", "Stream disconnect is not provider success");
+      if (!terminal) { await api.interrupt(); await waitFor(() => api.getSnapshot().execution === "idle"); }
+      await api.reconnect();
+      const history = api.getSnapshot().messages;
       assert.ok(history.some(message => message.type === "user"), "Prompt promoted into real durable history");
-      console.log("PASS actual chat adapter model selection, prompt admission/history, live events, interrupt", [...new Set(eventTypes)]);
+      console.log("PASS public controller model selection, prompt admission/history and execution states", [...observations]);
       const result = await preview.fetch("/src/App.tsx?t=2", { signal: AbortSignal.timeout(15000) });
       changed = (await result.text()).includes("Prepared OpenCode edit");
       console.log(changed ? "PASS real provider edit reached Vite transformed source" : "PROVIDER GATE INCOMPLETE: no verified model edit", { terminal, providerError });
@@ -157,13 +148,12 @@ export async function testPreparedApps({ workspace, distribution, kernel, restor
         await waitFor(() => frames.some(frame => frame.includes('"type":"update"')));
         console.log("PASS model edit generated actual Vite HMR update frame");
       }
-      const beforeCancel = eventTypes.length;
-      await api.prompt(id, "Explain how HTTP streaming works in detail. Do not edit files or delegate.", AbortSignal.timeout(15000));
-      await waitFor(() => eventTypes.slice(beforeCancel).includes("session.execution.started"));
-      await api.interrupt(id, AbortSignal.timeout(15000));
-      await waitFor(() => eventTypes.slice(beforeCancel).includes("session.execution.interrupted"));
-      console.log("PASS interrupt cancels an actively running prompt through the real client adapter");
-    } finally { subscription.abort(); await streamed; }
+      await api.send({ text: "Explain how HTTP streaming works in detail. Do not edit files or delegate." });
+      await waitFor(() => api.getSnapshot().execution === "running");
+      await api.interrupt();
+      await waitFor(() => api.getSnapshot().execution === "idle" && !api.getSnapshot().interruptRequested);
+      console.log("PASS active interrupt reaches authoritative idle through the public controller");
+    } finally { unsubscribe(); api.dispose(); chat = undefined; }
     await runtime.stop(); runtime = undefined;
     await Promise.all(drains);
     assert.equal(kernel.procs.size, 0); assert.equal(kernel.listeners.size, 0);
@@ -184,6 +174,7 @@ export async function testPreparedApps({ workspace, distribution, kernel, restor
     console.log("PASS explicit disk snapshot flush; ready for APP_RESTORE=1 in a fresh Node/FS worker");
     assert.ok(changed, `Real provider edit is required for app acceptance: ${JSON.stringify(providerError ?? "no edit observed")}`);
   } finally {
+    chat?.dispose();
     await runtime?.stop(); await Promise.allSettled(drains); globalThis.fetch = originalFetch;
   }
 }

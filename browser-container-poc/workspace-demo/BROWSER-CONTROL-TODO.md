@@ -1,5 +1,16 @@
 # Browser Control verification follow-up
 
+## Public chat integration QA (2026-09-07 local / September 8 UTC)
+
+Session `ses_f808cf774ffebOrr0RRAle1t2z`: one observational `browser-control doctor`.
+Exit 1, CLI/relay 0.7.0, matching build 2026-09-05T19:03:42.828Z, extension
+disconnected, active/child/relay-owned/unhealthy targets all zero; 48 retained
+sessions, zero connected. Expected attached user-tab inventory for independent QA;
+actual setup blocks page access. No execute, navigation, restart, reset, session or
+storage change attempted. Recovery needed: reconnect the unpacked extension and
+attach a normal tab. Inspect retained explicit sessions before navigation; a
+deliberate admin QA server is now 127.0.0.1:4312. See tests/integration-qa/README.md.
+
 ## Product mode implementation (2026-09-07)
 
 Session `ses_f80adc345ffehktRIDsTSnqYzk` made one observational

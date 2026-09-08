@@ -9,10 +9,13 @@ Enable editing. The original React tree remains mounted and visible during boot.
 ## Run
 
 With the pinned runtime and OpenCode package already prepared in this checkout,
-build the local library first (also required after changing library source):
+build both local packages first (also required after changing their source):
 
 ```sh
 cd browser-container-poc/workspace-api
+bun install --frozen-lockfile --ignore-scripts
+bun run build
+cd ../opencode-chat
 bun install --frozen-lockfile --ignore-scripts
 bun run build
 cd ../workspace-demo
@@ -20,8 +23,10 @@ bun install --ignore-scripts
 LOCAL_EDITOR_ADMIN=1 bun run demo
 ```
 
-The demo uses `@vivari/workspace-api` and its `/react` subpath through a local
-file dependency. See [local package delivery](../workspace-api/LOCAL-PACKAGES.md)
+The demo uses built public `@vivari/workspace-api` exports and
+`@vivari/opencode-chat` root, `/react` and `/styles.css` through local file
+dependencies. `demo` and the browser build check those exports and print exact
+preparation instructions if missing. See [local package delivery](../workspace-api/LOCAL-PACKAGES.md)
 for independent tarball installation and runtime asset copying. Omit
 `LOCAL_EDITOR_ADMIN=1` for normal non-admin mode: no toggle, and direct editor
 asset/model requests return 403. This flag is a **local admin fixture**, not identity.
@@ -33,7 +38,8 @@ Open **http://127.0.0.1:4311** and click **Enable editing**. That single action:
 3. Starts the real browser runtime and hash-verifies/delivers 2,291 prepared files.
 4. Launches guest Vite, attaches the preview, and waits for its React root to render.
 5. Launches authenticated guest OpenCode and waits for health, event connection,
-   models and session history. An empty server gets one “Sample workspace” session.
+   models and session history. An empty server stays empty: click **New chat**
+   explicitly before sending. Existing sessions are selected without creating another.
 
 An empty workspace gets an interactive React counter. Existing `/src/App.tsx`,
 configuration and chat sessions are **preserved**, including previous acceptance
@@ -93,7 +99,13 @@ host after source changes. Missing/stale assets produce an early actionable erro
 - `src/main.tsx`: normal app, app-owned permission/enable state and lazy editor load.
   `src/editor.tsx` / `editor-components.tsx`: full-window preview, stable host corner
   controls, chat overlay, expandable source editor, Reset source, Exit/retry.
-  Chat wraps `mountOpenCodeClient` through replaceable `mountChat` with effect cleanup.
+   `src/chat-adapter.ts` owns one public `createChatController` per service endpoint,
+   awaits `ready`, and disposes on replacement/release or startup cancellation.
+   `/react` `ChatView` only subscribes; hiding/remounting the panel does not own the
+   controller/server. The bounded optional panel and file callback remain replaceable.
+   The callback opens the source editor, mapping guest `/workspace/` paths to its FS.
+   There is no directory picker or attachment upload. The app's bundler resolves
+   React peers from the app to avoid duplicate React through Bun file symlinks.
   Host controls use minimal Base UI/shadcn-style buttons, Tailwind and Lucide.
 - `src/SampleApp.tsx`, `prepare.ts`, `guest/`: **shared normal/guest source** and
   pinned dependencies. Host React is bundled into `/app.js`; guest React is served
@@ -200,3 +212,6 @@ The React host requires its own browser pass; do not equate fixture or headless
 tests with OPFS, guest rendering or same-Document HMR.
 See [independent QA and diagnostics receipt](tests/REACT-QA-EVIDENCE.md) for the
 current browser blocker, host startup checks, and diagnostic failure-path tests.
+Latest public-chat integration and fresh independent QA:
+[integration checkpoint](tests/integration-qa/README.md). An admin QA-owned server
+is available at **http://127.0.0.1:4312**; the retained 4311 server is non-admin.

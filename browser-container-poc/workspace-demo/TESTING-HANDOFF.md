@@ -1,5 +1,25 @@
 # Fresh React demo QA handoff — implementation ownership released
 
+## Public chat integration + independent QA (latest)
+
+See [integration checkpoint](tests/integration-qa/README.md) and its bounded JSON
+HTTP receipt. Public root/controller, React view and styles are integrated through
+file dependencies; fresh workspaces require **New chat**. Query preservation and
+duplicate React peer resolution defects were fixed. Recipe owns ready/dispose, not
+the view or panel toggle. The generic workspace packages were not changed.
+
+Browser check once: CLI/relay 0.7.0 match; extension disconnected, zero targets.
+No page, storage, session or user edit touched. All new browser/guest acceptance is
+still blocked. **Next exact case:** reconnect extension, inspect retained tabs with
+their explicit sessions first; select a new QA-owned 4312 tab/session, verify normal
+counter with zero editing workers, then Enable editing through actual guest boot.
+
+**http://127.0.0.1:4312** is the deliberate admin QA server, PID 65716, shell
+`sh_07f798c270011eR7rzjxsE7mqv` (ownership transferred to parent). Existing 4311 is
+non-admin, latest observed PID 86252; its policy/process was not changed. Current
+HTTP checks set only the QA server's in-memory counter to 23. Preserved 4311 origins,
+headings and sessions in §Browser ownership below remain untouched.
+
 ## Current product-mode implementation (supersedes older UX notes below)
 
 Owner `ses_f80adc345ffehktRIDsTSnqYzk` implemented controlled normal/editing mode,
@@ -25,9 +45,9 @@ remain authoritative. Explicit Reset source must be tested on a QA-owned source
 snapshot/origin, not silently over those retained headings. Source reset preserves
 unknown files/chat/backend; ordinary entry always preserves edits.
 
-The standalone optional chat package is independently owned in `opencode-chat/`;
-the existing chat adapter remains a replaceable interim integration. Parent owns
-final public-package integration and fresh independent real-browser QA. Historical
+The standalone optional chat package in `opencode-chat/` is now integrated;
+the chat controller/view seam remains replaceable. Parent owns the remaining
+fresh independent real-browser QA. Historical
 Start workspace / Advanced UI descriptions below no longer describe the current shell.
 
 ## Local package checkpoint (2026-09-07)
@@ -35,8 +55,8 @@ Start workspace / Advanced UI descriptions below no longer describe the current 
 See [IMPLEMENTATION-HANDOFF.md](./IMPLEMENTATION-HANDOFF.md) for the newer public
 package layout, isolated consumer proof and exact remaining product-mode work.
 The provider is now imported from `@vivari/workspace-api/react`; build that local
-package before running the demo. The production editable-app shell/backend
-passthrough are not implemented yet. Existing browser acceptance gates below
+package before running the demo. The editable-app shell/backend passthrough are
+now implemented; see the current checkpoint above. Existing browser acceptance gates below
 remain pending; the CLI still reports the disconnected extension.
 
 ## Independent QA checkpoint + diagnostics (2026-09-07)

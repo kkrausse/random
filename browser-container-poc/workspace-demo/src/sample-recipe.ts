@@ -2,6 +2,7 @@ import type { Distribution, Runtime, Workspace, Endpoint } from "@vivari/workspa
 import { loadPrepared, preparedApps, openCodeLaunch, waitForOpenCode, type PreparedManifest } from "./prepared";
 import type { Connection, WorkspaceController } from "./workspace-provider";
 import { diagnostics } from "./diagnostics";
+import { attachChat } from "./chat-adapter";
 
 export async function sourcePaths(workspace: Workspace, directory = "/"): Promise<string[]> {
   const paths: string[] = [];
@@ -32,7 +33,7 @@ export async function resetSource(workspace: Workspace, project: Record<string, 
   await workspace.flush();
 }
 /** Native Fetch adapter for the public endpoint, including per-launch guest auth. */
-function connection(endpoint: Endpoint, extraHeaders?: HeadersInit): Connection {
+export function connection(endpoint: Endpoint, extraHeaders?: HeadersInit): Connection {
   return { url: endpoint.url, fetch: async (input, init) => {
     const request = new Request(input instanceof Request ? input : new URL(String(input), endpoint.url), init);
     const headers = new Headers(request.headers);
@@ -87,11 +88,11 @@ export function createSampleRecipe() {
     async chat(controller: WorkspaceController) {
       const launch = openCodeLaunch(manifest.opencode);
       try {
-        await controller.launch("chat", launch.options, 4096, async endpoint => {
+        const service = await controller.launch("chat", launch.options, 4096, async endpoint => {
           controller.log(`Guest OpenCode health: ${await waitForOpenCode(endpoint, launch.headers, controller.signal)}`);
           return connection(endpoint, launch.headers);
         });
-        await controller.waitForClient("chat");
+        await attachChat(controller, service);
       } catch (error) { try { await controller.stopService("chat"); } catch (cleanupError) { diagnostics.record("service.cleanup.failed", { name: "chat", error: cleanupError }); } throw error; }
     },
     async reset(controller: WorkspaceController) {
