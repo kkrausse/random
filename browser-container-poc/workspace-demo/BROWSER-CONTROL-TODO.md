@@ -1,6 +1,8 @@
 # Browser Control verification follow-up
 
-Integration recheck 2026-09-07: bare CLI execute still fails with the same exact
+Integration recheck 2026-09-07, replacement session `ses_f814d0710ffeif21SAWfQ2WDQG`:
+`browser-control execute 'return { url: page.url(), title: await page.title() }'`
+still fails with the same exact
 extension-disconnected error below. Doctor confirms matching 0.7.0 relay, zero
 targets, no competing connections. No session/page was acquired. Real demo is now
 4311; contract is 43917. Run the contract first after reconnect, then follow
@@ -20,7 +22,10 @@ targets, no competing connections. No session/page was acquired. Real demo is no
 - Recovery attempted: `browser-control doctor` confirms reachable matching relay,
   disconnected extension, zero active targets, and no competing connections.
   No relay restart or alternate browser driver was used.
-- Follow-up: reconnect the installed Browser Control extension and verify the
-  README fixture walkthrough, mock chat session/send, filesystem access after
-  runtime stop, explicit snapshot/reopen, and honest real-mode missing-manifest
-  failure. Use one returned CLI session ID for subsequent inspect/act/verify calls.
+- Follow-up: reconnect the installed Browser Control extension; run the real
+  contract `window.contract.run()` and `window.contract.search()` at 43917 first.
+  Then verify the real demo at 4311: seed/start/deliver/launch, same iframe Document
+  across manual edit/restore and model edit, active-prompt interrupt, and
+  stop/flush/close/reopen/dependency delivery/restart. Use one returned CLI session
+  ID for subsequent inspect/act/verify calls. Headless HMR and fresh-worker disk
+  snapshot restoration now pass; they do not satisfy these browser gates.

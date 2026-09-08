@@ -17,6 +17,7 @@ import { Kernel } from "../../vivari/.runtime/patched/packages/kernel-host/kerne
 import { createKernelFs } from "../../vivari/.runtime/patched/packages/kernel-host/kernel-fs.js";
 
 assert.ok(!process.versions.bun, "Use real Node 24 (Bun workers are not this gate)");
+assert.ok(!process.env.APP_RESTORE || (process.env.PREPARED_APPS && process.env.APP_STATE_DIR), "APP_RESTORE requires PREPARED_APPS and the previous run's APP_STATE_DIR");
 const root = resolve(import.meta.dirname, "../../vivari/.runtime/patched");
 const workers = new Set<Worker>();
 const timeout = setTimeout(() => { console.error("headless contract timeout"); process.exit(1); }, process.env.PREPARED_APPS ? 240_000 : 90_000);
@@ -83,7 +84,7 @@ const host = {
       if (!kernel.exists(data.path)) return { type: "vv-reply", exists: false };
       const stat = kernel.stat(data.path); return { type: "vv-reply", exists: true, isDir: stat.kind === "dir", size: stat.size };
     }
-    if (type === "workspace-read") return new Promise((resolve, reject) => {
+    if (type === "workspace-read" || type === "test-flush") return new Promise((resolve, reject) => {
       const reqId = requestSequence++; fsRequests.set(reqId,{ resolve,reject }); fsWorker.postMessage({type,reqId,...data});
     });
     if (type === "workspace-write") { await kernel.writeFilesBatch([{ path: data.path, bytes: data.bytes }]); return { type: "vv-reply" }; }
@@ -119,7 +120,7 @@ async function output(execution: Execution) {
   return { stdout, stderr, exit };
 }
 let runtime: Awaited<ReturnType<typeof Runtime.start>> | undefined;
-try {
+async function testOfflineContract() {
   runtime = await Runtime.start({ workspace, distribution });
   await kernel.writeFilesBatch([{ path: "/workspace/large.bin", bytes: Uint8Array.from({ length: 1_200_001 }, (_, i) => i % 256) }]);
   const large = (await host.request("workspace-read", { path: "/workspace/large.bin" })).bytes as Uint8Array;
@@ -206,9 +207,13 @@ res.statusCode=418;res.setHeader('x-probe','real');res.end(Buffer.from([0,255,12
     assert.equal((await tools.tools.ripgrep({ pattern: "TODO", paths: ["/workspace/search"], glob: ["!*.txt"] })).matches.length,0);
     console.log("PASS real ripgrep WASM positive/no-match/invalid-regex/Unicode/ignore/glob/truncation and shadowed CLI");
   } finally { await tools.stop(); globalThis.fetch=originalFetch; }
+}
+try {
+  if (!process.env.APP_RESTORE) await testOfflineContract();
   if (process.env.PREPARED_APPS) {
     const { testPreparedApps } = await import("../../workspace-demo/tests/real-apps.ts");
-    await testPreparedApps({ workspace, distribution, kernel });
+    await testPreparedApps({ workspace, distribution, kernel, restore: !!process.env.APP_RESTORE,
+      flush: async () => { await host.request("test-flush"); } });
   }
   console.log("RESULT PASS (real headless workers; browser-only gates remain separate)");
 } finally { await runtime?.stop(); for (const worker of workers) await worker.terminate(); clearTimeout(timeout); }
