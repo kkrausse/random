@@ -261,6 +261,8 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     withPermission = true
     commands.find((c) => c.bind === "down").run()
     await commands.find((c) => c.bind === "r").run()
+    sessions[0]!.title = "A long mobile session title that wraps across two lines"
+    handlers.get("session.created")!({ data: { sessionID: "s0" } })
     for (let i = 0; i < 50; i++) commands.find((c) => c.bind === "up").run()
     commands.find((c) => c.bind === "down").run()
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -285,6 +287,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
       if (width! < 70) {
         assert.doesNotMatch(setup.captureCharFrame(), /Approval required/)
         assert.match(setup.captureCharFrame(), /echo hello/)
+        assert.match(setup.captureCharFrame(), /1\/1\s+\[Once\]\s+\[Always\]\s+\[Deny\]/)
         assert.match(setup.captureCharFrame(), /\[Open\] \[Archive\] \[Close\]/)
       }
     }

@@ -826,7 +826,9 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
             {options()[selectedIndex()]?.title}
           </text>
         ) : null}
-        <text wrapMode="none" fg={props.context.theme.text.subdued}>{options()[selectedIndex()]?.description}</text>
+        {!(mobile() && permission() && dimensions().height < 20) ? (
+          <text height={1} flexShrink={0} wrapMode="none" fg={props.context.theme.text.subdued}>{options()[selectedIndex()]?.description}</text>
+        ) : null}
         {!mobile() || !permission() ? (
         <box height={1} flexShrink={0} flexDirection="row" justifyContent="space-between">
            <text wrapMode="none" flexShrink={1} fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
