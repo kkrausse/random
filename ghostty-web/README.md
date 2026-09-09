@@ -47,6 +47,39 @@ The bridge uses native bulk-row reads, dirty-state tracking, pooled cell objects
 and cached style decoding. See [measured engine/bridge performance](docs/performance.md)
 for the comparison with the retired implementation and the benchmark's limits.
 
+## Rendering quality and directions
+
+Official Ghostty WASM supplies terminal state and protocol handling. Our browser
+renderer is separate from native Ghostty's font and GPU rendering stack: ordinary
+text is rasterized with Canvas2D `fillText`, cached in an atlas, then drawn by WebGL.
+
+The first targeted improvement is procedural **Block Elements** rendering in
+WebGL: full, fractional, and quadrant blocks use pixel-aligned cell geometry instead
+of font glyphs. Masks share the background grid's rounded device-pixel boundaries,
+including at fractional scaling. They use the existing glyph pass for foreground
+colors, selection, faint/inverse styles, cursor accents, and image layering.
+Shade characters and box drawing still use the font. CanvasRenderer retains its
+existing font rendering.
+
+This helps TUIs and pictures made from Unicode blocks. Actual terminal images
+(Kitty graphics) have their own image pass; this does not change their rendering.
+
+Possible next steps, with rough one-engineer estimates including verification:
+
+| Direction | Scope | Rough effort |
+| --- | --- | --- |
+| Seamless terminal graphics | Extend procedural drawing to box drawing, shades, and common legacy-computing symbols; verify scaling | Several days–2 weeks |
+| Native-like browser rendering | Graphics above, font/cell metrics and fallback, clipping/overhang, decorations, cursor/selection, Unicode edge cases, visual regression coverage | 3–6 weeks total |
+| Native-stack convergence | Investigate adapting upstream rendering code, explicit font management, shaping/rasterization such as HarfBuzz/FreeType in WASM | 2–4+ months, highly uncertain |
+
+These are planning ranges, not commitments or promises of macOS pixel parity.
+The preferred incremental direction is native-like browser rendering while retaining
+the official engine/ABI bridge, public API, input/clipboard/selection, WebGL passes,
+and consumer integration. Audit upstream reuse opportunities before a larger effort.
+Use adjacent background fills and block glyphs to isolate seams, then compare real
+TUIs across fonts, Retina/non-Retina displays, and browser zoom. Geometry unit tests
+alone do not establish screenshot-level parity.
+
 ## Development
 
 ```sh

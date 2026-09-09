@@ -29,6 +29,7 @@ import type { GhosttyCell } from '../types';
 import { CellFlags } from '../types';
 import { createViewportRowAccessor } from '../viewport-row';
 import { type Rgba, parseColor } from './color';
+import { blockElementRects } from './block-elements';
 import { GlyphAtlas, GlyphStyle } from './glyph-atlas';
 import { GlyphPass, createGlyphProgram } from './glyph-pass';
 import { ImagePass, type ImagePlacement } from './image-pass';
@@ -602,6 +603,15 @@ export class WebglRenderer implements ITerminalRenderer {
 
   /** Atlas entry for a cell, or null when it paints nothing. */
   private glyphFor(cell: GhosttyCell, y: number, x: number) {
+    const chars = cell.codepoint >= 0x2580 && cell.codepoint <= 0x259f
+      ? cell.grapheme_len > 0 && this.currentBuffer?.getGraphemeString
+      ? this.currentBuffer.getGraphemeString(y, x) : String.fromCodePoint(cell.codepoint)
+      : null;
+    const rects = chars && chars.length === 1 ? blockElementRects(chars.charCodeAt(0)) : null;
+    if (rects && chars) {
+      const span = Math.min(this.cols, x + Math.max(1, cell.width));
+      return this.atlas.getBlock(chars.charCodeAt(0), this.colX[span] - this.colX[x], this.rowY[y + 1] - this.rowY[y], rects);
+    }
     let style = GlyphStyle.NONE;
     if (cell.flags & CellFlags.BOLD) style |= GlyphStyle.BOLD;
     if (cell.flags & CellFlags.ITALIC) style |= GlyphStyle.ITALIC;
