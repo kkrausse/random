@@ -759,12 +759,14 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
           <Index each={options()}>
             {(option, index) => {
               const active = () => selectedIndex() === index
-               const titleColor = () => option().state === "inactive" ? props.context.theme.text.subdued : props.context.theme.text.default
+              const titleColor = () => active()
+                ? props.context.theme.hue.yellow[400]
+                : option().state === "inactive" ? props.context.theme.text.subdued : props.context.theme.text.default
                const heading = () => {
                  const label = groupLabel(option().state)
                  return label !== groupLabel(options()[index - 1]?.state ?? "new") ? label : undefined
                }
-              const descriptionColor = () => props.context.theme.text.subdued
+              const descriptionColor = () => active() ? props.context.theme.text.default : props.context.theme.text.subdued
               const iconColor = () => {
                 if (option().state === "permission") return props.context.theme.text.status.permission
                 if (option().state === "question") return props.context.theme.text.status.question
@@ -809,8 +811,11 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
                       const icon = state === "running" ? "spinner"
                         : state === "permission" ? "!"
                         : state === "question" ? "?"
-                        : state === "new" ? "+" : ""
+                        : state === "new" ? "+" : active() ? "❯" : ""
                       if (!icon) return null
+                      if (icon === "❯") return (
+                        <text fg={props.context.theme.hue.yellow[400]} attributes={TextAttributes.BOLD}>{icon}</text>
+                      )
                       return (
                         icon === "spinner" ? (
                           <spinner frames={SPINNER_FRAMES} interval={80} color={iconColor()} />
