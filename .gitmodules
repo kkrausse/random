@@ -1,4 +1,0 @@
-[submodule "bun-web-terminal/vendor/ghostty-web"]
-	path = bun-web-terminal/vendor/ghostty-web
-	url = https://github.com/kkrausse/ghostty-web.git
-	branch = xterm-webgl

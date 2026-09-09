@@ -1,5 +1,10 @@
 # Handoff: terminal refactor needs reassessment
 
+> Historical tmux-refactor notes. For current setup and dependencies, use
+> [README.md](README.md). The browser engine has since moved from the vendor
+> submodule/npm WASM pair to the sibling [ghostty-web](../ghostty-web/README.md)
+> package using an official Ghostty WASM artifact.
+
 ## Latest user feedback / goal
 
 User: “why tmux? this thing like slower and more blurry. but like pls handoff bc context is expensive”, then “continue pls”.

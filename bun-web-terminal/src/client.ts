@@ -1,4 +1,4 @@
-import { init, Terminal, type ITheme } from "../vendor/ghostty-web/lib/index";
+import { init, Terminal, type ITheme } from "@random/ghostty-web";
 import { TerminalConnection } from "./connection";
 import { installScrolling } from "./scroll";
 import { installMobileControls } from "./mobile";

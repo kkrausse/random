@@ -1,4 +1,4 @@
-import type { Terminal } from "../vendor/ghostty-web/lib/index";
+import type { Terminal } from "@random/ghostty-web";
 
 // Long presses follow desktop drag routing; the Select toolbar forces local selection.
 export function installTerminalTouchControls(container: HTMLElement, terminal: Terminal, selecting: () => boolean, notice: (message: string) => void) {

@@ -1,6 +1,6 @@
 # Bun Web Terminal
 
-A loopback-only web terminal using tmux for session state, Bun's native PTY API for attachments, and the WebGL2 renderer from the `ghostty-web` `xterm-webgl` branch.
+A loopback-only web terminal using tmux for session state, Bun's native PTY API for attachments, and the local [ghostty-web](../ghostty-web/README.md) browser wrapper around official Ghostty WASM, rendered with WebGL2.
 
 ## Quick start
 
@@ -11,12 +11,11 @@ From a fresh clone:
 ```sh
 git clone https://github.com/kkrausse/random.git
 cd random/bun-web-terminal
-git submodule update --init vendor/ghostty-web
 bun install --frozen-lockfile
 bun run dev
 ```
 
-For an existing clone, run the last three commands from `bun-web-terminal/` after pulling updates. Use `bun start` instead of `bun run dev` to run without file watching. Client assets are built automatically at startup.
+For an existing clone, run the last two commands from `bun-web-terminal/` after pulling updates. Use `bun start` instead of `bun run dev` to run without server file watching. Client assets are built automatically at startup. Restart Bun after browser-only or sibling wrapper changes so the client bundle and WASM are rebuilt together.
 
 Open the **Mac sign-in** link printed at startup, or scan the QR on your phone
 through Tailscale. After signing in, you can open <http://127.0.0.1:3000/sessions>
@@ -26,26 +25,19 @@ Desktop Ghostty is optional; without it, the app uses a fallback theme. Tailscal
 
 ## Ghostty dependencies and copying this directory
 
-This app uses two complementary dependencies:
+The `@random/ghostty-web` dependency is linked from `../ghostty-web`. It contains the browser renderer/input wrapper and a checked-in, checksum-pinned **official `ghostty-org/ghostty` WASM release artifact**. Startup bundles its TypeScript and copies its WASM into the client build directory. There is no Git submodule, npm `ghostty-web` engine dependency, Zig build, or runtime artifact download.
 
-- **Browser source:** `vendor/ghostty-web` is a submodule of [kkrausse/ghostty-web](https://github.com/kkrausse/ghostty-web), our fork of [Coder's ghostty-web](https://github.com/coder/ghostty-web). It supplies the WebGL2 renderer and input/selection/clipboard behavior. Git checks out the exact commit recorded by this repo; the `xterm-webgl` branch is its development branch.
-- **Precompiled terminal engine:** the exact `ghostty-web` npm version in `package.json` and `bun.lock` supplies `ghostty-vt.wasm`. Startup copies that binary into the client build directory. Coder's library wraps the official Ghostty terminal engine for browsers; it is a separate project from `ghostty-org/ghostty`.
+For a standalone copy or source ZIP, include **both sibling directories**, preserving this layout:
 
-The app bundles the fork's TypeScript directly. Running it does **not** require Zig, building Ghostty/WASM, installing dependencies inside the vendor folder, or initializing the vendor's nested Ghostty submodule. Keep the source pin and npm/WASM version together when upgrading, and run the checks below.
-
-Prefer cloning this repository: the submodule configuration is in its root `.gitmodules`. A source ZIP or a copy of only `bun-web-terminal/` may omit the vendor source. For a standalone copy with an absent or empty `vendor/ghostty-web`, populate it explicitly from this version's pin:
-
-```sh
-# Run inside the standalone bun-web-terminal directory.
-git clone https://github.com/kkrausse/ghostty-web.git vendor/ghostty-web
-git -C vendor/ghostty-web checkout --detach a169a863599517272533b9c70789a09556a55b06
-bun install --frozen-lockfile
-bun start
+```text
+your-project/
+  bun-web-terminal/
+  ghostty-web/
 ```
 
-If distributing a self-contained copy, include the populated vendor source rather than a submodule placeholder. Dictation additionally needs the sibling service or an explicitly configured service URL; see below.
+Then run `bun install --frozen-lockfile` and `bun start` inside `bun-web-terminal/`. You do not need to install the wrapper's development dependencies to run the app. Dictation additionally needs the sibling service or an explicitly configured service URL; see below.
 
-If startup reports missing `vendor/ghostty-web/lib` imports, initialize the submodule (or use the standalone procedure). A missing `ghostty-web/ghostty-vt.wasm` means the app's Bun dependencies need installing. WebGL2 must be enabled in the browser; the app reports an error rather than falling back to Canvas2D.
+If startup reports a missing `@random/ghostty-web` package or WASM, ensure the sibling directory is present and reinstall the app's Bun dependencies. WebGL2 must be enabled in the browser; the app reports an error rather than falling back to Canvas2D. See the wrapper README for artifact provenance and coordinated engine/bridge upgrades.
 
 ## Sign-in and access
 
@@ -219,4 +211,4 @@ authentication is required in addition to tailnet access. For another reverse
 proxy, preserve the original Host header and set `TERMINAL_PUBLIC_URL` to its
 HTTPS origin.
 
-`vendor/ghostty-web` is a Git submodule pinned to the WebGL renderer branch. The app requests `rendererType: "webgl"` and shows an error instead of silently falling back to Canvas2D when WebGL2 is unavailable.
+The app requests `rendererType: "webgl"` from the local wrapper and shows an error instead of silently falling back to Canvas2D when WebGL2 is unavailable.

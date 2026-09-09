@@ -1,4 +1,4 @@
-import type { Terminal } from "../vendor/ghostty-web/lib/index";
+import type { Terminal } from "@random/ghostty-web";
 import { DictationController } from "./dictation";
 import type { TerminalConnection } from "./connection";
 import { installTerminalTouchControls } from "./touch";

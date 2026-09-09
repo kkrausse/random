@@ -35,9 +35,10 @@
 !browser-container-poc/**
 !isochron-home-map/
 !isochron-home-map/**
-!.gitmodules
 !bun-web-terminal/
 !bun-web-terminal/**
+!ghostty-web/
+!ghostty-web/**
 !dictation-server/
 !dictation-server/**
 node_modules/

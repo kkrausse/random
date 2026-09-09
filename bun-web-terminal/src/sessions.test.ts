@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { Ghostty } from "../vendor/ghostty-web/lib/ghostty";
+import { Ghostty } from "@random/ghostty-web/ghostty";
 import { SessionManager, type Attachment, type Session } from "./sessions";
 
 async function until(check: () => boolean, timeout = 5000) {
@@ -11,7 +11,7 @@ async function until(check: () => boolean, timeout = 5000) {
 }
 
 test("tmux restores a live alternate screen, coalesces resize storms, and survives slow attachments", async () => {
-  const ghostty = await Ghostty.load(new URL(import.meta.resolve("ghostty-web/ghostty-vt.wasm")).pathname);
+  const ghostty = await Ghostty.load(new URL(import.meta.resolve("@random/ghostty-web/ghostty-vt.wasm")).pathname);
   const socket = `bun-web-terminal-test-${crypto.randomUUID()}`;
   let manager = new SessionManager(import.meta.dir, socket);
   const terminals: ReturnType<typeof ghostty.createTerminal>[] = [];
