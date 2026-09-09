@@ -12,8 +12,11 @@ import { checkLocalPackages } from "../local-packages";
 // Deterministic pinned-protocol fixture, NOT a guest OpenCode/browser receipt.
 function fixture(marker = true) {
   let streams = 0, cancelled = 0, disposed = 0, posts = 0;
-  const endpoint = {
+  const endpoint: Endpoint = {
     url: "https://fixture.invalid/preview/4096/?__vv_listener=qa&scope=retained",
+    port: 4096,
+    closed: new Promise(() => {}),
+    attachPreview() { throw Error("Chat fixture does not provide browser preview transport"); },
     dispose() { disposed++; },
     async fetch(input: string, init: RequestInit = {}) {
       expect(typeof input).toBe("string");
@@ -41,7 +44,7 @@ function fixture(marker = true) {
       if (path.endsWith("/message")) return Response.json({ data: [], cursor: {} });
       return Response.json({ data: [] });
     },
-  } as unknown as Endpoint;
+  };
   const service = { endpoint, connection: connection(endpoint, { authorization: "Bearer explicit-test-fixture" }) } as Service;
   return { service, counts: () => ({ streams, cancelled, disposed, posts }) };
 }

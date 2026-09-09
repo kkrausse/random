@@ -63,12 +63,21 @@ export interface Execution {
   closeStdin(): void;
   stop(): Promise<void>;
 }
+export interface PreviewAttachment { dispose(): void }
+export interface PreviewOptions {
+  /** Root-absolute same-origin paths (segment prefixes) sent natively to the host backend.
+   * Example: ["/api"]. This is routing, never server authorization. */
+  hostPaths?: readonly string[];
+}
 export interface Endpoint {
   readonly url: string;
   readonly port: number;
   readonly closed: Promise<{ reason: string }>;
   /** Streaming response; buffered upload (8 MiB). Manual redirect behavior. */
   fetch(input: string, init?: RequestInit): Promise<Response>;
+  /** Attach a mounted browser iframe using this endpoint's owning transport.
+   * Safe to call from another package copy; no shared module identity is required. */
+  attachPreview(iframe: HTMLIFrameElement, options?: PreviewOptions): PreviewAttachment;
   dispose(): void;
 }
 export type ErrorCode = "ENTRY_NOT_FOUND" | "LAUNCH_REJECTED" | "BACKEND_UNAVAILABLE"

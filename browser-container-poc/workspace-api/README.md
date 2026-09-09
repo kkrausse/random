@@ -52,7 +52,12 @@ await workspace.close();
   response headers cap at 64 KiB. Redirect responses are returned manually;
   automatic following, cookie-jar integration, and browser-native Response URL/
   redirected metadata are not implemented. SW preview HTTP itself stays buffered.
-- `attachPreview` validates sender window/origin and namespaces connection IDs
+- `endpoint.attachPreview(iframe, options)` owns its browser preview transport.
+  The compatibility helper `attachPreview(iframe, endpoint, options)` delegates
+  to that capability, so React entrypoints and separate package copies can attach
+  without sharing a private registry or module identity. Browser globals are used
+  only when attaching; importing the API/React entrypoint remains SSR-safe.
+  Attachment validates sender window/origin and namespaces connection IDs
   per attachment. Detach closes its WS/SSE tunnels and clears the frame, not the
   listening server. Same-origin trusted embedding is not deployment isolation.
 - `defineRipgrepTool({receiptUrl})` binds a callable `runtime.tools.ripgrep(options)`
@@ -68,10 +73,17 @@ await workspace.close();
 ```sh
 bun run typecheck
 bun test
+bun run test:consumer # tarball install, declarations, SSR, cross-copy preview, asset relocation
 bun run test:workers  # real Node 24.18.0 worker_threads; macOS arm64 runner
 bun run distribution
 bun scripts/serve-contract.ts
 ```
+
+`test:consumer` creates an endpoint through the installed React controller and
+attaches it through the endpoint method, root helper, and another loaded package
+copy. Its deterministic worker/DOM transport fixture checks routing, sender
+validation, HMR forwarding and attachment lifetime; it does not replace live
+browser/guest qualification.
 
 `test:workers` uses real Rust VFS and process workers with a small headless Host
 adapter. It is not proof of browser Worker startup, OPFS, Service Worker or HMR.

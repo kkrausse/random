@@ -150,7 +150,7 @@ fixture. Backend state is independent of workspace resets, but restarting this t
 server resets it. Real apps supply their existing durable backend. The echo route
 is a local request-test fixture, not an application production endpoint.
 
-The recipe opts into `attachPreview(..., {hostPaths:["/api"]})`. Matching iframe
+The recipe opts into `endpoint.attachPreview(iframe, {hostPaths:["/api"]})`. Matching iframe
 requests use native Fetch, not guest Vite: original cookies/credentials, methods,
 headers, upload bytes, response status and streams. Root-absolute paths are required;
 relative `api/...` resolves under `/preview/PORT/`. Routers need a prefix-aware base

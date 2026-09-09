@@ -39,7 +39,7 @@ this session did not edit `opencode-chat/` or the completed audit directory.
   not production identity. Without it, no toggle and direct editor assets/model
   routes deny. Runtime/prepared/lazy editor graph/diagnostics are guarded in serve.ts.
   Replace `server-policy.ts` with existing app session/role policy for deployment.
-- Public `attachPreview(...,{hostPaths:["/api"]})` routing policy. Reserved
+- Public `endpoint.attachPreview(iframe,{hostPaths:["/api"]})` routing policy. Reserved
   `__vv_host_paths` query travels with `__vv_listener`. Authored SW native-fetches
   matching root-absolute iframe requests with the original Request/Response stream;
   host WS/EventSource stays native too. Default policy empty; no OpenCode routes in VM.

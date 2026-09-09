@@ -172,7 +172,7 @@ return its 403 Response. Hook errors deny. `/server` is not imported by browser/
 React entries. The local demo's `LOCAL_EDITOR_ADMIN=1` loopback fixture is explicitly
 not a production identity system; replace it with existing application authorization.
 
-`attachPreview(iframe, endpoint, { hostPaths: ["/api"] })` uses caller-selected
+`endpoint.attachPreview(iframe, { hostPaths: ["/api"] })` uses caller-selected
 root-absolute segment prefixes. With the matching rebuilt runtime SW, `/api` and
 `/api/...` from that iframe use native Fetch with the original Request and streamed
 Response. `/apix` remains guest traffic; the default policy is empty. Native host
