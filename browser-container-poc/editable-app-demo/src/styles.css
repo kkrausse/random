@@ -1,0 +1,11 @@
+@import "tailwindcss";
+@import "@kev-browser-agent-kit/opencode-chat/styles.css";
+@source "./**/*.{ts,tsx}";
+@layer base {
+  body { @apply m-0 bg-white text-neutral-900 font-sans; }
+  h1 { @apply text-2xl font-semibold; }
+  h2 { @apply text-lg font-semibold; }
+  p { @apply leading-relaxed; }
+  input, select, textarea { @apply border border-neutral-300 rounded-md bg-white p-2 text-sm disabled:opacity-50; }
+  summary { @apply cursor-pointer font-medium; }
+}

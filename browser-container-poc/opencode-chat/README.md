@@ -1,4 +1,7 @@
-# @vivari/opencode-chat
+# @kev-browser-agent-kit/opencode-chat
+
+The optional OpenCode client package of **kev-browser-agent-kit**. Source lives in
+`browser-container-poc/opencode-chat/`; see the [project overview](../PROJECT-OVERVIEW.md).
 
 Optional, locally packable OpenCode V2 chat. **The root is headless**: it imports
 no React, DOM implementation, CSS, workspace runtime, service discovery or VM
@@ -12,9 +15,9 @@ See [PROVENANCE.md](PROVENANCE.md) and the distributed full MIT upstream notice.
 ## Host integration
 
 ```tsx
-import { createChatController } from '@vivari/opencode-chat';
-import { ChatView } from '@vivari/opencode-chat/react';
-import '@vivari/opencode-chat/styles.css';
+import { createChatController } from '@kev-browser-agent-kit/opencode-chat';
+import { ChatView } from '@kev-browser-agent-kit/opencode-chat/react';
+import '@kev-browser-agent-kit/opencode-chat/styles.css';
 
 // Create once per host-owned endpoint scope, outside rendering.
 const controller = createChatController({
@@ -47,7 +50,7 @@ fetch types. There is no DOM access in root JavaScript.
   native `SessionMessageInfo`, request types).
 - React: `ChatView`, `useChatSnapshot`, `Transcript`, `MessagePart`, `ToolCard`,
   `Composer`, `PermissionCard`, `QuestionCard`, `Markdown`, `CodeBlock`.
-- Explicit CSS: `@vivari/opencode-chat/styles.css`. All selectors scoped under
+- Explicit CSS: `@kev-browser-agent-kit/opencode-chat/styles.css`. All selectors scoped under
   `.oc-chat`; no reset, fonts, app assets, Tailwind or host routing required.
   Standalone presentation pieces can be wrapped in `.oc-chat` for these styles.
 - `ChatViewProps`: `{controller, showSessions?:boolean, showModels?:boolean,

@@ -1,4 +1,8 @@
-# Workspace API v0
+# @kev-browser-agent-kit/workspace
+
+The workspace package of **kev-browser-agent-kit**, providing browser implementations
+of agent harness capabilities. Source lives in `browser-container-poc/workspace-api/`;
+see the [project overview](../PROJECT-OVERVIEW.md) for demos and package boundaries.
 
 Real Vivari worker-backed files, explicit execution, typed tools and endpoints.
 Browser-only acceptance remains pending; see [V0-HANDOFF.md](V0-HANDOFF.md).
@@ -92,4 +96,4 @@ adapter. It is not proof of browser Worker startup, OPFS, Service Worker or HMR.
 For compiled ESM/declarations, the reusable `/react` integration, server-only
 `/assets` API, independent tarball install and explicit versioned runtime delivery,
 see [LOCAL-PACKAGES.md](./LOCAL-PACKAGES.md). Existing source-oriented examples below
-describe the core API; consumers should use `@vivari/workspace-api` public imports.
+describe the core API; consumers should use `@kev-browser-agent-kit/workspace` public imports.

@@ -1,16 +1,16 @@
 # Local TypeScript package checkpoint
 
-`@vivari/workspace-api@0.1.0` is a private, locally packable ESM package.
+`@kev-browser-agent-kit/workspace@0.1.0` is a private, locally packable ESM package.
 Nothing is published. Generated JS/declarations and runtime payloads are ignored.
 
 ## Public entrypoints
 
 | Import | Environment / contract |
 | --- | --- |
-| `@vivari/workspace-api` | Browser Workspace, Runtime, storage, endpoints, previews and tools |
-| `@vivari/workspace-api/react` | React 18/19 peer; WorkspaceEditing controlled boundary, WorkspaceProvider, useWorkspace, WorkspaceController and types |
-| `@vivari/workspace-api/assets` | Bun/Node build/server only; readRuntimeAssets, copyRuntimeAssets, RuntimeAssetManifest |
-| `@vivari/workspace-api/server` | Server-only authorizeEditorRequest(Request, appPolicy); denial Response or undefined |
+| `@kev-browser-agent-kit/workspace` | Browser Workspace, Runtime, storage, endpoints, previews and tools |
+| `@kev-browser-agent-kit/workspace/react` | React 18/19 peer; WorkspaceEditing controlled boundary, WorkspaceProvider, useWorkspace, WorkspaceController and types |
+| `@kev-browser-agent-kit/workspace/assets` | Bun/Node build/server only; readRuntimeAssets, copyRuntimeAssets, RuntimeAssetManifest |
+| `@kev-browser-agent-kit/workspace/server` | Server-only authorizeEditorRequest(Request, appPolicy); denial Response or undefined |
 
 The React entry imports the public core entry, keeping runtime class identity shared.
 Core imports do not load React. No entry starts workers on import. Provider mount
@@ -39,7 +39,7 @@ From this package directory, using Bun and TypeScript:
 ```sh
 bun install --frozen-lockfile --ignore-scripts
 bun run build
-bun pm pack --filename /absolute/output/workspace-api-0.1.0.tgz
+bun pm pack --filename /absolute/output/kev-browser-agent-kit-workspace-0.1.0.tgz
 ```
 
 `pack` runs the JS/declaration build. Its output contains `dist/lib`, documentation
@@ -50,17 +50,17 @@ consumer typecheck. A package build replaces `dist/lib`.
 In an unrelated Bun TypeScript React project:
 
 ```sh
-bun add /absolute/output/workspace-api-0.1.0.tgz react@19.1.1 react-dom@19.1.1
+bun add /absolute/output/kev-browser-agent-kit-workspace-0.1.0.tgz react@19.1.1 react-dom@19.1.1
 bun add -d typescript @types/react @types/react-dom @types/bun
 ```
 
-Alternatively set `"@vivari/workspace-api": "file:/absolute/path/to/workspace-api"`
+Alternatively set `"@kev-browser-agent-kit/workspace": "file:/absolute/path/to/workspace-api"`
 in dependencies **after building**, then `bun install --ignore-scripts`. That
 development dependency may be symlinked; a tarball is the independent delivery.
 Use public imports only:
 
 ```tsx
-import { WorkspaceProvider, useWorkspace } from "@vivari/workspace-api/react";
+import { WorkspaceProvider, useWorkspace } from "@kev-browser-agent-kit/workspace/react";
 function Status() {
   const { state } = useWorkspace();
   return <p>{state.status}</p>;
@@ -92,7 +92,7 @@ directory, then use **the installed package** in a Bun build-time script:
 
 ```ts
 import { mkdir } from "node:fs/promises";
-import { copyRuntimeAssets } from "@vivari/workspace-api/assets";
+import { copyRuntimeAssets } from "@kev-browser-agent-kit/workspace/assets";
 await mkdir("public/editor", { recursive: true });
 const manifest = await copyRuntimeAssets({
   source: "/absolute/unpacked-runtime-VERSION",

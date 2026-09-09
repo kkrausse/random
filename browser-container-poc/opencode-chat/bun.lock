@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@vivari/opencode-chat",
+      "name": "@kev-browser-agent-kit/opencode-chat",
       "devDependencies": {
         "@types/bun": "1.3.9",
         "@types/react": "19.2.14",

@@ -1,10 +1,10 @@
 // Executed in the isolated tarball consumer, against built entrypoints only.
 import { strict as assert } from "node:assert";
 import { cp } from "node:fs/promises";
-import { WorkspaceController } from "@vivari/workspace-api/react";
-import { attachPreview, type Endpoint } from "@vivari/workspace-api";
+import { WorkspaceController } from "@kev-browser-agent-kit/workspace/react";
+import { attachPreview, type Endpoint } from "@kev-browser-agent-kit/workspace";
 
-await cp("node_modules/@vivari/workspace-api/dist/lib", "second-copy", { recursive: true });
+await cp("node_modules/@kev-browser-agent-kit/workspace/dist/lib", "second-copy", { recursive: true });
 const second = await import(new URL("./second-copy/index.js", import.meta.url).href);
 assert.notEqual(second.attachPreview, attachPreview, "independent module copies must be exercised");
 type Message = { type: string; reqId?: number; [key: string]: unknown };

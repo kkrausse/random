@@ -1,10 +1,16 @@
-# Browser workspace: project overview
+# kev-browser-agent-kit: project overview
 
 Last summarized: **September 8, 2026**. This is the starting point for what exists,
 which demo to use, and what is still being integrated. Older receipts describe
 the exact revision they tested; they are not blanket acceptance of newer UI code.
 
 ## The idea
+
+**kev-browser-agent-kit** provides browser implementations of agent harness
+capabilities: workspace files, execution, tools, service endpoints and previews,
+plus an optional OpenCode chat client. Applications and existing harnesses compose
+these capabilities; the kit is not itself an agent harness. OpenCode supplies the
+agent loop in the demos, and the runtime implementation uses upstream Vivari.
 
 An ordinary application can optionally enable an editable version of itself.
 The normal application is visible while browser-hosted execution starts. The
@@ -21,17 +27,24 @@ run arbitrary native Linux binaries or stock Node/Bun.
 
 | Directory / public package | Purpose |
 | --- | --- |
-| `workspace-api/` → `@vivari/workspace-api` | Workspace filesystem/persistence, Runtime execution, byte streams, endpoints, preview adapter, typed ripgrep |
-| `@vivari/workspace-api/react` | Optional provider/controller/hooks and controlled `WorkspaceEditing` boundary; does not choose applications to launch |
-| `@vivari/workspace-api/assets` | Server/build-only helpers for delivering a separate runtime distribution |
-| `@vivari/workspace-api/server` | Application-supplied editor authorization adapter |
-| `opencode-chat/` → `@vivari/opencode-chat` | Standalone headless OpenCode client; injected HTTP transport, no VM or Vite dependency |
-| `@vivari/opencode-chat/react` and `/styles.css` | Optional replaceable chat UI: models, sessions, Markdown, tools, permissions/questions, interruption |
-| `workspace-demo/` | Main consumer example: normal React app, optional editing shell, app recipe, local backend/model proxy, diagnostics |
+| `workspace-api/` → `@kev-browser-agent-kit/workspace` | Workspace filesystem/persistence, Runtime execution, byte streams, endpoints, preview adapter, typed ripgrep |
+| `@kev-browser-agent-kit/workspace/react` | Optional provider/controller/hooks and controlled `WorkspaceEditing` boundary; does not choose applications to launch |
+| `@kev-browser-agent-kit/workspace/assets` | Server/build-only helpers for delivering a separate runtime distribution |
+| `@kev-browser-agent-kit/workspace/server` | Application-supplied editor authorization adapter |
+| `opencode-chat/` → `@kev-browser-agent-kit/opencode-chat` | Standalone headless OpenCode client; injected HTTP transport, no VM or Vite dependency |
+| `@kev-browser-agent-kit/opencode-chat/react` and `/styles.css` | Optional replaceable chat UI: models, sessions, Markdown, tools, permissions/questions, interruption |
+| `editable-app-demo/` | Main consumer example: normal React app, optional editing shell, app recipe, local backend/model proxy, diagnostics |
 | `vivari/` | Runtime source/build preparation and durable runtime patch; developer infrastructure rather than consumer UI |
-| `opencode-demo/` | Earlier integrated OpenCode/Vite/terminal POC and runtime research evidence |
-| `opencode-client-demo/` | Earlier standalone DOM chat demo; shared-package React chat supersedes it as the main integration target |
+| `terminal-agent-demo/` | Earlier integrated OpenCode/Vite/terminal POC and runtime research evidence |
+| `chat-client-demo/` | Earlier standalone DOM chat demo; shared-package React chat supersedes it as the main integration target |
 | `qemu/`, `hybrid*`, other experiment directories | Earlier or separate runtime experiments; not required entrypoints for the current sample |
+
+All paths in this table are under `browser-container-poc/`. This shared historical
+directory also contains independent QEMU/hybrid experiments, so the umbrella is a
+public project name rather than a wholesale directory move. `workspace-api/`,
+`opencode-chat/` and `vivari/` remain the source/build directory names. Upstream
+`@vivari/core`, runtime protocol identifiers, source pins and attribution retain
+their upstream names. Consumers should use the public package names above.
 
 ### Four separately delivered things
 
@@ -55,7 +68,7 @@ running servers. Previous messages saying servers were left running are historic
 
 ### 1. Main sample: optional editing shell
 
-**Use this first:** `workspace-demo/`.
+**Use this first:** `editable-app-demo/`.
 
 - Normal interactive React counter/backend sample by default.
 - Local admin mode offers **Enable editing**.
@@ -67,7 +80,14 @@ running servers. Previous messages saying servers were left running are historic
   data or arbitrary workspace files. **Exit** stops/closes editing and restores
   the normal view. The sample backend's own data is server-lifetime, not durable.
 
-From the repository root, with existing runtime/OpenCode preparation available:
+From the repository root, after local package setup and with existing
+runtime/OpenCode preparation available:
+
+```sh
+LOCAL_EDITOR_ADMIN=1 bun run --cwd browser-container-poc/editable-app-demo demo
+```
+
+Default URL: **http://127.0.0.1:4311**. First-time local package setup:
 
 ```sh
 cd browser-container-poc/workspace-api
@@ -76,19 +96,19 @@ bun run build
 cd ../opencode-chat
 bun install --frozen-lockfile --ignore-scripts
 bun run build
-cd ../workspace-demo
+cd ../editable-app-demo
 bun install --ignore-scripts
-PORT=4312 LOCAL_EDITOR_ADMIN=1 bun run demo
+LOCAL_EDITOR_ADMIN=1 bun run demo
 ```
 
-Open **http://127.0.0.1:4312**. Omit `LOCAL_EDITOR_ADMIN=1` for non-admin mode
+Open **http://127.0.0.1:4311**. Omit `LOCAL_EDITOR_ADMIN=1` for non-admin mode
 (no editing toggle; protected editor routes denied). It is a local fixture, not
-real identity verification. Default port is 4311. A new port is a different
+real identity verification. Override the default with `PORT=4312` if needed. A new port is a different
 browser origin and persistent store.
 
 This is not yet a zero-prerequisite fresh-checkout installer: compiled runtime,
 matched OpenCode package and toolchain prerequisites are documented in the
-[demo README](workspace-demo/README.md). The startup command reuses verified
+[demo README](editable-app-demo/README.md). The startup command reuses verified
 prepared output and prepares missing/stale app assets; it does not always rebuild
 the runtime.
 
@@ -107,8 +127,8 @@ They cover real filesystem/runtime/preview behavior independently of the main UI
 
 ### 3. Historical chat and terminal demos
 
-`opencode-client-demo/` previously used port 5194 for its standalone harness.
-`opencode-demo/` contains the older integrated terminal-first POC. Consult their
+`chat-client-demo/` uses port 5194 for its standalone fixture.
+`terminal-agent-demo/` contains the older integrated terminal-first POC. Consult their
 own READMEs when reproducing historical evidence; use the main sample for current
 package consumption and editing UX.
 
@@ -129,10 +149,14 @@ the new chat's live guest interaction, UI behavior, latest iframe API/cookie
 behavior, lifecycle races and persistence after the newer shell changes.
 Forced OPFS quota/flush-write failures also lack browser acceptance.
 
-Current receipt: [shell/chat integration QA](workspace-demo/tests/integration-qa/README.md).
-Earlier evidence: [real-app receipt](workspace-demo/tests/REAL-APPS-EVIDENCE.md).
+Current receipt: [shell/chat integration QA](editable-app-demo/tests/integration-qa/README.md).
+Earlier evidence: [real-app receipt](editable-app-demo/tests/REAL-APPS-EVIDENCE.md).
 
 ## IRS Tools: real application integration in progress
+
+The sibling worktree is outside this rename's scope. Any consumer still using the
+previous public package scope must migrate its dependencies/imports to the names
+above, reinstall local packages and regenerate its own lockfile.
 
 - Original checkout: `../irs-tools`, kept on its original branch.
 - Isolated worktree: `../irs-tools-browser-editor` (sibling of this repository).
@@ -160,7 +184,7 @@ the evolving details. Do not treat intermediate files as completed-agent results
 
 ## Diagnostics and remaining practical boundaries
 
-- Main demo logs: `workspace-demo/.diagnostics/events.jsonl` and rotated `.1`.
+- Main demo logs: `editable-app-demo/.diagnostics/events.jsonl` and rotated `.1`.
   The UI provides a run ID/download link. These files are local and gitignored.
 - One persistent workspace owner per origin; currently only workspace ID `default`.
 - Dependencies excluded from OPFS are explicitly re-delivered after reopen.

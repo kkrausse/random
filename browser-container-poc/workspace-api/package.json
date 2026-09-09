@@ -1,5 +1,5 @@
 {
-  "name": "@vivari/workspace-api",
+  "name": "@kev-browser-agent-kit/workspace",
   "version": "0.1.0",
   "private": true,
   "type": "module",

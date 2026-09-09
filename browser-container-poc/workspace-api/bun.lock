@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@vivari/workspace-api",
+      "name": "@kev-browser-agent-kit/workspace",
       "devDependencies": {
         "@types/bun": "latest",
         "@types/react": "^19.2.18",

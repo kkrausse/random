@@ -8,7 +8,7 @@ Ownership is released on completion. Correct parent/coordinator:
 
 ## Implemented
 
-- `workspace-demo/prepare.ts`, `guest/package.json` + `guest/bun.lock`: explicit
+- `editable-app-demo/prepare.ts`, `guest/package.json` + `guest/bun.lock`: explicit
   pinned dependency delivery; own guest install, no sibling private node_modules.
   Host preparation aliases esbuild 0.25.12 / Rollup 4.63.1 to their official WASM
   packages. User project metadata omits those host-only overrides.
@@ -36,7 +36,7 @@ Ownership is released on completion. Correct parent/coordinator:
 ## Evidence and remaining browser gate
 
 **Passed:** full real-Node runtime `verify-node.mjs` (90 processes); rebuilt runtime;
-distribution packaging; combined workspace-demo typecheck (latest tree); demo
+distribution packaging; combined editable-app-demo typecheck (latest tree); demo
 fixture tests 2/2; client tests 6/6; HTTP 200/isolation headers on 4311 and 43917.
 
 Current strict real app test reached **RESULT PASS** with the new distribution:
@@ -64,8 +64,8 @@ the real edit for final success. The next full run passed with no provider error
 Node invocation using `APP_RESTORE=1` and the same `APP_STATE_DIR`. Exact source
 bytes restored; both excluded dependency trees were absent, explicitly re-delivered,
 and both real guest services launched. The previous session's user history survived.
-Receipt: `../workspace-demo/tests/REAL-APPS-EVIDENCE.md`. No runtime rebuild/change
-was needed. Both workspace-api and workspace-demo typechecks passed.
+Receipt: `../editable-app-demo/tests/REAL-APPS-EVIDENCE.md`. No runtime rebuild/change
+was needed. Both workspace-api and editable-app-demo typechecks passed.
 
 ## Browser and running servers
 
@@ -89,7 +89,7 @@ Chat fixes: discard live overlays when completed history becomes authoritative
 (prevents duplicate text); show interrupt-request status before awaiting the RPC
 (preserves the terminal interrupted event). Fresh browser prompt verified a single
 `RESTORED_BROWSER_OK` response and terminal `interrupted` on active cancellation.
-Durable receipt/screenshots: `../workspace-demo/tests/browser-evidence/`.
+Durable receipt/screenshots: `../editable-app-demo/tests/browser-evidence/`.
 No provider 429 occurred. Quota exhaustion/forced OPFS write failure was not tested.
 Cleanup: stopped both services, acknowledged final OPFS flush, closed workspace,
 closed the extra owned contract page, deleted Browser Control session
@@ -113,16 +113,16 @@ From `browser-container-poc/`:
 ```sh
 bun vivari/scripts/build-runtime.ts patched
 bun workspace-api/scripts/distribution.ts
-bun run --cwd workspace-demo prepare
-PORT=4311 RUNTIME_DIR="$PWD/workspace-api/dist/runtime" bun run --cwd workspace-demo dev
+bun run --cwd editable-app-demo prepare
+PORT=4311 RUNTIME_DIR="$PWD/workspace-api/dist/runtime" bun run --cwd editable-app-demo dev
 bun workspace-api/scripts/serve-contract.ts
 export APP_STATE_DIR="$(mktemp -d)"
-export PREPARED_APPS="$PWD/workspace-demo/dist/prepared"
+export PREPARED_APPS="$PWD/editable-app-demo/dist/prepared"
 bun run --cwd workspace-api test:workers
 APP_RESTORE=1 bun run --cwd workspace-api test:workers
-bun run --cwd workspace-demo typecheck
-bun test --cwd workspace-demo
-bun test --cwd opencode-client-demo
+bun run --cwd editable-app-demo typecheck
+bun test --cwd editable-app-demo
+bun test --cwd chat-client-demo
 ```
 App test makes real free-provider requests; outbound provider URL is direct in
 headless test, same-origin model proxy in browser. Ordinary `test:workers` without

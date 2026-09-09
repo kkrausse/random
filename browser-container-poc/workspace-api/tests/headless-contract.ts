@@ -211,7 +211,7 @@ res.statusCode=418;res.setHeader('x-probe','real');res.end(Buffer.from([0,255,12
 try {
   if (!process.env.APP_RESTORE) await testOfflineContract();
   if (process.env.PREPARED_APPS) {
-    const { testPreparedApps } = await import("../../workspace-demo/tests/real-apps.ts");
+    const { testPreparedApps } = await import("../../editable-app-demo/tests/real-apps.ts");
     await testPreparedApps({ workspace, distribution, kernel, restore: !!process.env.APP_RESTORE,
       flush: async () => { await host.request("test-flush"); } });
   }
