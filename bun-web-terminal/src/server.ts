@@ -200,7 +200,7 @@ async function buildClient() {
     sourcemap: process.env.NODE_ENV === "production" ? "none" : "inline",
   });
   if (!result.success) throw new AggregateError(result.logs, "Client build failed");
-  const wasmUrl = import.meta.resolve("ghostty-web/ghostty-vt.wasm");
+  const wasmUrl = import.meta.resolve("@random/ghostty-web/ghostty-vt.wasm");
   await Bun.write(join(dist, "ghostty-vt.wasm"), Bun.file(new URL(wasmUrl)));
 }
 

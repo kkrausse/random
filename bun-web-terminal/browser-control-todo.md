@@ -1,5 +1,14 @@
 # Browser verification blocker
 
+- 2026-09-08, Browser Control 0.7.0, official Ghostty WASM migration:
+  `browser-control execute 'return {url:page.url(),title:await page.title()}'`
+  exited with `Browser Control extension is not connected. Load extension/dist in Chromium; it reconnects automatically after relay or browser startup.`
+  Expected a disposable verification page/session; none was created. Asked the
+  user to connect the extension. Engine tests can proceed independently; live
+  WebGL/input verification needs the connection restored.
+  `browser-control doctor` confirmed matching CLI/relay 0.7.0 builds, extension
+  0.0.24 disconnected, and zero active targets. No relay restart was needed.
+
 - 2026-09-06, Browser Control 0.7.0, session `quiet-otter-585`, disposable local
   auth test instance: navigate to `/sessions` (redirects to `/login`), then navigate
   to the startup fragment-bearing sign-in URL. `waitForURL(.../sessions)` timed

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import type { Terminal } from "../vendor/ghostty-web/lib/index";
+import type { Terminal } from "@random/ghostty-web";
 import { installTerminalTouchControls } from "./touch";
 
 // Exercise the actual event handlers; only DOM geometry and terminal output are stubbed.

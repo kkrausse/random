@@ -16,6 +16,8 @@ scripts, skills, or explorations that do not need their own repository.
 - [`bird-log/`](./bird-log): A multi-user bird sighting log.
 - [`fix-chrome-extension/`](./fix-chrome-extension): A Chrome shortcut guard extension.
 - [`isochron-home-map/`](./isochron-home-map): A static travel-time isochrone map.
+- [`bun-web-terminal/`](./bun-web-terminal): A Bun/tmux web terminal with phone controls.
+- [`ghostty-web/`](./ghostty-web): An xterm.js-style browser wrapper and WebGL renderer for official Ghostty WASM.
 - [`skills/`](./skills): Reusable agent skills.
 
 Projects are intentionally added one at a time. Other directories in this

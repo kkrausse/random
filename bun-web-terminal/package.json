@@ -9,7 +9,7 @@
     "test": "bun test src"
   },
   "dependencies": {
-    "ghostty-web": "0.4.0-next.20.g1858a59",
+    "@random/ghostty-web": "file:../ghostty-web",
     "qrcode": "^1.5.4"
   },
   "devDependencies": {

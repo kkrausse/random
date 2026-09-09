@@ -1,3 +1,11 @@
+# Ghostty terminal engine and browser wrapper
+
+The terminal uses the local [ghostty-web](../../ghostty-web/README.md) package.
+Its browser layer retains MIT-licensed code from Coder's ghostty-web and our
+former fork; the [license](../../ghostty-web/LICENSE) is preserved with the source.
+The engine is an official Ghostty WASM release artifact; its provenance and
+upstream license are included in `../../ghostty-web/vendor/`.
+
 # Dictation references
 
 The append-only cumulative transcript policy follows the local Swift fork of
