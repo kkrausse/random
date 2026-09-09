@@ -159,6 +159,34 @@ export class GlyphAtlas {
     return entry;
   }
 
+  /** Exact cell masks; actual cell sizes can vary at fractional DPR. */
+  public getBlock(codepoint: number, width: number, height: number, rects: readonly (readonly number[])[]): GlyphEntry | null {
+    const key = `block:${codepoint}:${width}:${height}`;
+    const hit = this.cache.get(key);
+    if (hit !== undefined) return hit;
+    if (width <= 0 || height <= 0 || width > this.scratch.width || height > this.scratch.height) return null;
+    const ctx = this.scratchCtx;
+    ctx.clearRect(0, 0, this.scratch.width, this.scratch.height);
+    ctx.fillStyle = '#ffffff';
+    for (const [left, top, right, bottom] of rects) {
+      const x = Math.round(left * width / 8);
+      const y = Math.round(top * height / 8);
+      ctx.fillRect(x, y, Math.round(right * width / 8) - x, Math.round(bottom * height / 8) - y);
+    }
+    const rect = this.allocate(width, height);
+    if (!rect) return null;
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.texture);
+    gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, rect.x, rect.y, rect.layer, width, height, 1, gl.RGBA, gl.UNSIGNED_BYTE, this.scratch);
+    const entry: GlyphEntry = {
+      layer: rect.layer, u: rect.x / this.pageSize, v: rect.y / this.pageSize,
+      uw: width / this.pageSize, vh: height / this.pageSize,
+      w: width, h: height, offX: 0, offY: 0, colored: false,
+    };
+    this.cache.set(key, entry);
+    return entry;
+  }
+
   private sizeScratch(): void {
     // Room for a double-width glyph plus overflow in every direction; combining
     // marks and box-drawing glyphs routinely paint outside the cell box.
