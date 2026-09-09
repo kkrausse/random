@@ -81,4 +81,5 @@ await $`bun build consumer.tsx --outdir build --target browser`
   .cwd(react)
   .quiet();
 await $`bun ssr.tsx`.cwd(react);
+await $`NODE_ENV=production bun ssr.tsx`.cwd(react);
 console.log(`Packed consumers passed: ${temp}`);

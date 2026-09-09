@@ -6,8 +6,8 @@ import { createHash } from "node:crypto";
 
 const root = resolve(import.meta.dir, "..");
 const scratch = await mkdtemp(join(Bun.env.WORKSPACE_SMOKE_TMP ?? tmpdir(), "workspace-consumer-"));
-async function run(args: string[], cwd: string) {
-  const process = Bun.spawn(args, { cwd, stdout: "inherit", stderr: "inherit", env: { ...Bun.env, NODE_PATH: "" } });
+async function run(args: string[], cwd: string, env: Record<string, string> = {}) {
+  const process = Bun.spawn(args, { cwd, stdout: "inherit", stderr: "inherit", env: { ...Bun.env, NODE_PATH: "", ...env } });
   if (await process.exited) throw Error(`Failed: ${args.join(" ")} (retained ${scratch})`);
 }
 await run(["bun", "pm", "pack", "--filename", join(scratch, "workspace.tgz"), "--quiet"], root);
@@ -57,6 +57,7 @@ await writeFile(join(consumer, "packaged-preview.ts"), await readFile(join(root,
 await run(["bun", "x", "--no-install", "tsc"], consumer);
 await run(["bun", "build", "app.tsx", "--target", "browser", "--outdir", "build"], consumer);
 await run(["bun", "lazy.tsx"], consumer);
+await run(["bun", "lazy.tsx"], consumer, { NODE_ENV: "production" });
 await run(["bun", "server.ts"], consumer);
 await run(["bun", "packaged-preview.ts"], consumer);
 const installed = join(consumer, "node_modules/@kev-browser-agent-kit/workspace");
