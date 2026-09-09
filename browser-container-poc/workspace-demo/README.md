@@ -31,7 +31,14 @@ for independent tarball installation and runtime asset copying. Omit
 `LOCAL_EDITOR_ADMIN=1` for normal non-admin mode: no toggle, and direct editor
 asset/model requests return 403. This flag is a **local admin fixture**, not identity.
 
-Open **http://127.0.0.1:4311** and click **Enable editing**. That single action:
+Open **http://127.0.0.1:4311** and click **Local editor mode** in the page header.
+The dashboard includes a counter with backend save/refresh/stream controls, a local
+interactive checklist, startup instructions, and suggested agent edits. The checklist
+is React view state; source changes persist separately in the workspace. Existing
+workspaces preserve their previous source; use **Reset source** inside editing mode
+to load this expanded sample into an existing workspace.
+
+That single editor action:
 
 1. Checks asset availability before opening persistent storage.
 2. Opens/restores the origin's workspace and adds only missing guest source/config.
