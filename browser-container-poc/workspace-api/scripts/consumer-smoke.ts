@@ -14,13 +14,13 @@ await run(["bun", "pm", "pack", "--filename", join(scratch, "workspace.tgz"), "-
 const consumer = join(scratch, "consumer");
 await mkdir(consumer);
 await writeFile(join(consumer, "package.json"), JSON.stringify({ name: "isolated-workspace-consumer", private: true, type: "module",
-  dependencies: { "@vivari/workspace-api": "file:../workspace.tgz", react: "19.1.1", "react-dom": "19.1.1" },
+  dependencies: { "@kev-browser-agent-kit/workspace": "file:../workspace.tgz", react: "19.1.1", "react-dom": "19.1.1" },
   devDependencies: { typescript: "^5.9.3", "@types/react": "^19.2.18", "@types/react-dom": "^19.2.7", "@types/bun": "latest" } }));
 await writeFile(join(consumer, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", jsx: "react-jsx", strict: true, noEmit: true, skipLibCheck: false }, include: ["*.tsx", "*.ts"] }));
 await writeFile(join(consumer, "app.tsx"), `import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { WorkspaceProvider, WorkspaceEditing, useWorkspace, type ControllerDiagnosticEvent } from '@vivari/workspace-api/react';
-import { Workspace, Runtime, opfsStore, attachPreview, type Distribution } from '@vivari/workspace-api';
+import { WorkspaceProvider, WorkspaceEditing, useWorkspace, type ControllerDiagnosticEvent } from '@kev-browser-agent-kit/workspace/react';
+import { Workspace, Runtime, opfsStore, attachPreview, type Distribution } from '@kev-browser-agent-kit/workspace';
 const distribution: Distribution = { name: 'vivari', version: 'pinned-at-deployment', assetBaseUrl: '/editor/runtime/' };
 const events: ControllerDiagnosticEvent[] = [];
 function App() { const { state } = useWorkspace(); return <p>{state.status}: normal app; no workers started</p>; }
@@ -28,18 +28,18 @@ createRoot(document.getElementById('root')!).render(<StrictMode><WorkspaceProvid
 const editing = <WorkspaceEditing allowed={false} enabled={false} start={async controller => { controller.signal.throwIfAborted(); }} isPreviewReady={() => false} renderEditor={() => null}><App /></WorkspaceEditing>;
 export { Workspace, Runtime, opfsStore, attachPreview, distribution, editing };
 `);
-await writeFile(join(consumer, "assets.ts"), `import { copyRuntimeAssets, readRuntimeAssets } from '@vivari/workspace-api/assets';
+await writeFile(join(consumer, "assets.ts"), `import { copyRuntimeAssets, readRuntimeAssets } from '@kev-browser-agent-kit/workspace/assets';
 const source = process.argv[2]!;
 const manifest = await readRuntimeAssets(source);
 await copyRuntimeAssets({ source, destination: './public/editor/runtime', expectedVersion: manifest.version });
 console.log('Relocated runtime', manifest.version);
 `);
-await writeFile(join(consumer, "server.ts"), `import { authorizeEditorRequest, type EditorAuthorization } from '@vivari/workspace-api/server';
+await writeFile(join(consumer, "server.ts"), `import { authorizeEditorRequest, type EditorAuthorization } from '@kev-browser-agent-kit/workspace/server';
 const policy: EditorAuthorization = () => false;
 if ((await authorizeEditorRequest(new Request('http://localhost/editor'), policy))?.status !== 403) throw Error('Authorization failed');
 `);
 await writeFile(join(consumer, "lazy.tsx"), `import { renderToString } from 'react-dom/server';
-import { WorkspaceProvider, WorkspaceEditing, WorkspaceController } from '@vivari/workspace-api/react';
+import { WorkspaceProvider, WorkspaceEditing, WorkspaceController } from '@kev-browser-agent-kit/workspace/react';
 globalThis.Worker = class { constructor() { throw Error('Eager worker'); } } as unknown as typeof Worker;
 globalThis.fetch = (() => { throw Error('Eager fetch'); }) as unknown as typeof fetch;
 const html = renderToString(<WorkspaceProvider><p>normal app</p></WorkspaceProvider>);
@@ -59,7 +59,7 @@ await run(["bun", "build", "app.tsx", "--target", "browser", "--outdir", "build"
 await run(["bun", "lazy.tsx"], consumer);
 await run(["bun", "server.ts"], consumer);
 await run(["bun", "packaged-preview.ts"], consumer);
-const installed = join(consumer, "node_modules/@vivari/workspace-api");
+const installed = join(consumer, "node_modules/@kev-browser-agent-kit/workspace");
 if ((await readdir(installed)).some(name => ["src", "scripts", "node_modules"].includes(name))) throw Error("Private package content leaked");
 const bundle = await readFile(join(consumer, "build/app.js"), "utf8");
 if (/node:fs|\.runtime\/patched|\/api\/diagnostics/.test(bundle)) throw Error("Server/demo code leaked into browser bundle");

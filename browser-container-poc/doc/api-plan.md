@@ -65,8 +65,8 @@ These make the plan executable; they are not additional settled user decisions:
 | TUI performance | Large allocation reduction established; sustained responsiveness remains unresolved |
 
 Use [V2 results](vivari-v2-results.md), the current
-[demo README](../opencode-demo/README.md), and
-[performance results](../opencode-demo/PERFORMANCE-RESULTS.md). Historical
+[demo README](../terminal-agent-demo/README.md), and
+[performance results](../terminal-agent-demo/PERFORMANCE-RESULTS.md). Historical
 handoffs contain superseded blockers. Local `.runtime/patched` source and frozen
 demo distributions may differ; always record the build actually tested.
 

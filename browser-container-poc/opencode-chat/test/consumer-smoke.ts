@@ -9,7 +9,7 @@ const tempBase = join(process.env.TMPDIR || tmpdir(), "opencode");
 await mkdir(tempBase, { recursive: true });
 const temp = await mkdtemp(join(tempBase, "opencode-chat-consumer-"));
 await $`bun pm pack --destination ${temp}`.cwd(root).quiet();
-const tarball = join(temp, "vivari-opencode-chat-0.1.0.tgz");
+const tarball = join(temp, "kev-browser-agent-kit-opencode-chat-0.1.0.tgz");
 const headless = join(temp, "headless"),
   react = join(temp, "react");
 await Promise.all([mkdir(headless), mkdir(react)]);
@@ -18,13 +18,13 @@ await writeFile(
   JSON.stringify({
     type: "module",
     dependencies: {
-      "@vivari/opencode-chat": `file:${tarball}`,
+      "@kev-browser-agent-kit/opencode-chat": `file:${tarball}`,
       typescript: "5.9.3",
     },
   }),
 );
 await $`bun install`.cwd(headless).quiet();
-await Promise.all(["LICENSE.upstream","LICENSE.marked"].map(name=>access(join(headless,"node_modules/@vivari/opencode-chat",name))));
+await Promise.all(["LICENSE.upstream","LICENSE.marked"].map(name=>access(join(headless,"node_modules/@kev-browser-agent-kit/opencode-chat",name))));
 try {
   await access(join(headless, "node_modules/react"));
   throw new Error("Headless consumer unexpectedly installed React");
@@ -33,7 +33,7 @@ try {
 }
 await writeFile(
   join(headless, "consumer.ts"),
-  `import {createChatController, type ChatEndpoint, type ChatController} from '@vivari/opencode-chat';
+  `import {createChatController, type ChatEndpoint, type ChatController} from '@kev-browser-agent-kit/opencode-chat';
 const endpoint:ChatEndpoint={url:'https://example.invalid',fetch:async (_input:string,_init?:RequestInit)=>new Response()};
 const make: (options:{endpoint:ChatEndpoint;directory:string})=>ChatController=createChatController;
 if(typeof make!=='function')throw new Error('Headless export missing');
@@ -48,7 +48,7 @@ await writeFile(
   JSON.stringify({
     type: "module",
     dependencies: {
-      "@vivari/opencode-chat": `file:${tarball}`,
+      "@kev-browser-agent-kit/opencode-chat": `file:${tarball}`,
       react: "19.2.4",
       "react-dom": "19.2.4",
       "@types/react": "19.2.14",
@@ -59,16 +59,16 @@ await writeFile(
 );
 await writeFile(
   join(react, "consumer.tsx"),
-  `import {ChatView, Markdown} from '@vivari/opencode-chat/react';
-import type {ChatController} from '@vivari/opencode-chat';
-import '@vivari/opencode-chat/styles.css';
+  `import {ChatView, Markdown} from '@kev-browser-agent-kit/opencode-chat/react';
+import type {ChatController} from '@kev-browser-agent-kit/opencode-chat';
+import '@kev-browser-agent-kit/opencode-chat/styles.css';
 export const render=(controller:ChatController)=><ChatView controller={controller} showModels showSessions onOpenFile={path=>console.log(path)}/>;
 export const markdown=<Markdown text={'**Packed React consumer**'}/>;`,
 );
 await writeFile(
   join(react, "ssr.tsx"),
   `import {renderToStaticMarkup} from 'react-dom/server';
-import {Markdown} from '@vivari/opencode-chat/react';
+import {Markdown} from '@kev-browser-agent-kit/opencode-chat/react';
 const html=renderToStaticMarkup(<Markdown text="**Packed consumer**"/>);
 if(!html.includes('<strong>Packed consumer</strong>'))throw new Error(html);
 console.log('packed React SSR passed');`,

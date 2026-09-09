@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { Workspace, Runtime, opfsStore, type Distribution, type Endpoint, type Execution, type NodeLaunchOptions, type ToolSet } from "@vivari/workspace-api";
+import { Workspace, Runtime, opfsStore, type Distribution, type Endpoint, type Execution, type NodeLaunchOptions, type ToolSet } from "@kev-browser-agent-kit/workspace";
 import { createControllerDiagnostics, safeText, type ControllerDiagnosticOptions } from "./react-diagnostics.js";
 
 /** Reusable React boundary: public API ownership, serialization and subscriptions.

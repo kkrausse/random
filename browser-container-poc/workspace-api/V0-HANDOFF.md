@@ -5,13 +5,13 @@ September 7, 2026. **Real backend checkpoint, not first-milestone browser accept
 **Superseded browser status:** subsequent integration completed real-browser
 contract/search, OPFS reload/ownership rejection, Vite same-Document manual/model
 HMR, authenticated OpenCode streaming/cancel and dependency/history restoration.
-See `INTEGRATION-HANDOFF.md` and `../workspace-demo/tests/REAL-APPS-EVIDENCE.md`.
+See `INTEGRATION-HANDOFF.md` and `../editable-app-demo/tests/REAL-APPS-EVIDENCE.md`.
 Current runtime version is `5b9e2d83dddb85eb5e09c482418a19779c7235ce5b42ff0376e52872f9d4ba50`.
 The parent requested this checkpoint and will launch a fresh integration agent.
 This owner releases the runtime seam after the checkpoint commit.
 
-Independent consumer commits: `196aec1` (`workspace-demo`) and `b02ac70`
-(`opencode-client-demo`, matched to POC V2 core/schema `0.0.0-dev-19167`).
+Independent consumer commits: `196aec1` (now `editable-app-demo`) and `b02ac70`
+(now `chat-client-demo`, matched to POC V2 core/schema `0.0.0-dev-19167`).
 
 ## Source of truth and code layout
 
@@ -67,7 +67,7 @@ await workspace.close();
   idempotent forced stop are supplied. No public Bun/full PTY/native-binary claim.
 - Endpoint supplies `url`, `port`, `closed`, `fetch(string,RequestInit)`, `dispose`.
   Demo's native-Fetch input adapter remains compatible.
-- Final combined workspace-demo typecheck passed against these exports.
+- Final combined editable-app-demo typecheck passed against these exports.
 
 ## Implemented and verified versus remaining gates
 
@@ -162,7 +162,7 @@ receipt. The contract server exposes `/tools/`; other consumers must provide it.
 Fresh real-demo server, avoiding the parent's existing `4310` server:
 
 ```sh
-PORT=4311 RUNTIME_DIR="$PWD/workspace-api/dist/runtime" bun run --cwd workspace-demo dev
+PORT=4311 RUNTIME_DIR="$PWD/workspace-api/dist/runtime" bun run --cwd editable-app-demo dev
 # http://127.0.0.1:4311
 ```
 
@@ -201,7 +201,7 @@ API-owned server was left running**. Parent's 4310 demo is independently owned.
   Its small headless Host adapter is explicit; no browser transport claim.
 - Full upstream `scripts/verify-node.mjs` under real Node 24.18.0: **RESULT PASS**
   after final runtime behavior changes; 90 processes plus shell/HTTP/watch/Node APIs.
-- workspace-demo combined typecheck: **PASS** against final exports.
+- editable-app-demo combined typecheck: **PASS** against final exports.
 - Browser CLI: **BLOCKED** by disconnected extension; no browser result.
 
 ## Safe ownership transfer and generated dirty state
@@ -238,7 +238,7 @@ agent after completion, with no concurrent runtime patch/protocol writer.
 2. **Boot real demo on 4311 with this distribution**. Validate files without runtime,
    start/stop retention, then a small generic HTTP module copied from the contract
    fixture to isolate preview routing from Vite packaging.
-3. **Explicitly prepare Vite dependencies**, using existing `opencode-demo/build.ts`
+3. **Explicitly prepare Vite dependencies**, using existing `terminal-agent-demo/build.ts`
    and Vivari packaging recipes as references. Project files belong under
    `/workspace`; no host Vite substitution or second authoritative file tree.
    Vite 6+/8 may need documented `--configLoader native`. Prove same iframe Document

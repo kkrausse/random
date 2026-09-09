@@ -5,6 +5,7 @@ scripts, skills, or explorations that do not need their own repository.
 
 ## Projects
 
+- [**kev-browser-agent-kit**](./browser-container-poc/PROJECT-OVERVIEW.md): Browser implementations of agent harness capabilities—workspace files, execution, tools, previews, and optional OpenCode chat. Start with the [editable app demo](./browser-container-poc/editable-app-demo).
 - [`fieldcut/`](./fieldcut): A local-first video editor.
 - [`timegrapher/`](./timegrapher): A browser-based mechanical watch timegrapher.
 - [`workout-analyze/`](./workout-analyze): A Garmin workout analysis app.

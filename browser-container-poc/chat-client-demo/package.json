@@ -1,0 +1,16 @@
+{
+  "name": "chat-client-demo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot serve.ts",
+    "build": "bun build ./src/main.ts --outdir dist --target browser",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test src/api.test.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.3"
+  }
+}

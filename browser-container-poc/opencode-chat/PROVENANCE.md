@@ -11,7 +11,7 @@ Vendored from https://github.com/anomalyco/opencode at that exact revision:
 | `src/vendor/types.ts` | [`packages/client/src/promise/generated/types.ts`](https://github.com/anomalyco/opencode/blob/d7a7256bb6b0952f486c95718cfbf460b1570a56/packages/client/src/promise/generated/types.ts) | Exact generated type-only source, no runtime dependency. |
 | `LICENSE.upstream` | [`LICENSE`](https://github.com/anomalyco/opencode/blob/d7a7256bb6b0952f486c95718cfbf460b1570a56/LICENSE) | Exact complete MIT notice, Copyright (c) 2025 opencode. Distributed in tarballs. |
 
-`src/api.ts` derives from this repository's `opencode-client-demo/src/api.ts`:
+`src/api.ts` derives from this repository's `chat-client-demo/src/api.ts`:
 same injected string-only endpoint URL resolution, pagination, model-catalog
 activation and SSE parser. Replaced workspace imports and minimal hand-written
 message/event types with the pinned native contract; formatted the local copy. No code from the Solid UI,

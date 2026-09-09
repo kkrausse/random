@@ -69,11 +69,11 @@ If main packaging already provides a controller, add a thin view adapter around 
 
 ### Fetch details for this browser runtime
 
-Existing [`OpenCodeAPI`](../../opencode-client-demo/src/api.ts) uses string URLs and the injected `endpoint.fetch`. Preserve that path for **all** requests, including SSE, rather than using global fetch or a native service. Endpoint fetch currently takes `(string, RequestInit?)`; it is narrower than `typeof globalThis.fetch`. Do not fix this with an unchecked cast when adding a generated client. Either retain the string-only transport or implement a tested `Request`/`URL` adapter preserving method, headers, body, and signal and respecting the runtime's buffered-upload limit.
+Existing [`OpenCodeAPI`](../../chat-client-demo/src/api.ts) uses string URLs and the injected `endpoint.fetch`. Preserve that path for **all** requests, including SSE, rather than using global fetch or a native service. Endpoint fetch currently takes `(string, RequestInit?)`; it is narrower than `typeof globalThis.fetch`. Do not fix this with an unchecked cast when adding a generated client. Either retain the string-only transport or implement a tested `Request`/`URL` adapter preserving method, headers, body, and signal and respecting the runtime's buffered-upload limit.
 
 The current endpoint documents buffered uploads capped at **8 MiB**; base64/JSON expansion counts toward that request limit. Attachment preparation must check serialized size, preserve draft on failure, and revoke local object URLs on removal/disposal. Preview bytes can come from the host; a private file URI is not necessarily browser-fetchable.
 
-At audit time, [`client.ts`](../../opencode-client-demo/src/client.ts) is a vanilla DOM mount used by a React host: full transcript replacement, text-only part labels, forced scrolling, and text delta tracking in `content[ordinal]`. Its wire API has `{providerID,id}` and custom injected fetch. Preserve those transport/runtime decisions while replacing the presentation and per-kind delta handling.
+At audit time, [`client.ts`](../../chat-client-demo/src/client.ts) is a vanilla DOM mount used by a React host: full transcript replacement, text-only part labels, forced scrolling, and text delta tracking in `content[ordinal]`. Its wire API has `{providerID,id}` and custom injected fetch. Preserve those transport/runtime decisions while replacing the presentation and per-kind delta handling.
 
 ## Exact V2 data boundaries to implement first
 
@@ -95,7 +95,7 @@ For bootstrap, the reducer's “missing assistant → no touched messages” cas
 
 ## Staged implementation and file ownership
 
-These are suggested work units. **No permission to edit concurrently owned files is implied.** Main agent `ses_f80b87aabffecxahTVNNLC30bT` owns workspace-api, client, runtime, React packaging and workspace-demo. This audit sidequest owns only `doc/opencode-chat-ui-audit/` and creates no shared implementation changes.
+These are suggested work units. **No permission to edit concurrently owned files is implied.** Main agent `ses_f80b87aabffecxahTVNNLC30bT` owns workspace-api, client, runtime, React packaging and editable-app-demo. This audit sidequest owns only `doc/opencode-chat-ui-audit/` and creates no shared implementation changes.
 
 | Stage | Deliverable / suggested ownership after explicit handoff | Exit criterion |
 | --- | --- | --- |

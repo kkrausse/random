@@ -7,7 +7,7 @@ and ownership transfer to the fresh integration agent. Task cards below retain
 their acceptance criteria. A1/A2/B1/C1/D1 have a working v0 backend slice in
 `workspace-api` and the Vivari patch/build seam, with browser-only qualification
 remaining. Runtime ownership is released to the parent's fresh integration agent.
-Consumer commits are `196aec1` (workspace-demo) and `b02ac70` (OpenCode chat).
+Consumer commits are `196aec1` (now editable-app-demo) and `b02ac70` (OpenCode chat).
 
 ### Active public contract for parallel consumers
 
@@ -336,7 +336,7 @@ Paths below are relative to `browser-container-poc/`:
 | Tool example | `vivari/scripts/package-ripgrep.ts`, `vivari/probes/runtime/ripgrep-contract.cjs` |
 | FFI example | `vivari/scripts/build-ffi-probe.ts`, `vivari/probes/runtime/ffi-{library.c,contract.cjs}`, `doc/vivari-ffi-results.md` |
 | Terminal adapter | `vivari/src/shell-sessions.ts`; process/shell/terminal probes in `vivari/scripts/` |
-| Existing application glue | `opencode-demo/{main.ts,build.ts,serve.ts}` |
+| Existing application glue | `terminal-agent-demo/{main.ts,build.ts,serve.ts}` |
 | Provider gateway | `vivari/scripts/model-proxy.ts` |
 
 - `.runtime/patched` is a generated, ignored working checkout. Preserve durable
