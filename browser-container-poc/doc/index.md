@@ -1,5 +1,10 @@
 # Browser workspace experiments
 
+## Start here
+
+- [Project overview: packages, demos, status and next steps](../PROJECT-OVERVIEW.md)
+  — current summary, launch commands, verification boundaries and IRS Tools work.
+
 ## Current API design
 
 - [JavaScript workspace API plan](api-plan.md) — filesystem/runtime separation,
