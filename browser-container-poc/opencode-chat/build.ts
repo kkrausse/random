@@ -12,6 +12,7 @@ for (const [entry, name] of [
     outdir: "dist",
     naming: name!,
     target: "browser",
+    jsx: { runtime: "automatic", development: false },
     external: ["react", "react/jsx-runtime"],
   });
   if (!result.success) throw new AggregateError(result.logs);
