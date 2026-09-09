@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { RotateCcw, Save } from "lucide-react";
-import { attachPreview } from "@vivari/workspace-api";
 import { useWorkspace } from "@vivari/workspace-api/react";
 import { sourcePaths } from "./sample-recipe";
 import { chatFor } from "./chat-adapter";
@@ -82,7 +81,7 @@ export function Preview() {
     };
     target.addEventListener("load", loaded);
     try {
-      const attachment = attachPreview(target, service.endpoint, { hostPaths: ["/api"] });
+      const attachment = service.endpoint.attachPreview(target, { hostPaths: ["/api"] });
       return controller.registerAttachment("vite", () => { observer?.disconnect(); target.removeEventListener("load", loaded); attachment.dispose(); target.src = "about:blank"; });
     } catch (error) { target.removeEventListener("load", loaded); controller.clientFailed("vite", error); }
   }, [controller, service]);
@@ -95,6 +94,6 @@ export function Chat({ onOpenFile }: { onOpenFile(path: string, selection?: File
   return <section className="space-y-3" aria-labelledby="chat-heading">
     <h2 id="chat-heading">OpenCode chat</h2>
     <p className="text-sm text-neutral-600">{service ? `Guest OpenCode · ${state.clients.chat}. New workspaces default to Muse Spark (free).` : "Start workspace to connect real guest OpenCode."} Try: “Add a Reset button to /workspace/src/App.tsx.” It edits the same guest source Vite serves.</p>
-    <div id="chat" style={{ height: "min(52vh, 560px)", minHeight: 240 }}>{chat ? <ChatView controller={chat} showSessions showModels onOpenFile={onOpenFile} /> : <p>Waiting for guest chat connection…</p>}</div>
+    <div id="chat" style={{ height: "min(52vh, 560px)", minHeight: 240 }}>{chat ? <ChatView controller={chat} showSessions showModels onOpenFile={onOpenFile} /> : state.error ? <p role="alert">Guest chat unavailable: {state.error}</p> : <p>{state.busy ? "Waiting for guest chat connection…" : "Start workspace to connect guest chat."}</p>}</div>
   </section>;
 }

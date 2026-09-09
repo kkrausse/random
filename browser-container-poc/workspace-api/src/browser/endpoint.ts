@@ -1,4 +1,5 @@
 import type { Host } from "../host.js";
+import { attachEndpointPreview } from "./preview.js";
 import { WorkspaceError, type Endpoint, type Execution, type NodeLaunchOptions } from "../types.js";
 
 // This ordinary guest module adapts real Node HTTP streams to the byte execution
@@ -22,7 +23,6 @@ function base64(bytes: Uint8Array): string {
   return btoa(text);
 }
 type Launch = (options: NodeLaunchOptions, binding?: Record<string, unknown>) => Promise<Execution>;
-export const endpointInternals = new WeakMap<Endpoint, { host: Host; listenerId: string; check(): void }>();
 export function createEndpoint(host: Host, port: number, listenerId: string, node: Launch): Endpoint {
   if (host.listeners.get(port) !== listenerId) throw new WorkspaceError("CLOSED", "Listener closed before endpoint attachment");
   let reason: string | undefined;
@@ -42,6 +42,7 @@ export function createEndpoint(host: Host, port: number, listenerId: string, nod
   const endpoint: Endpoint = {
     url: new URL(`/preview/${port}/?__vv_listener=${encodeURIComponent(listenerId)}`, location.href).href,
     port, closed, dispose,
+    attachPreview(iframe, options) { return attachEndpointPreview(iframe, endpoint, { host, check }, options); },
     async fetch(input, init = {}) {
       check();
       const signal = init.signal ? AbortSignal.any([init.signal, lifetime.signal]) : lifetime.signal;
@@ -102,6 +103,5 @@ export function createEndpoint(host: Host, port: number, listenerId: string, nod
       } catch (error) { await execution.stop(); await errors.catch(() => {}); throw error; }
     },
   };
-  endpointInternals.set(endpoint, { host, listenerId, check });
   return endpoint;
 }

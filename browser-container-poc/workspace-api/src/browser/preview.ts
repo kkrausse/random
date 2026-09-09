@@ -1,18 +1,16 @@
-import type { Endpoint } from "../types.js";
-import { endpointInternals } from "./endpoint.js";
-export interface PreviewAttachment { dispose(): void }
-export interface PreviewOptions {
-  /** Root-absolute same-origin paths (segment prefixes) sent natively to the host backend.
-   * Example: ["/api"]. This is routing, never server authorization. */
-  hostPaths?: readonly string[];
-}
+import type { Endpoint, PreviewAttachment, PreviewOptions } from "../types.js";
+import type { Host } from "../host.js";
+export type { PreviewAttachment, PreviewOptions } from "../types.js";
+/** Compatibility helper: the endpoint owns attachment, including across package copies. */
 export function attachPreview(iframe: HTMLIFrameElement, endpoint: Endpoint, options: PreviewOptions = {}): PreviewAttachment {
+  return endpoint.attachPreview(iframe, options);
+}
+/** Internal implementation, invoked only by the endpoint that owns the transport. */
+export function attachEndpointPreview(iframe: HTMLIFrameElement, endpoint: Endpoint, internal: { host: Host; check(): void }, options: PreviewOptions = {}): PreviewAttachment {
   const paths = options.hostPaths ?? [];
   if (paths.length > 32 || paths.some(path => !/^\/[A-Za-z0-9_/-]+$/.test(path) || path.includes("//") || path.endsWith("/"))) throw Error("hostPaths must be up to 32 root-absolute segment prefixes, without trailing slash");
   const previewUrl = new URL(endpoint.url);
   if (paths.length) previewUrl.searchParams.set("__vv_host_paths", JSON.stringify(paths));
-  const internal = endpointInternals.get(endpoint);
-  if (!internal) throw new Error("Expected a workspace-api Endpoint");
   internal.check();
   const { host } = internal;
   const origin = new URL(endpoint.url).origin;

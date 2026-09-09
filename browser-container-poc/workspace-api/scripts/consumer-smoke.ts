@@ -53,10 +53,12 @@ await controller.dispose();
 console.log('SSR/import lazy startup and public controller passed');
 `);
 await run(["bun", "install", "--ignore-scripts"], consumer);
+await writeFile(join(consumer, "packaged-preview.ts"), await readFile(join(root, "tests/packaged-preview.ts")));
 await run(["bun", "x", "--no-install", "tsc"], consumer);
 await run(["bun", "build", "app.tsx", "--target", "browser", "--outdir", "build"], consumer);
 await run(["bun", "lazy.tsx"], consumer);
 await run(["bun", "server.ts"], consumer);
+await run(["bun", "packaged-preview.ts"], consumer);
 const installed = join(consumer, "node_modules/@vivari/workspace-api");
 if ((await readdir(installed)).some(name => ["src", "scripts", "node_modules"].includes(name))) throw Error("Private package content leaked");
 const bundle = await readFile(join(consumer, "build/app.js"), "utf8");
@@ -79,5 +81,5 @@ async function compare(directory = "") {
   }
 }
 await compare();
-await writeFile(join(scratch, "receipt.json"), JSON.stringify({ consumer, files, bytes, checks: ["tarball install", "NodeNext declarations", "React browser build", "SSR/import lazy", "diagnostics redaction", "public asset relocation hashes"] }, null, 2));
+await writeFile(join(scratch, "receipt.json"), JSON.stringify({ consumer, files, bytes, checks: ["tarball install", "NodeNext declarations", "React browser build", "SSR/import lazy", "diagnostics redaction", "packaged React endpoint and independent-copy preview attachment", "public asset relocation hashes"] }, null, 2));
 console.log(JSON.stringify({ scratch, files, bytes }));
