@@ -1,5 +1,5 @@
 {
-  "name": "opencode2-plugin-claude-sessions",
+  "name": "oc-plugin-session-manager",
   "version": "0.0.0",
   "private": true,
   "type": "module",

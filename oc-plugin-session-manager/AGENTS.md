@@ -1,4 +1,4 @@
-# AGENTS.md — opencode2-plugin-claude-sessions
+# AGENTS.md — oc-plugin-session-manager
 
 ## Refresh the plugin
 
@@ -22,7 +22,7 @@ bun test --preload @opentui/solid/preload
 Scope commits to this directory only:
 
 ```sh
-git add opencode2-plugin-claude-sessions/<files> && git commit -m "..."
+git add oc-plugin-session-manager/<files> && git commit -m "..."
 ```
 
 Never `add -A` / `commit -a`.

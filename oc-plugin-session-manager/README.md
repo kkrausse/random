@@ -1,6 +1,6 @@
 # Sessions viewer
 
-Package/directory: `opencode2-plugin-claude-sessions` (kept for existing plugin configurations).
+Package/directory: `oc-plugin-session-manager`.
 
 Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 
@@ -17,7 +17,7 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Legacy inactive markers remain readable. They still describe live sessions, so running/attention status takes precedence. Press `x` to archive one, or `r` to clear its old marker. Existing markers are not automatically converted into deleted sessions.
 - Archiving a child acts on its highest loaded parent. Cleanup discovers descendants through the paginated API, including children outside the picker's loaded pages. Children are deleted but **not archived or restored**.
 - Shell cleanup lists each family's locations, matches `shell.metadata.sessionID`, and calls `shell.remove`. OpenCode handles termination; the plugin does not implement signal escalation. This covers tracked owned shells, not arbitrary untracked processes.
-- Status indicators match OpenCode V2 tabs: `!` for permissions, `?` for questions, and a Braille spinner for running sessions.
+- Status indicators match OpenCode V2 tabs: `!` for permissions, `?` for questions, and a Braille spinner for running sessions. They share a single-cell far-left gutter with the selected-row accent, so status changes do not shift session titles or consume extra horizontal space. Selected titles also use the accent color when a status icon occupies the gutter.
 - Indicators use the active theme's semantic status colors.
 - Active sessions prioritize needs input, then working, then ready, ordered by latest interaction within each status. Inactive sessions are ordered by latest interaction.
 - Each session occupies one line with its title, status, and lifecycle button. The selected session's location, agent, and last-interaction time appear in the preview.
@@ -106,7 +106,7 @@ Add the plugin directory to `~/.config/opencode/cli.json`:
 
 ```json
 {
-  "plugins": ["/absolute/path/to/opencode2-plugin-claude-sessions"]
+  "plugins": ["/absolute/path/to/oc-plugin-session-manager"]
 }
 ```
 
