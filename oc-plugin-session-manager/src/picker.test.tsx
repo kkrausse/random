@@ -65,7 +65,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
         status: { permission: "#ffffff", question: "#ffffff", running: "#ffffff" },
         feedback: { error: { default: "#ffffff" } },
       },
-      hue: { accent: { 400: "#ffffff" } },
+      hue: { accent: { 400: "#ffffff" }, yellow: { 400: "#ffff00" } },
       contextual: {
         overlay: {
           background: { default: "#000000", surface: { offset: "#444444" } },

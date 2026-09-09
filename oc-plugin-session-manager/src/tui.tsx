@@ -759,9 +759,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
           <Index each={options()}>
             {(option, index) => {
               const active = () => selectedIndex() === index
-               const titleColor = () => active()
-                 ? props.context.theme.hue.accent[400]
-                 : option().state === "inactive" ? props.context.theme.text.subdued : props.context.theme.text.default
+               const titleColor = () => option().state === "inactive" ? props.context.theme.text.subdued : props.context.theme.text.default
                const heading = () => {
                  const label = groupLabel(option().state)
                  return label !== groupLabel(options()[index - 1]?.state ?? "new") ? label : undefined
@@ -770,7 +768,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
               const iconColor = () => {
                 if (option().state === "permission") return props.context.theme.text.status.permission
                 if (option().state === "question") return props.context.theme.text.status.question
-                if (option().state === "running") return props.context.theme.text.status.running
+                if (option().state === "running") return props.context.theme.hue.yellow[400]
                 return descriptionColor()
               }
               return (
@@ -812,7 +810,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
                         : state === "permission" ? "!"
                         : state === "question" ? "?"
                         : state === "new" ? "+" : ""
-                      if (!icon) return active() ? <text fg={props.context.theme.hue.accent[400]}>▌</text> : null
+                      if (!icon) return null
                       return (
                         icon === "spinner" ? (
                           <spinner frames={SPINNER_FRAMES} interval={80} color={iconColor()} />
