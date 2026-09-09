@@ -26,13 +26,16 @@ function App() {
     };
     return <>
       {active && loaded && <loaded.Editor recipe={loaded.recipe} exit={exit} retry={() => retry(value => value + 1)} />}
-      {allowed && (!active || !loaded) && <aside className="fixed bottom-4 right-4 z-20 border bg-white p-3 space-y-2">
-        <p className="text-sm">Local admin fixture</p>
-        {enabled ? <Button onClick={exit}>Cancel editing startup</Button> : <Button id="start-sample" disabled={closing || !!error} onClick={() => { setError(""); setEnabled(true); }}>{closing ? "Closing workspace…" : "Enable editing"}</Button>}
+      {allowed && (!active || !loaded) && (enabled || closing || !!error) && <aside className="fixed bottom-4 right-4 z-20 border bg-white p-3 space-y-2">
+        <p className="text-sm">Local editor mode</p>
+        {enabled && <Button onClick={exit}>Cancel editing startup</Button>}
         {enabled && state.error && <><p role="alert">{state.error}</p><Button onClick={() => retry(value => value + 1)}>Retry editing</Button></>}
         {error && <><p role="alert">{error}</p><Button onClick={exit}>Retry Exit</Button></>}
       </aside>}
     </>;
-  }}><SampleApp /></WorkspaceEditing>;
+  }}><SampleApp editorControl={allowed
+    ? <Button id="start-sample" disabled={enabled || closing || !!error} onClick={() => { setError(""); setEnabled(true); }}>{closing ? "Closing workspace…" : enabled ? "Starting workspace…" : "Local editor mode"}</Button>
+    : <p className="sample-label">Editing is disabled on this server. Start the local demo with LOCAL_EDITOR_ADMIN=1 to enable the editor.</p>
+  } /></WorkspaceEditing>;
 }
 createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);
