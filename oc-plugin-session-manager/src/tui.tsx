@@ -759,7 +759,9 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
           <Index each={options()}>
             {(option, index) => {
               const active = () => selectedIndex() === index
-               const titleColor = () => option().state === "inactive" ? props.context.theme.text.subdued : props.context.theme.text.default
+               const titleColor = () => active()
+                 ? props.context.theme.hue.accent[400]
+                 : option().state === "inactive" ? props.context.theme.text.subdued : props.context.theme.text.default
                const heading = () => {
                  const label = groupLabel(option().state)
                  return label !== groupLabel(options()[index - 1]?.state ?? "new") ? label : undefined
@@ -781,17 +783,11 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
                 ) : null}
                 <box
                   id={`claude-session-row-${index}`}
-                   height={1}
+                  height={1}
                   flexShrink={0}
-                   flexDirection="row"
-                   paddingLeft={Math.max(0, Math.min(option().depth, 4) * 2)}
+                  flexDirection="row"
+                  paddingLeft={0}
                   paddingRight={0}
-                  border={["left"]}
-                  borderColor={
-                    active()
-                      ? props.context.theme.hue.accent[400]
-                      : props.context.theme.contextual.overlay.background.default
-                  }
                   backgroundColor={
                     active()
                       ? props.context.theme.contextual.overlay.background.surface.offset
@@ -804,25 +800,38 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
                     handleRowClick(option().value)
                   }}
                 >
-                  <box height={1} flexDirection="row" flexGrow={1} flexBasis={0} minWidth={0} overflow="hidden">
+                  <box
+                    id={`claude-session-gutter-${index}`}
+                    width={1}
+                    height={1}
+                    flexShrink={0}
+                  >
                     {(() => {
                       const state = option().state
                       const icon = state === "running" ? "spinner"
                         : state === "permission" ? "!"
                         : state === "question" ? "?"
                         : state === "new" ? "+" : ""
-                      if (!icon) return null
+                      if (!icon) return active() ? <text fg={props.context.theme.hue.accent[400]}>▌</text> : null
                       return (
-                        <box width={2} flexShrink={0}>
-                          {icon === "spinner" ? (
-                            <spinner frames={SPINNER_FRAMES} interval={80} color={iconColor()} />
-                          ) : (
-                            <text fg={iconColor()}>{`${icon} `}</text>
-                          )}
-                        </box>
+                        icon === "spinner" ? (
+                          <spinner frames={SPINNER_FRAMES} interval={80} color={iconColor()} />
+                        ) : (
+                          <text fg={iconColor()}>{icon}</text>
+                        )
                       )
                     })()}
-                    <text wrapMode="none" flexShrink={1} fg={titleColor()} attributes={active() ? TextAttributes.BOLD : undefined}>
+                  </box>
+                  <box
+                    height={1}
+                    flexDirection="row"
+                    flexGrow={1}
+                    flexBasis={0}
+                    minWidth={0}
+                    overflow="hidden"
+                    paddingLeft={Math.max(0, Math.min(option().depth, 4) * 2)}
+                  >
+                    <text id={`claude-session-title-${index}`} wrapMode="none" flexShrink={1} fg={titleColor()} attributes={active() ? TextAttributes.BOLD : undefined}>
                       {option().title}
                     </text>
                     {(() => {

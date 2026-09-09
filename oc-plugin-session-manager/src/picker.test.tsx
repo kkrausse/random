@@ -131,8 +131,11 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     assert.match(setup.captureCharFrame(), /Grandchild/)
     const parentRow = setup.renderer.root.findDescendantById("claude-session-row-1")!
     const childRow = setup.renderer.root.findDescendantById("claude-session-row-2")!
+    const runningTitle = setup.renderer.root.findDescendantById("claude-session-title-1")!
+    const idleTitle = setup.renderer.root.findDescendantById("claude-session-title-4")!
     assert.equal(parentRow.height, 1)
     assert.equal(childRow.height, 1)
+    assert.equal(runningTitle.x, idleTitle.x)
     assert.match(setup.captureCharFrame(), /\d+[smhdy] ago|just now/)
     assert.doesNotMatch(setup.captureCharFrame(), /\[x\]/)
     assert.doesNotMatch(setup.captureCharFrame(), /❯/)
@@ -246,7 +249,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     assert.equal(Object.values(lifecycle.inactive).filter(Boolean).length, 40)
     assert.ok(interruptCalls > callsBeforeIdle)
     assert.equal(toasts.at(-1)!.message, "Session archived; family deleted")
-    assert.match(setup.captureCharFrame(), /\+\s+New session/)
+    assert.match(setup.captureCharFrame(), /\+New session/)
     assert.match(setup.captureCharFrame(), /New session/)
 
     commands.find((c) => c.bind === "down").run()
