@@ -1,5 +1,13 @@
 # Browser-control checks
 
+- [x] 2026-09-09, browser-control 0.7.0, session `amber-wombat-312`, localhost:4317:
+  startup wait returned `waitForFunction: Timeout 30000ms exceeded`. The script
+  incorrectly passed `{timeout:180000}` as Playwright's second argument (the page
+  function argument), leaving the default timeout active. Retried with `undefined`
+  as argument two and timeout options as argument three; startup and source loading
+  succeeded. Expected an extended wait; actual was a caller-signature mistake.
+  No relay/page reset needed.
+
 - [x] 2026-09-09, browser-control 0.7.0, session `amber-wombat-312`, todo demo
   at localhost:4316: Playwright `checkbox.check()` reported `Clicking the checkbox
   did not change its state`. The React-controlled checkbox waits for the backend

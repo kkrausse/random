@@ -2,17 +2,7 @@ import type { Distribution, Runtime, Workspace, Endpoint } from "@kev-browser-ag
 import { loadPrepared, preparedApps, openCodeLaunch, waitForOpenCode, type PreparedManifest } from "./prepared";
 import type { Connection, WorkspaceController } from "./workspace-provider";
 import { diagnostics } from "./diagnostics";
-import { attachChat } from "./chat-adapter";
-
-export async function sourcePaths(workspace: Workspace, directory = "/"): Promise<string[]> {
-  const paths: string[] = [];
-  for (const name of await workspace.fs.readdir(directory)) {
-    if (["node_modules", ".git", ".opencode-state"].includes(name)) continue;
-    const path = `${directory === "/" ? "" : directory}/${name}`;
-    if ((await workspace.fs.stat(path)).isDirectory) paths.push(...await sourcePaths(workspace, path)); else paths.push(path);
-  }
-  return paths.sort();
-}
+import { attachChat, sourcePaths } from "@kev-browser-agent-kit/opencode-chat/editor";
 export async function seedMissing(workspace: Workspace, project: Record<string, string>, proxy: string) {
   const existing = new Set(await sourcePaths(workspace));
   for (const [path, content] of Object.entries(project)) {
@@ -115,7 +105,7 @@ export function createSampleRecipe() {
         ["Launch guest Vite and render preview", () => this.vite(controller)],
         ["Launch guest OpenCode and connect chat", () => this.chat(controller)],
       ]);
-      controller.status("Workspace ready. Edit and Save file, use the preview, or ask OpenCode to change the guest UI. Existing files and sessions were preserved.");
+      controller.status("Workspace ready. Source edits autosave locally; ask OpenCode to change the app or open Source. Existing files and sessions were preserved.");
     },
   };
 }
