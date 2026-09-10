@@ -138,3 +138,72 @@ headless declarations and bundles/SSR-renders a separate React consumer.
 browser clipboard and IME interactions, scroll/selection behavior and responsive
 visual QA. Those checks belong to fresh host integration against the pinned
 guest. Fixture evidence is not a claim of real-server/browser QA.
+# Mounted browser editor
+
+`@kev-browser-agent-kit/opencode-chat/editor` exports `BrowserEditor`,
+`BrowserEditorProps`, `attachChat`, `chatFor`, `WorkspaceChatOptions`, and
+`sourcePaths`. Install the optional `@kev-browser-agent-kit/workspace` peer when
+using this integration. The root and `/react` standalone chat entries have no
+workspace imports; the editor uses workspace types and the supplied controller.
+
+```tsx
+import { BrowserEditor, attachChat } from "@kev-browser-agent-kit/opencode-chat/editor";
+import "@kev-browser-agent-kit/opencode-chat/editor.css";
+
+// App owns authorization, launcher, isEditing, and when this subtree is mounted.
+// Keep controller and recipe stable. The existing WorkspaceProvider can own it.
+return isEditing ? (
+  <BrowserEditor
+    controller={controller}
+    recipe={recipe}
+    onExit={() => setIsEditing(false)}
+    hostPaths={hostPaths} // stable array, e.g. ["/api"]
+  />
+) : null;
+```
+
+`recipe` has one requirement: `start(controller): Promise<void>`. Reuse the
+existing workspace recipe: open/seed the workspace, start its runtime, and
+`controller.launch(...)` the preview and OpenCode services. The defaults are
+service names `vite` and `chat`; override with `previewService` and `chatService`.
+The package attaches the preview iframe and a real `ChatView` to these services.
+After launching chat, a recipe can `await attachChat(controller, service)` or
+`await controller.waitForClient("chat")`. `attachChat` is idempotent for a service
+and uses its existing `connection.fetch`, including authentication. For custom
+names/directories pass `{ serviceName, directory }` to both the recipe adapter
+and matching editor props. Default OpenCode directory is `/workspace`.
+
+With `recipe`, the mounted editor starts once (including React StrictMode),
+offers startup retry, and flushes the source document before closing through
+`controller.cancelAndClose()` on unmount. Retry/remount waits for prior cleanup.
+The controller itself remains reusable; its provider owns final disposal.
+Without `recipe`, the host owns starting/closing the workspace (for example via
+the existing `WorkspaceEditing`). Supply `onRetry` for that lifecycle. Chat
+clients live until their service is stopped or controller is aborted, so toggling
+the chat pane does not reconnect. The iframe attachment is released on unmount.
+The Exit button flushes pending source writes before calling `onExit`; arbitrary
+host-managed unmounts should occur after local autosave has completed.
+
+Preview readiness defaults to the attached iframe's load event. For an app that
+renders asynchronously, provide a stable `isPreviewReady(frame)` predicate;
+the package observes document mutations until it returns true. Such a predicate
+requires a same-origin preview. `hostPaths` is passed unchanged to
+`endpoint.attachPreview`, so API routing continues to use the existing bridge.
+
+Source files are discovered recursively, excluding `node_modules`, `.git`, and
+`.opencode-state`. Override `listFiles(workspace)` and `initialPath` as needed.
+There is no app-specific seed/reset list. Edits autosave after `autosaveMs`
+(default 1000), serializing writes and filesystem flushes. File switching waits
+for dirty text to flush; late reads cannot replace newer edits. Reload file
+explicitly picks up agent changes. Local autosave failures retain dirty text;
+editing again retries. Exit reports a flush failure rather than leaving.
+
+**Persistence scope:** “flushed” means the existing workspace filesystem's local
+flush completed. It does not mean published, remotely saved, committed, or
+persisted to an application server. Concurrent agent/manual writes do not have
+revision conflict detection in the existing filesystem API. This integration
+does not add a remote persistence endpoint or change the OpenCode wire protocol.
+
+`editor.css` includes the chat styles plus minimal scoped editor styles, and
+needs no host Tailwind setup. It renders a full-viewport preview and a compact
+fixed editing pane; applications can override its `oc-editor-*` classes.
