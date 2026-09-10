@@ -1,6 +1,11 @@
 import type { ReactNode } from 'react'
 import { Links, Meta, Outlet, Scripts, ScrollRestoration } from 'react-router'
-import './style.css'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { trpc, trpcClient, TRPCProvider } from '@/lib/trpc'
+import '@/style.css'
+import cssUrl from '@/style.css?url'
+
+const queryClient = new QueryClient()
 
 export function Layout({ children }: { children: ReactNode }) {
   return (
@@ -9,6 +14,7 @@ export function Layout({ children }: { children: ReactNode }) {
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Todos</title>
+        <link rel="preload" href={cssUrl} as="style" />
         <Meta />
         <Links />
       </head>
@@ -22,5 +28,13 @@ export function Layout({ children }: { children: ReactNode }) {
 }
 
 export default function Root() {
-  return <Outlet />
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>
+        <trpc.Provider client={trpcClient} queryClient={queryClient}>
+          <Outlet />
+        </trpc.Provider>
+      </TRPCProvider>
+    </QueryClientProvider>
+  )
 }

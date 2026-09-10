@@ -1,28 +1,27 @@
-import { resolve, sep } from 'node:path'
-import { createRequestHandler } from 'react-router'
-import { createTodoApi } from './src/todos'
+import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
+import { appRouter } from '@/server/trpcRouter'
+import type { Todo } from '@/schema/todo'
+import { createStaticHandler } from '@/server/staticFiles'
 
-const production = process.env.NODE_ENV === 'production'
-const clientDirectory = resolve(import.meta.dir, 'build/client')
-const buildPath = resolve(import.meta.dir, 'build/server/index.js')
-const render = production ? createRequestHandler(() => import(buildPath), 'production') : undefined
+const isProduction = process.env.NODE_ENV === 'production'
+const useBuild = isProduction || !!process.env.SERVE_BUILD
+const todos = new Map<string, Todo>()
+
+const apiRoutes = {
+  '/api/*': (req: Request) => fetchRequestHandler({
+    endpoint: '/api',
+    req,
+    router: appRouter,
+    createContext: ({ req }) => ({ req, todos }),
+  }),
+}
+const buildRoutes: Record<string, (req: Request) => Promise<Response>> = useBuild
+  ? { '/*': createStaticHandler('build/client') }
+  : {}
 
 const server = Bun.serve({
-  hostname: '127.0.0.1',
-  port: Number(process.env.PORT ?? (production ? 3000 : 3001)),
-  routes: { '/api/*': createTodoApi() },
-  async fetch(request) {
-    const pathname = new URL(request.url).pathname
-    if (render && pathname.startsWith('/assets/')) {
-      const path = resolve(clientDirectory, `.${decodeURIComponent(pathname)}`)
-      if (!path.startsWith(clientDirectory + sep)) return new Response('Not found', { status: 404 })
-      const file = Bun.file(path)
-      return await file.exists()
-        ? new Response(file, { headers: { 'Cache-Control': 'public, max-age=31536000, immutable' } })
-        : new Response('Not found', { status: 404 })
-    }
-    return render ? render(request) : new Response('Not found', { status: 404 })
-  },
+  port: useBuild ? Number(process.env.PORT) || 3000 : 3001,
+  routes: { ...apiRoutes, ...buildRoutes },
 })
 
-console.log(`Todo server: ${server.url}`)
+console.log(`Server running at ${server.url}`)
