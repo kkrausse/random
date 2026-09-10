@@ -192,11 +192,11 @@ requires a same-origin preview. `hostPaths` is passed unchanged to
 
 Source files are discovered recursively, excluding `node_modules`, `.git`, and
 `.opencode-state`. Override `listFiles(workspace)` and `initialPath` as needed.
-There is no app-specific seed/reset list. Edits autosave after `autosaveMs`
+There is no app-specific seed/reset list. Dirty edits autosave every `autosaveMs`
 (default 1000), serializing writes and filesystem flushes. File switching waits
 for dirty text to flush; late reads cannot replace newer edits. Reload file
 explicitly picks up agent changes. Local autosave failures retain dirty text;
-editing again retries. Exit reports a flush failure rather than leaving.
+the next interval retries automatically. Exit reports a flush failure rather than leaving.
 
 **Persistence scope:** “flushed” means the existing workspace filesystem's local
 flush completed. It does not mean published, remotely saved, committed, or
@@ -205,5 +205,15 @@ revision conflict detection in the existing filesystem API. This integration
 does not add a remote persistence endpoint or change the OpenCode wire protocol.
 
 `editor.css` includes the chat styles plus minimal scoped editor styles, and
-needs no host Tailwind setup. It renders a full-viewport preview and a compact
+needs no host Tailwind setup. Controls use package-local shadcn/ui Base UI
+primitives with Tailwind 4 utilities and Lucide indicators. Both CSS exports
+ship precompiled utilities: consumers do not install Tailwind, scan this package,
+or import a separate UI stylesheet. There is no global preflight or theme;
+utility classes, internal variables, and fallback initialization are isolated
+from host styles. Select popups are portaled and carry their own package styles.
+Install `react` and `react-dom` when using `/react` or `/editor`; both are optional
+peers so headless consumers need neither. Base UI and the small styling helpers
+are bundled into the UI entries.
+
+It renders a full-viewport preview and a compact
 fixed editing pane; applications can override its `oc-editor-*` classes.

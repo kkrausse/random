@@ -2,9 +2,7 @@
 .oc-editor-preview { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: white; z-index: 10; }
 .oc-editor-panel { position: fixed; bottom: 1rem; right: 1rem; width: 440px; max-width: calc(100vw - 2rem); max-height: 90vh; overflow: auto; padding: 12px; border: 1px solid #aaa; background: white; z-index: 20; }
 .oc-editor-panel *, .oc-editor-panel { box-sizing: border-box; }
-.oc-editor-actions { display: flex; gap: 8px; }
-.oc-editor-panel button, .oc-editor-panel select { font: inherit; padding: 4px 8px; }
-.oc-editor-panel select { max-width: 100%; }
+.oc-editor-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .oc-editor-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; overflow: auto; }
 .oc-editor-chat { height: min(52vh, 560px); min-height: 240px; }
 .oc-editor-source textarea { display: block; width: 100%; height: 300px; margin-top: 8px; font: 13px/1.4 monospace; }

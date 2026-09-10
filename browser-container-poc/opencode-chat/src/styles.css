@@ -19,31 +19,6 @@
 .oc-chat * {
   box-sizing: border-box;
 }
-.oc-chat button,
-.oc-chat input,
-.oc-chat select,
-.oc-chat textarea {
-  font: inherit;
-}
-.oc-chat button {
-  cursor: pointer;
-  background: #fff;
-  color: inherit;
-  border: 1px solid var(--oc-border);
-  border-radius: 7px;
-  padding: 5px 10px;
-}
-.oc-chat button:hover:not(:disabled) {
-  background: #f0f3fa;
-}
-.oc-chat button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.oc-chat :focus-visible {
-  outline: 2px solid var(--oc-accent);
-  outline-offset: 2px;
-}
 .oc-toolbar,
 .oc-controls,
 .oc-actions {
@@ -56,7 +31,7 @@
   padding: 12px 16px;
   border-bottom: 1px solid var(--oc-border);
 }
-.oc-toolbar span {
+.oc-toolbar > span {
   font-size: 12px;
   color: var(--oc-muted);
   flex: 1;
@@ -72,13 +47,9 @@
   min-width: 0;
   font-size: 12px;
 }
-.oc-chat select {
+.oc-controls [data-slot="select-trigger"] {
   min-width: 0;
   max-width: 240px;
-  border: 1px solid var(--oc-border);
-  border-radius: 6px;
-  background: #fff;
-  padding: 5px;
 }
 .oc-transcript-wrap {
   position: relative;
@@ -247,27 +218,13 @@
   display: block;
   color: var(--oc-muted);
 }
-.oc-request input:not([type="radio"]):not([type="checkbox"]) {
-  display: block;
-  width: 100%;
-  padding: 6px;
-  border: 1px solid var(--oc-border);
-  border-radius: 5px;
-}
 .oc-composer {
   padding: 12px 16px;
   border-top: 1px solid var(--oc-border);
 }
 .oc-composer textarea {
-  width: 100%;
-  min-height: 80px;
   max-height: 220px;
   resize: vertical;
-  padding: 10px;
-  border: 1px solid var(--oc-border);
-  border-radius: 8px;
-  background: #fafbfc;
-  color: inherit;
 }
 .oc-composer .oc-actions {
   margin-top: 8px;
@@ -276,9 +233,4 @@
 .oc-composer small {
   font-size: 11px;
   color: var(--oc-muted);
-}
-.oc-composer button[type="submit"] {
-  background: var(--oc-accent);
-  color: #fff;
-  border-color: var(--oc-accent);
 }

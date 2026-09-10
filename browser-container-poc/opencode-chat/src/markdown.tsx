@@ -1,5 +1,6 @@
 import { Fragment, memo, useState, type ReactNode } from "react";
 import { Lexer, type Token } from "marked";
+import { Button } from "./components/ui/button";
 
 /** HTML is rendered as text; only explicit safe link schemes become anchors. */
 export function safeHref(href: string): string | undefined {
@@ -20,7 +21,7 @@ export function CodeBlock({
     <div className="oc-code">
       <header>
         <span>{language || "Code"}</span>
-        <button
+        <Button
           type="button"
           onClick={() => {
             void navigator.clipboard.writeText(text).then(
@@ -30,7 +31,7 @@ export function CodeBlock({
           }}
         >
           Copy
-        </button>
+        </Button>
         <span role="status">{status}</span>
       </header>
       <pre>

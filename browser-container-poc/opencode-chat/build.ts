@@ -1,4 +1,6 @@
 import { $ } from "bun";
+import postcss from "postcss";
+import { uiLicenses } from "./scripts/ui-licenses";
 await $`rm -rf dist`;
 await $`bunx tsc --emitDeclarationOnly`;
 // Build the runtime implementation directly: Bun 1.4's sideEffects optimization
@@ -14,9 +16,22 @@ for (const [entry, name] of [
     naming: name!,
     target: "browser",
     jsx: { runtime: "automatic", development: false },
-    external: ["react", "react/jsx-runtime", "@kev-browser-agent-kit/workspace", "@kev-browser-agent-kit/workspace/react"],
+    external: ["react", "react/jsx-runtime", "react-dom", "react-dom/*", "@kev-browser-agent-kit/workspace", "@kev-browser-agent-kit/workspace/react"],
   });
   if (!result.success) throw new AggregateError(result.logs);
 }
-await Bun.write("dist/styles.css", Bun.file("src/styles.css"));
-await Bun.write("dist/editor.css", `${await Bun.file("src/styles.css").text()}\n${await Bun.file("src/editor.css").text()}`);
+await $`bunx @tailwindcss/cli -i src/tailwind.css -o dist/ui.css --minify`;
+// Tailwind's internal property names are not covered by its utility prefix.
+// Isolate those too, including the fallback universal property initializer.
+const compiled = postcss.parse((await Bun.file("dist/ui.css").text()).replaceAll("--tw-", "--ocui-tw-"));
+compiled.walkAtRules("layer", rule => { rule.params = rule.params.split(",").map(name => `ocui-${name.trim()}`).join(","); });
+compiled.walkRules(rule => {
+  if (rule.selector === "*,:before,:after,::backdrop") {
+    rule.selector = ".oc-ui,.oc-ui *,.oc-ui::before,.oc-ui::after,.oc-ui *::before,.oc-ui *::after,.oc-ui::backdrop";
+  }
+});
+const ui = compiled.toString();
+await Bun.write("dist/ui.css", ui);
+await Bun.write("dist/styles.css", `${ui}\n${await Bun.file("src/styles.css").text()}`);
+await Bun.write("dist/editor.css", `${await Bun.file("dist/styles.css").text()}\n${await Bun.file("src/editor.css").text()}`);
+await Bun.write("dist/THIRD-PARTY-LICENSES.txt", await uiLicenses());

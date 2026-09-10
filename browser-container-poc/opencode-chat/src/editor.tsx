@@ -5,6 +5,9 @@ import type { ChatController } from "./types";
 import { ChatView, type OpenFile } from "./react";
 import { attachChat, editorLifecycle } from "./editor-adapter";
 import { SourceDocument, sourcePaths } from "./editor-source";
+import { Button } from "./components/ui/button";
+import { Textarea } from "./components/ui/textarea";
+import { ChoiceSelect } from "./components/ui/select";
 export { attachChat, chatFor, type WorkspaceChatOptions } from "./editor-adapter";
 export { sourcePaths } from "./editor-source";
 
@@ -14,6 +17,8 @@ export interface BrowserEditorProps {
   recipe?: { start(controller: WorkspaceController): Promise<void> };
   onExit?(): void;
   onRetry?(): void;
+  /** Optional host recipe action; does not imply remote archival/reset semantics. */
+  onReset?(): Promise<void>;
   previewService?: string;
   chatService?: string;
   directory?: string;
@@ -25,13 +30,14 @@ export interface BrowserEditorProps {
   isPreviewReady?(frame: HTMLIFrameElement): boolean;
 }
 const noHostPaths: string[] = [];
-export function BrowserEditor({ controller, recipe, onExit, onRetry, previewService = "vite", chatService = "chat", directory = "/workspace", hostPaths = noHostPaths, initialPath, listFiles = sourcePaths, autosaveMs = 1000, isPreviewReady }: BrowserEditorProps) {
+export function BrowserEditor({ controller, recipe, onExit, onRetry, onReset, previewService = "vite", chatService = "chat", directory = "/workspace", hostPaths = noHostPaths, initialPath, listFiles = sourcePaths, autosaveMs = 1000, isPreviewReady }: BrowserEditorProps) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const document = useMemo(() => state.workspace ? new SourceDocument(state.workspace) : undefined, [state.workspace]);
   const currentDocument = useRef(document); currentDocument.current = document;
   const start = useRef(recipe); start.current = recipe;
   const [retry, setRetry] = useState(0), [sourceOpen, setSourceOpen] = useState(false), [chatOpen, setChatOpen] = useState(true);
   const [exiting, setExiting] = useState(false);
+  const [resetting, setResetting] = useState(false), [sourceRevision, setSourceRevision] = useState(0);
   const [request, setRequest] = useState<{ path: string; selection?: { startLine: number; endLine: number } }>();
   const managed = !!recipe;
   useEffect(() => {
@@ -46,15 +52,16 @@ export function BrowserEditor({ controller, recipe, onExit, onRetry, previewServ
     <EditorPreview controller={controller} service={state.services[previewService]} name={previewService} hostPaths={hostPaths} isReady={isPreviewReady} />
     <aside className="oc-editor-panel" aria-label="Editing controls">
       <header className="oc-editor-actions">
-        <button onClick={() => setChatOpen(!chatOpen)} aria-expanded={chatOpen}>Chat</button>
-        <button onClick={() => setSourceOpen(!sourceOpen)} aria-expanded={sourceOpen}>Source</button>
-        {onExit && <button disabled={exiting} onClick={() => { setExiting(true); void (document?.flush() ?? Promise.resolve()).then(onExit).catch(error => controller.reportError(error)).finally(() => setExiting(false)); }}>Exit</button>}
+        <Button onClick={() => setChatOpen(!chatOpen)} aria-expanded={chatOpen}>Chat</Button>
+        <Button onClick={() => setSourceOpen(!sourceOpen)} aria-expanded={sourceOpen}>Source</Button>
+        {onReset && <Button disabled={state.busy || exiting || resetting || !state.runtime} onClick={() => { setResetting(true); void (document?.flush() ?? Promise.resolve()).then(onReset).then(() => setSourceRevision(value => value + 1)).catch(error => controller.reportError(error)).finally(() => setResetting(false)); }}>Reset source</Button>}
+        {onExit && <Button disabled={exiting || resetting} onClick={() => { setExiting(true); void (document?.flush() ?? Promise.resolve()).then(onExit).catch(error => controller.reportError(error)).finally(() => setExiting(false)); }}>Exit</Button>}
       </header>
       <p role="status">{state.status}</p>
-      {state.error && <div role="alert"><p>{state.error}</p>{(managed || onRetry) && <button disabled={state.busy || document?.dirty} onClick={() => onRetry ? onRetry() : setRetry(value => value + 1)}>Retry editing</button>}</div>}
+      {state.error && <div role="alert"><p>{state.error}</p>{(managed || onRetry) && <Button disabled={state.busy || document?.dirty} onClick={() => onRetry ? onRetry() : setRetry(value => value + 1)}>Retry editing</Button>}</div>}
       <p>Workspace: {state.workspace ? state.persistence : "closed"} · Runtime: {state.runtime ? "active" : "stopped"}</p>
       <div hidden={!chatOpen}><EditorChat controller={controller} service={state.services[chatService]} name={chatService} directory={directory} onOpenFile={openFile} /></div>
-      <div hidden={!sourceOpen}>{document && state.workspace ? <SourceEditor key={state.workspace.id} document={document} workspace={state.workspace} initialPath={initialPath} listFiles={listFiles} delay={autosaveMs} request={request} busy={state.busy || exiting} /> : <p>Waiting for workspace…</p>}</div>
+      <div hidden={!sourceOpen}>{document && state.workspace ? <SourceEditor key={`${state.workspace.id}:${sourceRevision}`} document={document} workspace={state.workspace} initialPath={initialPath} listFiles={listFiles} delay={autosaveMs} request={request} busy={state.busy || exiting || resetting} /> : <p>Waiting for workspace…</p>}</div>
       <details><summary>Activity</summary><pre>{state.logs.join("\n")}</pre></details>
     </aside>
   </div>;
@@ -114,6 +121,9 @@ function SourceEditor({ document, workspace, initialPath, listFiles, delay, requ
   useEffect(() => {
     active.current = true;
     let cancelled = false;
+    // A workspace is published before the recipe seeds/delivers its files.
+    // Wait for startup/reset to settle, then discover the resulting tree.
+    if (busy || document.dirty) return () => { active.current = false; };
     void listFiles(workspace).then(async files => {
       if (cancelled) return;
       setPaths(files);
@@ -121,15 +131,18 @@ function SourceEditor({ document, workspace, initialPath, listFiles, delay, requ
       if (path) await read(path);
     }).catch(error => { if (!cancelled) setNote(String(error)); });
     return () => { cancelled = true; active.current = false; };
-  }, [document, workspace, listFiles, initialPath]);
+  }, [document, workspace, listFiles, initialPath, busy]);
   useEffect(() => {
-    if (!document.dirty || busy) return;
-    const timer = setTimeout(() => {
+    if (busy) return;
+    let saving = false;
+    const timer = setInterval(() => {
+      if (!document.dirty || saving) return;
+      saving = true;
       setNote("Writing local workspace…");
-      void document.flush().then(() => { if (active.current) { setNote(document.dirty ? "Changes pending…" : "Written and flushed to local workspace. Not published to a remote server."); update(); } }, error => { if (active.current) setNote(`Local autosave failed: ${String(error)}. Edit again to retry.`); });
+      void document.flush().then(() => { if (active.current) { setNote(document.dirty ? "Changes pending…" : "Written and flushed to local workspace. Not published to a remote server."); update(); } }, error => { if (active.current) setNote(`Local autosave failed: ${String(error)}. Retrying automatically.`); }).finally(() => { saving = false; });
     }, delay);
-    return () => clearTimeout(timer);
-  }, [document, version, busy, delay]);
+    return () => clearInterval(timer);
+  }, [document, busy, delay]);
   useEffect(() => {
     if (!request || handled.current === request || busy || loading || document.dirty) return;
     handled.current = request;
@@ -147,12 +160,12 @@ function SourceEditor({ document, workspace, initialPath, listFiles, delay, requ
     });
   }, [request, busy, loading, version, document]);
   return <section className="oc-editor-source" aria-label="Source editor">
-    <label>File <select aria-label="Source file" value={document.path} disabled={busy || loading || document.dirty} onChange={event => void read(event.target.value)}>
-      {!paths.includes(document.path) && <option value={document.path}>{document.path || "Choose file"}</option>}{paths.map(path => <option key={path}>{path}</option>)}
-    </select></label>
-    <button disabled={busy || loading || document.dirty || !document.path} onClick={() => void read(document.path)}>Reload file</button>
-    <textarea ref={input} aria-label="File contents" spellCheck={false} disabled={busy || loading || !document.path} value={document.text} onChange={event => { document.edit(event.target.value); setNote("Changes pending local autosave…"); update(); }} />
+    <label>File <ChoiceSelect label="Source file" value={document.path} disabled={busy || loading || document.dirty} onValueChange={value => void read(value)} placeholder="Choose file"
+      items={(document.path && !paths.includes(document.path) ? [document.path, ...paths] : paths).map(path => ({ value: path, label: path }))}
+    /></label>
+    <Button disabled={busy || loading || document.dirty || !document.path} onClick={() => void read(document.path)}>Reload file</Button>
+    <Textarea ref={input} aria-label="File contents" spellCheck={false} disabled={busy || loading || !document.path} value={document.text} onChange={event => { document.edit(event.target.value); setNote("Changes pending local autosave…"); update(); }} />
     <p role="status">{note}</p>
-    <p>Autosaves locally after a short pause. Reload file to pick up agent edits.</p>
+    <p>Autosaves locally while editing. Reload file to pick up agent edits.</p>
   </section>;
 }

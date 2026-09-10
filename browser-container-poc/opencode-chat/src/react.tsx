@@ -13,6 +13,11 @@ import type {
   SessionMessageInfo,
 } from "./types";
 import { Markdown } from "./markdown";
+import { Button } from "./components/ui/button";
+import { Input } from "./components/ui/input";
+import { Textarea } from "./components/ui/textarea";
+import { ChoiceSelect } from "./components/ui/select";
+import { ChoiceGroup } from "./components/ui/choice-group";
 export { Markdown, CodeBlock } from "./markdown";
 export type OpenFile = (
   path: string,
@@ -63,9 +68,9 @@ export const ToolCard = memo(function ToolCard({
         <span>{part.state.status}</span>
       </summary>
       {typeof file === "string" && onOpenFile && (
-        <button type="button" onClick={() => onOpenFile(file)}>
+        <Button type="button" onClick={() => onOpenFile(file)}>
           Open {file}
-        </button>
+        </Button>
       )}
       <h4>Input</h4>
       <pre>{pretty(input)}</pre>
@@ -149,7 +154,7 @@ const MessageRow = memo(function MessageRow({
             {onOpenFile &&
               file.source?.type === "uri" &&
               file.source.uri.startsWith("file://") && (
-                <button
+                <Button
                   onClick={() =>
                     onOpenFile(
                       decodeURIComponent(
@@ -163,7 +168,7 @@ const MessageRow = memo(function MessageRow({
                   }
                 >
                   Open file
-                </button>
+                </Button>
               )}
           </div>
         ))}
@@ -234,7 +239,7 @@ export function Transcript({
         }}
       >
         {state.hasOlder && (
-          <button
+          <Button
             disabled={state.loadingOlder}
             onClick={() => {
               const el = viewport.current!;
@@ -244,7 +249,7 @@ export function Transcript({
             }}
           >
             {state.loadingOlder ? "Loading…" : "Load earlier messages"}
-          </button>
+          </Button>
         )}
         {state.loading && (
           <p className="oc-empty" role="status">
@@ -274,7 +279,7 @@ export function Transcript({
         ))}
       </div>
       {away && (
-        <button
+        <Button
           className="oc-latest"
           onClick={() => {
             following.current = true;
@@ -283,7 +288,7 @@ export function Transcript({
           }}
         >
           Jump to latest ↓
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -307,7 +312,7 @@ export function PermissionCard({
             ["reject", "Reject"],
           ] as const
         ).map(([decision, label]) => (
-          <button
+          <Button
             key={decision}
             disabled={entry.submitting}
             onClick={() =>
@@ -315,7 +320,7 @@ export function PermissionCard({
             }
           >
             {label}
-          </button>
+          </Button>
         ))}
       </div>
       {entry.error && (
@@ -355,37 +360,16 @@ export function QuestionCard({
           <legend>
             {q.header}: {q.question}
           </legend>
-          {q.options.map((option) => (
-            <label className="oc-option" key={option.label}>
-              <input
-                type={q.multiple ? "checkbox" : "radio"}
-                name={`${entry.request.id}-${i}`}
-                checked={answers[i]?.includes(option.label) ?? false}
-                onChange={(e) => {
-                  setAnswers((previous) =>
-                    previous.map((a, j) =>
-                      j !== i
-                        ? a
-                        : q.multiple
-                          ? e.target.checked
-                            ? [...a, option.label]
-                            : a.filter((v) => v !== option.label)
-                          : [option.label],
-                    ),
-                  );
-                  if (!q.multiple) setCustom((c) => ({ ...c, [i]: "" }));
-                }}
-              />
-              <span>
-                {option.label}
-                <small>{option.description}</small>
-              </span>
-            </label>
-          ))}
+          <ChoiceGroup label={q.question} name={`${entry.request.id}-${i}`} options={q.options} value={answers[i] ?? []} multiple={q.multiple} disabled={entry.submitting}
+            onValueChange={value => {
+              setAnswers(previous => previous.map((answer, index) => index === i ? value : answer));
+              if (!q.multiple) setCustom(previous => ({ ...previous, [i]: "" }));
+            }}
+          />
           {q.custom !== false && (
             <label>
               Custom answer
-              <input
+              <Input
                 value={custom[i] ?? ""}
                 onChange={(e) => {
                   setCustom((c) => ({ ...c, [i]: e.target.value }));
@@ -398,19 +382,19 @@ export function QuestionCard({
         </fieldset>
       ))}
       <div className="oc-actions">
-        <button
+        <Button
           type="submit"
           disabled={entry.submitting || complete.some((a) => !a.length)}
         >
           Submit answers
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           disabled={entry.submitting}
           onClick={() => run(controller.rejectQuestion(entry.request.id))}
         >
           Skip
-        </button>
+        </Button>
       </div>
       {entry.error && <p role="alert">{entry.error} — you can retry.</p>}
     </form>
@@ -441,7 +425,7 @@ export function Composer({ controller }: { controller: ChatController }) {
         send();
       }}
     >
-      <textarea
+      <Textarea
         aria-label="Message OpenCode"
         placeholder="Message OpenCode…"
         value={text}
@@ -461,17 +445,17 @@ export function Composer({ controller }: { controller: ChatController }) {
       <div className="oc-actions">
         <small>Enter to send · Shift+Enter for a new line</small>
         {state.execution !== "idle" && state.sessionID ? (
-          <button
+          <Button
             type="button"
             disabled={state.connection !== "connected"}
             onClick={() => run(controller.interrupt())}
           >
             {state.interruptRequested ? "Stop requested · Retry" : "Stop"}
-          </button>
+          </Button>
         ) : (
-          <button type="submit" disabled={disabled || !text.trim()}>
+          <Button variant="default" type="submit" disabled={disabled || !text.trim()}>
             {state.sending ? "Sending…" : "Send ↑"}
-          </button>
+          </Button>
         )}
       </div>
     </form>
@@ -500,12 +484,12 @@ export function ChatView({
                   : "Working…"
             : state.connection}
         </span>
-        <button
+        <Button
           disabled={state.connection === "connecting"}
           onClick={() => run(controller.reconnect())}
         >
           Reconnect
-        </button>
+        </Button>
       </header>
       {(showSessions || showModels) && (
         <nav className="oc-controls" aria-label="Chat settings">
@@ -513,36 +497,29 @@ export function ChatView({
             <>
               <label>
                 Session
-                <select
-                  aria-label="Session"
+                <ChoiceSelect
+                  label="Session"
                   value={state.sessionID ?? ""}
-                  onChange={(e) =>
-                    run(controller.selectSession(e.target.value))
+                  onValueChange={(value) =>
+                    run(controller.selectSession(value))
                   }
-                >
-                  <option value="" disabled>
-                    Select session
-                  </option>
-                  {state.sessions.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.title || s.id}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Select session"
+                  items={state.sessions.map(s => ({ value: s.id, label: s.title || s.id }))}
+                />
               </label>
-              <button
+              <Button
                 disabled={state.connection !== "connected" || state.loading}
                 onClick={() => run(controller.createSession())}
               >
                 New chat
-              </button>
+              </Button>
             </>
           )}
           {showModels && (
             <label>
               Model
-              <select
-                aria-label="Model"
+              <ChoiceSelect
+                label="Model"
                 disabled={
                   !state.sessionID ||
                   state.connection !== "connected" ||
@@ -556,27 +533,20 @@ export function ChatView({
                       })
                     : ""
                 }
-                onChange={(e) =>
-                  run(controller.selectModel(JSON.parse(e.target.value)))
+                onValueChange={(value) =>
+                  run(controller.selectModel(JSON.parse(value)))
                 }
-              >
-                <option value="" disabled>
-                  Server default
-                </option>
-                {state.models
+                placeholder="Server default"
+                items={state.models
                   .filter((m) => m.enabled)
-                  .map((m) => (
-                    <option
-                      key={`${m.providerID}/${m.id}`}
-                      value={JSON.stringify({
+                  .map((m) => ({
+                      value: JSON.stringify({
                         providerID: m.providerID,
                         id: m.id,
-                      })}
-                    >
-                      {m.name} · {m.providerID}
-                    </option>
-                  ))}
-              </select>
+                      }),
+                      label: `${m.name} · ${m.providerID}`,
+                  }))}
+              />
             </label>
           )}
         </nav>
@@ -584,7 +554,7 @@ export function ChatView({
       {state.error && (
         <div className="oc-error" role="alert">
           <span>{state.error}</span>
-          <button onClick={() => controller.clearError()}>Dismiss</button>
+          <Button onClick={() => controller.clearError()}>Dismiss</Button>
         </div>
       )}
       <Transcript controller={controller} onOpenFile={onOpenFile} />
