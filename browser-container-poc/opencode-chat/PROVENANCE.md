@@ -31,3 +31,17 @@ Do not replace question endpoints with the current public Form API silently.
 The source audit and acceptance rationale are in the owning repository's
 `browser-container-poc/doc/opencode-chat-ui-audit/`. This package does not depend
 on those files at runtime or during its build.
+# Package-owned UI primitives
+
+`src/components/ui` adapts shadcn/ui's MIT-licensed **Base UI** registry
+(`base-nova/button`, `select`, `input`, and `textarea`) into compact local
+components. Registry source: <https://ui.shadcn.com/r/styles/base-nova/button.json>
+and its sibling component URLs. See `LICENSE.shadcn`.
+
+Buttons, selects, text inputs, radio groups, and checkboxes use `@base-ui/react`;
+the textarea follows shadcn's native-element implementation. Lucide supplies
+select/checkbox indicators. CVA, clsx, and tailwind-merge compose variants.
+These implementation dependencies are bundled into the UI subpaths, with
+their dependency licenses shipped in `dist/THIRD-PARTY-LICENSES.txt`.
+React and React DOM stay external optional peers. Tailwind 4 is build-time only;
+the distributed stylesheets contain compiled, namespaced component utilities.

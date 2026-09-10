@@ -9,6 +9,7 @@
     "PROVENANCE.md",
     "LICENSE",
     "LICENSE.marked",
+    "LICENSE.shadcn",
     "LICENSE.upstream"
   ],
   "exports": {
@@ -32,15 +33,26 @@
   ],
   "peerDependencies": {
     "@kev-browser-agent-kit/workspace": "^0.1.0",
+    "react-dom": ">=18",
     "react": ">=18"
   },
   "peerDependenciesMeta": {
+    "react-dom": { "optional": true },
     "@kev-browser-agent-kit/workspace": { "optional": true },
     "react": {
       "optional": true
     }
   },
   "devDependencies": {
+    "@base-ui/react": "1.8.0",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "tailwind-merge": "3.6.0",
+    "tailwindcss": "4.3.3",
+    "@tailwindcss/cli": "4.3.3",
+    "lucide-react": "1.43.0",
+    "happy-dom": "20.14.3",
+    "postcss": "8.5.28",
     "@kev-browser-agent-kit/workspace": "file:../workspace-api",
     "marked": "17.0.4",
     "@types/bun": "1.3.9",
@@ -54,6 +66,7 @@
     "build": "bun build.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
+    "test:packed": "bun scripts/packed-smoke.ts",
     "prepack": "bun run build"
   }
 }
