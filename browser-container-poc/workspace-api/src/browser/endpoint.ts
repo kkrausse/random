@@ -53,7 +53,8 @@ export function createEndpoint(host: Host, port: number, listenerId: string, nod
       if (url.origin !== "http://workspace.invalid") {
         const prefix = `/preview/${port}/`;
         if (!url.pathname.startsWith(prefix)) throw new Error("URL belongs to another endpoint");
-        url.searchParams.delete("__vv_listener");
+        // Do not serialize unrelated bare query flags (Vite distinguishes ?url from ?url=).
+        url.search = url.search.slice(1).split('&').filter(part => part.split('=')[0] !== '__vv_listener').join('&');
         path = "/" + url.pathname.slice(prefix.length) + url.search;
       }
       const request = new Request("http://workspace.invalid" + path, { ...init, signal });

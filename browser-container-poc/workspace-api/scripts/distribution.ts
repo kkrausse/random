@@ -1,8 +1,9 @@
 // Explicit distribution delivery. Builds source via the established vivari patch
-// workflow first; this script packages that output without editing emitted code.
+// workflow first; this script packages that output with the versioned preview query adapter.
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
+import { preservePreviewQuery } from './preview-query';
 const root = resolve(import.meta.dir, "../..");
 const source = resolve(root, "vivari/.runtime/patched/packages/core/dist");
 const destination = resolve(process.argv[2] ?? resolve(root, "workspace-api/dist/runtime"));
@@ -15,9 +16,11 @@ if (/new URL\(\s*["']\/assets\//.test(kernelBytes.toString())) {
   throw new Error("Runtime nested workers are root-absolute; rebuild core with a relative Vite base before delivery");
 }
 const patch = await readFile(resolve(root, "vivari/patches/0001-sqlite.patch"));
-const version = createHash("sha256").update(patch).digest("hex");
+const serviceWorker = preservePreviewQuery(await readFile(resolve(source, 'assets/sw.js'), 'utf8'));
+const version = createHash("sha256").update(patch).update(serviceWorker).digest("hex");
 await mkdir(destination, { recursive: true });
 await cp(resolve(source, "assets"), resolve(destination, "assets"), { recursive: true });
+await writeFile(resolve(destination, 'assets/sw.js'), serviceWorker);
 await writeFile(resolve(destination, "distribution.json"), JSON.stringify({
   abi: "workspace-v1", name: "vivari", version, kernelWorker, serviceWorker: "assets/sw.js",
   upstream: "2629c71097238400c45aefa213ef61df4794c2b7",
