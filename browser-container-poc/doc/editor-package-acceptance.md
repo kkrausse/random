@@ -35,6 +35,20 @@ Record which steps actually pass and the concrete blocker for anything unverifie
 An HTTP test, successful bundle or simulated chat does not establish guest runtime
 acceptance.
 
+### September 9 initial todo receipt
+
+- Demo conversion `921e26b`: typecheck, preparation (2,291 assets), 18 tests,
+  production build and prepared-asset hash validation passed. Prepared
+  `/src/App.tsx` equals the normal application's `src/SampleApp.tsx`.
+- Browser Control CLI session `amber-wombat-312`, `http://127.0.0.1:4316`:
+  created a todo, completed it through the backend, reloaded the page and verified
+  the completed state persisted. The app-owned local editor launcher is present.
+- Before switching to the new editor entrypoint, entered editing and reached real
+  guest Vite/OpenCode readiness. The iframe rendered Todos and the same completed
+  backend task. Chat loaded its model list. Exit removed the iframe and restored
+  the normal app. This establishes the existing runtime/recipe baseline, not yet
+  acceptance of the extracted editor, HMR edits or an actual model tool turn.
+
 ## Separate persistence milestone
 
 Current capability audit: `workspace-api/src/workspace.ts` rejects workspace IDs
