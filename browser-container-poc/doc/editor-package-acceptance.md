@@ -51,9 +51,7 @@ acceptance.
   the normal app. This establishes the existing runtime/recipe baseline, not yet
   acceptance of the extracted editor, HMR edits or an actual model tool turn.
 
-## Separate persistence milestone
-
-### Package integration browser receipt (before shadcn conversion)
+## Package integration browser receipt (before shadcn conversion)
 
 On September 9, Browser Control CLI session `amber-wombat-312` at
 `http://127.0.0.1:4317` exercised the extracted `/editor` component:
@@ -74,7 +72,7 @@ On September 9, Browser Control CLI session `amber-wombat-312` at
 - Package tests (30), consumer tests (18), builds/typechecks and packed headless/
   React SSR smoke checks passed before the UI conversion. Recheck changed UI afterward.
 
-### Remaining storage milestone
+## Remaining storage milestone
 
 Current capability audit: `workspace-api/src/workspace.ts` rejects workspace IDs
 other than `default`, and its React controller opens that default ID. Per-admin

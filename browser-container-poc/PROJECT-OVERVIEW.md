@@ -1,8 +1,27 @@
 # kev-browser-agent-kit: project overview
 
-Last summarized: **September 8, 2026**. This is the starting point for what exists,
+Last summarized: **September 9, 2026**. This is the starting point for what exists,
 which demo to use, and what is still being integrated. Older receipts describe
 the exact revision they tested; they are not blanket acceptance of newer UI code.
+
+## Current iteration
+
+`editable-app-demo` is now a small server-backed todo app, sharing its exact frontend
+source with the prepared editable version. It consumes the package-owned
+`@kev-browser-agent-kit/opencode-chat/editor` surface rather than copying preview,
+source editor and chat adapter implementations. App-owned authorization, launcher
+and enabled state still use the existing workspace React lifecycle API.
+
+Real browser acceptance of this extraction covered startup, local source autosave,
+same-document HMR, a genuine model read/edit turn, file-link navigation, source reset,
+exit/re-entry source/chat retention and startup cancellation. See
+[the scoped receipt](doc/editor-package-acceptance.md). The UI is being converted
+to package-owned shadcn/ui (Base UI) and precompiled Tailwind; recheck that conversion
+before treating these prior browser checks as its acceptance.
+
+Remote per-admin Git-patch persistence and deployment patch migration remain a
+separate milestone. Existing local filesystem flush is not remote persistence.
+The historical overview below records earlier package/runtime qualification.
 
 ## The idea
 
