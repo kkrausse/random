@@ -1,6 +1,6 @@
 # kev-browser-agent-kit · Editable app demo
 
-A **normal interactive React app by default**, with caller-controlled optional
+A **simple backend-backed React todo app by default**, with caller-controlled optional
 editing through public `WorkspaceEditing`. `src/SampleApp.tsx` is both the deployed
 app and the exact known-good source seeded into guest Vite. Both use the same
 application-owned `/api` backend. Vite/OpenCode run inside the browser only after
@@ -40,11 +40,16 @@ for independent tarball installation and runtime asset copying. Omit
 asset/model requests return 403. This flag is a **local admin fixture**, not identity.
 
 Open **http://127.0.0.1:4311** and click **Local editor mode** in the page header.
-The dashboard includes a counter with backend save/refresh/stream controls, a local
-interactive checklist, startup instructions, and suggested agent edits. The checklist
-is React view state; source changes persist separately in the workspace. Existing
-workspaces preserve their previous source; use **Reset source** inside editing mode
-to load this expanded sample into an existing workspace.
+Add, complete, delete, and refresh tasks through the app-owned `/api/todos` API.
+The normal app and guest preview share the same server-side list. Tasks last for
+the server lifetime; restarting the server clears them. Source changes are separate
+from task data. Existing workspaces preserve their previous source; use **Reset
+source** inside editing mode to load the todo app into an existing workspace.
+
+The API supports `GET /api/todos`, `POST /api/todos` with `{title}`,
+`PATCH /api/todos/:id` with `{title?, completed?}`, and `DELETE /api/todos/:id`.
+Titles are trimmed and limited to 200 characters. The counter, echo and stream
+endpoints remain available for backend passthrough integration checks.
 
 That single editor action:
 
@@ -56,7 +61,7 @@ That single editor action:
    models and session history. An empty server stays empty: click **New chat**
    explicitly before sending. Existing sessions are selected without creating another.
 
-An empty workspace gets an interactive React counter. Existing `/src/App.tsx`,
+An empty workspace gets the same React todo app. Existing `/src/App.tsx`,
 configuration and chat sessions are **preserved**, including previous acceptance
 edits. Edit **Guest source editor → Save file** or ask OpenCode to change
 `/workspace/src/App.tsx`; both affect the same guest preview through HMR. Save
