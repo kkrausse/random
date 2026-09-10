@@ -64,7 +64,17 @@ export async function browserCompatibleTailwind(): Promise<Plugin[]> {
       cssModules.add(id);
       const compiler = await compile(code, { base: dirname(id.split('?')[0]!),
         async loadStylesheet(name, base) {
-          const path = createRequire(resolve(base, 'package.json')).resolve(name);
+          const require = createRequire(resolve(base, 'package.json'));
+          let path = require.resolve(name);
+          if (!path.endsWith('.css') && !name.startsWith('.')) {
+            const packageName = name.startsWith('@') ? name.split('/').slice(0, 2).join('/') : name.split('/')[0]!;
+            const packagePath = require.resolve(packageName + '/package.json');
+            const pkg = JSON.parse(await readFile(packagePath, 'utf8'));
+            const subpath = '.' + name.slice(packageName.length);
+            const style = pkg.exports?.[subpath]?.style ?? (subpath === '.' ? pkg.style : undefined);
+            if (!style) throw Error(`No CSS export for ${name}`);
+            path = resolve(dirname(packagePath), style);
+          }
           return { path, base: dirname(path), content: await readFile(path, 'utf8') };
         },
         async loadModule(name, base) {

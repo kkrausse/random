@@ -33,6 +33,9 @@ export function createBrowserEditorHandler(options: {
     if (path.startsWith(base + 'model/')) {
       if (!['GET', 'POST'].includes(request.method)) return new Response('Method not allowed', { status: 405 });
       const upstreamBase = new URL(options.model.baseURL.replace(/\/$/, '') + '/');
+      let modelPath: string;
+      try { modelPath = decodeURIComponent(path.slice((base + 'model/').length)); } catch { return new Response('Invalid model path', { status: 400 }); }
+      if (modelPath.includes('\\') || modelPath.split('/').some(part => part === '..' || part === '.')) return new Response('Invalid model path', { status: 400 });
       const upstream = new URL(upstreamBase.href + path.slice((base + 'model/').length) + url.search);
       if (upstream.origin !== upstreamBase.origin || !upstream.pathname.startsWith(upstreamBase.pathname)) return new Response('Invalid model path', { status: 400 });
       const headers = cleanHeaders(request.headers);

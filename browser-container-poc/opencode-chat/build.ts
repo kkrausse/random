@@ -22,7 +22,7 @@ for (const [entry, name] of [
   if (!result.success) throw new AggregateError(result.logs);
 }
 for (const entry of ['prepare', 'server', 'vite']) {
-  const result = await Bun.build({ entrypoints: [`src/${entry}.ts`], outdir: 'dist', naming: `${entry}.js`, target: 'bun', packages: 'external' });
+  const result = await Bun.build({ entrypoints: [`src/${entry}.ts`], outdir: 'dist', naming: `${entry}.js`, target: entry === 'vite' ? 'node' : 'bun', packages: 'external' });
   if (!result.success) throw new AggregateError(result.logs);
 }
 await $`bunx @tailwindcss/cli -i src/tailwind.css -o dist/ui.css --minify`;
@@ -40,3 +40,11 @@ await Bun.write("dist/ui.css", ui);
 await Bun.write("dist/styles.css", `${ui}\n${await Bun.file("src/styles.css").text()}`);
 await Bun.write("dist/editor.css", `${await Bun.file("dist/styles.css").text()}\n${await Bun.file("src/editor.css").text()}`);
 await Bun.write("dist/THIRD-PARTY-LICENSES.txt", await uiLicenses());
+// A compiled local package has the same public exports without bringing build/test dependencies.
+const metadata = await Bun.file('package.json').json();
+const relocate = (value: unknown): unknown => typeof value === 'string' ? value.replace('./dist/', './')
+  : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, relocate(item)])) : value;
+await Bun.write('dist/package.json', JSON.stringify({ name: metadata.name, version: metadata.version, type: metadata.type,
+  license: metadata.license, exports: relocate(metadata.exports), sideEffects: metadata.sideEffects,
+  peerDependencies: metadata.peerDependencies, peerDependenciesMeta: metadata.peerDependenciesMeta }, null, 2));
+for (const file of ['README.md', 'PROVENANCE.md', 'LICENSE', 'LICENSE.marked', 'LICENSE.shadcn', 'LICENSE.upstream']) await Bun.write('dist/' + file, Bun.file(file));
