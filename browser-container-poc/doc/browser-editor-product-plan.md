@@ -1,5 +1,34 @@
 # Browser editor: library-owned product, small app integration
 
+## Revised direction: app-owned lifecycle and persistence
+
+This section supersedes the provider-owned lifecycle and library-owned persistence/
+reset proposals below. The IRS mock is in `irs-tools-editor-draft` on
+`feat/browser-editor-library-integration`; its `src/browserEditing/README.md` records
+the current contract. The older sections remain historical context for reuse and
+mainline-app preparation.
+
+- IRS owns eligibility, launcher, conditional editor mounting, and application state.
+- The OpenCode integration takes an opened workspace connection and inference
+  endpoint. It does not know about patch formats, workspace endpoints, or autosave.
+- Workspace primitives expose execution, filesystem and preview/runtime capabilities.
+  Application code uses those capabilities to load/apply/calculate/upload patches.
+- One active workspace per admin. Autosave a complete Git-compatible patch roughly
+  once per second while dirty. Include additions/deletions of editable project files.
+- Use a separate app-managed Git directory with one prepared-source baseline commit;
+  no upstream history, remotes, or autosave commits. Ordinary agent Git operations
+  should not alter this baseline. This is practical separation, not a security boundary.
+- On deployment, attempt the saved patch against a fresh baseline from the current
+  artifact. On success save the regenerated patch/new base atomically; on failure
+  block loading with an error and retain the original saved patch/base.
+- Reset retains the saved workspace and starts clean from the current artifact.
+  No save button, branching, version picker, or previous-workspace list.
+- IRS server authorization covers model streaming, prepared assets and patch storage.
+  Artifact discovery comes from the application's workspace loading endpoint.
+- Current scope is the IRS mock only. Next prove the application controller and real
+  primitives in the browser POC demo, then replace the IRS mock. Do not prematurely
+  make application persistence policy part of either library.
+
 Status: UX and API direction agreed; validate a runnable IRS mock before implementing
 the new library integration. This replaces the separate-guest-app direction from the
 earlier IRS experiment. Reuse working library/runtime code rather than rewriting it.
