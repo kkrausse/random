@@ -9,6 +9,7 @@ for (const [entry, name] of [
   ["src/controller.ts", "index.js"],
   ["src/react.tsx", "react.js"],
   ["src/editor.tsx", "editor.js"],
+  ["src/recipe.ts", "recipe.js"],
 ]) {
   const result = await Bun.build({
     entrypoints: [entry!],
@@ -18,6 +19,10 @@ for (const [entry, name] of [
     jsx: { runtime: "automatic", development: false },
     external: ["react", "react/jsx-runtime", "react-dom", "react-dom/*", "@kev-browser-agent-kit/workspace", "@kev-browser-agent-kit/workspace/react"],
   });
+  if (!result.success) throw new AggregateError(result.logs);
+}
+for (const entry of ['prepare', 'server', 'vite']) {
+  const result = await Bun.build({ entrypoints: [`src/${entry}.ts`], outdir: 'dist', naming: `${entry}.js`, target: 'bun', packages: 'external' });
   if (!result.success) throw new AggregateError(result.logs);
 }
 await $`bunx @tailwindcss/cli -i src/tailwind.css -o dist/ui.css --minify`;
