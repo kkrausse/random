@@ -133,7 +133,7 @@ Provider keys remain server-side. The library owns the mechanics; IRS owns acces
   preparation experiment. The checkpoint is not a passing implementation.
 - Clean IRS starting branch: `feat/browser-editor-library-integration`, based on
   `main` at `738b7ac`, rather than the old integration branch.
-- Library work branch in `random`: `feat/composable-browser-editor`.
+- The plan lives directly on `random`'s `main`; no separate POC branch.
 
 ### 1. Run a mock of the desired API in IRS
 
