@@ -1,5 +1,14 @@
 # Browser-control checks
 
+- [x] 2026-09-09, browser-control 0.7.0, session `amber-wombat-312`, todo demo
+  at localhost:4316: Playwright `checkbox.check()` reported `Clicking the checkbox
+  did not change its state`. The React-controlled checkbox waits for the backend
+  mutation before rendering its new state, so the immediate check assertion raced
+  that response. Expected eventual completion; a subsequent status wait and page
+  reload verified the checkbox remained checked. Use click followed by an explicit
+  application-state wait for this asynchronous control. No relay reset or page
+  replacement was necessary; this is a test synchronization issue.
+
 - [x] 2026-09-06, browser-control 0.7.0 / extension 0.0.24, session `amber-walrus-881`,
   localhost workspace: after connecting the new multiplexed shell, typing a terminal probe and waiting for
   `TERMINAL_OK` returned `waitFor: Timeout 90000ms exceeded`. A fresh read showed `Shell error: Error: Failed to open PTY`.
