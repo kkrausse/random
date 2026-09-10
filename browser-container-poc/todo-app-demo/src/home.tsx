@@ -1,76 +1,50 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import type { Todo } from './todos'
-
-async function request(path = '', method = 'GET', body?: unknown) {
-  const response = await fetch(`/api/todos${path}`, {
-    method,
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
-  if (!response.ok) throw new Error((await response.json()).error ?? 'Request failed')
-  return response.status === 204 ? undefined : response.json()
-}
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useTRPC } from '@/lib/trpc'
 
 export default function Home() {
-  const [todos, setTodos] = useState<Todo[]>([])
   const [title, setTitle] = useState('')
-  const [busy, setBusy] = useState(true)
-  const [error, setError] = useState('')
-
-  async function refresh() {
-    setTodos(await request())
-  }
-
-  async function run(action: () => Promise<void>) {
-    setBusy(true)
-    setError('')
-    try {
-      await action()
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Request failed')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  useEffect(() => { void run(refresh) }, [])
-
-  function add(event: FormEvent) {
-    event.preventDefault()
-    void run(async () => {
-      await request('', 'POST', { title })
-      setTitle('')
-      await refresh()
-    })
-  }
+  const trpc = useTRPC()
+  const queryClient = useQueryClient()
+  const todos = useQuery(trpc.getTodos.queryOptions())
+  const refresh = () => queryClient.invalidateQueries({ queryKey: trpc.getTodos.queryKey() })
+  const add = useMutation(trpc.addTodo.mutationOptions({ onSuccess: async () => {
+    setTitle('')
+    await refresh()
+  } }))
+  const complete = useMutation(trpc.setTodoCompleted.mutationOptions({ onSuccess: refresh }))
+  const remove = useMutation(trpc.deleteTodo.mutationOptions({ onSuccess: refresh }))
+  const busy = todos.isPending || add.isPending || complete.isPending || remove.isPending
+  const error = todos.error ?? add.error ?? complete.error ?? remove.error
 
   return (
     <main>
       <h1>Todos</h1>
-      <form onSubmit={add}>
+      <form onSubmit={(event) => {
+        event.preventDefault()
+        add.reset(); complete.reset(); remove.reset()
+        add.mutate({ title })
+      }}>
         <label htmlFor="title">New todo</label>
         <div className="row">
           <input id="title" value={title} onChange={(event) => setTitle(event.target.value)} required maxLength={200} disabled={busy} />
           <button disabled={busy || !title.trim()}>Add</button>
         </div>
       </form>
-      {error && <p role="alert">{error} <button disabled={busy} onClick={() => void run(refresh)}>Retry</button></p>}
+      {error && <p role="alert">{error.message} <button onClick={() => {
+        add.reset(); complete.reset(); remove.reset()
+        void todos.refetch()
+      }}>Retry</button></p>}
       {busy && <p role="status">Loading…</p>}
-      {!busy && !error && !todos.length && <p>No todos yet.</p>}
+      {!busy && !error && !todos.data?.length && <p>No todos yet.</p>}
       <ul>
-        {todos.map((todo) => (
+        {todos.data?.map((todo) => (
           <li key={todo.id}>
             <label>
-              <input type="checkbox" checked={todo.completed} disabled={busy} onChange={() => void run(async () => {
-                await request(`/${todo.id}`, 'PATCH', { completed: !todo.completed })
-                await refresh()
-              })} />
-              <span className={todo.completed ? 'completed' : undefined}>{todo.title}</span>
+              <input type="checkbox" checked={todo.completed} disabled={busy} onChange={() => complete.mutate({ id: todo.id, completed: !todo.completed })} />
+              <span className={todo.completed ? 'line-through' : undefined}>{todo.title}</span>
             </label>
-            <button disabled={busy} aria-label={`Delete ${todo.title}`} onClick={() => void run(async () => {
-              await request(`/${todo.id}`, 'DELETE')
-              await refresh()
-            })}>Delete</button>
+            <button disabled={busy} aria-label={`Delete ${todo.title}`} onClick={() => remove.mutate({ id: todo.id })}>Delete</button>
           </li>
         ))}
       </ul>

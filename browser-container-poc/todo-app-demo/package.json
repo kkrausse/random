@@ -3,13 +3,23 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n web,api 'bun --bun react-router dev' 'bun --watch server.ts'",
+    "dev": "bunx --bun concurrently -k -n vite,api 'react-router dev' 'bun --hot server.ts'",
     "build": "bun --bun react-router build",
     "start": "NODE_ENV=production bun server.ts",
+    "preview": "bun run build && SERVE_BUILD=1 bun server.ts",
     "typecheck": "bun --bun react-router typegen && tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
+    "@tailwindcss/vite": "^4.1.18",
+    "@tanstack/react-query": "^5.90.2",
+    "@trpc/client": "^11.6.0",
+    "@trpc/react-query": "^11.6.0",
+    "@trpc/server": "^11.6.0",
+    "@trpc/tanstack-react-query": "^11.6.0",
+    "tailwindcss": "^4.1.13",
+    "valibot": "^1.1.0",
+    "vite-tsconfig-paths": "^6.1.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router": "^7.13.0"
