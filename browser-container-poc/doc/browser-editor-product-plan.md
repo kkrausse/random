@@ -29,9 +29,56 @@ mainline-app preparation.
   primitives in the browser POC demo, then replace the IRS mock. Do not prematurely
   make application persistence policy part of either library.
 
-Status: UX and API direction agreed; validate a runnable IRS mock before implementing
-the new library integration. This replaces the separate-guest-app direction from the
-earlier IRS experiment. Reuse working library/runtime code rather than rewriting it.
+Status: implement and validate the package boundary in `editable-app-demo` before
+returning to IRS. The decisions below supersede the original provider-owned launcher
+sketch later in this document. Reuse working library/runtime code rather than rewriting it.
+
+## Current implementation direction (September 9, 2026)
+
+- Adapt the existing full-stack demo into a simple todo application; retain its
+  backend, authorized model proxy, prepared assets and working runtime recipe.
+- Put reusable editor UI and OpenCode integration in `opencode-chat`, including
+  preview, source editing, chat, startup/error presentation and service attachment.
+  The consumer should not carry copies of these components.
+- Reuse the existing `workspace-api` controller, filesystem, runtime and React
+  lifecycle contracts. A smaller consumer API does not require redesigning them.
+- The application owns admin eligibility, the launcher, editing state and conditional
+  mounting. The editor component is the editing surface, not a floating launcher.
+- Keep standalone chat usable independently of a browser workspace. Workspace
+  integration belongs behind an optional package entrypoint.
+- Prove real behavior in this demo, then replace the IRS mock on
+  `feat/browser-editor-library-integration`. The earlier
+  `feat/browser-workspace-editor` remains reference material, not an integration to copy wholesale.
+
+### Persistence target
+
+The saved representation is a standard Git-compatible patch containing the complete
+current changes against an identified prepared base, including added/deleted editable
+project files. It is not a chain of patches or a custom file-overlay protocol.
+Use Git in the browser workspace where supported; qualify that capability rather than
+assuming it. The prepared artifact identifies exact source content and records the
+Git commit when available. Dependencies, caches and generated output are excluded.
+
+There is one active workspace per authenticated admin. Autosave roughly once per
+second while dirty, serializing writes and retaining dirty state on failure. No save
+button, branching, version selector or workspace history UI. Closing the editor has
+no special remote-save workflow. Display actual saving/failure state; local filesystem
+flush is not evidence of server persistence.
+
+Reset retains the current saved workspace and creates a fresh workspace. After a
+deployment, attempt to apply the saved patch to the new prepared base. On failure,
+preserve the old patch/base and show a load error instead of launching a partially
+patched application. After success, subsequent patches must be generated against the
+new base. Reset/archive ordering must not discard edits pending autosave.
+
+The host authorizes artifact delivery, inference and workspace persistence. A future
+workspace endpoint can return the selected artifact manifest reference; callers need
+not configure a separate artifact URL. Server storage holds the current complete
+patch and its base identity, with revision checks to prevent stale tab overwrites.
+Collecting a patch for review exports a fixed saved state, without adding version UI.
+
+These are the persistence contract and follow-up acceptance criteria, not claims that
+the current demo implements remote patch persistence or deployment migration.
 
 ## The experience we want
 
