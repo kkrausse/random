@@ -1,0 +1,19 @@
+{
+  "include": ["**/*.ts", "**/*.tsx", ".react-router/types/**/*"],
+  "exclude": ["node_modules", "build"],
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "types": ["bun", "vite/client"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "esModuleInterop": true,
+    "rootDirs": [".", "./.react-router/types"]
+  }
+}
