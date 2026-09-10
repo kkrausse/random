@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@kev-browser-agent-kit/opencode-chat/styles.css";
+@import "@kev-browser-agent-kit/opencode-chat/editor.css";
 @source "./**/*.{ts,tsx}";
 @layer base {
   body { @apply m-0 bg-white text-neutral-900 font-sans; }

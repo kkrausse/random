@@ -32,7 +32,7 @@ LOCAL_EDITOR_ADMIN=1 bun run demo
 ```
 
 The demo uses built public `@kev-browser-agent-kit/workspace` exports and
-`@kev-browser-agent-kit/opencode-chat` root, `/react` and `/styles.css` through local file
+`@kev-browser-agent-kit/opencode-chat` `/editor`, `/editor.css` and `/styles.css` through local file
 dependencies. `demo` and the browser build check those exports and print exact
 preparation instructions if missing. See [local package delivery](../workspace-api/LOCAL-PACKAGES.md)
 for independent tarball installation and runtime asset copying. Omit
@@ -63,9 +63,10 @@ That single editor action:
 
 An empty workspace gets the same React todo app. Existing `/src/App.tsx`,
 configuration and chat sessions are **preserved**, including previous acceptance
-edits. Edit **Guest source editor → Save file** or ask OpenCode to change
-`/workspace/src/App.tsx`; both affect the same guest preview through HMR. Save
-writes and flushes; **Read file** picks up model edits. New guest configuration
+edits. Open **Source** or ask OpenCode to change
+`/workspace/src/App.tsx`; both affect the same guest preview through HMR. Source
+edits write and flush locally approximately once per second while dirty, retrying
+failed saves; **Reload file** picks up model edits. New guest configuration
 selects `opencode/muse-spark-1.3-contributor-free`; existing model settings remain
 user-owned. Model calls require a reachable provider and may hit provider limits.
 
@@ -117,16 +118,15 @@ host after source changes. Missing/stale assets produce an early actionable erro
   prepared delivery, guest ports, health checks and endpoint Fetch adaptation.
   These are deliberately outside the core API and generic React provider.
 - `src/main.tsx`: normal app, app-owned permission/enable state and lazy editor load.
-  `src/editor.tsx` / `editor-components.tsx`: full-window preview, stable host corner
-  controls, chat overlay, expandable source editor, Reset source, Exit/retry.
-   `src/chat-adapter.ts` owns one public `createChatController` per service endpoint,
-   awaits `ready`, and disposes on replacement/release or startup cancellation.
-   `/react` `ChatView` only subscribes; hiding/remounting the panel does not own the
-   controller/server. The bounded optional panel and file callback remain replaceable.
-   The callback opens the source editor, mapping guest `/workspace/` paths to its FS.
-   There is no directory picker or attachment upload. The app's bundler resolves
-   React peers from the app to avoid duplicate React through Bun file symlinks.
-  Host controls use minimal Base UI/shadcn-style buttons, Tailwind and Lucide.
+  `src/editor.tsx` is a small adapter to the package's `BrowserEditor`: controller,
+  host API paths, initial source path, rendered-root readiness, exit/retry and the
+  existing reset recipe. Preview, source controls/autosave, chat, errors and activity
+  UI live in `opencode-chat`; no copied editor-components or chat-adapter remains.
+  The recipe uses package `attachChat`, which shares a client for the service
+  lifetime and disposes on release/abort. The app retains `WorkspaceEditing` as its
+  lifecycle owner, so it deliberately omits the editor's optional `recipe` prop.
+  Package CSS is explicit and independent of host Tailwind. The app's bundler
+  resolves React peers from the app to avoid duplicate React through Bun file symlinks.
 - `src/SampleApp.tsx`, `prepare.ts`, `guest/`: **shared normal/guest source** and
   pinned dependencies. Host React is bundled into `/app.js`; guest React is served
   by in-browser Vite from the persistent workspace.
@@ -137,8 +137,9 @@ host after source changes. Missing/stale assets produce an early actionable erro
 Conflicting actions are excluded. **Exit** also works during boot: it aborts,
 waits for current work, stops services and closes/releases the lease. Cleanup errors
 offer Retry Exit; a failed start offers Retry editing. Re-entry preserves saved
-source/chat and redelivers excluded dependencies. Unsaved editor text is discarded
-on Exit. Explicit Exit acknowledges cleanup; unload is best-effort. Only one tab per
+source/chat and redelivers excluded dependencies. The package Exit button flushes
+pending local source text before app cleanup; unload is best-effort. These local
+saves are not remote Git-patch persistence. Only one tab per
 origin may own OPFS; `localhost` and `127.0.0.1` are independent stores.
 
 **Reset source** is intentional: restore only `/index.html`, `/src/main.tsx`,

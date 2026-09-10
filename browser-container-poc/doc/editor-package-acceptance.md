@@ -13,6 +13,8 @@ for running the browser runtime.
 - The normal and editable application share their source and call the same host API.
 - Standalone headless/chat consumers do not require a workspace runtime.
 - The normal application's entry graph does not eagerly load editor/runtime code.
+- UI uses package-owned shadcn/ui (Base UI) components and precompiled Tailwind
+  styles. Consumers should not need their own Tailwind content scanning/configuration.
 
 ## Verification flow
 
@@ -50,6 +52,29 @@ acceptance.
   acceptance of the extracted editor, HMR edits or an actual model tool turn.
 
 ## Separate persistence milestone
+
+### Package integration browser receipt (before shadcn conversion)
+
+On September 9, Browser Control CLI session `amber-wombat-312` at
+`http://127.0.0.1:4317` exercised the extracted `/editor` component:
+
+- Guest Vite and OpenCode reached ready. Source discovery initially raced startup
+  seeding and stayed at ENOENT; corrected the component to discover after startup
+  settles, then verified the source selector loaded `/src/App.tsx`.
+- Changed the heading through the source textarea, observed automatic local flush
+  and Vite HMR. A property set on the preview window survived the heading change,
+  verifying same-document HMR.
+- Created a real chat. The default model read and edited `/workspace/src/App.tsx`
+  through the existing model proxy. Both tools completed and the heading changed
+  in the preview. The tool's file button opened the current edited source.
+- Reset source restored the original heading and refreshed the source editor.
+  This is the existing source-only recipe reset, not archive-and-new-workspace.
+- Exited/re-entered with a saved source marker; both marker and chat history
+  survived. Restored the test source afterward.
+- Package tests (30), consumer tests (18), builds/typechecks and packed headless/
+  React SSR smoke checks passed before the UI conversion. Recheck changed UI afterward.
+
+### Remaining storage milestone
 
 Current capability audit: `workspace-api/src/workspace.ts` rejects workspace IDs
 other than `default`, and its React controller opens that default ID. Per-admin

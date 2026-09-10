@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Endpoint } from "@kev-browser-agent-kit/workspace";
 import { WorkspaceController, type Service } from "@kev-browser-agent-kit/workspace/react";
-import { attachChat, chatFor } from "../src/chat-adapter";
+import { attachChat, chatFor } from "@kev-browser-agent-kit/opencode-chat/editor";
 import { connection } from "../src/sample-recipe";
 import { browserAssets, styles, reactPeerPlugin } from "../build";
 import { checkLocalPackages } from "../local-packages";
@@ -77,7 +77,7 @@ test("public package integration scopes one authenticated controller to service,
 
 test("cancel during chat handshake aborts promptly before serialized workspace cleanup", async () => {
   const owner = new WorkspaceController(), pending = fixture(false);
-  const start = owner.run("attach fixture chat", () => attachChat(owner, pending.service));
+  const start = owner.run("attach fixture chat", async () => { await attachChat(owner, pending.service); });
   await Promise.resolve();
   await owner.cancelAndClose();
   await start;
@@ -86,16 +86,20 @@ test("cancel during chat handshake aborts promptly before serialized workspace c
   await owner.dispose();
 }, 2000);
 
-test("built public root/react/CSS resolve; chat remains outside normal static JS graph", async () => {
+test("built public editor/CSS resolve; editor remains outside normal static JS graph", async () => {
   await checkLocalPackages();
   const assets = await browserAssets();
   const publicCode = [...assets.publicPaths].map(path => assets.files.get(path)).join("\n");
   const allCode = [...assets.files.values()].join("\n");
   expect(publicCode).not.toContain("createChatController");
   expect(publicCode).not.toContain("oc-composer");
+  expect(publicCode).not.toContain("oc-editor-panel");
   expect(allCode).toContain("oc-composer");
+  expect(allCode).toContain("oc-editor-panel");
   expect(allCode).not.toContain("mountOpenCodeClient");
-  expect(await styles()).toContain(".oc-chat");
+  const css = await styles();
+  expect(css).toContain(".oc-chat");
+  expect(css).toContain(".oc-editor");
 });
 
 test("file dependency React peers share the demo renderer in a fresh bundled consumer", async () => {
