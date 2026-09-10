@@ -10,3 +10,10 @@ for (const [entry, target] of [["index.ts", "browser"], ["react.tsx", "browser"]
 }
 const types = Bun.spawn(["bun", "x", "--no-install", "tsc", "-p", "tsconfig.build.json"], { cwd: root, stdout: "inherit", stderr: "inherit" });
 if (await types.exited) throw Error("Declaration build failed");
+const metadata = await Bun.file(resolve(root, 'package.json')).json();
+const relocate = (value: unknown): unknown => typeof value === 'string' ? value.replace('./dist/lib/', './')
+  : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, relocate(item)])) : value;
+await Bun.write(resolve(root, 'dist/lib/package.json'), JSON.stringify({ name: metadata.name, version: metadata.version,
+  type: metadata.type, types: relocate(metadata.types), exports: relocate(metadata.exports),
+  peerDependencies: metadata.peerDependencies, peerDependenciesMeta: metadata.peerDependenciesMeta }, null, 2));
+for (const file of ['README.md', 'LOCAL-PACKAGES.md']) await Bun.write(resolve(root, 'dist/lib', file), Bun.file(resolve(root, file)));

@@ -1,6 +1,5 @@
 import type { Endpoint, Distribution } from '@kev-browser-agent-kit/workspace';
 import type { WorkspaceController, Connection } from '@kev-browser-agent-kit/workspace/react';
-import { attachChat } from './editor-adapter';
 import { sourcePaths } from './editor-source';
 import { loadPrepared, preparedApps, type PreparedManifest } from './prepared';
 
@@ -59,7 +58,7 @@ export function createBrowserEditorRecipe(options: { base?: string; model?: stri
       ['Start OpenCode', async () => {
         const password = crypto.randomUUID() + crypto.randomUUID();
         const authorization = 'Basic ' + btoa('opencode:' + password);
-        const service = await controller.launch('chat', { entry: '/opencode-v2/run.cjs', args: ['serve', '--port', '4096'], cwd: '/workspace', env: {
+        await controller.launch('chat', { entry: '/opencode-v2/run.cjs', args: ['serve', '--port', '4096'], cwd: '/workspace', env: {
           OPENCODE_SERVER_PASSWORD: password, OPENCODE_MODELS_PATH: '/opencode-v2/models.json', OPENCODE_DISABLE_MODELS_FETCH: '1', OPENCODE_DISABLE_FFF: '1', OPENCODE_DISABLE_FILEWATCHER: '1', OTUI_TREE_SITTER_WORKER_PATH: '/opencode-v2/parser/entry.cjs',
           XDG_DATA_HOME: '/workspace/.opencode-state/data', XDG_CONFIG_HOME: '/workspace/.opencode-state/config', XDG_CACHE_HOME: '/workspace/.opencode-state/cache', XDG_STATE_HOME: '/workspace/.opencode-state/state',
         } }, 4096, async endpoint => {
@@ -72,7 +71,7 @@ export function createBrowserEditorRecipe(options: { base?: string; model?: stri
             await new Promise(resolve => setTimeout(resolve, 100));
           }
         });
-        await attachChat(controller, service);
+        await controller.waitForClient('chat');
       }],
     ]);
     controller.status('Ready. Source changes save locally in this browser; remote Git persistence is not connected.');
