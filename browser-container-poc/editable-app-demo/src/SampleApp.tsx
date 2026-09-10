@@ -1,110 +1,69 @@
 import React, { useEffect, useState } from "react";
 
+type Todo = { id: string; title: string; completed: boolean };
+
 /** This exact source is compiled into the deployed app and seeded into guest Vite. */
 export default function SampleApp({ editorControl }: { editorControl?: React.ReactNode } = {}) {
-  const [count, setCount] = useState(0);
-  const [tasks, setTasks] = useState([
-    { title: "Try the counter and save it to the backend", done: false },
-    { title: "Open local editor mode", done: false },
-    { title: "Ask the agent to change this page", done: false },
-  ]);
+  const [todos, setTodos] = useState<Todo[]>([]);
   const [draft, setDraft] = useState("");
-  const [saved, setSaved] = useState<number>();
-  const [note, setNote] = useState("");
-  const refresh = async () => {
-    const response = await fetch("/api/counter");
-    if (!response.ok) throw Error(`Backend HTTP ${response.status}`);
-    setSaved((await response.json()).count);
+  const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const request = async (path: string, method = "GET", body?: unknown) => {
+    const response = await fetch(path, { method, headers: body === undefined ? undefined : { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+    if (!response.ok) {
+      const detail = await response.json().catch(() => null);
+      throw Error(detail?.error ?? `Backend HTTP ${response.status}`);
+    }
+    return response.status === 204 ? undefined : response.json();
   };
-  useEffect(() => { void refresh().catch(error => setNote(String(error))); }, []);
+  const refresh = async () => { setTodos((await request("/api/todos")).todos); };
+  useEffect(() => {
+    let active = true;
+    void request("/api/todos").then(data => { if (active) setTodos(data.todos); }).catch(reason => { if (active) setError(String(reason)); }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true); setError("");
+    try { await action(); } catch (reason) { setError(String(reason)); } finally { setBusy(false); }
+  };
   return <main className="sample-app">
     <style>{`
-      .sample-app { font-family: system-ui, sans-serif; color: #172033; background: #f8fafc; min-height: 100vh; padding: clamp(20px, 5vw, 64px); line-height: 1.6; }
-      .sample-app * { box-sizing: border-box; }
-      .sample-app .sample-content { max-width: 1040px; margin: auto; }
-      .sample-app h1 { font-size: clamp(30px, 5vw, 46px); font-weight: 700; line-height: 1.15; margin: 12px 0; }
-      .sample-app h2 { font-size: 20px; font-weight: 650; margin: 0 0 12px; }
-      .sample-app p { margin: 12px 0; }
-      .sample-app .sample-label { font-size: 13px; font-weight: 650; color: #475569; }
-      .sample-app .sample-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 20px; margin: 28px 0; }
-      .sample-app section { background: white; border: 1px solid #dbe1e8; border-radius: 10px; padding: 24px; }
-      .sample-app button, .sample-app input[type=text] { font: inherit; border: 1px solid #cbd5e1; border-radius: 6px; padding: 7px 12px; background: white; color: inherit; }
-      .sample-app button { cursor: pointer; margin: 4px 4px 4px 0; }
-      .sample-app button:hover { background: #eef2f6; }
-      .sample-app button:disabled { opacity: .6; cursor: wait; }
-      .sample-app #start-sample { background: #172033; color: white; padding: 10px 18px; }
-      .sample-app label { display: flex; gap: 10px; align-items: baseline; padding: 8px 0; }
-      .sample-app input[type=checkbox] { accent-color: #172033; }
-      .sample-app form { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; }
-      .sample-app input[type=text] { flex: 1; min-width: 120px; }
-      .sample-app ul, .sample-app ol { padding-left: 22px; list-style: revert; }
-      .sample-app li { margin: 8px 0; }
-      .sample-app .sample-status { min-height: 26px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+      body { margin: 0; }
+      .sample-app { font: 16px/1.5 system-ui, sans-serif; max-width: 640px; margin: auto; padding: 24px; color: #172033; }
+      .sample-app h1 { font-size: 30px; font-weight: 700; margin: 16px 0; }
+      .sample-app button, .sample-app input[type=text] { font: inherit; color: inherit; background: white; border: 1px solid #cbd5e1; border-radius: 4px; padding: 6px 10px; }
+      .sample-app button { cursor: pointer; }
+      .sample-app button:disabled { opacity: .5; cursor: default; }
+      .sample-app form, .sample-app li, .sample-app label { display: flex; align-items: center; gap: 10px; }
+      .sample-app form { margin: 20px 0; }
+      .sample-app input[type=text], .sample-app label { flex: 1; min-width: 0; }
+      .sample-app ul { list-style: none; padding: 0; }
+      .sample-app li { padding: 12px 0; border-bottom: 1px solid #e2e8f0; }
+      .sample-app label span { overflow-wrap: anywhere; }
+      .sample-app .sample-label { font-size: 13px; color: #475569; }
+      .sample-app [role=alert] { color: #b91c1c; }
     `}</style>
-    <div className="sample-content">
-    <header>
-      <span className="sample-label">KEV-BROWSER-AGENT-KIT · EDITABLE APP DEMO</span>
-      <h1>A little app you can make your own.</h1>
-      <p>Try the dashboard below, then edit its source right in your browser. An agent can change the actual React files while Vite updates the live preview.</p>
-      {editorControl ?? <p className="sample-label">Use the workspace controls to chat, edit source, or exit editing mode.</p>}
-    </header>
-    <div className="sample-grid">
-    <section aria-labelledby="counter-heading">
-    <h2 id="counter-heading">Counter & backend</h2>
-    <p>Increment locally, then save through the same API used by the normal app.</p>
-    <button onClick={() => setCount(value => value + 1)}>Count: {count}</button>{" "}
-    <button onClick={() => setCount(0)}>Reset counter</button>{" "}
-    <button onClick={() => void (async () => {
-      const response = await fetch("/api/counter", { method: "POST", headers: { "content-type": "application/json", "x-counter-client": "shared-app" }, body: JSON.stringify({ count }) });
-      if (!response.ok) throw Error(`Backend HTTP ${response.status}`);
-      await refresh(); setNote("Saved to same-origin backend");
-    })().catch(error => setNote(String(error)))}>Save to backend</button>{" "}
-    <button onClick={() => void refresh().catch(error => setNote(String(error)))}>Refresh backend</button>
-    <p>Backend count: {saved ?? "Loading…"}</p>
-    <button onClick={() => void (async () => {
-      const response = await fetch("/api/stream");
-      if (!response.ok || !response.body) throw Error(`Stream HTTP ${response.status}`);
-      setNote("");
-      const reader = response.body.getReader(), decoder = new TextDecoder();
-      while (true) { const chunk = await reader.read(); if (chunk.done) break; const text = decoder.decode(chunk.value, { stream: true }); setNote(value => value + text); }
-    })().catch(error => setNote(String(error)))}>Read backend stream</button>
-    <p className="sample-status" role="status">{note}</p>
-    <p className="sample-label">Backend data lasts until the host server restarts. The local counter belongs to this React view.</p>
-    </section>
-    <section aria-labelledby="checklist-heading">
-      <h2 id="checklist-heading">Your demo checklist</h2>
-      <p>{tasks.filter(task => task.done).length} of {tasks.length} complete · local view state</p>
-      {tasks.map((task, index) => <label key={index}>
-        <input type="checkbox" checked={task.done} onChange={() => setTasks(values => values.map((value, i) => i === index ? { ...value, done: !value.done } : value))} />
-        <span style={{ textDecoration: task.done ? "line-through" : undefined }}>{task.title}</span>
-      </label>)}
-      <form onSubmit={event => { event.preventDefault(); if (!draft.trim()) return; setTasks(values => [...values, { title: draft.trim(), done: false }]); setDraft(""); }}>
-        <input type="text" aria-label="New checklist item" placeholder="Something else to try…" value={draft} onChange={event => setDraft(event.target.value)} />
-        <button type="submit">Add item</button>
-      </form>
-    </section>
-    </div>
-    <div className="sample-grid">
-    <section>
-      <h2>Make your first edit</h2>
-      <ol>
-        <li>Click <strong>Local editor mode</strong> and wait for the workspace to start.</li>
-        <li>Open chat, select a model, and click <strong>New chat</strong>.</li>
-        <li>Ask for a change below—or open the source editor and save a change yourself.</li>
-      </ol>
-      <p>Source edits persist in this browser. <strong>Reset source</strong> restores the sample; <strong>Exit</strong> returns to the normal app.</p>
-    </section>
-    <section>
-      <h2>Things to ask the agent</h2>
-      <ul>
-        <li>“Add a decrement button next to the counter.”</li>
-        <li>“Show a progress bar above the checklist.”</li>
-        <li>“Add a button to clear completed checklist items.”</li>
-        <li>“Change the heading and give the page a green accent.”</li>
-      </ul>
-      <p className="sample-label">The agent edits /workspace/src/App.tsx. Vite and OpenCode execute inside browser workers; API requests still reach the host backend.</p>
-    </section>
-    </div>
-    </div>
+    <header><h1>Todos</h1><p>A simple shared list. Add a task, check it off, or remove it.</p>{editorControl}</header>
+    <form onSubmit={event => { event.preventDefault(); if (!draft.trim() || busy || loading) return; void run(async () => {
+      const { todo } = await request("/api/todos", "POST", { title: draft });
+      setTodos(values => [...values, todo]); setDraft("");
+    }); }}>
+      <input type="text" aria-label="New todo" placeholder="What needs doing?" maxLength={200} value={draft} disabled={busy || loading} onChange={event => setDraft(event.target.value)} />
+      <button type="submit" disabled={busy || loading || !draft.trim()}>Add task</button>
+    </form>
+    {error && <p role="alert">{error}</p>}
+    <p role="status">{loading ? "Loading tasks…" : `${todos.filter(todo => todo.completed).length} of ${todos.length} complete`}</p>
+    {!loading && !todos.length && <p>No tasks yet. Add your first task above.</p>}
+    <ul aria-label="Todo list">{todos.map(todo => <li key={todo.id}>
+      <label><input type="checkbox" checked={todo.completed} disabled={busy} onChange={() => void run(async () => {
+        const data = await request(`/api/todos/${todo.id}`, "PATCH", { completed: !todo.completed });
+        setTodos(values => values.map(value => value.id === todo.id ? data.todo : value));
+      })} /><span style={{ textDecoration: todo.completed ? "line-through" : undefined }}>{todo.title}</span></label>
+      <button disabled={busy} aria-label={`Delete ${todo.title}`} onClick={() => void run(async () => {
+        await request(`/api/todos/${todo.id}`, "DELETE"); setTodos(values => values.filter(value => value.id !== todo.id));
+      })}>Delete</button>
+    </li>)}</ul>
+    <button disabled={busy || loading} onClick={() => void run(refresh)}>Refresh tasks</button>
+    <p className="sample-label">Tasks are saved on the app server and shared with the editor preview. They last until the server restarts.</p>
   </main>;
 }
