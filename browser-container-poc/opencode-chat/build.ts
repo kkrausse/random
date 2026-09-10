@@ -6,6 +6,7 @@ await $`bunx tsc --emitDeclarationOnly`;
 for (const [entry, name] of [
   ["src/controller.ts", "index.js"],
   ["src/react.tsx", "react.js"],
+  ["src/editor.tsx", "editor.js"],
 ]) {
   const result = await Bun.build({
     entrypoints: [entry!],
@@ -13,8 +14,9 @@ for (const [entry, name] of [
     naming: name!,
     target: "browser",
     jsx: { runtime: "automatic", development: false },
-    external: ["react", "react/jsx-runtime"],
+    external: ["react", "react/jsx-runtime", "@kev-browser-agent-kit/workspace", "@kev-browser-agent-kit/workspace/react"],
   });
   if (!result.success) throw new AggregateError(result.logs);
 }
 await Bun.write("dist/styles.css", Bun.file("src/styles.css"));
+await Bun.write("dist/editor.css", `${await Bun.file("src/styles.css").text()}\n${await Bun.file("src/editor.css").text()}`);
