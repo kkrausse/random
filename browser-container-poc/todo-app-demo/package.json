@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prepare:editor": "bun prepare.ts",
     "dev": "bunx --bun concurrently -k -n vite,api 'react-router dev' 'bun --hot server.ts'",
     "build": "bun --bun react-router build",
     "start": "NODE_ENV=production bun server.ts",
@@ -11,6 +12,8 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@kev-browser-agent-kit/opencode-chat": "file:../opencode-chat/dist",
+    "@kev-browser-agent-kit/workspace": "file:../workspace-api/dist/lib",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-query": "^5.90.2",
     "@trpc/client": "^11.6.0",

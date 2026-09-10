@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { trpc, trpcClient, TRPCProvider } from '@/lib/trpc'
 import '@/style.css'
 import cssUrl from '@/style.css?url'
+import Editing from '@/editing'
 
 const queryClient = new QueryClient()
 
@@ -33,6 +34,7 @@ export default function Root() {
       <TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>
         <trpc.Provider client={trpcClient} queryClient={queryClient}>
           <Outlet />
+          <Editing />
         </trpc.Provider>
       </TRPCProvider>
     </QueryClientProvider>
