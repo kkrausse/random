@@ -30,6 +30,15 @@ bundle transform; full server and tree-sitter operation acceptance remain ahead.
 **Normal builds/transpilation are accepted; the direct TS stripper is not
 necessarily the critical path.** No browser qualification or runtime pin advance.
 
+Shutdown investigation: default mode is unmanaged and waits forever; the pinned
+stop handler requires service mode plus its registered instance ID. One temporary
+service-mode attempt reached a listener but health returned 401, then timed out
+(124); no stop request was reached. Incomplete lifecycle code was removed.
+Next bounded task is shutdown only, using actual guest registration credentials
+and explicit guest XDG paths. Restart/session retention is deferred. See the
+[shutdown findings](../vivari/experiments/opencode-bun-server/README.md#shutdown-investigation--stopped-at-authentication-boundary)
+for exact source lines and the historical command.
+
 Native jsonc-parser reduction now reproduces that same `./impl/format` failure
 under both Node 24.7.0 and Bun 1.4.0. The emitted bundle binds require to its own
 URL and omits the original implementation files; no Vivari-only discrepancy is
