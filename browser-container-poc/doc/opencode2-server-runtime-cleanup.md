@@ -357,6 +357,12 @@ and reruns successfully. Interruption and restart are included in qualification.
 
 ## Intended public boundary
 
+Design reference: [runtime API comparison](runtime-api-comparison.md) reviews
+Nodepod, WebContainers, ZenFS, and emnapi against the current APIs. It recommends retaining
+these ownership boundaries, with concrete P1/P2 transport decisions and a P3
+filesystem semantics table. These recommendations are design input, not completed
+implementation or browser qualification.
+
 ```text
 Workspace: files + persistence lifetime
 Runtime:   process ownership + execution + service endpoints
@@ -374,6 +380,12 @@ an agent session, stopping a process tree, stopping a runtime, and closing its
 workspace/storage lifetime.
 
 ## Execution order and verification
+
+See [Node compatibility testing](node-compatibility-testing.md) for proposed
+wiring of a pinned upstream Node test subset into real Vivari guest execution,
+with reference-Node runs, explicit outcome reporting, and browser qualification.
+Establish a small trustworthy baseline alongside P0; expand relevant regression
+gates through P1–P4. This complements the focused and application contracts below.
 
 Start with P0a and P0, then implement the HTTP bridge and shared stream mechanics in
 P1/P2. Use demonstrated server blockers to prioritize P3/P4; do not postpone a
