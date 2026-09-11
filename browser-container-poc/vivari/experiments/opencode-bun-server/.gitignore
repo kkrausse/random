@@ -1,0 +1,2 @@
+# Dependency image is pinned by the existing upstream checkout and bun.lock.
+bun.lock

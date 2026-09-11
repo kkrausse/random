@@ -1,0 +1,12 @@
+{
+  "name": "opencode-bun-server-probe",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build ./server.ts --target=bun --outdir=../../.runtime/opencode-bun-server"
+  },
+  "dependencies": {
+    "@opencode-ai/cli": "file:../../.runtime/opencode-v2-source/packages/cli",
+    "effect": "file:../../.runtime/opencode-v2-source/packages/cli/node_modules/effect"
+  }
+}
