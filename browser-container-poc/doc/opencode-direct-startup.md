@@ -3,6 +3,93 @@
 September 11, 2026. **Built-path browser OPFS health, minimal model SSE, local read/edit/grep/glob, and managed shutdown pass;
 broader server acceptance remains ahead. Unbundled startup remains blocked.**
 
+## September 11: clean-attested artifact combined retention — host-accepted PASS
+
+**Final result: PASS, 21/21 checkpoints, host exit 0.** Harness `d76db1a`
+ran one `bun scripts/serve-opencode-bun-server.ts --once --combined-retention`
+attempt using the supplied artifact/source/build-receipt environment overrides.
+Run `11211fd0-508a-4c80-a634-f69457afe240` retained original background shell
+`sh_0923528ad001Wqlg1Ms96hQEeQ` through bounded continuations. Browser Control
+CLI session `brisk-walrus-245` navigated exactly once to the printed fresh URL:
+`http://127.0.0.1:55323/?autorun=1&runID=11211fd0-508a-4c80-a634-f69457afe240&restart=1&model=1&combined-tools=1&combined-retention=1`.
+The host bound was 480 seconds and initial combined-prompt deadline 180 seconds.
+The automatic host completion notification preceded the single completed-receipt
+read; truncated provenance was recovered from the saved tool output. There were
+no retries, completion polls, sleeps, or additional browser navigations.
+
+Qualification receipt:
+`vivari/.runtime/opencode-bun-11211fd0-508a-4c80-a634-f69457afe240.json`.
+Manifest observed at `2026-09-11T20:42:32.652Z`; host Bun `1.4.0`.
+
+### Exact artifact provenance
+
+The supplied artifact root was
+`/private/var/folders/t_/x48jtnps7n5_0g_pt9xpvbg00000gn/T/opencode/clean-build.x7j1u24y`:
+`OPENCODE_BUN_APP_ARTIFACT` selected its `.runtime/opencode-bun-server`,
+`OPENCODE_BUN_APP_SOURCE` its `.runtime/opencode-v2-source`, and
+`OPENCODE_BUN_BUILD_RECEIPT` its `receipt.json`.
+
+- Clean application source before/after build and at serve time:
+  `d7a7256bb6b0952f486c95718cfbf460b1570a56`, tree
+  `f4999819e778ae35433716c72f643c1eaf1a30ba`, empty status.
+- Build-receipt SHA-256:
+  `c8726755726734b3c5f3e8b0370b122ec387d06b719ddab60b75cb3d175135af`.
+  Serve-time validation matched the emitted file set, lengths and hashes,
+  clean pinned source before/after, and copied/current recipe hashes.
+- Exact served `server.js`: 28,339,477 bytes, SHA-256
+  `1281158d5c583e49b5e20eab2705b35fb902fb729dd2635cf0d29f8c6a0eb115`.
+  Both browser phases verified and mounted all six app assets unchanged.
+- Existing runtime distribution
+  `098e0b60a0ff8703994ea681d9c974ae9267bfe5dbdd799e87ff00982ff938a3`
+  carries clean fork `80d5cdd599fce4fa4817128461c865e009109d34`.
+- The earlier single build used an offline reused installed dependency image:
+  12,835 audited symlinks with zero failures and a copied-regular-file manifest
+  covering 225,320 files / 3,479,983,315 bytes. These are recorded build-time
+  claims, not a serve-time re-audit, fresh install, registry-integrity attestation,
+  or comparison against the original dependency image. The models catalog is a
+  separately accepted snapshot. Builder Bun was `1.4.0+34cbb9a40`; the upstream
+  package-manager declaration was `bun@1.3.14`.
+- The existing build recipe used a Node target, published `jsonc-parser` ESM
+  selection, and three original WASM copies. The prior accepted JS differs in
+  embedded source paths; its in-memory prefix-normalized comparison was diagnostic
+  only. This run qualifies the exact clean-emitted bytes above. No application or
+  runtime rebuild, additional transform, accepted-artifact overwrite, runtime-pin
+  change, or host live-OpenCode change was performed during this qualification.
+
+### Accepted browser checkpoints
+
+| Evidence | Actual result |
+| --- | --- |
+| Scope | Same-page full workspace/runtime teardown and reopen; default OPFS |
+| Provider/model | `opencode/muse-spark-1.3-contributor-free` |
+| Prompt requests / provider POSTs initial → reopened | 1 / 5 → 5; zero phase-two POSTs |
+| Tools | read → edit → grep → glob; four ordered correlated local successes, provider-executed=false |
+| Tool events / ordered validated events | 26 / 12 (started, called, success for each tool) |
+| Execution / SSE cleanup | `session.execution.succeeded` / aborted and joined |
+| Original and reopened session ID/title | `ses_f6dca766cffeYaqcoMROrJOZmC` / `Combined tools probe` |
+| Stable history | 1 user, 5 completed assistants, 4 completed tools; identical sanitized projection |
+| History SHA-256 before/after | `cfc85b3f059d37bafa77ccb87f9c6680d6a0c8a76b8e481a3aa8f578f7407d04` |
+| Edited file | `/workspace/combined-probe/baseline.txt`, exact `BASELINE_AFTER\n`, 15 bytes |
+| File SHA-256 at both retention checks | `e3866f28b5008d611653f340104d6f68a6bfd7451a0a2b888edeb1edd88c5b73` |
+| File checkpoints | Before second `Runtime.start` without reseed; after fresh health |
+| SQLite path / bytes / header | `/.server/data/opencode.sqlite` / 442368 / valid SQLite header |
+| SQLite SHA-256 before close / after reopen | `490cdb2558bb6ed8be0d849670ea7d5bb890d8b6191880ff67b1f3ad64465576` |
+| SQLite checkpoints | After first stop + flush before close; after reopen before second start |
+| Reopened registration / endpoint / health | Fresh registration and endpoint; authenticated healthy=true |
+| Old endpoint | Rejected with `CLOSED` after first `runtime.stop` |
+| Ripgrep delivery each phase | 9 unchanged files, ordinary bin symlink/chmod setup, empty stderr, natural setup exit 0 |
+| Both managed stops / guest exits | accepted=true / exitCode=0, forced=false, signal=null before cleanup |
+| Both full cleanups | `runtime.stop + workspace.flush + workspace.close completed` |
+| Initial / reopened stdout, stderr bytes | 3334, 0 / 42, 0 |
+
+This closes the build-time source/output-attestation gap for the combined-tool
+same-page OPFS retention gate on this pin. **Smallest next acceptance gap:**
+bounded same-origin page-reload retention, with explicit two-stage handoff,
+reopen without reseeding, original session/history/file verification, fresh
+health, unchanged provider POSTs, and natural shutdown. Document replacement was
+not exercised here. Cancellation, backpressure, newer-pin qualification, broader
+server acceptance, and the unbundled startup blocker remain open.
+
 ## September 11: prompted combined session retention — host-accepted PASS
 
 **Final result: PASS, 21/21 checkpoints, host exit 0.** Harness `f862153`
