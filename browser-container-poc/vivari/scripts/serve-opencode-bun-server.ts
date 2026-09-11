@@ -6,12 +6,15 @@ import { modelProxy } from './model-proxy'
 import catalog from '../src/provider-upstreams.json'
 import { directAssets } from './ripgrep-direct-assets.mjs'
 import { globSeed, globSeedBytes } from '../probes/opencode-bun-fixtures'
+import { validateCombined } from './opencode-bun-combined-validation'
 
 const read = process.argv.includes('--read')
 const edit = process.argv.includes('--edit')
 const grep = process.argv.includes('--grep')
 const glob = process.argv.includes('--glob')
-const search = grep || glob
+const mode = process.argv.includes('--combined-tools') ? 'combined-tools' : 'single'
+if (mode === 'combined-tools' && [read, edit, grep, glob, process.argv.includes('--restart'), process.argv.includes('--session-retention')].some(Boolean)) throw Error('--combined-tools requires its own single phase')
+const search = grep || glob || mode === 'combined-tools'
 if ([read, edit, grep, glob].filter(Boolean).length > 1) throw Error('--read, --edit, --grep and --glob are separate single-prompt modes')
 const model = read || edit || search || process.argv.includes('--model')
 const sessionRetention = process.argv.includes('--session-retention')
@@ -78,7 +81,7 @@ const built = await Bun.build({ entrypoints: [resolve(root, 'probes/opencode-bun
 if (!built.success) throw new AggregateError(built.logs)
 const code = await built.outputs[0].text()
 const headers = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp', 'Service-Worker-Allowed': '/', 'Cache-Control': 'no-store' }
-const timeoutSeconds = restart ? 360 : 180
+const timeoutSeconds = mode === 'combined-tools' ? 300 : restart ? 360 : 180
 const receipt = resolve(root, '.runtime', `opencode-bun-${runID}.json`)
 let finished = false, timer: ReturnType<typeof setTimeout> | undefined
 type Result = { status: string; runtime?: string; error?: string; checks?: string[] }
@@ -87,7 +90,7 @@ async function report(result: Result) {
   finished = true
   clearTimeout(timer)
   try {
-    await Bun.write(receipt, JSON.stringify({ runID, restart, sessionRetention, model, ...(read ? { read } : {}), ...(edit ? { edit } : {}), ...(grep ? { grep } : {}), ...(glob ? { glob } : {}), modelPosts, manifest, result }, null, 2) + '\n')
+    await Bun.write(receipt, JSON.stringify({ runID, restart, sessionRetention, model, ...(mode === 'combined-tools' ? { mode } : {}), ...(read ? { read } : {}), ...(edit ? { edit } : {}), ...(grep ? { grep } : {}), ...(glob ? { glob } : {}), modelPosts, manifest, result }, null, 2) + '\n')
     console.log(JSON.stringify({ status: result.status, runtime: result.runtime, checks: result.checks, error: result.error, receipt }))
     if (once) process.exitCode = result.status === 'PASS' ? 0 : 1
   } catch { process.exitCode = 1; console.error('Could not write qualification receipt') }
@@ -100,12 +103,18 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT 
     if (model && path.startsWith('/api/model/opencode/') && request.method === 'POST') modelPosts++
     return proxy(request)
   }
-  if (path === '/run-config') return Response.json({ runID, restart, sessionRetention, model, ...(read ? { read } : {}), ...(edit ? { edit } : {}), ...(grep ? { grep } : {}), ...(glob ? { glob } : {}) }, { headers })
+  if (path === '/run-config') return Response.json({ runID, restart, sessionRetention, model, ...(mode === 'combined-tools' ? { mode } : {}), ...(read ? { read } : {}), ...(edit ? { edit } : {}), ...(grep ? { grep } : {}), ...(glob ? { glob } : {}) }, { headers })
   if (path === '/result' && request.method === 'POST') {
     if (finished) return new Response('Run already finished', { status: 409, headers })
     let body
     try { body = await request.json() } catch { return new Response('Invalid result', { status: 400, headers }) }
     if (!body || body.runID !== runID || !body.result || !['PASS', 'FAIL'].includes(body.result.status)) return new Response('Invalid result', { status: 400, headers })
+    if (mode === 'combined-tools') {
+      const accepted = validateCombined(body.result, { runtime: runtimeManifest.version, assets: assets.length, modelPosts,
+        manifestSha256: ripgrepManifest!.manifestSha256, installerSha256: ripgrepManifest!.installer.sha256 })
+      await report(accepted ? body.result : { status: 'FAIL', error: 'Host rejected combined result: incomplete acceptance checkpoints' })
+      return Response.json({ received: true, status: accepted ? 'PASS' : 'FAIL' }, { headers })
+    }
     if (body.result.status === 'PASS' && (body.result.runtime !== runtimeManifest.version || body.result.assets !== assets.length ||
       body.result.exit?.exitCode !== 0 || body.result.exit?.forced !== false || body.result.exit?.signal !== null || body.result.checks?.length !== (sessionRetention ? 14 : restart ? 12 : search ? 9 : model ? 8 : 6) ||
       body.result.model !== model ||
@@ -203,5 +212,5 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT 
   }
   return new Response('Not found', { status: 404, headers })
 } })
-console.log(`OpenCode Bun OPFS: ${server.url}?autorun=1&runID=${runID}${restart ? '&restart=1' : ''}${sessionRetention ? '&session-retention=1' : ''}${model ? '&model=1' : ''}${read ? '&read=1' : ''}${edit ? '&edit=1' : ''}${grep ? '&grep=1' : ''}${glob ? '&glob=1' : ''}`)
+console.log(`OpenCode Bun OPFS: ${server.url}?autorun=1&runID=${runID}${restart ? '&restart=1' : ''}${sessionRetention ? '&session-retention=1' : ''}${model ? '&model=1' : ''}${read ? '&read=1' : ''}${edit ? '&edit=1' : ''}${grep ? '&grep=1' : ''}${glob ? '&glob=1' : ''}${mode === 'combined-tools' ? '&combined-tools=1' : ''}`)
 if (once) timer = setTimeout(() => { void report({ status: 'FAIL', error: `Browser qualification timed out after ${timeoutSeconds} seconds` }) }, timeoutSeconds * 1000)

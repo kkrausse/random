@@ -226,6 +226,52 @@ node scripts/probe-ripgrep-direct.mjs --native --opencode-glob
 node scripts/probe-ripgrep-direct.mjs --opencode-glob
 ```
 
+### Combined tools: one fixed single-phase scenario
+
+Implementation is ready for **one separate browser attempt**:
+
+```sh
+bun scripts/serve-opencode-bun-server.ts --once --combined-tools
+```
+
+Open the exact printed fresh-port/run-ID URL once. This mode implies the existing
+model/catalog/proxy configuration and uses one fresh OPFS workspace and one session.
+It rejects the individual tool flags, restart, and session retention. Shared
+fixtures seed `/workspace/combined-probe/baseline.txt` with `BASELINE_BEFORE\n`.
+One prompt requires exactly these sequential local calls, with no extra arguments:
+
+1. `read`: path `/workspace/combined-probe/baseline.txt`.
+2. `edit`: the same path, `oldString: "BASELINE_BEFORE"`,
+   `newString: "BASELINE_AFTER"`; preserve the newline.
+3. `grep`: pattern `BASELINE_AFTER`, the same exact file path, limit `10`.
+4. `glob`: pattern `baseline.txt`, path `/workspace/combined-probe`, limit `10`.
+
+The focused validator correlates session/tool/assistant-message IDs and requires
+each local success before the next tool starts. Read content must show the old
+marker, grep content the new marker on line 1, and glob content the exact absolute
+file path. Twelve validated Started/Called/Success records are retained; edit
+output is normalized to a local-success diagnostic. Model prose is diagnostic only.
+Streamed execution success and exact final `BASELINE_AFTER\n` bytes through public
+`workspace.fs` are mandatory, with before/after byte lengths and SHA-256 hashes.
+The host independently replays the records and derives expected bytes/hashes from
+the shared fixtures. Rejected combined results are replaced with a fixed sanitized
+failure, never the rejected payload.
+
+The existing unchanged nine-file ripgrep delivery and ordinary bin installer,
+managed stop, natural exit (`0`, `null`, nonforced), SSE/output joins, runtime stop,
+and OPFS flush/close remain required. The combined SSE/prompt deadline is 180 seconds
+and the `--once` host bound is 300 seconds. Receipts record actual proxy POST count
+without a fixed cap and require exactly one prompt request. No browser/model run
+was performed for this implementation; individual-tool browser baselines are
+recorded separately (latest accepted baseline `23a224b`).
+
+Offline regression checks:
+
+```sh
+bun test scripts/serve-opencode-bun-server.test.ts
+bunx tsc --noEmit
+```
+
 Omit all mode flags for the existing single-lifecycle, six-checkpoint gate and
 180-second timeout. Restart mode has passed both browser phases with matching
 SQLite bytes and clean health/stop/exit checks.
