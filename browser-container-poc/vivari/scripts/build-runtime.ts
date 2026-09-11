@@ -34,7 +34,7 @@ function command(args: string[], capture = false, optional = false) {
     if (optional) return null;
     throw new Error(`Failed (${result.exitCode}): ${args.join(' ')}${capture ? `\n${result.stderr}` : ''}`);
   }
-  return capture ? result.stdout.toString().trim() : '';
+  return capture ? result.stdout!.toString().trim() : '';
 }
 const git = (...args: string[]) => command(['git', ...args], true)!;
 const revision = git('rev-parse', 'HEAD');

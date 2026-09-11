@@ -6,6 +6,12 @@ the exact revision they tested; they are not blanket acceptance of newer UI code
 
 ## Current iteration
 
+**Runtime workflow (September 10):** Vivari is now maintained as a directly
+editable [fork](https://github.com/kkrausse/vivari/tree/browser-runtime), rather
+than a cumulative patch applied to an ignored checkout. See
+[development workflow](vivari/DEVELOPMENT.md) and the
+[OpenCode2 server cleanup plan](doc/opencode2-server-runtime-cleanup.md).
+
 `editable-app-demo` is now a small server-backed todo app, sharing its exact frontend
 source with the prepared editable version. It consumes the package-owned
 `@kev-browser-agent-kit/opencode-chat/editor` surface rather than copying preview,

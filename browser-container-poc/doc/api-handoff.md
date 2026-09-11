@@ -1,5 +1,8 @@
 # Vivari API implementation handoff
 
+> Historical receipt. Runtime source/build instructions below are superseded by
+> [direct fork development](../vivari/DEVELOPMENT.md). Do not regenerate patches.
+
 Status: September 7, 2026. **Real backend v0 checkpoint implemented**; see
 [`workspace-api/V0-HANDOFF.md`](../workspace-api/V0-HANDOFF.md) for code layout,
 exact distribution commands/hashes, passing real-worker results, browser blockers

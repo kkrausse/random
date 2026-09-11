@@ -1,5 +1,8 @@
 # Vivari handoff — 2026-09-06
 
+> Historical receipt. Runtime source/build instructions below are superseded by
+> [direct fork development](../vivari/DEVELOPMENT.md). Do not regenerate patches.
+
 ## Resume here: model transport design decision (paused)
 
 **Latest 2026-09-06:** user requested a breakpoint/context reset before deciding
