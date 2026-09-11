@@ -50,16 +50,25 @@ a compatible implementation; runtime shims are not CPU/OS emulation.
 
 ### Next investigation — direct upstream execution
 
-- [ ] Attempt the pinned upstream server command/entrypoint with normal package
+- [x] Attempt the pinned upstream server command/entrypoint with normal package
   layout and dependencies, without `package-opencode-server.ts`; identify actual
   loading/execution blockers before introducing transforms.
-- [ ] Execute published JS/WASM ripgrep unchanged, including cold-cache Brotli,
+- [x] Execute published JS/WASM ripgrep unchanged, including cold-cache Brotli,
   dynamic imports and ordinary executable discovery; bypass no-op chmod by fixing
   its semantics rather than relying on OpenCode's private binary cache.
 - [ ] Turn blockers into focused fork contracts and general runtime fixes. Keep
   the current packaged P1 workflow as a regression reference during migration.
 - [ ] Pass the complete browser server workflow and reproduce from clean inputs
   with zero consumer behavioral transformations, then qualify a newer OpenCode pin.
+
+**Executed continuation:** both direct OpenCode launch paths now reach Undici's
+missing `worker_threads.markAsUncloneable` API after general export-comment,
+package-self-reference and TS-module-alias fixes; neither listens yet. The mounted
+code image still needs complete generic asset delivery. See
+[direct startup findings](opencode-direct-startup.md). Unchanged ripgrep passes
+cold/warm API and original PATH command checks in Chromium after general Brotli,
+inode permission and virtual identity fixes; see
+[search acceptance and low-output browser workflow](ripgrep-direct-handoff.md).
 
 Start this alongside P2, before P4's broader adaptation audit. Pull forward required
 P3/P4 fixes when the direct path demonstrates them. Detailed acceptance and the

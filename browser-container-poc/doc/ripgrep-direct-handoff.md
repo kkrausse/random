@@ -1,7 +1,72 @@
 # Unmodified ripgrep investigation
 
-September 11, 2026. **Unchanged-package cold/warm API acceptance passed in Chromium**;
+September 11, 2026. **Unchanged-package cold/warm API and PATH command acceptance passed in Chromium**;
 separate from packaged OpenCode acceptance.
+
+## PATH command continuation
+
+Runtime `2b27981` implements inode-owned chmod/fchmod and exposes the existing
+single-user virtual uid/gid through process identity getters. The latter matters
+because published `isexe` rejects execution checks without uid/gid; `which`
+silently treats that error as a missing command. No package-specific lookup hook
+or caller-supplied uid override is used.
+
+The expanded probe mounts pinned `which@6.0.1` (matching the inspected OpenCode
+dependency) and its lockfile-selected `isexe` alongside unchanged ripgrep, for 55
+hash-verified files. It creates the ordinary `node_modules/.bin/rg` symlink to the
+published `lib/rg.mjs`, applies chmod, verifies non-executable rejection followed
+by successful `isexe`/`which` discovery, and launches `rg` through `child_process`.
+`RIPGREP_NODE_WASI=0` explicitly selects the published package's own WASI shim.
+
+Native Node, headless guest workers and Chromium now pass:
+
+- API cold/warm cache checks from the prior milestone
+- Original CLI cold-cache search with an argument containing spaces
+- CLI no-match exit 1, glob output, and invalid-regex exit 2
+- Clean parent completion with empty stderr
+
+Browser continuation used clean runtime `2b27981` (including `c2b10ac` loader
+fixes), distribution
+`64b673e7dea777a985120f1149dc856a59d253e8247da9d03fc4e6141b0e2ecf`,
+fresh origin `http://127.0.0.1:43932/`, session `cosmic-falcon-435`.
+The automatic host receipt reports `PASS` with checks `cold`, `warm`, `command`;
+local full receipt: `.runtime/ripgrep-direct-fb54a82e-0af2-4c06-9f04-09bf7e44a8d3.json`
+under `vivari/`. No OpenCode binary-cache path is provisioned.
+
+This qualifies the command provisioning/search path, not the complete OpenCode
+server or permission persistence/multiuser enforcement. The existing packaged
+baseline and qualified P1 runtime pin remain until that server regression passes.
+
+## Low-output browser iteration
+
+The browser harness supports one-shot automatic result reporting:
+
+```sh
+PORT=43933 bun scripts/serve-ripgrep-direct.ts --once
+```
+
+Run the host as a background tool call and navigate once with Browser Control CLI:
+
+```sh
+browser-control execute --session <session> 'await page.goto("http://127.0.0.1:43933/?autorun=1"); return page.url()'
+```
+
+The page runs the checks, closes its runtime/workspace, and POSTs a run-ID-bound
+JSON receipt to the host. The host saves the full result/log under
+`vivari/.runtime/ripgrep-direct-<runID>.json`, prints one compact summary and exits
+0 for PASS or 1 for failure. A 120-second deadline also fails the host. Tool
+completion delivers the result automatically: no Browser Control polling,
+screenshots, or repeated full-page log reads are needed. Omit PORT to let the OS
+choose an available port and use the printed URL. Use a fresh origin for acceptance.
+
+The reporting failure path was also exercised by repeating the used origin:
+the page reported `Use a fresh localhost port for qualification`, the host wrote
+the failure receipt and exited 1. That expected failure verifies reporting and
+exit-status propagation; it is not a runtime regression.
+
+During compatibility iteration, use the focused native/worker contract first,
+then this browser gate when a fix is ready. Read saved logs only after a failure;
+retain browser interaction for browser-specific diagnostics and UI workflows.
 
 ## Accepted continuation
 
@@ -71,10 +136,11 @@ Use native Node (the bare `node` in some agent shells is a Bun shim):
 
 The same fixture passes both cold and warm checks on native Node 24.7.0, with
 empty stderr and exact result bytes. `--native` uses a private temporary workspace
-and WASM cache, links the original installed package, and removes its own files.
+and WASM cache, copies the original installed packages, and removes its own files.
 
-The headless probe reads all nine installed package files without transformation,
-prints their SHA-256 input receipt, and batch-mounts them into the guest filesystem.
+The headless probe reads installed package files without transformation,
+prints their aggregate SHA-256 manifest receipt (`--trace-inputs` includes the full
+per-file manifest), and batch-mounts them into the guest filesystem.
 It requires completion checkpoints as well as zero exit status. Its cold and warm
 checks run in different guest processes sharing one fresh filesystem, so the warm
 check exercises the disk cache rather than the first process's module cache.
@@ -83,7 +149,7 @@ For browser qualification, first build the runtime and workspace distribution
 using [DEVELOPMENT.md](../vivari/DEVELOPMENT.md), then:
 
 ```sh
-PORT=43932 bun scripts/serve-ripgrep-direct.ts
+PORT=43933 bun scripts/serve-ripgrep-direct.ts
 ```
 
 Use a fresh port for every browser run. Open `/` using Browser Control CLI, then
@@ -111,7 +177,8 @@ selecting the package's own WASI shim. It checks exact search bytes, no-match ex
 cache creation, and a second-process warm-cache search. No special CJS lowering,
 `import.meta` substitution, loader rewrite, or host-side Brotli decoding is used.
 
-This API probe does not qualify executable permissions/PATH discovery, all ripgrep
-flags, stdin, the package's native Node-WASI path, OpenCode integration, or persistence
-across runtime reopen. Ordinary command provisioning and the OpenCode regression
-remain separate gates in [the case study](opencode-runtime-case-study.md).
+The additional `ripgrep-command.cjs` fixture qualifies the command path described
+above. Neither fixture qualifies all ripgrep flags, stdin, the package's native
+Node-WASI path, OpenCode integration, or persistence across runtime reopen.
+The OpenCode regression remains a separate gate in
+[the case study](opencode-runtime-case-study.md).
