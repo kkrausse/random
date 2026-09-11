@@ -113,7 +113,15 @@ The source pin, lock hash and preexisting upstream TUI modification are unchange
 Logs: `.runtime/opencode-node-server-build.log`, `.runtime/opencode-node-headless.log`
 (initial), and `.runtime/opencode-node-headless-clean.log` (fresh output).
 
-**Next bounded task:** reduce the emitted jsonc-parser UMD relative-require failure
-and compare native behavior before selecting a normal build/delivery remedy.
+**Native reduction completed:** both native Node and Bun reproduce the bundled
+UMD failure. Ordinary `--packages=external` plus unchanged package delivery and
+ordinary unbundled delivery both pass parse/edit checks on both runtimes.
+The bundle omits the implementation files and original require base; this does
+not demonstrate a Vivari loader discrepancy. See the [minimal reproduction](jsonc-repro/README.md).
+The old baseline selected jsonc-parser's published ESM entry, not replacement
+package source. No ESM swap was used here.
+
+**Next bounded task:** consider a normal selective external-package server build
+and unchanged jsonc-parser delivery; the full server variant is not yet tested.
 Ordinary builds are accepted; the direct TS stripper is **not necessarily the
 critical path**. Later assets, native/TUI branches, HTTP and tools are unqualified.
