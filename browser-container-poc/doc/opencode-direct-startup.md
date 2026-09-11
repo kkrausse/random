@@ -3,6 +3,68 @@
 September 11, 2026. **Built-path browser OPFS health, minimal model SSE, local read/edit/grep/glob, and managed shutdown pass;
 broader server acceptance remains ahead. Unbundled startup remains blocked.**
 
+## September 11: prompted combined session retention — host-accepted PASS
+
+**Final result: PASS, 21/21 checkpoints, host exit 0.** Harness `f862153`
+ran one `PORT=0 bun scripts/serve-opencode-bun-server.ts --once --combined-retention`
+attempt, run `62a7da34-3833-4f42-8cd7-c2e2b94cb4a8`, original background
+shell `sh_092273adf0011wa4v93W0b8px9`. Browser Control CLI session
+`brisk-walrus-245` navigated exactly once to the printed fresh autorun URL:
+`http://127.0.0.1:54758/?autorun=1&runID=62a7da34-3833-4f42-8cd7-c2e2b94cb4a8&restart=1&model=1&combined-tools=1&combined-retention=1`.
+The host bound was 480 seconds and combined-prompt deadline 180 seconds.
+An interim receipt-existence check found the run pending; the original host
+subsequently delivered its automatic PASS notification. The completed receipt
+was then read once; truncated provenance was recovered from saved tool output.
+
+Receipt: `vivari/.runtime/opencode-bun-62a7da34-3833-4f42-8cd7-c2e2b94cb4a8.json`.
+Manifest observed at `2026-09-11T20:27:19.757Z`. Existing runtime distribution
+`098e0b60a0ff8703994ea681d9c974ae9267bfe5dbdd799e87ff00982ff938a3`
+carries clean fork `80d5cdd599fce4fa4817128461c865e009109d34`, built
+`2026-09-11T18:36:31.189Z`. Host Bun was `1.4.0`. Application provenance
+observes source `d7a7256bb6b0952f486c95718cfbf460b1570a56` with preexisting
+dirty `packages/tui/src/component/devtools-bar.tsx` and null build receipt;
+this records observed source rather than a build-time source/output attestation.
+The host bundled the browser harness and consumed existing runtime/app artifacts.
+
+| Accepted receipt evidence | Actual result |
+| --- | --- |
+| Scope | Same-page full workspace/runtime reopen; default OPFS |
+| App assets verified and mounted each phase | 6, unchanged lengths and SHA-256 |
+| Provider/model | `opencode/muse-spark-1.3-contributor-free` |
+| Prompt requests / provider POSTs initial → reopened | 1 / 5 → 5 (zero additional POSTs) |
+| Tool events / ordered validated events | 26 / 12: started, called, success for read → edit → grep → glob |
+| Local calls / successes | 4 / 4, correlated session/call/assistant IDs and provider-executed=false |
+| Execution terminal / SSE cleanup | `session.execution.succeeded` / aborted and joined |
+| Original and reopened session ID/title | `ses_f6dd86543ffehrC5ptKZt9vBBI` / `Combined tools probe` |
+| Stable history before/after | 1 user, 5 completed assistants, 4 completed local tools; identical sanitized message projection |
+| History SHA-256 before/after | `a697294ff8dce73a2e1cd2e2f19abb4beac85c48615b2f1613ecf2306743ac85` |
+| Edited file | `/workspace/combined-probe/baseline.txt`, exact `BASELINE_AFTER\n`, 15 bytes |
+| Edited file SHA-256 | `e3866f28b5008d611653f340104d6f68a6bfd7451a0a2b888edeb1edd88c5b73` |
+| File retention checkpoints | Before second `Runtime.start` without reseed, and after fresh health |
+| SQLite path / bytes | `/.server/data/opencode.sqlite` / 442368, valid SQLite header |
+| SQLite SHA-256 at both checkpoints | `f7ab3e3bf8e4c2cf7ea7309d0461d63d5fb1cbc36f556ee4cd6a5775f7f8c31f` |
+| SQLite checkpoints | After first runtime.stop + workspace.flush before close; after reopen before second Runtime.start |
+| Second registration / endpoint / health | Fresh registration and endpoint; authenticated healthy=true |
+| Old endpoint after first runtime.stop | Rejected with `CLOSED` |
+| Ripgrep delivery each phase | 9 unchanged `ripgrep@0.3.1` files; ordinary bin symlink/chmod setup; empty stderr and natural setup exit 0 |
+| Ripgrep manifest / installer SHA-256 | `a81b84f137a13dd27977bb55578eb58c13e8d8a4da12612afd84808dad90256a` / `3314ddc36719cd3d4857b5b52398fefef445f2f6bde5f809aa53efee2c78708a` |
+| Both managed stops / guest exits | accepted=true / exitCode=0, forced=false, signal=null before cleanup |
+| Both full cleanup checkpoints | `runtime.stop + workspace.flush + workspace.close completed` |
+| Initial / reopened stdout, stderr byte counts | 3337, 0 / 42, 0 |
+
+This qualifies retention of one completed combined-tool conversation and edited
+file across a full same-page OPFS workspace/runtime teardown and reopen. The
+standalone `sessionRetention=false` flag denotes the separate unprompted-row mode;
+this accepted run has `combinedRetention=true` and `restart=true`.
+The final acceptance checkpoint is unchanged provider POST count after both
+completed phases. **Next small acceptance gap:** a bounded two-stage same-origin
+page-reload retention harness that preserves this evidence across document
+replacement, reopens without reseeding, and verifies fresh health, the same
+session/history/file, unchanged provider POST count, and natural shutdown. That
+requires explicit phase handoff and a host lifecycle spanning both stages;
+a random reload of this completed one-shot URL would not qualify it. Broader
+server acceptance and the separately documented unbundled loader blocker remain.
+
 ## September 11: combined read/edit/grep/glob — host-accepted PASS
 
 **Final result: PASS, 9/9 checkpoints, host exit 0.** Harness `7674ce7`
