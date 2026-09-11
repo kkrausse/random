@@ -1,5 +1,18 @@
 # Browser Control observations
 
+## September 10 continuation: extension disconnected
+
+- Browser Control CLI/relay 0.7.0, build 2026-09-05T19:03:42.828Z.
+- Reproduction: `browser-control execute 'return {url:page.url(),title:await page.title()}'`.
+- Actual: `Browser Control extension is not connected.` No session/page was acquired.
+- `browser-control doctor` confirms matching, reachable relay, disconnected extension,
+  zero targets, and no competing connections. Expected: a connected page and session ID.
+- Recovery attempted: normal relay-backed execute followed by doctor; requested user
+  enable/reload the extension and click its toolbar button on a normal Chromium tab.
+  No relay restart or browser storage reset performed.
+- Prepared fresh qualification URL: `http://127.0.0.1:43924/`. Browser acceptance
+  remains blocked until reconnection; this is not a grep/glob result.
+
 ## Bounded execution when a guest operation never completes
 
 - Browser Control 0.7.0, build 2026-09-05T19:03:42.828Z; extension 0.0.24.
