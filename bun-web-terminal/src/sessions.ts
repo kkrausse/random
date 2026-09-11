@@ -6,6 +6,8 @@ export type Session = {
   id: string;
   name: string;
   title: string;
+  command: string;
+  cwd: string;
   status: "running" | "exited";
   createdAt: Date;
   exitCode: number | null;
@@ -51,19 +53,22 @@ export class SessionManager {
 
   create(label?: unknown) {
     const suffix = typeof label === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(label) ? `-${label}` : "";
-    const name = `web-${crypto.randomUUID()}${suffix}`;
     const shell = process.env.SHELL ?? "/bin/zsh";
     const result = this.command([
-      "new-session", "-d", "-P", "-F", "#{session_id}", "-s", name, "-c", this.cwd, "-x", "100", "-y", "30", "--", shell, "-l",
-      ";", "set-option", "-t", name, "status", "off",
+      "new-session", "-d", "-P", "-F", "#{session_id}", "-c", this.cwd, "-x", "100", "-y", "30", "--", shell, "-l",
+    ]);
+    if (result.exitCode !== 0) throw new Error(`Could not create terminal: ${result.stderr.toString().trim()}`);
+    const id = result.stdout.toString().trim();
+    const name = id;
+    if (suffix) this.command(["rename-session", "-t", id, `${id.slice(1)}${suffix}`]);
+    this.command([
+      "set-option", "-t", name, "status", "off",
       ";", "set-option", "-t", name, "remain-on-exit", "on",
       ";", "set-option", "-t", name, "window-size", "latest",
       ";", "set-option", "-t", name, "mouse", "on",
       ";", "set-option", "-t", name, "set-titles", "on",
       ";", "set-option", "-t", name, "set-titles-string", titleFormat,
     ]);
-    if (result.exitCode !== 0) throw new Error(`Could not create terminal: ${result.stderr.toString().trim()}`);
-    const id = result.stdout.toString().trim();
     this.refresh();
     const session = this.sessions.get(id);
     if (!session) throw new Error("Could not discover newly created terminal.");
@@ -149,19 +154,21 @@ export class SessionManager {
   }
 
   private refresh() {
-    const result = this.command(["list-sessions", "-F", `#{session_id}\t#{session_name}\t#{session_created}\t#{pane_dead}\t#{pane_dead_status}\t${titleFormat}`]);
+    const result = this.command(["list-sessions", "-F", `#{session_id}\t#{session_name}\t#{session_created}\t#{pane_dead}\t#{pane_dead_status}\t#{pane_current_command}\t#{pane_current_path}\t${titleFormat}`]);
     if (result.exitCode !== 0 && !/no server running|no sessions|error connecting to/.test(result.stderr.toString())) return;
     const seen = new Set<string>();
     for (const line of result.stdout.toString().trimEnd().split("\n")) {
-      const [id, name, created, dead, code, ...title] = line.split("\t");
+      const [id, name, created, dead, code, command, cwd, ...title] = line.split("\t");
       if (!id || !name) continue;
       seen.add(id);
       let session = this.sessions.get(id);
       if (!session) {
-        session = { id, name, title: "", status: "running", createdAt: new Date(Number(created) * 1000), exitCode: null };
+        session = { id, name, title: "", command: "", cwd: "", status: "running", createdAt: new Date(Number(created) * 1000), exitCode: null };
         this.sessions.set(id, session);
       }
       session.name = name;
+      session.command = command ?? "";
+      session.cwd = cwd ?? "";
       session.title = title.join("\t").slice(0, 512);
       session.status = dead === "1" ? "exited" : "running";
       session.exitCode = dead === "1" ? Number(code) || 0 : null;
