@@ -2,7 +2,15 @@
 
 September 11, 2026. **Startup remains blocked; no server acceptance.**
 
-Latest: runtime `80d5cdd` supplies bounded worker uncloneable-mark semantics.
+Latest conventional-build experiment: a minimal invocation-only `bun build`
+with target `bun` succeeds (2,938 modules, JS plus four WASM assets). Its isolated
+headless guest run on `80d5cdd` stops at `Cannot find module 'ws' from '/app'`,
+before a listener. See the [build probe handoff](../vivari/experiments/opencode-bun-server/README.md)
+for exact commands, pins, artifact hash and the next bounded delivery task.
+**Normal builds/transpilation are accepted; the direct TS stripper is not
+necessarily the critical path.** No browser qualification or runtime pin advance.
+
+Latest unbundled result: runtime `80d5cdd` supplies bounded worker uncloneable-mark semantics.
 The direct launcher now passes Undici initialization and reaches `Unexpected string`
 compiling `packages/client/src/effect/service.ts`. Earlier failures below record
 progress. Still no listener or server acceptance.
@@ -146,6 +154,8 @@ such skill was found in this environment. The available pinned `opencode-drive`
 instructions were read. This work used the explicitly authorized noninteractive
 isolated guest kernel rather than the installed live service.
 
-Keep the existing packaged baseline. Continue with the executed client-service
-TypeScript compilation failure, then retry with full generic assets when needed.
+Keep the existing packaged baseline. The next bounded conventional-build task is
+ordinary `ws` dependency delivery/Bun-target contract assessment and a retry;
+the unbundled client-service TypeScript compilation failure remains a separate
+loader issue. Retry with further generic assets when execution requires them.
 The original [case-study acceptance gates](opencode-runtime-case-study.md) remain.
