@@ -3,6 +3,71 @@
 September 11, 2026. **Built-path browser OPFS health, minimal model SSE, local read/edit/grep/glob, and managed shutdown pass;
 broader server acceptance remains ahead. Unbundled startup remains blocked.**
 
+## September 11: controlled-transport active interrupt — FAIL
+
+**Final result: FAIL, 4/7 browser checkpoints reached, host exit 1.** Harness
+`29d0fbb7e800ce4ef612eecf0689102eed8d6f6d` ran one
+`bun scripts/serve-opencode-bun-server.ts --interrupt --once` attempt with the
+same clean artifact/source/build-receipt overrides described below. Original run
+`4f6c287b-925d-4424-a4b0-673ff7cfdc54` and background shell
+`sh_0923e629a001AxolbYAqjaGF6b` were preserved across continuations. Browser Control
+CLI session `brisk-walrus-245` navigated exactly once to
+`http://127.0.0.1:55850/?autorun=1&runID=4f6c287b-925d-4424-a4b0-673ff7cfdc54`.
+The host bound was 180 seconds; the controlled stream bound was 30 seconds.
+One premature receipt collection found no file and was reported as pending,
+not failure. After automatic host completion, the saved receipt was collected;
+its truncated result was recovered through a compact projection. One read-only
+browser result projection recovered the failed checkpoint without navigation.
+There was no second execution attempt or fallback.
+
+Receipt: `vivari/.runtime/opencode-bun-4f6c287b-925d-4424-a4b0-673ff7cfdc54.json`.
+Manifest observed at `2026-09-11T20:52:37.302Z`; host Bun `1.4.0`.
+
+| Final evidence | Actual result |
+| --- | --- |
+| Scope | Single fresh-origin lifecycle; default OPFS |
+| Browser checkpoints | Fresh default OPFS; unchanged app asset lengths/hashes; guest registration; authenticated healthy=true |
+| Local controlled provider requests | 1; valid pinned streaming Responses request, headers sent |
+| External model requests / forwarded model POSTs | **0 / 0**; external forwarding disabled |
+| Provider transport closure | `transportClosed=true`, **`closeReason=deadline`**, not `request.abort` or `response.cancel` |
+| Browser failure | `Failed at initial: controlled provider readiness, user interrupt, aborted assistant and transport close (not real model generation)` |
+| Host failure | `Controlled interrupt incomplete or rejected; inspect browser checkpoint` |
+| Retained interrupt evidence | Absent; actual step-start, interrupt 204, user terminal, correlated aborted step/assistant context, and post-interrupt health are unverified |
+| Completed phases / verified guest exit | 0 / absent |
+| Managed stop / natural exit / explicit OPFS cleanup checkpoint | Not verified by the result |
+| Host process | Completed with exit 1 |
+
+This attempted **actual OpenCode API cancellation against a controlled
+transport**, not real model generation. The local held-request and zero-external
+request evidence are established, but the transport ended at its fixture
+deadline. That closure does not prove active API cancellation. The aggregate
+browser failure does not identify which internal interrupt substep failed;
+absent evidence must not be treated as proof that the interrupt POST occurred.
+The failure result was published after the probe's `finally` path (managed-stop
+attempt, runtime stop, workspace flush/close, output drain), but it retains no
+accepted managed-stop, natural-exit, or explicit cleanup receipt. OPFS retention
+across reopen was not exercised.
+
+Provenance validation matched the clean source
+`d7a7256bb6b0952f486c95718cfbf460b1570a56`, tree
+`f4999819e778ae35433716c72f643c1eaf1a30ba`, empty status, and supplied build receipt
+SHA-256 `c8726755726734b3c5f3e8b0370b122ec387d06b719ddab60b75cb3d175135af`.
+Served `server.js` was 28,339,477 bytes, SHA-256
+`1281158d5c583e49b5e20eab2705b35fb902fb729dd2635cf0d29f8c6a0eb115`.
+Runtime distribution
+`098e0b60a0ff8703994ea681d9c974ae9267bfe5dbdd799e87ff00982ff938a3`
+carried clean fork `80d5cdd599fce4fa4817128461c865e009109d34`.
+The artifact root was the supplied `clean-build.x7j1u24y` directory below;
+dependency reuse remains a recorded build-time claim, not a fresh install or
+registry-integrity attestation. Six app assets included the separately accepted
+models catalog. This qualification consumed existing application/runtime bytes.
+
+**Next bounded task:** offline diagnosis of the interrupt harness's event,
+request, and transport-abort sequence, with sanitized per-substep failure
+evidence and cleanup outcomes retained. Isolate why the held response reached
+its deadline before accepting another browser qualification. Cancellation
+acceptance remains open.
+
 ## September 11: clean-attested artifact combined retention — host-accepted PASS
 
 **Final result: PASS, 21/21 checkpoints, host exit 0.** Harness `d76db1a`
