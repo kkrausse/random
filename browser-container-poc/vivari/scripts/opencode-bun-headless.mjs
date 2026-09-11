@@ -22,6 +22,9 @@ console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_INPUT',
   artifact: 'Bun.build target=node; published jsonc-parser ESM entry selection; emitted files plus original tree-sitter WASM assets', consumerBehavioralRewrites: 0,
 }));
 const workers = new Set();
+const service = process.argv.includes('--service');
+let servicePassed = false;
+let serviceFailed = false;
 const workerErrors = [];
 const deadline = setTimeout(() => { console.error('OPENCODE_BUN_TIMEOUT'); process.exit(124); }, 180000);
 try {
@@ -57,12 +60,50 @@ try {
       bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }));
   }
   kernel.mkdirp('/home/direct');
-  console.log('OPENCODE_BUN_COMMAND bun /app/server.js');
+  console.log('OPENCODE_BUN_COMMAND bun /app/server.js' + (service ? ' --service' : ''));
   let finished = false;
   let health;
   kernel.onListen = (port, pid) => {
     console.log(`OPENCODE_BUN_LISTEN ${port}`);
     health = (async () => {
+      if (service) {
+        try {
+          const file = '/home/direct/state/opencode/service-local.json';
+          const until = Date.now() + 30000;
+          while (!kernel.exists(file) && !finished && Date.now() < until)
+            await new Promise(done => setTimeout(done, 100));
+          if (!kernel.exists(file)) throw new Error('Guest registration did not appear within 30 seconds');
+          const info = JSON.parse(kernel.readFile(file));
+          if (typeof info.password !== 'string' || !info.password || typeof info.id !== 'string' || !info.id)
+            throw new Error('Guest registration missing password or id');
+          if (info.url !== `http://127.0.0.1:${port}` || info.pid !== pid)
+            throw new Error('Guest registration does not match listener');
+          console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_REGISTRATION', file, credentials: 'guest-generated; redacted' }));
+          const headers = { host: '127.0.0.1:' + port,
+            authorization: 'Basic ' + Buffer.from('opencode:' + info.password).toString('base64'),
+            'content-type': 'application/json' };
+          for (const route of ['health', 'stop']) {
+            let timer;
+            try {
+              const response = await Promise.race([
+                kernel.handleHttpRequest(port, { method: route === 'health' ? 'GET' : 'POST',
+                  url: route === 'health' ? '/api/health' : '/api/service/stop', headers,
+                  body: route === 'health' ? '' : JSON.stringify({ instanceID: info.id }) }),
+                new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${route} timed out`)), 5000); }),
+              ]);
+              console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_' + route.toUpperCase(), status: response.status, body: response.body }));
+              if (response.status !== 200 || JSON.parse(response.body)[route === 'health' ? 'healthy' : 'accepted'] !== true)
+                throw new Error(`${route} rejected`);
+            } finally { clearTimeout(timer); }
+          }
+          servicePassed = true;
+        } catch (error) {
+          serviceFailed = true;
+          console.error('OPENCODE_BUN_SERVICE_ERROR', String(error));
+          kernel.stop(pid);
+        }
+        return;
+      }
       const until = Date.now() + 30000;
       while (!finished && Date.now() < until) {
         let timer;
@@ -86,8 +127,11 @@ try {
       }
     })();
   };
-  const result = await kernel.start('bun', ['/app/server.js'], { cwd: '/app', env: {
+  const result = await kernel.start('bun', ['/app/server.js', ...(service ? ['--service'] : [])], { cwd: '/app', env: {
     PATH: '/bin', HOME: '/home/direct', OPENCODE_PASSWORD: 'isolated-probe-only',
+    ...(service ? { XDG_CONFIG_HOME: '/home/direct/config', XDG_STATE_HOME: '/home/direct/state',
+      XDG_DATA_HOME: '/home/direct/data', XDG_CACHE_HOME: '/home/direct/cache',
+      OPENCODE_TEST_HOME: '/home/direct', TMPDIR: '/home/direct/tmp' } : {}),
     OPENCODE_DB: '/runtime-probe/opencode.sqlite',
     OPENCODE_DISABLE_FFF: '1', OPENCODE_DISABLE_FILEWATCHER: '1', OPENCODE_DISABLE_MODELS_FETCH: '1',
     OPENCODE_TREE_SITTER_WASM_PATH: '/app/tree-sitter.wasm',
@@ -97,7 +141,7 @@ try {
   finished = true;
   await health;
   console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_EXIT', workerErrors, ...result }, null, 2));
-  process.exitCode = result.code || 1; // Exit zero alone is never server acceptance.
+  process.exitCode = service && servicePassed && !serviceFailed && !workerErrors.length && result.code === 0 ? 0 : result.code || 1;
 } finally {
   await Promise.all([...workers].map(w => w.terminate()));
   clearTimeout(deadline);

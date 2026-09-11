@@ -14,8 +14,9 @@ FS worker explicitly supplying no persistence adapter. Reusing the existing
 disk-snapshot test worker with a fresh isolated directory and upstream
 `OPENCODE_DB=/runtime-probe/opencode.sqlite` resolves it without runtime edits.
 On `80d5cdd`, all 41 migrations complete and authenticated `/api/health` returns
-200 with `healthy:true`. The probe then deliberately stops the process (143,
-no worker errors); graceful shutdown and full acceptance are not yet qualified.
+200 with `healthy:true`. Default readiness deliberately stops the process (143,
+no worker errors); the opt-in managed shutdown now exits cleanly as detailed below.
+Full acceptance remains unqualified.
 Native SQLite reopened the resulting disk file: integrity `ok`, 18 tables.
 Exact build command from `vivari/experiments/opencode-bun-server`: `bun run build`
 (runs `bun ./build.ts`; only resolver is `/^jsonc-parser$/` → published ESM main,
@@ -30,14 +31,14 @@ bundle transform; full server and tree-sitter operation acceptance remain ahead.
 **Normal builds/transpilation are accepted; the direct TS stripper is not
 necessarily the critical path.** No browser qualification or runtime pin advance.
 
-Shutdown investigation: default mode is unmanaged and waits forever; the pinned
-stop handler requires service mode plus its registered instance ID. One temporary
-service-mode attempt reached a listener but health returned 401, then timed out
-(124); no stop request was reached. Incomplete lifecycle code was removed.
-Next bounded task is shutdown only, using actual guest registration credentials
-and explicit guest XDG paths. Restart/session retention is deferred. See the
-[shutdown findings](../vivari/experiments/opencode-bun-server/README.md#shutdown-investigation--stopped-at-authentication-boundary)
-for exact source lines and the historical command.
+Managed shutdown now passes in one isolated guest execution: explicit guest XDG
+paths, actual registration credentials read through `Kernel.readFile`, health 200,
+stop 200 with `accepted: true`, then natural exit 0, no signal or worker errors.
+The probe's opt-in `--service` mode preserves default readiness behavior. See the
+[current shutdown result](../vivari/experiments/opencode-bun-server/README.md#september-11-isolated-managed-shutdown-current)
+for commands and exact registration source. Next bounded task is one managed
+restart against retained SQLite with authenticated health; session retention is
+still deferred.
 
 Native jsonc-parser reduction now reproduces that same `./impl/format` failure
 under both Node 24.7.0 and Bun 1.4.0. The emitted bundle binds require to its own

@@ -323,3 +323,43 @@ Require stop accepted and clean exit; stop on first error. Session creation,
 restart/retention, runtime fixes and model/tool/browser work are deferred.
 Ordinary builds are accepted; the direct TS stripper is **not necessarily the
 critical path**. Later assets, native/TUI branches, HTTP and tools are unqualified.
+
+## September 11 isolated managed shutdown (current)
+
+**One execution passed authenticated health, accepted stop, and clean guest exit.**
+The entry now selects upstream service mode only with `--service`; the default
+readiness invocation keeps its existing behavior. The probe reuses the snapshot
+adapter and fresh VFS, setting all four guest XDG homes under `/home/direct`, plus
+guest home and temporary paths explicitly.
+
+Registration path and fields were established from pinned source rather than
+assumed: `util/src/global.ts:9-13` appends `opencode` to XDG paths;
+`cli/src/services/service-config.ts:27-29,83-98` chooses the state-directory
+`service-local.json`; `cli/src/server-process.ts:161-178` writes `id`, `url`, `pid`,
+and `password`. The probe waits at most 30 seconds for that guest file using
+`Kernel.exists`, reads it with `Kernel.readFile`, validates its listener identity,
+and keeps the generated credential out of output. Each of the two HTTP requests
+is made once with a five-second timeout. Errors stop the owned guest; successful
+stop observes natural exit under the existing overall deadline.
+
+Commands (build from this directory, then probe from `vivari`):
+
+```sh
+bun run build > ../../.runtime/opencode-service-stop-build.log 2>&1
+/Users/kkrausse/.nvm/versions/node/v24.7.0/bin/node scripts/opencode-bun-headless.mjs --service > .runtime/opencode-service-stop-headless.log 2>&1
+```
+
+Both commands exited **0**. The one guest execution reported:
+
+```text
+OPENCODE_BUN_REGISTRATION /home/direct/state/opencode/service-local.json
+OPENCODE_BUN_HEALTH status=200 {"healthy":true,"version":"local","pid":1}
+OPENCODE_BUN_STOP status=200 {"accepted":true}
+OPENCODE_BUN_EXIT code=0 signal=null workerErrors=[]
+```
+
+Only guest-created registration credentials were used. Source remains `d7a7256`,
+runtime `80d5cdd`; no runtime change or pin advance. The default readiness mode
+was preserved by inspection and was not re-executed in this single-attempt slice.
+Next smallest task: qualify one managed restart against the retained SQLite
+snapshot with authenticated health; session retention needs a separate checkpoint.
