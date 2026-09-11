@@ -10,6 +10,7 @@ import { Cause, Effect } from "effect"
 import { makeRunner, operation } from "./effects"
 import { archiveSession, fileArchiveStore, restoreSession, type Archive, type ArchiveStore } from "./archive"
 import { loadInbox, pendingOrder, requestKey } from "./inbox"
+import { createWeeklyUsageLoader } from "./weekly-usage"
 
 const PAGE_SIZE = 100
 const LOAD_MORE_THRESHOLD = 10
@@ -158,6 +159,74 @@ export function estimateUsageCost(
   return { cost, estimated, unpriced, zenEquivalent: zenEquivalent && !otherEstimate }
 }
 
+function WeeklyUsage(props: { context: Plugin.Context; models: ReadonlyArray<ModelInfo> }) {
+  const load = createWeeklyUsageLoader(props.context.client, (id) => props.context.data.session.status(id) === "running")
+  const [snapshot, setSnapshot] = createSignal<Awaited<ReturnType<typeof load>>>()
+  const [failure, setFailure] = createSignal(false)
+  let controller: AbortController | undefined
+  let disposed = false
+  async function refresh() {
+    if (controller) return
+    controller = new AbortController()
+    try {
+      const result = await load(Date.now(), controller.signal)
+      if (!disposed) { setSnapshot(result); setFailure(false) }
+    } catch (error) {
+      controller.abort()
+      if (!disposed) {
+        setFailure(true)
+        console.error("[claude.sessions] Failed to load weekly usage", error)
+      }
+    } finally { controller = undefined }
+  }
+  onMount(() => {
+    void refresh()
+    const timer = setInterval(() => void refresh(), 60_000)
+    onCleanup(() => { disposed = true; clearInterval(timer); controller?.abort() })
+  })
+  const total = createMemo(() => estimateUsageCost(snapshot()?.messages ?? [], props.models, usageRates(props.context.options)))
+  const byModel = createMemo(() => {
+    const groups = new Map<string, SessionMessageInfo[]>()
+    for (const message of snapshot()?.messages ?? []) {
+      if (message.type !== "assistant") continue
+      const key = `${message.model.providerID}/${message.model.id}`
+      const group = groups.get(key) ?? []
+      group.push(message)
+      groups.set(key, group)
+    }
+    return [...groups].map(([name, messages]) => ({ name, ...estimateUsageCost(messages, props.models, usageRates(props.context.options)) }))
+      .sort((a, b) => b.cost - a.cost)
+  })
+  const money = (cost: number, estimated: boolean) => `${estimated ? "≈ " : ""}${formatCost(cost)}`
+  const row = (label: string, value: string) => (
+    <box flexDirection="row" justifyContent="space-between">
+      <text fg={props.context.theme.text.subdued}>{label}</text>
+      <text fg={props.context.theme.text.default}>{value}</text>
+    </box>
+  )
+  return (
+    <box paddingTop={1}>
+      <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>Rolling 7 days</text>
+      <text fg={props.context.theme.text.subdued}>All server sessions · incl. subagents</text>
+      {snapshot() ? <box>
+        {row(total().estimated ? total().zenEquivalent ? "Zen equivalent" : "Estimated total" : "Calculated total", money(total().cost, total().estimated))}
+        {row("Daily average", money(total().cost / 7, total().estimated))}
+        {row("Sessions / responses", `${snapshot()!.sessions} / ${snapshot()!.messages.length}`)}
+        <box paddingTop={1}>
+          <text fg={props.context.theme.text.subdued}>By model</text>
+          <Index each={byModel()}>{(model) => <box>
+            <text fg={props.context.theme.text.subdued} wrapMode="word">{model().name}</text>
+            {row(model().unpriced ? `${model().unpriced} unpriced` : "", money(model().cost, model().estimated))}
+          </box>}</Index>
+        </box>
+        {total().unpriced > 0 ? <text fg={props.context.theme.text.subdued}>{total().unpriced} unpriced responses · partial total</text> : null}
+        <text fg={props.context.theme.text.subdued}>Updated {new Date(snapshot()!.updated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · refreshes every minute</text>
+      </box> : <text fg={props.context.theme.text.subdued}>{failure() ? "Weekly usage unavailable" : "Loading weekly usage…"}</text>}
+      {failure() && snapshot() ? <text fg={props.context.theme.text.subdued}>Refresh failed · showing previous total</text> : null}
+    </box>
+  )
+}
+
 function UsageBreakdown(props: { context: Plugin.Context; sessionID: string }) {
   const session = createMemo(() => props.context.data.session.get(props.sessionID))
   const messages = createMemo(() => props.context.data.session.message.list(props.sessionID))
@@ -215,6 +284,7 @@ function UsageBreakdown(props: { context: Plugin.Context; sessionID: string }) {
           ? <text fg={props.context.theme.text.subdued}>{estimate().unpriced} unpriced response{estimate().unpriced === 1 ? "" : "s"}</text>
           : null}
       </box>
+      <WeeklyUsage context={props.context} models={models()} />
     </box>
   )
 }
