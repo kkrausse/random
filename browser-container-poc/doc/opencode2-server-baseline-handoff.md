@@ -1,8 +1,37 @@
 # OpenCode2 server-only baseline — implementation handoff
 
-September 10, 2026. **P0 in progress; full acceptance is not yet claimed.**
+September 10, 2026. **P0 server-only baseline acceptance passed.**
 
-## Continuation: clean build prepared, browser connection blocked
+## Latest: complete browser acceptance passed
+
+The consolidated `serverBaseline.qualify()` passed on fresh origin
+`http://127.0.0.1:43924`, Browser Control session `tidy-badger-830`, using the
+normal (non-trace) package. All 19 delivered assets passed integrity checks.
+
+- Real server readiness, session creation, and model SSE output passed.
+- Model-driven **read, edit, grep, and glob all completed successfully**.
+- Workspace readback verified exact `BASELINE_AFTER\n` bytes.
+- Both graceful stops exited `{exitCode:0, signal:null, forced:false}`.
+- Restart produced new service/listener identities; the old endpoint rejected requests.
+- The real session and edited file survived the server-process restart.
+- Runtime stopped and workspace flushed/closed successfully at completion.
+
+Qualified runtime source: `bd5a60c13a317ed79ae579da182535b1925ece66` (clean build);
+distribution: `f4b058e1cb4df1ea319f7baa3d54570a2e058872a4bbc9d8edb0f2312e24a0a9`.
+The `runtime-source.json` qualified pin now identifies this revision.
+OpenCode source remains `d7a7256bb6b0952f486c95718cfbf460b1570a56`;
+model: `muse-spark-1.3-contributor-free`.
+
+Local ignored receipt: `doc/logs/opencode-server/acceptance-2026-09-10.json`,
+containing the result and selected PASS/tool/exit checkpoints, without credentials
+or model reasoning. This qualifies server-process restart within the same runtime,
+not a page reload or full runtime reopen. The browser origin is now used; select
+a new port for another fresh acceptance run.
+
+**Next:** use this workflow as the regression gate for P1, the runtime-owned HTTP
+bridge. The process-per-request bridge and the packaging adaptations below remain.
+
+## Earlier continuation: clean build prepared, browser connection blocked
 
 - Rebuilt the normal server package: 2,945 inputs, 19 assets, no trace instrumentation.
 - Clean release runtime build passed using explicit revision
@@ -34,8 +63,8 @@ September 10, 2026. **P0 in progress; full acceptance is not yet claimed.**
   Workspace/Runtime/Endpoint: health, create session, SSE, model read/edit/grep/glob,
   graceful stop, restart, old-listener rejection, session/edit retention, cleanup.
 
-**The consolidated acceptance function was typechecked but has not been run end
-to end.** Earlier browser checks were incremental; see the results below.
+**The consolidated acceptance function now passes end to end**, as recorded above.
+The following incremental results and implementation notes explain how it got there.
 
 ## Verified so far
 
@@ -76,10 +105,9 @@ Canonical source: sibling `../vivari`, branch `browser-runtime`.
 - Independent `node-entry` / `fs-remove` regression fixtures and architecture /
   workflow / roadmap notes accompany the changes.
 
-The latest integration build and workspace distribution include these fixes.
-The distribution was built from a dirty development checkout before the final
-commit. Rebuild after committing to record clean provenance; the qualified fork
-revision in `runtime-source` configuration has **not** been advanced.
+The latest integration build and workspace distribution include these fixes,
+rebuilt from clean commit `bd5a60c` before the complete browser acceptance.
+The qualified fork revision in `runtime-source` configuration has been advanced.
 
 ## Remaining adaptations and blockers
 
@@ -90,8 +118,8 @@ revision in `runtime-source` configuration has **not** been advanced.
    its mode because Vivari's chmod is a no-op. Upstream then tried selecting a
    native ripgrep for `wasm32-linux` and failed. Latest packager also delivers the
    runner at `/workspace/.server/cache/opencode/bin/rg`, which the unchanged
-   upstream binary resolver accepts by file existence. **Fresh-run verification
-   of grep/glob with this delivery is still pending.** The resolver caches a failed
+    upstream binary resolver accepts by file existence. **Fresh-run model-driven
+    grep/glob with this delivery passed.** The resolver caches a failed
    lookup, so adding a file to an already-failed live server is not a valid retry;
    restart the server or use a fresh origin.
 3. Search runner itself retains the pre-existing `package-ripgrep.ts` adaptations:
@@ -171,10 +199,9 @@ Always choose a fresh origin/port for a new full run: Workspace v0 only supports
 id `default`, and the harness refuses a previously used acceptance store. No
 browser storage clearing is needed.
 
-If a runtime blocker remains, isolate it in the fork, add a focused contract,
-rebuild and repackage the distribution, then rerun in a new origin. Once P0 is
-actually green, record the result, update the cleanup checklist and qualified
-runtime pin, then use this workflow as the regression gate for the HTTP bridge.
+If a future run exposes a runtime blocker, isolate it in the fork, add a focused
+contract, rebuild and repackage the distribution, then rerun in a new origin.
+P0 is now green; use this workflow as the regression gate for the HTTP bridge.
 The process-per-request bridge has not been replaced.
 
 ## Concurrent work / operational notes

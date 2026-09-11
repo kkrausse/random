@@ -1,7 +1,7 @@
 # OpenCode2 server: runtime cleanup plan
 
 Date: September 10, 2026  
-Status: Agreed direction; implementation backlog
+Status: P0a fork migration and P0 server-only baseline accepted; P1–P5 backlog
 
 ## Goal and scope
 
@@ -167,7 +167,8 @@ Sources:
 the fork is published, active source/build/test paths are migrated, and native,
 headless, and browser contract checks pass. See the
 [migration receipt](runtime-fork-migration.md) and
-[development workflow](../vivari/DEVELOPMENT.md). P0–P5 remain future work.
+[development workflow](../vivari/DEVELOPMENT.md). P0 acceptance is recorded below;
+P1–P5 remain future work.
 
 Do this before substantial runtime changes. Maintain Vivari changes as ordinary
 source commits rather than regenerating a cumulative patch.
@@ -233,21 +234,22 @@ change. Keep the server packager and one small tool example discoverable.
 
 ### P0 — Establish a server-only baseline
 
-**Implementation checkpoint September 10, 2026:** server-only packaging, fresh
-browser readiness/session creation, real model streaming, read/edit, and graceful
-stop are demonstrated. Search cache delivery and the consolidated restart/tool
-acceptance run remain to verify. See [the implementation handoff](opencode2-server-baseline-handoff.md).
+**Accepted September 10, 2026:** the complete fresh-origin browser workflow passed:
+server readiness/session creation, real model SSE, read/edit/grep/glob, exact edited
+bytes, two clean graceful exits, new service/listener identities, old-endpoint
+rejection, and session/edit retention across server restart. Clean runtime source
+`bd5a60c` is now the qualified pin. See [the implementation handoff](opencode2-server-baseline-handoff.md).
 
-- [ ] Create an OpenCode2 server-only packaging and launch path using the pinned
+- [x] Create an OpenCode2 server-only packaging and launch path using the pinned
   upstream server entry or closest supported entry. The inspected V2 packaging
   pin is `d7a7256bb6b0952f486c95718cfbf460b1570a56`.
-- [ ] Remove packaging dependencies on renderer initialization, Solid transforms,
+- [x] Remove packaging dependencies on renderer initialization, Solid transforms,
   and OpenTUI scratch adapters where the server graph permits.
-- [ ] Record remaining source patches, native dependencies, behavioral transforms,
+- [x] Record remaining source patches, native dependencies, behavioral transforms,
   asset requirements, and special launch flags.
-- [ ] Deliver all required assets into a fresh workspace, including the search
+- [x] Deliver all required assets into a fresh workspace, including the search
   runner; do not rely on previous standalone tool provisioning.
-- [ ] Verify actual server readiness, session creation, one model response, and
+- [x] Verify actual server readiness, session creation, one model response, and
   one filesystem tool call.
 
 **Acceptance:** the server's actual runtime requirements are known and a fresh
