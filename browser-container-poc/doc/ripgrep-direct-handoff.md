@@ -3,6 +3,63 @@
 September 11, 2026. **Unchanged-package cold/warm API and PATH command acceptance passed in Chromium**;
 separate from packaged OpenCode acceptance.
 
+## Exact OpenCode grep command: headless preflight
+
+September 11, 2026: native Node **24.7.0**, then real guest workers on existing
+runtime `80d5cdd599fce4fa4817128461c865e009109d34`, passed the opt-in
+`--opencode-grep` extension to the existing direct probe. Commands from `vivari/`:
+
+```sh
+/Users/kkrausse/.nvm/versions/node/v24.7.0/bin/node scripts/probe-ripgrep-direct.mjs --native --opencode-grep
+/Users/kkrausse/.nvm/versions/node/v24.7.0/bin/node scripts/probe-ripgrep-direct.mjs --opencode-grep
+```
+
+Both retain cold/warm API and basic CLI/discovery checks, then launch the original
+CLI with exactly:
+
+```js
+['--no-config', '--json', '--hidden', '--no-messages', '--glob=!**/.git/**', '--', 'VIVARI_GREP_NEEDLE', 'grep-probe.txt']
+```
+
+Guest command cwd is `/workspace`, containing `grep-probe.txt` with exact bytes
+`before\nVIVARI_GREP_NEEDLE\nafter\n`. Native uses an equivalent `workspace`
+directory inside its disposable temporary installation. The same fixture asserts
+JSON event order `begin, match, end, summary` and this exact match payload on both:
+
+```json
+{"path":{"text":"grep-probe.txt"},"lines":{"text":"VIVARI_GREP_NEEDLE\n"},"line_number":2,"absolute_offset":7,"submatches":[{"match":{"text":"VIVARI_GREP_NEEDLE"},"start":0,"end":18}]}
+```
+
+Timing-dependent summary fields are not compared; summary match and matched-line
+counts must each be 1. Exact-command and parent exits are code 0, signal null,
+with empty stderr and explicit `RIPGREP_OPENCODE_GREP_PASS` /
+`RIPGREP_COMMAND_PASS` checkpoints. The supervisor emits its existing OPFS SQLite
+availability notice; captured guest stderr is empty.
+
+### Delivery/setup for the next browser task
+
+- Reuse `scripts/ripgrep-direct-assets.mjs`: deliver the nine original
+  `ripgrep@0.3.1` files verbatim to `/direct/node_modules/ripgrep`. The existing
+  standalone discovery fixture also mounts `which@6.0.1` and `isexe@4.0.0`:
+  55 total files, `transforms: []`, manifest SHA-256
+  `e40f3b2f9cb5617e5c50e6f70a4ed2c8c01fccd7fda28cf191d9700914a9c7d7`.
+- Make `/direct/node_modules/.bin/rg` a symlink to `../ripgrep/lib/rg.mjs`,
+  chmod its target to `0755`, and prepend `/direct/node_modules/.bin` to PATH
+  (retain `/bin` for the Node shebang). Set `RIPGREP_NODE_WASI=0` in the launched
+  process environment. Fixture discovery verifies rejection at `0644` and
+  successful published `isexe`/`which` checks at `0755`.
+- OpenCode already bundles which 6/isexe 4 and checks PATH before its private
+  binary directory; later application delivery needs no extra external discovery
+  dependencies or OpenCode private binary cache provisioning.
+- The exact check deletes only the package's `ripgrep-wasm-*.wasm` temporary cache
+  before launch and verifies it is recreated by the unchanged guest loader.
+  No host decompression, loader rewrite, runtime rebuild, or pin change was needed.
+- Reuse the fixture directly as `node /direct/command.cjs command /workspace`
+  with parent cwd `/direct`, or its opt-in headless probe flag above. The optional
+  workspace argument enables the exact check; existing browser invocations retain
+  their current checks. Browser `--grep` mode and model/server acceptance are the
+  next independent gate and were not run in this preflight.
+
 ## PATH command continuation
 
 Runtime `2b27981` implements inode-owned chmod/fchmod and exposes the existing
