@@ -12,6 +12,10 @@
   No relay restart or browser storage reset performed.
 - Prepared fresh qualification URL: `http://127.0.0.1:43924/`. Browser acceptance
   remains blocked until reconnection; this is not a grep/glob result.
+- After the user reported the page open and extension enabled, retried execute
+  (navigate to the prepared harness) and doctor: same disconnected-extension error,
+  zero targets, matching relay at `http://127.0.0.1:19989`. No page was acquired.
+  Requested extension reload and explicit toolbar attachment in that browser/profile.
 
 ## Bounded execution when a guest operation never completes
 
