@@ -3,6 +3,65 @@
 September 11, 2026. **Built-path browser OPFS health and managed shutdown pass;
 broader server acceptance remains ahead. Unbundled startup remains blocked.**
 
+## September 11: session-row retention across same-page OPFS reopen
+
+**PASS**, all 14 acceptance checkpoints; original one-shot host completion
+notification confirmed exit **0**. One execution of
+`bun scripts/serve-opencode-bun-server.ts --once --session-retention` from `vivari`,
+at clean harness commit `9a2b47c16a9d47008eed103455bb277e0efb676c`, with the
+360-second harness bound. Browser Control CLI session `brisk-walrus-245`
+navigated once to the exact fresh URL:
+`http://127.0.0.1:50681/?autorun=1&runID=6a6b9aea-57a8-4fdf-92f0-dbe7acd1d9a2&restart=1&session-retention=1`.
+The same attempt was continued to collect its completed receipt; no retry,
+app/runtime rebuild, pin change, or app/runtime source edit occurred.
+
+Receipt (local generated artifact):
+`vivari/.runtime/opencode-bun-6a6b9aea-57a8-4fdf-92f0-dbe7acd1d9a2.json`,
+manifest observed `2026-09-11T18:58:35.540Z`, host Bun `1.4.0`.
+
+The 14 receipt checkpoints, in order, all passed:
+
+1. Fresh real OPFS workspace `default`.
+2. Initial mount of all five app assets unchanged, lengths and SHA-256 verified.
+3. Initial guest-generated registration validated (credentials omitted).
+4. Initial authenticated health `healthy: true`.
+5. One unprompted session created, with zero model/tool requests.
+6. Initial managed stop `accepted: true`.
+7. Initial natural exit `exitCode: 0`, `forced: false`, `signal: null`, before cleanup.
+8. Same workspace marker and SQLite size/SHA-256 retained across reopen.
+9. Reopened mount of all five app assets unchanged, lengths and SHA-256 verified.
+10. Reopened guest-generated registration validated (credentials omitted).
+11. Reopened authenticated health `healthy: true`.
+12. Retained session ID/title checked, with zero model/tool requests.
+13. Reopened managed stop `accepted: true`.
+14. Reopened natural exit `exitCode: 0`, `forced: false`, `signal: null`, before cleanup.
+
+Both phases completed awaited `runtime.stop`, `workspace.flush`, and
+`workspace.close`; stdout/stderr drains counted 257/0 then 42/0 bytes.
+The created and retrieved session was `ses_f6e29a1ccffeUpabGg0N2q8l3o`, titled
+`Browser OPFS retention probe`; receipt flags confirm creation and ID/title equality.
+`/.server/data/opencode.sqlite` retained its valid SQLite header and identical
+**425,984 bytes**, SHA-256
+`de39386fe70d2a2ada9925be001c805cc439a9d51030e3951853c8b5eac4b4ee`,
+after first runtime stop/flush before close and after workspace reopen
+**before the second `Runtime.start`**.
+
+Actual served runtime distribution:
+`098e0b60a0ff8703994ea681d9c974ae9267bfe5dbdd799e87ff00982ff938a3`,
+carrying clean fork `80d5cdd599fce4fa4817128461c865e009109d34`, built
+`2026-09-11T18:36:31.189Z` (`release: false`). Observed app source was
+`d7a7256bb6b0952f486c95718cfbf460b1570a56`, retaining the preexisting
+`packages/tui/src/component/devtools-bar.tsx` modification. App build-time
+attestation remains absent (`buildReceipt: null`). Served `server.js` was
+28,339,357 bytes, SHA-256
+`765dd1b67583b645a01e904cdc0de525487e1b5c15db2b281ecad83fa5a5f059`.
+
+Qualified scope: **one unprompted session row and SQLite byte retention across
+same-page full workspace/runtime reopen**. Page reload remains unqualified.
+Next smallest task: add a bounded two-stage page-reload retention qualification
+that resumes the same origin/workspace and retrieves the recorded session ID/title
+without model execution. Browser session is retained; this qualification host exited.
+
 ## September 11: same-page OPFS workspace/runtime reopen qualification
 
 **PASS**, original one-shot host exit 0, all 12 acceptance checks. One execution of
@@ -40,9 +99,9 @@ was 28,339,357 bytes, SHA-256
 `765dd1b67583b645a01e904cdc0de525487e1b5c15db2b281ecad83fa5a5f059`.
 
 Scope is **same-page full workspace/runtime reopen and SQLite byte retention**.
-Page reload and session-row persistence are unqualified. Next smallest task:
-separately qualify creating and retrieving one session row across the same
-workspace/runtime reopen, without model execution. Browser session is retained;
+Page reload remains unqualified; session-row persistence is now qualified above.
+The next task at this checkpoint was creating and retrieving one session row
+across the same workspace/runtime reopen without model execution. Browser session is retained;
 the qualification host has exited.
 
 ## September 11: earlier single-attempt browser OPFS service qualification
