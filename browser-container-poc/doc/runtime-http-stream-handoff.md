@@ -102,6 +102,55 @@ clean process exit. This fixed both graceful stops in the full server workflow.
   `{exitCode:0, signal:null, forced:false}`, new service/listener identities,
   old-endpoint rejection, session/edit retention, runtime/workspace cleanup.
 
+## Headless requalification at `80d5cdd` (2026-09-11)
+
+One offline run of `bun run test:workers` from `workspace-api` completed with
+exit 0 and `RESULT PASS (real headless workers; browser-only gates remain separate)`.
+The existing runner bundles the test harness and launches native
+`bunx --package node-bin-darwin-arm64@24.18.0 node tests/.headless.mjs`;
+the selected binary reported `v24.18.0`. The offline contract has a 90-second
+deadline; this invocation also had a 120-second outer timeout. No selector is
+supported, so the existing offline suite ran once, with `PREPARED_APPS` and
+`APP_RESTORE` unset.
+
+Provenance checked through `vivari/scripts/runtime-source.mjs`, including after
+the run at `2026-09-11T20:55:00.868Z`:
+
+- Resolved fork `/Users/kkrausse/Documents/repos/kkrausse/vivari`, clean HEAD
+  `80d5cdd599fce4fa4817128461c865e009109d34`.
+- Existing `vivari/.runtime/patched-build.json`: same clean revision, built
+  `2026-09-11T18:36:31.189Z`, development receipt (`release: false`), SHA-256
+  `0600a75b9789e31eb52924f8315c60fc6de891899550cfb0065ea96778ba0ad4`.
+  All 37 receipted native output hashes matched the current fork files.
+- Existing `workspace-api/dist/runtime/distribution.json`: version
+  `098e0b60a0ff8703994ea681d9c974ae9267bfe5dbdd799e87ff00982ff938a3`,
+  matching revision and build-receipt hash. The headless adapter loads fork
+  source and existing native artifacts; this is provenance context, not an
+  execution of the browser distribution.
+
+Fresh HTTP checkpoints all passed: JSON/repeated headers/HEAD/204; live SSE with
+eight concurrent JSON requests and cancellation; byte-exact 2 MiB streaming echo;
+32 MiB response stall/resume/drain; slow upload backpressure and source cancellation
+on abort; mid-body error, pre-header abort, unread response cancellation reaching
+the guest connection, and early-response upload cleanup. Shared checks returned
+`{ status: 'PASS', stalledProducerBytes: 131072 }`, matching the older headless
+stall observation. The embedding checks also passed unchanged PID allocation,
+graceful listener close with accepted-response drain and clean exit, listener
+replacement, active-SSE process stop with reader rejection, closed-endpoint
+rejection, and **zero retained HTTP channels**.
+
+The remaining existing offline checkpoints passed: shared binary VFS, exact
+argv/cwd/env and byte streams, stdin EOF, child byte fidelity, runtime stop/port
+cleanup, filesystem reattachment, bounded output overflow, and local ripgrep WASM
+contracts. The run emitted the expected main-thread OPFS SQLite VFS availability
+notice. It used no browser, host live OpenCode, credentials, or real model.
+
+This adds headless HTTP evidence at `80d5cdd`; the browser HTTP acceptance above
+remains evidence at `48d4ca12fd478a6e28b0838830a4724ee771213e`. Fresh Chromium
+transport, OPFS/SW/preview lifecycle, and browser active-stream interruption at the
+new revision remain separate qualification. These results do not qualify generic
+stdout credits or the other P2 process-stream contracts.
+
 ## Reproduce / continue
 
 From `random/browser-container-poc/vivari`, with the canonical fork checked out:
