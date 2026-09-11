@@ -51,7 +51,41 @@ records the session ID/title, completed verification, and zero model/tool
 requests alongside the SQLite evidence. The gate stops at its first failed
 checkpoint. This mode is ready for a separate browser attempt.
 
-Omit both flags for the existing single-lifecycle, six-checkpoint gate and
+For the opt-in single-phase model/SSE check, run:
+
+```sh
+bun scripts/serve-opencode-bun-server.ts --once --model
+```
+
+Open the exact printed URL on a fresh origin (`PORT` defaults to an allocated
+port). `--model` cannot be combined with restart or session retention. It uses
+the existing app output plus a separate `/app/models.json` data asset from
+`.runtime/opencode-server-package/models.json`, verified against SHA-256
+`93c9a67396a5a459c4cd6c4ea3514ef86652019ed2bc1a3589dbc624c4a42ea9`
+on the host and again during guest delivery. `OPENCODE_MODELS_PATH` selects that
+asset with model fetching disabled. Guest config disables snapshots and selects
+`opencode/muse-spark-1.3-contributor-free` through the existing streaming host
+proxy, restricted to the public `opencode` provider marker.
+
+After authenticated health, the probe creates `Minimal build model SSE` in
+`/workspace`, subscribes to and drains `/api/event`, then sends exactly one prompt:
+`Reply with exactly MINIMAL_MODEL_OK. Do not invoke any tools.` The 60-second
+model deadline covers subscription, prompt, and terminal events. Acceptance
+requires session-filtered text deltas, exact ended text `MINIMAL_MODEL_OK`,
+`session.execution.succeeded`, and zero tool events. Failures, tool input, or an
+early stream close fail the gate. There are no prompt retries or fallback.
+The SSE subscription is aborted and joined; guest server termination through
+managed stop on success or `runtime.stop()` in final cleanup handles model
+cancellation. SSE cancellation alone is not considered model cancellation.
+
+The receipt includes model identity, delta/tool counts, one prompt count,
+terminal status, SSE and runtime cleanup, and host proxy model POST count as
+evidence (auxiliary generation can make that count greater than one). Raw model
+responses, reasoning, guest logs, and credentials are omitted. This eight-checkpoint
+mode has a 180-second overall timeout and is ready for a separate browser attempt;
+implementation checks alone do not qualify model execution.
+
+Omit all three mode flags for the existing single-lifecycle, six-checkpoint gate and
 180-second timeout. Restart mode has passed both browser phases with matching
 SQLite bytes and clean health/stop/exit checks.
 
