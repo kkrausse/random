@@ -1,7 +1,25 @@
-import type { SessionMessageInfo } from "@opencode-ai/client"
+import type { SessionMessageInfo, TokenUsageInfo } from "@opencode-ai/client"
 import type { Plugin } from "@opencode-ai/plugin/tui"
 
 export const WEEK_MS = 7 * 24 * 60 * 60 * 1_000
+
+export function sumUsageTokens(messages: ReadonlyArray<SessionMessageInfo>) {
+  const tokens: TokenUsageInfo = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+  for (const message of messages) {
+    if (message.type !== "assistant" || !message.tokens) continue
+    tokens.input += message.tokens.input
+    tokens.output += message.tokens.output
+    tokens.reasoning += message.tokens.reasoning
+    tokens.cache.read += message.tokens.cache.read
+    tokens.cache.write += message.tokens.cache.write
+  }
+  const input = tokens.input + tokens.cache.read + tokens.cache.write
+  return {
+    tokens,
+    processed: input + tokens.output + tokens.reasoning,
+    cacheReadPercent: input > 0 ? tokens.cache.read / input * 100 : 0,
+  }
+}
 
 export function weeklyMessages(messages: ReadonlyArray<SessionMessageInfo>, now: number) {
   const unique = new Map<string, SessionMessageInfo>()

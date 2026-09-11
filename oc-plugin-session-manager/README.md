@@ -85,7 +85,11 @@ request and therefore include context read repeatedly across turns.
 The sidebar also sums response usage over the trailing 168 hours across all
 sessions on the connected server, including subagents and other projects. It
 shows total cost/equivalent, a daily average (total ÷ 7), session and response
-counts, and a per-model breakdown. Each response is priced separately so a
+counts, and a per-model breakdown. Weekly token totals show fresh input, cache
+reads, cache writes, output, reasoning, and total tokens processed. The input
+cache percentage is cache reads ÷ (fresh input + cache reads + cache writes).
+Token totals include unpriced responses and use the same window and deduplicated
+responses as the cost total. Each response is priced separately so a
 week's cumulative tokens cannot accidentally trigger a long-context tier.
 The window uses response completion time, or creation time for in-progress
 responses. Shared message IDs are counted once.
