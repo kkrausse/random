@@ -21,8 +21,8 @@ for (const [entry, name] of [
   });
   if (!result.success) throw new AggregateError(result.logs);
 }
-for (const entry of ['prepare', 'server', 'vite']) {
-  const result = await Bun.build({ entrypoints: [`src/${entry}.ts`], outdir: 'dist', naming: `${entry}.js`, target: entry === 'vite' ? 'node' : 'bun', packages: 'external' });
+for (const entry of ['prepare', 'server', 'vite', 'config']) {
+  const result = await Bun.build({ entrypoints: [`src/${entry}.ts`], outdir: 'dist', naming: `${entry}.js`, target: ['vite', 'config'].includes(entry) ? 'node' : 'bun', packages: 'external' });
   if (!result.success) throw new AggregateError(result.logs);
 }
 await $`bunx @tailwindcss/cli -i src/tailwind.css -o dist/ui.css --minify`;

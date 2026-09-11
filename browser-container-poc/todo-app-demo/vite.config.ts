@@ -2,10 +2,11 @@ import { reactRouter } from '@react-router/dev/vite'
 import { browserCompatibleTailwind, browserEditorBoundary } from '@kev-browser-agent-kit/opencode-chat/vite'
 import tsconfigPaths from 'vite-tsconfig-paths'
 import { defineConfig } from 'vite'
+import { authorizeEditing } from './src/server/editing'
 
 export default defineConfig(async () => ({
   resolve: { dedupe: ['react', 'react-dom'] },
-  plugins: [await browserCompatibleTailwind(), reactRouter(), tsconfigPaths(), browserEditorBoundary('src/editing.tsx', 'src/editor-panel.tsx')],
+  plugins: [await browserCompatibleTailwind(), reactRouter(), tsconfigPaths(), browserEditorBoundary('src/editing.tsx', 'src/editor-panel.tsx', authorizeEditing)],
   server: {
     port: 5173,
     strictPort: true,

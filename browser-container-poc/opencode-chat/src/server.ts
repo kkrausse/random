@@ -29,7 +29,12 @@ export function createBrowserEditorHandler(options: {
     if (!path.startsWith(base) && !protectedAsset) return;
     const denied = await authorizeEditorRequest(request, options.authorize);
     if (denied) return denied;
-    if (protectedAsset) return; // Authorized; host static handler retains its cache/HEAD behavior.
+    if (protectedAsset) {
+      if (!['GET', 'HEAD'].includes(request.method)) return new Response('Method not allowed', { status: 405 });
+      const file = Bun.file(resolve(options.clientDirectory!, '.' + path));
+      if (!await file.exists()) return new Response('Not found', { status: 404 });
+      return new Response(request.method === 'HEAD' ? null : file, { headers: { ...browserEditorHeaders, 'Content-Type': file.type, 'Cache-Control': 'no-store' } });
+    }
     if (path.startsWith(base + 'model/')) {
       if (!['GET', 'POST'].includes(request.method)) return new Response('Method not allowed', { status: 405 });
       const upstreamBase = new URL(options.model.baseURL.replace(/\/$/, '') + '/');
