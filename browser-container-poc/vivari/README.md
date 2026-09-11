@@ -38,9 +38,22 @@ The SQLite header and matching bytes are required; these named observation
 checkpoints do not assert a SQL WAL checkpoint or retained application rows.
 Credentials and raw guest output are omitted. Restart mode allows 360 seconds.
 
-Omit `--restart` for the existing single-lifecycle, six-checkpoint gate and
-180-second timeout. Restart browser acceptance is pending; this command prepares
-the harness for a separate browser attempt.
+For an opt-in application-row retention check, run:
+
+```sh
+bun scripts/serve-opencode-bun-server.ts --once --session-retention
+```
+
+`--session-retention` implies restart and adds two checkpoints: create exactly one
+unprompted session with title `Browser OPFS retention probe` and location `/app`,
+then retrieve it by ID after reopening and verify its ID/title. The receipt
+records the session ID/title, completed verification, and zero model/tool
+requests alongside the SQLite evidence. The gate stops at its first failed
+checkpoint. This mode is ready for a separate browser attempt.
+
+Omit both flags for the existing single-lifecycle, six-checkpoint gate and
+180-second timeout. Restart mode has passed both browser phases with matching
+SQLite bytes and clean health/stop/exit checks.
 
 ## Historical: matched V2 TUI → model edit → Vite HMR
 
