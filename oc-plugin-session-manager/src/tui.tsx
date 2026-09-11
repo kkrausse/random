@@ -52,6 +52,15 @@ function formatCost(value: number) {
   return `$${value.toFixed(2)}`
 }
 
+export function sessionTokenBreakdown(session: Pick<SessionInfo, "tokens">, compact = false) {
+  const tokens = session.tokens
+  const labels = compact
+    ? ["In", "CR", "CW", "Out", "Think"]
+    : ["Input", "Cache read", "Cache write", "Output", "Reasoning"]
+  const values = [tokens.input, tokens.cache.read, tokens.cache.write, tokens.output, tokens.reasoning]
+  return labels.map((label, index) => `${label} ${formatCompactTokens(values[index]!)}`).join(" · ")
+}
+
 // Mirrors opencode's sidebar context calculation
 // (packages/tui/src/util/session.ts + feature-plugins/sidebar/context.tsx):
 // current window usage = last assistant message with token usage after the
@@ -899,6 +908,11 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
             {selectedStats().right}
           </text>
         </box>
+        ) : null}
+        {selectedSession() && !inboxRequest() && (!mobile() || !permission()) ? (
+          <text id="claude-session-token-breakdown" height={1} flexShrink={0} wrapMode="none" fg={props.context.theme.text.subdued}>
+            {sessionTokenBreakdown(selectedSession()!, mobile())}
+          </text>
         ) : null}
         {permission() ? (
           <>
