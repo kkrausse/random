@@ -2,9 +2,10 @@
 
 September 11, 2026. **Startup remains blocked; no server acceptance.**
 
-Latest: runtime `c2b10ac` passes package self-reference and TypeScript module-alias
-contracts. Both launch paths now reach Undici's missing
-`webidl.util.markAsUncloneable` function. Earlier failures below record progress.
+Latest: runtime `80d5cdd` supplies bounded worker uncloneable-mark semantics.
+The direct launcher now passes Undici initialization and reaches `Unexpected string`
+compiling `packages/client/src/effect/service.ts`. Earlier failures below record
+progress. Still no listener or server acceptance.
 
 ## Reproduce
 
@@ -89,11 +90,26 @@ server qualification must add authenticated health and lifecycle checkpoints.
    imports. Preserve module binding clauses and erase only their inline type
    specifiers. The independent contract tests namespace export/import, renamed
    bindings, an ordinary binding named `type`, erased types and real assertions.
-8. **Latest executed launcher retry:** now also reaches
+8. **Launcher retry after `c2b10ac`:** now also reaches
    `webidl.util.markAsUncloneable is not a function`. This is a missing
    `node:worker_threads.markAsUncloneable` API used by installed modern Undici,
    rather than a reason to rewrite or bundle the package. Correct implementation
-   needs cloning-boundary semantics, not a silent no-op. No such shim was added.
+   needs cloning-boundary semantics, not a silent no-op.
+9. **Bounded fix, `80d5cdd`:** process-local WeakSet marks reject at guest
+   structuredClone, MessagePort/BroadcastChannel posting and Worker workerData
+   boundaries. JS graphs are snapshotted once, preserving getters-once, cycles,
+   aliases, Map/Set entries and Error causes. Known native values and transfer
+   semantics remain native; ArrayBuffer/SharedArrayBuffer marks are ignored like
+   Node. Unknown branded host objects explicitly reject once marks exist, rather
+   than bypassing checks; raw cloning functions saved before builtin loading are
+   outside this guard. This is bounded compatibility, not every platform brand.
+10. **Latest executed launcher retry on committed `80d5cdd`:** Undici initializes;
+    then `SyntaxError: Unexpected string (while compiling
+    /upstream/packages/client/src/effect/service.ts [esm])`. A diagnostic parse of
+    the runtime's transformed output finds a leftover `from "../service.js"`
+    after type-export stripping; additional TS declarations also survive later
+    in that file. These are next loader defects, not addressed in this slice.
+    The compilation failure triggers worker cleanup/exit 143; no listening marker.
 
 Neither attempt emitted a listener checkpoint. No conclusions about later native,
 TUI, SQLite, HTTP, model or tool paths follow from these failures.
@@ -105,13 +121,17 @@ Executed in the standalone runtime fork with native Node 24.7.0:
 ```sh
 node scripts/fixtures/runtime-contracts/esm-export-comments.cjs
 node scripts/fixtures/runtime-contracts/package-self.cjs
+node scripts/fixtures/runtime-contracts/worker-uncloneable.cjs
 bun scripts/fixtures/runtime-contracts/ts-module-alias.cjs
 node scripts/spike-bun-offline.mjs
 node scripts/verify-runtime-contracts.mjs
 ```
 
 Native fixtures and the complete offline Bun suite passed; the latest run passed
-all twelve real-worker contracts (including the concurrent fs-permissions fixture).
+all thirteen real-worker contracts (including fs-permissions). The new native
+Node/guest uncloneable contract covers nested marked values, maps, sets, Error
+causes, workerData rejection, accessor values, getters-once, cycles, ordinary
+Date/RegExp/typed-array/Error cloning and real ArrayBuffer transfer/detachment.
 A direct `bun run build:core` attempt failed
 because `wasm-pack` was absent from that shell's PATH, before any build output.
 The coordinating session built clean `b6a5fbe` and qualified unchanged ripgrep in
@@ -126,6 +146,6 @@ such skill was found in this environment. The available pinned `opencode-drive`
 instructions were read. This work used the explicitly authorized noninteractive
 isolated guest kernel rather than the installed live service.
 
-Keep the existing packaged baseline. Continue with the executed Undici failure,
-then retry with full generic assets when needed.
+Keep the existing packaged baseline. Continue with the executed client-service
+TypeScript compilation failure, then retry with full generic assets when needed.
 The original [case-study acceptance gates](opencode-runtime-case-study.md) remain.
