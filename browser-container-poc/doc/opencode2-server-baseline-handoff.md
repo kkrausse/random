@@ -2,6 +2,21 @@
 
 September 10, 2026. **P0 in progress; full acceptance is not yet claimed.**
 
+## Continuation: clean build prepared, browser connection blocked
+
+- Rebuilt the normal server package: 2,945 inputs, 19 assets, no trace instrumentation.
+- Clean release runtime build passed using explicit revision
+  `bd5a60c13a317ed79ae579da182535b1925ece66`; the qualified configuration pin is
+  intentionally still unchanged pending browser acceptance.
+- Regenerated workspace distribution:
+  `f4b058e1cb4df1ea319f7baa3d54570a2e058872a4bbc9d8edb0f2312e24a0a9`.
+- All six fork headless contracts passed on native host Node 24.7.0:
+  node-entry, fs-remove, stream-consumers, vm-import, process-warning, sea.
+- Started the acceptance host at `http://127.0.0.1:43924/`; recheck availability
+  when resuming. Browser Control's relay is reachable but its extension is disconnected.
+  No browser acceptance was executed in this continuation. Reconnect the extension,
+  then use the asynchronous qualification workflow below on this unused origin.
+
 ## What is implemented
 
 - `vivari/scripts/package-opencode-server.ts` builds upstream
