@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto'
 import { modelProxy } from './model-proxy'
 import catalog from '../src/provider-upstreams.json'
 import { directAssets } from './ripgrep-direct-assets.mjs'
+import { globSeed, globSeedBytes } from '../probes/opencode-bun-fixtures'
 
 const read = process.argv.includes('--read')
 const edit = process.argv.includes('--edit')
@@ -101,9 +102,10 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT 
   }
   if (path === '/run-config') return Response.json({ runID, restart, sessionRetention, model, ...(read ? { read } : {}), ...(edit ? { edit } : {}), ...(grep ? { grep } : {}), ...(glob ? { glob } : {}) }, { headers })
   if (path === '/result' && request.method === 'POST') {
-    const body = await request.json()
     if (finished) return new Response('Run already finished', { status: 409, headers })
-    if (body.runID !== runID || !['PASS', 'FAIL'].includes(body.result?.status)) return new Response('Invalid result', { status: 400, headers })
+    let body
+    try { body = await request.json() } catch { return new Response('Invalid result', { status: 400, headers }) }
+    if (!body || body.runID !== runID || !body.result || !['PASS', 'FAIL'].includes(body.result.status)) return new Response('Invalid result', { status: 400, headers })
     if (body.result.status === 'PASS' && (body.result.runtime !== runtimeManifest.version || body.result.assets !== assets.length ||
       body.result.exit?.exitCode !== 0 || body.result.exit?.forced !== false || body.result.exit?.signal !== null || body.result.checks?.length !== (sessionRetention ? 14 : restart ? 12 : search ? 9 : model ? 8 : 6) ||
       body.result.model !== model ||
@@ -115,7 +117,7 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT 
         body.result.globEvidence.inputMatched !== true || body.result.globEvidence.pathMatched !== true || body.result.globEvidence.correlationMatched !== true ||
         body.result.globEvidence.contentMatched !== true || body.result.globEvidence.contentItems !== 1 || body.result.globEvidence.matchedFiles !== 1 ||
         body.result.globEvidence.fixtureFiles !== 2 || body.result.globEvidence.target !== '/workspace/glob-probe' || body.result.globEvidence.providerExecuted !== false ||
-        body.result.globEvidence.seedBytes !== 37 || body.result.globEvidence.seedSha256 !== sha256('VIVARI_GLOB_MATCH\nVIVARI_GLOB_NONMATCH\n') ||
+        body.result.globEvidence.seedBytes !== globSeedBytes || body.result.globEvidence.seedSha256 !== sha256(globSeed) ||
         body.result.globEvidence.contentSha256 !== sha256('/workspace/glob-probe/match.ts') ||
         body.result.globEvidence.packageFiles !== 9 || body.result.globEvidence.manifestSha256 !== ripgrepManifest?.manifestSha256 ||
         body.result.globEvidence.installerSha256 !== ripgrepManifest?.installer.sha256 || body.result.globEvidence.setupCheckpoint !== true ||
@@ -163,16 +165,18 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT 
         body.result.session.idTitleChecked !== true || body.result.session.modelRequests !== 0 || body.result.session.toolRequests !== 0)) ||
       body.result.restart !== restart || body.result.scope !== (restart ? 'same-page full workspace/runtime reopen; no page reload' : 'single fresh-origin lifecycle') ||
       !Array.isArray(body.result.phases) || body.result.phases.length !== (restart ? 2 : 1) ||
-      body.result.phases.some((phase: any, index: number) => phase.phase !== (index === 0 ? 'initial' : 'reopened') ||
+      body.result.phases.some((phase: any, index: number) => !phase || phase.phase !== (index === 0 ? 'initial' : 'reopened') ||
         phase.exit?.exitCode !== 0 || phase.exit?.forced !== false || phase.exit?.signal !== null ||
         phase.checks?.length !== (index === 0 ? 5 : 6) + (sessionRetention ? 1 : 0) + (model ? 2 : 0) + (search ? 1 : 0) || phase.cleanup !== 'runtime.stop + workspace.flush + workspace.close completed') ||
       !Array.isArray(body.result.database) || body.result.database.length !== (restart ? 2 : 0) ||
-      (restart && (body.result.database.some((db: any) => db.path !== '/.server/data/opencode.sqlite' || db.sqliteHeader !== true ||
+      (restart && (body.result.database.some((db: any) => !db || db.path !== '/.server/data/opencode.sqlite' || db.sqliteHeader !== true ||
         !Number.isInteger(db.bytes) || db.bytes < 100 || !/^[a-f0-9]{64}$/.test(db.sha256)) ||
         body.result.database[0].checkpoint !== 'after first runtime.stop and workspace.flush, before close' ||
         body.result.database[1].checkpoint !== 'after reopen, before second Runtime.start' ||
         body.result.database[0].bytes !== body.result.database[1].bytes || body.result.database[0].sha256 !== body.result.database[1].sha256)))) {
-      return new Response('Incomplete acceptance checkpoints', { status: 400, headers })
+      // Retain no rejected payload: even evidence/check strings may contain secrets.
+      await report({ status: 'FAIL', error: 'Host rejected browser PASS: incomplete acceptance checkpoints' })
+      return Response.json({ received: true, status: 'FAIL' }, { headers })
     }
     await report(body.result)
     return Response.json({ received: true }, { headers })
