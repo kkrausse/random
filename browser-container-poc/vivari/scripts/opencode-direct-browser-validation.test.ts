@@ -17,6 +17,27 @@ function complete() {
   }
 }
 test('accepts complete ordered direct-server evidence', () => expect(validateDirectBrowser(complete(), expected)).toBe(true))
+test('retention requires a second natural lifecycle and identical persisted session data', () => {
+  const result: any = complete()
+  const retained = { sessionID: 'ses_retained', title: 'retention', fileSha256: 'a'.repeat(64), entries: [{ key: 'retention', value: { runID: 'run' } }] }
+  result.retention = { ...retained, exits: [result.exit, result.exit], oldEndpoint: 'CLOSED' }
+  result.stages.splice(8, 0, { name: 'retention.created', detail: retained })
+  const second = complete().stages.slice(3, 11)
+  second.splice(5, 0, { name: 'retention.verified', detail: retained })
+  result.stages.splice(12, 0, ...['retention.first-runtime-stopped', 'retention.first-workspace-flushed',
+    'retention.first-workspace-closed', 'retention.old-endpoint-closed', 'retention.workspace-reopened'].map(name => ({ name, detail: {} })), ...second)
+  const target = { ...expected, retention: true }
+  expect(validateDirectBrowser(result, target)).toBe(true)
+  expect(validateDirectBrowser(complete(), target)).toBe(false)
+  const mismatch = structuredClone(result)
+  mismatch.stages.find((s: any) => s.name === 'retention.verified').detail = { ...retained, sessionID: 'other' }
+  expect(validateDirectBrowser(mismatch, target)).toBe(false)
+  const incomplete = structuredClone(result)
+  incomplete.stages = incomplete.stages.filter((s: any) => s.name !== 'retention.first-workspace-closed')
+  expect(validateDirectBrowser(incomplete, target)).toBe(false)
+  const forced = structuredClone(result); forced.retention.exits[0].forced = true
+  expect(validateDirectBrowser(forced, target)).toBe(false)
+})
 test('rejects missing, early or forced shutdown and incomplete cleanup', () => {
   const missing = complete(); missing.stages = missing.stages.filter(stage => stage.name !== 'application.ready')
   expect(validateDirectBrowser(missing, expected)).toBe(false)

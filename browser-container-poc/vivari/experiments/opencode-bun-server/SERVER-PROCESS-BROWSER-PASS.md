@@ -1,5 +1,9 @@
 # September 11: unchanged direct server/process browser OPFS PASS
 
+Follow-up: [same-page OPFS retention PASS](SERVER-PROCESS-RETENTION-PASS.md) on the
+same unchanged artifact, with two natural lifetimes and genuine persisted session
+and instruction-entry data. The scope of this original startup receipt is unchanged.
+
 **PASS — one real-browser attempt, final host receipt accepted, host exit 0.**
 The retained beta-19425 direct-server artifact completed fresh OPFS startup,
 missing/valid authentication checks through the public runtime HTTP endpoint,
