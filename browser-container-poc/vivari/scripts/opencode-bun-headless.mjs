@@ -15,7 +15,7 @@ console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_INPUT',
   sourceStatus: execFileSync('git', ['-C', source, 'status', '--short'], { encoding: 'utf8' }).trim(),
   lockSha256: createHash('sha256').update(readFileSync(resolve(source, 'bun.lock'))).digest('hex'),
   runtimeRevision: execFileSync('git', ['-C', fileURLToPath(runtimeSourceUrl('.')), 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
-  artifact: 'vanilla bun build --target=bun; emitted JS and assets', consumerBehavioralRewrites: 0,
+  artifact: 'vanilla bun build --target=node; emitted JS and assets', consumerBehavioralRewrites: 0,
 }));
 const workers = new Set();
 const workerErrors = [];
@@ -44,7 +44,7 @@ try {
     } };
   } });
   kernel.installCoreutils();
-  // Copy every ordinary emitted file, including the four Bun-emitted WASM assets.
+  // Copy every ordinary emitted file, including assets selected by the build target.
   for (const entry of readdirSync(output, { withFileTypes: true })) {
     if (!entry.isFile()) throw new Error(`Unexpected build output: ${entry.name}`);
     const bytes = readFileSync(resolve(output, entry.name));

@@ -3,10 +3,17 @@
 September 11, 2026. **Startup remains blocked; no server acceptance.**
 
 Latest conventional-build experiment: a minimal invocation-only `bun build`
-with target `bun` succeeds (2,938 modules, JS plus four WASM assets). Its isolated
-headless guest run on `80d5cdd` stops at `Cannot find module 'ws' from '/app'`,
-before a listener. See the [build probe handoff](../vivari/experiments/opencode-bun-server/README.md)
-for exact commands, pins, artifact hash and the next bounded delivery task.
+with approved target `node` succeeds (2,952 modules, JS plus one native asset).
+`ws@8.21.0` is now bundled, and the isolated guest passes the earlier `ws`
+resolution failure. On `80d5cdd`, fresh-output execution next stops at
+`Cannot find module './impl/format' from '/app'`, from jsonc-parser's bundled UMD
+factory, before a listener (cleanup exit 143). Exact build command from
+`vivari/experiments/opencode-bun-server`:
+`bun build ./server.ts --target=node --outdir=../../.runtime/opencode-bun-server`.
+Probe from `vivari`:
+`/Users/kkrausse/.nvm/versions/node/v24.7.0/bin/node scripts/opencode-bun-headless.mjs`.
+See the [build probe handoff](../vivari/experiments/opencode-bun-server/README.md)
+for pins, artifact hash, clean-output repeat and the next bounded reduction.
 **Normal builds/transpilation are accepted; the direct TS stripper is not
 necessarily the critical path.** No browser qualification or runtime pin advance.
 
@@ -155,7 +162,7 @@ instructions were read. This work used the explicitly authorized noninteractive
 isolated guest kernel rather than the installed live service.
 
 Keep the existing packaged baseline. The next bounded conventional-build task is
-ordinary `ws` dependency delivery/Bun-target contract assessment and a retry;
+reducing jsonc-parser's emitted UMD relative require and comparing native behavior;
 the unbundled client-service TypeScript compilation failure remains a separate
 loader issue. Retry with further generic assets when execution requires them.
 The original [case-study acceptance gates](opencode-runtime-case-study.md) remain.
