@@ -80,6 +80,22 @@ catalog rates are respected as free. Responses lacking pricing are counted as un
 silently presented as free. Cumulative "session processed" tokens count every
 request and therefore include context read repeatedly across turns.
 
+### Rolling 7 days
+
+The sidebar also sums response usage over the trailing 168 hours across all
+sessions on the connected server, including subagents and other projects. It
+shows total cost/equivalent, a daily average (total ÷ 7), session and response
+counts, and a per-model breakdown. Each response is priced separately so a
+week's cumulative tokens cannot accidentally trigger a long-context tier.
+The window uses response completion time, or creation time for in-progress
+responses. Shared message IDs are counted once.
+
+The summary refreshes every minute, caches unchanged sessions, and cancels
+requests when the sidebar unmounts. Unknown model pricing is reported as a
+partial total; failed refreshes retain the previous total with a status message.
+Deleted sessions and the plugin's local archives are excluded. Catalog-based
+estimates use current prices rather than historical billing rates.
+
 ## Archive storage and API sequence
 
 Archives are local to the TUI machine, including when connected to a remote server:
