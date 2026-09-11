@@ -1,7 +1,70 @@
 # Direct unbundled OpenCode startup — first executed milestone
 
-September 11, 2026. **Built-path browser OPFS health, minimal model SSE, and managed shutdown pass;
+September 11, 2026. **Built-path browser OPFS health, minimal model SSE, local read, and managed shutdown pass;
 broader server acceptance remains ahead. Unbundled startup remains blocked.**
+
+## September 11: corrected read-gate single attempt passes
+
+**PASS**, all eight acceptance checkpoints; the original background completion
+notification confirmed host exit **0**. Executed
+`bun scripts/serve-opencode-bun-server.ts --once --read` once from clean harness
+`d495d1d`, with the 180-second host bound. Browser Control CLI session
+`brisk-walrus-245` navigated once to the exact printed fresh-origin URL:
+`http://127.0.0.1:51701/?autorun=1&runID=95a71a0a-b780-4586-8e06-1a85711b94fa&model=1&read=1`.
+Completion was collected from original background shell
+`sh_091ef8f46001hN7eaOYXpQ74fv`, without polling, sleeps, retries, or another
+navigation.
+
+Receipt (local generated artifact):
+`vivari/.runtime/opencode-bun-95a71a0a-b780-4586-8e06-1a85711b94fa.json`,
+manifest observed `2026-09-11T19:26:31.348Z`, host Bun `1.4.0`.
+
+| Gate / observation | Actual result |
+| --- | --- |
+| Provider/model | `opencode/muse-spark-1.3-contributor-free` |
+| Prompt requests / model-proxy POSTs | **1 / 2** |
+| Tool events / local read calls / correlated successes | **5 / 1 / 1**, no other tools |
+| Read target / input path matched | `/workspace/read-probe.txt` / `true` |
+| Canonical tool content matched authoritative fixture | `true` |
+| Provider-executed tool | `false` |
+| Text deltas / ended blocks / aggregate UTF-16 length | **2 / 1 / 34** |
+| Exact aggregate / trim-only / last-block text matched | `true / true / true` |
+| Terminal event | `session.execution.succeeded` |
+| SSE cleanup | aborted and joined |
+| Managed stop | accepted |
+| Cleanup exit status | natural exit verified |
+| Guest exit (top-level, initial phase, and read cleanup evidence) | `exitCode: 0, forced: false, signal: null` |
+| Awaited cleanup | `runtime.stop + workspace.flush + workspace.close completed` |
+| Output byte counts (stdout / stderr) | **3256 / 0** |
+| Host exit | **0** |
+
+The eight checkpoints cover fresh real OPFS workspace `default`, all six assets
+mounted with length/SHA-256 verification, validated guest registration,
+authenticated healthy service, minimal model session creation, one successful
+local read with exact target/content and successful terminal SSE, accepted managed
+stop, and natural guest exit before cleanup. The initial phase has seven checks;
+the fresh-workspace check is top-level. The receipt records one completed phase
+and no database-reopen observations.
+
+Both the harness's strict content/text assertions and the observed runtime
+lifecycle passed in this attempt. This does not retroactively resolve the earlier
+attempt's text mismatch or qualify broader tools/restart behavior. No model text,
+reasoning, credentials, or raw guest logs are retained in this handoff.
+
+Existing app/runtime artifacts were reused; only the browser harness was bundled.
+Runtime distribution is
+`098e0b60a0ff8703994ea681d9c974ae9267bfe5dbdd799e87ff00982ff938a3`,
+from clean fork `80d5cdd599fce4fa4817128461c865e009109d34`, built
+`2026-09-11T18:36:31.189Z`. Observed upstream source remains `d7a7256` with its
+preexisting TUI edit, and the manifest still lacks app build-time attestation.
+The qualification host exited and the browser session is retained. This outcome
+changes only this handoff document; no runtime, pin, provider, or host live service
+changes were made.
+
+Next smallest task: offline, select and specify the next single-tool acceptance
+case, including deterministic fixture, correlated tool-result checks, terminal
+event, and natural-exit requirements. This pass supplies the read baseline; it
+does not authorize another execution.
 
 ## September 11: offline read-gate diagnosis
 
