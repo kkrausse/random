@@ -2,18 +2,19 @@
 
 September 11, 2026. **Startup remains blocked; no server acceptance.**
 
-Latest conventional-build experiment: a minimal invocation-only `bun build`
-with approved target `node` succeeds (2,952 modules, JS plus one native asset).
-`ws@8.21.0` is now bundled, and the isolated guest passes the earlier `ws`
-resolution failure. On `80d5cdd`, fresh-output execution next stops at
-`Cannot find module './impl/format' from '/app'`, from jsonc-parser's bundled UMD
-factory, before a listener (cleanup exit 143). Exact build command from
-`vivari/experiments/opencode-bun-server`:
-`bun build ./server.ts --target=node --outdir=../../.runtime/opencode-bun-server`.
+Latest conventional-build experiment: `Bun.build` with target `node` and the
+authorized exact jsonc-parser published-ESM entry resolver succeeds (28,339,308-byte
+JS plus one native asset). `ws` is bundled, and selecting jsonc-parser's existing
+ESM modules passes the previous UMD `./impl/format` failure. On `80d5cdd`, fresh
+output now stops at `Cannot find module 'web-tree-sitter/tree-sitter.wasm' from
+'/app'`, from a retained `require.resolve`, before a listener (cleanup exit 143).
+Exact build command from `vivari/experiments/opencode-bun-server`: `bun run build`
+(runs `bun ./build.ts`; only resolver is `/^jsonc-parser$/` → published ESM main).
+This selects unchanged published source, with no runtime redirect or source rewrite.
 Probe from `vivari`:
 `/Users/kkrausse/.nvm/versions/node/v24.7.0/bin/node scripts/opencode-bun-headless.mjs`.
 See the [build probe handoff](../vivari/experiments/opencode-bun-server/README.md)
-for pins, artifact hash, clean-output repeat and the next bounded reduction.
+for configuration assessment, pins, artifact hash and the next bounded asset task.
 **Normal builds/transpilation are accepted; the direct TS stripper is not
 necessarily the critical path.** No browser qualification or runtime pin advance.
 
@@ -171,7 +172,7 @@ instructions were read. This work used the explicitly authorized noninteractive
 isolated guest kernel rather than the installed live service.
 
 Keep the existing packaged baseline. The next bounded conventional-build task is
-testing ordinary selective external-package delivery for jsonc-parser if pursued;
+ordinary tree-sitter WASM asset delivery or upstream asset-path configuration;
 the unbundled client-service TypeScript compilation failure remains a separate
 loader issue. Retry with further generic assets when execution requires them.
 The original [case-study acceptance gates](opencode-runtime-case-study.md) remain.
