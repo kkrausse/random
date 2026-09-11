@@ -89,7 +89,13 @@ const host = {
     if (type === "workspace-write") { await kernel.writeFilesBatch([{ path: data.path, bytes: data.bytes }]); return { type: "vv-reply" }; }
     throw Error(`Unhandled test RPC: ${type}`);
   },
-  post(type: string, data: Record<string, unknown>) {
+  post(type: string, data: Record<string, unknown>, transfer: MessagePort[] = []) {
+    if (type === "workspace-http-stream") {
+      if (listeners.get(Number(data.port)) !== data.listenerId) {
+        transfer[0].postMessage({ op: "error", error: "HTTP listener closed" }); transfer[0].close(); return;
+      }
+      kernel.openHttpStream(Number(data.port), data.request, transfer[0]); return;
+    }
     if (type === "proc-spawn") {
       if (data.listenerId && listeners.get(Number(data.port)) !== data.listenerId) {
         queueMicrotask(() => emit({ type: "proc-exit", execId: data.execId, code: 127, error: "listener closed" })); return;
@@ -104,7 +110,7 @@ const host = {
     else if (type === "proc-input") kernel.sendStdin(pid, data.chunk);
     else throw Error(`Unhandled test message: ${type}`);
   },
-  async registerPreview() {}, // Endpoint.fetch tested; no SW claim in this gate.
+  async registerPreview() { throw new Error("Programmatic HTTP must not register a preview SW"); },
 } as unknown as Host;
 Object.defineProperty(globalThis, "location", { value: { href: "http://localhost:43917/" }, configurable: true });
 const distribution = { name: "vivari", version: "headless-contract", assetBaseUrl: "/unused" };
@@ -121,6 +127,33 @@ async function output(execution: Execution) {
 let runtime: Awaited<ReturnType<typeof Runtime.start>> | undefined;
 async function testOfflineContract() {
   runtime = await Runtime.start({ workspace, distribution });
+  kernel.writeFile("/workspace/http-stream.cjs", readFileSync(runtimeSourcePath("scripts/fixtures/runtime-contracts/http-stream-server.cjs")));
+  let httpServer = await runtime.node({ entry: "/workspace/http-stream.cjs" });
+  let httpOutput = output(httpServer);
+  let httpEndpoint = await runtime.expose(3187, { signal: AbortSignal.timeout(5000) });
+  const nextPid = kernel.nextPid;
+  const { checkHttpStreaming } = await import(runtimeSourceUrl("scripts/lib/http-stream-checks.mjs").href);
+  console.log(await checkHttpStreaming(httpEndpoint.fetch));
+  assert.equal(kernel.nextPid, nextPid, "HTTP requests spawned processes");
+  const retired = httpEndpoint;
+  const shutdown = await retired.fetch("/shutdown");
+  await retired.closed;
+  await assert.rejects(retired.fetch("/json"), { code: "CLOSED" });
+  assert.equal(await shutdown.text(), "graceful", "accepted response must drain after listener closes");
+  assert.equal((await httpOutput).exit.exitCode, 0);
+  httpServer = await runtime.node({ entry: "/workspace/http-stream.cjs" });
+  httpOutput = output(httpServer);
+  httpEndpoint = await runtime.expose(3187, { signal: AbortSignal.timeout(5000) });
+  assert.notEqual(httpEndpoint.url, retired.url);
+  console.log("PASS graceful listener close drains accepted response before process exit");
+  const active = await httpEndpoint.fetch("/sse");
+  const activeReader = active.body!.getReader();
+  await activeReader.read();
+  await httpServer.stop(); await httpOutput;
+  await assert.rejects(activeReader.read());
+  await assert.rejects(httpEndpoint.fetch("/json"), { code: "CLOSED" });
+  assert.equal(kernel.httpStreams.size, 0, "HTTP channels leaked");
+  console.log("PASS HTTP process accounting/active-request exit cleanup");
   await kernel.writeFilesBatch([{ path: "/workspace/large.bin", bytes: Uint8Array.from({ length: 1_200_001 }, (_, i) => i % 256) }]);
   const large = (await host.request("workspace-read", { path: "/workspace/large.bin" })).bytes as Uint8Array;
   assert.equal(large.length,1_200_001); assert.ok(large.every((b,i)=>b===i%256));

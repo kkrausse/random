@@ -49,14 +49,24 @@ await workspace.close();
   EOF. `stop()` is idempotent, forced subtree cleanup. stdin accepts bytes and EOF.
 - `expose(port,{signal})` waits for a listener; `Endpoint.closed` reports loss.
   Handles do not retarget numeric-port replacements. Preview URLs carry reserved
-  listener identity; SW/iframe behavior still needs real-browser qualification.
-- `endpoint.fetch('/path',init)` uses a generic real guest HTTP relay process per
-  request, streams response bytes, preserves status/headers/binary bodies, and
-  closes the guest connection on abort/cancel. Uploads buffer (8 MiB limit),
-  response headers cap at 64 KiB. Redirect responses are returned manually;
+  listener identity. Programmatic expose/fetch does not register a Service Worker.
+- `endpoint.fetch('/path',init)` uses a runtime-owned streaming channel into the
+  existing listener worker's real Node HTTP client. No per-request process is
+  launched. Uploads and downloads use independent one-chunk (64 KiB) credit
+  windows, with local socket backpressure reaching Node's write/drain behavior.
+  Abort/body cancellation closes the actual guest connection. Headers cap at
+  64 KiB; the supervisor allows 128 active requests. Bodies have no total-size cap.
+  One caller-supplied upload chunk/current application write can exceed the window;
+  callers must still respect their own stream backpressure. An unread response
+  holds bounded buffers and an active slot until cancelled or its owner closes.
+  Repeated headers are preserved subject to Fetch's browser restrictions (including
+  filtering Set-Cookie). Redirect responses are returned manually;
   automatic following, cookie-jar integration, and browser-native Response URL/
   redirected metadata are not implemented. SW preview HTTP itself stays buffered.
 - `endpoint.attachPreview(iframe, options)` owns its browser preview transport.
+  It starts Service Worker registration lazily, then navigates the frame. Failure
+  disposes the attachment and dispatches an iframe `error` event. Fresh-origin
+  browser qualification covers registration/navigation after programmatic HTTP.
   The compatibility helper `attachPreview(iframe, endpoint, options)` delegates
   to that capability, so React entrypoints and separate package copies can attach
   without sharing a private registry or module identity. Browser globals are used

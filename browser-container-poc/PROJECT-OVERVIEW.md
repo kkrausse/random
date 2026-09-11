@@ -1,17 +1,18 @@
 # kev-browser-agent-kit: project overview
 
-Last summarized: **September 9, 2026**. This is the starting point for what exists,
+Last summarized: **September 11, 2026**. This is the starting point for what exists,
 which demo to use, and what is still being integrated. Older receipts describe
 the exact revision they tested; they are not blanket acceptance of newer UI code.
 
 ## Current iteration
 
-**Server baseline (September 10):** the isolated upstream OpenCode server now passes
-fresh-origin browser acceptance: model-driven read/edit/grep/glob, streamed output,
-clean shutdown/restart, old-endpoint rejection, and session/edit retention. Runtime
-fork commit `bd5a60c` is qualified. Next runtime milestone is replacing the
-process-per-request HTTP bridge. See the
-[current server handoff](doc/opencode2-server-baseline-handoff.md).
+**Runtime HTTP bridge (September 11):** P1 passes focused browser streaming checks
+and the complete OpenCode server regression: read/edit/grep/glob, streamed output,
+clean shutdown/restart, old-endpoint rejection, and session/edit retention.
+Endpoint.fetch now uses the existing listener worker with directional credits and
+real local-socket backpressure, without per-request processes. Runtime fork commit
+`48d4ca1` is qualified. Next is P2 execution/stream semantics. See the
+[HTTP bridge handoff](doc/runtime-http-stream-handoff.md).
 
 **Runtime workflow (September 10):** Vivari is now maintained as a directly
 editable [fork](https://github.com/kkrausse/vivari/tree/browser-runtime), rather

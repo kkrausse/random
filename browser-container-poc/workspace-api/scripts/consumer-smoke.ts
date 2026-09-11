@@ -15,7 +15,7 @@ const consumer = join(scratch, "consumer");
 await mkdir(consumer);
 await writeFile(join(consumer, "package.json"), JSON.stringify({ name: "isolated-workspace-consumer", private: true, type: "module",
   dependencies: { "@kev-browser-agent-kit/workspace": "file:../workspace.tgz", react: "19.1.1", "react-dom": "19.1.1" },
-  devDependencies: { typescript: "^5.9.3", "@types/react": "^19.2.18", "@types/react-dom": "^19.2.7", "@types/bun": "latest" } }));
+  devDependencies: { typescript: "^5.9.3", "@types/react": "^19.2.18", "@types/react-dom": "^19.2.7", "@types/node": "^24" } }));
 await writeFile(join(consumer, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", jsx: "react-jsx", strict: true, noEmit: true, skipLibCheck: false }, include: ["*.tsx", "*.ts"] }));
 await writeFile(join(consumer, "app.tsx"), `import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

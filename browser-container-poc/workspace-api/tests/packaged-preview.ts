@@ -27,7 +27,8 @@ class TestWorker {
 }
 const messages = new Set<(event: MessageEvent) => void>();
 const sw = new EventTarget();
-Object.assign(sw, { register: async () => ({}), ready: Promise.resolve(), controller: { postMessage() {} } });
+let registrations = 0;
+Object.assign(sw, { register: async () => { registrations++; return {}; }, ready: Promise.resolve(), controller: { postMessage() {} } });
 for (const [key, value] of Object.entries({
   Worker: TestWorker, crossOriginIsolated: true, location: { href: "http://qa.test/" },
   fetch: async () => Response.json({ abi: "workspace-v1", version: "qa", kernelWorker: "worker.js", serviceWorker: "sw.js" }),
@@ -40,9 +41,11 @@ try {
   await controller.open({ name: "qa", version: "qa", assetBaseUrl: "/runtime/" });
   const runtime = await controller.startRuntime({});
   const endpoint: Endpoint = await runtime.expose(5173);
+  assert.equal(registrations, 0, "expose must not register a Service Worker");
   const received: unknown[] = [];
   const contentWindow = { postMessage: (data: unknown, origin: string) => { received.push({ data, origin }); } };
-  const frame = { src: "", contentWindow } as unknown as HTMLIFrameElement;
+  const errors: Event[] = [];
+  const frame = { src: "", contentWindow, dispatchEvent(event: Event) { errors.push(event); return true; } } as unknown as HTMLIFrameElement;
   assert.throws(() => endpoint.attachPreview(frame, { hostPaths: ["/api/"] }), /hostPaths/);
   assert.equal(messages.size, 0);
   for (const attach of [
@@ -51,7 +54,9 @@ try {
     () => second.attachPreview(frame, endpoint, { hostPaths: ["/api"] }),
   ]) {
     const attachment = attach();
-    await Promise.resolve();
+    assert.equal(frame.src, "about:blank", "navigation waits for preview registration");
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(registrations, 1, "preview registration is shared across attachments");
     assert.equal(new URL(frame.src).searchParams.get("__vv_host_paths"), '["/api"]');
     const send = (source = contentWindow, origin = "http://qa.test") => {
       for (const receive of messages) receive({ source, origin, data: { type: "vv-ws", dir: "out", sub: "open", connId: "hmr" } } as unknown as MessageEvent);
@@ -76,5 +81,7 @@ try {
   assert.equal(messages.size, 0, "listener replacement disposes attachments");
   assert.equal(frame.src, "about:blank");
   assert.throws(() => second.attachPreview(frame, endpoint), /Listener closed/);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(errors.length, 0, "listener replacement during registration is normal disposal");
 } finally { await controller.dispose(); }
 console.log("Packaged React endpoint: owned method, root helper, independent copy, routing, sender validation, HMR relay and lifetime passed");
