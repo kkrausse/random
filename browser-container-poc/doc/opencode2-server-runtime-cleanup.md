@@ -2,8 +2,9 @@
 
 Updated: September 11, 2026
 
-Status: P0a fork migration, P0 baseline and P1 HTTP bridge accepted; direct upstream
-execution investigation next alongside P2; P2–P5 implementation backlog
+Status: P0a/P0/P1 accepted; clean conventional-build OpenCode combined-tool OPFS
+reopen and controlled active interrupt accepted at `d7a7256` / `80d5cdd`.
+Generic browser HTTP requalification at the current runtime is next; P2–P5 remain open.
 
 ## Goal and scope
 
@@ -14,9 +15,11 @@ must be supplied at runtime through general loader, builtin and JS/WASM backend
 support. Use this workload to make filesystem, execution, HTTP, module-loading,
 and storage interfaces dependable for other unmodified programs too.
 
-This is the ideal end state, not the current acceptance claim. P0/P1 qualify an
-unchanged OpenCode server source graph delivered by a custom packager; they do not
-prove the packager is necessary or that ordinary upstream installation works.
+This is the ideal end state, not the current acceptance claim. Historical P0/P1
+used a custom packager. The latest clean-built milestone uses an authorized Bun
+build, transparent consumer entry/published jsonc-parser ESM selection and original
+asset copies, with zero additional behavioral source patches. Audited reused
+dependencies and an exact build receipt do not establish a fresh install.
 See the [OpenCode case study](opencode-runtime-case-study.md) for the expected
 workflow, import semantics, adaptation inventory and removal gates.
 
@@ -48,7 +51,7 @@ package-specific rewrite into a runtime hook alone does not meet the goal; prefe
 standard semantics and reusable backend selection. Native binaries still require
 a compatible implementation; runtime shims are not CPU/OS emulation.
 
-### Next investigation — direct upstream execution
+### Current milestone and next acceptance — direct upstream execution
 
 - [x] Attempt the pinned upstream server command/entrypoint with normal package
   layout and dependencies, without `package-opencode-server.ts`; identify actual
@@ -61,14 +64,25 @@ a compatible implementation; runtime shims are not CPU/OS emulation.
 - [ ] Pass the complete browser server workflow and reproduce from clean inputs
   with zero consumer behavioral transformations, then qualify a newer OpenCode pin.
 
-**Executed continuation:** both direct OpenCode launch paths now reach Undici's
-missing `worker_threads.markAsUncloneable` API after general export-comment,
-package-self-reference and TS-module-alias fixes; neither listens yet. The mounted
-code image still needs complete generic asset delivery. See
-[direct startup findings](opencode-direct-startup.md). Unchanged ripgrep passes
-cold/warm API and original PATH command checks in Chromium after general Brotli,
-inode permission and virtual identity fixes; see
-[search acceptance and low-output browser workflow](ripgrep-direct-handoff.md).
+**Current evidence:** clean OpenCode `d7a7256`, build-attested JS `1281158d…`,
+and runtime `80d5cdd` / distribution `098e0b60…` pass 21/21 combined-tool
+same-page full OPFS workspace/runtime reopen checkpoints (`bef3504`), including
+exact file/history/SQLite retention, fresh endpoint, old endpoint `CLOSED`, original
+ripgrep on PATH and two clean exits. Controlled active interrupt passes 7/7
+(`884547e`): zero external requests, request abortion 124 ms after interrupt,
+user terminal/aborted assistant, healthy server and clean exit. See
+[direct startup evidence](opencode-direct-startup.md).
+
+The former Undici blocker is fixed; raw unbundled TS now fails compiling
+`packages/client/src/effect/service.ts`. That loader investigation is distinct
+from the accepted built path. Generic HTTP passes headlessly at `80d5cdd`
+(`824395a`), while browser HTTP remains at `48d4ca1`: rerun the existing browser
+suite at the current distribution next. Keep the qualified pin and old packagers
+until case-specific acceptance/adaptation review and intentional newer-OpenCode-pin
+qualification. No newer pin or fresh install is established. These passes do not
+qualify arbitrary native modules, page reload, remote-provider compute cessation
+or generic stdout/P2 backpressure. See the [case-study gates](opencode-runtime-case-study.md)
+and [original ripgrep acceptance](ripgrep-direct-handoff.md).
 
 Start this alongside P2, before P4's broader adaptation audit. Pull forward required
 P3/P4 fixes when the direct path demonstrates them. Detailed acceptance and the

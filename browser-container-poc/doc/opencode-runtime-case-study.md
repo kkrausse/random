@@ -1,6 +1,7 @@
 # OpenCode case study: install upstream code, run it in Vivari
 
-September 11, 2026. **Target workflow and investigation plan, not new acceptance.**
+September 11, 2026. **Clean conventional-build browser milestone accepted at
+OpenCode `d7a7256` / Vivari `80d5cdd`; full case-study acceptance remains open.**
 
 ## End-state contract
 
@@ -12,8 +13,10 @@ filesystem, SQLite, networking, processes, and supported JS/WASM backends.
 script that rewrites the application into a form the runtime can execute.**
 
 This is the desired default for supported JS/TS projects, not just OpenCode.
-It is an end-state goal; today's qualified OpenCode delivery still uses such
-scripts. Unmodified server source is progress, not completion of this contract.
+It is an end-state goal. The latest milestone uses an authorized conventional
+Bun build with transparent consumer entry selection, published `jsonc-parser`
+ESM selection and original asset copies, with zero additional behavioral source
+patches. This is not fully unbundled execution or a fresh dependency installation.
 
 ## Expected application workflow
 
@@ -80,12 +83,36 @@ tracked as an exception with a removal condition.
 
 ## Current baseline versus work to retire
 
-The accepted P1 workflow uses clean Vivari `48d4ca1` and OpenCode `d7a7256`.
-It verifies real model read/edit/grep/glob, HTTP streaming, clean shutdown and
-session/edit retention across server-process restart within one runtime. It does
-not qualify unbundled launch, page reload/full runtime reopen, or a newer OpenCode.
+The historical packaged P1 reference uses Vivari `48d4ca1` and OpenCode `d7a7256`.
+The current clean-built milestone uses OpenCode `d7a7256`, audited reused
+dependencies and build-attested JS `1281158d…`, on runtime `80d5cdd` (distribution
+`098e0b60…`). [Combined retention](opencode-direct-startup.md#september-11-clean-attested-artifact-combined-retention--host-accepted-pass)
+passes 21/21 checkpoints (`bef3504`): one prompt/five model POSTs, local
+read/edit/grep/glob, nine original ripgrep files on ordinary PATH, exact edited
+bytes and session/history/SQLite retention across same-page full OPFS
+workspace/runtime reopen, fresh endpoint, old endpoint `CLOSED`, and two clean exits.
+[Controlled active interrupt](opencode-direct-startup.md#september-11-readiness-ordered-controlled-interrupt--host-accepted-pass)
+passes 7/7 (`884547e`): zero external requests, provider request abortion 124 ms
+after interrupt, user-interrupted terminal/aborted assistant, healthy server and
+clean exit. It does not establish that a remote provider stopped computing.
 
-| Current mechanism | Direct-path investigation / removal condition |
+Generic HTTP passes headlessly at `80d5cdd` (`824395a`), but its browser suite
+remains qualified at `48d4ca1`. **Next bounded task:** run that existing browser
+HTTP regression against the current distribution. Before advancing the qualified
+pin or retiring old packagers, reconcile that result with the case-specific
+acceptance and adaptation inventory, then select and qualify an intentionally
+newer OpenCode pin using the same workflow. Fresh installation is a separate
+delivery qualification; no newer pin is selected here. Raw TS still fails compiling
+`packages/client/src/effect/service.ts`; it is a separate loader investigation,
+not a blocker to the accepted conventional-build milestone. Page reload, arbitrary
+native modules, real-provider interruption and generic stdout/P2 backpressure
+are not established by these passes.
+
+The inventory below describes the legacy packaged reference, not extra rewrites
+in the clean-built milestone. Original ripgrep/PATH replacement has passed; keep
+the old packager until the case-study removal gates are met.
+
+| Legacy mechanism | Direct-path investigation / removal condition |
 | --- | --- |
 | `package-opencode-server.ts`: custom ESM bundle, generated service launcher, constants, graph audit | Execute upstream source/dependencies or a suitable upstream JS artifact without this script; qualify source TS and package resolution. A normal native release launcher is not automatically a browser-runnable artifact. |
 | Force `jsonc-parser` to its published ESM build | Run normal package resolution first. Determine whether the unresolved UMD requires were solely a bundler problem or expose a runtime defect. Remove consumer selection once the ordinary package works. |
