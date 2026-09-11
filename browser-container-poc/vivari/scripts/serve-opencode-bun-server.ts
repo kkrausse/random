@@ -8,6 +8,7 @@ import { directAssets } from './ripgrep-direct-assets.mjs'
 import { globSeed, globSeedBytes } from '../probes/opencode-bun-fixtures'
 import { validateCombined } from './opencode-bun-combined-validation'
 import { validateCombinedRetention } from './opencode-bun-retention-validation'
+import { validateBuildReceipt } from './opencode-bun-build-receipt'
 
 const read = process.argv.includes('--read')
 const edit = process.argv.includes('--edit')
@@ -28,8 +29,10 @@ let modelPosts = 0
 let firstPosts: number | undefined, finalPosts: number | undefined
 
 const root = resolve(import.meta.dir, '..')
-const output = resolve(root, '.runtime/opencode-bun-server')
-const source = resolve(root, '.runtime/opencode-v2-source')
+const output = resolve(root, process.env.OPENCODE_BUN_APP_ARTIFACT || '.runtime/opencode-bun-server')
+const source = resolve(root, process.env.OPENCODE_BUN_APP_SOURCE || '.runtime/opencode-v2-source')
+const buildReceiptPath = process.env.OPENCODE_BUN_BUILD_RECEIPT
+if (buildReceiptPath === '') throw Error('OPENCODE_BUN_BUILD_RECEIPT must not be empty')
 const runtimeDirectory = resolve(root, '../workspace-api/dist/runtime')
 const sha256 = (bytes: Uint8Array | string) => createHash('sha256').update(bytes).digest('hex')
 const ripgrepFiles = new Map<string, Uint8Array>()
@@ -55,6 +58,8 @@ for (const name of ['server.js', 'tree-sitter.wasm', 'tree-sitter-bash.wasm', 't
   if (!files.has(name)) throw Error('Missing app output: ' + name)
 }
 const inputs = []
+// Capture only emitted app assets; models.json is a separately accepted snapshot.
+const appAssets = assets.slice()
 if (model) {
   const file = resolve(root, '.runtime/opencode-server-package/models.json'), bytes = await readFile(file)
   const hash = sha256(bytes)
@@ -70,13 +75,18 @@ for (const file of ['server.ts', 'build.ts', 'package.json', 'bun.lock']) {
 }
 const runtimeManifest = await Bun.file(resolve(runtimeDirectory, 'distribution.json')).json()
 const sourceStatus = git('status', '--short')
+const sourceObservation = { path: source, revision: git('rev-parse', 'HEAD'), tree: git('rev-parse', 'HEAD^{tree}'), status: sourceStatus, dirty: !!sourceStatus,
+  diffSha256: sha256(git('diff', 'HEAD', '--binary')), lockSha256: sha256(await readFile(resolve(source, 'bun.lock'))) }
+const buildReceipt = await validateBuildReceipt(buildReceiptPath === undefined ? undefined : resolve(root, buildReceiptPath),
+  { output, source: sourceObservation, assets: appAssets, inputs })
 const manifest = {
   observedAt: new Date().toISOString(), assets, ...(search ? { ripgrep: ripgrepManifest } : {}),
   provenance: {
-    note: 'Observed current source and build recipe; no build-time attestation exists linking these inputs to the emitted files. Dirty upstream state, including any preexisting TUI edit, is retained below.',
-    source: { path: source, revision: git('rev-parse', 'HEAD'), status: sourceStatus, dirty: !!sourceStatus,
-      diffSha256: sha256(git('diff', 'HEAD', '--binary')), lockSha256: sha256(await readFile(resolve(source, 'bun.lock'))) },
-    inputs, buildReceipt: null, hostBunVersion: Bun.version,
+    note: buildReceipt
+      ? 'Supplied build-time receipt validated against the served app bytes and observed clean source/recipe. Original checkout observations remain in the receipt. Models catalog is a separately accepted snapshot; dependency reuse is not a fresh install or registry-integrity attestation.'
+      : 'Observed current source and build recipe; no build-time attestation exists linking these inputs to the emitted files. Dirty upstream state, including any preexisting TUI edit, is retained below.',
+    artifactPath: output, source: sourceObservation,
+    inputs, buildReceipt, hostBunVersion: Bun.version,
     runtime: { version: runtimeManifest.version, receipt: runtimeManifest.runtimeBuild ?? null },
   },
 }
