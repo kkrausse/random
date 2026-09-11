@@ -1,5 +1,13 @@
 # Conventional Bun server build probe
 
+## Clean-source build receipt
+
+The [clean-source build handoff](CLEAN-BUILD.md) records a successful isolated
+build at the exact upstream pin, copied dependency-image provenance, raw artifact
+hashes, and the narrow absolute-path difference from the accepted JS. Its retained
+artifact is ready for a separate browser gate; existing accepted outputs remain
+preserved.
+
 ## Host glob receipt regression fix
 
 The two glob seed files contain **39 UTF-8 bytes** in total. The browser and
