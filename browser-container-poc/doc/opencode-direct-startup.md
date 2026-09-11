@@ -3,7 +3,49 @@
 September 11, 2026. **Built-path browser OPFS health and managed shutdown pass;
 broader server acceptance remains ahead. Unbundled startup remains blocked.**
 
-## September 11: single-attempt browser OPFS service qualification
+## September 11: same-page OPFS workspace/runtime reopen qualification
+
+**PASS**, original one-shot host exit 0, all 12 acceptance checks. One execution of
+`bun scripts/serve-opencode-bun-server.ts --once --restart` from `vivari`, at clean
+harness commit `434634a4cf93f9ca16e75d70874e5374d1037d33`, with the 360-second
+harness bound. Browser Control CLI session `brisk-walrus-245` navigated once to
+`http://127.0.0.1:50239/?autorun=1&runID=593b50af-886c-41fa-8cb2-ba678dc6d11f&restart=1`.
+The original background host completion notification confirmed success; no retry
+or app/runtime rebuild occurred.
+
+Receipt (local generated artifact):
+`vivari/.runtime/opencode-bun-593b50af-886c-41fa-8cb2-ba678dc6d11f.json`,
+manifest observed `2026-09-11T18:48:06.379Z`.
+
+- Fresh real OPFS workspace `default`; run marker retained after full close/reopen.
+- Both initial and reopened executions verified lengths and SHA-256 of all five
+  app assets, validated fresh guest registration, returned authenticated health
+  HTTP 200 (`healthy: true`), and managed stop HTTP 200 (`accepted: true`).
+- Both guests exited naturally with `exitCode: 0`, `signal: null`, `forced: false`
+  before cleanup. Both completed awaited `runtime.stop`, `workspace.flush`, and
+  `workspace.close`. Stdout/stderr drains counted 257/0 then 42/0 bytes.
+- `/.server/data/opencode.sqlite` had a valid SQLite header and identical
+  **425,984 bytes**, SHA-256
+  `aca532604ece0840285ce893ebbc0f54b10a6f02a9ca9bc423b8d109ccf7ed3c`,
+  after first runtime stop/flush before close, and after workspace reopen
+  **before the second `Runtime.start`**.
+
+Actual served runtime distribution:
+`098e0b60a0ff8703994ea681d9c974ae9267bfe5dbdd799e87ff00982ff938a3`,
+carrying the clean fork `80d5cdd599fce4fa4817128461c865e009109d34` receipt built
+`2026-09-11T18:36:31.189Z` (`release: false`). Observed app source remained
+`d7a7256bb6b0952f486c95718cfbf460b1570a56` with its preexisting TUI modification;
+app build-time attestation is absent (`buildReceipt: null`). Served `server.js`
+was 28,339,357 bytes, SHA-256
+`765dd1b67583b645a01e904cdc0de525487e1b5c15db2b281ecad83fa5a5f059`.
+
+Scope is **same-page full workspace/runtime reopen and SQLite byte retention**.
+Page reload and session-row persistence are unqualified. Next smallest task:
+separately qualify creating and retrieving one session row across the same
+workspace/runtime reopen, without model execution. Browser session is retained;
+the qualification host has exited.
+
+## September 11: earlier single-attempt browser OPFS service qualification
 
 **PASS**, host exit 0, using `bun scripts/serve-opencode-bun-server.ts --once`
 from `vivari` with harness commit `8d35946`. Browser Control CLI session
@@ -38,7 +80,7 @@ verified emitted bytes, not a clean-upstream build claim. Actual `server.js` is
 28,339,357 bytes, SHA-256
 `765dd1b67583b645a01e904cdc0de525487e1b5c15db2b281ecad83fa5a5f059`.
 
-Next smallest task: a separately bounded fresh-runtime restart on this same
+Next task at that checkpoint (now completed above): a bounded fresh-runtime restart on the same
 retained OPFS workspace, verifying retained SQLite state and repeating health,
 managed stop, and natural-exit checkpoints. Browser session is retained for that
 follow-up; the one-shot host has exited.
