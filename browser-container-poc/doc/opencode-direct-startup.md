@@ -1,7 +1,21 @@
-# Direct unbundled OpenCode startup — first executed milestone
+# Direct OpenCode startup — conventional-build milestone and unbundled investigation
 
-September 11, 2026. **Built-path browser OPFS health, minimal model SSE, local read/edit/grep/glob, controlled-transport active interrupt, and managed shutdown pass;
-broader server acceptance remains ahead. Unbundled startup remains blocked.**
+September 11, 2026. **Clean conventional-build OpenCode `d7a7256` on Vivari
+`80d5cdd` passes combined read/edit/grep/glob and exact file/history/SQLite retention
+across same-page full OPFS workspace/runtime reopen (21/21, `bef3504`), plus
+controlled active interrupt (7/7, `884547e`).** Build-attested JS `1281158d…`
+uses audited reused dependencies, authorized Bun build, transparent consumer
+entry/published jsonc-parser ESM selection and original asset copies, with zero
+additional behavioral source patches. This is not fresh-install or fully
+unbundled acceptance. Raw TS still fails compiling the client service module.
+
+**Next bounded gap:** generic browser HTTP regression at current runtime
+`80d5cdd` / distribution `098e0b60…`; headless HTTP passes there (`824395a`),
+but generic browser HTTP evidence remains at `48d4ca1`. Keep the qualified pin
+and old packagers pending case-study acceptance/adaptation review and deliberate
+newer-OpenCode-pin qualification. Page reload and generic stdout/P2 backpressure
+are outside these passes; controlled request abortion does not prove remote
+provider compute stopped. Detailed entries below retain historical checkpoints.
 
 ## September 11: readiness-ordered controlled interrupt — host-accepted PASS
 
@@ -214,12 +228,11 @@ The supplied artifact root was
 | Initial / reopened stdout, stderr bytes | 3334, 0 / 42, 0 |
 
 This closes the build-time source/output-attestation gap for the combined-tool
-same-page OPFS retention gate on this pin. **Smallest next acceptance gap:**
-bounded same-origin page-reload retention, with explicit two-stage handoff,
-reopen without reseeding, original session/history/file verification, fresh
-health, unchanged provider POSTs, and natural shutdown. Document replacement was
-not exercised here. Cancellation, backpressure, newer-pin qualification, broader
-server acceptance, and the unbundled startup blocker remain open.
+same-page OPFS retention gate on this pin. Document replacement was not exercised;
+page reload is a separate, unqualified scope, not the next task for this milestone.
+Controlled cancellation subsequently passed above. Generic browser HTTP at the
+current runtime is the next bounded regression; backpressure, newer-pin
+qualification, broader server acceptance and raw unbundled startup remain open.
 
 ## September 11: prompted combined session retention — host-accepted PASS
 
