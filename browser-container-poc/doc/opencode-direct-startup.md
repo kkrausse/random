@@ -5,16 +5,22 @@ September 11, 2026. **Startup remains blocked; no server acceptance.**
 Latest conventional-build experiment: `Bun.build` with target `node` and the
 authorized exact jsonc-parser published-ESM entry resolver succeeds (28,339,308-byte
 JS plus one native asset). `ws` is bundled, and selecting jsonc-parser's existing
-ESM modules passes the previous UMD `./impl/format` failure. On `80d5cdd`, fresh
-output now stops at `Cannot find module 'web-tree-sitter/tree-sitter.wasm' from
-'/app'`, from a retained `require.resolve`, before a listener (cleanup exit 143).
+ESM modules passes the previous UMD `./impl/format` failure. Ordinary unchanged
+tree-sitter runtime/Bash/PowerShell WASM copies and their three upstream
+`OPENCODE_TREE_SITTER*_WASM_PATH` settings now pass the subsequent missing-asset
+resolution failure. On `80d5cdd`, the probe emits `OPENCODE_BUN_LISTEN 4096`,
+then stops at `SQLITE_CANTOPEN: durable persistence unavailable` in `DatabaseSync`
+(cleanup exit 143). Listener alone is not server acceptance.
 Exact build command from `vivari/experiments/opencode-bun-server`: `bun run build`
-(runs `bun ./build.ts`; only resolver is `/^jsonc-parser$/` → published ESM main).
+(runs `bun ./build.ts`; only resolver is `/^jsonc-parser$/` → published ESM main,
+followed by original WASM asset copies).
 This selects unchanged published source, with no runtime redirect or source rewrite.
 Probe from `vivari`:
 `/Users/kkrausse/.nvm/versions/node/v24.7.0/bin/node scripts/opencode-bun-headless.mjs`.
 See the [build probe handoff](../vivari/experiments/opencode-bun-server/README.md)
-for configuration assessment, pins, artifact hash and the next bounded asset task.
+for configuration, exact asset paths, pins, unchanged JS hash and the next bounded
+headless persistence task. This was missing deployment data, not another code
+bundle transform; full server and tree-sitter operation acceptance remain ahead.
 **Normal builds/transpilation are accepted; the direct TS stripper is not
 necessarily the critical path.** No browser qualification or runtime pin advance.
 
@@ -172,7 +178,7 @@ instructions were read. This work used the explicitly authorized noninteractive
 isolated guest kernel rather than the installed live service.
 
 Keep the existing packaged baseline. The next bounded conventional-build task is
-ordinary tree-sitter WASM asset delivery or upstream asset-path configuration;
+reducing the headless SQLite durable-persistence failure after the listener checkpoint;
 the unbundled client-service TypeScript compilation failure remains a separate
 loader issue. Retry with further generic assets when execution requires them.
 The original [case-study acceptance gates](opencode-runtime-case-study.md) remain.

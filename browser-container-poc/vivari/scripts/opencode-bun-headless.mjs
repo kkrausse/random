@@ -15,7 +15,7 @@ console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_INPUT',
   sourceStatus: execFileSync('git', ['-C', source, 'status', '--short'], { encoding: 'utf8' }).trim(),
   lockSha256: createHash('sha256').update(readFileSync(resolve(source, 'bun.lock'))).digest('hex'),
   runtimeRevision: execFileSync('git', ['-C', fileURLToPath(runtimeSourceUrl('.')), 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
-  artifact: 'Bun.build target=node; published jsonc-parser ESM entry selection; emitted JS and assets', consumerBehavioralRewrites: 0,
+  artifact: 'Bun.build target=node; published jsonc-parser ESM entry selection; emitted files plus original tree-sitter WASM assets', consumerBehavioralRewrites: 0,
 }));
 const workers = new Set();
 const workerErrors = [];
@@ -44,7 +44,7 @@ try {
     } };
   } });
   kernel.installCoreutils();
-  // Copy every ordinary emitted file, including assets selected by the build target.
+  // Mount build output unchanged, including explicitly copied runtime data assets.
   for (const entry of readdirSync(output, { withFileTypes: true })) {
     if (!entry.isFile()) throw new Error(`Unexpected build output: ${entry.name}`);
     const bytes = readFileSync(resolve(output, entry.name));
@@ -58,6 +58,9 @@ try {
   const result = await kernel.start('bun', ['/app/server.js'], { cwd: '/app', env: {
     PATH: '/bin', HOME: '/home/direct', OPENCODE_PASSWORD: 'isolated-probe-only',
     OPENCODE_DISABLE_FFF: '1', OPENCODE_DISABLE_FILEWATCHER: '1', OPENCODE_DISABLE_MODELS_FETCH: '1',
+    OPENCODE_TREE_SITTER_WASM_PATH: '/app/tree-sitter.wasm',
+    OPENCODE_TREE_SITTER_BASH_WASM_PATH: '/app/tree-sitter-bash.wasm',
+    OPENCODE_TREE_SITTER_POWERSHELL_WASM_PATH: '/app/tree-sitter-powershell.wasm',
   }, capture: true });
   console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_EXIT', workerErrors, ...result }, null, 2));
   process.exitCode = result.code || 1; // Exit zero alone is never server acceptance.
