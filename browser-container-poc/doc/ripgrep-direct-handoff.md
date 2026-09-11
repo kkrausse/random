@@ -1,6 +1,37 @@
 # Unmodified ripgrep investigation
 
-September 11, 2026. Direct-path probe; separate from packaged OpenCode acceptance.
+September 11, 2026. **Unchanged-package cold/warm API acceptance passed in Chromium**;
+separate from packaged OpenCode acceptance.
+
+## Accepted continuation
+
+Runtime commit `05684dbb2d91b51bc129d1275718d555ea3284a5` adds the reusable
+`BrotliDecoder` binding over `brotli-decompressor@5.0.3` in the existing codec WASM.
+Node's published zlib JS uses this binding for synchronous, callback and Transform
+decompression. No ripgrep source or loader was changed.
+
+The general Brotli contract passed against native Node 24.7.0 and guest workers,
+including malformed/truncated inputs, output limits, 320,000-byte expansion,
+byte-split streaming and reset. The fork's runtime contracts and offline Node suite
+also passed during implementation.
+
+The integration build/distribution was regenerated from **clean** runtime source
+`b6a5fbe02e64b15397660b624ad7ce4813f5e686` (the Brotli commit plus the independently
+tested ESM export-comment fix). Chromium acceptance used:
+
+- Distribution: `445933bcccfa1a2d306905190ee896d10bfc4453cc1b6ccdb1c2aeba6d5dd2fc`
+- Fresh origin: `http://127.0.0.1:43931/`
+- Browser Control CLI session: `cosmic-falcon-435`
+- Nine hash-verified, unchanged package files; `transforms: []`
+- Cold and warm completion checkpoints, exact search bytes and no-match exit 1
+- Separate guest processes: both exited `{exitCode:0, signal:null, forced:false}`,
+  with empty stderr
+
+This removes the demonstrated need for host Brotli decoding, fixed-path loader
+rewriting, CJS lowering and `import.meta` substitution for this API workload.
+The baseline packager remains in place until ordinary executable discovery and
+the full OpenCode workflow pass. The shared qualified runtime pin still identifies
+P1; this focused acceptance does not replace that complete server regression.
 
 ## First executed blocker
 
@@ -52,7 +83,7 @@ For browser qualification, first build the runtime and workspace distribution
 using [DEVELOPMENT.md](../vivari/DEVELOPMENT.md), then:
 
 ```sh
-PORT=43931 bun scripts/serve-ripgrep-direct.ts
+PORT=43932 bun scripts/serve-ripgrep-direct.ts
 ```
 
 Use a fresh port for every browser run. Open `/` using Browser Control CLI, then
