@@ -145,11 +145,82 @@ cleanup, filesystem reattachment, bounded output overflow, and local ripgrep WAS
 contracts. The run emitted the expected main-thread OPFS SQLite VFS availability
 notice. It used no browser, host live OpenCode, credentials, or real model.
 
-This adds headless HTTP evidence at `80d5cdd`; the browser HTTP acceptance above
-remains evidence at `48d4ca12fd478a6e28b0838830a4724ee771213e`. Fresh Chromium
-transport, OPFS/SW/preview lifecycle, and browser active-stream interruption at the
-new revision remain separate qualification. These results do not qualify generic
-stdout credits or the other P2 process-stream contracts.
+This adds headless HTTP evidence at `80d5cdd`; the original browser HTTP acceptance
+above remains evidence at `48d4ca12fd478a6e28b0838830a4724ee771213e`. The focused
+Chromium requalification below supplies the newer browser transport evidence.
+These results do not qualify generic stdout credits or the other P2 process-stream
+contracts.
+
+## Focused Chromium requalification at `80d5cdd` (2026-09-11)
+
+**PASS**, once, completed `2026-09-11T21:07:59.159Z`. Integration checkout started
+clean at `ed260fc6b923e7025f9d7ac5b1f66d3865240afb`. Runtime source resolved through
+`vivari/scripts/runtime-source.mjs` to the canonical fork; before/after inspection
+confirmed clean HEAD `80d5cdd599fce4fa4817128461c865e009109d34`. The existing
+development build receipt and distribution match the headless provenance above;
+the receipt SHA-256 was rechecked as
+`0600a75b9789e31eb52924f8315c60fc6de891899550cfb0065ea96778ba0ad4` and matches
+`distribution.json.runtimeBuildSha256`.
+
+Exact existing entrypoint: `vivari/probes/http-stream.ts`, served by
+`vivari/scripts/serve-opencode-server.ts`; shared assertions are the fork's
+`scripts/lib/http-stream-checks.mjs`. The host has no HTTP one-shot report mode.
+From `vivari`, run `PORT=0 bun scripts/serve-opencode-server.ts`; this invocation
+allocated fresh origin `http://127.0.0.1:56865`. The host bundles its existing probes
+in memory and serves the existing runtime distribution. No app/runtime build or
+pin change was performed.
+
+Browser Control CLI used existing session `brisk-walrus-245`, one navigation,
+and the documented asynchronous result convention with a retained completion
+promise (no agent polling or sleeps):
+
+```sh
+browser-control execute --session brisk-walrus-245 'await page.goto("http://127.0.0.1:56865/http-stream"); return await page.evaluate(() => { window.httpResult = {status:"running"}; window.httpCompletion = window.qualifyHttpStreaming().then(result => window.httpResult = result, error => window.httpResult = {status:"FAIL",error:String(error)}); return {url:location.href, started:true, isolated:crossOriginIsolated, userAgent:navigator.userAgent}; })'
+browser-control execute --json --session brisk-walrus-245 'return await page.evaluate(async () => ({result:await window.httpCompletion,log:document.querySelector("pre").textContent,url:location.href,completedAt:new Date().toISOString()}))'
+```
+
+Both commands exited 0. The completion command ran asynchronously with a
+120-second outer bound and returned `ok: true`, no warnings, zero console/page
+errors, and:
+
+```json
+{"status":"PASS","stalledProducerBytes":131072,"runtime":"098e0b60a0ff8703994ea681d9c974ae9267bfe5dbdd799e87ff00982ff938a3"}
+```
+
+Actual passing assertions/checkpoints:
+
+- JSON, repeated `x-repeat` headers, HEAD/204 bodylessness; live SSE first event
+  alongside eight concurrent JSON requests, then reader cancellation.
+- Byte-exact 2 MiB streaming echo, including EOF; unread 32 MiB response stalled
+  at 131,072 producer bytes (within the 1 MiB assertion budget), then resumed and
+  drained all bytes with fidelity.
+- Slow upload read-ahead within 2 MiB, abort rejection and upload-source
+  cancellation; mid-body failure rejects rather than becoming EOF; pre-header
+  abort; unread response cancellation closes a guest connection; early response
+  cancels the unfinished upload.
+- Programmatic HTTP registers no Service Worker; lazy preview registration and
+  navigation produce `HTTP_PREVIEW_PASS`.
+- Listener close resolves `Endpoint.closed` while the accepted shutdown response
+  drains exactly `graceful`; server exits with code 0. Replacement has a new URL
+  and the retired endpoint rejects requests.
+- Stopping the replacement process rejects its active SSE reader. The returned
+  promise also completed the probe's `runtime.stop()`, workspace flush and close.
+
+Browser context reported cross-origin isolation and Chrome `152.0.0.0` on macOS.
+Evidence is retained in the CLI session journal
+`~/.browser-control/sessions/brisk-walrus-245/journal.jsonl` and the completion
+command's result above; the fresh origin is now used.
+
+Limits: this focused probe does **not** assert unchanged PID allocation or zero
+retained HTTP-channel counts; those remain the separately passing headless
+assertions. Connection cancellation and active-reader rejection are the browser
+cleanup evidence. Repeated Set-Cookie is conditional in the shared contract and
+browser Fetch filters it, so no browser cookie-fidelity claim is made. OPFS is used
+by the workspace, but full page reload/reopen durability and exhaustive storage/SW
+lifecycle are not asserted here. The graceful-exit assertion checks exit code,
+not the full headless exit tuple. No OpenCode server/model workflow, credentials,
+host live OpenCode, or P2 process-stream qualification was exercised. The original
+full OpenCode acceptance remains at its recorded older revision.
 
 ## Reproduce / continue
 
