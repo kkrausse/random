@@ -324,6 +324,56 @@ restart/retention, runtime fixes and model/tool/browser work are deferred.
 Ordinary builds are accepted; the direct TS stripper is **not necessarily the
 critical path**. Later assets, native/TUI branches, HTTP and tools are unqualified.
 
+## September 11 fresh-kernel managed restart
+
+**One two-start execution sequence passed.** From `vivari`:
+
+```sh
+/Users/kkrausse/.nvm/versions/node/v24.7.0/bin/node scripts/opencode-bun-headless.mjs --restart
+```
+
+`--restart` implies the existing managed `--service` path. Each start constructs
+a new Kernel, FS worker and in-memory VFS, remounting the same emitted build and
+original WASM assets. All first-start workers are terminated after natural guest
+exit and before the second start. The unchanged `sqlite-headless-fs.mjs` restores
+`/runtime-probe/*.sqlite` from the **same unique host snapshot directory** before
+its ready message. No other guest filesystem state is retained. The guest
+registration `/home/direct/state/opencode/service-local.json` is created and read
+anew through `Kernel.readFile` for each start; its generated credentials and
+instance ID remain internal. A first-start failure prevents the second start.
+The existing 180-second deadline covers the entire sequence.
+
+| Checkpoint | Start 1 | Start 2 |
+| --- | --- | --- |
+| Listener | 4096 | 4096 |
+| Fresh guest registration | read, credentials redacted | read, credentials redacted |
+| Authenticated `/api/health` | 200, `healthy:true` | 200, `healthy:true` |
+| Supported `/api/service/stop` | 200, `accepted:true` | 200, `accepted:true` |
+| Natural process exit | code 0, signal null | code 0, signal null |
+| Worker errors | none | none |
+| Schema bootstrap log | 41 migrations completed | absent |
+
+Overall command exit: **0**, with `OPENCODE_BUN_RESTART_PASS`. Retained directory:
+`.runtime/opencode-headless-storage-eopJWO`. Snapshot `opencode.sqlite` is
+**425,984 bytes** after start 1, at start 2 entry, and after start 2; each SHA-256 is
+`e1944710d0c6309e04b6b368aabe517cc6a029b29f504c363c402588c4e211ae`.
+The snapshot loader plus absence of second-start bootstrap provides database
+reuse evidence beyond merely finding a host file. No application data mutation
+was requested. This qualifies fresh-kernel disk-snapshot restart, not same-kernel
+restart, OPFS, power-loss durability, full filesystem persistence, or session
+retention.
+
+Runtime: `80d5cdd599fce4fa4817128461c865e009109d34`; upstream:
+`d7a7256bb6b0952f486c95718cfbf460b1570a56`, with the preserved preexisting TUI edit.
+Existing emitted JS: 28,339,357 bytes, SHA-256
+`765dd1b67583b645a01e904cdc0de525487e1b5c15db2b281ecad83fa5a5f059`.
+No rebuild or runtime/pin change. Local execution receipt:
+`/private/var/folders/t_/x48jtnps7n5_0g_pt9xpvbg00000gn/T/opencode/opencode-bun-restart.log`.
+
+Next small task, separately authorized: create one session without a model/tool
+invocation, gracefully restart using retained SQLite, and verify that session
+through the supported API. Browser and full server acceptance remain ahead.
+
 ## September 11 isolated managed shutdown (current)
 
 **One execution passed authenticated health, accepted stop, and clean guest exit.**

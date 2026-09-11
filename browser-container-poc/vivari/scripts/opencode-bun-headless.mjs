@@ -21,12 +21,22 @@ console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_INPUT',
   runtimeRevision: execFileSync('git', ['-C', fileURLToPath(runtimeSourceUrl('.')), 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
   artifact: 'Bun.build target=node; published jsonc-parser ESM entry selection; emitted files plus original tree-sitter WASM assets', consumerBehavioralRewrites: 0,
 }));
+const restart = process.argv.includes('--restart');
+const service = restart || process.argv.includes('--service');
+const deadline = setTimeout(() => { console.error('OPENCODE_BUN_TIMEOUT'); process.exit(124); }, 180000);
+function snapshot() {
+  const bytes = readFileSync(resolve(directory, 'opencode.sqlite'));
+  if (bytes.subarray(0, 16).toString() !== 'SQLite format 3\0') throw new Error('Invalid SQLite snapshot');
+  return { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
+}
+async function runStart(start) {
 const workers = new Set();
-const service = process.argv.includes('--service');
 let servicePassed = false;
 let serviceFailed = false;
 const workerErrors = [];
-const deadline = setTimeout(() => { console.error('OPENCODE_BUN_TIMEOUT'); process.exit(124); }, 180000);
+console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_START', start,
+  scope: 'fresh kernel, FS worker and ephemeral VFS; shared isolated SQLite snapshot directory',
+  ...(start === 2 ? { retainedSnapshot: snapshot() } : {}) }));
 try {
   const fsWorker = new Worker(new URL('./sqlite-headless-fs.mjs', import.meta.url), { workerData: { directory } });
   workers.add(fsWorker);
@@ -140,9 +150,23 @@ try {
   }, capture: true });
   finished = true;
   await health;
-  console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_EXIT', workerErrors, ...result }, null, 2));
+  console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_EXIT', start, workerErrors, ...result }, null, 2));
   process.exitCode = service && servicePassed && !serviceFailed && !workerErrors.length && result.code === 0 ? 0 : result.code || 1;
+  if (restart && result.signal !== null) process.exitCode = 1;
 } finally {
   await Promise.all([...workers].map(w => w.terminate()));
+}
+}
+try {
+  await runStart(1);
+  if (restart && process.exitCode === 0) {
+    const retained = snapshot();
+    console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_SNAPSHOT_RETAINED', ...retained }));
+    await runStart(2);
+    if (process.exitCode === 0) console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_RESTART_PASS',
+      starts: 2, scope: 'fresh-kernel SQLite snapshot reload; other VFS state ephemeral',
+      beforeRestart: retained, afterRestart: snapshot() }));
+  }
+} finally {
   clearTimeout(deadline);
 }

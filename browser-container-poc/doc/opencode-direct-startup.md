@@ -36,9 +36,13 @@ paths, actual registration credentials read through `Kernel.readFile`, health 20
 stop 200 with `accepted: true`, then natural exit 0, no signal or worker errors.
 The probe's opt-in `--service` mode preserves default readiness behavior. See the
 [current shutdown result](../vivari/experiments/opencode-bun-server/README.md#september-11-isolated-managed-shutdown-current)
-for commands and exact registration source. Next bounded task is one managed
-restart against retained SQLite with authenticated health; session retention is
-still deferred.
+for commands and exact registration source. The subsequent opt-in `--restart`
+sequence now passes two managed starts using **fresh kernels and FS workers**
+sharing only the isolated SQLite snapshot directory: both health/stop 200, natural
+exit 0, signal null, no worker errors. The 425,984-byte snapshot retains the same
+SHA-256 across restart, and only the first start logs the 41-migration bootstrap.
+See the [restart receipt](../vivari/experiments/opencode-bun-server/README.md#september-11-fresh-kernel-managed-restart).
+Session retention remains unqualified; that is the next separately scoped task.
 
 Native jsonc-parser reduction now reproduces that same `./impl/format` failure
 under both Node 24.7.0 and Bun 1.4.0. The emitted bundle binds require to its own
