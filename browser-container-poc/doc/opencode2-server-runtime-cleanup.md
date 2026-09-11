@@ -233,6 +233,11 @@ change. Keep the server packager and one small tool example discoverable.
 
 ### P0 — Establish a server-only baseline
 
+**Implementation checkpoint September 10, 2026:** server-only packaging, fresh
+browser readiness/session creation, real model streaming, read/edit, and graceful
+stop are demonstrated. Search cache delivery and the consolidated restart/tool
+acceptance run remain to verify. See [the implementation handoff](opencode2-server-baseline-handoff.md).
+
 - [ ] Create an OpenCode2 server-only packaging and launch path using the pinned
   upstream server entry or closest supported entry. The inspected V2 packaging
   pin is `d7a7256bb6b0952f486c95718cfbf460b1570a56`.
