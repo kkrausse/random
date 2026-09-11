@@ -182,6 +182,8 @@ function publicSession(session: Session) {
     id: session.id,
     name: session.name,
     title: session.title,
+    command: session.command,
+    cwd: session.cwd,
     status: session.status,
     clients: session.attachment ? 1 : 0,
     createdAt: session.createdAt.toISOString(),

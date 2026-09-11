@@ -140,6 +140,9 @@ button { font: inherit; }
 
 .session-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 
+.session-id { color: color-mix(in srgb, var(--foreground) 52%, transparent); margin-right: 8px; font-family: ui-monospace, monospace; }
+.session-context { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: color-mix(in srgb, var(--foreground) 72%, transparent); }
+
 .session-main strong { overflow: hidden; font-size: 15px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 
 .session-main small, .empty small { color: color-mix(in srgb, var(--foreground) 52%, transparent); font-size: 11px; }

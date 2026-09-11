@@ -7,6 +7,8 @@ type Session = {
   id: string;
   name: string;
   title: string;
+  command: string;
+  cwd: string;
   status: "running" | "exited";
   clients: number;
   createdAt: string;
@@ -74,15 +76,19 @@ function renderSessions(container: HTMLElement, sessions: Session[]) {
   }
 
   container.innerHTML = sessions
+    .sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)))
     .map((session) => {
+      const automatic = /^\d+$/.test(session.name) || /^web-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(session.name);
+      const label = automatic ? session.command || "Shell" : session.name;
+      const context = [!automatic ? session.command : "", session.cwd].filter(Boolean).join(" · ");
       const detail = session.status === "running"
         ? `${session.clients} ${session.clients === 1 ? "connection" : "connections"}`
         : `exited${session.exitCode === null ? "" : ` ${session.exitCode}`}`;
       return `<a class="session" href="/terminal/${session.id}">
         <span class="session-icon" aria-hidden="true">${iconSvg(iconKind(session.title || session.name))}<span class="status ${session.status}"></span></span>
-        <span class="session-main"><strong>${escapeHtml(session.name)}</strong><small>${detail} · ${relativeTime(session.createdAt)}</small></span>
-        <button class="rename" data-rename="${session.id}" data-name="${escapeHtml(session.name)}" aria-label="Rename ${escapeHtml(session.name)}">Rename</button>
-        <button class="delete" data-delete="${session.id}" aria-label="Remove ${escapeHtml(session.name)}">×</button>
+        <span class="session-main"><strong><span class="session-id">${escapeHtml(session.id)}</span> ${escapeHtml(label)}</strong>${context ? `<span class="session-context" title="${escapeHtml(context)}">${escapeHtml(context)}</span>` : ""}<small>${detail} · ${relativeTime(session.createdAt)}</small></span>
+        <button class="rename" data-rename="${session.id}" data-name="${automatic ? "" : escapeHtml(session.name)}" aria-label="Rename ${escapeHtml(session.id)} ${escapeHtml(label)}">Rename</button>
+        <button class="delete" data-delete="${session.id}" aria-label="Remove ${escapeHtml(session.id)} ${escapeHtml(label)}">×</button>
       </a>`;
     })
     .join("");
@@ -281,7 +287,7 @@ async function startTerminalPage() {
   }
 
   function updateTitle(title: string) {
-    document.title = title;
+    document.title = `${id} · ${title}`;
     const kind = iconKind(title);
     setFavicon(kind === "terminal" ? "shell" : kind);
   }
