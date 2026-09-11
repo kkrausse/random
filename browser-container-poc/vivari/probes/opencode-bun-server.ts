@@ -12,8 +12,8 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
   let stage = 'manifest', runtime: Awaited<ReturnType<typeof Runtime.start>> | undefined
   let workspace: Awaited<ReturnType<typeof Workspace.open>> | undefined
   let output: Promise<unknown> | undefined
-  const modelEvidence = model ? { providerID: 'opencode', id: 'muse-spark-1.3-contributor-free', deltas: 0, toolEvents: 0, promptRequests: 0, textMatched: false, terminal: 'pending', sseCleanup: 'pending', cleanup: 'pending' } : undefined
-  const readEvidence = read ? { target: '/workspace/read-probe.txt', calls: 0, successes: 0, targetMatched: false, providerExecuted: null as boolean | null, managedStop: 'pending' } : undefined
+  const modelEvidence = model ? { providerID: 'opencode', id: 'muse-spark-1.3-contributor-free', deltas: 0, toolEvents: 0, promptRequests: 0, textMatched: false, textBlocks: 0, textLength: 0, trimmedTextMatched: false, lastBlockMatched: false, terminal: 'pending', sseCleanup: 'pending', cleanup: 'pending' } : undefined
+  const readEvidence = read ? { target: '/workspace/read-probe.txt', calls: 0, successes: 0, targetMatched: false, contentMatched: false, providerExecuted: null as boolean | null, managedStop: 'pending', cleanupExitStatus: 'pending', exit: null as { exitCode: number; forced: boolean; signal: string | null } | null } : undefined
   const readContent = 'VIVARI_READ_PROBE_6ac6618_7f92d03b'
   let managedStop: (() => Promise<void>) | undefined
   let phase = 'initial', previousRegistrationID: string | undefined
@@ -134,7 +134,11 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
         const stopped = await endpoint.fetch('/api/service/stop', { method: 'POST', headers, body: JSON.stringify({ instanceID: registration.id }), signal: AbortSignal.timeout(20_000) })
         if (stopped.status !== 200 || (await stopped.json()).accepted !== true) throw Error('Managed cleanup stop failed')
         readEvidence!.managedStop = 'accepted'
-        await bounded(execution.exited, 20_000, 'Managed cleanup exit')
+        try {
+          const exit = await bounded(execution.exited, 20_000, 'Managed cleanup exit')
+          readEvidence!.exit = { exitCode: exit.exitCode, forced: exit.forced, signal: exit.signal }
+          readEvidence!.cleanupExitStatus = exit.exitCode === 0 && !exit.forced && exit.signal === null ? 'natural exit verified' : 'unexpected exit'
+        } catch { readEvidence!.cleanupExitStatus = 'exit unavailable within bound' }
       }
       stage = 'authenticated health'
       const health = await endpoint.fetch('/api/health', { headers, signal: AbortSignal.timeout(20_000) })
@@ -193,7 +197,13 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
                       } else if (event.type === 'session.tool.success') {
                         // executed is providerExecuted, not local execution success.
                         if (!call.called || call.succeeded || data.executed !== false || !Array.isArray(data.content) || !data.content.length) failed = true
-                        else { call.succeeded = true; readEvidence.successes++; readEvidence.providerExecuted = data.executed }
+                        else {
+                          call.succeeded = true; readEvidence.successes++; readEvidence.providerExecuted = data.executed
+                          // Pinned read.toModelContent emits a header and numbered lines, normalized to Content.Text.
+                          readEvidence.contentMatched = data.content.length === 1 && data.content[0]?.type === 'text' &&
+                            data.content[0].text === `Read file ${readEvidence.target}, lines 1-1\n1: ${readContent}`
+                          if (!readEvidence.contentMatched) failed = true
+                        }
                       }
                     }
                     if (failed) modelEvidence.terminal = 'read tool event rejected'
@@ -205,7 +215,16 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
                   if (event.type === 'session.text.delta') modelEvidence.deltas++
                   if (event.type === 'session.text.ended') {
                     if (typeof data.text !== 'string') failed = true
-                    else finalText += data.text
+                    else {
+                      finalText += data.text
+                      // Comparison-only diagnostics: no visible text, reasoning, or provider state retained.
+                      const expected = read ? readContent : 'MINIMAL_MODEL_OK'
+                      modelEvidence.textBlocks++
+                      modelEvidence.textLength = finalText.length
+                      modelEvidence.textMatched = finalText === expected
+                      modelEvidence.trimmedTextMatched = finalText.trim() === expected
+                      modelEvidence.lastBlockMatched = data.text === expected
+                    }
                   }
                   if (event.type === 'session.execution.succeeded') { completed = true; modelEvidence.terminal = event.type }
                   if (failed) subscription.abort()
@@ -226,9 +245,11 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
           if (!prompted.ok) throw Error()
           await prompted.arrayBuffer()
           while (!completed && !failed && !subscription.signal.aborted) await delay(50)
+          stage = completed ? 'terminal model evidence validation' : 'model SSE incomplete or rejected'
           modelEvidence.textMatched = finalText === (read ? readContent : 'MINIMAL_MODEL_OK')
+          if (completed && !failed && !modelEvidence.textMatched) stage = 'terminal model exact-text mismatch'
           if (failed || subscription.signal.aborted || !completed || !modelEvidence.textMatched || modelEvidence.deltas < 1 ||
-            (readEvidence ? readEvidence.calls !== 1 || readEvidence.successes !== 1 || !readEvidence.targetMatched : modelEvidence.toolEvents !== 0)) throw Error()
+            (readEvidence ? readEvidence.calls !== 1 || readEvidence.successes !== 1 || !readEvidence.targetMatched || !readEvidence.contentMatched : modelEvidence.toolEvents !== 0)) throw Error()
         } finally {
           clearTimeout(deadline)
           subscription.abort()
@@ -266,6 +287,10 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       pass('managed stop accepted=true')
       stage = 'natural exit'
       const exit = await bounded(execution.exited, 20_000, 'Natural exit')
+      if (readEvidence) {
+        readEvidence.exit = { exitCode: exit.exitCode, forced: exit.forced, signal: exit.signal }
+        readEvidence.cleanupExitStatus = exit.exitCode === 0 && !exit.forced && exit.signal === null ? 'natural exit verified' : 'unexpected exit'
+      }
       const outputBytes = await bounded(output, 5_000, 'Output drains')
       if (exit.exitCode !== 0 || exit.forced || exit.signal !== null) throw Error()
       pass('natural exitCode=0 forced=false signal=null before cleanup')

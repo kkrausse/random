@@ -3,6 +3,43 @@
 September 11, 2026. **Built-path browser OPFS health, minimal model SSE, and managed shutdown pass;
 broader server acceptance remains ahead. Unbundled startup remains blocked.**
 
+## September 11: offline read-gate diagnosis
+
+Inspected the failed `6489fb85-b0f7-4be3-8488-a283f18718df` receipt and
+the pinned `d7a7256` source without another execution. The accepted text-only
+baseline used the same `session.text.ended` aggregation. In
+`packages/schema/src/session-event.ts:344-365`, ended text is the replayable
+full-value boundary; `packages/core/src/session/runner/publish-llm-event.ts:149-175`
+publishes the accumulated fragments (or supplied full value). Counting deltas
+without concatenating them again is correct. Multiple ended blocks are possible;
+the old receipt records neither their count nor their text. The fixture is a
+single 34-character ASCII line with no trailing newline. Whitespace, formatting,
+extra blocks, and another text mismatch remain unproven explanations.
+
+Focused harness corrections:
+
+- Terminal validation and exact-text mismatch now have distinct failure
+  checkpoints, rather than retaining the generic `60s deadline` checkpoint.
+- Require the correlated local read success's canonical `content` to match the
+  known one-line fixture representation, in addition to its input path and
+  `executed: false`. Pinned `tool/plugin/read.ts:181-189` emits the header and
+  numbered line; `tool/runtime.ts:189-192` normalizes that string into one text
+  content item. Previously, any nonempty content array qualified this portion.
+- Preserve ended-block count, aggregate UTF-16 length, trim-only comparison,
+  and last-block exact comparison. These are diagnostics only; the exact-text
+  gate remains required. No actual text, reasoning, auth, or raw logs are retained.
+- Retain the managed-cleanup exit tuple and explicit natural/unexpected/unavailable
+  exit status within the existing 20-second exit bound. Stop acceptance remains
+  distinguishable from exit availability. The historical receipt cannot be filled
+  in retroactively, and cleanup cannot turn a failed read gate into a pass.
+
+Validation: targeted strict TypeScript check including the probe passed;
+`git diff --check` passed. No browser/model requests, builds, runtime edits, pins,
+or host OpenCode operations were performed. Next bounded test: one fresh-origin
+`--once --read` attempt using the existing app/runtime artifacts, retaining the
+new comparison/content/exit evidence and stopping after that single attempt.
+Only that evidence can justify any subsequent change to the prose gate.
+
 ## September 11: bounded upstream read-tool attempt
 
 **FAIL**: five of eight acceptance checkpoints completed; the original one-shot
