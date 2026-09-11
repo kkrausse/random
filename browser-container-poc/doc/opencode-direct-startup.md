@@ -5,6 +5,24 @@ broader server acceptance remains ahead. Unbundled startup remains blocked.**
 
 ## September 11: bounded glob attempt — browser PASS recovered; host acceptance blocked
 
+**Final host completion received:** original shell
+`sh_092090dbd001jaU4eDknX9KYPF` automatically completed with **exit 1**.
+The single post-completion receipt read for the original run confirmed
+`status: FAIL`, error `Browser qualification timed out after 180 seconds`, and
+**2 model-proxy POSTs**. Receipt:
+`vivari/.runtime/opencode-bun-6180cad9-dcb9-4401-9524-e87f0580c6b1.json`;
+manifest observed `2026-09-11T19:54:22.134Z`. This supersedes the earlier
+pending-host statements below while retaining the recovered browser evidence.
+The timeout result itself contains no browser checkpoints.
+Receipt provenance confirms runtime
+`098e0b60a0ff8703994ea681d9c974ae9267bfe5dbdd799e87ff00982ff938a3`, clean
+fork `80d5cdd599fce4fa4817128461c865e009109d34`, built
+`2026-09-11T18:36:31.189Z`, and nine `ripgrep@0.3.1` host assets with
+transforms `[]` and the manifest/installer hashes recorded below (installer
+279 bytes). The extraction header was read from saved tool output after the
+provenance list caused truncation. This completion handoff added no host launch,
+browser operation, retry, polling, sleep, or implementation change.
+
 **Browser PASS recovered; no host receipt PASS.** Started
 `bun scripts/serve-opencode-bun-server.ts --once --glob` exactly once from clean
 harness `53d21b73d9755b3d1ac89bbc04faa8a6c7c36a4f`. Original background shell:
