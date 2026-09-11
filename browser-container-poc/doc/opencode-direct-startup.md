@@ -1,7 +1,64 @@
 # Direct unbundled OpenCode startup — first executed milestone
 
-September 11, 2026. **Built-path browser OPFS health and managed shutdown pass;
+September 11, 2026. **Built-path browser OPFS health, minimal model SSE, and managed shutdown pass;
 broader server acceptance remains ahead. Unbundled startup remains blocked.**
+
+## September 11: single public-model prompt and terminal SSE
+
+**PASS**, all eight acceptance checkpoints; the original one-shot host completion
+notification confirmed exit **0**. One execution of
+`bun scripts/serve-opencode-bun-server.ts --once --model` from `vivari`, at clean
+harness commit `6ac6618708bb4c2322f9ebd4b17a5795e41dfb0e`, with a 180-second host
+bound and 60-second model SSE deadline. Browser Control CLI session
+`brisk-walrus-245` navigated once to the exact fresh URL:
+`http://127.0.0.1:51245/?autorun=1&runID=6fb9c428-9476-4108-a7d7-02ca42a6ffb2&model=1`.
+Completion was collected from that original background attempt without polling,
+retries, fallback, or additional model calls.
+
+Receipt (local generated artifact):
+`vivari/.runtime/opencode-bun-6fb9c428-9476-4108-a7d7-02ca42a6ffb2.json`,
+manifest observed `2026-09-11T19:15:01.019Z`, host Bun `1.4.0`.
+
+The eight receipt checkpoints, in order, all passed:
+
+1. Fresh real OPFS workspace `default`.
+2. All six assets mounted unchanged, lengths and SHA-256 verified.
+3. Guest-generated registration validated (credentials omitted).
+4. Authenticated health `healthy: true`.
+5. Minimal model session created.
+6. One short prompt streamed the exact `MINIMAL_MODEL_OK` marker, with **one text
+   delta**, **zero tool events**, and terminal `session.execution.succeeded`;
+   SSE subscription aborted and joined.
+7. Managed stop `accepted: true`.
+8. Natural guest exit `exitCode: 0`, `forced: false`, `signal: null`, before cleanup.
+
+Provider/model was exactly `opencode/muse-spark-1.3-contributor-free`.
+The receipt records **one prompt request and one model-proxy POST**,
+`textMatched: true`, and completed awaited `runtime.stop`, `workspace.flush`, and
+`workspace.close`. Stdout/stderr drains counted 3,255/0 bytes; their contents
+were not collected for this report. The run used the accepted public proxy and
+catalog, with no private host credentials or new authentication. The catalog
+SHA-256 was `93c9a67396a5a459c4cd6c4ea3514ef86652019ed2bc1a3589dbc624c4a42ea9`.
+
+Actual served runtime distribution:
+`098e0b60a0ff8703994ea681d9c974ae9267bfe5dbdd799e87ff00982ff938a3`,
+carrying clean fork `80d5cdd599fce4fa4817128461c865e009109d34`, built
+`2026-09-11T18:36:31.189Z` (`release: false`). Observed app source was
+`d7a7256bb6b0952f486c95718cfbf460b1570a56`, retaining the preexisting
+`packages/tui/src/component/devtools-bar.tsx` modification. App build-time
+attestation remains absent (`buildReceipt: null`). Served `server.js` was
+28,339,357 bytes, SHA-256
+`765dd1b67583b645a01e904cdc0de525487e1b5c15db2b281ecad83fa5a5f059`.
+App/runtime distributions were reused; only the existing browser harness was
+bundled by the server script. No runtime/pin changes or host live OpenCode were used.
+
+Qualified scope: **one public-model text-only round trip in a single fresh-origin
+lifecycle**, followed by managed shutdown and OPFS flush/close. This does not
+qualify tool execution, model conversation retention across restart/page reload,
+or broader provider coverage; OPFS cleanup here means flush/close, not deletion.
+Next smallest task: add a bounded page-reload session-retention qualification
+that retrieves a recorded session ID/title without another model call.
+The qualification host exited; the browser session is retained.
 
 ## September 11: session-row retention across same-page OPFS reopen
 
