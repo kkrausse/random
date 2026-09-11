@@ -1,5 +1,8 @@
 # Real-demo integration checkpoint — browser acceptance passed
 
+> Historical receipt. Runtime source/build instructions below are superseded by
+> [direct fork development](../vivari/DEVELOPMENT.md). Do not regenerate patches.
+
 2026-09-07, browser integration session `ses_f811fd780ffeFOeeaJhTQaPufW`.
 **Headless integration and actual browser acceptance pass.** Browser Control
 connection was restored; browser session `tidy-raven-945` used exclusively.

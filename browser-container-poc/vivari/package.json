@@ -8,6 +8,10 @@
     "relay": "bun scripts/dev-relay.ts",
     "vv": "bun scripts/vv.ts",
     "setup": "bun install --frozen-lockfile && bun scripts/vendor-npm.ts",
+    "runtime:setup": "bun scripts/setup-runtime.ts",
+    "runtime:build": "bun scripts/build-runtime.ts",
+    "runtime:release": "bun scripts/build-runtime.ts --release",
+    "runtime:contracts": "bun scripts/runtime-contracts.ts",
     "dev": "bun scripts/vendor-npm.ts && vite --host 127.0.0.1 --port 5190 --strictPort",
     "build": "bun run sync:providers && bun scripts/vendor-npm.ts && tsc --noEmit && vite build",
     "qualify:sqlite": "bun scripts/qualify-sqlite.ts"

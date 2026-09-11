@@ -1,5 +1,8 @@
 # Workspace API v0 — integration handoff
 
+> Historical receipt. Runtime source/build instructions below are superseded by
+> [direct fork development](../vivari/DEVELOPMENT.md). Do not regenerate patches.
+
 September 7, 2026. **Real backend checkpoint, not first-milestone browser acceptance.**
 
 **Superseded browser status:** subsequent integration completed real-browser

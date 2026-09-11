@@ -474,10 +474,10 @@ close, not quota exhaustion or power-loss simulation. Failed DB paths require a
 kernel restart; an unacknowledged operation may recover old or new data.
 
 See [handoff](../doc/vivari-handoff.md) for the current checkpoint and limitations.
-The project `.env` defaults `VIVARI_DIST` to `.runtime/patched/packages/core/dist`
-for Bun-launched commands. Build that runtime first; then use `bun run dev --port
-5192` and `bun run build` without inline environment assignments. An exported
-`VIVARI_DIST` overrides this default for baseline comparisons.
+The runtime now comes from the directly editable `kkrausse/vivari` fork, branch
+`browser-runtime`. See [DEVELOPMENT.md](DEVELOPMENT.md) for setup, fast rebuilds,
+qualification, and adding tools. `VIVARI_SOURCE` selects its checkout; the default
+is a sibling `vivari` directory next to `random`.
 
 Source builds run on the Mac; application and SQLite execution run in browser
 workers. Rust is only the existing Vivari VFS/codec/crypto build prerequisite.
@@ -489,34 +489,28 @@ npm lock migrated by Bun. It does not install/upgrade the Rust toolchain.
 
 ```sh
 bun run setup
-bun scripts/build-runtime.ts baseline
-bun scripts/build-runtime.ts patched
+bun scripts/build-runtime.ts
 # Run one server per build; inspect existing listeners before choosing ports.
-VIVARI_DIST=.runtime/baseline/packages/core/dist bunx vite --host 127.0.0.1 --port 5191 --strictPort
-VIVARI_DIST=.runtime/patched/packages/core/dist bunx vite --host 127.0.0.1 --port 5192 --strictPort
+bunx vite --host 127.0.0.1 --port 5192 --strictPort
 ```
 
-The script clones revision `2629c71097238400c45aefa213ef61df4794c2b7` into
-gitignored `.runtime/<mode>`, builds web/headless WASM plus the upstream WASI test
-fixture, builds the core SDK, and records patch/lock/asset SHA-256 hashes in
-`.runtime/<mode>-build.json`. It accepts a pristine checkout or exactly the
-recorded single patch; unrecognized source edits cause a failure. New patches
-are applied to source with `git apply`, never to `node_modules` or emitted JS.
-For editing an existing patched checkout, export its reviewed diff with
-`git diff --binary HEAD > ../../patches/0001-sqlite.patch` from that checkout;
-new source files must first be marked with `git add -N <your-files>`.
+Edit and commit normal source files in the fork. The build accepts development
+edits, builds web/headless WASM when its inputs change, rebuilds the core SDK,
+and records fork/toolchain/lock/asset provenance. The compatibility receipt name
+`.runtime/patched-build.json` remains, but patches are no longer build inputs.
+The fork preserves upstream history and the exact imported runtime delta.
 
 SQLite uses `@sqlite.org/sqlite-wasm@3.49.1-build1` (package metadata Apache-2.0;
 SQLite code public domain), keeping SQLite **3.49.1**. The POC's frozen Bun lock
-pins delivery of this dependency; the upstream build resolves it from the
-enclosing POC installation. `LICENSE.sqlite-wasm` records the Apache license;
+pins delivery for probes; the standalone fork explicitly declares its own pinned
+SQLite dependency. `LICENSE.sqlite-wasm` records the Apache license;
 build output includes it and Vivari's license. `sql.js@1.13.0` remains a pinned
 comparison probe (MIT), not the new runtime backend.
 
 ```sh
 bun scripts/qualify-sqlite-backends.ts
 bun test scripts/sqlite-server.test.ts
-# From each .runtime/<mode> directory, on this Apple Silicon host:
+# From the fork checkout, on this Apple Silicon host:
 bunx --package node-bin-darwin-arm64@24.18.0 node scripts/verify-node.mjs
 # From repo root, after booting the patched browser:
 browser-control execute --session <id> --file browser-container-poc/vivari/scripts/sqlite-api.js
@@ -529,8 +523,7 @@ check, save its report, reload the page, boot, set `state.sqliteMode = "recover"
 through Browser Control, then rerun `sqlite-api.js`. This mode does not rewrite
 the database. Reset `state.sqliteMode` before running the full suite again.
 
-`VIVARI_DIST` also selects production assets: `bun run build` uses the patched
-runtime selected by `.env`.
+`VIVARI_SOURCE` also selects the fork used for production asset packaging.
 The asset middleware re-reads filenames after rebuilds. Changes to the Vite
 configuration itself require restarting that host server because harness HMR is
 disabled. An already-running browser retains its old workers until page reload.

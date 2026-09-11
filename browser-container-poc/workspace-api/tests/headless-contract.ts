@@ -184,7 +184,7 @@ res.statusCode=418;res.setHeader('x-probe','real');res.end(Buffer.from([0,255,12
   console.log("PASS reattach shared filesystem and bounded output overflow kills execution");
 
   const originalFetch = globalThis.fetch;
-  const packageDir = resolve(root, "../opencode-package");
+  const packageDir = resolve(import.meta.dirname, "../../vivari/.runtime/opencode-package");
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     const parsed = new URL(String(url));
     if (parsed.hostname === "tool-assets.invalid") {

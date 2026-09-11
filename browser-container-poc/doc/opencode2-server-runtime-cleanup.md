@@ -163,10 +163,16 @@ Sources:
 
 ### P0a — Make the runtime a directly editable fork
 
+**Completed September 10, 2026:** the cumulative runtime patch has been removed;
+the fork is published, active source/build/test paths are migrated, and native,
+headless, and browser contract checks pass. See the
+[migration receipt](runtime-fork-migration.md) and
+[development workflow](../vivari/DEVELOPMENT.md). P0–P5 remain future work.
+
 Do this before substantial runtime changes. Maintain Vivari changes as ordinary
 source commits rather than regenerating a cumulative patch.
 
-The current workflow has three tracked patches under `vivari/patches/`:
+Before migration, the workflow had three tracked patches under `vivari/patches/`:
 
 - `0001-sqlite.patch`: cumulative runtime changes across several subsystems.
 - `opencode-v2/0001-optional-process-metrics.patch`: changes only the TUI
@@ -187,28 +193,28 @@ embedding project to consume that local checkout for development and a pinned
 fork revision/distribution for reproducible qualification. Repository ownership,
 remote URL, and checkout location must be selected before executing migration.
 
-- [ ] Inventory tracked, untracked, and ignored changes in existing runtime
+- [x] Inventory tracked, untracked, and ignored changes in existing runtime
   checkouts; preserve work that is not represented by the saved patch.
-- [ ] Create the fork from the recorded upstream base and import the current
+- [x] Create the fork from the recorded upstream base and import the current
   runtime delta as an ordinary commit. Record provenance and retain licensing.
-- [ ] Establish one canonical source path, configurable for local development;
+- [x] Establish one canonical source path, configurable for local development;
   remove direct `.runtime/patched` imports from active probes and build scripts.
-- [ ] Make development builds accept normal working-tree edits. Reproducible
+- [x] Make development builds accept normal working-tree edits. Reproducible
   release/qualification builds identify the exact committed source revision.
-- [ ] Replace patch hashes in build receipts with fork revision, upstream base,
+- [x] Replace patch hashes in build receipts with fork revision, upstream base,
   toolchain/lockfile identifiers, asset hashes, and development dirty-state
   provenance where applicable.
-- [ ] Split fast JS/worker rebuilds from Rust/WASM rebuilds; reuse unchanged WASM
+- [x] Split fast JS/worker rebuilds from Rust/WASM rebuilds; reuse unchanged WASM
   artifacts while reliably rebuilding them after Rust or toolchain changes.
-- [ ] Keep build outputs, download caches, and retained hashed assets separate
+- [x] Keep build outputs, download caches, and retained hashed assets separate
   from editable source. Preserve assets needed by running kernels.
-- [ ] Provide documented commands for setup, development, build, focused runtime
+- [x] Provide documented commands for setup, development, build, focused runtime
   contracts, and browser/server qualification.
-- [ ] Put generic runtime regression tests beside the fork's implementation;
+- [x] Put generic runtime regression tests beside the fork's implementation;
   keep OpenCode delivery and end-to-end qualification in this integration repo.
-- [ ] Update agent instructions and architecture docs to make the fork the source
+- [x] Update agent instructions and architecture docs to make the fork the source
   of truth, replacing the patch-regeneration workflow.
-- [ ] Reproduce the baseline from the fork, then remove the cumulative runtime
+- [x] Reproduce the baseline from the fork, then remove the cumulative runtime
   patch and active patch-application path. Historical Git commits retain it.
 
 **Acceptance:** edit a runtime source file, rebuild, run its focused contract,
