@@ -1,5 +1,27 @@
 # Conventional Bun server build probe
 
+## Current upgrade candidate — September 11, 2026
+
+The launcher now imports `@opencode/cli/server-process`, following upstream's
+package-scope rename in `a5312e169`. `ServerProcess.run` remains the entrypoint.
+Candidate source is pinned to `20aff6d9f643afe9abf8a048e68f019d049f5329`, the
+`beta` publish commit for `@opencode/cli@0.0.0-beta-19425`, also running on the
+development machine. [Publish run 19425](https://github.com/anomalyco/opencode/actions/runs/34425206646)
+records the branch and commit. This is a published beta version, not a Git release tag.
+
+The isolated checkout at `../../.runtime/opencode-v2-beta-19425` was advanced from
+`d7a7256` with `git merge --ff-only`; the candidate is 1,930 commits ahead.
+The original `opencode-v2-source` checkout has a pre-existing TUI edit and is
+preserved. The recipe's relative `opencode-v2-source` layout must be populated
+with the candidate in an isolated build root before using the updated launcher;
+the old installed image is not the candidate's dependency installation.
+
+This change selects the candidate and updates the import/package name only.
+Build and browser startup are pending. In particular, the newer server's upstream
+web-asset delivery must be accounted for, rather than externalizing its virtual
+asset module. The `v1.18.30` release-tag experiment followed divergent history
+and is not the candidate. Historical baseline instructions below refer to `d7a7256`.
+
 ## Controlled transport interrupt (implementation only)
 
 `bun scripts/serve-opencode-bun-server.ts --interrupt --once` from `vivari`
@@ -55,6 +77,8 @@ sanitization, exit/stop behavior, and malformed/unrelated requests. These tests
 use in-memory synthetic results and are **not browser qualification**. Original
 run `6180cad9-dcb9-4401-9524-e87f0580c6b1` is not upgraded by this fix; qualification
 requires one fresh browser attempt and its final host receipt.
+
+### Historical baseline setup (before the package-scope rename)
 
 Invocation-only entry using the existing installed OpenCode V2 source image at
 `../../.runtime/opencode-v2-source`. Required revision:
