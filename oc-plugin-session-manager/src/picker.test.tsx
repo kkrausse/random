@@ -122,7 +122,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
       form: { list: empty, request: { list: async () => ({ data: [] }) } },
     },
   }
-  const setup = await testRender(() => <SessionPicker context={context} archiveStore={archiveStore} />, { width: 100, height: 55 })
+  const setup = await testRender(() => <SessionPicker context={context} archiveStore={archiveStore} hostDialogInsets={false} />, { width: 100, height: 55 })
   try {
     await new Promise((resolve) => setTimeout(resolve, 20))
     await setup.renderOnce()
@@ -285,11 +285,11 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
       assert.equal(picker.height, width! < 70 ? height : Math.min(40, height! - 2))
       assert.equal(picker.width, width)
       assert.equal(picker.x, 0)
-      assert.equal(picker.y, width! < 70 ? -1 : 0)
+      assert.equal(picker.y, 0)
       const row = setup.renderer.root.findDescendantById("claude-session-row-1")!
-      assert.equal(row.x + row.width, width, "session rows reach the terminal's right edge")
+      assert.equal(row.x + row.width, picker.x + picker.width, "session rows reach the picker's right edge")
       const timestamp = row.getChildren().at(-1)!
-      assert.equal(timestamp.x + timestamp.width, width, "timestamps have no reserved right column")
+      assert.equal(timestamp.x + timestamp.width, picker.x + picker.width, "timestamps have no reserved right column")
       assert.ok(scroll.height >= 2, `list remains usable at ${width}x${height}`)
       assert.ok(preview.y + preview.height <= picker.y + picker.height)
       assert.ok(approve.y + approve.height <= preview.y + preview.height)

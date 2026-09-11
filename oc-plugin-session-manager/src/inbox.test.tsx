@@ -67,7 +67,7 @@ test("New session drains a stable cross-location inbox without selecting its own
       form: { list: empty, request: { list: async ({ location }: any) => ({ data: location.workspace === "ws2" ? questions : [] }) } },
     },
   }
-  const setup = await testRender(() => <SessionPicker context={context} archiveStore={{ list: empty, save: async () => {}, remove: async () => {} }} />, { width: 36, height: 24 })
+  const setup = await testRender(() => <SessionPicker context={context} archiveStore={{ list: empty, save: async () => {}, remove: async () => {} }} hostDialogInsets={false} />, { width: 36, height: 24 })
   const settle = async () => { await new Promise((resolve) => setTimeout(resolve, 30)); await setup.renderOnce() }
   const changed = () => notify({ details: { type: "permission.asked" } })
   const run = (bind: string) => commands.find((command) => command.bind === bind).run()
