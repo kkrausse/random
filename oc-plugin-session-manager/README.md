@@ -4,7 +4,7 @@ Package/directory: `oc-plugin-session-manager`.
 
 Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 
-- The normal session sidebar includes a live current-context breakdown for fresh input, cache reads, cache writes, output, and reasoning, plus cumulative tokens processed and a cost estimate. Unpriced subscription responses use matching OpenCode Zen catalog rates and are labeled **Zen equivalent ≈**.
+- The normal session sidebar includes a live current-context breakdown for fresh input, cache reads, cache writes, output, and reasoning. Current context remains scoped to the open session; cumulative tokens and cost show separate session-only and **Incl. subagents** totals when descendants exist. Unpriced subscription responses use matching OpenCode Zen catalog rates and are labeled **Zen equivalent ≈**.
 
 - Press `Left` while the focused prompt is empty to open a status-aware session picker.
 - Press `Left` while the prompt contains text to move the cursor normally.
@@ -78,7 +78,11 @@ Add fallback rates for models without provider or Zen pricing by changing the pl
 The estimate combines recorded costs with the estimates above. Explicit zero
 catalog rates are respected as free. Responses lacking pricing are counted as unpriced instead of
 silently presented as free. Cumulative "session processed" tokens count every
-request and therefore include context read repeatedly across turns.
+request and therefore include context read repeatedly across turns. When the
+session has descendants, an additional **Incl. subagents** row rolls their
+cumulative tokens and estimated cost into the session-family total. The live
+current-context rows remain scoped to the open session because each subagent has
+its own context window.
 
 ### Rolling 7 days
 
