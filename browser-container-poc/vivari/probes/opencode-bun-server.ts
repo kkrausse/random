@@ -8,13 +8,15 @@ async function bounded<T>(promise: Promise<T>, ms: number, label: string): Promi
   finally { clearTimeout(timer) }
 }
 
-async function qualify(runID: string, restart: boolean) {
+async function qualify(runID: string, restart: boolean, sessionRetention: boolean) {
   let stage = 'manifest', runtime: Awaited<ReturnType<typeof Runtime.start>> | undefined
   let workspace: Awaited<ReturnType<typeof Workspace.open>> | undefined
   let output: Promise<unknown> | undefined
   let phase = 'initial', previousRegistrationID: string | undefined
   const phases: { phase: string; checks: string[]; exit: { exitCode: number; forced: boolean; signal: string | null }; outputBytes: unknown; cleanup: string }[] = []
   const database: { checkpoint: string; path: string; bytes: number; sha256: string; sqliteHeader: true }[] = []
+  const sessionTitle = 'Browser OPFS retention probe'
+  let session: { id: string; title: string; created: true; idTitleChecked: boolean; modelRequests: 0; toolRequests: 0 } | undefined
   const scope = restart ? 'same-page full workspace/runtime reopen; no page reload' : 'single fresh-origin lifecycle'
   const checks: string[] = []
   const pass = (name: string) => { checks.push(name); log('PASS ' + name) }
@@ -118,6 +120,24 @@ async function qualify(runID: string, restart: boolean) {
       const health = await endpoint.fetch('/api/health', { headers, signal: AbortSignal.timeout(20_000) })
       if (health.status !== 200 || (await health.json()).healthy !== true) throw Error()
       pass('authenticated health healthy=true')
+      if (sessionRetention) {
+        stage = phase === 'initial' ? 'create one unprompted session' : 'retrieve retained session ID/title'
+        if (phase === 'reopened' && !session) throw Error()
+        const response = await endpoint.fetch(phase === 'initial' ? '/api/session' : '/api/session/' + encodeURIComponent(session!.id), {
+          method: phase === 'initial' ? 'POST' : 'GET', headers,
+          ...(phase === 'initial' ? { body: JSON.stringify({ title: sessionTitle, location: { directory: '/app' } }) } : {}),
+          signal: AbortSignal.timeout(20_000),
+        })
+        if (response.status !== 200) throw Error()
+        const data = (await response.json()).data
+        if (typeof data?.id !== 'string' || !data.id.startsWith('ses_') || data.title !== sessionTitle) throw Error()
+        if (phase === 'initial') session = { id: data.id, title: data.title, created: true, idTitleChecked: false, modelRequests: 0, toolRequests: 0 }
+        else {
+          if (data.id !== session!.id || data.title !== session!.title) throw Error()
+          session!.idTitleChecked = true
+        }
+        pass(phase === 'initial' ? 'one unprompted session created; no model/tool requests' : 'retained session ID/title checked; no model/tool requests')
+      }
       stage = 'managed service stop'
       const stopped = await endpoint.fetch('/api/service/stop', { method: 'POST', headers, body: JSON.stringify({ instanceID: registration.id }), signal: AbortSignal.timeout(20_000) })
       if (stopped.status !== 200 || (await stopped.json()).accepted !== true) throw Error()
@@ -146,10 +166,10 @@ async function qualify(runID: string, restart: boolean) {
       log('PASS ' + phase + ' full cleanup completed')
     }
     const last = phases[phases.length - 1]
-    return { status: 'PASS', restart, scope, runtime: manifest.version, checks, phases, database, exit: last.exit, outputBytes: last.outputBytes, assets: receipt.assets.length }
+    return { status: 'PASS', restart, sessionRetention, session, scope, runtime: manifest.version, checks, phases, database, exit: last.exit, outputBytes: last.outputBytes, assets: receipt.assets.length }
   } catch {
     // Error objects and response bodies can contain credentials; report only the checkpoint.
-    return { status: 'FAIL', restart, scope, error: 'Failed at ' + phase + ': ' + stage, checks, phases, database }
+    return { status: 'FAIL', restart, sessionRetention, session, scope, error: 'Failed at ' + phase + ': ' + stage, checks, phases, database }
   } finally {
     try { await runtime?.stop() }
     finally {
@@ -161,11 +181,12 @@ async function qualify(runID: string, restart: boolean) {
 }
 
 async function run() {
-  const { runID, restart } = await fetch('/run-config').then(r => r.json())
+  const { runID, restart, sessionRetention } = await fetch('/run-config').then(r => r.json())
   if (new URL(location.href).searchParams.get('runID') !== runID) throw Error('Run ID mismatch; use the printed URL')
   if (typeof restart !== 'boolean' || new URL(location.href).searchParams.has('restart') !== restart) throw Error('Restart mode mismatch; use the printed URL')
+  if (typeof sessionRetention !== 'boolean' || new URL(location.href).searchParams.has('session-retention') !== sessionRetention || (sessionRetention && !restart)) throw Error('Session retention mode mismatch; use the printed URL')
   let result
-  try { result = await qualify(runID, restart) }
+  try { result = await qualify(runID, restart, sessionRetention) }
   catch (error) {
     const message = error instanceof Error && error.message.startsWith('Failed at ') ? error.message : 'Probe cleanup or startup failed'
     result = { status: 'FAIL', error: message }

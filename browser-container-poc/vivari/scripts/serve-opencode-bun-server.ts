@@ -43,7 +43,8 @@ const built = await Bun.build({ entrypoints: [resolve(root, 'probes/opencode-bun
 if (!built.success) throw new AggregateError(built.logs)
 const code = await built.outputs[0].text()
 const headers = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp', 'Service-Worker-Allowed': '/', 'Cache-Control': 'no-store' }
-const once = process.argv.includes('--once'), restart = process.argv.includes('--restart'), runID = crypto.randomUUID()
+const sessionRetention = process.argv.includes('--session-retention')
+const once = process.argv.includes('--once'), restart = sessionRetention || process.argv.includes('--restart'), runID = crypto.randomUUID()
 const timeoutSeconds = restart ? 360 : 180
 const receipt = resolve(root, '.runtime', `opencode-bun-${runID}.json`)
 let finished = false, timer: ReturnType<typeof setTimeout> | undefined
@@ -53,7 +54,7 @@ async function report(result: Result) {
   finished = true
   clearTimeout(timer)
   try {
-    await Bun.write(receipt, JSON.stringify({ runID, restart, manifest, result }, null, 2) + '\n')
+    await Bun.write(receipt, JSON.stringify({ runID, restart, sessionRetention, manifest, result }, null, 2) + '\n')
     console.log(JSON.stringify({ status: result.status, runtime: result.runtime, checks: result.checks, error: result.error, receipt }))
     if (once) process.exitCode = result.status === 'PASS' ? 0 : 1
   } catch { process.exitCode = 1; console.error('Could not write qualification receipt') }
@@ -61,18 +62,22 @@ async function report(result: Result) {
 }
 const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT || 0), async fetch(request) {
   const path = new URL(request.url).pathname
-  if (path === '/run-config') return Response.json({ runID, restart }, { headers })
+  if (path === '/run-config') return Response.json({ runID, restart, sessionRetention }, { headers })
   if (path === '/result' && request.method === 'POST') {
     const body = await request.json()
     if (finished) return new Response('Run already finished', { status: 409, headers })
     if (body.runID !== runID || !['PASS', 'FAIL'].includes(body.result?.status)) return new Response('Invalid result', { status: 400, headers })
     if (body.result.status === 'PASS' && (body.result.runtime !== runtimeManifest.version || body.result.assets !== assets.length ||
-      body.result.exit?.exitCode !== 0 || body.result.exit?.forced !== false || body.result.exit?.signal !== null || body.result.checks?.length !== (restart ? 12 : 6) ||
+      body.result.exit?.exitCode !== 0 || body.result.exit?.forced !== false || body.result.exit?.signal !== null || body.result.checks?.length !== (sessionRetention ? 14 : restart ? 12 : 6) ||
+      body.result.sessionRetention !== sessionRetention ||
+      (sessionRetention && (typeof body.result.session?.id !== 'string' || !body.result.session.id.startsWith('ses_') ||
+        body.result.session.title !== 'Browser OPFS retention probe' || body.result.session.created !== true ||
+        body.result.session.idTitleChecked !== true || body.result.session.modelRequests !== 0 || body.result.session.toolRequests !== 0)) ||
       body.result.restart !== restart || body.result.scope !== (restart ? 'same-page full workspace/runtime reopen; no page reload' : 'single fresh-origin lifecycle') ||
       !Array.isArray(body.result.phases) || body.result.phases.length !== (restart ? 2 : 1) ||
       body.result.phases.some((phase: any, index: number) => phase.phase !== (index === 0 ? 'initial' : 'reopened') ||
         phase.exit?.exitCode !== 0 || phase.exit?.forced !== false || phase.exit?.signal !== null ||
-        phase.checks?.length !== (index === 0 ? 5 : 6) || phase.cleanup !== 'runtime.stop + workspace.flush + workspace.close completed') ||
+        phase.checks?.length !== (index === 0 ? 5 : 6) + (sessionRetention ? 1 : 0) || phase.cleanup !== 'runtime.stop + workspace.flush + workspace.close completed') ||
       !Array.isArray(body.result.database) || body.result.database.length !== (restart ? 2 : 0) ||
       (restart && (body.result.database.some((db: any) => db.path !== '/.server/data/opencode.sqlite' || db.sqliteHeader !== true ||
         !Number.isInteger(db.bytes) || db.bytes < 100 || !/^[a-f0-9]{64}$/.test(db.sha256)) ||
@@ -100,5 +105,5 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT 
   }
   return new Response('Not found', { status: 404, headers })
 } })
-console.log(`OpenCode Bun OPFS: ${server.url}?autorun=1&runID=${runID}${restart ? '&restart=1' : ''}`)
+console.log(`OpenCode Bun OPFS: ${server.url}?autorun=1&runID=${runID}${restart ? '&restart=1' : ''}${sessionRetention ? '&session-retention=1' : ''}`)
 if (once) timer = setTimeout(() => { void report({ status: 'FAIL', error: `Browser qualification timed out after ${timeoutSeconds} seconds` }) }, timeoutSeconds * 1000)
