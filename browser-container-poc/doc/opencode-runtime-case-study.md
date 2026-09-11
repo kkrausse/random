@@ -96,13 +96,17 @@ passes 7/7 (`884547e`): zero external requests, provider request abortion 124 ms
 after interrupt, user-interrupted terminal/aborted assistant, healthy server and
 clean exit. It does not establish that a remote provider stopped computing.
 
-Generic HTTP passes headlessly at `80d5cdd` (`824395a`), but its browser suite
-remains qualified at `48d4ca1`. **Next bounded task:** run that existing browser
-HTTP regression against the current distribution. Before advancing the qualified
-pin or retiring old packagers, reconcile that result with the case-specific
-acceptance and adaptation inventory, then select and qualify an intentionally
-newer OpenCode pin using the same workflow. Fresh installation is a separate
-delivery qualification; no newer pin is selected here. Raw TS still fails compiling
+Generic HTTP passes headlessly at `80d5cdd` (`824395a`) and in the focused
+[Chromium requalification](runtime-http-stream-handoff.md#focused-chromium-requalification-at-80d5cdd-2026-09-11)
+(`b1f8b00`) against distribution `098e0b60…`: streaming, backpressure,
+cancellation, listener replacement and graceful draining. **Next task, authorized
+September 11:** select a recent OpenCode V2 release, record an exact candidate pin,
+and run clean-build, startup, combined tools/retention and controlled-interrupt
+qualification using the same workflow. Before advancing the shared qualified pin
+or retiring old packagers, reconcile the results with the case-specific acceptance
+and adaptation inventory. Fresh installation is a separate delivery qualification;
+the existing audited dependency image must be assessed against the candidate's
+lockfile. No newer pin is selected in this summary. Raw TS still fails compiling
 `packages/client/src/effect/service.ts`; it is a separate loader investigation,
 not a blocker to the accepted conventional-build milestone. Page reload, arbitrary
 native modules, real-provider interruption and generic stdout/P2 backpressure
