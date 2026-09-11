@@ -1,4 +1,5 @@
 import { combinedFixture, combinedPrompt, combinedSteps } from './opencode-bun-fixtures'
+import { combinedTitle } from './opencode-bun-retention'
 
 export type CombinedEvent = { type: string; data: { sessionID: string; id: string; assistantMessageID: string; name?: string; input?: unknown; executed?: boolean; content?: unknown } }
 const identifier = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(value)
@@ -53,10 +54,10 @@ type Evidence = ReturnType<typeof combinedEvidence>
 type Endpoint = { fetch(path: string, init?: RequestInit): Promise<Response> }
 type ModelEvidence = { providerID: string; id: string; promptRequests: number; terminal: string; sseCleanup: string; deltas: number; toolEvents: number; textBlocks: number; textLength: number }
 export async function runCombined(endpoint: Endpoint, headers: Record<string, string>, evidence: Evidence, model: ModelEvidence) {
-  const created = await endpoint.fetch('/api/session', { method: 'POST', headers, body: JSON.stringify({ title: 'Combined tools probe', location: { directory: '/workspace' }, model: { providerID: model.providerID, id: model.id } }), signal: AbortSignal.timeout(20_000) })
+  const created = await endpoint.fetch('/api/session', { method: 'POST', headers, body: JSON.stringify({ title: combinedTitle, location: { directory: '/workspace' }, model: { providerID: model.providerID, id: model.id } }), signal: AbortSignal.timeout(20_000) })
   if (!created.ok) throw Error()
   const data = (await created.json()).data
-  if (!identifier(data?.id) || !data.id.startsWith('ses_') || data.title !== 'Combined tools probe') throw Error()
+  if (!identifier(data?.id) || !data.id.startsWith('ses_') || data.title !== combinedTitle) throw Error()
   evidence.sessionID = data.id
   const validator = combinedValidator(data.id)
   evidence.events = validator.events
