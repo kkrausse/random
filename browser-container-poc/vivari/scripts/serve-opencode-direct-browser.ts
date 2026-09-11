@@ -11,6 +11,7 @@ const integration = resolve(import.meta.dir, '..')
 const retained = resolve(process.argv[2] || '')
 if (!process.argv[2]) throw Error('Expected retained build root argument')
 const runID = crypto.randomUUID()
+const retention = process.argv.includes('--retention')
 const runRoot = resolve(integration, '.runtime/browser-direct', runID)
 mkdirSync(runRoot, { recursive: true })
 const source = resolve(retained, '.runtime/opencode-v2-source'), artifact = resolve(retained, '.runtime/opencode-bun-server')
@@ -53,7 +54,7 @@ runtimeAssets.set(distribution.serviceWorker, hash(sw))
 for (const item of distribution.runtimeBuild.assets.filter((a: any) => a.name.startsWith('assets/') && !a.retained && a.name !== distribution.serviceWorker))
   equal(hash(readFileSync(resolve(runtimeRoot, item.name))), item.sha256, 'Runtime asset ' + item.name)
 equal(hash(readFileSync(resolve(runtimeRoot, distribution.kernelWorker))), distribution.kernelSha256, 'Active kernel')
-const manifest = { runID, assets, runtime: { version: distribution.version, revision,
+const manifest = { runID, retention, assets, runtime: { version: distribution.version, revision,
   manifestSha256: hash(distributionBytes), runtimeBuildSha256: distribution.runtimeBuildSha256,
   kernelWorker: distribution.kernelWorker, kernelSha256: distribution.kernelSha256, serviceWorkerSha256: hash(sw) },
   provenance: { artifact, source, buildReceiptSha256: hash(buildBytes), build, runtimeBuild: distribution.runtimeBuild } }
@@ -87,7 +88,7 @@ const report = (browser: any, reason?: string) => {
     try { closeSync(file.fd) } catch (error) { sinkErrors.push(String(error)) }
   }
   const channels = Object.fromEntries(['stdout', 'stderr'].map(channel => [channel, { bytes: files[channel].bytes, sha256: hash(readFileSync(files[channel].path)), path: files[channel].path }]))
-  const accepted = !reason && !sinkErrors.length && validateDirectBrowser(browser, { runtime: distribution.version, assets, channels })
+   const accepted = !reason && !sinkErrors.length && validateDirectBrowser(browser, { runtime: distribution.version, assets, channels, retention })
   const receipt = { runID, result: accepted ? 'PASS' : 'FAIL', reason: reason ?? (accepted ? null : 'Browser acceptance incomplete or rejected'),
     manifest, browser: browser ?? null, stages, channels, sinkErrors, runtimeRequests: requests,
     harness: { browserSha256: hash(browserCode), host: 'serve-opencode-direct-browser.ts' },
@@ -158,6 +159,6 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) 
     return new Response('Qualification host failure', { status: 500, headers })
   }
 } })
-timer = setTimeout(() => report(null, 'Host 180-second deadline; last durable stage retained, browser cleanup unreported'), 180000)
+timer = setTimeout(() => report(null, 'Host deadline; last durable stage retained, browser cleanup unreported'), retention ? 240000 : 180000)
 process.once('SIGTERM', () => report(null, 'Host terminated; browser cleanup unreported'))
 console.log(JSON.stringify({ url: server.url.href, runID, runRoot, runtime: manifest.runtime, assets, browserHarnessSha256: hash(browserCode) }))

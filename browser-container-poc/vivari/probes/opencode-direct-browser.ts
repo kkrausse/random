@@ -19,6 +19,7 @@ async function qualify() {
     channels: Object.fromEntries(['stdout', 'stderr'].map(channel => [channel, { receivedBytes: 0, acknowledgedBytes: 0, chunks: 0, ended: false, errors: [] as string[], sha256: '' }])),
     cleanup: { executionStop: 'not needed', runtimeStop: 'pending', workspaceFlush: 'pending', workspaceClose: 'pending', drains: 'pending' },
     workerObservation: 'Public execution/Workspace errors and stream completion only; private worker exit/messageerror events are not exposed',
+    retention: undefined as undefined | { sessionID: string; title: string; entries: unknown; fileSha256: string; exits: unknown[]; oldEndpoint: string },
   }
   const chunks: Record<string, Uint8Array[]> = { stdout: [], stderr: [] }
   const texts: Record<string, string> = { stdout: '', stderr: '' }
@@ -100,13 +101,22 @@ async function qualify() {
       check(manifest.version === config.runtime.version && manifest.runtimeBuild.revision === config.runtime.revision, 'Runtime provenance mismatch')
       await stage('runtime.provenance-verified', config.runtime)
       const distribution = { name: 'vivari', version: manifest.version, assetBaseUrl: '/runtime/' }
+      let oldEndpoint: Awaited<ReturnType<Runtime['expose']>> | undefined
+      for (let phase = 0; phase < (config.retention ? 2 : 1); phase++) {
+      texts.stdout = ''; texts.stderr = ''; result.exit = null
+      result.channels.stdout.ended = false; result.channels.stderr.ended = false
       workspace = await Workspace.open({ id: 'default', storage: opfsStore(distribution), signal: abort.signal,
         onDiagnostic: event => { void stage('workspace.' + event.stage, event.detail ?? {}) },
       })
       check(workspace.persistence.status === 'durable', 'OPFS persistence not durable')
-      check((await workspace.fs.readdir('/')).length === 0, 'Workspace not fresh')
-      await stage('opfs.fresh-durable')
-      for (const name of ['home', 'config', 'state', 'data', 'cache', 'tmp']) await workspace.fs.mkdir('/.server/' + name)
+      if (!phase) {
+        check((await workspace.fs.readdir('/')).length === 0, 'Workspace not fresh')
+        await stage('opfs.fresh-durable')
+        for (const name of ['home', 'config', 'state', 'data', 'cache', 'tmp']) await workspace.fs.mkdir('/.server/' + name)
+      } else {
+        check(await hash(await workspace.fs.readFile('/retention.txt')) === result.retention!.fileSha256, 'Reopened file changed before runtime start')
+        await stage('retention.workspace-reopened', { fileSha256: result.retention!.fileSha256 })
+      }
       runtime = await Runtime.start({ distribution, workspace, signal: abort.signal, tools: { delivery: {
         name: 'direct-server-assets', version: '1', async bind(context) {
           for (const asset of config.assets) {
@@ -117,10 +127,10 @@ async function qualify() {
             await context.installFile('/app/' + asset.file, bytes)
             const installed = await context.readFile('/app/' + asset.file)
             check(installed.length === asset.bytes && await hash(installed) === asset.sha256, 'Installed asset integrity mismatch')
-            result.assets.push(asset)
+             if (!phase) result.assets.push(asset)
           }
           // Ordinary directory provisioning for the artifact's fixed database path.
-          await context.installFile('/runtime-probe/.qualification', new TextEncoder().encode(config.runID))
+           if (!phase) await context.installFile('/runtime-probe/.qualification', new TextEncoder().encode(config.runID))
           return async () => result.assets.length
         },
       } } })
@@ -151,6 +161,35 @@ async function qualify() {
       const health = await response.json()
       check(response.status === 200 && health.healthy === true && health.version === '0.0.0-beta-19425' && Number.isInteger(health.pid) && health.pid > 0, 'Authenticated health mismatch')
       await stage('health.authenticated', { status: response.status, ...health })
+      if (config.retention) {
+        const api = async (path: string, method = 'GET', body?: unknown) => {
+          const response = await endpoint.fetch(path, { method, headers: { authorization: 'Basic ' + btoa('opencode:isolated-probe-only'), 'content-type': 'application/json' },
+            body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(15000) })
+          const text = await response.text()
+          check(response.ok, `Session API ${method} ${path}: ${response.status} ${text.slice(0, 1000)}`)
+          return text ? JSON.parse(text).data : null
+        }
+        if (!phase) {
+          const title = 'OPFS retention ' + config.runID
+          const session = await api('/api/session', 'POST', { title, location: { directory: '/workspace' } })
+          check(typeof session.id === 'string' && session.title === title, 'Created session mismatch')
+          await api(`/api/session/${session.id}/instructions/entries/retention`, 'PUT', { value: { runID: config.runID, purpose: 'same-page OPFS retention qualification' } })
+          const entries = await api(`/api/session/${session.id}/instructions/entries`)
+          check(Array.isArray(entries) && entries.some(entry => entry.key === 'retention' && entry.value?.runID === config.runID), 'Durable instruction entry mismatch')
+          const bytes = new TextEncoder().encode(`Meaningful retained workspace data\n${config.runID}\n`)
+          await workspace.fs.writeFile('/retention.txt', bytes)
+          result.retention = { sessionID: session.id, title, entries, fileSha256: await hash(bytes), exits: [], oldEndpoint: 'pending' }
+          await stage('retention.created', result.retention)
+        } else {
+          const retained = result.retention!
+          const session = await api('/api/session/' + retained.sessionID)
+          check(session.id === retained.sessionID && session.title === retained.title && session.location.directory === '/workspace', 'Reopened session mismatch')
+          const entries = await api(`/api/session/${retained.sessionID}/instructions/entries`)
+          check(JSON.stringify(entries) === JSON.stringify(retained.entries), 'Reopened instruction entries mismatch')
+          check(await hash(await workspace.fs.readFile('/retention.txt')) === retained.fileSha256, 'Reopened file changed after server start')
+          await stage('retention.verified', { sessionID: session.id, title: session.title, entries, fileSha256: retained.fileSha256 })
+        }
+      }
       execution.closeStdin()
       await stage('stdin.eof-posted', { acknowledgment: 'public closeStdin returns void; later scope marker/exit establish behavior' })
       await waitMarker('OPENCODE_SERVER_PROCESS_SHUTDOWN_COMPLETE')
@@ -160,7 +199,19 @@ async function qualify() {
       await stage('process.natural-exit', result.exit)
       await bounded(output, 5000, 'Output join')
       check(result.channels.stderr.receivedBytes === 0, 'Unexpected guest stderr')
-    })(), 120000, 'Browser qualification')
+      if (config.retention) result.retention!.exits.push(result.exit)
+      if (config.retention && !phase) {
+        await bounded(runtime.stop(), 5000, 'First runtime stop'); await stage('retention.first-runtime-stopped')
+        await bounded(workspace.flush(), 5000, 'First workspace flush'); await stage('retention.first-workspace-flushed')
+        await bounded(workspace.close(), 5000, 'First workspace close'); await stage('retention.first-workspace-closed')
+        runtime = undefined; workspace = undefined; execution = undefined; output = undefined
+        oldEndpoint = endpoint
+        try { await oldEndpoint.fetch('/api/health', { signal: AbortSignal.timeout(5000) }); throw Error('Old endpoint accepted request') }
+        catch (error) { check((error as { code?: string }).code === 'CLOSED', 'Old endpoint did not reject CLOSED'); result.retention!.oldEndpoint = 'CLOSED' }
+        await stage('retention.old-endpoint-closed')
+      }
+      }
+    })(), config.retention ? 180000 : 120000, 'Browser qualification')
   } catch (error) { fail(error) }
   finally {
     const cleanup = async (key: keyof typeof result.cleanup, action: () => Promise<unknown>) => {
