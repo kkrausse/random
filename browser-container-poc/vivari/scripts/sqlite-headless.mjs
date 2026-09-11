@@ -3,8 +3,9 @@ import { Worker, MessageChannel } from "node:worker_threads";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Kernel } from "../.runtime/patched/packages/kernel-host/kernel.js";
-import { createKernelFs } from "../.runtime/patched/packages/kernel-host/kernel-fs.js";
+import { runtimeSourceUrl } from './runtime-source.mjs';
+const { Kernel } = await import(runtimeSourceUrl('packages/kernel-host/kernel.js').href);
+const { createKernelFs } = await import(runtimeSourceUrl('packages/kernel-host/kernel-fs.js').href);
 
 const directory = mkdtempSync(join(tmpdir(), "vivari-sqlite-"));
 const results = [];
@@ -23,7 +24,7 @@ async function boot() {
   onMessage = bridge.onMessage;
   let output = "";
   const kernel = new Kernel({ fs: bridge.fs, stdout: s => { output += s; }, stderr: s => { output += s; }, spawnWorker(info) {
-    const w = new Worker(new URL("../.runtime/patched/scripts/process-worker.mjs", import.meta.url));
+    const w = new Worker(runtimeSourceUrl('scripts/process-worker.mjs'));
     workers.add(w);
     w.on("message", msg => info.on[msg.type]?.(msg));
     w.on("error", error => { console.error(error); process.exitCode = 1; kernel.stop(info.pid); });
@@ -36,7 +37,8 @@ async function boot() {
     } };
   } });
   kernel.installCoreutils();
-  for (const file of ["sqlite-api.cjs", "sqlite-owner.cjs", "sea.cjs"]) kernel.writeFile(`/runtime-probe/${file}`, readFileSync(new URL(`../probes/runtime/${file}`, import.meta.url)));
+  for (const file of ["sqlite-api.cjs", "sqlite-owner.cjs"]) kernel.writeFile(`/runtime-probe/${file}`, readFileSync(new URL(`../probes/runtime/${file}`, import.meta.url)));
+  kernel.writeFile('/runtime-probe/sea.cjs', readFileSync(runtimeSourceUrl('scripts/fixtures/runtime-contracts/sea.cjs')));
   const opts = { cwd: "/runtime-probe", env: { PATH: "/bin" }, capture: true };
   return {
     kernel, get output() { return output; }, opts,
