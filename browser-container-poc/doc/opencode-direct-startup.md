@@ -1,7 +1,49 @@
 # Direct unbundled OpenCode startup — first executed milestone
 
-September 11, 2026. **Built-path authenticated headless readiness passes;
-full server acceptance remains ahead. Unbundled startup remains blocked.**
+September 11, 2026. **Built-path browser OPFS health and managed shutdown pass;
+broader server acceptance remains ahead. Unbundled startup remains blocked.**
+
+## September 11: single-attempt browser OPFS service qualification
+
+**PASS**, host exit 0, using `bun scripts/serve-opencode-bun-server.ts --once`
+from `vivari` with harness commit `8d35946`. Browser Control CLI session
+`brisk-walrus-245` navigated once to the exact fresh URL:
+`http://127.0.0.1:49919/?autorun=1&runID=8c372cbc-d2c0-4f1a-93de-89248b0c75a0`.
+The host completion notification supplied the result; no retry was needed.
+
+Receipt (local generated artifact):
+`vivari/.runtime/opencode-bun-8c372cbc-d2c0-4f1a-93de-89248b0c75a0.json`,
+observed `2026-09-11T18:40:27.767Z`. Acceptance checkpoints:
+
+- Fresh real OPFS workspace `default`, run marker written and flushed.
+- All five app outputs mounted unchanged, with byte lengths and SHA-256 verified:
+  server JS, emitted native asset, and the three tree-sitter WASM files.
+- Guest-generated service registration validated; credentials omitted.
+- Authenticated `/api/health`: HTTP 200, `healthy: true`.
+- Managed `/api/service/stop`: HTTP 200, `accepted: true`.
+- Natural guest exit **0**, `forced: false`, `signal: null`, before cleanup.
+  Output drains counted 257 stdout bytes and zero stderr bytes without retaining logs.
+- The successful result was posted only after awaited runtime stop, workspace
+  flush, workspace close, and cleanup drains completed.
+
+Actual served runtime distribution:
+`098e0b60a0ff8703994ea681d9c974ae9267bfe5dbdd799e87ff00982ff938a3`.
+Its carried build receipt identifies clean fork commit
+`80d5cdd599fce4fa4817128461c865e009109d34`, built
+`2026-09-11T18:36:31.189Z` (`release: false`). The app's observed upstream revision
+is `d7a7256bb6b0952f486c95718cfbf460b1570a56`, with the preexisting
+`packages/tui/src/component/devtools-bar.tsx` modification retained. App build-time
+attestation is absent (`buildReceipt: null`); this records observed inputs and
+verified emitted bytes, not a clean-upstream build claim. Actual `server.js` is
+28,339,357 bytes, SHA-256
+`765dd1b67583b645a01e904cdc0de525487e1b5c15db2b281ecad83fa5a5f059`.
+
+Next smallest task: a separately bounded fresh-runtime restart on this same
+retained OPFS workspace, verifying retained SQLite state and repeating health,
+managed stop, and natural-exit checkpoints. Browser session is retained for that
+follow-up; the one-shot host has exited.
+
+## Earlier headless and unbundled investigation
 
 Latest conventional-build experiment: `Bun.build` with target `node` and the
 authorized exact jsonc-parser published-ESM entry resolver succeeds (28,339,308-byte
@@ -29,7 +71,8 @@ for configuration, exact asset paths, pins, unchanged JS hash and the next bound
 headless lifecycle task. These were missing deployment data/storage setup, not another code
 bundle transform; full server and tree-sitter operation acceptance remain ahead.
 **Normal builds/transpilation are accepted; the direct TS stripper is not
-necessarily the critical path.** No browser qualification or runtime pin advance.
+necessarily the critical path.** Browser qualification is recorded above; this
+earlier investigation made no runtime pin advance.
 
 Managed shutdown now passes in one isolated guest execution: explicit guest XDG
 paths, actual registration credentials read through `Kernel.readFile`, health 200,
