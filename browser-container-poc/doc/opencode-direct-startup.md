@@ -1,7 +1,64 @@
 # Direct unbundled OpenCode startup — first executed milestone
 
-September 11, 2026. **Built-path browser OPFS health, minimal model SSE, local read/edit/grep, and managed shutdown pass;
+September 11, 2026. **Built-path browser OPFS health, minimal model SSE, local read/edit/grep/glob, and managed shutdown pass;
 broader server acceptance remains ahead. Unbundled startup remains blocked.**
+
+## September 11: fresh glob qualification — host-accepted PASS
+
+**Final result: PASS, 9/9 checkpoints, host exit 0.** Following the harness
+fix in `a4ee632`, one fresh `bun scripts/serve-opencode-bun-server.ts --once --glob`
+attempt ran as `28e55b45-27ab-458c-8411-c6c0e74d17d9`, background shell
+`sh_0921066070011ChSa6zIeZfPSe`. Browser Control CLI session
+`brisk-walrus-245` navigated exactly once to
+`http://127.0.0.1:52653/?autorun=1&runID=28e55b45-27ab-458c-8411-c6c0e74d17d9&model=1&glob=1`
+and returned the exact destination (CLI exit 0). Automatic host completion
+preceded the single saved-receipt read; the extraction's truncated provenance
+header was recovered from saved tool output.
+
+Receipt: `vivari/.runtime/opencode-bun-28e55b45-27ab-458c-8411-c6c0e74d17d9.json`.
+Manifest observed at `2026-09-11T20:02:23.519Z`. Runtime:
+`098e0b60a0ff8703994ea681d9c974ae9267bfe5dbdd799e87ff00982ff938a3`,
+clean fork `80d5cdd599fce4fa4817128461c865e009109d34`, built
+`2026-09-11T18:36:31.189Z`. The existing runtime build was used. Application
+provenance remains an observation of current source/build recipe, not a
+build-time attestation linking those inputs to emitted files; the receipt
+retains the preexisting dirty upstream source state.
+
+| Accepted fresh receipt evidence | Actual result |
+| --- | --- |
+| Scope / workspace | Single fresh-origin lifecycle / default OPFS |
+| App assets verified unchanged by length and SHA-256 | 6 |
+| Provider/model | `opencode/muse-spark-1.3-contributor-free` |
+| Prompt requests / model-proxy POSTs / tool events | 1 / 2 / 7 |
+| Local glob calls / successes / provider-executed | 1 / 1 / false |
+| Input / path / local correlation / exact content matched | all true |
+| Target / returned path | `/workspace/glob-probe` / `/workspace/glob-probe/match.ts` |
+| Content items / matched files / fixture files | 1 / 1 / 2 |
+| Seed bytes / SHA-256 | 39 / `a9af5f95b94f0de12968fc7e513cf000f573b4e91f10bd9450f52de2ae1cbcdf` |
+| Exact content SHA-256 | `6246d2c3789c8c4af609e062c529aa4326214c06192d0dbec1e560634628a717` |
+| Original `ripgrep@0.3.1` files / transforms | 9 / `[]` |
+| Package manifest SHA-256 | `a81b84f137a13dd27977bb55578eb58c13e8d8a4da12612afd84808dad90256a` |
+| Installer bytes / SHA-256 | 279 / `3314ddc36719cd3d4857b5b52398fefef445f2f6bde5f809aa53efee2c78708a` |
+| Ordinary bin symlink/chmod setup checkpoint / stderr bytes | true / 0 |
+| Setup exit / guest exit | both `exitCode=0 forced=false signal=null` |
+| Text deltas / blocks / aggregate UTF-16 length | 2 / 2 / 73 |
+| Aggregate / trimmed / last-block marker matched | false / false / true |
+| Execution terminal / SSE cleanup | `session.execution.succeeded` / aborted and joined |
+| Managed stop / cleanup exit status | accepted / natural exit verified |
+| OPFS cleanup | `runtime.stop + workspace.flush + workspace.close completed` |
+| Guest stdout / stderr bytes | 3257 / 0 |
+
+The nine accepted checkpoints cover fresh OPFS, unchanged app output, original
+ripgrep setup, guest-generated registration validation, authenticated healthy
+health response, minimal model session creation, exact successful local glob
+with no other tools and joined SSE, accepted managed stop, and natural exit
+before cleanup. This fresh result establishes host acceptance after the earlier
+run's timeout documented below.
+
+**Next small combined regression task:** qualify a bounded fresh-origin
+read/edit/grep/glob sequence against a shared fixture, with explicit per-tool
+input/content/correlation checks and one terminal, managed-stop, natural-exit,
+and OPFS-cleanup receipt.
 
 ## September 11: bounded glob attempt — browser PASS recovered; host acceptance blocked
 
