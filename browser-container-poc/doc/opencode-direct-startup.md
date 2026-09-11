@@ -3,6 +3,76 @@
 September 11, 2026. **Built-path browser OPFS health, minimal model SSE, local read/edit/grep/glob, and managed shutdown pass;
 broader server acceptance remains ahead. Unbundled startup remains blocked.**
 
+## September 11: combined read/edit/grep/glob — host-accepted PASS
+
+**Final result: PASS, 9/9 checkpoints, host exit 0.** Harness `7674ce7`
+ran one `bun scripts/serve-opencode-bun-server.ts --once --combined-tools`
+attempt, run `9a54d95d-e2f9-4467-a6e9-f5f923b7c339`, original background
+shell `sh_0921c5c7a001AvhPOxdvMZ8toD`. Browser Control CLI session
+`brisk-walrus-245` navigated exactly once to the printed fresh URL:
+`http://127.0.0.1:53555/?autorun=1&runID=9a54d95d-e2f9-4467-a6e9-f5f923b7c339&model=1&combined-tools=1`.
+Navigation returned that destination with CLI exit 0. The model deadline was
+180 seconds and host deadline 300 seconds. Automatic host completion preceded
+one saved-receipt extraction; its truncated output was recovered from the saved
+tool output. No retry or additional browser navigation was performed.
+
+Receipt: `vivari/.runtime/opencode-bun-9a54d95d-e2f9-4467-a6e9-f5f923b7c339.json`.
+Manifest observed at `2026-09-11T20:15:27.526Z`. Existing runtime distribution
+`098e0b60a0ff8703994ea681d9c974ae9267bfe5dbdd799e87ff00982ff938a3`
+carries clean fork `80d5cdd599fce4fa4817128461c865e009109d34`, built
+`2026-09-11T18:36:31.189Z`. Host Bun was `1.4.0`; runtime/app outputs were
+prebuilt inputs. Application provenance observes source
+`d7a7256bb6b0952f486c95718cfbf460b1570a56` with the preexisting dirty
+`packages/tui/src/component/devtools-bar.tsx`; application build receipt is
+null, so this is not a build-time attestation linking source to emitted files.
+
+| Accepted receipt evidence | Actual result |
+| --- | --- |
+| Scope / workspace / unchanged app assets | Single fresh-origin lifecycle / default OPFS / 6 |
+| Provider/model | `opencode/muse-spark-1.3-contributor-free` |
+| Prompt requests / model-proxy POSTs / all tool events | 1 / 5 / 26 |
+| Ordered validated events | 12: started, called, success for each of read → edit → grep → glob |
+| Local calls / successes / provider-executed | 4 / 4 / false on every call and success |
+| Correlation | Matching session, tool-call and assistant-message IDs for each triple |
+| Before bytes / SHA-256 | 16 / `56e029ebb3be5756ba86df9eb8345ff54e07a90d43db668e16ea80a7fc804e77` |
+| After bytes / SHA-256 | 15 / `e3866f28b5008d611653f340104d6f68a6bfd7451a0a2b888edeb1edd88c5b73` |
+| Final exact bytes through public `workspace.fs` | `BASELINE_AFTER\n`, matched=true |
+| Original ripgrep package / files / transforms | `ripgrep@0.3.1` / 9 / `[]` |
+| Package manifest SHA-256 | `a81b84f137a13dd27977bb55578eb58c13e8d8a4da12612afd84808dad90256a` |
+| Installer bytes / SHA-256 | 279 / `3314ddc36719cd3d4857b5b52398fefef445f2f6bde5f809aa53efee2c78708a` |
+| Symlink/chmod setup checkpoint / stderr bytes | true / 0 |
+| Setup exit / guest exit | Both `exitCode=0 forced=false signal=null` |
+| Text deltas / blocks / aggregate UTF-16 length | 2 / 2 / 49 |
+| Execution terminal / SSE cleanup | `session.execution.succeeded` / aborted and joined |
+| Managed stop / cleanup exit status | accepted / natural exit verified |
+| OPFS cleanup | `runtime.stop + workspace.flush + workspace.close completed` |
+| Guest stdout / stderr bytes | 3334 / 0 |
+
+Exact accepted inputs were read `{path:"/workspace/combined-probe/baseline.txt"}`;
+edit of the same path with `oldString:"BASELINE_BEFORE"` and
+`newString:"BASELINE_AFTER"`; grep of that file with
+`pattern:"BASELINE_AFTER", limit:10`; and glob of
+`/workspace/combined-probe` with `pattern:"baseline.txt", limit:10`.
+Read returned exactly
+`Read file /workspace/combined-probe/baseline.txt, lines 1-1\n1: BASELINE_BEFORE`;
+the edit success was sanitized to `validated local edit success`;
+grep returned exactly
+`Found 1 matches\n/workspace/combined-probe/baseline.txt:\n  Line 1: BASELINE_AFTER\n`;
+glob returned exactly `/workspace/combined-probe/baseline.txt`.
+The host accepted the ordered correlated tool evidence and independent final
+byte check. Text-marker flags were all false and are not combined-mode acceptance
+criteria. The nine checkpoints also include registration validation and
+authenticated healthy health, with natural guest exit before OPFS cleanup.
+
+**Next small task:** qualify retention of the same prompted session, its
+conversation/tool history, and edited file across a same-origin full
+workspace/runtime reopen. Retain original browser session `brisk-walrus-245`,
+origin `http://127.0.0.1:53555`, run ID above, and guest session
+`ses_f6de34074ffe0kX4FPq31C7d0F` as the continuation references. The one-shot
+host has naturally completed; this run qualifies one lifecycle, with
+`sessionRetention=false` and no reopen/database comparison. A retention probe
+must explicitly verify that session/history and the 15 edited bytes after reopen.
+
 ## September 11: fresh glob qualification — host-accepted PASS
 
 **Final result: PASS, 9/9 checkpoints, host exit 0.** Following the harness
