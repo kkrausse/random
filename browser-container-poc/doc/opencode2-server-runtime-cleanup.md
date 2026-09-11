@@ -161,6 +161,70 @@ Sources:
 
 ## Prioritized implementation backlog
 
+### P0a — Make the runtime a directly editable fork
+
+Do this before substantial runtime changes. Maintain Vivari changes as ordinary
+source commits rather than regenerating a cumulative patch.
+
+The current workflow has three tracked patches under `vivari/patches/`:
+
+- `0001-sqlite.patch`: cumulative runtime changes across several subsystems.
+- `opencode-v2/0001-optional-process-metrics.patch`: changes only the TUI
+  devtools component; investigate eliminating it from server-only packaging.
+- `opentui/0001-wasm.patch`: renderer port, outside the server milestone.
+
+The separate `qemu/guest/qemu-popcnt.patch` belongs to another experiment.
+
+`vivari/scripts/build-runtime.ts` clones a pinned upstream revision into ignored
+`.runtime/baseline` or `.runtime/patched`, applies the runtime patch, and rejects
+working-tree edits unless they exactly match that patch. Several probes import
+directly from `.runtime/patched`. This is reproducible packaging, but an awkward
+source-development loop: ordinary source edits cannot simply be rebuilt.
+
+Recommended destination: a dedicated Vivari Git fork with a normal working
+checkout, preserving upstream history and an `upstream` remote. Configure the
+embedding project to consume that local checkout for development and a pinned
+fork revision/distribution for reproducible qualification. Repository ownership,
+remote URL, and checkout location must be selected before executing migration.
+
+- [ ] Inventory tracked, untracked, and ignored changes in existing runtime
+  checkouts; preserve work that is not represented by the saved patch.
+- [ ] Create the fork from the recorded upstream base and import the current
+  runtime delta as an ordinary commit. Record provenance and retain licensing.
+- [ ] Establish one canonical source path, configurable for local development;
+  remove direct `.runtime/patched` imports from active probes and build scripts.
+- [ ] Make development builds accept normal working-tree edits. Reproducible
+  release/qualification builds identify the exact committed source revision.
+- [ ] Replace patch hashes in build receipts with fork revision, upstream base,
+  toolchain/lockfile identifiers, asset hashes, and development dirty-state
+  provenance where applicable.
+- [ ] Split fast JS/worker rebuilds from Rust/WASM rebuilds; reuse unchanged WASM
+  artifacts while reliably rebuilding them after Rust or toolchain changes.
+- [ ] Keep build outputs, download caches, and retained hashed assets separate
+  from editable source. Preserve assets needed by running kernels.
+- [ ] Provide documented commands for setup, development, build, focused runtime
+  contracts, and browser/server qualification.
+- [ ] Put generic runtime regression tests beside the fork's implementation;
+  keep OpenCode delivery and end-to-end qualification in this integration repo.
+- [ ] Update agent instructions and architecture docs to make the fork the source
+  of truth, replacing the patch-regeneration workflow.
+- [ ] Reproduce the baseline from the fork, then remove the cumulative runtime
+  patch and active patch-application path. Historical Git commits retain it.
+
+**Acceptance:** edit a runtime source file, rebuild, run its focused contract,
+and exercise OpenCode without generating or applying a patch. A fresh checkout
+can reproduce the qualified distribution from its recorded fork revision.
+
+Treat upstream merges as deliberate upgrades followed by qualification, rather
+than automatically rebasing the fork during builds. Preserve useful history;
+there is no need to discard upstream ancestry to own the runtime development.
+
+Tool development should remain simpler than runtime development: use OpenCode's
+supported tool extension surface for guest tools, and the existing workspace
+tool descriptor mechanism for host-bound helpers where appropriate. A tool that
+uses supported files, execution, or JS/WASM packages should not require a kernel
+change. Keep the server packager and one small tool example discoverable.
+
 ### P0 — Establish a server-only baseline
 
 - [ ] Create an OpenCode2 server-only packaging and launch path using the pinned
@@ -305,7 +369,7 @@ workspace/storage lifetime.
 
 ## Execution order and verification
 
-Start with P0, then implement the HTTP bridge and shared stream mechanics in
+Start with P0a and P0, then implement the HTTP bridge and shared stream mechanics in
 P1/P2. Use demonstrated server blockers to prioritize P3/P4; do not postpone a
 required correctness fix merely because it appears in a later section.
 
