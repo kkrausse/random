@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "bun build ./server.ts --target=bun --outdir=../../.runtime/opencode-bun-server"
+    "build": "bun build ./server.ts --target=node --outdir=../../.runtime/opencode-bun-server"
   },
   "dependencies": {
     "@opencode-ai/cli": "file:../../.runtime/opencode-v2-source/packages/cli",
