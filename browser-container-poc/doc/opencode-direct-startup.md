@@ -1,7 +1,74 @@
 # Direct unbundled OpenCode startup — first executed milestone
 
-September 11, 2026. **Built-path browser OPFS health, minimal model SSE, local read, and managed shutdown pass;
+September 11, 2026. **Built-path browser OPFS health, minimal model SSE, local read/edit, and managed shutdown pass;
 broader server acceptance remains ahead. Unbundled startup remains blocked.**
+
+## September 11: bounded single-file edit attempt passes
+
+**PASS**, all eight checkpoints; original background shell
+`sh_091f5cf1c0013yshAbv0Q1B0Ca` completed with host exit **0**.
+Executed `bun scripts/serve-opencode-bun-server.ts --once --edit` once from
+clean harness `e6a6141881beaa1cbb0b33ddefd3fc182035b2b7`. Browser Control CLI
+session `brisk-walrus-245` navigated once to the exact printed fresh URL:
+`http://127.0.0.1:51882/?autorun=1&runID=6f0ce2c4-bd07-472c-8896-4ea6ec995d52&model=1&edit=1`.
+Automatic host completion supplied the outcome, without polling, sleeps,
+retries, or another navigation. The saved receipt inspection required a targeted
+result extraction after the full-file read was truncated by its provenance list.
+
+Receipt (local generated artifact):
+`vivari/.runtime/opencode-bun-6f0ce2c4-bd07-472c-8896-4ea6ec995d52.json`;
+manifest observed `2026-09-11T19:33:20.911Z`, host Bun `1.4.0`.
+
+| Gate / observation | Actual result |
+| --- | --- |
+| Provider/model | `opencode/muse-spark-1.3-contributor-free` |
+| Prompt requests / model-proxy POSTs | **1 / 2** |
+| Prompt deadline / host bound | **60s / 180s**, completed within gate |
+| Tool events / upstream edit calls / correlated successes | **7 / 1 / 1** |
+| Same-file read calls / successes | **0 / 0**, permitted range 0–2; no other tools |
+| Edit target / target matched | `/workspace/edit-probe.txt` / `true` |
+| Exact old/new input matched | `true`; `VIVARI_EDIT_BEFORE` → `VIVARI_EDIT_AFTER`, replaceAll omitted or false |
+| Provider-executed tool | `false` |
+| Final bytes checked through `workspace.fs` | **18**, exact match including trailing newline |
+| Text deltas / ended blocks / aggregate UTF-16 length | **2 / 2 / 51** |
+| Aggregate / trim-only / last-block marker matched | `false / false / true` |
+| Terminal event | `session.execution.succeeded` |
+| SSE cleanup | aborted and joined |
+| Managed stop / cleanup exit status | accepted / natural exit verified |
+| Guest exit, top-level and phase and edit evidence | `exitCode: 0, forced: false, signal: null` |
+| Awaited OPFS lifecycle cleanup | `runtime.stop + workspace.flush + workspace.close completed` |
+| Output byte counts (stdout / stderr) | **3330 / 0** |
+| Host exit | **0** |
+
+Fixture hashes matched the gate's expected bytes:
+
+- Before: **19 bytes**, SHA-256
+  `86327673f81b55747abf3ae3212fbcef76cccb9ea10384e5a56f174378247d92`.
+- After: **18 bytes**, SHA-256
+  `4dc9aa238cd84bbb9e6d8ce654b1beacc276701922cb126e14b003d99c36eb37`.
+
+The edit gate requires nonempty streamed final text and successful execution;
+aggregate marker equality is diagnostic. Both ended blocks account for the
+aggregate mismatch, while the last block matched. Exact file bytes are the
+authoritative edit result. All six mounted assets passed length/SHA-256 checks.
+One initial phase completed; this run has no reopen observations.
+
+Existing app/runtime artifacts were reused; only the browser harness was bundled.
+Runtime distribution
+`098e0b60a0ff8703994ea681d9c974ae9267bfe5dbdd799e87ff00982ff938a3`
+was built `2026-09-11T18:36:31.189Z` from clean fork
+`80d5cdd599fce4fa4817128461c865e009109d34`. App `server.js` SHA-256 is
+`765dd1b67583b645a01e904cdc0de525487e1b5c15db2b281ecad83fa5a5f059`.
+Observed upstream source is `d7a7256bb6b0952f486c95718cfbf460b1570a56`
+with the preexisting TUI edit; app build-time attestation remains absent.
+The host exited and browser session is retained. This handoff records sanitized
+evidence only, omitting raw model text, reasoning, credentials, and guest logs.
+
+Next smallest task, subject to sequential user approval: specify offline a
+single-file edit-persistence acceptance case that verifies the exact edited
+bytes after full workspace/runtime reopen, with explicit terminal and natural-exit
+checkpoints. This result supplies the edit baseline; further execution requires
+its own approval.
 
 ## September 11: corrected read-gate single attempt passes
 
