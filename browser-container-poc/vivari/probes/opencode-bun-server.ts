@@ -8,10 +8,11 @@ async function bounded<T>(promise: Promise<T>, ms: number, label: string): Promi
   finally { clearTimeout(timer) }
 }
 
-async function qualify(runID: string, restart: boolean, sessionRetention: boolean) {
+async function qualify(runID: string, restart: boolean, sessionRetention: boolean, model: boolean) {
   let stage = 'manifest', runtime: Awaited<ReturnType<typeof Runtime.start>> | undefined
   let workspace: Awaited<ReturnType<typeof Workspace.open>> | undefined
   let output: Promise<unknown> | undefined
+  const modelEvidence = model ? { providerID: 'opencode', id: 'muse-spark-1.3-contributor-free', deltas: 0, toolEvents: 0, promptRequests: 0, textMatched: false, terminal: 'pending', sseCleanup: 'pending', cleanup: 'pending' } : undefined
   let phase = 'initial', previousRegistrationID: string | undefined
   const phases: { phase: string; checks: string[]; exit: { exitCode: number; forced: boolean; signal: string | null }; outputBytes: unknown; cleanup: string }[] = []
   const database: { checkpoint: string; path: string; bytes: number; sha256: string; sqliteHeader: true }[] = []
@@ -62,6 +63,13 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       if (!workspace) throw Error()
       stage = 'writable guest directories'
       for (const path of ['home', 'config', 'state', 'data', 'cache', 'tmp']) await workspace.fs.mkdir('/.server/' + path)
+      if (modelEvidence) {
+        stage = 'model configuration'
+        await workspace.fs.writeFile('/.server/config/opencode/opencode.json', JSON.stringify({
+          model: 'opencode/' + modelEvidence.id, snapshots: false,
+          providers: { opencode: { settings: { baseURL: `http://host.vivari.internal:${location.port}/api/model/opencode` } } },
+        }))
+      }
       stage = 'verified app delivery'
       runtime = await Runtime.start({ distribution, workspace, tools: { delivery: {
         name: 'opencode-bun-server-delivery', version: '1', async bind(context) {
@@ -84,6 +92,7 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
         XDG_DATA_HOME: '/workspace/.server/data', XDG_CACHE_HOME: '/workspace/.server/cache',
         TMPDIR: '/workspace/.server/tmp', OPENCODE_DB: '/workspace/.server/data/opencode.sqlite',
         OPENCODE_DISABLE_FFF: '1', OPENCODE_DISABLE_FILEWATCHER: '1', OPENCODE_DISABLE_MODELS_FETCH: '1',
+        ...(model ? { OPENCODE_MODELS_PATH: '/app/models.json' } : {}),
         OPENCODE_TREE_SITTER_WASM_PATH: '/app/tree-sitter.wasm',
         OPENCODE_TREE_SITTER_BASH_WASM_PATH: '/app/tree-sitter-bash.wasm',
         OPENCODE_TREE_SITTER_POWERSHELL_WASM_PATH: '/app/tree-sitter-powershell.wasm',
@@ -120,6 +129,82 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       const health = await endpoint.fetch('/api/health', { headers, signal: AbortSignal.timeout(20_000) })
       if (health.status !== 200 || (await health.json()).healthy !== true) throw Error()
       pass('authenticated health healthy=true')
+      if (modelEvidence) {
+        stage = 'create minimal model session'
+        const created = await endpoint.fetch('/api/session', { method: 'POST', headers,
+          body: JSON.stringify({ title: 'Minimal build model SSE', location: { directory: '/workspace' }, model: { providerID: modelEvidence.providerID, id: modelEvidence.id } }),
+          signal: AbortSignal.timeout(20_000),
+        })
+        if (created.status !== 200) throw Error()
+        const data = (await created.json()).data
+        if (typeof data?.id !== 'string' || !data.id.startsWith('ses_') || data.title !== 'Minimal build model SSE') throw Error()
+        const sessionID = data.id
+        pass('minimal model session created')
+        const subscription = new AbortController()
+        let drain: Promise<void> | undefined
+        let failed = false, completed = false, finalText = ''
+        const deadline = setTimeout(() => { modelEvidence.terminal = 'deadline exceeded'; subscription.abort() }, 60_000)
+        try {
+          stage = 'model SSE subscription'
+          const response = await endpoint.fetch('/api/event', { headers, signal: subscription.signal })
+          if (!response.ok || !response.headers.get('content-type')?.includes('text/event-stream') || !response.body) throw Error()
+          const reader = response.body.getReader(), decoder = new TextDecoder()
+          drain = (async () => {
+            let pending = ''
+            try {
+              for (;;) {
+                const { value, done } = await reader.read()
+                if (done) {
+                  if (!completed) { failed = true; modelEvidence.terminal = 'stream closed early'; subscription.abort() }
+                  break
+                }
+                pending += decoder.decode(value, { stream: true })
+                let end: number
+                while ((end = pending.indexOf('\n')) !== -1) {
+                  const line = pending.slice(0, end); pending = pending.slice(end + 1)
+                  if (!line.startsWith('data: ')) continue
+                  const event = JSON.parse(line.slice(6)), data = event.data
+                  if (data?.sessionID !== sessionID) continue
+                  if (event.type.startsWith('session.tool.')) modelEvidence.toolEvents++
+                  if (event.type === 'session.tool.input.started' || event.type === 'session.tool.failed' || event.type === 'session.execution.failed') {
+                    failed = true
+                    modelEvidence.terminal = event.type === 'session.execution.failed' ? event.type : 'tool event rejected'
+                  }
+                  if (event.type === 'session.text.delta') modelEvidence.deltas++
+                  if (event.type === 'session.text.ended') {
+                    if (typeof data.text !== 'string') failed = true
+                    else finalText += data.text
+                  }
+                  if (event.type === 'session.execution.succeeded') { completed = true; modelEvidence.terminal = event.type }
+                  if (failed) subscription.abort()
+                }
+              }
+            } catch {
+              if (!subscription.signal.aborted) { failed = true; modelEvidence.terminal = 'stream failed'; subscription.abort() }
+            }
+            finally { reader.releaseLock() }
+          })()
+          stage = 'one model prompt and terminal SSE (60s deadline)'
+          modelEvidence.promptRequests++
+          const prompted = await endpoint.fetch('/api/session/' + encodeURIComponent(sessionID) + '/prompt', { method: 'POST', headers,
+            body: JSON.stringify({ text: 'Reply with exactly MINIMAL_MODEL_OK. Do not invoke any tools.' }), signal: subscription.signal,
+          })
+          if (!prompted.ok) throw Error()
+          await prompted.arrayBuffer()
+          while (!completed && !failed && !subscription.signal.aborted) await delay(50)
+          modelEvidence.textMatched = finalText === 'MINIMAL_MODEL_OK'
+          if (failed || subscription.signal.aborted || !completed || !modelEvidence.textMatched || modelEvidence.deltas < 1 || modelEvidence.toolEvents !== 0) throw Error()
+        } finally {
+          clearTimeout(deadline)
+          subscription.abort()
+          if (drain) {
+            await bounded(drain, 5_000, 'Model SSE drain')
+            modelEvidence.sseCleanup = 'aborted and joined'
+          } else modelEvidence.sseCleanup = 'subscription aborted before drain'
+        }
+        if (failed || modelEvidence.toolEvents !== 0) throw Error()
+        pass('one prompt streamed exact marker with deltas, no tools, execution succeeded; SSE joined')
+      }
       if (sessionRetention) {
         stage = phase === 'initial' ? 'create one unprompted session' : 'retrieve retained session ID/title'
         if (phase === 'reopened' && !session) throw Error()
@@ -163,13 +248,14 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       workspace = undefined
       output = undefined
       phaseResult.cleanup = 'runtime.stop + workspace.flush + workspace.close completed'
+      if (modelEvidence) modelEvidence.cleanup = phaseResult.cleanup
       log('PASS ' + phase + ' full cleanup completed')
     }
     const last = phases[phases.length - 1]
-    return { status: 'PASS', restart, sessionRetention, session, scope, runtime: manifest.version, checks, phases, database, exit: last.exit, outputBytes: last.outputBytes, assets: receipt.assets.length }
+    return { status: 'PASS', restart, sessionRetention, session, model, modelEvidence, scope, runtime: manifest.version, checks, phases, database, exit: last.exit, outputBytes: last.outputBytes, assets: receipt.assets.length }
   } catch {
     // Error objects and response bodies can contain credentials; report only the checkpoint.
-    return { status: 'FAIL', restart, sessionRetention, session, scope, error: 'Failed at ' + phase + ': ' + stage, checks, phases, database }
+    return { status: 'FAIL', restart, sessionRetention, session, model, modelEvidence, scope, error: 'Failed at ' + phase + ': ' + stage, checks, phases, database }
   } finally {
     try { await runtime?.stop() }
     finally {
@@ -177,16 +263,18 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       finally { await workspace?.close() }
     }
     if (output) await bounded(output, 5_000, 'Cleanup drains')
+    if (modelEvidence && modelEvidence.cleanup === 'pending') modelEvidence.cleanup = 'runtime.stop + workspace.flush + workspace.close completed'
   }
 }
 
 async function run() {
-  const { runID, restart, sessionRetention } = await fetch('/run-config').then(r => r.json())
+  const { runID, restart, sessionRetention, model } = await fetch('/run-config').then(r => r.json())
   if (new URL(location.href).searchParams.get('runID') !== runID) throw Error('Run ID mismatch; use the printed URL')
   if (typeof restart !== 'boolean' || new URL(location.href).searchParams.has('restart') !== restart) throw Error('Restart mode mismatch; use the printed URL')
   if (typeof sessionRetention !== 'boolean' || new URL(location.href).searchParams.has('session-retention') !== sessionRetention || (sessionRetention && !restart)) throw Error('Session retention mode mismatch; use the printed URL')
+  if (typeof model !== 'boolean' || new URL(location.href).searchParams.has('model') !== model || (model && restart)) throw Error('Model mode mismatch; use the printed URL')
   let result
-  try { result = await qualify(runID, restart, sessionRetention) }
+  try { result = await qualify(runID, restart, sessionRetention, model) }
   catch (error) {
     const message = error instanceof Error && error.message.startsWith('Failed at ') ? error.message : 'Probe cleanup or startup failed'
     result = { status: 'FAIL', error: message }
