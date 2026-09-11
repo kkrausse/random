@@ -803,3 +803,43 @@ the database. Reset `state.sqliteMode` before running the full suite again.
 The asset middleware re-reads filenames after rebuilds. Changes to the Vite
 configuration itself require restarting that host server because harness HMR is
 disabled. An already-running browser retains its old workers until page reload.
+### Combined history + edited-file retention (implemented; browser gate pending)
+
+From this directory, the next **single fresh-origin browser attempt** is:
+
+```sh
+PORT=0 bun scripts/serve-opencode-bun-server.ts --once --combined-retention
+```
+
+Open the exact printed autorun URL once using the browser-control CLI. Use its
+newly allocated port; do not reuse the completed origin on port 53555. This
+standalone flag implies combined tools plus same-page workspace/runtime reopen;
+combining it with other mode flags is rejected. The host bound is 480 seconds;
+only the initial phase has the existing 180-second, one-prompt model budget.
+
+Acceptance requires the existing four ordered local read/edit/grep/glob successes,
+then GET of the original session ID/title and `/api/session/:id/context`.
+The pinned context response is `{ data: SessionMessage.Info[] }` (protocol
+`groups/session.ts:496-505`); tools are nested `assistant.content` entries with
+`state.status: completed`, and assistants require `time.completed`. The stable
+projection preserves message/tool identity, order, tool names and completion,
+hashing prose (including reasoning), input and content. Timestamps, provider
+state, metadata, cost and tokens are excluded. It requires one user message and
+exactly the four correlated completed tools; this is not full event-log replay.
+
+Both phases require managed stop, natural zero exit, joined output drains,
+`runtime.stop`, workspace flush and close. After reopening the same OPFS store,
+the SQLite header/length/hash and edited file are checked **before** starting the
+second runtime. There is no second seed/config write or prompt. App/catalog and
+the original nine ripgrep files are remounted and the ordinary installer reruns.
+Fresh health, a different service registration and listener-bound endpoint URL,
+original session/title/history and edited bytes are required. The old endpoint
+must reject after the first runtime stops. Host-observed provider POST counts
+at both completed-phase checkpoints and final reporting must agree.
+
+The file must remain `BASELINE_AFTER\n`, 15 bytes, SHA-256
+`e3866f28b5008d611653f340104d6f68a6bfd7451a0a2b888edeb1edd88c5b73`.
+This qualifies graceful same-page reopen only: no page reload, browser restart,
+crash recovery, second model continuation or host-service persistence claim.
+Implementation checks use synthetic in-memory host requests and history fixtures;
+no browser/model gate was run for this mode during implementation.

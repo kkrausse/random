@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { combinedFixture, combinedSteps, globSeed, globSeedBytes } from '../probes/opencode-bun-fixtures'
 import { validateCombined } from './opencode-bun-combined-validation'
+import { validateCombinedRetention } from './opencode-bun-retention-validation'
 import { combinedBytes, combinedEvidence, combinedValidator } from '../probes/opencode-bun-combined'
 
 // Exercise the actual host route and report function in isolation. No host startup,
@@ -11,8 +12,8 @@ const report = source.slice(source.indexOf('async function report('), source.ind
 const route = source.slice(source.indexOf("  if (path === '/result'"), source.indexOf("  if (path === '/')"))
 const code = new Bun.Transpiler({ loader: 'ts' }).transformSync(`
 function harness(context: any) {
-  const { Bun, process, console, setTimeout, clearTimeout, server, sha256, globSeed, globSeedBytes, mode, validateCombined } = context
-  const runID = 'synthetic-only', restart = false, sessionRetention = false,
+  const { Bun, process, console, setTimeout, clearTimeout, server, sha256, globSeed, globSeedBytes, mode, validateCombined, validateCombinedRetention, combinedRetention } = context
+  const runID = 'synthetic-only', restart = combinedRetention, sessionRetention = false, firstPosts = 2, finalPosts = 2,
     model = true, read = false, edit = false, grep = false, glob = mode === 'single', search = true,
     once = true, receipt = 'in-memory-only', modelPosts = 2, manifest = {},
     runtimeManifest = { version: 'synthetic-runtime' }, assets = [{}],
@@ -50,13 +51,13 @@ function validResult() {
     },
   }
 }
-function host(mode = 'single') {
+function host(mode = 'single', combinedRetention = false) {
   const receipts: any[] = [], stops: boolean[] = [], scheduled: (() => void)[] = []
   const process = { exitCode: undefined as number | undefined }
   let cleared = false
   const handle = factory({
     Bun: { write: async (_path: string, data: string) => { receipts.push(JSON.parse(data)) } },
-    process, console: { log() {}, error() {} }, sha256, globSeed, globSeedBytes, mode, validateCombined,
+    process, console: { log() {}, error() {} }, sha256, globSeed, globSeedBytes, mode, validateCombined, validateCombinedRetention, combinedRetention,
     setTimeout: (callback: () => void) => { scheduled.push(callback) },
     clearTimeout: () => { cleared = true }, server: { stop: (force: boolean) => { stops.push(force) } },
   }) as (request: Request) => Promise<Response>
@@ -140,6 +141,17 @@ test('combined route accepts four ordered local successes and exact bytes withou
   expect(h.receipts[0].result).toEqual(result)
   expect(h.receipts[0].modelPosts).toBe(2)
   expect(h.process.exitCode).toBe(0)
+})
+
+test('retention route rejects incomplete evidence with sanitized receipt and --once exit', async () => {
+  const h = host('combined-tools', true)
+  const response = await h.send({ runID: 'synthetic-only', result: { ...validCombined(), retention: { secret: 'SECRET_HISTORY' } } })
+  expect(await response.json()).toEqual({ received: true, status: 'FAIL' })
+  expect(h.receipts[0].result).toEqual({ status: 'FAIL', error: 'Host rejected combined result: incomplete acceptance checkpoints' })
+  expect(JSON.stringify(h.receipts)).not.toContain('SECRET_HISTORY')
+  expect(h.process.exitCode).toBe(1)
+  h.scheduled[0]()
+  expect(h.stops).toEqual([true])
 })
 
 const combinedMutations: Record<string, (r: any) => void> = {

@@ -1,6 +1,8 @@
 import { Workspace, Runtime, opfsStore } from '../../workspace-api/src/index'
 import { combinedFixture, combinedSteps, globFixtures } from './opencode-bun-fixtures'
 import { combinedBytes, combinedEvidence, runCombined } from './opencode-bun-combined'
+import { combinedTitle, projectHistory, sameHistory, retentionCheckpoints } from './opencode-bun-retention'
+import type { HistoryProjection } from './opencode-bun-retention'
 
 const log = (text: string) => { document.querySelector('pre')!.textContent += text + '\n' }
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
@@ -10,8 +12,11 @@ async function bounded<T>(promise: Promise<T>, ms: number, label: string): Promi
   finally { clearTimeout(timer) }
 }
 
-async function qualify(runID: string, restart: boolean, sessionRetention: boolean, model: boolean, read: boolean, edit: boolean, grep: boolean, glob: boolean, mode: 'single' | 'combined-tools' = 'single') {
+async function qualify(runID: string, restart: boolean, sessionRetention: boolean, model: boolean, read: boolean, edit: boolean, grep: boolean, glob: boolean, mode: 'single' | 'combined-tools' = 'single', combinedRetention = false) {
   const combined = mode === 'combined-tools' ? combinedEvidence() : undefined
+  const retention = combinedRetention ? { sessionID: '', title: combinedTitle, before: undefined as HistoryProjection | undefined, after: undefined as HistoryProjection | undefined,
+    files: [] as { checkpoint: string; bytes: number; sha256: string }[], providerPosts: [] as number[], freshRegistration: false, freshEndpoint: false, oldEndpointRejected: false } : undefined
+  let previousEndpointURL: string | undefined
   const needsRipgrep = grep || glob || !!combined
   let stage = 'manifest', runtime: Awaited<ReturnType<typeof Runtime.start>> | undefined
   let workspace: Awaited<ReturnType<typeof Workspace.open>> | undefined
@@ -72,6 +77,12 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
         const reopened = await snapshotDatabase('after reopen, before second Runtime.start')
         if (reopened.bytes !== database[0].bytes || reopened.sha256 !== database[0].sha256) throw Error()
         pass('same workspace marker and SQLite size/SHA-256 retained across reopen')
+        if (retention && combined) {
+          stage = retentionCheckpoints.before
+          await combinedBytes(combined, 'after', new Uint8Array(await workspace.fs.readFile(combinedFixture.path)), hashBytes)
+          retention.files.push({ checkpoint: 'before runtime', bytes: combined.afterBytes, sha256: combined.afterSha256 })
+          pass(retentionCheckpoints.before)
+        }
         // A leftover registration must never qualify the new execution.
         stage = 'remove prior registration if retained'
         if ((await workspace.fs.readdir('/.server/state/opencode')).includes('service-local.json')) {
@@ -81,7 +92,7 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       if (!workspace) throw Error()
       stage = 'writable guest directories'
       for (const path of ['home', 'config', 'state', 'data', 'cache', 'tmp']) await workspace.fs.mkdir('/.server/' + path)
-      if (modelEvidence) {
+      if (modelEvidence && phase === 'initial') {
         stage = 'model configuration'
         await workspace.fs.writeFile('/.server/config/opencode/opencode.json', JSON.stringify({
           model: 'opencode/' + modelEvidence.id, snapshots: false,
@@ -202,6 +213,13 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       execution.closeStdin()
       stage = 'listener 4096'
       const endpoint = await runtime.expose(4096, { signal: AbortSignal.timeout(60_000) })
+      if (retention) {
+        if (phase === 'reopened') {
+          if (!previousEndpointURL || endpoint.url === previousEndpointURL) throw Error()
+          retention.freshEndpoint = true
+        }
+        previousEndpointURL = endpoint.url
+      }
       stage = 'guest service registration'
       let registration: { id: string; password: string; url: string } | undefined
       const until = Date.now() + 30_000
@@ -218,6 +236,7 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       }
       if (!registration) throw Error()
       previousRegistrationID = registration.id
+      if (retention && phase === 'reopened') retention.freshRegistration = true
       pass('guest-generated registration validated (credentials omitted)')
       const headers = { authorization: 'Basic ' + btoa('opencode:' + registration.password), 'content-type': 'application/json' }
       if (toolCleanup) managedStop = async () => {
@@ -234,14 +253,14 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       const health = await endpoint.fetch('/api/health', { headers, signal: AbortSignal.timeout(20_000) })
       if (health.status !== 200 || (await health.json()).healthy !== true) throw Error()
       pass('authenticated health healthy=true')
-      if (combined && modelEvidence) {
+      if (combined && modelEvidence && phase === 'initial') {
         stage = 'combined one prompt and correlated terminal SSE (180s deadline)'
         await runCombined(endpoint, headers, combined, modelEvidence)
         pass('combined session created and one prompt completed with four ordered correlated local successes; SSE joined')
         stage = 'exact combined final bytes through workspace.fs'
         await combinedBytes(combined, 'after', new Uint8Array(await workspace.fs.readFile(combinedFixture.path)), hashBytes)
         pass('combined final bytes and SHA-256 verified through public workspace.fs')
-      } else if (modelEvidence) {
+      } else if (modelEvidence && phase === 'initial') {
         stage = 'create minimal model session'
         const created = await endpoint.fetch('/api/session', { method: 'POST', headers,
           body: JSON.stringify({ title: 'Minimal build model SSE', location: { directory: '/workspace' }, model: { providerID: modelEvidence.providerID, id: modelEvidence.id } }),
@@ -442,6 +461,25 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
         if (failed || (!read && !edit && !grep && !glob && modelEvidence.toolEvents !== 0)) throw Error()
         pass(grep || glob ? 'one prompt, one successful local ' + searchName + ' with exact input/content, no other tools, streamed execution succeeded; SSE joined' : edit ? 'one prompt, one successful local edit, bounded same-file reads, exact final bytes, streamed completion and execution succeeded; SSE joined' : read ? 'one prompt, one successful local read with exact target/content, no other tools, execution succeeded; SSE joined' : 'one prompt streamed exact marker with deltas, no tools, execution succeeded; SSE joined')
       }
+      if (retention && combined) {
+        stage = phase === 'initial' ? retentionCheckpoints.captured : retentionCheckpoints.after
+        const sessionResponse = await endpoint.fetch('/api/session/' + encodeURIComponent(combined.sessionID), { headers, signal: AbortSignal.timeout(20_000) })
+        if (!sessionResponse.ok) throw Error()
+        const info = (await sessionResponse.json()).data
+        if (info?.id !== combined.sessionID || info.title !== combinedTitle) throw Error()
+        retention.sessionID = info.id
+        const response = await endpoint.fetch('/api/session/' + encodeURIComponent(combined.sessionID) + '/context', { headers, signal: AbortSignal.timeout(20_000) })
+        if (!response.ok) throw Error()
+        const history = await projectHistory((await response.json()).data, combined.events, hashBytes)
+        if (phase === 'initial') retention.before = history
+        else {
+          retention.after = history
+          sameHistory(retention.before!, history)
+          await combinedBytes(combined, 'after', new Uint8Array(await workspace.fs.readFile(combinedFixture.path)), hashBytes)
+          retention.files.push({ checkpoint: 'after health', bytes: combined.afterBytes, sha256: combined.afterSha256 })
+        }
+        pass(stage)
+      }
       if (sessionRetention) {
         stage = phase === 'initial' ? 'create one unprompted session' : 'retrieve retained session ID/title'
         if (phase === 'reopened' && !session) throw Error()
@@ -480,6 +518,13 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       stage = 'runtime.stop'
       await runtime.stop()
       runtime = undefined
+      if (retention && phase === 'initial') {
+        stage = retentionCheckpoints.endpoint
+        try { await endpoint.fetch('/api/health', { headers, signal: AbortSignal.timeout(3_000) }) }
+        catch (error) { retention.oldEndpointRejected = !!error && typeof error === 'object' && 'code' in error && error.code === 'CLOSED' }
+        if (!retention.oldEndpointRejected) throw Error()
+        pass(stage); phaseResult.checks.push(stage)
+      }
       stage = 'workspace.flush'
       await workspace.flush()
       if (restart && phase === 'initial') {
@@ -491,11 +536,21 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       workspace = undefined
       output = undefined
       phaseResult.cleanup = 'runtime.stop + workspace.flush + workspace.close completed'
+      if (retention) {
+        stage = retentionCheckpoints.posts
+        const response = await fetch('/retention-posts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runID, phase }) })
+        if (!response.ok) throw Error()
+        retention.providerPosts.push((await response.json()).modelPosts)
+        if (phase === 'reopened') {
+          if (retention.providerPosts[0] !== retention.providerPosts[1]) throw Error()
+          pass(stage); phaseResult.checks.push(stage)
+        }
+      }
       if (modelEvidence) modelEvidence.cleanup = phaseResult.cleanup
       log('PASS ' + phase + ' full cleanup completed')
     }
     const last = phases[phases.length - 1]
-    return { status: 'PASS', restart, sessionRetention, session, model, modelEvidence, ...(combined ? { mode, combinedEvidence: combined, deliveryEvidence: grepEvidence } : {}), ...(read ? { read, readEvidence } : {}), ...(edit ? { edit, editEvidence } : {}), ...(grep ? { grep, grepEvidence } : {}), ...(glob ? { glob, globEvidence: grepEvidence } : {}), scope, runtime: manifest.version, checks, phases, database, exit: last.exit, outputBytes: last.outputBytes, assets: receipt.assets.length }
+    return { status: 'PASS', ...(retention ? { combinedRetention, retention } : {}), restart, sessionRetention, session, model, modelEvidence, ...(combined ? { mode, combinedEvidence: combined, deliveryEvidence: grepEvidence } : {}), ...(read ? { read, readEvidence } : {}), ...(edit ? { edit, editEvidence } : {}), ...(grep ? { grep, grepEvidence } : {}), ...(glob ? { glob, globEvidence: grepEvidence } : {}), scope, runtime: manifest.version, checks, phases, database, exit: last.exit, outputBytes: last.outputBytes, assets: receipt.assets.length }
   } catch {
     // Error objects and response bodies can contain credentials; report only the checkpoint.
     return { status: 'FAIL', restart, sessionRetention, session, model, modelEvidence, ...(combined ? { mode, combinedEvidence: combined, deliveryEvidence: grepEvidence } : {}), ...(read ? { read, readEvidence } : {}), ...(edit ? { edit, editEvidence } : {}), ...(grep ? { grep, grepEvidence } : {}), ...(glob ? { glob, globEvidence: grepEvidence } : {}), scope, error: 'Failed at ' + phase + ': ' + stage, checks, phases, database }
@@ -512,19 +567,20 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
 }
 
 async function run() {
-  const { runID, restart, sessionRetention, model, read = false, edit = false, grep = false, glob = false, mode = 'single' } = await fetch('/run-config').then(r => r.json())
+  const { runID, restart, sessionRetention, model, read = false, edit = false, grep = false, glob = false, mode = 'single', combinedRetention = false } = await fetch('/run-config').then(r => r.json())
+  if (new URL(location.href).searchParams.has('combined-retention') !== combinedRetention || (combinedRetention && (mode !== 'combined-tools' || !restart || sessionRetention))) throw Error('Combined retention mode mismatch')
   if (!['single', 'combined-tools'].includes(mode) || new URL(location.href).searchParams.has('combined-tools') !== (mode === 'combined-tools') ||
-    (mode === 'combined-tools' && (!model || restart || sessionRetention || read || edit || grep || glob))) throw Error('Combined mode mismatch; use the printed URL')
+    (mode === 'combined-tools' && (!model || (restart && !combinedRetention) || sessionRetention || read || edit || grep || glob))) throw Error('Combined mode mismatch; use the printed URL')
   if (new URL(location.href).searchParams.get('runID') !== runID) throw Error('Run ID mismatch; use the printed URL')
   if (typeof restart !== 'boolean' || new URL(location.href).searchParams.has('restart') !== restart) throw Error('Restart mode mismatch; use the printed URL')
   if (typeof sessionRetention !== 'boolean' || new URL(location.href).searchParams.has('session-retention') !== sessionRetention || (sessionRetention && !restart)) throw Error('Session retention mode mismatch; use the printed URL')
-  if (typeof model !== 'boolean' || new URL(location.href).searchParams.has('model') !== model || (model && restart)) throw Error('Model mode mismatch; use the printed URL')
+  if (typeof model !== 'boolean' || new URL(location.href).searchParams.has('model') !== model || (model && restart && !combinedRetention)) throw Error('Model mode mismatch; use the printed URL')
   if (typeof read !== 'boolean' || new URL(location.href).searchParams.has('read') !== read || (read && (!model || restart))) throw Error('Read mode mismatch; use the printed URL')
   if (typeof edit !== 'boolean' || new URL(location.href).searchParams.has('edit') !== edit || (edit && (!model || restart || read))) throw Error('Edit mode mismatch; use the printed URL')
   if (typeof grep !== 'boolean' || new URL(location.href).searchParams.has('grep') !== grep || (grep && (!model || restart || read || edit))) throw Error('Grep mode mismatch; use the printed URL')
   if (typeof glob !== 'boolean' || new URL(location.href).searchParams.has('glob') !== glob || (glob && (!model || restart || sessionRetention || read || edit || grep))) throw Error('Glob mode mismatch; use the printed URL')
   let result
-  try { result = await qualify(runID, restart, sessionRetention, model, read, edit, grep, glob, mode) }
+  try { result = await qualify(runID, restart, sessionRetention, model, read, edit, grep, glob, mode, combinedRetention) }
   catch (error) {
     const message = error instanceof Error && error.message.startsWith('Failed at ') ? error.message : 'Probe cleanup or startup failed'
     result = { status: 'FAIL', error: message }
