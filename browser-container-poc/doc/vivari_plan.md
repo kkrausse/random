@@ -1,5 +1,18 @@
 # Vivari implementation plan
 
+## Current direction — September 11, 2026
+
+The [active runtime revamp](opencode2-server-runtime-cleanup.md) has accepted the
+server baseline and HTTP bridge. Its end state is **install upstream packages and
+run them without prerequisite package-hacking scripts**: module/API shimming and
+compatible JS/WASM backends belong in the runtime. Normal upstream builds and
+generic dependency/asset delivery are allowed; special package rewrites should
+disappear. Direct unbundled OpenCode/ripgrep investigation starts alongside P2.
+See the [OpenCode case study](opencode-runtime-case-study.md) for the workflow,
+lazy-import behavior and explicit distinction from today's packaged acceptance.
+
+## Historical implementation record
+
 **Current pause:** discuss long-term model transport/auth before continuing.
 The model probe and experimental dev proxy are implemented, but the free endpoint
 returns 429; no model-driven loop has passed. See

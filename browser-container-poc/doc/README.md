@@ -1,5 +1,11 @@
 # Browser container POC
 
+For the current browser-native runtime, start with the
+[project overview](../PROJECT-OVERVIEW.md), [revamp plan](opencode2-server-runtime-cleanup.md)
+and [OpenCode case study](opencode-runtime-case-study.md). The target is upstream
+install-and-run with runtime-owned compatibility, without prerequisite package
+rewrite scripts. The QEMU guide below records the separate earlier experiment.
+
 The preserved app now lives in `../qemu/`. Run host commands below from that
 directory; host-side paths are relative to it. See [the experiment index](index.md)
 for the new layout and Vivari attempt.

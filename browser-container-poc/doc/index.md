@@ -7,6 +7,12 @@
 
 ## Current API design
 
+- [Runtime cleanup / revamp plan](opencode2-server-runtime-cleanup.md) — accepted
+  P0/P1, next execution work, and the runtime-owned compatibility end state.
+- [OpenCode runtime case study](opencode-runtime-case-study.md) — install upstream
+  packages and run their server path without prerequisite package-hacking scripts;
+  lazy imports, ripgrep and the gates for retiring today's custom packaging.
+
 - [JavaScript workspace API plan](api-plan.md) — filesystem/runtime separation,
   typed module execution and tools, service endpoints, and current implementation gaps.
 - [API implementation handoff](api-handoff.md) — granular task cards, dependencies,

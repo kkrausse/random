@@ -4,6 +4,13 @@ The workspace package of **kev-browser-agent-kit**, providing browser implementa
 of agent harness capabilities. Source lives in `browser-container-poc/workspace-api/`;
 see the [project overview](../PROJECT-OVERVIEW.md) for demos and package boundaries.
 
+**Compatibility goal:** install/mount upstream packages, configure them and launch
+their normal entrypoints without prerequisite package-hacking scripts. Runtime
+loader/builtin shims and reusable JS/WASM implementations supply compatibility.
+Normal upstream builds and generic dependency/asset delivery remain valid. This
+is an end-state goal: current OpenCode delivery still has custom transformations;
+see the [OpenCode case study](../doc/opencode-runtime-case-study.md).
+
 Real Vivari worker-backed files, explicit execution, typed tools and endpoints.
 Browser-only acceptance remains pending; see [V0-HANDOFF.md](V0-HANDOFF.md).
 

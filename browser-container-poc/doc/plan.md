@@ -1,5 +1,13 @@
 # Browser Coding Workspace POC Plan
 
+**Current direction (September 11, 2026):** the active
+[runtime revamp plan](opencode2-server-runtime-cleanup.md) targets ordinary upstream
+installation/mounting and execution, with runtime-owned shims and no prerequisite
+package-hacking scripts. Generic delivery and normal upstream builds remain valid;
+custom behavioral rewrites are transitional. See the
+[OpenCode case study](opencode-runtime-case-study.md) for workflow and acceptance.
+The research sketch below is historical, including its original prebundling choice.
+
 See the [descriptive decision matrix](decision-matrix.md) for criteria-by-approach facts, without ratings or coloring.
 The separate [assessment](assessment.md) provides critique and a timeboxed validation proposal. It recommends testing existing
 container2wasm/QEMU packaging before committing to direct integration; the original proposal below is retained for context.

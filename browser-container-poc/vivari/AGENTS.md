@@ -14,5 +14,11 @@ Default local source: a sibling `vivari` checkout next to `random`.
   qualification here. Retain explicit completion checkpoints, not just exit zero.
 - Runtime tools should use supported files/execution/package APIs. Add a kernel
   operation only when a reusable missing capability actually requires it.
+- Target upstream install/mount-and-run without prerequisite package-hacking
+  scripts. Runtime shims/loaders and reusable JS/WASM backends own compatibility;
+  normal upstream builds and generic dependency/asset delivery remain valid.
+  Investigate direct execution before adding consumer transforms. Record existing
+  transforms as temporary exceptions with removal gates; preserve lazy imports.
+  See `../doc/opencode-runtime-case-study.md` and the main runtime cleanup plan.
 - Commit only your own files in each repository. Preserve concurrent work and
   existing runtime checkouts. Browser automation uses the browser-control CLI.
