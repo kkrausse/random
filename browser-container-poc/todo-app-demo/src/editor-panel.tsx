@@ -5,11 +5,12 @@ import '@kev-browser-agent-kit/opencode-chat/editor.css'
 
 const recipe = createBrowserEditorRecipe()
 const hostPaths = ['/api']
+const isPreviewReady = (frame: HTMLIFrameElement) => !!frame.contentDocument?.querySelector('main input#title:not(:disabled)')
 
 function Editor({ onExit }: { onExit(): void }) {
   const { controller } = useWorkspace()
   return <BrowserEditor controller={controller} recipe={recipe} hostPaths={hostPaths}
-    initialPath="/src/home.tsx" onExit={onExit} />
+    initialPath="/src/home.tsx" isPreviewReady={isPreviewReady} onExit={onExit} />
 }
 
 export default function EditorPanel(props: { onExit(): void }) {

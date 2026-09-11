@@ -1,9 +1,11 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 
 const EditorPanel = lazy(() => import('./editor-panel'))
 
 /** App-owned UI gate. The server independently protects editor assets and model calls. */
 export default function Editing() {
+  const queryClient = useQueryClient()
   const [allowed, setAllowed] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   useEffect(() => {
@@ -19,7 +21,7 @@ export default function Editing() {
       <button onClick={() => setIsEditing(true)} disabled={isEditing}>Enable editing</button>
     </aside>
     {isEditing && <Suspense fallback={<p>Loading editor…</p>}>
-      <EditorPanel onExit={() => setIsEditing(false)} />
+      <EditorPanel onExit={() => { setIsEditing(false); void queryClient.invalidateQueries() }} />
     </Suspense>}
   </>
 }

@@ -52,8 +52,9 @@ export async function prepareBrowserEditor(options: PrepareBrowserEditorOptions)
     await add(destination, new Uint8Array(await Bun.file(path).arrayBuffer()));
   });
   // The shared Vite config imports this build-only entry. No editor/browser payload enters the guest.
-  await add('/workspace/node_modules/@kev-browser-agent-kit/opencode-chat/package.json', new TextEncoder().encode(JSON.stringify({ type: 'module', exports: { './vite': './vite.js' } })));
+  await add('/workspace/node_modules/@kev-browser-agent-kit/opencode-chat/package.json', new TextEncoder().encode(JSON.stringify({ type: 'module', exports: { './vite': './vite.js', './config': './config.js' } })));
   await add('/workspace/node_modules/@kev-browser-agent-kit/opencode-chat/vite.js', new Uint8Array(await Bun.file(join(import.meta.dirname, 'vite.js')).arrayBuffer()));
+  await add('/workspace/node_modules/@kev-browser-agent-kit/opencode-chat/config.js', new Uint8Array(await Bun.file(join(import.meta.dirname, 'config.js')).arrayBuffer()));
   for (const asset of receipt.assets) {
     const bytes = new Uint8Array(await Bun.file(join(options.openCodeDirectory, asset.file)).arrayBuffer());
     if (bytes.length !== asset.bytes || hash(bytes) !== asset.sha256) throw Error(`OpenCode integrity failure: ${asset.file}`);

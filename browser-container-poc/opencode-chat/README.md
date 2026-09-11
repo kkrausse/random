@@ -217,3 +217,53 @@ are bundled into the UI entries.
 
 It renders a full-viewport preview and a compact
 fixed editing pane; applications can override its `oc-editor-*` classes.
+
+## Prepared shared-application integration
+
+The optional toolkit entries own the reusable build/server/runtime orchestration:
+
+- `/prepare`: `prepareBrowserEditor({appRoot, output, runtimeDirectory, openCodeDirectory, source})`
+  verifies the delivered workspace ABI and pinned OpenCode receipt, installs exact top-level
+  application dependency versions with WASM esbuild/Rollup, and writes a content-addressed
+  preparation manifest. `source` is an explicit app-relative allowlist. No guest frontend
+  template is generated: the application's existing source and framework config are seeded.
+- `/recipe`: `createBrowserEditorRecipe({base?: '/editor/', model?})` opens the existing
+  workspace controller, seeds only missing source, installs hash-verified dependencies,
+  launches real Vite and OpenCode, and waits for the mounted editor's clients. The editor
+  owns chat attachment; the recipe does not create a second chat controller.
+- `/server`: `createBrowserEditorHandler({authorize, preparedDirectory, runtimeDirectory,
+  clientDirectory, model: {baseURL, headers}, base?})` returns a request handler whose
+  `undefined` result delegates to the app. It protects preparation/runtime assets, the
+  build's private editor JS/CSS, and the streamed model proxy. Authorization errors deny.
+  Client credentials/cookies are stripped from upstream requests. Protected artifacts use
+  `no-store`. Apply `browserEditorHeaders` to the host document for worker isolation.
+- `/vite`: `browserEditorBoundary('src/editing.tsx', 'src/editor-panel.tsx', authorize)`
+  replaces the host-only editing entry with a null component in the guest, before its
+  imports load. In the host build it records private dynamic-entry artifacts in
+  `editor-assets.json`; in development it gates the private entry and toolkit files and
+  excludes them from shared dependency prebundling. Keep the editor behind that dynamic
+  entry. The app retains its authorization function, launcher, and editing state.
+- `/config`: `browserPreviewBase()` supplies a framework router's deployment basename
+  (`/` on the host, `/preview/5173/` in the guest). The Vite boundary uses that same base,
+  restoring it after the workspace bridge strips its transport prefix, including HMR.
+- `/vite`: `browserCompatibleTailwind()` uses the ordinary Tailwind Vite plugin on the
+  host and the official Tailwind JS compiler in the guest, with JS token discovery and
+  CSS HMR. This avoids native oxide/lightningcss addons. It covers ordinary source-class
+  discovery; it is not a replacement for every native scanner/configuration feature.
+
+Example consumer: `../todo-app-demo`. It retains React Router framework SPA/prerender
+and its existing tRPC React Query frontend against the real host `/api`. Supply
+`hostPaths={['/api']}` and an application-specific `isPreviewReady` predicate to the
+mounted editor to wait for hydration/data rather than merely iframe load.
+
+Build packages in dependency order (`workspace`, then `opencode-chat`). Each build also
+emits a compiled local package directory (`workspace-api/dist/lib`, `opencode-chat/dist`)
+with the same public exports and no package-development dependencies. Consumers can use
+these directories as `file:` dependencies; normal tarball distribution remains supported.
+The todo checkout's installation is verified with Bun 1.3.9. Bun 1.4.0 in this environment
+rejects sibling file dependencies as unsafe; use Bun 1.3.9 for that installation step.
+
+Runtime/OpenCode distributions must be prepared separately; this API does not silently
+download a moving runtime or model harness. Dependencies are restored each open because
+the workspace's existing OPFS mirror excludes `node_modules`. Source and chat state are
+browser-local. **No remote Git patch persistence or publishing endpoint is implemented.**
