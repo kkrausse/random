@@ -1,5 +1,6 @@
 import { cp, mkdir, readdir } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
+import { runtimeSourcePath } from '../vivari/scripts/runtime-source.mjs';
 const root = import.meta.dirname;
 const source = resolve(root, '../vivari');
 const out = join(root, '.snapshot');
@@ -7,11 +8,12 @@ await mkdir(out, { recursive: true });
 const hash = (b: Uint8Array) => new Bun.CryptoHasher('sha256').update(b).digest('hex');
 const uiOnly = process.argv.includes('--ui-only');
 if (!uiOnly) {
-await cp(join(source, '.runtime/patched/packages/core/dist'), join(out, 'runtime'), { recursive: true });
+const runtimeDist = runtimeSourcePath('packages/core/dist');
+await cp(runtimeDist, join(out, 'runtime'), { recursive: true });
 await cp(join(source, 'public/vendor'), join(out, 'vendor'), { recursive: true });
 for (const name of await readdir(join(out, 'runtime'), { recursive: true })) {
   const f = Bun.file(join(out, 'runtime', name));
-  if (await f.exists() && hash(new Uint8Array(await f.arrayBuffer())) !== hash(new Uint8Array(await Bun.file(join(source, '.runtime/patched/packages/core/dist', name)).arrayBuffer()))) throw Error('Runtime changed during snapshot; wait for its build to finish and retry');
+  if (await f.exists() && hash(new Uint8Array(await f.arrayBuffer())) !== hash(new Uint8Array(await Bun.file(join(runtimeDist, name)).arrayBuffer()))) throw Error('Runtime changed during snapshot; wait for its build to finish and retry');
 }
 const receipt = await Bun.file(join(source, '.runtime/opencode-v2-package/receipt.json')).json();
 const assets = [];

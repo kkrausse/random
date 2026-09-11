@@ -1,21 +1,21 @@
 import { defineConfig, loadEnv } from "vite";
 import { readFileSync, readdirSync } from "node:fs";
-import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { runtimeSourcePath } from "./scripts/runtime-source.mjs";
 
 const isolation = {
   "Cross-Origin-Opener-Policy": "same-origin",
   "Cross-Origin-Embedder-Policy": "require-corp",
 };
 const env = loadEnv(process.env.NODE_ENV ?? 'development', import.meta.dirname, 'VIVARI_');
-const runtimeDist = process.env.VIVARI_DIST ?? env.VIVARI_DIST;
-const dist = runtimeDist
-  ? pathToFileURL(resolve(runtimeDist) + "/")
-  : new URL("./node_modules/@vivari/core/dist/", import.meta.url);
+const dist = pathToFileURL(runtimeSourcePath("packages/core/dist") + "/");
 const sw = () => readFileSync(new URL("assets/sw.js", dist));
 const assets = new URL("assets/", dist);
 export default defineConfig({
-  resolve: runtimeDist ? { alias: { "@vivari/core": new URL("index.js", dist).pathname } } : undefined,
+  resolve: { alias: {
+    "@vivari/core": new URL("index.js", dist).pathname,
+    "@vivari-source": runtimeSourcePath(),
+  } },
   optimizeDeps: { exclude: ["@vivari/core"] },
   // Host source edits must not tear down an in-browser benchmark or agent run.
   server: {

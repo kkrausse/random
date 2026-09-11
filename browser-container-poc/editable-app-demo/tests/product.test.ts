@@ -6,6 +6,7 @@ import { authorizeEditorRequest } from "@kev-browser-agent-kit/workspace/server"
 import { WorkspaceController } from "@kev-browser-agent-kit/workspace/react";
 import { openFixture } from "../src/fixture";
 import { resetSource, resetSourcePaths } from "../src/sample-recipe";
+import { runtimeSourcePath } from "../../vivari/scripts/runtime-source.mjs";
 
 test("explicit reset preserves unknown source, configuration and session state across reopen", async () => {
   let snapshot: string | null = null;
@@ -85,7 +86,7 @@ test("authored preview SW passes original backend Request with bytes, headers, c
     guestUrl.searchParams.set("__vv_host_paths", JSON.stringify(["/api"]));
     const client = { url: guestUrl.href, id: "frame", frameType: "nested" };
     const kernel = { url: server.url.href, id: "host", frameType: "top-level", postMessage(message: any, ports: MessagePort[]) { guestRequest = message.req; ports[0]!.postMessage({ status: 200, headers: { "content-type": "text/plain" }, body: "guest" }); ports[0]!.close(); } };
-    const source = await Bun.file(new URL("../../vivari/.runtime/patched/packages/studio/public/sw.js", import.meta.url)).text();
+    const source = await Bun.file(runtimeSourcePath("packages/studio/public/sw.js")).text();
     // The actual authored SW dispatches real Requests to a real Bun HTTP backend.
     runInNewContext(source, { URL, Response, Request, Headers, MessageChannel, setTimeout, clearTimeout, console,
       fetch: (request: Request) => { nativeRequest = request; return fetch(request); },

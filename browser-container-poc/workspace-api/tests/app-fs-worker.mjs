@@ -3,9 +3,10 @@ import { parentPort, workerData } from "node:worker_threads";
 import { createRequire } from "node:module";
 import { readFileSync, writeFileSync, renameSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { FsServer } from "../../vivari/.runtime/patched/packages/kernel-host/fs-server.js";
-import { createSqliteServer } from "../../vivari/.runtime/patched/packages/kernel-host/sqlite-server.js";
-const require = createRequire(new URL("../../vivari/.runtime/patched/package.json", import.meta.url));
+import { runtimeSourceUrl } from "../../vivari/scripts/runtime-source.mjs";
+const { FsServer } = await import(runtimeSourceUrl("packages/kernel-host/fs-server.js").href);
+const { createSqliteServer } = await import(runtimeSourceUrl("packages/kernel-host/sqlite-server.js").href);
+const require = createRequire(runtimeSourceUrl("package.json"));
 const { VirtualFileSystem } = require("./packages/vfs/pkg-node/vivari_vfs.js");
 const vfs = new VirtualFileSystem();
 for (const file of readdirSync(workerData.directory).filter(f => f.endsWith(".snapshot"))) {
