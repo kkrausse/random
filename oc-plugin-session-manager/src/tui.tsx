@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import type { FormInfo, ModelInfo, PermissionRequest, SessionInfo, SessionMessageAssistant, SessionMessageInfo } from "@opencode-ai/client"
+import type { FormInfo, ModelCost, ModelInfo, PermissionRequest, SessionInfo, SessionMessageAssistant, SessionMessageInfo, TokenUsageInfo } from "@opencode-ai/client"
 import { Plugin } from "@opencode-ai/plugin/tui"
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
@@ -93,9 +93,129 @@ function contextUsage(
   const model = models?.find((candidate) => candidate.providerID === last.model.providerID && candidate.id === last.model.id)
   return {
     tokens,
+    breakdown: last.tokens,
     percent: model?.limit.context ? Math.round((tokens / model.limit.context) * 100) : undefined,
+    limit: model?.limit.context,
     model: last.model,
   }
+}
+
+type UsageRates = Pick<ModelCost, "input" | "output" | "cache"> & { tier?: ModelCost["tier"] }
+
+const defaultUsageRates: Record<string, UsageRates[]> = {
+  // OpenCode Zen's published models.dev rates. Keep these in cli.json when
+  // overriding them so subscription-backed models remain visibly estimates.
+  "openai/gpt-5.6-sol": [
+    { input: 2, output: 10, cache: { read: 0.2, write: 2.5 } },
+    { tier: { type: "context", size: 272_000 }, input: 4, output: 15, cache: { read: 0.4, write: 5 } },
+  ],
+}
+
+function usageRates(options: Record<string, unknown>) {
+  const configured = options.usageRates
+  if (!configured || typeof configured !== "object" || Array.isArray(configured)) return defaultUsageRates
+  return { ...defaultUsageRates, ...(configured as Record<string, UsageRates[]>) }
+}
+
+function rateFor(rates: UsageRates[], tokens: TokenUsageInfo) {
+  const context = tokens.input + tokens.cache.read + tokens.cache.write
+  return rates
+    .filter((rate) => !rate.tier || context > rate.tier.size)
+    .sort((a, b) => (b.tier?.size ?? 0) - (a.tier?.size ?? 0))[0]
+}
+
+export function estimateUsageCost(
+  messages: ReadonlyArray<SessionMessageInfo>,
+  models: ReadonlyArray<ModelInfo>,
+  fallback: Record<string, UsageRates[]> = defaultUsageRates,
+) {
+  let cost = 0
+  let estimated = false
+  let unpriced = 0
+  for (const message of messages) {
+    if (message.type !== "assistant" || !message.tokens) continue
+    if ((message.cost ?? 0) > 0) {
+      cost += message.cost!
+      continue
+    }
+    const key = `${message.model.providerID}/${message.model.id}`
+    const model = models.find((candidate) => candidate.providerID === message.model.providerID && candidate.id === message.model.id)
+    const rates = model?.cost.length ? model.cost : fallback[key]
+    const rate = rates && rateFor(rates, message.tokens)
+    if (!rate) {
+      unpriced++
+      continue
+    }
+    estimated = true
+    cost += (
+      message.tokens.input * rate.input
+      + (message.tokens.output + message.tokens.reasoning) * rate.output
+      + message.tokens.cache.read * rate.cache.read
+      + message.tokens.cache.write * rate.cache.write
+    ) / 1_000_000
+  }
+  return { cost, estimated, unpriced }
+}
+
+function UsageBreakdown(props: { context: Plugin.Context; sessionID: string }) {
+  const session = createMemo(() => props.context.data.session.get(props.sessionID))
+  const messages = createMemo(() => props.context.data.session.message.list(props.sessionID))
+  const models = createMemo(() => props.context.data.location.model.list(session()?.location) ?? [])
+  const usage = createMemo(() => contextUsage(messages(), models(), session()?.revert?.messageID))
+  const estimate = createMemo(() => estimateUsageCost(messages(), models(), usageRates(props.context.options)))
+
+  onMount(() => {
+    const current = session()
+    if (!current) return
+    void Promise.all([
+      props.context.data.session.message.sync(current.id),
+      props.context.data.location.model.sync(current.location),
+    ]).catch((error) => console.error("[claude.sessions] Failed to sync usage breakdown", error))
+  })
+
+  const row = (label: string, value: () => number) => (
+    <box flexDirection="row" justifyContent="space-between">
+      <text fg={props.context.theme.text.subdued}>{label}</text>
+      <text fg={props.context.theme.text.default}>{formatCompactTokens(value())}</text>
+    </box>
+  )
+
+  return (
+    <box paddingTop={1}>
+      <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>Token breakdown</text>
+      {usage() ? (
+        <box>
+          <box flexDirection="row" justifyContent="space-between">
+            <text fg={props.context.theme.text.subdued}>Current context</text>
+            <text fg={props.context.theme.text.default}>
+              {formatCompactTokens(usage()!.tokens)}{usage()!.limit ? ` / ${formatCompactTokens(usage()!.limit!)}` : ""}
+            </text>
+          </box>
+          {row("Fresh input", () => usage()!.breakdown.input)}
+          {row("Cache read", () => usage()!.breakdown.cache.read)}
+          {row("Cache write", () => usage()!.breakdown.cache.write)}
+          {row("Output", () => usage()!.breakdown.output)}
+          {row("Reasoning", () => usage()!.breakdown.reasoning)}
+        </box>
+      ) : <text fg={props.context.theme.text.subdued}>No usage yet</text>}
+      <box paddingTop={1}>
+        <box flexDirection="row" justifyContent="space-between">
+          <text fg={props.context.theme.text.subdued}>Session processed</text>
+          <text fg={props.context.theme.text.default}>{session() ? formatCompactTokens(
+            session()!.tokens.input + session()!.tokens.output + session()!.tokens.reasoning
+            + session()!.tokens.cache.read + session()!.tokens.cache.write,
+          ) : "0"}</text>
+        </box>
+        <box flexDirection="row" justifyContent="space-between">
+          <text fg={props.context.theme.text.subdued}>{estimate().estimated ? "Zen estimate" : "Calculated cost"}</text>
+          <text fg={props.context.theme.text.default}>{formatCost(estimate().cost)}</text>
+        </box>
+        {estimate().unpriced > 0
+          ? <text fg={props.context.theme.text.subdued}>{estimate().unpriced} unpriced response{estimate().unpriced === 1 ? "" : "s"}</text>
+          : null}
+      </box>
+    </box>
+  )
 }
 
 function contextStats(
@@ -1085,8 +1205,13 @@ export default Plugin.define({
       append: "app",
       render: () => <EmptyPromptBinding context={context} />,
     })
+    const unregisterUsage = context.ui.slot({
+      append: "sidebar.content",
+      render: ({ sessionID }) => <UsageBreakdown context={context} sessionID={sessionID} />,
+    })
     return () => {
       unregisterSlot()
+      unregisterUsage()
     }
   },
 })

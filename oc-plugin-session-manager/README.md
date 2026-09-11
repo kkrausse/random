@@ -4,6 +4,8 @@ Package/directory: `oc-plugin-session-manager`.
 
 Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 
+- The normal session sidebar includes a live current-context breakdown for fresh input, cache reads, cache writes, output, and reasoning, plus cumulative tokens processed and a cost estimate. Unpriced `openai/gpt-5.6-sol` subscription responses use OpenCode Zen's published per-million-token rates and are explicitly labeled **Zen estimate**, not spent.
+
 - Press `Left` while the focused prompt is empty to open a status-aware session picker.
 - Press `Left` while the prompt contains text to move the cursor normally.
 - Press `Alt+S` to open the picker globally, including from permission and question prompts.
@@ -38,6 +40,44 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - The picker resizes with the terminal, including phone keyboard/rotation changes. Narrow or short terminals use a compact header and a smaller scrollable approval preview.
 - Tap/click a row to preview, double-tap or press `→`/`Enter` to enter it. Approval previews show the action and request count above a scrollable request, with a pinned **Allow / Deny / Always** bar below. **Allow** approves once. Equal-width cells are fully clickable, with three-line tap targets on phones when height permits; short keyboard-open layouts use one line. The chosen action shows **Sending…** in place and all approval cells disable during reply/refresh. Refresh retains the current request layout until the next result arrives.
 - In `bun-web-terminal`, use its **Keyboard** button to explicitly show/hide the phone keyboard. Taps select TUI controls without opening it, and swipes scroll without clicking.
+
+## Sidebar usage estimates
+
+OpenCode's subscription-backed `openai/gpt-5.6-sol` model reports tokens but
+has no cost metadata. The sidebar estimates those responses with OpenCode Zen's
+published rates per million tokens:
+
+| Token class | Up to 272K context | Above 272K context |
+| --- | ---: | ---: |
+| Fresh input | $2.00 | $4.00 |
+| Cache read | $0.20 | $0.40 |
+| Cache write | $2.50 | $5.00 |
+| Output / reasoning | $10.00 | $15.00 |
+
+Override or add model rates by changing the plugin entry in
+`~/.config/opencode/cli.json` from a string to an object:
+
+```jsonc
+{
+  "package": "/path/to/oc-plugin-session-manager",
+  "options": {
+    "usageRates": {
+      "provider/model": [
+        {
+          "input": 2,
+          "output": 10,
+          "cache": { "read": 0.2, "write": 2.5 }
+        }
+      ]
+    }
+  }
+}
+```
+
+The estimate combines provider-calculated costs when available with configured
+fallback rates. Responses lacking either are counted as unpriced instead of
+silently presented as free. Cumulative "session processed" tokens count every
+request and therefore include context read repeatedly across turns.
 
 ## Archive storage and API sequence
 
