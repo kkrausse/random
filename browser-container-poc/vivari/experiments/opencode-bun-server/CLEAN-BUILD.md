@@ -95,3 +95,31 @@ The helper ran successfully once. Its post-build preservation enforcement and
 in-memory comparison were then added and syntax-checked; those same checks were
 performed separately on the retained artifact and added to the receipt, without
 another build. The receipt notes that later read-only comparison explicitly.
+
+## Serving the exact retained artifact
+
+From the `vivari` integration directory, the separate one-browser-attempt gate is:
+
+```sh
+OPENCODE_BUN_APP_ARTIFACT=/private/var/folders/t_/x48jtnps7n5_0g_pt9xpvbg00000gn/T/opencode/clean-build.x7j1u24y/.runtime/opencode-bun-server \
+OPENCODE_BUN_APP_SOURCE=/private/var/folders/t_/x48jtnps7n5_0g_pt9xpvbg00000gn/T/opencode/clean-build.x7j1u24y/.runtime/opencode-v2-source \
+OPENCODE_BUN_BUILD_RECEIPT=/private/var/folders/t_/x48jtnps7n5_0g_pt9xpvbg00000gn/T/opencode/clean-build.x7j1u24y/receipt.json \
+bun scripts/serve-opencode-bun-server.ts --once --combined-retention
+```
+
+These host-only overrides resolve relative paths from the integration root.
+Absent overrides preserve the existing app/source paths and observational
+provenance. An explicitly supplied receipt must exist and match the complete
+emitted file set, byte counts, hashes, clean source pin/tree/lock/diff at both
+build checkpoints, and the copied and current recipe hashes. Validation occurs
+before the harness build or listener starts. A missing or mismatched supplied
+receipt aborts rather than falling back to observational provenance.
+
+The served manifest and local `.runtime/opencode-bun-<runID>.json` final receipt
+include the receipt's exact SHA-256, byte count, full content and validation
+scope. Builder and copied-dependency audit details remain recorded build-time
+claims, not a new dependency audit or fresh-install claim. The models catalog
+still comes from the separately hash-accepted old package snapshot; ripgrep
+uses the original direct delivery. App files are read directly from the selected
+directory without copying or rewriting embedded paths. Browser byte/hash checks
+are unchanged. Execution of this clean artifact is still a separate gate.
