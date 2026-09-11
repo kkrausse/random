@@ -115,6 +115,41 @@ read call/success/target evidence and retain total tool-event and proxy POST cou
 increase this). Raw tool/model content and credentials are omitted. This mode is
 implementation-checked only, pending its separate browser/model attempt.
 
+For one real upstream exact edit in a single phase, run one separate attempt:
+
+```sh
+bun scripts/serve-opencode-bun-server.ts --once --edit
+```
+
+`--edit` implies the same public model/catalog/proxy setup and rejects `--read`,
+restart, and session retention. Open the exact printed URL on a fresh origin.
+The harness seeds and reads back `/edit-probe.txt` through `workspace.fs` with
+`VIVARI_EDIT_BEFORE\n`, exposed as `/workspace/edit-probe.txt`. One prompt asks the
+upstream `edit` tool to replace the token `VIVARI_EDIT_BEFORE` with
+`VIVARI_EDIT_AFTER`, preserving the newline. The accepted read/edit permission
+rules are used. Up to two reads of that exact absolute path are allowed, including
+normal read-before-edit and post-edit verification. All started reads must have
+correlated called/success events; zero reads is also valid.
+
+The eight-checkpoint gate retains the 60-second subscription/prompt/terminal
+deadline and 180-second overall bound, with no prompt retries or fallback.
+It requires exactly one local edit success correlated by session, assistant
+message, and call ID, with the exact absolute `input.path`, `oldString`,
+`newString`, and absent/false `replaceAll` from the pinned upstream
+`packages/core/src/tool/plugin/edit.ts` schema. Unrelated tool kinds or paths,
+failed tools, duplicate calls, and unfinished calls fail the gate. After streamed
+text completion and `session.execution.succeeded`, direct `workspace.fs` byte
+comparison must yield exactly `VIVARI_EDIT_AFTER\n`. The requested `EDIT_PROBE_OK`
+reply is diagnostic only: prose exactness cannot qualify or disqualify the edit.
+
+Receipts add sanitized edit/read counts, target/input/byte-match flags, before
+and after byte lengths and SHA-256 hashes, local execution evidence, terminal
+status, and managed-stop/exit evidence. Success requires accepted managed stop,
+exit `0`/`null`/non-forced, joined SSE, and completed runtime stop plus OPFS
+flush/close. Failure also attempts managed stop before mandatory cleanup. Raw
+tool/model output, reasoning, and credentials are omitted. This mode is
+implementation-checked only; the next step is one separate browser/model run.
+
 Omit all mode flags for the existing single-lifecycle, six-checkpoint gate and
 180-second timeout. Restart mode has passed both browser phases with matching
 SQLite bytes and clean health/stop/exit checks.

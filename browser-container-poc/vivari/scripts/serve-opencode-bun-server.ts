@@ -6,10 +6,12 @@ import { modelProxy } from './model-proxy'
 import catalog from '../src/provider-upstreams.json'
 
 const read = process.argv.includes('--read')
-const model = read || process.argv.includes('--model')
+const edit = process.argv.includes('--edit')
+if (read && edit) throw Error('--read and --edit are separate single-prompt modes')
+const model = read || edit || process.argv.includes('--model')
 const sessionRetention = process.argv.includes('--session-retention')
 const once = process.argv.includes('--once'), restart = sessionRetention || process.argv.includes('--restart'), runID = crypto.randomUUID()
-if (model && restart) throw Error('--model/--read require a single phase; omit --restart and --session-retention')
+if (model && restart) throw Error('--model/--read/--edit require a single phase; omit --restart and --session-retention')
 const proxy = modelProxy(new Map(model ? [['opencode', { baseURL: catalog.upstreams.opencode, headers: { authorization: 'Bearer public' } }]] : []))
 let modelPosts = 0
 
@@ -70,7 +72,7 @@ async function report(result: Result) {
   finished = true
   clearTimeout(timer)
   try {
-    await Bun.write(receipt, JSON.stringify({ runID, restart, sessionRetention, model, ...(read ? { read } : {}), modelPosts, manifest, result }, null, 2) + '\n')
+    await Bun.write(receipt, JSON.stringify({ runID, restart, sessionRetention, model, ...(read ? { read } : {}), ...(edit ? { edit } : {}), modelPosts, manifest, result }, null, 2) + '\n')
     console.log(JSON.stringify({ status: result.status, runtime: result.runtime, checks: result.checks, error: result.error, receipt }))
     if (once) process.exitCode = result.status === 'PASS' ? 0 : 1
   } catch { process.exitCode = 1; console.error('Could not write qualification receipt') }
@@ -83,7 +85,7 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT 
     if (model && path.startsWith('/api/model/opencode/') && request.method === 'POST') modelPosts++
     return proxy(request)
   }
-  if (path === '/run-config') return Response.json({ runID, restart, sessionRetention, model, ...(read ? { read } : {}) }, { headers })
+  if (path === '/run-config') return Response.json({ runID, restart, sessionRetention, model, ...(read ? { read } : {}), ...(edit ? { edit } : {}) }, { headers })
   if (path === '/result' && request.method === 'POST') {
     const body = await request.json()
     if (finished) return new Response('Run already finished', { status: 409, headers })
@@ -92,12 +94,24 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT 
       body.result.exit?.exitCode !== 0 || body.result.exit?.forced !== false || body.result.exit?.signal !== null || body.result.checks?.length !== (sessionRetention ? 14 : restart ? 12 : model ? 8 : 6) ||
       body.result.model !== model ||
       (body.result.read ?? false) !== read ||
+      (body.result.edit ?? false) !== edit ||
       (read && (body.result.readEvidence?.target !== '/workspace/read-probe.txt' || body.result.readEvidence.calls !== 1 ||
         body.result.readEvidence.successes !== 1 || body.result.readEvidence.targetMatched !== true || body.result.readEvidence.providerExecuted !== false || body.result.readEvidence.managedStop !== 'accepted' ||
         !Number.isInteger(body.result.modelEvidence?.toolEvents) || body.result.modelEvidence.toolEvents < 3 || modelPosts < 2)) ||
+      (edit && (body.result.editEvidence?.target !== '/workspace/edit-probe.txt' || body.result.editEvidence.calls !== 1 ||
+        body.result.editEvidence.successes !== 1 || body.result.editEvidence.targetMatched !== true || body.result.editEvidence.inputMatched !== true ||
+        body.result.editEvidence.providerExecuted !== false || body.result.editEvidence.bytesMatched !== true ||
+        body.result.editEvidence.beforeBytes !== 19 || body.result.editEvidence.beforeSha256 !== sha256('VIVARI_EDIT_BEFORE\n') ||
+        body.result.editEvidence.afterBytes !== 18 || body.result.editEvidence.afterSha256 !== sha256('VIVARI_EDIT_AFTER\n') ||
+        !Number.isInteger(body.result.editEvidence.readCalls) || body.result.editEvidence.readCalls < 0 || body.result.editEvidence.readCalls > 2 ||
+        body.result.editEvidence.readSuccesses !== body.result.editEvidence.readCalls || body.result.editEvidence.managedStop !== 'accepted' ||
+        body.result.editEvidence.cleanupExitStatus !== 'natural exit verified' || body.result.editEvidence.exit?.exitCode !== 0 ||
+        body.result.editEvidence.exit?.forced !== false || body.result.editEvidence.exit?.signal !== null ||
+        !Number.isInteger(body.result.modelEvidence?.toolEvents) || body.result.modelEvidence.toolEvents < 3 * (1 + body.result.editEvidence.readCalls) ||
+        !Number.isInteger(body.result.modelEvidence?.textBlocks) || body.result.modelEvidence.textBlocks < 1 || body.result.modelEvidence.textLength < 1 || modelPosts < 2)) ||
       (model && (body.result.modelEvidence?.providerID !== 'opencode' || body.result.modelEvidence?.id !== 'muse-spark-1.3-contributor-free' ||
-        !Number.isInteger(body.result.modelEvidence?.deltas) || body.result.modelEvidence.deltas < 1 || (!read && body.result.modelEvidence.toolEvents !== 0) ||
-        body.result.modelEvidence.promptRequests !== 1 || body.result.modelEvidence.textMatched !== true ||
+        !Number.isInteger(body.result.modelEvidence?.deltas) || body.result.modelEvidence.deltas < 1 || (!read && !edit && body.result.modelEvidence.toolEvents !== 0) ||
+        body.result.modelEvidence.promptRequests !== 1 || (!edit && body.result.modelEvidence.textMatched !== true) ||
         body.result.modelEvidence.terminal !== 'session.execution.succeeded' || body.result.modelEvidence.sseCleanup !== 'aborted and joined' ||
         body.result.modelEvidence.cleanup !== 'runtime.stop + workspace.flush + workspace.close completed')) ||
       body.result.sessionRetention !== sessionRetention ||
@@ -136,5 +150,5 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT 
   }
   return new Response('Not found', { status: 404, headers })
 } })
-console.log(`OpenCode Bun OPFS: ${server.url}?autorun=1&runID=${runID}${restart ? '&restart=1' : ''}${sessionRetention ? '&session-retention=1' : ''}${model ? '&model=1' : ''}${read ? '&read=1' : ''}`)
+console.log(`OpenCode Bun OPFS: ${server.url}?autorun=1&runID=${runID}${restart ? '&restart=1' : ''}${sessionRetention ? '&session-retention=1' : ''}${model ? '&model=1' : ''}${read ? '&read=1' : ''}${edit ? '&edit=1' : ''}`)
 if (once) timer = setTimeout(() => { void report({ status: 'FAIL', error: `Browser qualification timed out after ${timeoutSeconds} seconds` }) }, timeoutSeconds * 1000)
