@@ -1,5 +1,5 @@
 // Bounded conventional-build probe; isolation/worker lifecycle follows opencode-direct-headless.mjs.
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdtempSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { Worker, MessageChannel } from 'node:worker_threads';
@@ -10,6 +10,10 @@ const { Kernel } = await import(runtimeSourceUrl('packages/kernel-host/kernel.js
 const { createKernelFs } = await import(runtimeSourceUrl('packages/kernel-host/kernel-fs.js'));
 const source = fileURLToPath(new URL('../.runtime/opencode-v2-source', import.meta.url));
 const output = fileURLToPath(new URL('../.runtime/opencode-bun-server', import.meta.url));
+const directory = mkdtempSync(fileURLToPath(new URL('../.runtime/opencode-headless-storage-', import.meta.url)));
+console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_STORAGE', directory,
+  adapter: 'sqlite-headless-fs disk snapshots; restart coverage, not OPFS/power-loss qualification',
+  database: '/runtime-probe/opencode.sqlite' }));
 console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_INPUT',
   revision: execFileSync('git', ['-C', source, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
   sourceStatus: execFileSync('git', ['-C', source, 'status', '--short'], { encoding: 'utf8' }).trim(),
@@ -21,7 +25,7 @@ const workers = new Set();
 const workerErrors = [];
 const deadline = setTimeout(() => { console.error('OPENCODE_BUN_TIMEOUT'); process.exit(124); }, 180000);
 try {
-  const fsWorker = new Worker(runtimeSourceUrl('scripts/fs-worker.mjs'));
+  const fsWorker = new Worker(new URL('./sqlite-headless-fs.mjs', import.meta.url), { workerData: { directory } });
   workers.add(fsWorker);
   let dispatch = () => {};
   await new Promise((done, reject) => {
@@ -54,14 +58,44 @@ try {
   }
   kernel.mkdirp('/home/direct');
   console.log('OPENCODE_BUN_COMMAND bun /app/server.js');
-  kernel.onListen = port => console.log(`OPENCODE_BUN_LISTEN ${port}`);
+  let finished = false;
+  let health;
+  kernel.onListen = (port, pid) => {
+    console.log(`OPENCODE_BUN_LISTEN ${port}`);
+    health = (async () => {
+      const until = Date.now() + 30000;
+      while (!finished && Date.now() < until) {
+        let timer;
+        try {
+          const response = await Promise.race([
+            kernel.handleHttpRequest(port, { method: 'GET', url: '/api/health', body: '',
+              headers: { host: '127.0.0.1:' + port,
+                authorization: 'Basic ' + Buffer.from('opencode:isolated-probe-only').toString('base64') } }),
+            new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('health request timed out')), 5000); }),
+          ]);
+          console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_HEALTH', status: response.status, body: response.body }));
+          if (response.status === 200 && JSON.parse(response.body).healthy === true) {
+            console.log('OPENCODE_BUN_HEALTH_PASS');
+            kernel.stop(pid); // Diagnostic stop; this does not qualify graceful application shutdown.
+            return;
+          }
+        } catch (error) {
+          console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_HEALTH_ERROR', error: String(error) }));
+        } finally { clearTimeout(timer); }
+        if (!finished) await new Promise(done => setTimeout(done, 100));
+      }
+    })();
+  };
   const result = await kernel.start('bun', ['/app/server.js'], { cwd: '/app', env: {
     PATH: '/bin', HOME: '/home/direct', OPENCODE_PASSWORD: 'isolated-probe-only',
+    OPENCODE_DB: '/runtime-probe/opencode.sqlite',
     OPENCODE_DISABLE_FFF: '1', OPENCODE_DISABLE_FILEWATCHER: '1', OPENCODE_DISABLE_MODELS_FETCH: '1',
     OPENCODE_TREE_SITTER_WASM_PATH: '/app/tree-sitter.wasm',
     OPENCODE_TREE_SITTER_BASH_WASM_PATH: '/app/tree-sitter-bash.wasm',
     OPENCODE_TREE_SITTER_POWERSHELL_WASM_PATH: '/app/tree-sitter-powershell.wasm',
   }, capture: true });
+  finished = true;
+  await health;
   console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_EXIT', workerErrors, ...result }, null, 2));
   process.exitCode = result.code || 1; // Exit zero alone is never server acceptance.
 } finally {

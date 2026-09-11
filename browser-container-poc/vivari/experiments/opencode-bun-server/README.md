@@ -30,11 +30,11 @@ was attempted.
 Then from `browser-container-poc/vivari`:
 
 ```sh
-/Users/kkrausse/.nvm/versions/node/v24.7.0/bin/node scripts/opencode-bun-headless.mjs > .runtime/opencode-tree-sitter-headless.log 2>&1
+/Users/kkrausse/.nvm/versions/node/v24.7.0/bin/node scripts/opencode-bun-headless.mjs > .runtime/opencode-storage-headless.log 2>&1
 ```
 
-The probe mounts every emitted file unchanged at `/app`, uses fresh in-memory
-storage and `/home/direct`, probe-only auth and the direct probe's explicit
+The probe mounts build output unchanged at `/app`, uses a fresh VFS and isolated
+disk-backed SQLite snapshots with `/home/direct`, probe-only auth and the direct probe's explicit
 feature-disable flags. It has a 180-second deadline, input/mount/command/listen/
 exit checkpoints, and terminates owned workers. Exit zero alone fails acceptance.
 `VIVARI_SOURCE` uses the shared runtime resolver. Build artifacts and logs remain
@@ -172,7 +172,7 @@ defect. There was no listener checkpoint; cleanup explains exit 143. Source pin,
 lock hash and preexisting TUI modification are unchanged. Logs are the build log
 above and `.runtime/opencode-jsonc-esm-headless.log`.
 
-## September 11 original tree-sitter asset delivery (current)
+## September 11 original tree-sitter asset delivery
 
 The code bundle passed the previous module-loading failures; the deployment was
 missing runtime-resolved data assets. `build.ts` now additionally resolves the
@@ -217,8 +217,70 @@ or actual tree-sitter parsing operation was exercised. Listener alone is not
 server acceptance. Logs: `.runtime/opencode-tree-sitter-build.log` and
 `.runtime/opencode-tree-sitter-headless.log`.
 
-**Next bounded task:** inspect the existing headless SQLite persistence setup and
-reduce `SQLITE_CANTOPEN: durable persistence unavailable`, retaining isolated
-storage and explicit completion checks. No runtime fix was attempted in this slice.
+## September 11 headless storage setup and readiness (current)
+
+**Authenticated headless readiness now passes.** The persistence failure was
+missing harness setup, not an observed runtime defect:
+
+- Fork `scripts/fs-worker.mjs:19` explicitly calls `createSqliteServer(vfs, null)`.
+- `packages/kernel-host/sqlite-server.js:57` correctly rejects a durable pathname
+  when no persistence adapter is available. It flushes exported committed bytes
+  before acknowledging database operations when an adapter is supplied.
+- The accepted browser baseline uses `Workspace.open(...opfsStore(...))`; the
+  browser FS worker creates/restores OPFS persistence before SQLite startup.
+- Existing integration `scripts/sqlite-headless-fs.mjs` already provides a real
+  disk-snapshot test adapter. It supports `/runtime-probe/*.sqlite`, restoring
+  saved bytes on worker startup and writing snapshots through temporary-file
+  replacement. Its headless suite checks process ownership and worker restart.
+
+The minimal probe now uses that **unchanged existing adapter**, with a unique
+`.runtime/opencode-headless-storage-*` directory per run and upstream
+`OPENCODE_DB=/runtime-probe/opencode.sqlite`. The directory is printed and retained
+for inspection, never reused implicitly. Other VFS state remains ephemeral.
+This is disk-backed snapshot/restart coverage, **not OPFS or power-loss durability**:
+the adapter does not fsync, implement full filesystem persistence, or qualify
+concurrent host ownership. No in-memory fallback or fake successful flush was added.
+
+The code bundle, exact jsonc ESM hook and tree-sitter asset bytes are unchanged.
+No build was necessary in this slice. Source remains `d7a7256` with its preexisting
+TUI modification; runtime remains `80d5cdd599fce4fa4817128461c865e009109d34`.
+
+Executed from `vivari` with native Node 24.7.0:
+
+```sh
+/Users/kkrausse/.nvm/versions/node/v24.7.0/bin/node scripts/sqlite-headless.mjs > .runtime/opencode-storage-contract.log 2>&1
+/Users/kkrausse/.nvm/versions/node/v24.7.0/bin/node scripts/opencode-bun-headless.mjs > .runtime/opencode-storage-headless.log 2>&1
+```
+
+The SQLite suite exited zero, including write/recover under guest Node and Bun,
+ownership rejection/release, and recovery after replacing the worker/kernel.
+The OpenCode probe completed all **41 schema migrations**, then produced:
+
+```text
+OPENCODE_BUN_LISTEN 4096
+OPENCODE_BUN_HEALTH status=200 body={"healthy":true,"version":"local","pid":1}
+OPENCODE_BUN_HEALTH_PASS
+OPENCODE_BUN_EXIT code=143 signal=SIGTERM workerErrors=[]
+```
+
+Health uses the existing public `Kernel.handleHttpRequest` test API with Basic
+auth made from probe-only credentials. Each request has a five-second timeout;
+readiness retries are bounded to 30 seconds, under the existing 180-second overall
+deadline. The probe checks both status 200 and `healthy === true`, then deliberately
+calls `kernel.stop(pid)`. Thus 143 is a diagnostic stop, **not a new startup blocker
+or successful graceful shutdown**. The overall command remains nonzero so it
+cannot be mistaken for complete server acceptance.
+
+After the first completed run, native Node's real SQLite reopened only the fresh
+`.runtime/opencode-headless-storage-kmvFOk/opencode.sqlite` in read-only mode;
+`PRAGMA integrity_check` returned `ok` and `sqlite_master` contained **18 tables**.
+This verifies actual disk bytes survived guest/worker termination. The sqlite-wasm
+OPFS warning still appears in Node but is irrelevant to the supplied disk adapter.
+
+**Next bounded task:** qualify isolated server lifecycle beyond readiness: a
+normal supported shutdown, restart on explicitly selected retained storage, and
+database/session retention. Resolve the default invocation's supported shutdown
+surface before claiming clean exit; broader model/tool and browser acceptance are
+still ahead. No runtime change, browser test or shared qualified-pin update occurred.
 Ordinary builds are accepted; the direct TS stripper is **not necessarily the
 critical path**. Later assets, native/TUI branches, HTTP and tools are unqualified.
