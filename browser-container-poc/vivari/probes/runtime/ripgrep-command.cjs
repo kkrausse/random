@@ -51,7 +51,19 @@ const which = require('which');
   const invalid = await run(['--no-config', '[', fixture]);
   assert.equal(invalid.code, 2);
   assert.match(invalid.stderr, /regex parse error/);
-  if (process.argv[3]) {
+  if (process.argv[3] && process.argv[4] === 'glob') {
+    const workspace = path.join(process.argv[3], 'glob-probe');
+    fs.mkdirSync(workspace, { recursive: true });
+    fs.writeFileSync(path.join(workspace, 'match.ts'), 'VIVARI_GLOB_MATCH\n');
+    fs.writeFileSync(path.join(workspace, 'nonmatch.txt'), 'VIVARI_GLOB_NONMATCH\n');
+    // Exact pinned core Ripgrep.glob argv, with the same fixture as the browser harness.
+    const args = ['--no-config', '--files', '--glob=*.ts', '--glob=!**/.git/**', '.'];
+    for (const name of cacheFiles()) fs.rmSync(path.join(tmpdir(), name));
+    const result = await run(args, workspace);
+    assert.deepEqual(result, { code: 0, signal: null, stdout: './match.ts\n', stderr: '' });
+    assert.ok(cacheFiles().length > 0, 'exact glob command creates its own WASM cache');
+    console.log(JSON.stringify({ checkpoint: 'RIPGREP_OPENCODE_GLOB_PASS', args, cwd: workspace, matchedFiles: 1, contentMatched: true, code: result.code, signal: result.signal, stderrBytes: result.stderr.length }));
+  } else if (process.argv[3]) {
     const workspace = process.argv[3];
     fs.mkdirSync(workspace, { recursive: true });
     fs.writeFileSync(path.join(workspace, 'grep-probe.txt'), 'before\nVIVARI_GREP_NEEDLE\nafter\n');

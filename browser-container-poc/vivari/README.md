@@ -193,6 +193,39 @@ hashes, provisioning and call/content counts, and cleanup evidence, omitting
 credentials, raw model/tool output, and reasoning. This mode is implementation-
 checked only; browser/model qualification is the next independent attempt.
 
+For one upstream glob using the same package provisioning, model/catalog,
+environment, and nine-checkpoint lifecycle:
+
+```sh
+bun scripts/serve-opencode-bun-server.ts --once --glob
+```
+
+Open the exact printed fresh-port run-ID URL once. `--glob` implies model mode
+and rejects read, edit, grep, restart, and session retention. The fixture directory
+`/workspace/glob-probe` contains `match.ts` (`VIVARI_GLOB_MATCH\n`) and
+`nonmatch.txt` (`VIVARI_GLOB_NONMATCH\n`); both seeds are byte-verified.
+One matching name avoids ordering assumptions. The single prompt requests exactly
+one upstream glob with pattern `*.ts`, path `/workspace/glob-probe`, and limit `10`,
+with no other arguments/tools. The pinned `glob.Input` supports pattern/path/limit;
+its formatter produces absolute paths joined by newlines, without a final newline.
+The exact required single text item is `/workspace/glob-probe/match.ts`.
+
+`globEvidence` records sanitized input/path/content/correlation booleans, fixture
+and match counts, hashes, local `executed: false`, provisioning, and cleanup.
+Session/tool/assistant-message IDs correlate the canonical tool events in memory.
+`GLOB_PROBE_OK` prose comparisons are diagnostic; streamed terminal success and
+exact tool content are authoritative. One prompt has a 60-second deadline, no
+retry/fallback, and requires managed stop, natural exit, joined drains, runtime
+stop and OPFS flush/close. The browser/model mode is implementation-only pending
+one separate browser attempt. Native and guest preflights passed the exact pinned
+rg argv (`--no-config --files --glob=*.ts --glob=!**/.git/** .`) from the fixture
+directory, asserting only `./match.ts\n`, empty stderr, and natural exit zero:
+
+```sh
+node scripts/probe-ripgrep-direct.mjs --native --opencode-glob
+node scripts/probe-ripgrep-direct.mjs --opencode-glob
+```
+
 Omit all mode flags for the existing single-lifecycle, six-checkpoint gate and
 180-second timeout. Restart mode has passed both browser phases with matching
 SQLite bytes and clean health/stop/exit checks.
