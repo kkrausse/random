@@ -10,7 +10,7 @@ once in a fresh local `node_modules`; this does not install workspace packages):
 
 ```sh
 bun -e 'import {mkdirSync,symlinkSync,realpathSync} from "node:fs"; mkdirSync("node_modules/@opencode-ai",{recursive:true}); symlinkSync(realpathSync("../../.runtime/opencode-v2-source/packages/cli"),"node_modules/@opencode-ai/cli"); symlinkSync(realpathSync("../../.runtime/opencode-v2-source/packages/cli/node_modules/effect"),"node_modules/effect");'
-bun run build > ../../.runtime/opencode-node-server-build.log 2>&1
+bun run build > ../../.runtime/opencode-jsonc-esm-build.log 2>&1
 ```
 
 The package manifest describes local file dependencies; the symlinks preserve
@@ -30,7 +30,7 @@ was attempted.
 Then from `browser-container-poc/vivari`:
 
 ```sh
-/Users/kkrausse/.nvm/versions/node/v24.7.0/bin/node scripts/opencode-bun-headless.mjs > .runtime/opencode-node-headless-clean.log 2>&1
+/Users/kkrausse/.nvm/versions/node/v24.7.0/bin/node scripts/opencode-bun-headless.mjs > .runtime/opencode-jsonc-esm-headless.log 2>&1
 ```
 
 The probe mounts every emitted file unchanged at `/app`, uses fresh in-memory
@@ -67,7 +67,7 @@ modification remains, so this is not a clean-upstream reproducibility receipt.
 
 ## September 11 approved Node-target continuation
 
-The package build command now uses ordinary Node-target resolution:
+The initial Node-target package build command used ordinary resolution:
 
 ```sh
 bun build ./server.ts --target=node --outdir=../../.runtime/opencode-bun-server
@@ -121,7 +121,59 @@ not demonstrate a Vivari loader discrepancy. See the [minimal reproduction](json
 The old baseline selected jsonc-parser's published ESM entry, not replacement
 package source. No ESM swap was used here.
 
-**Next bounded task:** consider a normal selective external-package server build
-and unchanged jsonc-parser delivery; the full server variant is not yet tested.
+## September 11 approved published-ESM entry selection (current)
+
+The user chose to keep bundling and explicitly select jsonc-parser's published
+ESM implementation. `bun run build` now executes `bun ./build.ts`, which calls
+`Bun.build` with `target: 'node'` and the same entry/output paths. Its only plugin
+is an exact `/^jsonc-parser$/` `onResolve`: resolve the installed package from
+the importer, then select `../esm/main.js` relative to its ordinary UMD entry.
+There is no `onLoad`, package source replacement, behavioral source rewrite,
+external flag, or Vivari-specific resolution logic. This is authorized build-time
+entry selection and meets the unchanged-application goal.
+
+Configuration assessment: executed `bun build --help` on installed Bun 1.4.0;
+it exposes no alias or `mainFields` flag. Local `bun-types` declarations expose
+neither, and its bundler comparison documents `mainFields` as unsupported.
+`--conditions` does not select this package's legacy `module` field (the package
+has no conditional exports). The small resolver hook provides explicit per-package
+selection without changing global resolution or introducing tsconfig path mapping
+across upstream workspace configs. No claim that every possible Bun alias surface
+was exhaustively tested is needed for this supported plugin approach.
+
+Archived the prior output directory before building to exclude stale assets:
+
+```sh
+# From vivari:
+bun -e 'import {renameSync} from "node:fs"; renameSync(".runtime/opencode-bun-server", ".runtime/opencode-bun-server-before-jsonc-esm-" + Date.now())'
+# From this experiment directory:
+bun run build > ../../.runtime/opencode-jsonc-esm-build.log 2>&1
+```
+
+Build succeeded. Output is `server.js` (28,339,308 bytes) and the unchanged
+705,384-byte native ffi-rs asset. JS SHA-256:
+`bac87e4939fefd7aed6f8523ecaa3bb9d2a43656b5278fdff2a9d05d51561c87`.
+Artifact inspection finds jsonc-parser ESM main plus scanner, string-intern,
+format, parser and edit modules; no UMD main or dangling `require2("./impl/format")`.
+
+The existing isolated guest probe on `80d5cdd` passes that earlier failure, then
+stops at the next concrete blocker:
+
+```text
+Error: Cannot find module 'web-tree-sitter/tree-sitter.wasm' from '/app'
+OPENCODE_BUN_EXIT: code 143, signal SIGTERM
+```
+
+The emitted bundle retains
+`process.env.OPENCODE_TREE_SITTER_WASM_PATH ?? require4.resolve("web-tree-sitter/tree-sitter.wasm")`
+at line 436986. That package asset is not among the two emitted files mounted in
+this attempt. This is an asset-delivery boundary, not yet proof of a runtime WASM
+defect. There was no listener checkpoint; cleanup explains exit 143. Source pin,
+lock hash and preexisting TUI modification are unchanged. Logs are the build log
+above and `.runtime/opencode-jsonc-esm-headless.log`.
+
+**Next bounded task:** deliver the ordinary tree-sitter asset/package layout (or
+use the upstream explicit asset-path configuration) and retry, stopping at the
+next blocker. This attempt stops before that delivery work.
 Ordinary builds are accepted; the direct TS stripper is **not necessarily the
 critical path**. Later assets, native/TUI branches, HTTP and tools are unqualified.

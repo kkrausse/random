@@ -15,7 +15,7 @@ console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_INPUT',
   sourceStatus: execFileSync('git', ['-C', source, 'status', '--short'], { encoding: 'utf8' }).trim(),
   lockSha256: createHash('sha256').update(readFileSync(resolve(source, 'bun.lock'))).digest('hex'),
   runtimeRevision: execFileSync('git', ['-C', fileURLToPath(runtimeSourceUrl('.')), 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
-  artifact: 'vanilla bun build --target=node; emitted JS and assets', consumerBehavioralRewrites: 0,
+  artifact: 'Bun.build target=node; published jsonc-parser ESM entry selection; emitted JS and assets', consumerBehavioralRewrites: 0,
 }));
 const workers = new Set();
 const workerErrors = [];
