@@ -4,7 +4,7 @@ Package/directory: `oc-plugin-session-manager`.
 
 Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 
-- The normal session sidebar includes a live current-context breakdown for fresh input, cache reads, cache writes, output, and reasoning, plus cumulative tokens processed and a cost estimate. Unpriced `openai/gpt-5.6-sol` subscription responses use OpenCode Zen's published per-million-token rates and are explicitly labeled **Zen estimate**, not spent.
+- The normal session sidebar includes a live current-context breakdown for fresh input, cache reads, cache writes, output, and reasoning, plus cumulative tokens processed and a cost estimate. Unpriced subscription responses use matching OpenCode Zen catalog rates and are labeled **Zen equivalent ≈**.
 
 - Press `Left` while the focused prompt is empty to open a status-aware session picker.
 - Press `Left` while the prompt contains text to move the cursor normally.
@@ -43,18 +43,19 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 
 ## Sidebar usage estimates
 
-OpenCode's subscription-backed `openai/gpt-5.6-sol` model reports tokens but
-has no cost metadata. The sidebar estimates those responses with OpenCode Zen's
-published rates per million tokens:
+The sidebar uses recorded response costs first, then the current provider's
+model rates. When those rates are missing, it uses the matching `opencode`
+model from OpenCode's synced model catalog, including cache pricing and context
+tiers. This covers subscription-backed Sol and Astra without hardcoded prices
+or generation requests to Zen. Prices reflect the server's current catalog,
+not historical rates at the time of each response.
 
-| Token class | Up to 272K context | Above 272K context |
-| --- | ---: | ---: |
-| Fresh input | $2.00 | $4.00 |
-| Cache read | $0.20 | $0.40 |
-| Cache write | $2.50 | $5.00 |
-| Output / reasoning | $10.00 | $15.00 |
+Fast variants match by their underlying `modelID` and use standard Zen rates
+without a priority surcharge. **Zen equivalent ≈** describes token usage valued
+at those rates, not subscription spending. Estimates using other provider or
+manual rates are labeled **Estimated cost ≈**.
 
-Override or add model rates by changing the plugin entry in
+Add fallback rates for models without provider or Zen pricing by changing the plugin entry in
 `~/.config/opencode/cli.json` from a string to an object:
 
 ```jsonc
@@ -74,8 +75,8 @@ Override or add model rates by changing the plugin entry in
 }
 ```
 
-The estimate combines provider-calculated costs when available with configured
-fallback rates. Responses lacking either are counted as unpriced instead of
+The estimate combines recorded costs with the estimates above. Explicit zero
+catalog rates are respected as free. Responses lacking pricing are counted as unpriced instead of
 silently presented as free. Cumulative "session processed" tokens count every
 request and therefore include context read repeatedly across turns.
 
