@@ -9,11 +9,14 @@ entry/published jsonc-parser ESM selection and original asset copies, with zero
 additional behavioral source patches. This is not fresh-install or fully
 unbundled acceptance. Raw TS still fails compiling the client service module.
 
-**Next bounded gap:** generic browser HTTP regression at current runtime
-`80d5cdd` / distribution `098e0b60…`; headless HTTP passes there (`824395a`),
-but generic browser HTTP evidence remains at `48d4ca1`. Keep the qualified pin
-and old packagers pending case-study acceptance/adaptation review and deliberate
-newer-OpenCode-pin qualification. Page reload and generic stdout/P2 backpressure
+**Current HTTP regression closed:** generic HTTP passes headlessly (`824395a`)
+and in Chromium (`b1f8b00`) at runtime `80d5cdd` / distribution `098e0b60…`.
+The [focused Chromium receipt](runtime-http-stream-handoff.md#focused-chromium-requalification-at-80d5cdd-2026-09-11)
+establishes streaming, backpressure, cancellation, listener replacement and graceful
+draining. **Next task, authorized September 11:** select a recent OpenCode V2 release,
+record an exact candidate pin and qualify it end to end using this same minimal-build
+workflow. Keep the shared qualified pin and old packagers pending that qualification
+and case-study acceptance/adaptation review. Page reload and generic stdout/P2 backpressure
 are outside these passes; controlled request abortion does not prove remote
 provider compute stopped. Detailed entries below retain historical checkpoints.
 
