@@ -119,10 +119,11 @@ function contextStats(
   }
 }
 
-export function SessionPicker(props: { context: Plugin.Context; archiveStore?: ArchiveStore; returnSessionID?: string }) {
+export function SessionPicker(props: { context: Plugin.Context; archiveStore?: ArchiveStore; returnSessionID?: string; hostDialogInsets?: boolean }) {
   const dimensions = useTerminalDimensions()
   // The dialog tracks the terminal, including phone keyboard/rotation changes.
   const mobile = () => dimensions().width < 70
+  const offsetHostInsets = () => mobile() && props.hostDialogInsets !== false
   const height = () => Math.max(1, dimensions().height)
   const dialogHeight = () => mobile()
     ? height()
@@ -730,10 +731,11 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
     <box
       flexDirection="column"
       id="claude-session-picker"
-      width="100%"
+      width={offsetHostInsets() ? dimensions().width : "100%"}
       height={dialogHeight()}
       position="relative"
-      top={mobile() ? -1 : 0}
+      left={offsetHostInsets() ? -1 : 0}
+      top={offsetHostInsets() ? -1 : 0}
       minHeight={0}
       overflow="hidden"
       backgroundColor={props.context.theme.contextual.overlay.background.default}
