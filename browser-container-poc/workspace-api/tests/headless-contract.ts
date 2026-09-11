@@ -11,14 +11,13 @@ import { Runtime, defineRipgrepTool } from "../src/index.ts";
 import { workspaceInternals, type Workspace } from "../src/workspace.ts";
 import type { Host, Message } from "../src/host.ts";
 import type { Execution } from "../src/types.ts";
-// @ts-ignore - backend JS is intentionally untyped
-import { Kernel } from "../../vivari/.runtime/patched/packages/kernel-host/kernel.js";
-// @ts-ignore
-import { createKernelFs } from "../../vivari/.runtime/patched/packages/kernel-host/kernel-fs.js";
+import { runtimeSourcePath, runtimeSourceUrl } from "../../vivari/scripts/runtime-source.mjs";
+const { Kernel } = await import(runtimeSourceUrl("packages/kernel-host/kernel.js").href);
+const { createKernelFs } = await import(runtimeSourceUrl("packages/kernel-host/kernel-fs.js").href);
 
 assert.ok(!process.versions.bun, "Use real Node 24 (Bun workers are not this gate)");
 assert.ok(!process.env.APP_RESTORE || (process.env.PREPARED_APPS && process.env.APP_STATE_DIR), "APP_RESTORE requires PREPARED_APPS and the previous run's APP_STATE_DIR");
-const root = resolve(import.meta.dirname, "../../vivari/.runtime/patched");
+const root = runtimeSourcePath();
 const workers = new Set<Worker>();
 const timeout = setTimeout(() => { console.error("headless contract timeout"); process.exit(1); }, process.env.PREPARED_APPS ? 240_000 : 90_000);
 const fsWorker = new Worker(pathToFileURL(process.env.PREPARED_APPS ? resolve(import.meta.dirname, "app-fs-worker.mjs") : resolve(root, "scripts/fs-worker.mjs")), {

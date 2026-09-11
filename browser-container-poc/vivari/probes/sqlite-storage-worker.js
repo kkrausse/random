@@ -1,10 +1,10 @@
 // Browser-only storage qualification. Imports the same source as the shipped FS
 // worker; the full runtime API probe separately covers bundling and the SAB path.
-import initVfs, { VirtualFileSystem } from "../.runtime/patched/packages/vfs/pkg/vivari_vfs.js";
-import vfsUrl from "../.runtime/patched/packages/vfs/pkg/vivari_vfs_bg.wasm?url";
+import initVfs, { VirtualFileSystem } from "@vivari-source/packages/vfs/pkg/vivari_vfs.js";
+import vfsUrl from "@vivari-source/packages/vfs/pkg/vivari_vfs_bg.wasm?url";
 import sqliteUrl from "@sqlite.org/sqlite-wasm/sqlite3.wasm?url";
-import { createSqliteServer } from "../.runtime/patched/packages/kernel-host/sqlite-server.js";
-import { createOpfsPersistence } from "../.runtime/patched/packages/kernel-host/opfs-persistence.js";
+import { createSqliteServer } from "@vivari-source/packages/kernel-host/sqlite-server.js";
+import { createOpfsPersistence } from "@vivari-source/packages/kernel-host/opfs-persistence.js";
 import { sqliteContract, sqliteRequests } from "./sqlite-contract.js";
 
 let server, request, persistence, base, locked;
