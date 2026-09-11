@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import { readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { ripgrep } from 'ripgrep';
+
+console.log('RIPGREP_DIRECT_IMPORTED');
+const caches = () => readdirSync(tmpdir()).filter(name => /^ripgrep-wasm-.*\.wasm$/.test(name));
+if (process.argv[2] === 'cold') for (const name of caches()) rmSync(join(tmpdir(), name));
+else assert.ok(caches().length > 0, 'warm process must start with a disk cache');
+console.log('RIPGREP_DIRECT_' + process.argv[2].toUpperCase() + '_START');
+const fixture = join(process.cwd(), 'fixture.txt');
+const result = await ripgrep(['--no-heading', '--color=never', 'DIRECT_SEARCH_NEEDLE', fixture], {buffer:true, nodeWasi:false});
+assert.equal(result.code, 0);
+assert.equal(result.stdout, 'DIRECT_SEARCH_NEEDLE\n');
+assert.equal(result.stderr, '');
+assert.ok(caches().length > 0, 'published loader must write its WASM cache');
+const missing = await ripgrep(['ABSENT_NEEDLE', fixture], {buffer:true, nodeWasi:false});
+assert.equal(missing.code, 1);
+assert.equal(missing.stdout, '');
+console.log('RIPGREP_DIRECT_' + process.argv[2].toUpperCase() + '_PASS');
