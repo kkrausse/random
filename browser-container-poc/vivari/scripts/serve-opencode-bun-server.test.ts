@@ -13,6 +13,7 @@ const route = source.slice(source.indexOf("  if (path === '/result'"), source.in
 const code = new Bun.Transpiler({ loader: 'ts' }).transformSync(`
 function harness(context: any) {
   const { Bun, process, console, setTimeout, clearTimeout, server, sha256, globSeed, globSeedBytes, mode, validateCombined, validateCombinedRetention, combinedRetention } = context
+  const controlled = undefined, interrupt = false
   const runID = 'synthetic-only', restart = combinedRetention, sessionRetention = false, firstPosts = 2, finalPosts = 2,
     model = true, read = false, edit = false, grep = false, glob = mode === 'single', search = true,
     once = true, receipt = 'in-memory-only', modelPosts = 2, manifest = {},
