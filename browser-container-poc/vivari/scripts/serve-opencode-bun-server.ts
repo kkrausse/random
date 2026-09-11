@@ -10,6 +10,7 @@ import { validateCombined } from './opencode-bun-combined-validation'
 import { validateCombinedRetention } from './opencode-bun-retention-validation'
 import { validateBuildReceipt } from './opencode-bun-build-receipt'
 import { controlledProvider } from './opencode-controlled-provider'
+import { interruptFailure } from './opencode-interrupt-result'
 
 const interrupt = process.argv.includes('--interrupt')
 if (interrupt && ['--model', '--read', '--edit', '--grep', '--glob', '--combined-tools', '--combined-retention', '--restart', '--session-retention'].some(flag => process.argv.includes(flag))) throw Error('--interrupt is a standalone controlled-transport mode')
@@ -157,7 +158,7 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT 
         e.stepStarted === true && e.terminal === 'session.execution.interrupted' && e.reason === 'user' && e.assistantAborted === true &&
         e.healthAfterInterrupt === true && e.sseCleanup === 'aborted and joined' && modelPosts === 0 &&
         t.localRequests === 1 && t.headersSent && t.transportClosed && ['request.abort', 'response.cancel'].includes(t.closeReason)
-      await report(accepted ? r : { status: 'FAIL', error: 'Controlled interrupt incomplete or rejected; inspect browser checkpoint' })
+      await report(accepted ? r : interruptFailure(r))
       return Response.json({ received: true, status: accepted ? 'PASS' : 'FAIL' }, { headers })
     }
     if (mode === 'combined-tools') {

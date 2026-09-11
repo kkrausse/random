@@ -1,7 +1,8 @@
 // Transport-only fixture: no upstream URL, fetch dependency, or generated content.
 export function controlledProvider(waitMs = 30_000) {
   const evidence = { controlledTransport: true, externalModelRequests: 0, localRequests: 0,
-    headersSent: false, transportClosed: false, closeReason: 'pending' }
+    headersSent: false, transportClosed: false, closeReason: 'pending',
+    requestAt: 0, headersAt: 0, closedAt: 0 }
   let ready!: () => void, closed!: () => void
   const readiness = new Promise<void>(resolve => { ready = resolve })
   const closure = new Promise<void>(resolve => { closed = resolve })
@@ -16,6 +17,7 @@ export function controlledProvider(waitMs = 30_000) {
   }
   async function handle(request: Request) {
     evidence.localRequests++
+    evidence.requestAt = Date.now()
     if (evidence.localRequests !== 1 || request.method !== 'POST' || new URL(request.url).pathname !== '/api/controlled-provider/responses')
       return new Response('Controlled transport rejects this request', { status: 409 })
     const body = await request.json().catch(() => null)
@@ -26,6 +28,7 @@ export function controlledProvider(waitMs = 30_000) {
     const finish = (reason: string) => {
       if (evidence.transportClosed) return
       evidence.transportClosed = true; evidence.closeReason = reason
+      evidence.closedAt = Date.now()
       clearTimeout(timer)
       request.signal.removeEventListener('abort', abort)
       if (reason !== 'response.cancel') controller.close()
@@ -38,6 +41,7 @@ export function controlledProvider(waitMs = 30_000) {
         // Native Responses SSE ignores comments. No fabricated model/session events.
         controller.enqueue(new TextEncoder().encode(': controlled transport; not real model generation\n\n'))
         evidence.headersSent = true
+        evidence.headersAt = Date.now()
         timer = setTimeout(() => finish('deadline'), waitMs)
         request.signal.addEventListener('abort', abort, { once: true })
         if (request.signal.aborted) abort()
