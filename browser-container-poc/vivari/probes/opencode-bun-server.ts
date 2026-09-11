@@ -8,7 +8,7 @@ async function bounded<T>(promise: Promise<T>, ms: number, label: string): Promi
   finally { clearTimeout(timer) }
 }
 
-async function qualify(runID: string, restart: boolean, sessionRetention: boolean, model: boolean, read: boolean, edit: boolean) {
+async function qualify(runID: string, restart: boolean, sessionRetention: boolean, model: boolean, read: boolean, edit: boolean, grep: boolean) {
   let stage = 'manifest', runtime: Awaited<ReturnType<typeof Runtime.start>> | undefined
   let workspace: Awaited<ReturnType<typeof Workspace.open>> | undefined
   let output: Promise<unknown> | undefined
@@ -17,7 +17,13 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
   const readContent = 'VIVARI_READ_PROBE_6ac6618_7f92d03b'
   const editBefore = 'VIVARI_EDIT_BEFORE', editAfter = 'VIVARI_EDIT_AFTER'
   const editEvidence = edit ? { target: '/workspace/edit-probe.txt', calls: 0, successes: 0, readCalls: 0, readSuccesses: 0, targetMatched: false, inputMatched: false, bytesMatched: false, beforeBytes: 0, beforeSha256: '', afterBytes: 0, afterSha256: '', providerExecuted: null as boolean | null, managedStop: 'pending', cleanupExitStatus: 'pending', exit: null as { exitCode: number; forced: boolean; signal: string | null } | null } : undefined
-  const toolCleanup = readEvidence ?? editEvidence
+  const grepContent = 'Found 1 matches\n/workspace/grep-probe.txt:\n  Line 2: VIVARI_GREP_NEEDLE\n'
+  const grepEvidence = grep ? { target: '/workspace/grep-probe.txt', calls: 0, successes: 0, inputMatched: false, contentMatched: false, contentItems: 0, contentSha256: '',
+    seedBytes: 0, seedSha256: '', packageFiles: 0, manifestSha256: '', installerSha256: '', setupCheckpoint: false, setupStderrBytes: 0,
+    setupExit: null as { exitCode: number; forced: boolean; signal: string | null } | null,
+    providerExecuted: null as boolean | null, managedStop: 'pending', cleanupExitStatus: 'pending', exit: null as { exitCode: number; forced: boolean; signal: string | null } | null } : undefined
+  const hashBytes = async (bytes: Uint8Array) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(bytes)))].map(b => b.toString(16).padStart(2, '0')).join('')
+  const toolCleanup = readEvidence ?? editEvidence ?? grepEvidence
   let managedStop: (() => Promise<void>) | undefined
   let phase = 'initial', previousRegistrationID: string | undefined
   const phases: { phase: string; checks: string[]; exit: { exitCode: number; forced: boolean; signal: string | null }; outputBytes: unknown; cleanup: string }[] = []
@@ -74,9 +80,18 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
         await workspace.fs.writeFile('/.server/config/opencode/opencode.json', JSON.stringify({
           model: 'opencode/' + modelEvidence.id, snapshots: false,
           providers: { opencode: { settings: { baseURL: `http://host.vivari.internal:${location.port}/api/model/opencode` } } },
-          ...(read || edit ? { permissions: [{ action: 'read', resource: '*', effect: 'allow' }, ...(edit ? [{ action: 'edit', resource: '*', effect: 'allow' }] : [])] } : {}),
+          ...(grep ? { permissions: [{ action: 'grep', resource: '*', effect: 'allow' }] } : read || edit ? { permissions: [{ action: 'read', resource: '*', effect: 'allow' }, ...(edit ? [{ action: 'edit', resource: '*', effect: 'allow' }] : [])] } : {}),
         }))
         if (read) await workspace.fs.writeFile('/read-probe.txt', readContent)
+        if (grepEvidence) {
+          stage = 'seed and verify grep target'
+          const expected = new TextEncoder().encode('before\nVIVARI_GREP_NEEDLE\nafter\n')
+          await workspace.fs.writeFile('/grep-probe.txt', expected)
+          const bytes = new Uint8Array(await workspace.fs.readFile('/grep-probe.txt'))
+          if (bytes.length !== expected.length || !bytes.every((byte, i) => byte === expected[i])) throw Error()
+          grepEvidence.seedBytes = bytes.length
+          grepEvidence.seedSha256 = await hashBytes(bytes)
+        }
         if (editEvidence) {
           stage = 'seed and verify edit target'
           await workspace.fs.writeFile('/edit-probe.txt', editBefore + '\n')
@@ -99,12 +114,37 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
             if (hash !== asset.sha256 || bytes.length !== asset.bytes) throw Error()
             await context.installFile('/app/' + asset.file, bytes)
           }
+          if (grepEvidence) {
+            stage = 'verified unchanged nested ripgrep delivery'
+            const nested = await fetch('/ripgrep-manifest').then(r => { if (!r.ok) throw Error(); return r.json() })
+            if (nested.package !== 'ripgrep' || nested.version !== '0.3.1' || !Array.isArray(nested.transforms) || nested.transforms.length ||
+              !Array.isArray(nested.assets) || nested.assets.length !== 9 || await hashBytes(new TextEncoder().encode(JSON.stringify(nested.assets))) !== nested.manifestSha256) throw Error()
+            const seen = new Set<string>()
+            for (const asset of nested.assets) {
+              if (typeof asset.file !== 'string' || !/^ripgrep\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+$/.test(asset.file) ||
+                asset.file.split('/').some((part: string) => part === '.' || part === '..') || seen.has(asset.file) || asset.destination !== '/direct/node_modules/' + asset.file) throw Error()
+              seen.add(asset.file)
+              const response = await fetch('/ripgrep-package/' + encodeURIComponent(asset.file))
+              if (!response.ok) throw Error()
+              const bytes = new Uint8Array(await response.arrayBuffer())
+              if (bytes.length !== asset.bytes || await hashBytes(bytes) !== asset.sha256) throw Error()
+              await context.installFile(asset.destination, bytes)
+            }
+            const response = await fetch('/ripgrep-installer')
+            if (!response.ok || nested.installer.destination !== '/direct/opencode-ripgrep-install.cjs') throw Error()
+            const bytes = new Uint8Array(await response.arrayBuffer())
+            if (bytes.length !== nested.installer.bytes || await hashBytes(bytes) !== nested.installer.sha256) throw Error()
+            await context.installFile(nested.installer.destination, bytes)
+            grepEvidence.packageFiles = seen.size
+            grepEvidence.manifestSha256 = nested.manifestSha256
+            grepEvidence.installerSha256 = nested.installer.sha256
+          }
           return async () => receipt.assets.length
         },
       } } })
       pass('all app output mounted unchanged; length and SHA-256 verified')
       const env = {
-        PATH: '/bin', HOME: '/workspace/.server/home', OPENCODE_TEST_HOME: '/workspace/.server/home',
+        PATH: grep ? '/direct/node_modules/.bin:/bin' : '/bin', ...(grep ? { RIPGREP_NODE_WASI: '0' } : {}), HOME: '/workspace/.server/home', OPENCODE_TEST_HOME: '/workspace/.server/home',
         XDG_CONFIG_HOME: '/workspace/.server/config', XDG_STATE_HOME: '/workspace/.server/state',
         XDG_DATA_HOME: '/workspace/.server/data', XDG_CACHE_HOME: '/workspace/.server/cache',
         TMPDIR: '/workspace/.server/tmp', OPENCODE_DB: '/workspace/.server/data/opencode.sqlite',
@@ -113,6 +153,28 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
         OPENCODE_TREE_SITTER_WASM_PATH: '/app/tree-sitter.wasm',
         OPENCODE_TREE_SITTER_BASH_WASM_PATH: '/app/tree-sitter-bash.wasm',
         OPENCODE_TREE_SITTER_POWERSHELL_WASM_PATH: '/app/tree-sitter-powershell.wasm',
+      }
+      if (grepEvidence) {
+        stage = 'ordinary ripgrep bin installation checkpoint'
+        const setup = await runtime.node({ entry: '/direct/opencode-ripgrep-install.cjs', cwd: '/direct', env })
+        const collect = async (stream: AsyncIterable<Uint8Array>) => {
+          const decoder = new TextDecoder(); let text = ''
+          for await (const bytes of stream) text += decoder.decode(bytes, { stream: true })
+          return text + decoder.decode()
+        }
+        const setupOutput = Promise.all([collect(setup.stdout), collect(setup.stderr)])
+        output = setupOutput
+        void setupOutput.catch(() => {})
+        void setup.exited.catch(() => {})
+        setup.closeStdin()
+        const exit = await bounded(setup.exited, 20_000, 'Ripgrep setup exit')
+        const [stdout, stderr] = await bounded(setupOutput, 5_000, 'Ripgrep setup drains')
+        grepEvidence.setupExit = { exitCode: exit.exitCode, forced: exit.forced, signal: exit.signal }
+        grepEvidence.setupCheckpoint = stdout === 'OPENCODE_RIPGREP_INSTALL_PASS\n'
+        grepEvidence.setupStderrBytes = new TextEncoder().encode(stderr).length
+        if (!grepEvidence.setupCheckpoint || stderr !== '' || exit.exitCode !== 0 || exit.forced || exit.signal !== null) throw Error()
+        output = undefined
+        pass('nine unchanged ripgrep files verified; ordinary bin symlink/chmod checkpoint, empty stderr and clean setup exit')
       }
       stage = 'Bun shim launch'
       const execution = await runtime.node({ entry: '/bin/bun.js', args: ['/app/server.js', '--service'], cwd: '/app', env })
@@ -172,6 +234,7 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
         let failed = false, completed = false, finalText = ''
         const calls = new Map<string, { called: boolean; succeeded: boolean }>()
         const editCalls = new Map<string, { name: 'read' | 'edit'; called: boolean; succeeded: boolean; assistantMessageID: string }>()
+        const grepCalls = new Map<string, { called: boolean; succeeded: boolean; assistantMessageID: string }>()
         const deadline = setTimeout(() => { modelEvidence.terminal = 'deadline exceeded'; subscription.abort() }, 60_000)
         try {
           stage = 'model SSE subscription'
@@ -252,7 +315,37 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
                     }
                     if (failed) modelEvidence.terminal = 'edit tool event rejected'
                   }
-                  if ((!read && !edit && event.type.startsWith('session.tool.')) || event.type === 'session.tool.failed' || event.type === 'session.execution.failed') {
+                  if (grepEvidence && event.type.startsWith('session.tool.')) {
+                    // Pinned session-event schema: data.id is toolID; every tool event carries assistantMessageID.
+                    if (event.type === 'session.tool.input.started') {
+                      grepEvidence.calls++
+                      if (data.name !== 'grep' || typeof data.id !== 'string' || !data.id || grepCalls.has(data.id) ||
+                        typeof data.assistantMessageID !== 'string' || !data.assistantMessageID || grepEvidence.calls !== 1) failed = true
+                      else grepCalls.set(data.id, { called: false, succeeded: false, assistantMessageID: data.assistantMessageID })
+                    } else {
+                      const call = grepCalls.get(data.id)
+                      if (!call || data.assistantMessageID !== call.assistantMessageID) failed = true
+                      else if (event.type === 'session.tool.called') {
+                        if (call.called || data.executed !== false || data.input?.pattern !== 'VIVARI_GREP_NEEDLE' ||
+                          data.input?.path !== grepEvidence.target || data.input?.limit !== 10 || Object.hasOwn(data.input, 'include') ||
+                          Object.keys(data.input).some(key => !['pattern', 'path', 'limit'].includes(key))) failed = true
+                        else { call.called = true; grepEvidence.inputMatched = true }
+                      } else if (event.type === 'session.tool.success') {
+                        if (!call.called || call.succeeded || data.executed !== false || !Array.isArray(data.content)) failed = true
+                        else {
+                          call.succeeded = true; grepEvidence.successes++; grepEvidence.providerExecuted = data.executed
+                          grepEvidence.contentItems = data.content.length
+                          grepEvidence.contentMatched = data.content.length === 1 && data.content[0]?.type === 'text' && data.content[0].text === grepContent
+                          if (data.content.length === 1 && typeof data.content[0]?.text === 'string') grepEvidence.contentSha256 = await hashBytes(new TextEncoder().encode(data.content[0].text))
+                          if (!grepEvidence.contentMatched) failed = true
+                        }
+                      } else if (event.type === 'session.tool.progress') {
+                        if (!call.called || call.succeeded) failed = true
+                      } else if (!['session.tool.input.delta', 'session.tool.input.ended'].includes(event.type) || call.called) failed = true
+                    }
+                    if (failed) modelEvidence.terminal = 'grep tool event rejected'
+                  }
+                  if ((!read && !edit && !grep && event.type.startsWith('session.tool.')) || event.type === 'session.tool.failed' || event.type === 'session.execution.failed') {
                     failed = true
                     modelEvidence.terminal = event.type === 'session.execution.failed' ? event.type : 'tool event rejected'
                   }
@@ -262,7 +355,7 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
                     else {
                       finalText += data.text
                       // Comparison-only diagnostics: no visible text, reasoning, or provider state retained.
-                      const expected = edit ? 'EDIT_PROBE_OK' : read ? readContent : 'MINIMAL_MODEL_OK'
+                      const expected = grep ? 'GREP_PROBE_OK' : edit ? 'EDIT_PROBE_OK' : read ? readContent : 'MINIMAL_MODEL_OK'
                       modelEvidence.textBlocks++
                       modelEvidence.textLength = finalText.length
                       modelEvidence.textMatched = finalText === expected
@@ -282,7 +375,9 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
           stage = 'one model prompt and terminal SSE (60s deadline)'
           modelEvidence.promptRequests++
           const prompted = await endpoint.fetch('/api/session/' + encodeURIComponent(sessionID) + '/prompt', { method: 'POST', headers,
-            body: JSON.stringify({ text: editEvidence
+            body: JSON.stringify({ text: grepEvidence
+              ? 'Invoke grep exactly once with pattern "VIVARI_GREP_NEEDLE", path "/workspace/grep-probe.txt", and limit 10. Omit include. Do not invoke any other tools. Finish by replying GREP_PROBE_OK.'
+              : editEvidence
               ? `Use the upstream edit tool exactly once on ${editEvidence.target} with oldString "${editBefore}" and newString "${editAfter}" (replaceAll omitted or false). Preserve the trailing newline. You may use read on this exact absolute path before editing and to verify afterward, at most twice total. Use this exact absolute path in every tool call. Do not invoke any other tools. Finish by replying EDIT_PROBE_OK.`
               : readEvidence
               ? `Invoke read exactly once to read ${readEvidence.target}, then reply with exactly the file content, without formatting or commentary. Do not invoke any other tool.`
@@ -292,10 +387,12 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
           await prompted.arrayBuffer()
           while (!completed && !failed && !subscription.signal.aborted) await delay(50)
           stage = completed ? 'terminal model evidence validation' : 'model SSE incomplete or rejected'
-          modelEvidence.textMatched = finalText === (edit ? 'EDIT_PROBE_OK' : read ? readContent : 'MINIMAL_MODEL_OK')
-          if (!edit && completed && !failed && !modelEvidence.textMatched) stage = 'terminal model exact-text mismatch'
-          if (failed || subscription.signal.aborted || !completed || (!edit && !modelEvidence.textMatched) || modelEvidence.deltas < 1 ||
-            (editEvidence ? editEvidence.calls !== 1 || editEvidence.successes !== 1 || !editEvidence.targetMatched || !editEvidence.inputMatched ||
+          modelEvidence.textMatched = finalText === (grep ? 'GREP_PROBE_OK' : edit ? 'EDIT_PROBE_OK' : read ? readContent : 'MINIMAL_MODEL_OK')
+          if (!edit && !grep && completed && !failed && !modelEvidence.textMatched) stage = 'terminal model exact-text mismatch'
+          if (failed || subscription.signal.aborted || !completed || (!edit && !grep && !modelEvidence.textMatched) || modelEvidence.deltas < 1 ||
+            (grepEvidence ? grepEvidence.calls !== 1 || grepEvidence.successes !== 1 || !grepEvidence.inputMatched || !grepEvidence.contentMatched ||
+              [...grepCalls.values()].some(call => !call.called || !call.succeeded) || modelEvidence.textBlocks < 1
+              : editEvidence ? editEvidence.calls !== 1 || editEvidence.successes !== 1 || !editEvidence.targetMatched || !editEvidence.inputMatched ||
               editEvidence.readCalls !== editEvidence.readSuccesses || [...editCalls.values()].some(call => !call.called || !call.succeeded) || modelEvidence.textBlocks < 1 || !finalText.trim()
               : readEvidence ? readEvidence.calls !== 1 || readEvidence.successes !== 1 || !readEvidence.targetMatched || !readEvidence.contentMatched : modelEvidence.toolEvents !== 0)) throw Error()
           if (editEvidence) {
@@ -315,8 +412,8 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
             modelEvidence.sseCleanup = 'aborted and joined'
           } else modelEvidence.sseCleanup = 'subscription aborted before drain'
         }
-        if (failed || (!read && !edit && modelEvidence.toolEvents !== 0)) throw Error()
-        pass(edit ? 'one prompt, one successful local edit, bounded same-file reads, exact final bytes, streamed completion and execution succeeded; SSE joined' : read ? 'one prompt, one successful local read with exact target/content, no other tools, execution succeeded; SSE joined' : 'one prompt streamed exact marker with deltas, no tools, execution succeeded; SSE joined')
+        if (failed || (!read && !edit && !grep && modelEvidence.toolEvents !== 0)) throw Error()
+        pass(grep ? 'one prompt, one successful local grep with exact input/content, no other tools, streamed execution succeeded; SSE joined' : edit ? 'one prompt, one successful local edit, bounded same-file reads, exact final bytes, streamed completion and execution succeeded; SSE joined' : read ? 'one prompt, one successful local read with exact target/content, no other tools, execution succeeded; SSE joined' : 'one prompt streamed exact marker with deltas, no tools, execution succeeded; SSE joined')
       }
       if (sessionRetention) {
         stage = phase === 'initial' ? 'create one unprompted session' : 'retrieve retained session ID/title'
@@ -371,10 +468,10 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       log('PASS ' + phase + ' full cleanup completed')
     }
     const last = phases[phases.length - 1]
-    return { status: 'PASS', restart, sessionRetention, session, model, modelEvidence, ...(read ? { read, readEvidence } : {}), ...(edit ? { edit, editEvidence } : {}), scope, runtime: manifest.version, checks, phases, database, exit: last.exit, outputBytes: last.outputBytes, assets: receipt.assets.length }
+    return { status: 'PASS', restart, sessionRetention, session, model, modelEvidence, ...(read ? { read, readEvidence } : {}), ...(edit ? { edit, editEvidence } : {}), ...(grep ? { grep, grepEvidence } : {}), scope, runtime: manifest.version, checks, phases, database, exit: last.exit, outputBytes: last.outputBytes, assets: receipt.assets.length }
   } catch {
     // Error objects and response bodies can contain credentials; report only the checkpoint.
-    return { status: 'FAIL', restart, sessionRetention, session, model, modelEvidence, ...(read ? { read, readEvidence } : {}), ...(edit ? { edit, editEvidence } : {}), scope, error: 'Failed at ' + phase + ': ' + stage, checks, phases, database }
+    return { status: 'FAIL', restart, sessionRetention, session, model, modelEvidence, ...(read ? { read, readEvidence } : {}), ...(edit ? { edit, editEvidence } : {}), ...(grep ? { grep, grepEvidence } : {}), scope, error: 'Failed at ' + phase + ': ' + stage, checks, phases, database }
   } finally {
     try { await managedStop?.() } catch { if (toolCleanup) toolCleanup.managedStop = 'failed'; /* runtime.stop below remains mandatory */ }
     try { await runtime?.stop() }
@@ -388,15 +485,16 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
 }
 
 async function run() {
-  const { runID, restart, sessionRetention, model, read = false, edit = false } = await fetch('/run-config').then(r => r.json())
+  const { runID, restart, sessionRetention, model, read = false, edit = false, grep = false } = await fetch('/run-config').then(r => r.json())
   if (new URL(location.href).searchParams.get('runID') !== runID) throw Error('Run ID mismatch; use the printed URL')
   if (typeof restart !== 'boolean' || new URL(location.href).searchParams.has('restart') !== restart) throw Error('Restart mode mismatch; use the printed URL')
   if (typeof sessionRetention !== 'boolean' || new URL(location.href).searchParams.has('session-retention') !== sessionRetention || (sessionRetention && !restart)) throw Error('Session retention mode mismatch; use the printed URL')
   if (typeof model !== 'boolean' || new URL(location.href).searchParams.has('model') !== model || (model && restart)) throw Error('Model mode mismatch; use the printed URL')
   if (typeof read !== 'boolean' || new URL(location.href).searchParams.has('read') !== read || (read && (!model || restart))) throw Error('Read mode mismatch; use the printed URL')
   if (typeof edit !== 'boolean' || new URL(location.href).searchParams.has('edit') !== edit || (edit && (!model || restart || read))) throw Error('Edit mode mismatch; use the printed URL')
+  if (typeof grep !== 'boolean' || new URL(location.href).searchParams.has('grep') !== grep || (grep && (!model || restart || read || edit))) throw Error('Grep mode mismatch; use the printed URL')
   let result
-  try { result = await qualify(runID, restart, sessionRetention, model, read, edit) }
+  try { result = await qualify(runID, restart, sessionRetention, model, read, edit, grep) }
   catch (error) {
     const message = error instanceof Error && error.message.startsWith('Failed at ') ? error.message : 'Probe cleanup or startup failed'
     result = { status: 'FAIL', error: message }
