@@ -9,11 +9,13 @@ import { directAssets } from './ripgrep-direct-assets.mjs'
 const read = process.argv.includes('--read')
 const edit = process.argv.includes('--edit')
 const grep = process.argv.includes('--grep')
-if ([read, edit, grep].filter(Boolean).length > 1) throw Error('--read, --edit and --grep are separate single-prompt modes')
-const model = read || edit || grep || process.argv.includes('--model')
+const glob = process.argv.includes('--glob')
+const search = grep || glob
+if ([read, edit, grep, glob].filter(Boolean).length > 1) throw Error('--read, --edit, --grep and --glob are separate single-prompt modes')
+const model = read || edit || search || process.argv.includes('--model')
 const sessionRetention = process.argv.includes('--session-retention')
 const once = process.argv.includes('--once'), restart = sessionRetention || process.argv.includes('--restart'), runID = crypto.randomUUID()
-if (model && restart) throw Error('--model/--read/--edit/--grep require a single phase; omit --restart and --session-retention')
+if (model && restart) throw Error('--model/--read/--edit/--grep/--glob require a single phase; omit --restart and --session-retention')
 const proxy = modelProxy(new Map(model ? [['opencode', { baseURL: catalog.upstreams.opencode, headers: { authorization: 'Bearer public' } }]] : []))
 let modelPosts = 0
 
@@ -23,13 +25,13 @@ const source = resolve(root, '.runtime/opencode-v2-source')
 const runtimeDirectory = resolve(root, '../workspace-api/dist/runtime')
 const sha256 = (bytes: Uint8Array | string) => createHash('sha256').update(bytes).digest('hex')
 const ripgrepFiles = new Map<string, Uint8Array>()
-const ripgrepAssets = grep ? directAssets().filter(asset => asset.file.startsWith('ripgrep/')).map(asset => {
+const ripgrepAssets = search ? directAssets().filter(asset => asset.file.startsWith('ripgrep/')).map(asset => {
   ripgrepFiles.set(asset.file, asset.bytes)
   return { file: asset.file, destination: asset.path, bytes: asset.bytes.length, sha256: asset.sha256 }
 }) : []
-if (grep && (ripgrepAssets.length !== 9 || JSON.parse(new TextDecoder().decode(ripgrepFiles.get('ripgrep/package.json'))).version !== '0.3.1')) throw Error('Expected nine ripgrep@0.3.1 package files')
-const installer = grep ? new Uint8Array(await readFile(resolve(root, 'probes/runtime/opencode-ripgrep-install.cjs'))) : undefined
-const ripgrepManifest = grep ? { package: 'ripgrep', version: '0.3.1', transforms: [], assets: ripgrepAssets,
+if (search && (ripgrepAssets.length !== 9 || JSON.parse(new TextDecoder().decode(ripgrepFiles.get('ripgrep/package.json'))).version !== '0.3.1')) throw Error('Expected nine ripgrep@0.3.1 package files')
+const installer = search ? new Uint8Array(await readFile(resolve(root, 'probes/runtime/opencode-ripgrep-install.cjs'))) : undefined
+const ripgrepManifest = search ? { package: 'ripgrep', version: '0.3.1', transforms: [], assets: ripgrepAssets,
   installer: { file: 'opencode-ripgrep-install.cjs', destination: '/direct/opencode-ripgrep-install.cjs', bytes: installer!.length, sha256: sha256(installer!) },
   manifestSha256: sha256(JSON.stringify(ripgrepAssets)) } : undefined
 const git = (...args: string[]) => execFileSync('git', ['-C', source, ...args], { encoding: 'utf8' }).trim()
@@ -61,7 +63,7 @@ for (const file of ['server.ts', 'build.ts', 'package.json', 'bun.lock']) {
 const runtimeManifest = await Bun.file(resolve(runtimeDirectory, 'distribution.json')).json()
 const sourceStatus = git('status', '--short')
 const manifest = {
-  observedAt: new Date().toISOString(), assets, ...(grep ? { ripgrep: ripgrepManifest } : {}),
+  observedAt: new Date().toISOString(), assets, ...(search ? { ripgrep: ripgrepManifest } : {}),
   provenance: {
     note: 'Observed current source and build recipe; no build-time attestation exists linking these inputs to the emitted files. Dirty upstream state, including any preexisting TUI edit, is retained below.',
     source: { path: source, revision: git('rev-parse', 'HEAD'), status: sourceStatus, dirty: !!sourceStatus,
@@ -84,7 +86,7 @@ async function report(result: Result) {
   finished = true
   clearTimeout(timer)
   try {
-    await Bun.write(receipt, JSON.stringify({ runID, restart, sessionRetention, model, ...(read ? { read } : {}), ...(edit ? { edit } : {}), ...(grep ? { grep } : {}), modelPosts, manifest, result }, null, 2) + '\n')
+    await Bun.write(receipt, JSON.stringify({ runID, restart, sessionRetention, model, ...(read ? { read } : {}), ...(edit ? { edit } : {}), ...(grep ? { grep } : {}), ...(glob ? { glob } : {}), modelPosts, manifest, result }, null, 2) + '\n')
     console.log(JSON.stringify({ status: result.status, runtime: result.runtime, checks: result.checks, error: result.error, receipt }))
     if (once) process.exitCode = result.status === 'PASS' ? 0 : 1
   } catch { process.exitCode = 1; console.error('Could not write qualification receipt') }
@@ -97,17 +99,32 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT 
     if (model && path.startsWith('/api/model/opencode/') && request.method === 'POST') modelPosts++
     return proxy(request)
   }
-  if (path === '/run-config') return Response.json({ runID, restart, sessionRetention, model, ...(read ? { read } : {}), ...(edit ? { edit } : {}), ...(grep ? { grep } : {}) }, { headers })
+  if (path === '/run-config') return Response.json({ runID, restart, sessionRetention, model, ...(read ? { read } : {}), ...(edit ? { edit } : {}), ...(grep ? { grep } : {}), ...(glob ? { glob } : {}) }, { headers })
   if (path === '/result' && request.method === 'POST') {
     const body = await request.json()
     if (finished) return new Response('Run already finished', { status: 409, headers })
     if (body.runID !== runID || !['PASS', 'FAIL'].includes(body.result?.status)) return new Response('Invalid result', { status: 400, headers })
     if (body.result.status === 'PASS' && (body.result.runtime !== runtimeManifest.version || body.result.assets !== assets.length ||
-      body.result.exit?.exitCode !== 0 || body.result.exit?.forced !== false || body.result.exit?.signal !== null || body.result.checks?.length !== (sessionRetention ? 14 : restart ? 12 : grep ? 9 : model ? 8 : 6) ||
+      body.result.exit?.exitCode !== 0 || body.result.exit?.forced !== false || body.result.exit?.signal !== null || body.result.checks?.length !== (sessionRetention ? 14 : restart ? 12 : search ? 9 : model ? 8 : 6) ||
       body.result.model !== model ||
       (body.result.read ?? false) !== read ||
       (body.result.edit ?? false) !== edit ||
       (body.result.grep ?? false) !== grep ||
+      (body.result.glob ?? false) !== glob ||
+      (glob && (body.result.globEvidence?.calls !== 1 || body.result.globEvidence.successes !== 1 ||
+        body.result.globEvidence.inputMatched !== true || body.result.globEvidence.pathMatched !== true || body.result.globEvidence.correlationMatched !== true ||
+        body.result.globEvidence.contentMatched !== true || body.result.globEvidence.contentItems !== 1 || body.result.globEvidence.matchedFiles !== 1 ||
+        body.result.globEvidence.fixtureFiles !== 2 || body.result.globEvidence.target !== '/workspace/glob-probe' || body.result.globEvidence.providerExecuted !== false ||
+        body.result.globEvidence.seedBytes !== 37 || body.result.globEvidence.seedSha256 !== sha256('VIVARI_GLOB_MATCH\nVIVARI_GLOB_NONMATCH\n') ||
+        body.result.globEvidence.contentSha256 !== sha256('/workspace/glob-probe/match.ts') ||
+        body.result.globEvidence.packageFiles !== 9 || body.result.globEvidence.manifestSha256 !== ripgrepManifest?.manifestSha256 ||
+        body.result.globEvidence.installerSha256 !== ripgrepManifest?.installer.sha256 || body.result.globEvidence.setupCheckpoint !== true ||
+        body.result.globEvidence.setupStderrBytes !== 0 || body.result.globEvidence.setupExit?.exitCode !== 0 ||
+        body.result.globEvidence.setupExit?.forced !== false || body.result.globEvidence.setupExit?.signal !== null ||
+        body.result.globEvidence.managedStop !== 'accepted' || body.result.globEvidence.cleanupExitStatus !== 'natural exit verified' ||
+        body.result.globEvidence.exit?.exitCode !== 0 || body.result.globEvidence.exit?.forced !== false || body.result.globEvidence.exit?.signal !== null ||
+        !Number.isInteger(body.result.modelEvidence?.toolEvents) || body.result.modelEvidence.toolEvents < 3 ||
+        !Number.isInteger(body.result.modelEvidence?.textBlocks) || body.result.modelEvidence.textBlocks < 1 || modelPosts < 2)) ||
       (grep && (body.result.grepEvidence?.calls !== 1 || body.result.grepEvidence.successes !== 1 ||
         body.result.grepEvidence.inputMatched !== true || body.result.grepEvidence.contentMatched !== true || body.result.grepEvidence.contentItems !== 1 ||
         body.result.grepEvidence.target !== '/workspace/grep-probe.txt' || body.result.grepEvidence.providerExecuted !== false ||
@@ -136,8 +153,8 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT 
         !Number.isInteger(body.result.modelEvidence?.toolEvents) || body.result.modelEvidence.toolEvents < 3 * (1 + body.result.editEvidence.readCalls) ||
         !Number.isInteger(body.result.modelEvidence?.textBlocks) || body.result.modelEvidence.textBlocks < 1 || body.result.modelEvidence.textLength < 1 || modelPosts < 2)) ||
       (model && (body.result.modelEvidence?.providerID !== 'opencode' || body.result.modelEvidence?.id !== 'muse-spark-1.3-contributor-free' ||
-        !Number.isInteger(body.result.modelEvidence?.deltas) || body.result.modelEvidence.deltas < 1 || (!read && !edit && !grep && body.result.modelEvidence.toolEvents !== 0) ||
-        body.result.modelEvidence.promptRequests !== 1 || (!edit && !grep && body.result.modelEvidence.textMatched !== true) ||
+        !Number.isInteger(body.result.modelEvidence?.deltas) || body.result.modelEvidence.deltas < 1 || (!read && !edit && !search && body.result.modelEvidence.toolEvents !== 0) ||
+        body.result.modelEvidence.promptRequests !== 1 || (!edit && !search && body.result.modelEvidence.textMatched !== true) ||
         body.result.modelEvidence.terminal !== 'session.execution.succeeded' || body.result.modelEvidence.sseCleanup !== 'aborted and joined' ||
         body.result.modelEvidence.cleanup !== 'runtime.stop + workspace.flush + workspace.close completed')) ||
       body.result.sessionRetention !== sessionRetention ||
@@ -148,7 +165,7 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT 
       !Array.isArray(body.result.phases) || body.result.phases.length !== (restart ? 2 : 1) ||
       body.result.phases.some((phase: any, index: number) => phase.phase !== (index === 0 ? 'initial' : 'reopened') ||
         phase.exit?.exitCode !== 0 || phase.exit?.forced !== false || phase.exit?.signal !== null ||
-        phase.checks?.length !== (index === 0 ? 5 : 6) + (sessionRetention ? 1 : 0) + (model ? 2 : 0) + (grep ? 1 : 0) || phase.cleanup !== 'runtime.stop + workspace.flush + workspace.close completed') ||
+        phase.checks?.length !== (index === 0 ? 5 : 6) + (sessionRetention ? 1 : 0) + (model ? 2 : 0) + (search ? 1 : 0) || phase.cleanup !== 'runtime.stop + workspace.flush + workspace.close completed') ||
       !Array.isArray(body.result.database) || body.result.database.length !== (restart ? 2 : 0) ||
       (restart && (body.result.database.some((db: any) => db.path !== '/.server/data/opencode.sqlite' || db.sqliteHeader !== true ||
         !Number.isInteger(db.bytes) || db.bytes < 100 || !/^[a-f0-9]{64}$/.test(db.sha256)) ||
@@ -163,9 +180,9 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT 
   if (path === '/') return new Response('<!doctype html><title>OpenCode Bun OPFS service qualification</title><pre>OpenCode Bun health + managed stop\n</pre><script type="module" src="/probe.js"></script>', { headers: { ...headers, 'content-type': 'text/html' } })
   if (path === '/probe.js') return new Response(code, { headers: { ...headers, 'content-type': 'text/javascript' } })
   if (path === '/package-manifest') return Response.json(manifest, { headers })
-  if (grep && path === '/ripgrep-manifest') return Response.json(ripgrepManifest, { headers })
-  if (grep && path === '/ripgrep-installer') return new Response(installer!, { headers })
-  if (grep && path.startsWith('/ripgrep-package/')) {
+  if (search && path === '/ripgrep-manifest') return Response.json(ripgrepManifest, { headers })
+  if (search && path === '/ripgrep-installer') return new Response(installer!, { headers })
+  if (search && path.startsWith('/ripgrep-package/')) {
     const bytes = ripgrepFiles.get(decodeURIComponent(path.slice('/ripgrep-package/'.length)))
     if (bytes) return new Response(new Uint8Array(bytes), { headers })
   }
@@ -182,5 +199,5 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT 
   }
   return new Response('Not found', { status: 404, headers })
 } })
-console.log(`OpenCode Bun OPFS: ${server.url}?autorun=1&runID=${runID}${restart ? '&restart=1' : ''}${sessionRetention ? '&session-retention=1' : ''}${model ? '&model=1' : ''}${read ? '&read=1' : ''}${edit ? '&edit=1' : ''}${grep ? '&grep=1' : ''}`)
+console.log(`OpenCode Bun OPFS: ${server.url}?autorun=1&runID=${runID}${restart ? '&restart=1' : ''}${sessionRetention ? '&session-retention=1' : ''}${model ? '&model=1' : ''}${read ? '&read=1' : ''}${edit ? '&edit=1' : ''}${grep ? '&grep=1' : ''}${glob ? '&glob=1' : ''}`)
 if (once) timer = setTimeout(() => { void report({ status: 'FAIL', error: `Browser qualification timed out after ${timeoutSeconds} seconds` }) }, timeoutSeconds * 1000)
