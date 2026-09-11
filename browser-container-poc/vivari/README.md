@@ -14,6 +14,34 @@ Start with [DEVELOPMENT.md](DEVELOPMENT.md), the
 [OpenCode case study](../doc/opencode-runtime-case-study.md). Older demo URLs and
 results below describe historical checkpoints, not current server availability.
 
+## Bun service OPFS qualification
+
+From this directory, using the existing app output and runtime distribution:
+
+```sh
+bun scripts/serve-opencode-bun-server.ts --once --restart
+```
+
+Open the exact printed URL on a fresh origin. `--restart` sets `/run-config`'s
+`restart: true` and adds `&restart=1` to the URL; the probe requires matching
+configuration. The initial workspace must still be empty. The internal second
+phase intentionally reopens the same `default` OPFS workspace in the **same page**
+after `runtime.stop()`, `workspace.flush()`, and `workspace.close()` complete.
+It creates a new Runtime, remounts and hash-verifies every `/app` asset, rejects
+stale service registration, and repeats authenticated health, managed stop, and
+natural nonforced exit checks. Both phases must complete full cleanup.
+
+One `.runtime/opencode-bun-<runID>.json` receipt records both phases and SQLite
+size/SHA-256 observations through supported `workspace.fs.readFile`: after the
+first runtime stop/flush, and after reopening before the second runtime starts.
+The SQLite header and matching bytes are required; these named observation
+checkpoints do not assert a SQL WAL checkpoint or retained application rows.
+Credentials and raw guest output are omitted. Restart mode allows 360 seconds.
+
+Omit `--restart` for the existing single-lifecycle, six-checkpoint gate and
+180-second timeout. Restart browser acceptance is pending; this command prepares
+the harness for a separate browser attempt.
+
 ## Historical: matched V2 TUI → model edit → Vite HMR
 
 **Demo: http://127.0.0.1:5206/** — run **`opencode2`** in its guest shell.
