@@ -124,6 +124,9 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
   // The dialog tracks the terminal, including phone keyboard/rotation changes.
   const mobile = () => dimensions().width < 70
   const height = () => Math.max(1, dimensions().height)
+  const dialogHeight = () => mobile()
+    ? height()
+    : Math.max(1, Math.min(40, height() - 2))
   const previewHeight = () => Math.min(permission() ? 20 : mobile() ? 8 : 6, Math.max(mobile() && permission() ? 9 : 5, Math.floor(height() * (mobile() ? 0.5 : 0.4))))
   const approvalButtonHeight = () => mobile() && dimensions().height >= 20 ? 3 : 1
   const runner = makeRunner((message, cause) => {
@@ -728,8 +731,9 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
       flexDirection="column"
       id="claude-session-picker"
       width="100%"
-      height="100%"
-      flexGrow={1}
+      height={dialogHeight()}
+      position="relative"
+      top={mobile() ? -1 : 0}
       minHeight={0}
       overflow="hidden"
       backgroundColor={props.context.theme.contextual.overlay.background.default}
@@ -1014,8 +1018,9 @@ export function showSessionPicker(context: Plugin.Context) {
   if (route.type !== "home" && route.type !== "session") return false
 
   const returnSessionID = route.type === "session" ? route.sessionID : undefined
-  context.ui.dialog.set({ size: "xlarge", centered: true })
   context.ui.dialog.show(() => <SessionPicker context={context} returnSessionID={returnSessionID} />)
+  // show() resets host presentation options, so apply these after mounting.
+  context.ui.dialog.set({ size: "xlarge", centered: true })
 }
 
 function EmptyPromptBinding(props: { context: Plugin.Context }) {
