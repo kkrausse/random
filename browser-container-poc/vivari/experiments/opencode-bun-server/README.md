@@ -1,5 +1,35 @@
 # Conventional Bun server build probe
 
+## Controlled transport interrupt (implementation only)
+
+`bun scripts/serve-opencode-bun-server.ts --interrupt --once` from `vivari`
+prepares a separate, fresh-origin browser attempt using existing artifacts and
+the same `OPENCODE_BUN_APP_ARTIFACT`, `OPENCODE_BUN_APP_SOURCE`, and
+`OPENCODE_BUN_BUILD_RECEIPT` overrides. This mode is **not real model generation**.
+It has not been browser-qualified; implementation tests do not establish runtime
+cancellation support.
+
+The pinned catalog's `muse-spark-1.3-contributor-free` uses `@ai-sdk/openai`;
+`packages/core/src/model-resolver.ts:176-180` selects native `OpenAIResponses`.
+The isolated host helper accepts only one streaming `POST /responses`, sends
+an SSE comment to flush headers, and holds the body open. It contains no upstream
+forwarding operation. `/api/model/*` is explicitly rejected in this mode.
+The existing public proxy and real-model modes retain their behavior.
+
+Acceptance requires one actual prompt, real `session.step.started` plus a bounded
+host readiness wait, bodyless interrupt returning 204, real
+`session.execution.interrupted` with reason `user`, correlated aborted step and
+assistant context, and host-observed request abort or response cancellation.
+SSE remains subscribed through terminal state and post-interrupt health before
+being aborted and joined. Existing managed stop, natural exit, runtime stop,
+OPFS flush and close follow. Host evidence records `controlledTransport:true`,
+`externalModelRequests:0`, local request count and closure cause. A provider
+deadline is a failure, never cancellation evidence. Readiness and provider hold
+are each bounded to 30 seconds; the host attempt is bounded to 180 seconds.
+
+Focused host tests (no browser, guest, model, or host service execution):
+`bun test scripts/opencode-controlled-provider.test.ts`.
+
 ## Clean-source build receipt
 
 The [clean-source build handoff](CLEAN-BUILD.md) records a successful isolated

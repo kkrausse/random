@@ -9,6 +9,12 @@ import { globSeed, globSeedBytes } from '../probes/opencode-bun-fixtures'
 import { validateCombined } from './opencode-bun-combined-validation'
 import { validateCombinedRetention } from './opencode-bun-retention-validation'
 import { validateBuildReceipt } from './opencode-bun-build-receipt'
+import { controlledProvider } from './opencode-controlled-provider'
+
+const interrupt = process.argv.includes('--interrupt')
+if (interrupt && ['--model', '--read', '--edit', '--grep', '--glob', '--combined-tools', '--combined-retention', '--restart', '--session-retention'].some(flag => process.argv.includes(flag))) throw Error('--interrupt is a standalone controlled-transport mode')
+const controlled = interrupt ? controlledProvider() : undefined
+if (interrupt) console.log('CONTROLLED TRANSPORT INTERRUPT: not real model generation; external model forwarding disabled')
 
 const read = process.argv.includes('--read')
 const edit = process.argv.includes('--edit')
@@ -60,7 +66,7 @@ for (const name of ['server.js', 'tree-sitter.wasm', 'tree-sitter-bash.wasm', 't
 const inputs = []
 // Capture only emitted app assets; models.json is a separately accepted snapshot.
 const appAssets = assets.slice()
-if (model) {
+if (model || interrupt) {
   const file = resolve(root, '.runtime/opencode-server-package/models.json'), bytes = await readFile(file)
   const hash = sha256(bytes)
   if (hash !== '93c9a67396a5a459c4cd6c4ea3514ef86652019ed2bc1a3589dbc624c4a42ea9') throw Error('Model catalog integrity mismatch')
@@ -100,6 +106,7 @@ const receipt = resolve(root, '.runtime', `opencode-bun-${runID}.json`)
 let finished = false, timer: ReturnType<typeof setTimeout> | undefined
 type Result = { status: string; runtime?: string; error?: string; checks?: string[] }
 async function report(result: Result) {
+  if (controlled) Object.assign(result, { interrupt, transport: { ...controlled.evidence }, realModelGeneration: false })
   if (finished) return
   finished = true
   clearTimeout(timer)
@@ -110,14 +117,22 @@ async function report(result: Result) {
   } catch { process.exitCode = 1; console.error('Could not write qualification receipt') }
   finally { if (once) setTimeout(() => { void server.stop(true) }, 100) }
 }
-const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT || 0), async fetch(request) {
+const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT || 0), ...(interrupt ? { idleTimeout: 60 } : {}), async fetch(request) {
   const path = new URL(request.url).pathname
+  if (controlled && path.startsWith('/api/controlled-provider/')) return finished ? new Response('Run finished', { status: 409 }) : controlled.handle(request)
+  if (controlled && path === '/controlled-provider-wait') {
+    const query = new URL(request.url).searchParams, phase = query.get('phase')
+    if (finished || query.get('runID') !== runID || !['ready', 'closed'].includes(phase!)) return new Response('Invalid wait', { status: 400 })
+    try { return Response.json(await controlled.wait(phase as 'ready' | 'closed'), { headers }) }
+    catch { return new Response('Controlled transport wait timed out', { status: 504, headers }) }
+  }
   if (path.startsWith('/api/model/')) {
+    if (controlled) return new Response('External model transport disabled', { status: 403 })
     if (finished) return new Response('Run finished', { status: 409 })
     if (model && path.startsWith('/api/model/opencode/') && request.method === 'POST') modelPosts++
     return proxy(request)
   }
-  if (path === '/run-config') return Response.json({ runID, restart, sessionRetention, model, ...(combinedRetention ? { combinedRetention } : {}), ...(mode === 'combined-tools' ? { mode } : {}), ...(read ? { read } : {}), ...(edit ? { edit } : {}), ...(grep ? { grep } : {}), ...(glob ? { glob } : {}) }, { headers })
+  if (path === '/run-config') return Response.json({ runID, interrupt, restart, sessionRetention, model, ...(combinedRetention ? { combinedRetention } : {}), ...(mode === 'combined-tools' ? { mode } : {}), ...(read ? { read } : {}), ...(edit ? { edit } : {}), ...(grep ? { grep } : {}), ...(glob ? { glob } : {}) }, { headers })
   if (combinedRetention && path === '/retention-posts' && request.method === 'POST') {
     const body = await request.json().catch(() => null)
     if (finished || body?.runID !== runID || !['initial', 'reopened'].includes(body.phase) ||
@@ -131,6 +146,20 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT 
     let body
     try { body = await request.json() } catch { return new Response('Invalid result', { status: 400, headers }) }
     if (!body || body.runID !== runID || !body.result || !['PASS', 'FAIL'].includes(body.result.status)) return new Response('Invalid result', { status: 400, headers })
+    if (controlled) {
+      const r = body.result, e = r.interruptEvidence, t = controlled.evidence
+      const accepted = r.status === 'PASS' && r.interrupt === true && r.runtime === runtimeManifest.version && r.assets === assets.length &&
+        r.exit?.exitCode === 0 && r.exit.forced === false && r.exit.signal === null && r.checks?.length === 7 &&
+        r.phases?.length === 1 && r.phases[0].phase === 'initial' && r.phases[0].checks?.length === 6 &&
+        r.phases[0].exit?.exitCode === 0 && r.phases[0].exit.forced === false && r.phases[0].exit.signal === null &&
+        r.checks.includes('managed stop accepted=true') && r.phases[0].cleanup === 'runtime.stop + workspace.flush + workspace.close completed' &&
+        e?.controlledTransport === true && e.realModelGeneration === false && e.promptRequests === 1 && e.interruptStatus === 204 &&
+        e.stepStarted === true && e.terminal === 'session.execution.interrupted' && e.reason === 'user' && e.assistantAborted === true &&
+        e.healthAfterInterrupt === true && e.sseCleanup === 'aborted and joined' && modelPosts === 0 &&
+        t.localRequests === 1 && t.headersSent && t.transportClosed && ['request.abort', 'response.cancel'].includes(t.closeReason)
+      await report(accepted ? r : { status: 'FAIL', error: 'Controlled interrupt incomplete or rejected; inspect browser checkpoint' })
+      return Response.json({ received: true, status: accepted ? 'PASS' : 'FAIL' }, { headers })
+    }
     if (mode === 'combined-tools') {
       const expected = { runtime: runtimeManifest.version, assets: assets.length, modelPosts,
         manifestSha256: ripgrepManifest!.manifestSha256, installerSha256: ripgrepManifest!.installer.sha256 }
@@ -236,4 +265,4 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: Number(process.env.PORT 
   return new Response('Not found', { status: 404, headers })
 } })
 console.log(`OpenCode Bun OPFS: ${server.url}?autorun=1&runID=${runID}${restart ? '&restart=1' : ''}${sessionRetention ? '&session-retention=1' : ''}${model ? '&model=1' : ''}${read ? '&read=1' : ''}${edit ? '&edit=1' : ''}${grep ? '&grep=1' : ''}${glob ? '&glob=1' : ''}${mode === 'combined-tools' ? '&combined-tools=1' : ''}${combinedRetention ? '&combined-retention=1' : ''}`)
-if (once) timer = setTimeout(() => { void report({ status: 'FAIL', error: `Browser qualification timed out after ${timeoutSeconds} seconds` }) }, timeoutSeconds * 1000)
+if (once || interrupt) timer = setTimeout(() => { void report({ status: 'FAIL', error: `Browser qualification timed out after ${timeoutSeconds} seconds` }) }, timeoutSeconds * 1000)
