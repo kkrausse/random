@@ -1,7 +1,73 @@
 # Direct unbundled OpenCode startup — first executed milestone
 
-September 11, 2026. **Built-path browser OPFS health, minimal model SSE, local read/edit/grep/glob, and managed shutdown pass;
+September 11, 2026. **Built-path browser OPFS health, minimal model SSE, local read/edit/grep/glob, controlled-transport active interrupt, and managed shutdown pass;
 broader server acceptance remains ahead. Unbundled startup remains blocked.**
+
+## September 11: readiness-ordered controlled interrupt — host-accepted PASS
+
+**Final result: PASS, 7/7 checkpoints, host exit 0.** Harness
+`d297dfe7a3a74ea1587c1e401ceabb3b099b1175` ran one bounded
+`bun scripts/serve-opencode-bun-server.ts --interrupt --once` qualification.
+The exact clean artifact/source/build-receipt overrides under
+`/private/var/folders/t_/x48jtnps7n5_0g_pt9xpvbg00000gn/T/opencode/clean-build.x7j1u24y`
+selected `.runtime/opencode-bun-server`, `.runtime/opencode-v2-source`, and
+`receipt.json`, respectively. The existing application/runtime bytes passed
+provenance validation and all six mounted asset length/hash checks. Application
+source was clean `d7a7256bb6b0952f486c95718cfbf460b1570a56`; runtime distribution
+`098e0b60a0ff8703994ea681d9c974ae9267bfe5dbdd799e87ff00982ff938a3`
+carried fork `80d5cdd599fce4fa4817128461c865e009109d34`.
+
+Run `dd9f9460-3499-4cd6-a328-79eed325bcb6`, background shell
+`sh_0924749b6001BvAx7eVtSdYSxa`, used Browser Control CLI session
+`brisk-walrus-245` and exactly one navigation to
+`http://127.0.0.1:56685/?autorun=1&runID=dd9f9460-3499-4cd6-a328-79eed325bcb6`.
+Automatic host completion preceded receipt inspection; there were no retries,
+completion polls, or sleeps. Receipt:
+`vivari/.runtime/opencode-bun-dd9f9460-3499-4cd6-a328-79eed325bcb6.json`.
+Manifest observation: `2026-09-11T21:02:20.766Z`.
+
+| Final evidence | Actual result |
+| --- | --- |
+| Scope | Single fresh-origin lifecycle, default OPFS |
+| Prompt / local controlled provider requests | 1 / 1; held comment-only Responses SSE |
+| External model requests / forwarded model POSTs | **0 / 0**; realModelGeneration=false |
+| Subscription and readiness | `server.connected` before prompt; prompt accepted before held provider ready |
+| Interrupt | HTTP 204; actual step-start and correlated aborted step-failure settlement verified |
+| Terminal / context | `session.execution.interrupted`, reason `user`; completed aborted assistant |
+| Post-interrupt health / SSE cleanup | healthy=true / aborted and joined |
+| Provider closure | **request.abort**, 126 ms after request, 124 ms after interrupt request |
+| Managed stop / guest exit | accepted; exitCode=0, forced=false, signal=null |
+| Cleanup | runtime.stop, workspace.flush, workspace.close, output.drain completed |
+| Completed phases / stdout, stderr bytes | 1 / 3256, 0 |
+| Host exit | 0 |
+
+Persisted stage timestamps below are Unix milliseconds (browser observations
+and host transport observations retain their own recording points):
+
+| Stage | Timestamp |
+| --- | ---: |
+| Session request | 1789160567547 |
+| Subscription request / server.connected | 1789160567672 / 1789160567688 |
+| Prompt request / accepted | 1789160567688 / 1789160568616 |
+| Host provider requestAt / headersAt | 1789160569198 / 1789160569199 |
+| Provider ready / interrupt request | 1789160569200 / 1789160569200 |
+| Host closedAt (`request.abort`) | 1789160569324 |
+| Interrupt response 204 | 1789160569326 |
+| Actual step.started / terminal.interrupted / context request | 1789160569329 / 1789160569329 / 1789160569329 |
+| Aborted context / health verified | 1789160569384 / 1789160569386 |
+| Transport close wait / observed closed | 1789160569386 / 1789160569391 |
+| Runtime stop / workspace flush / workspace close / output drain completed | 1789160569444 (each) |
+
+Managed-stop acceptance and natural exit are retained as explicit outcomes;
+this success receipt does not include separate managed-stop/exit timestamps.
+The final stage is `transport.closed`, with empty `failedAt`. The provider
+closed by request abortion before the interrupt response was observed, well
+inside its 30-second deadline. This establishes active API cancellation through
+the held provider transport on this pin. The real settlement events arrived
+after the interrupt, consistent with the diagnosed pre-output Step.Started gate
+defect. The historical failure below remains historical evidence; this pass
+does not reconstruct its missing substeps. Real-model interruption, broader
+backpressure, and page-reload retention remain separate acceptance gates.
 
 ## September 11: controlled-transport active interrupt — FAIL
 
@@ -62,11 +128,11 @@ dependency reuse remains a recorded build-time claim, not a fresh install or
 registry-integrity attestation. Six app assets included the separately accepted
 models catalog. This qualification consumed existing application/runtime bytes.
 
-**Next bounded task:** offline diagnosis of the interrupt harness's event,
+**Historical next task (completed by the diagnosis and qualification above):** offline diagnosis of the interrupt harness's event,
 request, and transport-abort sequence, with sanitized per-substep failure
 evidence and cleanup outcomes retained. Isolate why the held response reached
 its deadline before accepting another browser qualification. Cancellation
-acceptance remains open.
+acceptance remained open at that checkpoint.
 
 ## September 11: clean-attested artifact combined retention — host-accepted PASS
 
