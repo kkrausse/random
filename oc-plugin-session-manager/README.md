@@ -7,7 +7,7 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Press `Left` while the focused prompt is empty to open a status-aware session picker.
 - Press `Left` while the prompt contains text to move the cursor normally.
 - Press `Alt+S` to open the picker globally, including from permission and question prompts.
-- The picker is a full-screen plugin page, using the available width and height without dialog margins or a width cap. **Close**, `Left`, or `Escape` returns to the originating session (or Home).
+- The picker opens as a centered, extra-large dialog. It has a comfortable maximum width on laptops and wide terminals, while the host lets it expand nearly edge-to-edge on narrow screens. **Close**, `Left`, or `Escape` dismisses it without leaving the originating session (or Home).
 - Labeled sections with prominent dividers show **Active → Archived** (including legacy inactive markers).
 - Click **Archive** or press `x` to stop the session family, archive the parent's transcript locally, and delete the live family. Click **Restore to active** or press `r` to import the parent without starting work. These actions keep the picker open.
 - Cleanup interrupts every family member, including idle sessions. An unavailable location/runtime or failed cleanup stops archival before deletion and shows an error.
