@@ -6,7 +6,7 @@
     "build": "bun ./build.ts"
   },
   "dependencies": {
-    "@opencode-ai/cli": "file:../../.runtime/opencode-v2-source/packages/cli",
+    "@opencode/cli": "file:../../.runtime/opencode-v2-source/packages/cli",
     "effect": "file:../../.runtime/opencode-v2-source/packages/cli/node_modules/effect"
   }
 }
