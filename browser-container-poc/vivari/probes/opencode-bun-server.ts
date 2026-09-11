@@ -3,7 +3,7 @@ import { combinedFixture, combinedSteps, globFixtures } from './opencode-bun-fix
 import { combinedBytes, combinedEvidence, runCombined } from './opencode-bun-combined'
 import { combinedTitle, projectHistory, sameHistory, retentionCheckpoints } from './opencode-bun-retention'
 import type { HistoryProjection } from './opencode-bun-retention'
-import { runInterrupt } from './opencode-bun-interrupt'
+import { runInterrupt, interruptEvidence as createInterruptEvidence } from './opencode-bun-interrupt'
 
 const log = (text: string) => { document.querySelector('pre')!.textContent += text + '\n' }
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
@@ -14,7 +14,7 @@ async function bounded<T>(promise: Promise<T>, ms: number, label: string): Promi
 }
 
 async function qualify(runID: string, restart: boolean, sessionRetention: boolean, model: boolean, read: boolean, edit: boolean, grep: boolean, glob: boolean, mode: 'single' | 'combined-tools' = 'single', combinedRetention = false, interrupt = false) {
-  let interruptEvidence: Awaited<ReturnType<typeof runInterrupt>> | undefined
+  const interruptEvidence = interrupt ? createInterruptEvidence() : undefined
   const combined = mode === 'combined-tools' ? combinedEvidence() : undefined
   const retention = combinedRetention ? { sessionID: '', title: combinedTitle, before: undefined as HistoryProjection | undefined, after: undefined as HistoryProjection | undefined,
     files: [] as { checkpoint: string; bytes: number; sha256: string }[], providerPosts: [] as number[], freshRegistration: false, freshEndpoint: false, oldEndpointRejected: false } : undefined
@@ -36,7 +36,7 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
     setupExit: null as { exitCode: number; forced: boolean; signal: string | null } | null,
     providerExecuted: null as boolean | null, managedStop: 'pending', cleanupExitStatus: 'pending', exit: null as { exitCode: number; forced: boolean; signal: string | null } | null } : undefined
   const hashBytes = async (bytes: Uint8Array) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(bytes)))].map(b => b.toString(16).padStart(2, '0')).join('')
-  const toolCleanup = readEvidence ?? editEvidence ?? grepEvidence
+  const toolCleanup = readEvidence ?? editEvidence ?? grepEvidence ?? interruptEvidence
   let managedStop: (() => Promise<void>) | undefined
   let phase = 'initial', previousRegistrationID: string | undefined
   const phases: { phase: string; checks: string[]; exit: { exitCode: number; forced: boolean; signal: string | null }; outputBytes: unknown; cleanup: string }[] = []
@@ -242,14 +242,19 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       pass('guest-generated registration validated (credentials omitted)')
       const headers = { authorization: 'Basic ' + btoa('opencode:' + registration.password), 'content-type': 'application/json' }
       if (toolCleanup) managedStop = async () => {
+        if (interruptEvidence) interruptEvidence.progress['managedStop.request'] = Date.now()
+        try {
         const stopped = await endpoint.fetch('/api/service/stop', { method: 'POST', headers, body: JSON.stringify({ instanceID: registration.id }), signal: AbortSignal.timeout(20_000) })
         if (stopped.status !== 200 || (await stopped.json()).accepted !== true) throw Error('Managed cleanup stop failed')
         toolCleanup.managedStop = 'accepted'
+        } catch { toolCleanup.managedStop = 'failed' }
+        if (interruptEvidence) interruptEvidence.progress['managedStop.settled'] = Date.now()
         try {
           const exit = await bounded(execution.exited, 20_000, 'Managed cleanup exit')
           toolCleanup.exit = { exitCode: exit.exitCode, forced: exit.forced, signal: exit.signal }
           toolCleanup.cleanupExitStatus = exit.exitCode === 0 && !exit.forced && exit.signal === null ? 'natural exit verified' : 'unexpected exit'
         } catch { toolCleanup.cleanupExitStatus = 'exit unavailable within bound' }
+        if (interruptEvidence) interruptEvidence.progress['exit.settled'] = Date.now()
       }
       stage = 'authenticated health'
       const health = await endpoint.fetch('/api/health', { headers, signal: AbortSignal.timeout(20_000) })
@@ -257,7 +262,7 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       pass('authenticated health healthy=true')
       if (interrupt) {
         stage = 'controlled provider readiness, user interrupt, aborted assistant and transport close (not real model generation)'
-        interruptEvidence = await runInterrupt(endpoint, headers, runID)
+        await runInterrupt(endpoint, headers, runID, interruptEvidence)
         pass('controlled transport interrupt, aborted assistant, transport close, post-interrupt health and SSE join verified')
       }
       if (combined && modelEvidence && phase === 'initial') {
@@ -560,9 +565,19 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
     return { status: 'PASS', ...(interrupt ? { interrupt, interruptEvidence } : {}), ...(retention ? { combinedRetention, retention } : {}), restart, sessionRetention, session, model, modelEvidence, ...(combined ? { mode, combinedEvidence: combined, deliveryEvidence: grepEvidence } : {}), ...(read ? { read, readEvidence } : {}), ...(edit ? { edit, editEvidence } : {}), ...(grep ? { grep, grepEvidence } : {}), ...(glob ? { glob, globEvidence: grepEvidence } : {}), scope, runtime: manifest.version, checks, phases, database, exit: last.exit, outputBytes: last.outputBytes, assets: receipt.assets.length }
   } catch {
     // Error objects and response bodies can contain credentials; report only the checkpoint.
-    return { status: 'FAIL', restart, sessionRetention, session, model, modelEvidence, ...(combined ? { mode, combinedEvidence: combined, deliveryEvidence: grepEvidence } : {}), ...(read ? { read, readEvidence } : {}), ...(edit ? { edit, editEvidence } : {}), ...(grep ? { grep, grepEvidence } : {}), ...(glob ? { glob, globEvidence: grepEvidence } : {}), scope, error: 'Failed at ' + phase + ': ' + stage, checks, phases, database }
+    return { status: 'FAIL', ...(interrupt ? { interrupt, interruptEvidence } : {}), restart, sessionRetention, session, model, modelEvidence, ...(combined ? { mode, combinedEvidence: combined, deliveryEvidence: grepEvidence } : {}), ...(read ? { read, readEvidence } : {}), ...(edit ? { edit, editEvidence } : {}), ...(grep ? { grep, grepEvidence } : {}), ...(glob ? { glob, globEvidence: grepEvidence } : {}), scope, error: 'Failed at ' + phase + ': ' + stage, checks, phases, database }
   } finally {
     try { await managedStop?.() } catch { if (toolCleanup) toolCleanup.managedStop = 'failed'; /* runtime.stop below remains mandatory */ }
+    if (interruptEvidence) {
+      // Keep each cleanup observation even if another cleanup operation fails.
+      for (const [name, cleanup] of [
+        ['runtime.stop', () => runtime?.stop()], ['workspace.flush', () => workspace?.flush()],
+        ['workspace.close', () => workspace?.close()], ['output.drain', () => output],
+      ] as const) {
+        try { await bounded(Promise.resolve().then(cleanup), 5_000, name); interruptEvidence.progress[name + '.completed'] = Date.now() }
+        catch { interruptEvidence.progress[name + '.failed'] = Date.now() }
+      }
+    } else {
     try { await runtime?.stop() }
     finally {
       try { await workspace?.flush() }
@@ -570,6 +585,7 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
     }
     if (output) await bounded(output, 5_000, 'Cleanup drains')
     if (modelEvidence && modelEvidence.cleanup === 'pending') modelEvidence.cleanup = 'runtime.stop + workspace.flush + workspace.close completed'
+    }
   }
 }
 
