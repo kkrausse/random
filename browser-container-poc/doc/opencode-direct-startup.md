@@ -17,6 +17,15 @@ for pins, artifact hash, clean-output repeat and the next bounded reduction.
 **Normal builds/transpilation are accepted; the direct TS stripper is not
 necessarily the critical path.** No browser qualification or runtime pin advance.
 
+Native jsonc-parser reduction now reproduces that same `./impl/format` failure
+under both Node 24.7.0 and Bun 1.4.0. The emitted bundle binds require to its own
+URL and omits the original implementation files; no Vivari-only discrepancy is
+shown. Standard `--packages=external` with the unchanged package delivered, and
+ordinary unbundled delivery, both pass native parse/edit checkpoints.
+See the [reduction and exact command](../vivari/experiments/opencode-bun-server/jsonc-repro/README.md).
+The baseline's `onResolve` chose the package's published ESM entry; it did not
+replace package source. This reduction uses neither that hook nor an ESM swap.
+
 Latest unbundled result: runtime `80d5cdd` supplies bounded worker uncloneable-mark semantics.
 The direct launcher now passes Undici initialization and reaches `Unexpected string`
 compiling `packages/client/src/effect/service.ts`. Earlier failures below record
@@ -162,7 +171,7 @@ instructions were read. This work used the explicitly authorized noninteractive
 isolated guest kernel rather than the installed live service.
 
 Keep the existing packaged baseline. The next bounded conventional-build task is
-reducing jsonc-parser's emitted UMD relative require and comparing native behavior;
+testing ordinary selective external-package delivery for jsonc-parser if pursued;
 the unbundled client-service TypeScript compilation failure remains a separate
 loader issue. Retry with further generic assets when execution requires them.
 The original [case-study acceptance gates](opencode-runtime-case-study.md) remain.
