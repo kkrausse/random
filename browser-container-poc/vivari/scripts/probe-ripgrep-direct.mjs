@@ -2,12 +2,13 @@
 // Host Node is only the worker supervisor; decompression and search run in the guest.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { Worker, MessageChannel } from 'node:worker_threads';
 import { integrationRoot, runtimeSourceUrl } from './runtime-source.mjs';
+import { directAssets, installation, packages } from './ripgrep-direct-assets.mjs';
 
 const pkg = resolve(integrationRoot, 'probes/ripgrep/node_modules/ripgrep');
 assert.equal(JSON.parse(readFileSync(resolve(pkg, 'package.json'), 'utf8')).version, '0.3.1');
@@ -16,39 +17,32 @@ if (process.argv.includes('--native')) {
   try {
     mkdirSync(resolve(directory, 'node_modules'));
     mkdirSync(resolve(directory, 'cache'));
-    symlinkSync(pkg, resolve(directory, 'node_modules/ripgrep'), 'dir');
+    for (const name of packages) cpSync(resolve(installation, name), resolve(directory, 'node_modules', name), { recursive: true });
     copyFileSync(resolve(integrationRoot, 'probes/runtime/ripgrep-direct.mjs'), resolve(directory, 'probe.mjs'));
+    copyFileSync(resolve(integrationRoot, 'probes/runtime/ripgrep-command.cjs'), resolve(directory, 'command.cjs'));
     writeFileSync(resolve(directory, 'fixture.txt'), 'DIRECT_SEARCH_NEEDLE\n');
-    for (const mode of ['cold', 'warm']) {
-      const result = spawnSync(process.execPath, [resolve(directory, 'probe.mjs'), mode], {
+    for (const mode of ['cold', 'warm', 'command']) {
+      const result = spawnSync(process.execPath, [resolve(directory, mode === 'command' ? 'command.cjs' : 'probe.mjs'), mode], {
         cwd: directory, env: { ...process.env, TMPDIR: resolve(directory, 'cache') }, encoding: 'utf8', timeout: 60_000,
       });
       console.log(JSON.stringify({ native: process.version, mode, status: result.status, stdout: result.stdout, stderr: result.stderr }));
       assert.equal(result.status, 0, result.stderr || String(result.error));
-      assert.ok(result.stdout.includes(`RIPGREP_DIRECT_${mode.toUpperCase()}_PASS`));
+      assert.ok(result.stdout.includes(mode === 'command' ? 'RIPGREP_COMMAND_PASS' : `RIPGREP_DIRECT_${mode.toUpperCase()}_PASS`));
     }
   } finally { rmSync(directory, { recursive: true, force: true }); }
   process.exit(0);
 }
 const { Kernel } = await import(runtimeSourceUrl('packages/kernel-host/kernel.js'));
 const { createKernelFs } = await import(runtimeSourceUrl('packages/kernel-host/kernel-fs.js'));
-const files = [];
-function collect(directory, relative = '') {
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    const name = relative ? `${relative}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) collect(resolve(directory, entry.name), name);
-    else {
-      assert.ok(entry.isFile(), `Unexpected package entry: ${name}`);
-      const bytes = readFileSync(resolve(directory, entry.name));
-      files.push({ path: `/direct/node_modules/ripgrep/${name}`, bytes });
-    }
-  }
-}
-collect(pkg);
-console.log(JSON.stringify({ package: 'ripgrep@0.3.1', transforms: [], inputs: files.map(file => ({
+const files = directAssets();
+const inputs = files.map(file => ({
   path: file.path, bytes: file.bytes.length,
-  sha256: createHash('sha256').update(file.bytes).digest('hex'),
-})) }));
+  sha256: file.sha256,
+}));
+console.log(JSON.stringify({ package: 'ripgrep@0.3.1', transforms: [], files: inputs.length,
+  manifestSha256: createHash('sha256').update(JSON.stringify(inputs)).digest('hex'),
+  ...(process.argv.includes('--trace-inputs') ? { inputs } : {}),
+}));
 const workers = new Set();
 const deadline = setTimeout(() => {
   console.error('RIPGREP_DIRECT_TIMEOUT');
@@ -90,13 +84,14 @@ try {
   await kernel.writeFilesBatch(files);
   kernel.writeFile('/direct/fixture.txt', 'DIRECT_SEARCH_NEEDLE\n');
   kernel.writeFile('/direct/probe.mjs', readFileSync(resolve(integrationRoot, 'probes/runtime/ripgrep-direct.mjs')));
-  for (const mode of ['cold', 'warm']) {
-    const result = await kernel.start('node', ['/direct/probe.mjs', mode], {
+  kernel.writeFile('/direct/command.cjs', readFileSync(resolve(integrationRoot, 'probes/runtime/ripgrep-command.cjs')));
+  for (const mode of ['cold', 'warm', 'command']) {
+    const result = await kernel.start('node', [mode === 'command' ? '/direct/command.cjs' : '/direct/probe.mjs', mode], {
       cwd: '/direct', env: { PATH: '/bin', TMPDIR: '/tmp' }, capture: true,
     });
     console.log(JSON.stringify({ mode, ...result }));
     assert.equal(result.code, 0, result.stderr);
-    assert.ok(result.stdout.includes(`RIPGREP_DIRECT_${mode.toUpperCase()}_PASS`), 'Missing completion checkpoint');
+    assert.ok(result.stdout.includes(mode === 'command' ? 'RIPGREP_COMMAND_PASS' : `RIPGREP_DIRECT_${mode.toUpperCase()}_PASS`), 'Missing completion checkpoint');
   }
 } finally {
   await Promise.all([...workers].map(worker => worker.terminate()));
