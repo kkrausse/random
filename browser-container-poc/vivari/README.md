@@ -150,6 +150,49 @@ flush/close. Failure also attempts managed stop before mandatory cleanup. Raw
 tool/model output, reasoning, and credentials are omitted. This mode is
 implementation-checked only; the next step is one separate browser/model run.
 
+For one upstream grep using the original `ripgrep@0.3.1` package:
+
+```sh
+bun scripts/serve-opencode-bun-server.ts --once --grep
+```
+
+Open the exact printed run-ID URL once on its fresh, OS-selected localhost port.
+`--grep` implies model mode and rejects read, edit, restart, and session retention.
+The separate `/ripgrep-manifest` and exact-map `/ripgrep-package/` routes deliver
+nine original files with length/SHA-256 verification under
+`/direct/node_modules/ripgrep/`; flat `/app/` delivery retains its existing rules.
+The hash-verified `probes/runtime/opencode-ripgrep-install.cjs` runs through public
+`runtime.node` before OpenCode. It creates the ordinary `.bin/rg` symlink and
+chmods its target to `0755`. Setup requires exactly
+`OPENCODE_RIPGREP_INSTALL_PASS\n`, empty stderr, drained output/closed stdin, and
+natural exit zero. OpenCode receives `PATH=/direct/node_modules/.bin:/bin` and
+`RIPGREP_NODE_WASI=0`, using its bundled which/isexe for ordinary discovery.
+
+The workspace seed is exactly `before\nVIVARI_GREP_NEEDLE\nafter\n` in
+`/grep-probe.txt`, visible to OpenCode at `/workspace/grep-probe.txt`. The existing
+permission-rule shape allows grep. One prompt requests exactly one grep with
+pattern `VIVARI_GREP_NEEDLE`, that absolute path, limit `10`, and omitted `include`;
+no other tools are allowed. Session, tool ID, and assistant-message ID correlate
+started/called/success events. Called and success must have `executed: false`
+(local execution). The authoritative result is exactly one text item:
+
+```text
+Found 1 matches
+/workspace/grep-probe.txt:
+  Line 2: VIVARI_GREP_NEEDLE
+```
+
+The final newline is required. `GREP_PROBE_OK` reply comparisons are diagnostic;
+the gate requires streamed text and `session.execution.succeeded`, exact tool
+input/content, and no failed or unrelated tools. There is one prompt with a
+60-second deadline, no retry/fallback, and a 180-second overall bound. Nine
+checkpoints include managed stop, clean natural exit, joined SSE/output drains,
+and runtime stop plus OPFS flush/close. Failures retain the existing managed-stop
+and mandatory cleanup path. Receipts include package/installer/seed/content
+hashes, provisioning and call/content counts, and cleanup evidence, omitting
+credentials, raw model/tool output, and reasoning. This mode is implementation-
+checked only; browser/model qualification is the next independent attempt.
+
 Omit all mode flags for the existing single-lifecycle, six-checkpoint gate and
 180-second timeout. Restart mode has passed both browser phases with matching
 SQLite bytes and clean health/stop/exit checks.
