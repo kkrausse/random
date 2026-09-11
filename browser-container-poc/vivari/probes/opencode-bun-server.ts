@@ -8,13 +8,16 @@ async function bounded<T>(promise: Promise<T>, ms: number, label: string): Promi
   finally { clearTimeout(timer) }
 }
 
-async function qualify(runID: string, restart: boolean, sessionRetention: boolean, model: boolean, read: boolean) {
+async function qualify(runID: string, restart: boolean, sessionRetention: boolean, model: boolean, read: boolean, edit: boolean) {
   let stage = 'manifest', runtime: Awaited<ReturnType<typeof Runtime.start>> | undefined
   let workspace: Awaited<ReturnType<typeof Workspace.open>> | undefined
   let output: Promise<unknown> | undefined
   const modelEvidence = model ? { providerID: 'opencode', id: 'muse-spark-1.3-contributor-free', deltas: 0, toolEvents: 0, promptRequests: 0, textMatched: false, textBlocks: 0, textLength: 0, trimmedTextMatched: false, lastBlockMatched: false, terminal: 'pending', sseCleanup: 'pending', cleanup: 'pending' } : undefined
   const readEvidence = read ? { target: '/workspace/read-probe.txt', calls: 0, successes: 0, targetMatched: false, contentMatched: false, providerExecuted: null as boolean | null, managedStop: 'pending', cleanupExitStatus: 'pending', exit: null as { exitCode: number; forced: boolean; signal: string | null } | null } : undefined
   const readContent = 'VIVARI_READ_PROBE_6ac6618_7f92d03b'
+  const editBefore = 'VIVARI_EDIT_BEFORE', editAfter = 'VIVARI_EDIT_AFTER'
+  const editEvidence = edit ? { target: '/workspace/edit-probe.txt', calls: 0, successes: 0, readCalls: 0, readSuccesses: 0, targetMatched: false, inputMatched: false, bytesMatched: false, beforeBytes: 0, beforeSha256: '', afterBytes: 0, afterSha256: '', providerExecuted: null as boolean | null, managedStop: 'pending', cleanupExitStatus: 'pending', exit: null as { exitCode: number; forced: boolean; signal: string | null } | null } : undefined
+  const toolCleanup = readEvidence ?? editEvidence
   let managedStop: (() => Promise<void>) | undefined
   let phase = 'initial', previousRegistrationID: string | undefined
   const phases: { phase: string; checks: string[]; exit: { exitCode: number; forced: boolean; signal: string | null }; outputBytes: unknown; cleanup: string }[] = []
@@ -71,9 +74,18 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
         await workspace.fs.writeFile('/.server/config/opencode/opencode.json', JSON.stringify({
           model: 'opencode/' + modelEvidence.id, snapshots: false,
           providers: { opencode: { settings: { baseURL: `http://host.vivari.internal:${location.port}/api/model/opencode` } } },
-          ...(read ? { permissions: [{ action: 'read', resource: '*', effect: 'allow' }] } : {}),
+          ...(read || edit ? { permissions: [{ action: 'read', resource: '*', effect: 'allow' }, ...(edit ? [{ action: 'edit', resource: '*', effect: 'allow' }] : [])] } : {}),
         }))
         if (read) await workspace.fs.writeFile('/read-probe.txt', readContent)
+        if (editEvidence) {
+          stage = 'seed and verify edit target'
+          await workspace.fs.writeFile('/edit-probe.txt', editBefore + '\n')
+          const bytes = new Uint8Array(await workspace.fs.readFile('/edit-probe.txt'))
+          const expected = new TextEncoder().encode(editBefore + '\n')
+          if (bytes.length !== expected.length || !bytes.every((byte, i) => byte === expected[i])) throw Error()
+          editEvidence.beforeBytes = bytes.length
+          editEvidence.beforeSha256 = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('')
+        }
       }
       stage = 'verified app delivery'
       runtime = await Runtime.start({ distribution, workspace, tools: { delivery: {
@@ -130,15 +142,15 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       previousRegistrationID = registration.id
       pass('guest-generated registration validated (credentials omitted)')
       const headers = { authorization: 'Basic ' + btoa('opencode:' + registration.password), 'content-type': 'application/json' }
-      if (read) managedStop = async () => {
+      if (toolCleanup) managedStop = async () => {
         const stopped = await endpoint.fetch('/api/service/stop', { method: 'POST', headers, body: JSON.stringify({ instanceID: registration.id }), signal: AbortSignal.timeout(20_000) })
         if (stopped.status !== 200 || (await stopped.json()).accepted !== true) throw Error('Managed cleanup stop failed')
-        readEvidence!.managedStop = 'accepted'
+        toolCleanup.managedStop = 'accepted'
         try {
           const exit = await bounded(execution.exited, 20_000, 'Managed cleanup exit')
-          readEvidence!.exit = { exitCode: exit.exitCode, forced: exit.forced, signal: exit.signal }
-          readEvidence!.cleanupExitStatus = exit.exitCode === 0 && !exit.forced && exit.signal === null ? 'natural exit verified' : 'unexpected exit'
-        } catch { readEvidence!.cleanupExitStatus = 'exit unavailable within bound' }
+          toolCleanup.exit = { exitCode: exit.exitCode, forced: exit.forced, signal: exit.signal }
+          toolCleanup.cleanupExitStatus = exit.exitCode === 0 && !exit.forced && exit.signal === null ? 'natural exit verified' : 'unexpected exit'
+        } catch { toolCleanup.cleanupExitStatus = 'exit unavailable within bound' }
       }
       stage = 'authenticated health'
       const health = await endpoint.fetch('/api/health', { headers, signal: AbortSignal.timeout(20_000) })
@@ -159,6 +171,7 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
         let drain: Promise<void> | undefined
         let failed = false, completed = false, finalText = ''
         const calls = new Map<string, { called: boolean; succeeded: boolean }>()
+        const editCalls = new Map<string, { name: 'read' | 'edit'; called: boolean; succeeded: boolean; assistantMessageID: string }>()
         const deadline = setTimeout(() => { modelEvidence.terminal = 'deadline exceeded'; subscription.abort() }, 60_000)
         try {
           stage = 'model SSE subscription'
@@ -208,7 +221,38 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
                     }
                     if (failed) modelEvidence.terminal = 'read tool event rejected'
                   }
-                  if ((!read && event.type.startsWith('session.tool.')) || event.type === 'session.tool.failed' || event.type === 'session.execution.failed') {
+                  if (editEvidence && event.type.startsWith('session.tool.')) {
+                    // Pinned edit.Input: path/oldString/newString/optional replaceAll.
+                    // Correlate canonical local success, not provider-executed calls or model prose.
+                    if (event.type === 'session.tool.input.started') {
+                      if (data.name === 'read') editEvidence.readCalls++
+                      if (data.name === 'edit') editEvidence.calls++
+                      if (!['read', 'edit'].includes(data.name) || typeof data.id !== 'string' || editCalls.has(data.id) ||
+                        typeof data.assistantMessageID !== 'string' || editEvidence.readCalls > 2 || editEvidence.calls > 1) failed = true
+                      else editCalls.set(data.id, { name: data.name, called: false, succeeded: false, assistantMessageID: data.assistantMessageID })
+                    } else {
+                      const call = editCalls.get(data.id)
+                      if (!call || data.assistantMessageID !== call.assistantMessageID) failed = true
+                      else if (event.type === 'session.tool.called') {
+                        if (call.called || data.input?.path !== editEvidence.target || data.executed !== false) failed = true
+                        else if (call.name === 'edit' && (data.input.oldString !== editBefore || data.input.newString !== editAfter ||
+                          (data.input.replaceAll !== undefined && data.input.replaceAll !== false))) failed = true
+                        else {
+                          call.called = true
+                          if (call.name === 'edit') { editEvidence.targetMatched = true; editEvidence.inputMatched = true }
+                        }
+                      } else if (event.type === 'session.tool.success') {
+                        if (!call.called || call.succeeded || data.executed !== false || !Array.isArray(data.content) || !data.content.length) failed = true
+                        else {
+                          call.succeeded = true
+                          if (call.name === 'read') editEvidence.readSuccesses++
+                          else { editEvidence.successes++; editEvidence.providerExecuted = data.executed }
+                        }
+                      }
+                    }
+                    if (failed) modelEvidence.terminal = 'edit tool event rejected'
+                  }
+                  if ((!read && !edit && event.type.startsWith('session.tool.')) || event.type === 'session.tool.failed' || event.type === 'session.execution.failed') {
                     failed = true
                     modelEvidence.terminal = event.type === 'session.execution.failed' ? event.type : 'tool event rejected'
                   }
@@ -218,7 +262,7 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
                     else {
                       finalText += data.text
                       // Comparison-only diagnostics: no visible text, reasoning, or provider state retained.
-                      const expected = read ? readContent : 'MINIMAL_MODEL_OK'
+                      const expected = edit ? 'EDIT_PROBE_OK' : read ? readContent : 'MINIMAL_MODEL_OK'
                       modelEvidence.textBlocks++
                       modelEvidence.textLength = finalText.length
                       modelEvidence.textMatched = finalText === expected
@@ -238,7 +282,9 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
           stage = 'one model prompt and terminal SSE (60s deadline)'
           modelEvidence.promptRequests++
           const prompted = await endpoint.fetch('/api/session/' + encodeURIComponent(sessionID) + '/prompt', { method: 'POST', headers,
-            body: JSON.stringify({ text: readEvidence
+            body: JSON.stringify({ text: editEvidence
+              ? `Use the upstream edit tool exactly once on ${editEvidence.target} with oldString "${editBefore}" and newString "${editAfter}" (replaceAll omitted or false). Preserve the trailing newline. You may use read on this exact absolute path before editing and to verify afterward, at most twice total. Use this exact absolute path in every tool call. Do not invoke any other tools. Finish by replying EDIT_PROBE_OK.`
+              : readEvidence
               ? `Invoke read exactly once to read ${readEvidence.target}, then reply with exactly the file content, without formatting or commentary. Do not invoke any other tool.`
               : 'Reply with exactly MINIMAL_MODEL_OK. Do not invoke any tools.' }), signal: subscription.signal,
           })
@@ -246,10 +292,21 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
           await prompted.arrayBuffer()
           while (!completed && !failed && !subscription.signal.aborted) await delay(50)
           stage = completed ? 'terminal model evidence validation' : 'model SSE incomplete or rejected'
-          modelEvidence.textMatched = finalText === (read ? readContent : 'MINIMAL_MODEL_OK')
-          if (completed && !failed && !modelEvidence.textMatched) stage = 'terminal model exact-text mismatch'
-          if (failed || subscription.signal.aborted || !completed || !modelEvidence.textMatched || modelEvidence.deltas < 1 ||
-            (readEvidence ? readEvidence.calls !== 1 || readEvidence.successes !== 1 || !readEvidence.targetMatched || !readEvidence.contentMatched : modelEvidence.toolEvents !== 0)) throw Error()
+          modelEvidence.textMatched = finalText === (edit ? 'EDIT_PROBE_OK' : read ? readContent : 'MINIMAL_MODEL_OK')
+          if (!edit && completed && !failed && !modelEvidence.textMatched) stage = 'terminal model exact-text mismatch'
+          if (failed || subscription.signal.aborted || !completed || (!edit && !modelEvidence.textMatched) || modelEvidence.deltas < 1 ||
+            (editEvidence ? editEvidence.calls !== 1 || editEvidence.successes !== 1 || !editEvidence.targetMatched || !editEvidence.inputMatched ||
+              editEvidence.readCalls !== editEvidence.readSuccesses || [...editCalls.values()].some(call => !call.called || !call.succeeded) || modelEvidence.textBlocks < 1 || !finalText.trim()
+              : readEvidence ? readEvidence.calls !== 1 || readEvidence.successes !== 1 || !readEvidence.targetMatched || !readEvidence.contentMatched : modelEvidence.toolEvents !== 0)) throw Error()
+          if (editEvidence) {
+            stage = 'exact edit bytes through workspace.fs after terminal success'
+            const bytes = new Uint8Array(await workspace.fs.readFile('/edit-probe.txt'))
+            const expected = new TextEncoder().encode(editAfter + '\n')
+            editEvidence.afterBytes = bytes.length
+            editEvidence.afterSha256 = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('')
+            editEvidence.bytesMatched = bytes.length === expected.length && bytes.every((byte, i) => byte === expected[i])
+            if (!editEvidence.bytesMatched) throw Error()
+          }
         } finally {
           clearTimeout(deadline)
           subscription.abort()
@@ -258,8 +315,8 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
             modelEvidence.sseCleanup = 'aborted and joined'
           } else modelEvidence.sseCleanup = 'subscription aborted before drain'
         }
-        if (failed || (!read && modelEvidence.toolEvents !== 0)) throw Error()
-        pass(read ? 'one prompt, one successful local read with exact target/content, no other tools, execution succeeded; SSE joined' : 'one prompt streamed exact marker with deltas, no tools, execution succeeded; SSE joined')
+        if (failed || (!read && !edit && modelEvidence.toolEvents !== 0)) throw Error()
+        pass(edit ? 'one prompt, one successful local edit, bounded same-file reads, exact final bytes, streamed completion and execution succeeded; SSE joined' : read ? 'one prompt, one successful local read with exact target/content, no other tools, execution succeeded; SSE joined' : 'one prompt streamed exact marker with deltas, no tools, execution succeeded; SSE joined')
       }
       if (sessionRetention) {
         stage = phase === 'initial' ? 'create one unprompted session' : 'retrieve retained session ID/title'
@@ -282,14 +339,14 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       stage = 'managed service stop'
       const stopped = await endpoint.fetch('/api/service/stop', { method: 'POST', headers, body: JSON.stringify({ instanceID: registration.id }), signal: AbortSignal.timeout(20_000) })
       if (stopped.status !== 200 || (await stopped.json()).accepted !== true) throw Error()
-      if (readEvidence) readEvidence.managedStop = 'accepted'
+      if (toolCleanup) toolCleanup.managedStop = 'accepted'
       managedStop = undefined
       pass('managed stop accepted=true')
       stage = 'natural exit'
       const exit = await bounded(execution.exited, 20_000, 'Natural exit')
-      if (readEvidence) {
-        readEvidence.exit = { exitCode: exit.exitCode, forced: exit.forced, signal: exit.signal }
-        readEvidence.cleanupExitStatus = exit.exitCode === 0 && !exit.forced && exit.signal === null ? 'natural exit verified' : 'unexpected exit'
+      if (toolCleanup) {
+        toolCleanup.exit = { exitCode: exit.exitCode, forced: exit.forced, signal: exit.signal }
+        toolCleanup.cleanupExitStatus = exit.exitCode === 0 && !exit.forced && exit.signal === null ? 'natural exit verified' : 'unexpected exit'
       }
       const outputBytes = await bounded(output, 5_000, 'Output drains')
       if (exit.exitCode !== 0 || exit.forced || exit.signal !== null) throw Error()
@@ -314,12 +371,12 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       log('PASS ' + phase + ' full cleanup completed')
     }
     const last = phases[phases.length - 1]
-    return { status: 'PASS', restart, sessionRetention, session, model, modelEvidence, ...(read ? { read, readEvidence } : {}), scope, runtime: manifest.version, checks, phases, database, exit: last.exit, outputBytes: last.outputBytes, assets: receipt.assets.length }
+    return { status: 'PASS', restart, sessionRetention, session, model, modelEvidence, ...(read ? { read, readEvidence } : {}), ...(edit ? { edit, editEvidence } : {}), scope, runtime: manifest.version, checks, phases, database, exit: last.exit, outputBytes: last.outputBytes, assets: receipt.assets.length }
   } catch {
     // Error objects and response bodies can contain credentials; report only the checkpoint.
-    return { status: 'FAIL', restart, sessionRetention, session, model, modelEvidence, ...(read ? { read, readEvidence } : {}), scope, error: 'Failed at ' + phase + ': ' + stage, checks, phases, database }
+    return { status: 'FAIL', restart, sessionRetention, session, model, modelEvidence, ...(read ? { read, readEvidence } : {}), ...(edit ? { edit, editEvidence } : {}), scope, error: 'Failed at ' + phase + ': ' + stage, checks, phases, database }
   } finally {
-    try { await managedStop?.() } catch { if (readEvidence) readEvidence.managedStop = 'failed'; /* runtime.stop below remains mandatory */ }
+    try { await managedStop?.() } catch { if (toolCleanup) toolCleanup.managedStop = 'failed'; /* runtime.stop below remains mandatory */ }
     try { await runtime?.stop() }
     finally {
       try { await workspace?.flush() }
@@ -331,14 +388,15 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
 }
 
 async function run() {
-  const { runID, restart, sessionRetention, model, read = false } = await fetch('/run-config').then(r => r.json())
+  const { runID, restart, sessionRetention, model, read = false, edit = false } = await fetch('/run-config').then(r => r.json())
   if (new URL(location.href).searchParams.get('runID') !== runID) throw Error('Run ID mismatch; use the printed URL')
   if (typeof restart !== 'boolean' || new URL(location.href).searchParams.has('restart') !== restart) throw Error('Restart mode mismatch; use the printed URL')
   if (typeof sessionRetention !== 'boolean' || new URL(location.href).searchParams.has('session-retention') !== sessionRetention || (sessionRetention && !restart)) throw Error('Session retention mode mismatch; use the printed URL')
   if (typeof model !== 'boolean' || new URL(location.href).searchParams.has('model') !== model || (model && restart)) throw Error('Model mode mismatch; use the printed URL')
   if (typeof read !== 'boolean' || new URL(location.href).searchParams.has('read') !== read || (read && (!model || restart))) throw Error('Read mode mismatch; use the printed URL')
+  if (typeof edit !== 'boolean' || new URL(location.href).searchParams.has('edit') !== edit || (edit && (!model || restart || read))) throw Error('Edit mode mismatch; use the printed URL')
   let result
-  try { result = await qualify(runID, restart, sessionRetention, model, read) }
+  try { result = await qualify(runID, restart, sessionRetention, model, read, edit) }
   catch (error) {
     const message = error instanceof Error && error.message.startsWith('Failed at ') ? error.message : 'Probe cleanup or startup failed'
     result = { status: 'FAIL', error: message }
