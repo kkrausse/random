@@ -85,7 +85,37 @@ responses, reasoning, guest logs, and credentials are omitted. This eight-checkp
 mode has a 180-second overall timeout and is ready for a separate browser attempt;
 implementation checks alone do not qualify model execution.
 
-Omit all three mode flags for the existing single-lifecycle, six-checkpoint gate and
+For one real upstream read-tool use in a single phase, run one separate attempt:
+
+```sh
+bun scripts/serve-opencode-bun-server.ts --once --read
+```
+
+`--read` implies the public model/catalog setup above and rejects restart/session
+retention. Open the exact printed URL on a fresh origin. The harness seeds
+`/read-probe.txt` through `workspace.fs` with deterministic unique content
+`VIVARI_READ_PROBE_6ac6618_7f92d03b` (no trailing newline), exposed to the guest as
+`/workspace/read-probe.txt`. The one prompt names only the path and asks for exactly
+one read followed by the exact file content; it does not supply the content.
+Config uses the accepted baseline's read permission rule. The upstream tool
+registry is used as delivered.
+
+The same 60-second subscription/prompt/execution bound and eight checkpoints
+apply. Acceptance correlates `session.tool.input.started` ID/name with
+`session.tool.called` input.path and `session.tool.success`, requiring exactly one
+successful `read`, the exact target, exact ended text, text deltas, and terminal
+`session.execution.succeeded`. These fields follow the pinned
+`packages/schema/src/session-event.ts`; `executed: false` means local rather than
+provider execution (`core/src/session/runner/publish-llm-event.ts`). Any other
+tool, including discovery/search, edit, or shell, fails immediately. SSE is
+aborted and joined on failure; managed stop is attempted before mandatory runtime
+and workspace cleanup. There are no prompt retries or fallback. Receipts add
+read call/success/target evidence and retain total tool-event and proxy POST counts
+(at least two model POSTs for the read/result continuation; auxiliary calls may
+increase this). Raw tool/model content and credentials are omitted. This mode is
+implementation-checked only, pending its separate browser/model attempt.
+
+Omit all mode flags for the existing single-lifecycle, six-checkpoint gate and
 180-second timeout. Restart mode has passed both browser phases with matching
 SQLite bytes and clean health/stop/exit checks.
 

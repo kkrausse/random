@@ -8,11 +8,14 @@ async function bounded<T>(promise: Promise<T>, ms: number, label: string): Promi
   finally { clearTimeout(timer) }
 }
 
-async function qualify(runID: string, restart: boolean, sessionRetention: boolean, model: boolean) {
+async function qualify(runID: string, restart: boolean, sessionRetention: boolean, model: boolean, read: boolean) {
   let stage = 'manifest', runtime: Awaited<ReturnType<typeof Runtime.start>> | undefined
   let workspace: Awaited<ReturnType<typeof Workspace.open>> | undefined
   let output: Promise<unknown> | undefined
   const modelEvidence = model ? { providerID: 'opencode', id: 'muse-spark-1.3-contributor-free', deltas: 0, toolEvents: 0, promptRequests: 0, textMatched: false, terminal: 'pending', sseCleanup: 'pending', cleanup: 'pending' } : undefined
+  const readEvidence = read ? { target: '/workspace/read-probe.txt', calls: 0, successes: 0, targetMatched: false, providerExecuted: null as boolean | null, managedStop: 'pending' } : undefined
+  const readContent = 'VIVARI_READ_PROBE_6ac6618_7f92d03b'
+  let managedStop: (() => Promise<void>) | undefined
   let phase = 'initial', previousRegistrationID: string | undefined
   const phases: { phase: string; checks: string[]; exit: { exitCode: number; forced: boolean; signal: string | null }; outputBytes: unknown; cleanup: string }[] = []
   const database: { checkpoint: string; path: string; bytes: number; sha256: string; sqliteHeader: true }[] = []
@@ -68,7 +71,9 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
         await workspace.fs.writeFile('/.server/config/opencode/opencode.json', JSON.stringify({
           model: 'opencode/' + modelEvidence.id, snapshots: false,
           providers: { opencode: { settings: { baseURL: `http://host.vivari.internal:${location.port}/api/model/opencode` } } },
+          ...(read ? { permissions: [{ action: 'read', resource: '*', effect: 'allow' }] } : {}),
         }))
+        if (read) await workspace.fs.writeFile('/read-probe.txt', readContent)
       }
       stage = 'verified app delivery'
       runtime = await Runtime.start({ distribution, workspace, tools: { delivery: {
@@ -125,6 +130,12 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       previousRegistrationID = registration.id
       pass('guest-generated registration validated (credentials omitted)')
       const headers = { authorization: 'Basic ' + btoa('opencode:' + registration.password), 'content-type': 'application/json' }
+      if (read) managedStop = async () => {
+        const stopped = await endpoint.fetch('/api/service/stop', { method: 'POST', headers, body: JSON.stringify({ instanceID: registration.id }), signal: AbortSignal.timeout(20_000) })
+        if (stopped.status !== 200 || (await stopped.json()).accepted !== true) throw Error('Managed cleanup stop failed')
+        readEvidence!.managedStop = 'accepted'
+        await bounded(execution.exited, 20_000, 'Managed cleanup exit')
+      }
       stage = 'authenticated health'
       const health = await endpoint.fetch('/api/health', { headers, signal: AbortSignal.timeout(20_000) })
       if (health.status !== 200 || (await health.json()).healthy !== true) throw Error()
@@ -143,6 +154,7 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
         const subscription = new AbortController()
         let drain: Promise<void> | undefined
         let failed = false, completed = false, finalText = ''
+        const calls = new Map<string, { called: boolean; succeeded: boolean }>()
         const deadline = setTimeout(() => { modelEvidence.terminal = 'deadline exceeded'; subscription.abort() }, 60_000)
         try {
           stage = 'model SSE subscription'
@@ -166,7 +178,27 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
                   const event = JSON.parse(line.slice(6)), data = event.data
                   if (data?.sessionID !== sessionID) continue
                   if (event.type.startsWith('session.tool.')) modelEvidence.toolEvents++
-                  if (event.type === 'session.tool.input.started' || event.type === 'session.tool.failed' || event.type === 'session.execution.failed') {
+                  if (readEvidence && event.type.startsWith('session.tool.')) {
+                    // Pinned schema/session-event.ts: Started supplies name; Called supplies input.
+                    if (event.type === 'session.tool.input.started') {
+                      readEvidence.calls++
+                      if (data.name !== 'read' || typeof data.id !== 'string' || calls.has(data.id) || readEvidence.calls !== 1) failed = true
+                      else calls.set(data.id, { called: false, succeeded: false })
+                    } else {
+                      const call = calls.get(data.id)
+                      if (!call) failed = true
+                      else if (event.type === 'session.tool.called') {
+                        if (call.called || data.input?.path !== readEvidence.target || data.executed !== false) failed = true
+                        else { call.called = true; readEvidence.targetMatched = true }
+                      } else if (event.type === 'session.tool.success') {
+                        // executed is providerExecuted, not local execution success.
+                        if (!call.called || call.succeeded || data.executed !== false || !Array.isArray(data.content) || !data.content.length) failed = true
+                        else { call.succeeded = true; readEvidence.successes++; readEvidence.providerExecuted = data.executed }
+                      }
+                    }
+                    if (failed) modelEvidence.terminal = 'read tool event rejected'
+                  }
+                  if ((!read && event.type.startsWith('session.tool.')) || event.type === 'session.tool.failed' || event.type === 'session.execution.failed') {
                     failed = true
                     modelEvidence.terminal = event.type === 'session.execution.failed' ? event.type : 'tool event rejected'
                   }
@@ -187,13 +219,16 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
           stage = 'one model prompt and terminal SSE (60s deadline)'
           modelEvidence.promptRequests++
           const prompted = await endpoint.fetch('/api/session/' + encodeURIComponent(sessionID) + '/prompt', { method: 'POST', headers,
-            body: JSON.stringify({ text: 'Reply with exactly MINIMAL_MODEL_OK. Do not invoke any tools.' }), signal: subscription.signal,
+            body: JSON.stringify({ text: readEvidence
+              ? `Invoke read exactly once to read ${readEvidence.target}, then reply with exactly the file content, without formatting or commentary. Do not invoke any other tool.`
+              : 'Reply with exactly MINIMAL_MODEL_OK. Do not invoke any tools.' }), signal: subscription.signal,
           })
           if (!prompted.ok) throw Error()
           await prompted.arrayBuffer()
           while (!completed && !failed && !subscription.signal.aborted) await delay(50)
-          modelEvidence.textMatched = finalText === 'MINIMAL_MODEL_OK'
-          if (failed || subscription.signal.aborted || !completed || !modelEvidence.textMatched || modelEvidence.deltas < 1 || modelEvidence.toolEvents !== 0) throw Error()
+          modelEvidence.textMatched = finalText === (read ? readContent : 'MINIMAL_MODEL_OK')
+          if (failed || subscription.signal.aborted || !completed || !modelEvidence.textMatched || modelEvidence.deltas < 1 ||
+            (readEvidence ? readEvidence.calls !== 1 || readEvidence.successes !== 1 || !readEvidence.targetMatched : modelEvidence.toolEvents !== 0)) throw Error()
         } finally {
           clearTimeout(deadline)
           subscription.abort()
@@ -202,8 +237,8 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
             modelEvidence.sseCleanup = 'aborted and joined'
           } else modelEvidence.sseCleanup = 'subscription aborted before drain'
         }
-        if (failed || modelEvidence.toolEvents !== 0) throw Error()
-        pass('one prompt streamed exact marker with deltas, no tools, execution succeeded; SSE joined')
+        if (failed || (!read && modelEvidence.toolEvents !== 0)) throw Error()
+        pass(read ? 'one prompt, one successful local read with exact target/content, no other tools, execution succeeded; SSE joined' : 'one prompt streamed exact marker with deltas, no tools, execution succeeded; SSE joined')
       }
       if (sessionRetention) {
         stage = phase === 'initial' ? 'create one unprompted session' : 'retrieve retained session ID/title'
@@ -226,6 +261,8 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       stage = 'managed service stop'
       const stopped = await endpoint.fetch('/api/service/stop', { method: 'POST', headers, body: JSON.stringify({ instanceID: registration.id }), signal: AbortSignal.timeout(20_000) })
       if (stopped.status !== 200 || (await stopped.json()).accepted !== true) throw Error()
+      if (readEvidence) readEvidence.managedStop = 'accepted'
+      managedStop = undefined
       pass('managed stop accepted=true')
       stage = 'natural exit'
       const exit = await bounded(execution.exited, 20_000, 'Natural exit')
@@ -252,11 +289,12 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       log('PASS ' + phase + ' full cleanup completed')
     }
     const last = phases[phases.length - 1]
-    return { status: 'PASS', restart, sessionRetention, session, model, modelEvidence, scope, runtime: manifest.version, checks, phases, database, exit: last.exit, outputBytes: last.outputBytes, assets: receipt.assets.length }
+    return { status: 'PASS', restart, sessionRetention, session, model, modelEvidence, ...(read ? { read, readEvidence } : {}), scope, runtime: manifest.version, checks, phases, database, exit: last.exit, outputBytes: last.outputBytes, assets: receipt.assets.length }
   } catch {
     // Error objects and response bodies can contain credentials; report only the checkpoint.
-    return { status: 'FAIL', restart, sessionRetention, session, model, modelEvidence, scope, error: 'Failed at ' + phase + ': ' + stage, checks, phases, database }
+    return { status: 'FAIL', restart, sessionRetention, session, model, modelEvidence, ...(read ? { read, readEvidence } : {}), scope, error: 'Failed at ' + phase + ': ' + stage, checks, phases, database }
   } finally {
+    try { await managedStop?.() } catch { if (readEvidence) readEvidence.managedStop = 'failed'; /* runtime.stop below remains mandatory */ }
     try { await runtime?.stop() }
     finally {
       try { await workspace?.flush() }
@@ -268,13 +306,14 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
 }
 
 async function run() {
-  const { runID, restart, sessionRetention, model } = await fetch('/run-config').then(r => r.json())
+  const { runID, restart, sessionRetention, model, read = false } = await fetch('/run-config').then(r => r.json())
   if (new URL(location.href).searchParams.get('runID') !== runID) throw Error('Run ID mismatch; use the printed URL')
   if (typeof restart !== 'boolean' || new URL(location.href).searchParams.has('restart') !== restart) throw Error('Restart mode mismatch; use the printed URL')
   if (typeof sessionRetention !== 'boolean' || new URL(location.href).searchParams.has('session-retention') !== sessionRetention || (sessionRetention && !restart)) throw Error('Session retention mode mismatch; use the printed URL')
   if (typeof model !== 'boolean' || new URL(location.href).searchParams.has('model') !== model || (model && restart)) throw Error('Model mode mismatch; use the printed URL')
+  if (typeof read !== 'boolean' || new URL(location.href).searchParams.has('read') !== read || (read && (!model || restart))) throw Error('Read mode mismatch; use the printed URL')
   let result
-  try { result = await qualify(runID, restart, sessionRetention, model) }
+  try { result = await qualify(runID, restart, sessionRetention, model, read) }
   catch (error) {
     const message = error instanceof Error && error.message.startsWith('Failed at ') ? error.message : 'Probe cleanup or startup failed'
     result = { status: 'FAIL', error: message }
