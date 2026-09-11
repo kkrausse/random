@@ -62,6 +62,12 @@ export function sessionTokenBreakdown(session: Pick<SessionInfo, "tokens">, comp
   return labels.map((label, index) => `${label} ${formatCompactTokens(values[index]!)}`).join(" · ")
 }
 
+export function processedTokens(sessions: ReadonlyArray<Pick<SessionInfo, "tokens">>) {
+  return sessions.reduce((total, session) => total
+    + session.tokens.input + session.tokens.output + session.tokens.reasoning
+    + session.tokens.cache.read + session.tokens.cache.write, 0)
+}
+
 // Mirrors opencode's sidebar context calculation
 // (packages/tui/src/util/session.ts + feature-plugins/sidebar/context.tsx):
 // current window usage = last assistant message with token usage after the
@@ -242,15 +248,33 @@ function WeeklyUsage(props: { context: Plugin.Context; models: ReadonlyArray<Mod
 function UsageBreakdown(props: { context: Plugin.Context; sessionID: string }) {
   const session = createMemo(() => props.context.data.session.get(props.sessionID))
   const messages = createMemo(() => props.context.data.session.message.list(props.sessionID))
+  const descendants = createMemo(() => descendantIDs(
+    props.context.data.session.family(props.sessionID)
+      .map((id) => props.context.data.session.get(id))
+      .filter((item): item is SessionInfo => item !== undefined),
+    props.sessionID,
+  ))
+  const familySessions = createMemo(() => [session(), ...descendants().map((id) => props.context.data.session.get(id))]
+    .filter((item): item is SessionInfo => item !== undefined))
+  const familyMessages = createMemo(() => familySessions().flatMap((item) => props.context.data.session.message.list(item.id)))
   const models = createMemo(() => props.context.data.location.model.list(session()?.location) ?? [])
   const usage = createMemo(() => contextUsage(messages(), models(), session()?.revert?.messageID))
   const estimate = createMemo(() => estimateUsageCost(messages(), models(), usageRates(props.context.options)))
+  const familyEstimate = createMemo(() => estimateUsageCost(familyMessages(), models(), usageRates(props.context.options)))
+  const hasDescendants = createMemo(() => descendants().length > 0)
+  const requestedSessions = new Set<string>()
 
-  onMount(() => {
+  createEffect(() => {
     const current = session()
     if (!current) return
+    const fresh = familySessions().filter((item) => !requestedSessions.has(item.id))
+    for (const item of fresh) requestedSessions.add(item.id)
+    if (fresh.length === 0) return
     void Promise.all([
-      props.context.data.session.message.sync(current.id),
+      ...fresh.flatMap((item) => [
+        props.context.data.session.sync(item.id),
+        props.context.data.session.message.sync(item.id),
+      ]),
       props.context.data.location.model.sync(current.location),
     ]).catch((error) => console.error("[claude.sessions] Failed to sync usage breakdown", error))
   })
@@ -283,17 +307,25 @@ function UsageBreakdown(props: { context: Plugin.Context; sessionID: string }) {
       <box paddingTop={1}>
         <box flexDirection="row" justifyContent="space-between">
           <text fg={props.context.theme.text.subdued}>Session processed</text>
-          <text fg={props.context.theme.text.default}>{session() ? formatCompactTokens(
-            session()!.tokens.input + session()!.tokens.output + session()!.tokens.reasoning
-            + session()!.tokens.cache.read + session()!.tokens.cache.write,
-          ) : "0"}</text>
+          <text fg={props.context.theme.text.default}>{formatCompactTokens(session() ? processedTokens([session()!]) : 0)}</text>
         </box>
+        {hasDescendants() ? <box flexDirection="row" justifyContent="space-between">
+          <text fg={props.context.theme.text.subdued}>Incl. subagents</text>
+          <text fg={props.context.theme.text.default}>{formatCompactTokens(processedTokens(familySessions()))}</text>
+        </box> : null}
         <box flexDirection="row" justifyContent="space-between">
           <text fg={props.context.theme.text.subdued}>{estimate().estimated ? estimate().zenEquivalent ? "Zen equivalent" : "Estimated cost" : "Calculated cost"}</text>
           <text fg={props.context.theme.text.default}>{estimate().estimated ? "≈ " : ""}{formatCost(estimate().cost)}</text>
         </box>
         {estimate().unpriced > 0
           ? <text fg={props.context.theme.text.subdued}>{estimate().unpriced} unpriced response{estimate().unpriced === 1 ? "" : "s"}</text>
+          : null}
+        {hasDescendants() ? <box flexDirection="row" justifyContent="space-between">
+          <text fg={props.context.theme.text.subdued}>Incl. subagents</text>
+          <text fg={props.context.theme.text.default}>{familyEstimate().estimated ? "≈ " : ""}{formatCost(familyEstimate().cost)}</text>
+        </box> : null}
+        {hasDescendants() && familyEstimate().unpriced > 0
+          ? <text fg={props.context.theme.text.subdued}>{familyEstimate().unpriced} family response{familyEstimate().unpriced === 1 ? "" : "s"} unpriced</text>
           : null}
       </box>
       <WeeklyUsage context={props.context} models={models()} />

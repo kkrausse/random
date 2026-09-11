@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert"
 import { test } from "node:test"
-import { sessionTokenBreakdown, showSessionPicker } from "./tui"
+import { processedTokens, sessionTokenBreakdown, showSessionPicker } from "./tui"
 
 test("formats cumulative session token details for the preview", () => {
   const session = {
@@ -12,6 +12,13 @@ test("formats cumulative session token details for the preview", () => {
     "Input 12.4k · Cache read 84.2k · Cache write 1.2k · Output 3.1k · Reasoning 900",
   )
   assert.equal(sessionTokenBreakdown(session, true), "In 12.4k · CR 84.2k · CW 1.2k · Out 3.1k · Think 900")
+})
+
+test("sums processed tokens across a session family", () => {
+  assert.equal(processedTokens([
+    { tokens: { input: 100, output: 20, reasoning: 5, cache: { read: 300, write: 10 } } },
+    { tokens: { input: 50, output: 10, reasoning: 2, cache: { read: 100, write: 3 } } },
+  ]), 600)
 })
 
 test("opens the session picker as a centered, width-capped dialog", () => {
