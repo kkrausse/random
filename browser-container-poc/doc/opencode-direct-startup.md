@@ -1,7 +1,81 @@
 # Direct unbundled OpenCode startup — first executed milestone
 
-September 11, 2026. **Built-path browser OPFS health, minimal model SSE, local read/edit, and managed shutdown pass;
+September 11, 2026. **Built-path browser OPFS health, minimal model SSE, local read/edit/grep, and managed shutdown pass;
 broader server acceptance remains ahead. Unbundled startup remains blocked.**
+
+## September 11: bounded single-file grep attempt passes
+
+**PASS**, all nine checkpoints. Ran
+`bun scripts/serve-opencode-bun-server.ts --once --grep` exactly once from clean
+harness `ef009f2`. Browser Control CLI session `brisk-walrus-245` navigated once
+to the exact printed fresh URL:
+`http://127.0.0.1:52216/?autorun=1&runID=c99c7946-952d-44d9-b35a-242fbc8b807b&model=1&grep=1`.
+Original background shell `sh_09201d1ae001mW4Bq5YiFRaBPF` automatically
+completed with host exit **0**. No polling, sleeps, execution retries, repairs,
+fallbacks, or additional navigation occurred.
+
+Saved sanitized receipt (local generated artifact):
+`vivari/.runtime/opencode-bun-c99c7946-952d-44d9-b35a-242fbc8b807b.json`;
+manifest observed `2026-09-11T19:46:28.005Z`, host Bun `1.4.0`.
+The receipt was inspected through a targeted result/provenance extraction.
+
+| Gate / observation | Actual result |
+| --- | --- |
+| Provider/model | `opencode/muse-spark-1.3-contributor-free` |
+| Prompt requests / model-proxy POSTs | **1 / 2** |
+| Prompt deadline / host bound | **60s / 180s**, completed within gate |
+| Tool events / grep calls / correlated successes | **7 / 1 / 1**, no other tools |
+| Exact input matched | `true`; pattern `VIVARI_GREP_NEEDLE`, path `/workspace/grep-probe.txt`, limit **10**, include omitted |
+| Exact content matched / content items | `true / 1`, including trailing newline |
+| Provider-executed tool | `false`; local execution |
+| Unchanged ripgrep package files | **9**, `ripgrep@0.3.1`, all lengths/SHA-256 verified; transforms `[]` |
+| Installer checkpoint / stderr bytes | `true / 0` |
+| Installer exit | `exitCode: 0, forced: false, signal: null` |
+| Text deltas / ended blocks / aggregate UTF-16 length | **2 / 2 / 58** |
+| Aggregate / trim-only / last-block marker matched | `false / false / true` |
+| Terminal event | `session.execution.succeeded` |
+| SSE cleanup | aborted and joined |
+| Managed stop / cleanup exit status | accepted / natural exit verified |
+| Guest exit, top-level and phase and grep evidence | `exitCode: 0, forced: false, signal: null` |
+| Awaited OPFS lifecycle cleanup | `runtime.stop + workspace.flush + workspace.close completed` |
+| Guest stdout / stderr bytes | **3258 / 0** |
+| Host exit | **0** |
+
+The exact verified tool content is
+`"Found 1 matches\n/workspace/grep-probe.txt:\n  Line 2: VIVARI_GREP_NEEDLE\n"`,
+SHA-256 `d4e0ef49b1070a6413f8c35a873c8465c37a746803792140b66dc9a965bb9f9d`.
+The **32-byte** seed is `"before\nVIVARI_GREP_NEEDLE\nafter\n"`, SHA-256
+`eeb508a3252e85f21f9917342481048cd304b1708422cf748691f7564b61d123`.
+The harness correlates session events and tool IDs with the same nonempty
+assistantMessageID through call and success, requiring `executed: false` at both.
+Nonempty streamed final text and successful terminal execution are acceptance
+gates; aggregate marker equality is diagnostic, and the last block matched.
+
+Provisioning used the ordinary `/direct/node_modules/.bin/rg` symlink to
+`../ripgrep/lib/rg.mjs` and chmod **0755** on that entry. The installer emitted
+exactly `OPENCODE_RIPGREP_INSTALL_PASS\n` and exited cleanly. The nine-file
+manifest SHA-256 is
+`a81b84f137a13dd27977bb55578eb58c13e8d8a4da12612afd84808dad90256a`;
+the **279-byte** installer SHA-256 is
+`3314ddc36719cd3d4857b5b52398fefef445f2f6bde5f809aa53efee2c78708a`.
+Individual asset destinations, lengths, and hashes are retained in the receipt.
+
+All six app/model assets passed length and hash verification. Existing app and
+runtime artifacts were reused; only the browser harness was bundled. Runtime
+distribution `098e0b60a0ff8703994ea681d9c974ae9267bfe5dbdd799e87ff00982ff938a3`
+carries clean fork `80d5cdd599fce4fa4817128461c865e009109d34`, built
+`2026-09-11T18:36:31.189Z`. App `server.js` SHA-256 remains
+`765dd1b67583b645a01e904cdc0de525487e1b5c15db2b281ecad83fa5a5f059`.
+Observed upstream source is `d7a7256bb6b0952f486c95718cfbf460b1570a56`
+with the preexisting `packages/tui/src/component/devtools-bar.tsx` edit;
+app build-time attestation is absent. This is one fresh-origin lifecycle with
+one initial phase, not reopen/persistence qualification. The host exited and
+the browser session is retained. This documentation-only change records no raw
+reasoning, authentication responses, credentials, or guest logs.
+
+Next smallest task: specify an offline acceptance case combining an exact
+single-file edit with grep verification after full workspace/runtime reopen,
+including explicit terminal, natural-exit, and OPFS-cleanup checkpoints.
 
 ## September 11: bounded single-file edit attempt passes
 
