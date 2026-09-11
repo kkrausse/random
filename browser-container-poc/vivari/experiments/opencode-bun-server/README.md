@@ -370,9 +370,65 @@ Existing emitted JS: 28,339,357 bytes, SHA-256
 No rebuild or runtime/pin change. Local execution receipt:
 `/private/var/folders/t_/x48jtnps7n5_0g_pt9xpvbg00000gn/T/opencode/opencode-bun-restart.log`.
 
-Next small task, separately authorized: create one session without a model/tool
-invocation, gracefully restart using retained SQLite, and verify that session
-through the supported API. Browser and full server acceptance remain ahead.
+The session-retention follow-up below completes the next headless checkpoint.
+Browser and full server acceptance remain ahead.
+
+## September 11 unprompted session retention (current)
+
+**One execution sequence passed**, creating exactly one real session and fetching
+it after a graceful stop and fresh-kernel restart. New opt-in `--session-retention`
+implies `--restart` and `--service`; existing modes keep their behavior.
+
+Pinned upstream `d7a7256` contract inspected before execution:
+`packages/protocol/src/groups/session.ts:150-158,210-213` defines
+`POST /api/session` and `GET /api/session/:sessionID`, both returning
+`{data: Session.Info}`. Creation accepts optional `title` and `location`;
+`packages/schema/src/location.ts:9-12` requires an absolute `directory` within
+the supplied location and makes `workspaceID` optional. The create handler
+(`packages/server/src/handlers/session.ts:92-104`) passes those fields to the real
+session service. Request body used:
+
+```json
+{"title":"Headless SQLite retention probe","location":{"directory":"/app"}}
+```
+
+Command from `vivari` (native Node 24.7.0; no rebuild):
+
+```sh
+/Users/kkrausse/.nvm/versions/node/v24.7.0/bin/node scripts/opencode-bun-headless.mjs --session-retention > .runtime/opencode-session-retention.log 2>&1
+```
+
+| Checkpoint | Start 1 | Start 2 |
+| --- | --- | --- |
+| Authenticated health | 200, healthy | 200, healthy |
+| Session operation | POST 200 | GET by original ID 200 |
+| Managed stop | 200, accepted | 200, accepted |
+| Natural exit | 0 / null signal | 0 / null signal |
+| Worker errors / guest stderr | none / empty | none / empty |
+| Schema bootstrap | 41 migrations | absent |
+
+Overall exit **0**, with `OPENCODE_BUN_RESTART_PASS` and
+`OPENCODE_BUN_SESSION_RETENTION_PASS`. Both session responses contained ID
+`ses_f6e41dc0cffe014HHT1Jdmzdu4` and title `Headless SQLite retention probe`;
+the harness asserts both. Requests are single-attempt with five-second timeouts,
+under the existing 180-second overall deadline. No prompt, model or tool request
+was made. Guest registration is read afresh for each start, credentials redacted.
+
+Retention scope: **one unprompted session's ID/title via supported API after
+SQLite disk-snapshot reload into a fresh Kernel and FS worker**. `/app` is remounted
+from the same build each start; all other guest VFS state is ephemeral. No location
+filesystem persistence blocker occurred for these operations. This does not
+qualify arbitrary workspace files, messages, execution resumption, browser OPFS
+or power-loss durability. Snapshot directory:
+`.runtime/opencode-headless-storage-zcpcUt`; `opencode.sqlite` is 425,984 bytes,
+SHA-256 `004baf698766da96f781f9f40e3ddb42f264d25fdf67907c4c6d99cabc6ed0c3`
+before and after restart. Runtime remains `80d5cdd`, upstream and its preexisting
+TUI edit are preserved, and emitted JS retains the preceding hash.
+
+Next smallest task: inspect the existing browser qualification harness for running
+this same unprompted session create/stop/restart/get check with the minimal build
+and real OPFS storage, identifying the exact mount/lifecycle entrypoints before
+one bounded browser attempt.
 
 ## September 11 isolated managed shutdown (current)
 

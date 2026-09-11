@@ -21,8 +21,11 @@ console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_INPUT',
   runtimeRevision: execFileSync('git', ['-C', fileURLToPath(runtimeSourceUrl('.')), 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
   artifact: 'Bun.build target=node; published jsonc-parser ESM entry selection; emitted files plus original tree-sitter WASM assets', consumerBehavioralRewrites: 0,
 }));
-const restart = process.argv.includes('--restart');
+const sessionRetention = process.argv.includes('--session-retention');
+const restart = sessionRetention || process.argv.includes('--restart');
 const service = restart || process.argv.includes('--service');
+const sessionTitle = 'Headless SQLite retention probe';
+let retainedSession;
 const deadline = setTimeout(() => { console.error('OPENCODE_BUN_TIMEOUT'); process.exit(124); }, 180000);
 function snapshot() {
   const bytes = readFileSync(resolve(directory, 'opencode.sqlite'));
@@ -92,15 +95,32 @@ try {
           const headers = { host: '127.0.0.1:' + port,
             authorization: 'Basic ' + Buffer.from('opencode:' + info.password).toString('base64'),
             'content-type': 'application/json' };
-          for (const route of ['health', 'stop']) {
+          for (const route of ['health', ...(sessionRetention ? ['session'] : []), 'stop']) {
             let timer;
             try {
+              // Pinned protocol groups/session.ts:150,210; schema/location.ts:9.
+              const method = route === 'health' || (route === 'session' && start === 2) ? 'GET' : 'POST';
+              const url = route === 'health' ? '/api/health' : route === 'stop' ? '/api/service/stop'
+                : start === 1 ? '/api/session' : '/api/session/' + encodeURIComponent(retainedSession.id);
+              const body = method === 'GET' ? '' : JSON.stringify(route === 'stop' ? { instanceID: info.id }
+                : { title: sessionTitle, location: { directory: '/app' } });
               const response = await Promise.race([
-                kernel.handleHttpRequest(port, { method: route === 'health' ? 'GET' : 'POST',
-                  url: route === 'health' ? '/api/health' : '/api/service/stop', headers,
-                  body: route === 'health' ? '' : JSON.stringify({ instanceID: info.id }) }),
+                kernel.handleHttpRequest(port, { method, url, headers, body }),
                 new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${route} timed out`)), 5000); }),
               ]);
+              if (route === 'session') {
+                console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_SESSION_RESPONSE', start, method, url, status: response.status }));
+                if (response.status !== 200) throw new Error(`session ${method} rejected: ${response.body}`);
+                const data = JSON.parse(response.body).data;
+                if (typeof data?.id !== 'string' || !data.id.startsWith('ses_') || data.title !== sessionTitle)
+                  throw new Error('Session response missing expected ID/title');
+                if (start === 2 && (data.id !== retainedSession.id || data.title !== retainedSession.title))
+                  throw new Error('Session ID/title changed across restart');
+                if (start === 1) retainedSession = { id: data.id, title: data.title };
+                console.log(JSON.stringify({ checkpoint: start === 1 ? 'OPENCODE_BUN_SESSION_CREATED' : 'OPENCODE_BUN_SESSION_RETRIEVED',
+                  start, id: data.id, title: data.title }));
+                continue;
+              }
               console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_' + route.toUpperCase(), status: response.status, body: response.body }));
               if (response.status !== 200 || JSON.parse(response.body)[route === 'health' ? 'healthy' : 'accepted'] !== true)
                 throw new Error(`${route} rejected`);
@@ -166,6 +186,8 @@ try {
     if (process.exitCode === 0) console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_RESTART_PASS',
       starts: 2, scope: 'fresh-kernel SQLite snapshot reload; other VFS state ephemeral',
       beforeRestart: retained, afterRestart: snapshot() }));
+    if (sessionRetention && process.exitCode === 0) console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUN_SESSION_RETENTION_PASS',
+      ...retainedSession, scope: 'one unprompted session ID/title through fresh-kernel SQLite snapshot reload; /app remounted, other VFS ephemeral' }));
   }
 } finally {
   clearTimeout(deadline);
