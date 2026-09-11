@@ -1,4 +1,5 @@
 import { Workspace, Runtime, opfsStore } from '../../workspace-api/src/index'
+import { globFixtures } from './opencode-bun-fixtures'
 
 const log = (text: string) => { document.querySelector('pre')!.textContent += text + '\n' }
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
@@ -87,7 +88,7 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
         if (read) await workspace.fs.writeFile('/read-probe.txt', readContent)
         if (grepEvidence) {
           stage = 'seed and verify ' + searchName + ' target'
-          const fixtures = glob ? [['/glob-probe/match.ts', 'VIVARI_GLOB_MATCH\n'], ['/glob-probe/nonmatch.txt', 'VIVARI_GLOB_NONMATCH\n']] : [['/grep-probe.txt', 'before\nVIVARI_GREP_NEEDLE\nafter\n']]
+          const fixtures = glob ? globFixtures : [['/grep-probe.txt', 'before\nVIVARI_GREP_NEEDLE\nafter\n']]
           if (glob) await workspace.fs.mkdir('/glob-probe')
           for (const [path, content] of fixtures) {
             const expected = new TextEncoder().encode(content)

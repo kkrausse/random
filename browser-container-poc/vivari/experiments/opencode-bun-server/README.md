@@ -1,5 +1,23 @@
 # Conventional Bun server build probe
 
+## Host glob receipt regression fix
+
+The two glob seed files contain **39 UTF-8 bytes** in total. The browser and
+host now share `probes/opencode-bun-fixtures.ts`; host length and SHA-256 guards
+derive from the same contents. The previous hardcoded 37-byte guard rejected
+browser PASS before saving a receipt. A matching-run PASS that fails acceptance
+now saves a sanitized `FAIL` result (no rejected payload), clears the deadline,
+and completes `--once` with exit code 1. Malformed JSON/envelopes and unrelated
+run IDs still receive HTTP 400 without completing the run.
+
+From `browser-container-poc/vivari`, run
+`bun test scripts/serve-opencode-bun-server.test.ts` for isolated host route/report
+regressions: valid 39-byte acceptance, length/hash/cleanup rejection, receipt
+sanitization, exit/stop behavior, and malformed/unrelated requests. These tests
+use in-memory synthetic results and are **not browser qualification**. Original
+run `6180cad9-dcb9-4401-9524-e87f0580c6b1` is not upgraded by this fix; qualification
+requires one fresh browser attempt and its final host receipt.
+
 Invocation-only entry using the existing installed OpenCode V2 source image at
 `../../.runtime/opencode-v2-source`. Required revision:
 `d7a7256bb6b0952f486c95718cfbf460b1570a56`; upstream `bun.lock` SHA-256:
