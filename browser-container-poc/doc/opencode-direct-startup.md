@@ -3,9 +3,9 @@
 September 11, 2026. **Built-path browser OPFS health, minimal model SSE, local read/edit/grep, and managed shutdown pass;
 broader server acceptance remains ahead. Unbundled startup remains blocked.**
 
-## September 11: bounded glob attempt — completion evidence unavailable
+## September 11: bounded glob attempt — browser PASS recovered; host acceptance blocked
 
-**UNVERIFIED: receipt unavailable.** Started
+**Browser PASS recovered; no host receipt PASS.** Started
 `bun scripts/serve-opencode-bun-server.ts --once --glob` exactly once from clean
 harness `53d21b73d9755b3d1ac89bbc04faa8a6c7c36a4f`. Original background shell:
 `sh_092090dbd001jaU4eDknX9KYPF`; original run ID:
@@ -14,13 +14,60 @@ Browser Control CLI session `brisk-walrus-245` navigated once to the exact
 printed fresh URL, and returned that destination successfully:
 `http://127.0.0.1:52426/?autorun=1&runID=6180cad9-dcb9-4401-9524-e87f0580c6b1&model=1&glob=1`.
 
-On continuation, the single attempted receipt read returned **ENOENT** for
+On the first continuation, the single attempted receipt read returned **ENOENT** for
 `vivari/.runtime/opencode-bun-6180cad9-dcb9-4401-9524-e87f0580c6b1.json`.
-No automatic host-completion notification was available to this execution.
-Consequently, host/guest exits, prompt/model/tool counts, exact tool content,
-local correlation, installer/hash verification, terminal success, managed stop,
-and awaited OPFS cleanup are **unknown**, not passing or demonstrated failing.
-The missing receipt is the actual evidence-collection blocker.
+No automatic host-completion notification was available then. The original
+unverified entry was committed as `8994075` at `2026-09-11T19:55:29Z`.
+
+A bounded recovery inspection on the same run established this chronology:
+
+- Host PID **83488** started at `2026-09-11T19:54:22Z`; at elapsed **2m08s**
+  it was still listening on `127.0.0.1:52426`. The one recovery receipt read
+  around `19:56:12Z` also returned ENOENT, **before** the host deadline.
+- One read-only Browser Control CLI execute on the existing exact page at
+  `2026-09-11T19:56:40.580Z` recovered `window.opencodeBunServerResult` with
+  **PASS**, all nine checks, and completed cleanup. Navigation had started at
+  `19:54:32.280Z`; no new navigation or model request was issued.
+- Host timeout is **180 seconds**, armed after bundle preparation and server
+  startup (`scripts/serve-opencode-bun-server.ts:203`), thus no earlier than
+  approximately `19:57:22Z`. At the browser snapshot at least **41 seconds**
+  remained. This slice leaves the original host alive and does not observe its
+  later timeout/exit or perform another receipt check.
+
+| Recovered browser evidence | Actual result |
+| --- | --- |
+| Provider/model | `opencode/muse-spark-1.3-contributor-free` |
+| Prompt requests / tool events | **1 / 7**; host proxy POST count unavailable |
+| Local glob calls / successes | **1 / 1**, provider-executed `false` |
+| Input / path / correlation / exact content matched | all `true` |
+| Content items / matched files / fixture files | **1 / 1 / 2** |
+| Seed bytes / SHA-256 | **39** / `a9af5f95b94f0de12968fc7e513cf000f573b4e91f10bd9450f52de2ae1cbcdf` |
+| Exact content SHA-256 | `6246d2c3789c8c4af609e062c529aa4326214c06192d0dbec1e560634628a717` |
+| Unchanged package files / installer checkpoint / setup stderr bytes | **9 / true / 0** |
+| Package manifest SHA-256 | `a81b84f137a13dd27977bb55578eb58c13e8d8a4da12612afd84808dad90256a` |
+| Installer SHA-256 | `3314ddc36719cd3d4857b5b52398fefef445f2f6bde5f809aa53efee2c78708a` |
+| Text deltas / blocks / aggregate UTF-16 length | **2 / 2 / 88** |
+| Aggregate / trimmed / last-block marker matched | **false / false / true** |
+| Terminal / SSE cleanup | `session.execution.succeeded` / aborted and joined |
+| Managed stop / cleanup exit status | accepted / natural exit verified |
+| Setup, glob, and top-level guest exits | `exitCode: 0, forced: false, signal: null` |
+| Awaited lifecycle cleanup | `runtime.stop + workspace.flush + workspace.close completed` |
+| Guest stdout / stderr bytes; mounted assets | **3262 / 0; 6** |
+
+**Concrete reporting blocker:** the host PASS guard at
+`scripts/serve-opencode-bun-server.ts:118` requires `globEvidence.seedBytes === 37`.
+The actual fixture strings at `probes/opencode-bun-server.ts:90` total **39**
+UTF-8 bytes, independently recomputed offline with the same SHA-256 as the
+browser. Therefore this recovered PASS cannot satisfy the host guard. The
+guard returns HTTP **400**, `Incomplete acceptance checkpoints`, before calling
+`report()`; rejection does not clear the deadline or write a receipt. The
+browser stores its sanitized result before POSTing (`:514–517`). The snapshot
+contained no `/result` resource-timing entry, so the actual POST response was
+**not directly observed**; HTTP 400 is the proven validator outcome for this
+result, not a captured network response. This is a host acceptance/reporting
+defect, not evidence of failed guest glob execution. A subsequent host timeout
+receipt would describe the reporting timeout, not negate the recovered browser
+checkpoints.
 
 The requested gate was one prompt within 60 seconds, one local upstream `glob`
 call with pattern `*.ts`, path `/workspace/glob-probe`, and limit 10, returning
@@ -28,18 +75,24 @@ exactly `/workspace/glob-probe/match.ts` without a newline. Acceptance also
 requires seeded match/nonmatch fixtures, nine unchanged ripgrep package files,
 clean installer exit, successful terminal execution, accepted managed stop,
 natural guest exit `0/null/nonforced`, and completed OPFS cleanup. These are
-requirements, not observations from this attempt.
+requirements; the matching browser checkpoints above are now recovered.
 
 The supplied pre-run provenance identified existing runtime distribution
 `098e0b60a0ff8703994ea681d9c974ae9267bfe5dbdd799e87ff00982ff938a3`
-and clean fork `80d5cdd`; this attempt has no receipt corroborating them.
-No rebuild, second host launch, additional navigation, retry, fallback,
-completion polling, or sleep was performed. Only this documentation was edited;
-no raw reasoning, authentication data, or guest logs were captured here.
+and clean fork `80d5cdd`. The recovered browser result corroborates the runtime
+distribution hash; source provenance and host exit remain unverified without a
+receipt. Recovery used one receipt check, one process/listener inspection, and
+one targeted browser state snapshot. No rebuild, second host launch, additional
+navigation, retry, fallback, completion polling, or sleep was performed. Only
+this documentation was edited; no raw reasoning, authentication data, or guest
+logs were captured here.
 
-Handoff: preserve this original run ID when recovering completion evidence.
-After glob qualification, the next milestone is combined read/edit/grep/glob
-and persisted edit/session regression.
+Smallest next action: preserve this run and consume its original host completion
+notification/receipt when available. In a separate future code slice, correct
+the proven seed-length guard (prefer deriving it from the fixture bytes) and
+make rejected acceptance reporting explicit. Do not relabel this browser PASS
+as a host receipt PASS. Combined read/edit/grep/glob and persisted edit/session
+regression remain later milestones.
 
 ## September 11: bounded single-file grep attempt passes
 
