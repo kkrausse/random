@@ -3,6 +3,61 @@
 September 11, 2026. **Built-path browser OPFS health, minimal model SSE, and managed shutdown pass;
 broader server acceptance remains ahead. Unbundled startup remains blocked.**
 
+## September 11: bounded upstream read-tool attempt
+
+**FAIL**: five of eight acceptance checkpoints completed; the original one-shot
+host completion notification confirmed exit **1**. Executed
+`bun scripts/serve-opencode-bun-server.ts --once --read` once from clean harness
+commit `72b57a4`. Browser Control CLI session `brisk-walrus-245` navigated once to
+the exact printed fresh-origin URL:
+`http://127.0.0.1:51434/?autorun=1&runID=6489fb85-b0f7-4be3-8488-a283f18718df&model=1&read=1`.
+The original background completion was awaited without polling or sleep. No
+retry, repair, provider fallback, new credentials, or second navigation occurred.
+
+Receipt (local generated artifact):
+`vivari/.runtime/opencode-bun-6489fb85-b0f7-4be3-8488-a283f18718df.json`,
+manifest observed `2026-09-11T19:20:54.141Z`, host Bun `1.4.0`.
+
+Completed checkpoints: fresh real OPFS workspace `default`; all six app/catalog
+assets mounted unchanged with length and SHA-256 verification; guest registration
+validated; authenticated health `healthy: true`; minimal model session created.
+The harness seeded the read target `/workspace/read-probe.txt` before the prompt.
+
+Sanitized receipt evidence:
+
+| Gate / observation | Actual result |
+| --- | --- |
+| Provider/model | `opencode/muse-spark-1.3-contributor-free` |
+| Prompt requests / model-proxy POSTs | **1 / 2** (continuation POST observed) |
+| Tool events / calls / correlated successes | **5 / 1 / 1** |
+| Read target input path matched | `true`, `/workspace/read-probe.txt` |
+| Provider-executed tool | `false` |
+| Text deltas / exact file-content match | **3 / false** |
+| Terminal event | `session.execution.succeeded` |
+| SSE cleanup | aborted and joined |
+| Managed stop | accepted |
+| Awaited cleanup | `runtime.stop + workspace.flush + workspace.close completed` |
+| Natural guest exit | absent from failure receipt; not qualified |
+| Host exit | **1** |
+
+The reported failure stage was `initial: one model prompt and terminal SSE (60s
+deadline)`. This stage label does not establish a timeout: terminal success was
+observed, but the exact returned-file-content gate failed. The receipt records no
+completed phases or guest exit tuple. Read execution and cleanup evidence therefore
+do not constitute a full eight-checkpoint pass. No raw model text, reasoning,
+credentials, or response logs are included. Provider/authentication unavailability
+is not established by this receipt; no credential decision is needed from this run.
+
+Served runtime distribution remained
+`098e0b60a0ff8703994ea681d9c974ae9267bfe5dbdd799e87ff00982ff938a3`,
+from clean fork `80d5cdd599fce4fa4817128461c865e009109d34`, built
+`2026-09-11T18:36:31.189Z`. Existing app/runtime distributions were reused;
+only the existing browser harness was bundled. No host OpenCode, runtime, pin,
+or app changes were made. The qualification host exited; the browser session is
+retained. Next smallest task: inspect the harness's text-delta aggregation and
+exact-match acceptance logic offline to isolate the mismatch before authorizing
+another bounded execution.
+
 ## September 11: single public-model prompt and terminal SSE
 
 **PASS**, all eight acceptance checkpoints; the original one-shot host completion
