@@ -48,9 +48,17 @@ export function attachEndpointPreview(iframe: HTMLIFrameElement, endpoint: Endpo
     iframe.src = "about:blank";
   }
   window.addEventListener("message", receive);
-  // Caller mounts the frame first; SW control is established by expose().
+  // Preview registration is lazy; programmatic Endpoint.fetch needs no SW.
   iframe.src = "about:blank";
-  queueMicrotask(() => { if (!disposed) iframe.src = previewUrl.href; });
+  void host.registerPreview().then(() => {
+    if (disposed) return;
+    try { internal.check(); } catch { dispose(); return; }
+    iframe.src = previewUrl.href;
+  }).catch(error => {
+    if (disposed) return;
+    dispose();
+    iframe.dispatchEvent(new ErrorEvent("error", { error, message: String(error) }));
+  });
   void endpoint.closed.then(dispose);
   return { dispose };
 }

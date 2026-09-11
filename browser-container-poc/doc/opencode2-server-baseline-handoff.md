@@ -2,6 +2,17 @@
 
 September 10, 2026. **P0 server-only baseline acceptance passed.**
 
+## P1 continuation — September 11
+
+The runtime-owned streaming bridge now replaces the process-per-request adapter.
+Both the focused real-browser bridge suite and this complete server workflow pass
+on clean runtime `48d4ca12fd478a6e28b0838830a4724ee771213e`. Distribution:
+`028a96fdd9e2c86963e9ca4f2a46f41f16fe40996011caec70d702b45e731aa7`.
+The source configuration pin is advanced. See the
+[current P1 handoff](runtime-http-stream-handoff.md) for implementation, shutdown
+semantics, regression receipts and continuation commands. The P0 record below
+describes its earlier revision and the adapter P1 has now replaced.
+
 ## Latest: complete browser acceptance passed
 
 The consolidated `serverBaseline.qualify()` passed on fresh origin
@@ -28,8 +39,8 @@ or model reasoning. This qualifies server-process restart within the same runtim
 not a page reload or full runtime reopen. The browser origin is now used; select
 a new port for another fresh acceptance run.
 
-**Next:** use this workflow as the regression gate for P1, the runtime-owned HTTP
-bridge. The process-per-request bridge and the packaging adaptations below remain.
+**At P0 acceptance:** this workflow became the regression gate for P1. P1 now
+passes it as recorded above; the packaging adaptations below still apply.
 
 ## Earlier continuation: clean build prepared, browser connection blocked
 
@@ -201,8 +212,8 @@ browser storage clearing is needed.
 
 If a future run exposes a runtime blocker, isolate it in the fork, add a focused
 contract, rebuild and repackage the distribution, then rerun in a new origin.
-P0 is now green; use this workflow as the regression gate for the HTTP bridge.
-The process-per-request bridge has not been replaced.
+P0's workflow is the regression gate for the HTTP bridge and passed again for P1.
+Use the current P1 handoff for the latest qualified source and distribution.
 
 ## Concurrent work / operational notes
 

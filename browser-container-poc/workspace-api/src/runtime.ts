@@ -54,8 +54,6 @@ export namespace Runtime {
         if (!Number.isInteger(port) || port < 1 || port > 65535) throw new RangeError("Invalid port");
         const signal = opts.signal ? AbortSignal.any([opts.signal, lifetime.signal]) : lifetime.signal;
         signal.throwIfAborted();
-        await host.registerPreview();
-        signal.throwIfAborted();
         const listenerId = await new Promise<string>((resolve, reject) => {
           const abort = () => { off(); reject(signal.reason); };
           const finish = (id: string) => { off(); signal.removeEventListener("abort", abort); resolve(id); };
@@ -68,7 +66,7 @@ export namespace Runtime {
           if (existing) finish(existing);
         });
         check();
-        const endpoint = createEndpoint(host, port, listenerId, node);
+        const endpoint = createEndpoint(host, port, listenerId, lifetime.signal);
         endpoints.add(endpoint);
         void endpoint.closed.then(() => endpoints.delete(endpoint));
         return endpoint;

@@ -8,8 +8,8 @@ See [V0-HANDOFF.md](V0-HANDOFF.md) for tested status and continuation commands.
 | `host.ts` | Explicit `distribution.json` + immutable kernel Worker; private RPC, listener map, SW HTTP relay |
 | `execution.ts` | Explicit `/bin/node.js` frontend; real proc IDs; separate byte channels with shared in-flight byte credits |
 | `runtime.ts` | One attachment; owns executions/launches/endpoints; stop retains Workspace and FS worker |
-| `browser/endpoint.ts` | Listener incarnation plus generic guest Node HTTP relay process; real streaming response bytes |
-| `browser/preview.ts` | Fresh iframe navigation and validated, attachment-namespaced WS/SSE forwarding |
+| `browser/endpoint.ts`, `browser/http-stream.ts` | Listener-bound MessagePort → supervisor → existing listener worker's Node HTTP client; independent upload/download credits, real socket backpressure and cancellation |
+| `browser/preview.ts` | Lazy Service Worker registration, fresh iframe navigation and validated, attachment-namespaced WS/SSE forwarding |
 | `tools/ripgrep/descriptor.ts` | Hash-verified existing package receipt; private JS entry and genuine WASM; typed callable method |
 
 Durable backend changes live in the `kkrausse/vivari` fork, branch

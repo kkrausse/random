@@ -119,10 +119,12 @@ await workspace.close();
 4. **No prepared Vite/OpenCode app delivery**. Distribution is workers/WASM/SW, not
    project dependencies, OpenCode, npm vendor packs or provider setup. Missing npm
    asset logs are distinct from kernel readiness.
-5. Fetch uses **one guest process/request**, buffers uploads (8 MiB), bounds headers
-   (64 KiB), returns redirects manually, and does not implement browser cookie jars
-   or Response.url/redirected metadata. Slow consumers may hit output overflow.
-   SW preview HTTP itself remains buffered.
+5. **Superseded by P1 (September 11):** Fetch now uses a runtime-owned streaming
+   bridge in the existing listener worker, with 64 KiB directional credit windows
+   and local socket backpressure. No HTTP subprocess or total upload cap. Headers
+   remain bounded (64 KiB), redirects manual, and cookie jars/Response.url metadata
+   unimplemented. Legacy SW preview HTTP remains buffered. See the current
+   [HTTP bridge handoff](../doc/runtime-http-stream-handoff.md).
 6. Preview needs browser race/adversarial checks: SW restart, SPA query removal,
    cross-port subresources, repeated attach. Same-origin trusted embedding is not
    deployment isolation or outbound network policy.

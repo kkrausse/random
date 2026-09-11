@@ -1,7 +1,7 @@
 # OpenCode2 server: runtime cleanup plan
 
 Date: September 10, 2026  
-Status: P0a fork migration and P0 server-only baseline accepted; P1–P5 backlog
+Status: P0a fork migration, P0 baseline and P1 HTTP bridge accepted; P2–P5 backlog
 
 ## Goal and scope
 
@@ -66,6 +66,10 @@ Sources:
 - `vivari/.runtime/patched/packages/runtime/node/bindings/fs.js`
 
 ### HTTP: replace the process-per-request adapter
+
+**Historical assessment; replaced by P1 on September 11.** The following diagram
+describes the old adapter. See [P1's handoff](runtime-http-stream-handoff.md) for the
+qualified runtime-owned bridge and its streaming/shutdown contracts.
 
 ```text
 Browser OpenCode client
@@ -168,7 +172,7 @@ the fork is published, active source/build/test paths are migrated, and native,
 headless, and browser contract checks pass. See the
 [migration receipt](runtime-fork-migration.md) and
 [development workflow](../vivari/DEVELOPMENT.md). P0 acceptance is recorded below;
-P1–P5 remain future work.
+P1 is now accepted; P2–P5 remain future work.
 
 Do this before substantial runtime changes. Maintain Vivari changes as ordinary
 source commits rather than regenerating a cumulative patch.
@@ -258,6 +262,10 @@ not acceptance.
 
 ### P1 — Replace the HTTP process relay
 
+**Accepted September 11, 2026:** clean runtime `48d4ca1` passes the browser HTTP
+streaming suite and complete OpenCode regression (including both graceful stops
+and server restart retention). See [the P1 handoff](runtime-http-stream-handoff.md).
+
 Introduce a runtime-owned streaming HTTP bridge bound to a specific listener
 identity. Investigate its attachment point in the existing guest networking
 machinery before selecting the implementation.
@@ -274,15 +282,20 @@ Separate messages:
   cancellation / error / flow-control acknowledgments
 ```
 
-- [ ] Remove temporary scripts, argv payloads, and stdout framing from HTTP.
-- [ ] Remove per-request program launches.
-- [ ] Provide bounded request and response streaming.
-- [ ] Propagate slow-reader pressure toward the producer.
-- [ ] Make abort close the actual guest request/connection.
-- [ ] Invalidate old endpoints and active requests predictably on server restart.
-- [ ] Allow programmatic HTTP without preview Service Worker registration.
-- [ ] Exercise JSON responses, SSE, binary bodies, early disconnects, mid-body
-  failures, and concurrent requests.
+- [x] Remove temporary scripts, argv payloads, and stdout framing from Endpoint.fetch.
+- [x] Remove per-request program launches.
+- [x] Provide bounded request and response streaming.
+- [x] Propagate slow-reader pressure toward the producer.
+- [x] Make abort close the actual guest request/connection.
+- [x] Invalidate old endpoints and active requests predictably on server restart.
+- [x] Allow programmatic HTTP without preview Service Worker registration.
+- [x] Exercise JSON responses, SSE, binary bodies, early disconnects, mid-body
+   failures, and concurrent requests.
+
+Node server.close() retires the endpoint but drains accepted responses; bridge
+requests keep the process loop alive until completion. Process exit and listener
+replacement fail remaining channels. Legacy preview HTTP and cross-process pipe/
+execution transports retain their separate semantics; P2 is still needed.
 
 **Acceptance:** a long-lived event stream and concurrent API calls work with
 bounded queues and correct cleanup. Preserve OpenCode's normal HTTP handling;
