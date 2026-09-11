@@ -6,6 +6,13 @@ the exact revision they tested; they are not blanket acceptance of newer UI code
 
 ## Current iteration
 
+**Server baseline (September 10):** the isolated upstream OpenCode server now passes
+fresh-origin browser acceptance: model-driven read/edit/grep/glob, streamed output,
+clean shutdown/restart, old-endpoint rejection, and session/edit retention. Runtime
+fork commit `bd5a60c` is qualified. Next runtime milestone is replacing the
+process-per-request HTTP bridge. See the
+[current server handoff](doc/opencode2-server-baseline-handoff.md).
+
 **Runtime workflow (September 10):** Vivari is now maintained as a directly
 editable [fork](https://github.com/kkrausse/vivari/tree/browser-runtime), rather
 than a cumulative patch applied to an ignored checkout. See

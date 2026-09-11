@@ -2,7 +2,7 @@
   "checkout": "../../../vivari",
   "repository": "https://github.com/kkrausse/vivari.git",
   "branch": "browser-runtime",
-  "revision": "942d57d9140ec360a33a40e25056847745db228c",
+  "revision": "bd5a60c13a317ed79ae579da182535b1925ece66",
   "upstream": "https://github.com/maitrungduc1410/vivari.git",
   "upstreamBase": "2629c71097238400c45aefa213ef61df4794c2b7",
   "rustToolchain": "1.93.0",

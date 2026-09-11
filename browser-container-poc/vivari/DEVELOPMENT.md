@@ -135,8 +135,10 @@ fork edit or a bespoke HTTP adapter.
 ## Active scope and historical experiments
 
 Follow [the server cleanup plan](../doc/opencode2-server-runtime-cleanup.md).
-This migration establishes the fork workflow. Server-only packaging, the HTTP
-bridge, and the JavaScript-first OpenCode tool profile remain subsequent tasks.
+The fork workflow and server-only baseline are accepted, including real browser
+read/edit/grep/glob and server restart retention. See the
+[baseline receipt](../doc/opencode2-server-baseline-handoff.md). The HTTP bridge
+and JavaScript-first OpenCode tool profile remain subsequent tasks.
 
 The OpenTUI and OpenCode TUI-only patches remain historical experiment inputs.
 The cumulative runtime patch has been retired after fork build/contract qualification.

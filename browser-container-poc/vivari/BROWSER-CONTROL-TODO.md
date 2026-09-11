@@ -16,6 +16,9 @@
   (navigate to the prepared harness) and doctor: same disconnected-extension error,
   zero targets, matching relay at `http://127.0.0.1:19989`. No page was acquired.
   Requested extension reload and explicit toolbar attachment in that browser/profile.
+- Resolved after user reconnection: CLI acquired `tidy-badger-830` on port 43924.
+  The complete server baseline passed; workspace/runtime cleanup completed.
+  No relay restart or shared browser storage reset was needed.
 
 ## Bounded execution when a guest operation never completes
 
