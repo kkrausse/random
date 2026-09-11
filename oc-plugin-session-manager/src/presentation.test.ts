@@ -22,7 +22,7 @@ test("opens the session picker as a centered, width-capped dialog", () => {
   }
 
   assert.equal(showSessionPicker(context as never), undefined)
-  assert.deepEqual(calls, ["set", "show"])
+  assert.deepEqual(calls, ["show", "set"])
   assert.equal(typeof render, "function")
 })
 

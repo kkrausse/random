@@ -282,10 +282,10 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
       const picker = setup.renderer.root.findDescendantById("claude-session-picker")!
       const preview = setup.renderer.root.findDescendantById("claude-session-preview")!
       const approve = setup.renderer.root.findDescendantById("claude-session-approve")!
-      assert.equal(picker.height, height)
+      assert.equal(picker.height, width! < 70 ? height : Math.min(40, height! - 2))
       assert.equal(picker.width, width)
       assert.equal(picker.x, 0)
-      assert.equal(picker.y, 0)
+      assert.equal(picker.y, width! < 70 ? -1 : 0)
       const row = setup.renderer.root.findDescendantById("claude-session-row-1")!
       assert.equal(row.x + row.width, width, "session rows reach the terminal's right edge")
       const timestamp = row.getChildren().at(-1)!
