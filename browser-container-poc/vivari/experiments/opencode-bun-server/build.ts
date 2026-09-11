@@ -21,3 +21,15 @@ for (const output of result.outputs) {
   console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUILD_OUTPUT', path: output.path,
     bytes: output.size, kind: output.kind }));
 }
+// These runtime-resolved data files are not emitted by the Node-target bundler.
+const requireSource = createRequire(resolve(import.meta.dir, '../../.runtime/opencode-v2-source/packages/cli/package.json'));
+for (const [pkg, file] of [
+  ['web-tree-sitter', 'tree-sitter.wasm'],
+  ['tree-sitter-bash', 'tree-sitter-bash.wasm'],
+  ['tree-sitter-powershell', 'tree-sitter-powershell.wasm'],
+]) {
+  const source = requireSource.resolve(`${pkg}/${file}`);
+  const path = resolve(import.meta.dir, '../../.runtime/opencode-bun-server', file);
+  const bytes = await Bun.write(path, Bun.file(source));
+  console.log(JSON.stringify({ checkpoint: 'OPENCODE_BUILD_ASSET_COPY', source, path, bytes }));
+}

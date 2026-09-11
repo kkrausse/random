@@ -10,7 +10,7 @@ once in a fresh local `node_modules`; this does not install workspace packages):
 
 ```sh
 bun -e 'import {mkdirSync,symlinkSync,realpathSync} from "node:fs"; mkdirSync("node_modules/@opencode-ai",{recursive:true}); symlinkSync(realpathSync("../../.runtime/opencode-v2-source/packages/cli"),"node_modules/@opencode-ai/cli"); symlinkSync(realpathSync("../../.runtime/opencode-v2-source/packages/cli/node_modules/effect"),"node_modules/effect");'
-bun run build > ../../.runtime/opencode-jsonc-esm-build.log 2>&1
+bun run build > ../../.runtime/opencode-tree-sitter-build.log 2>&1
 ```
 
 The package manifest describes local file dependencies; the symlinks preserve
@@ -30,7 +30,7 @@ was attempted.
 Then from `browser-container-poc/vivari`:
 
 ```sh
-/Users/kkrausse/.nvm/versions/node/v24.7.0/bin/node scripts/opencode-bun-headless.mjs > .runtime/opencode-jsonc-esm-headless.log 2>&1
+/Users/kkrausse/.nvm/versions/node/v24.7.0/bin/node scripts/opencode-bun-headless.mjs > .runtime/opencode-tree-sitter-headless.log 2>&1
 ```
 
 The probe mounts every emitted file unchanged at `/app`, uses fresh in-memory
@@ -121,7 +121,7 @@ not demonstrate a Vivari loader discrepancy. See the [minimal reproduction](json
 The old baseline selected jsonc-parser's published ESM entry, not replacement
 package source. No ESM swap was used here.
 
-## September 11 approved published-ESM entry selection (current)
+## September 11 approved published-ESM entry selection
 
 The user chose to keep bundling and explicitly select jsonc-parser's published
 ESM implementation. `bun run build` now executes `bun ./build.ts`, which calls
@@ -172,8 +172,53 @@ defect. There was no listener checkpoint; cleanup explains exit 143. Source pin,
 lock hash and preexisting TUI modification are unchanged. Logs are the build log
 above and `.runtime/opencode-jsonc-esm-headless.log`.
 
-**Next bounded task:** deliver the ordinary tree-sitter asset/package layout (or
-use the upstream explicit asset-path configuration) and retry, stopping at the
-next blocker. This attempt stops before that delivery work.
+## September 11 original tree-sitter asset delivery (current)
+
+The code bundle passed the previous module-loading failures; the deployment was
+missing runtime-resolved data assets. `build.ts` now additionally resolves the
+three installed tree-sitter WASM files from the pinned CLI dependency tree and
+copies their original bytes into the existing output directory with `Bun.write`.
+The exact jsonc ESM hook and Node target remain. There are no package source
+edits, runtime shims or additional transforms.
+
+The pinned `packages/core/src/shell/parser-wasm.node.ts` initializes runtime,
+Bash and PowerShell asset paths together, so the bounded delivery includes all
+three tightly coupled files. Upstream `packages/cli/vite.node.config.ts:197-199`
+uses these same environment variables; the old baseline also copies these assets
+but retains package layout. Our isolated probe explicitly sets:
+
+| Original installed asset | Output / guest path | Upstream environment variable |
+| --- | --- | --- |
+| `web-tree-sitter@0.25.10/tree-sitter.wasm` | `tree-sitter.wasm` / `/app/tree-sitter.wasm` | `OPENCODE_TREE_SITTER_WASM_PATH` |
+| `tree-sitter-bash@0.25.0/tree-sitter-bash.wasm` | `tree-sitter-bash.wasm` / `/app/tree-sitter-bash.wasm` | `OPENCODE_TREE_SITTER_BASH_WASM_PATH` |
+| `tree-sitter-powershell@0.25.10/tree-sitter-powershell.wasm` | `tree-sitter-powershell.wasm` / `/app/tree-sitter-powershell.wasm` | `OPENCODE_TREE_SITTER_POWERSHELL_WASM_PATH` |
+
+Build and the existing isolated headless probe were executed using the current
+commands at the top of this README. Build succeeded, and separate SHA-256
+comparisons verified each copied file against its installed original. Sizes:
+205,488 / 1,380,769 / 983,236 bytes respectively. The JS remains **byte-identical**
+to the preceding build (`bac87e4939fefd7aed6f8523ecaa3bb9d2a43656b5278fdff2a9d05d51561c87`).
+
+On the same runtime `80d5cdd`, the probe now reports:
+
+```text
+OPENCODE_BUN_COMMAND bun /app/server.js
+OPENCODE_BUN_LISTEN 4096
+Error: SQLITE_CANTOPEN: durable persistence unavailable
+OPENCODE_BUN_EXIT: code 143, signal SIGTERM
+```
+
+This passes the asset-path resolution blocker and reaches a listener checkpoint,
+then fails during `DatabaseSync` through Vivari's SQLite builtin. The probe log
+also reports OPFS sqlite3_vfs unavailable in the main thread. The next blocker
+is durable persistence in this headless setup; its precise configuration/backend
+cause has not been reduced here. No authenticated health, lifecycle acceptance
+or actual tree-sitter parsing operation was exercised. Listener alone is not
+server acceptance. Logs: `.runtime/opencode-tree-sitter-build.log` and
+`.runtime/opencode-tree-sitter-headless.log`.
+
+**Next bounded task:** inspect the existing headless SQLite persistence setup and
+reduce `SQLITE_CANTOPEN: durable persistence unavailable`, retaining isolated
+storage and explicit completion checks. No runtime fix was attempted in this slice.
 Ordinary builds are accepted; the direct TS stripper is **not necessarily the
 critical path**. Later assets, native/TUI branches, HTTP and tools are unqualified.
