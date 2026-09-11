@@ -3,6 +3,44 @@
 September 11, 2026. **Built-path browser OPFS health, minimal model SSE, local read/edit/grep, and managed shutdown pass;
 broader server acceptance remains ahead. Unbundled startup remains blocked.**
 
+## September 11: bounded glob attempt — completion evidence unavailable
+
+**UNVERIFIED: receipt unavailable.** Started
+`bun scripts/serve-opencode-bun-server.ts --once --glob` exactly once from clean
+harness `53d21b73d9755b3d1ac89bbc04faa8a6c7c36a4f`. Original background shell:
+`sh_092090dbd001jaU4eDknX9KYPF`; original run ID:
+`6180cad9-dcb9-4401-9524-e87f0580c6b1`.
+Browser Control CLI session `brisk-walrus-245` navigated once to the exact
+printed fresh URL, and returned that destination successfully:
+`http://127.0.0.1:52426/?autorun=1&runID=6180cad9-dcb9-4401-9524-e87f0580c6b1&model=1&glob=1`.
+
+On continuation, the single attempted receipt read returned **ENOENT** for
+`vivari/.runtime/opencode-bun-6180cad9-dcb9-4401-9524-e87f0580c6b1.json`.
+No automatic host-completion notification was available to this execution.
+Consequently, host/guest exits, prompt/model/tool counts, exact tool content,
+local correlation, installer/hash verification, terminal success, managed stop,
+and awaited OPFS cleanup are **unknown**, not passing or demonstrated failing.
+The missing receipt is the actual evidence-collection blocker.
+
+The requested gate was one prompt within 60 seconds, one local upstream `glob`
+call with pattern `*.ts`, path `/workspace/glob-probe`, and limit 10, returning
+exactly `/workspace/glob-probe/match.ts` without a newline. Acceptance also
+requires seeded match/nonmatch fixtures, nine unchanged ripgrep package files,
+clean installer exit, successful terminal execution, accepted managed stop,
+natural guest exit `0/null/nonforced`, and completed OPFS cleanup. These are
+requirements, not observations from this attempt.
+
+The supplied pre-run provenance identified existing runtime distribution
+`098e0b60a0ff8703994ea681d9c974ae9267bfe5dbdd799e87ff00982ff938a3`
+and clean fork `80d5cdd`; this attempt has no receipt corroborating them.
+No rebuild, second host launch, additional navigation, retry, fallback,
+completion polling, or sleep was performed. Only this documentation was edited;
+no raw reasoning, authentication data, or guest logs were captured here.
+
+Handoff: preserve this original run ID when recovering completion evidence.
+After glob qualification, the next milestone is combined read/edit/grep/glob
+and persisted edit/session regression.
+
 ## September 11: bounded single-file grep attempt passes
 
 **PASS**, all nine checkpoints. Ran
