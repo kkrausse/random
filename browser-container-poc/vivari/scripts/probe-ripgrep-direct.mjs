@@ -11,6 +11,7 @@ import { integrationRoot, runtimeSourceUrl } from './runtime-source.mjs';
 import { directAssets, installation, packages } from './ripgrep-direct-assets.mjs';
 
 const pkg = resolve(integrationRoot, 'probes/ripgrep/node_modules/ripgrep');
+const opencodeGrep = process.argv.includes('--opencode-grep');
 assert.equal(JSON.parse(readFileSync(resolve(pkg, 'package.json'), 'utf8')).version, '0.3.1');
 if (process.argv.includes('--native')) {
   const directory = mkdtempSync(resolve(tmpdir(), 'ripgrep-direct-'));
@@ -22,12 +23,16 @@ if (process.argv.includes('--native')) {
     copyFileSync(resolve(integrationRoot, 'probes/runtime/ripgrep-command.cjs'), resolve(directory, 'command.cjs'));
     writeFileSync(resolve(directory, 'fixture.txt'), 'DIRECT_SEARCH_NEEDLE\n');
     for (const mode of ['cold', 'warm', 'command']) {
-      const result = spawnSync(process.execPath, [resolve(directory, mode === 'command' ? 'command.cjs' : 'probe.mjs'), mode], {
+      const result = spawnSync(process.execPath, [resolve(directory, mode === 'command' ? 'command.cjs' : 'probe.mjs'), mode,
+        ...(opencodeGrep && mode === 'command' ? [resolve(directory, 'workspace')] : [])], {
         cwd: directory, env: { ...process.env, TMPDIR: resolve(directory, 'cache') }, encoding: 'utf8', timeout: 60_000,
       });
       console.log(JSON.stringify({ native: process.version, mode, status: result.status, stdout: result.stdout, stderr: result.stderr }));
       assert.equal(result.status, 0, result.stderr || String(result.error));
       assert.ok(result.stdout.includes(mode === 'command' ? 'RIPGREP_COMMAND_PASS' : `RIPGREP_DIRECT_${mode.toUpperCase()}_PASS`));
+      assert.equal(result.signal, null);
+      assert.equal(result.stderr, '');
+      if (opencodeGrep && mode === 'command') assert.ok(result.stdout.includes('RIPGREP_OPENCODE_GREP_PASS'));
     }
   } finally { rmSync(directory, { recursive: true, force: true }); }
   process.exit(0);
@@ -86,12 +91,16 @@ try {
   kernel.writeFile('/direct/probe.mjs', readFileSync(resolve(integrationRoot, 'probes/runtime/ripgrep-direct.mjs')));
   kernel.writeFile('/direct/command.cjs', readFileSync(resolve(integrationRoot, 'probes/runtime/ripgrep-command.cjs')));
   for (const mode of ['cold', 'warm', 'command']) {
-    const result = await kernel.start('node', [mode === 'command' ? '/direct/command.cjs' : '/direct/probe.mjs', mode], {
+    const result = await kernel.start('node', [mode === 'command' ? '/direct/command.cjs' : '/direct/probe.mjs', mode,
+      ...(opencodeGrep && mode === 'command' ? ['/workspace'] : [])], {
       cwd: '/direct', env: { PATH: '/bin', TMPDIR: '/tmp' }, capture: true,
     });
     console.log(JSON.stringify({ mode, ...result }));
     assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.signal, null, 'guest must exit naturally');
+    assert.equal(result.stderr, '');
     assert.ok(result.stdout.includes(mode === 'command' ? 'RIPGREP_COMMAND_PASS' : `RIPGREP_DIRECT_${mode.toUpperCase()}_PASS`), 'Missing completion checkpoint');
+    if (opencodeGrep && mode === 'command') assert.ok(result.stdout.includes('RIPGREP_OPENCODE_GREP_PASS'));
   }
 } finally {
   await Promise.all([...workers].map(worker => worker.terminate()));
