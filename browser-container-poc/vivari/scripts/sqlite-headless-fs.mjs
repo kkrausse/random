@@ -4,10 +4,11 @@ import { parentPort, workerData } from "node:worker_threads";
 import { createRequire } from "node:module";
 import { readFileSync, readdirSync, writeFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
-import { FsServer } from "../.runtime/patched/packages/kernel-host/fs-server.js";
-import { createSqliteServer } from "../.runtime/patched/packages/kernel-host/sqlite-server.js";
+import { runtimeSourceUrl, runtimeSourcePath } from './runtime-source.mjs';
+const { FsServer } = await import(runtimeSourceUrl('packages/kernel-host/fs-server.js').href);
+const { createSqliteServer } = await import(runtimeSourceUrl('packages/kernel-host/sqlite-server.js').href);
 const require = createRequire(import.meta.url);
-const { VirtualFileSystem } = require("../.runtime/patched/packages/vfs/pkg-node/vivari_vfs.js");
+const { VirtualFileSystem } = require(runtimeSourcePath('packages/vfs/pkg-node/vivari_vfs.js'));
 const vfs = new VirtualFileSystem();
 vfs.mkdir("/runtime-probe", true); vfs.mkdir("/tmp", true);
 for (const file of readdirSync(workerData.directory).filter(f => f.endsWith(".sqlite"))) {

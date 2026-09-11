@@ -2,9 +2,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Worker, MessageChannel } from 'node:worker_threads';
-import { Kernel } from '../.runtime/patched/packages/kernel-host/kernel.js';
-import { createKernelFs } from '../.runtime/patched/packages/kernel-host/kernel-fs.js';
-const base = new URL('../.runtime/patched/scripts/', import.meta.url);
+import { runtimeSourceUrl } from './runtime-source.mjs';
+const { Kernel } = await import(runtimeSourceUrl('packages/kernel-host/kernel.js').href);
+const { createKernelFs } = await import(runtimeSourceUrl('packages/kernel-host/kernel-fs.js').href);
+const base = new URL('./', runtimeSourceUrl('scripts/process-worker.mjs'));
 const workers = new Set();
 const fsWorker = new Worker(new URL('fs-worker.mjs', base));
 workers.add(fsWorker);
@@ -33,10 +34,10 @@ try {
     ['ffi-library.ffi.json', '../.runtime/ffi-library.ffi.json'],
     ['contract.cjs', '../probes/runtime/ffi-contract.cjs'],
     ['loopback-fetch.cjs', '../probes/runtime/loopback-fetch.cjs'],
-    ['stream-consumers.cjs', '../probes/runtime/stream-consumers.cjs'],
-    ['vm-import.cjs', '../probes/runtime/vm-import.cjs'],
+    ['stream-consumers.cjs', runtimeSourceUrl('scripts/fixtures/runtime-contracts/stream-consumers.cjs')],
+    ['vm-import.cjs', runtimeSourceUrl('scripts/fixtures/runtime-contracts/vm-import.cjs')],
     ['inherit-stdin.cjs', '../probes/runtime/inherit-stdin.cjs'],
-    ['process-warning.cjs', '../probes/runtime/process-warning.cjs'],
+    ['process-warning.cjs', runtimeSourceUrl('scripts/fixtures/runtime-contracts/process-warning.cjs')],
   ]) kernel.writeFile('/ffi-probe/' + guest, new Uint8Array(readFileSync(new URL(host, import.meta.url))));
   const pid = kernel.launch('bun', ['/ffi-probe/contract.cjs'], {cwd: '/ffi-probe', env: {PATH: '/bin'}});
   while (kernel.procs.has(pid)) await new Promise(r => setTimeout(r, 10));

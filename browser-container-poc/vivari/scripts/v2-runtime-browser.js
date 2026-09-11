@@ -1,8 +1,10 @@
 if(page.url()!=='http://127.0.0.1:5206/')throw Error('Use isolated :5206');
 const root=state.ffiRoot || path.resolve('browser-container-poc/vivari');
+const runtimeConfig=JSON.parse(fs.readFileSync(path.join(root,'runtime-source.json'),'utf8'));
+const runtimeRoot=process.env.VIVARI_SOURCE ? path.resolve(process.env.VIVARI_SOURCE) : path.resolve(root,runtimeConfig.checkout);
 const results={};
 for(const name of ['stream-consumers','vm-import','process-warning']) {
-  const source=fs.readFileSync(path.join(root,`probes/runtime/${name}.cjs`),'utf8');
+  const source=fs.readFileSync(path.join(runtimeRoot,`scripts/fixtures/runtime-contracts/${name}.cjs`),'utf8');
   results[name]=await page.evaluate(async source=>{
     const p=await window.probe.vm.spawn('node',['-e',source]);
     let output='';const drain=(async()=>{for await(const t of p.output)output+=t})();const code=await p.exit;await drain;

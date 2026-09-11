@@ -2,6 +2,7 @@
 // success cannot prove OPFS, Web Locks, browser WASM delivery or worker teardown.
 import { resolve } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { resolveRuntimeSource } from './runtime-source.mjs';
 const root = resolve(import.meta.dir, "..");
 const session = process.argv[2];
 const origin = process.argv[3] || "http://localhost:5192/";
@@ -43,7 +44,7 @@ try {
   // This repo's pinned host is Apple Silicon. Other hosts can run Node >=24
   // directly using the documented sqlite-headless.mjs command.
   await run(["bunx", "--package", "node-bin-darwin-arm64@24.18.0", "node", "scripts/sqlite-headless.mjs"]);
-  await run(["bunx", "--package", "node-bin-darwin-arm64@24.18.0", "node", "scripts/verify-node.mjs"], resolve(root, ".runtime/patched"));
+  await run(["bunx", "--package", "node-bin-darwin-arm64@24.18.0", "node", "scripts/verify-node.mjs"], resolveRuntimeSource());
   await boot();
   await browser('state.sqliteMode=undefined; return "Full API mode"');
   await probe("sqlite-api.js", "sqliteApiProbe", "api");

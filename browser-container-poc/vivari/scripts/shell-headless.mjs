@@ -1,9 +1,10 @@
 // Guest-worker job/lifecycle contract. Run with Node >=24 after build-runtime.
 import assert from 'node:assert/strict';
 import { Worker, MessageChannel } from 'node:worker_threads';
-import { Kernel } from '../.runtime/patched/packages/kernel-host/kernel.js';
-import { createKernelFs } from '../.runtime/patched/packages/kernel-host/kernel-fs.js';
-const base = new URL('../.runtime/patched/scripts/', import.meta.url);
+import { runtimeSourceUrl } from './runtime-source.mjs';
+const { Kernel } = await import(runtimeSourceUrl('packages/kernel-host/kernel.js').href);
+const { createKernelFs } = await import(runtimeSourceUrl('packages/kernel-host/kernel-fs.js').href);
+const base = new URL('./', runtimeSourceUrl('scripts/process-worker.mjs'));
 const workers = new Set();
 const fsWorker = new Worker(new URL('fs-worker.mjs', base));
 workers.add(fsWorker);

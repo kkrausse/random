@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
-import { VivariProcess } from '../.runtime/patched/packages/core/src/process';
+import { runtimeSourceUrl } from './runtime-source.mjs';
+const { VivariProcess } = await import(runtimeSourceUrl('packages/core/src/process.ts').href);
 
 test('resize retains the newest pre-start size and removes its startup listener on exit', () => {
   const listeners = new Map<string, (m: any) => void>();

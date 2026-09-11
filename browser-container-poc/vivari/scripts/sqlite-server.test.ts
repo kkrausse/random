@@ -1,9 +1,10 @@
 import { test, expect } from "bun:test";
 import { createRequire } from "node:module";
-import { createSqliteServer } from "../.runtime/patched/packages/kernel-host/sqlite-server.js";
+import { runtimeSourceUrl, runtimeSourcePath } from './runtime-source.mjs';
+const { createSqliteServer } = await import(runtimeSourceUrl('packages/kernel-host/sqlite-server.js').href);
 import { sqliteContract, sqliteRequests } from "../probes/sqlite-contract.js";
 const require = createRequire(import.meta.url);
-const { VirtualFileSystem } = require("../.runtime/patched/packages/vfs/pkg-node/vivari_vfs.js");
+const { VirtualFileSystem } = require(runtimeSourcePath('packages/vfs/pkg-node/vivari_vfs.js'));
 
 test("committed exec prefix survives owner termination; failed flush poisons the connection", async () => {
   const vfs = new VirtualFileSystem();
