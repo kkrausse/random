@@ -277,10 +277,49 @@ After the first completed run, native Node's real SQLite reopened only the fresh
 This verifies actual disk bytes survived guest/worker termination. The sqlite-wasm
 OPFS warning still appears in Node but is irrelevant to the supplied disk adapter.
 
-**Next bounded task:** qualify isolated server lifecycle beyond readiness: a
-normal supported shutdown, restart on explicitly selected retained storage, and
-database/session retention. Resolve the default invocation's supported shutdown
-surface before claiming clean exit; broader model/tool and browser acceptance are
-still ahead. No runtime change, browser test or shared qualified-pin update occurred.
+## Shutdown investigation — stopped at authentication boundary
+
+Pinned source evidence:
+
+- `packages/cli/src/server-process.ts:114-123,148-152`: only `mode: 'service'`
+  supplies managed lifecycle registration and awaits `server.shutdown`; default
+  mode awaits `Effect.never`.
+- `packages/server/src/service-status.ts:35-37`: stop rejects unmanaged servers
+  or a mismatched instance ID. Thus the current default launcher cannot use this
+  API to terminate its effect.
+- `packages/server/src/process.ts:195-219`: authenticated
+  `POST /api/service/stop` with `{instanceID}` accepts managed shutdown and triggers
+  it after response finish/close. This is the selected supported path.
+- `packages/cli/src/server-process.ts:62-67`: service mode uses service-config
+  password or a generated credential, rather than the default-mode environment
+  password. Read guest-created registration credentials, as the accepted baseline
+  does, instead of assuming the default probe password applies.
+
+One temporary service-mode attempt was built and executed before scope was narrowed:
+
+```sh
+# Experiment directory:
+bun run build > ../../.runtime/opencode-lifecycle-build.log 2>&1
+# vivari:
+/Users/kkrausse/.nvm/versions/node/v24.7.0/bin/node scripts/opencode-bun-headless.mjs --lifecycle > .runtime/opencode-lifecycle-headless.log 2>&1
+```
+
+Result: listener 4096, then health **401** with the assumed probe credential;
+overall timeout **124**. No stop request, session creation, restart, or retention
+checkpoint was reached. The attempt wrote a guessed guest config location, but
+its effective path was not established. This demonstrates an authentication/setup
+blocker, not a shutdown/runtime failure.
+
+The incomplete lifecycle implementation was removed; committed source retains
+the earlier default-mode readiness probe. `--lifecycle` is **not a supported
+committed option**. The ignored build/log are historical evidence (attempt JS
+SHA-256 `765dd1b67583b645a01e904cdc0de525487e1b5c15db2b281ecad83fa5a5f059`);
+rebuild from committed source before another experiment. No second execution was
+made after the narrowing instruction. Runtime/source pins are unchanged.
+
+**Next smallest task:** one isolated service-mode shutdown-only attempt using the
+actual guest registration password/instance ID and explicit guest XDG paths.
+Require stop accepted and clean exit; stop on first error. Session creation,
+restart/retention, runtime fixes and model/tool/browser work are deferred.
 Ordinary builds are accepted; the direct TS stripper is **not necessarily the
 critical path**. Later assets, native/TUI branches, HTTP and tools are unqualified.
