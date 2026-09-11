@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert"
 import { test } from "node:test"
 import type { ModelInfo, SessionMessageInfo } from "@opencode-ai/client"
 import type { Plugin } from "@opencode-ai/plugin/tui"
-import { createWeeklyUsageLoader, weeklyMessages, WEEK_MS } from "./weekly-usage"
+import { createWeeklyUsageLoader, sumUsageTokens, weeklyMessages, WEEK_MS } from "./weekly-usage"
 import { estimateUsageCost } from "./tui"
 
 function message(id: string, time: number, cost = 1): SessionMessageInfo {
@@ -12,6 +12,21 @@ function message(id: string, time: number, cost = 1): SessionMessageInfo {
     tokens: { input: 10, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
   } as SessionMessageInfo
 }
+
+test("weekly token totals include every category even without pricing and count shared responses once", () => {
+  const response = {
+    ...message("one", WEEK_MS, 0),
+    tokens: { input: 100, output: 40, reasoning: 10, cache: { read: 800, write: 100 } },
+  } as SessionMessageInfo
+  const result = sumUsageTokens(weeklyMessages([response, response, message("old", 0)], WEEK_MS + 1))
+  assert.deepEqual(result, {
+    tokens: { input: 100, output: 40, reasoning: 10, cache: { read: 800, write: 100 } },
+    processed: 1050,
+    cacheReadPercent: 80,
+  })
+  assert.equal(sumUsageTokens([]).processed, 0)
+  assert.equal(sumUsageTokens([]).cacheReadPercent, 0)
+})
 
 test("weekly window uses response time, excludes future usage, and deduplicates shared messages", () => {
   const now = WEEK_MS * 2

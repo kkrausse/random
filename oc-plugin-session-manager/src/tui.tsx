@@ -10,7 +10,7 @@ import { Cause, Effect } from "effect"
 import { makeRunner, operation } from "./effects"
 import { archiveSession, fileArchiveStore, restoreSession, type Archive, type ArchiveStore } from "./archive"
 import { loadInbox, pendingOrder, requestKey } from "./inbox"
-import { createWeeklyUsageLoader } from "./weekly-usage"
+import { createWeeklyUsageLoader, sumUsageTokens } from "./weekly-usage"
 
 const PAGE_SIZE = 100
 const LOAD_MORE_THRESHOLD = 10
@@ -185,6 +185,7 @@ function WeeklyUsage(props: { context: Plugin.Context; models: ReadonlyArray<Mod
     onCleanup(() => { disposed = true; clearInterval(timer); controller?.abort() })
   })
   const total = createMemo(() => estimateUsageCost(snapshot()?.messages ?? [], props.models, usageRates(props.context.options)))
+  const tokenUsage = createMemo(() => sumUsageTokens(snapshot()?.messages ?? []))
   const byModel = createMemo(() => {
     const groups = new Map<string, SessionMessageInfo[]>()
     for (const message of snapshot()?.messages ?? []) {
@@ -208,10 +209,21 @@ function WeeklyUsage(props: { context: Plugin.Context; models: ReadonlyArray<Mod
     <box paddingTop={1}>
       <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>Rolling 7 days</text>
       <text fg={props.context.theme.text.subdued}>All server sessions · incl. subagents</text>
+      <text fg={props.context.theme.text.subdued}>Excludes local archives / deleted sessions</text>
       {snapshot() ? <box>
         {row(total().estimated ? total().zenEquivalent ? "Zen equivalent" : "Estimated total" : "Calculated total", money(total().cost, total().estimated))}
         {row("Daily average", money(total().cost / 7, total().estimated))}
         {row("Sessions / responses", `${snapshot()!.sessions} / ${snapshot()!.messages.length}`)}
+        <box paddingTop={1}>
+          <text fg={props.context.theme.text.subdued}>Weekly tokens</text>
+          {row("Fresh input", formatCompactTokens(tokenUsage().tokens.input))}
+          {row("Cache read", formatCompactTokens(tokenUsage().tokens.cache.read))}
+          {row("Cache write", formatCompactTokens(tokenUsage().tokens.cache.write))}
+          {row("Output", formatCompactTokens(tokenUsage().tokens.output))}
+          {row("Reasoning", formatCompactTokens(tokenUsage().tokens.reasoning))}
+          {row("Total processed", formatCompactTokens(tokenUsage().processed))}
+          {row("Input from cache", `${tokenUsage().cacheReadPercent.toFixed(1)}%`)}
+        </box>
         <box paddingTop={1}>
           <text fg={props.context.theme.text.subdued}>By model</text>
           <Index each={byModel()}>{(model) => <box>
