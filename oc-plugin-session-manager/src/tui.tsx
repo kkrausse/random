@@ -102,14 +102,7 @@ function contextUsage(
 
 type UsageRates = Pick<ModelCost, "input" | "output" | "cache"> & { tier?: ModelCost["tier"] }
 
-const defaultUsageRates: Record<string, UsageRates[]> = {
-  // OpenCode Zen's published models.dev rates. Keep these in cli.json when
-  // overriding them so subscription-backed models remain visibly estimates.
-  "openai/gpt-5.6-sol": [
-    { input: 2, output: 10, cache: { read: 0.2, write: 2.5 } },
-    { tier: { type: "context", size: 272_000 }, input: 4, output: 15, cache: { read: 0.4, write: 5 } },
-  ],
-}
+const defaultUsageRates: Record<string, UsageRates[]> = {}
 
 function usageRates(options: Record<string, unknown>) {
   const configured = options.usageRates
@@ -131,6 +124,8 @@ export function estimateUsageCost(
 ) {
   let cost = 0
   let estimated = false
+  let zenEquivalent = false
+  let otherEstimate = false
   let unpriced = 0
   for (const message of messages) {
     if (message.type !== "assistant" || !message.tokens) continue
@@ -140,13 +135,19 @@ export function estimateUsageCost(
     }
     const key = `${message.model.providerID}/${message.model.id}`
     const model = models.find((candidate) => candidate.providerID === message.model.providerID && candidate.id === message.model.id)
-    const rates = model?.cost.length ? model.cost : fallback[key]
+    // Fast variants share the underlying modelID: quote the standard Zen
+    // equivalent, without guessing a priority surcharge or stripping names.
+    const zen = models.find((candidate) => candidate.providerID === "opencode"
+      && candidate.id === (model?.modelID ?? message.model.id) && candidate.cost.length > 0)
+    const rates = model?.cost.length ? model.cost : zen?.cost ?? fallback[key]
     const rate = rates && rateFor(rates, message.tokens)
     if (!rate) {
       unpriced++
       continue
     }
     estimated = true
+    if (rates === zen?.cost || (model?.providerID === "opencode" && rates === model.cost)) zenEquivalent = true
+    else otherEstimate = true
     cost += (
       message.tokens.input * rate.input
       + (message.tokens.output + message.tokens.reasoning) * rate.output
@@ -154,7 +155,7 @@ export function estimateUsageCost(
       + message.tokens.cache.write * rate.cache.write
     ) / 1_000_000
   }
-  return { cost, estimated, unpriced }
+  return { cost, estimated, unpriced, zenEquivalent: zenEquivalent && !otherEstimate }
 }
 
 function UsageBreakdown(props: { context: Plugin.Context; sessionID: string }) {
@@ -207,8 +208,8 @@ function UsageBreakdown(props: { context: Plugin.Context; sessionID: string }) {
           ) : "0"}</text>
         </box>
         <box flexDirection="row" justifyContent="space-between">
-          <text fg={props.context.theme.text.subdued}>{estimate().estimated ? "Zen estimate" : "Calculated cost"}</text>
-          <text fg={props.context.theme.text.default}>{formatCost(estimate().cost)}</text>
+          <text fg={props.context.theme.text.subdued}>{estimate().estimated ? estimate().zenEquivalent ? "Zen equivalent" : "Estimated cost" : "Calculated cost"}</text>
+          <text fg={props.context.theme.text.default}>{estimate().estimated ? "≈ " : ""}{formatCost(estimate().cost)}</text>
         </box>
         {estimate().unpriced > 0
           ? <text fg={props.context.theme.text.subdued}>{estimate().unpriced} unpriced response{estimate().unpriced === 1 ? "" : "s"}</text>
