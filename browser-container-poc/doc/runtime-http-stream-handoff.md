@@ -128,7 +128,11 @@ Run OpenCode on another fresh origin at `/`, using the unchanged
 [baseline handoff](opencode2-server-baseline-handoff.md). Existing package snapshot
 and packaging prerequisites described there still apply.
 
-**Next agreed milestone: P2, process/stream semantics.** HTTP local-loopback flow
+**Next: P2 process/stream semantics, alongside direct upstream execution.** The
+[OpenCode case study](opencode-runtime-case-study.md) defines the install-and-run
+goal with runtime-owned shims and no prerequisite package-hacking scripts. P1
+acceptance still uses custom packaging; it does not qualify that new direct path.
+HTTP local-loopback flow
 control is implemented; execution stdout overflow credits, acknowledged stdin,
 cross-process pipe backpressure, final-output ordering and child-tree cleanup
 still need their own contracts. Legacy buffered SW HTTP/WS/EventSource paths,

@@ -2,6 +2,12 @@
 
 September 10, 2026. **P0 server-only baseline acceptance passed.**
 
+**Direction update, September 11:** this is acceptance of the custom packaged
+baseline, not the desired delivery contract. The target is ordinary upstream
+install/mount-and-run with runtime-owned compatibility and no prerequisite package
+rewrite scripts. Preserve this baseline as a regression reference while qualifying
+the direct path; see the [OpenCode case study](opencode-runtime-case-study.md).
+
 ## P1 continuation — September 11
 
 The runtime-owned streaming bridge now replaces the process-per-request adapter.

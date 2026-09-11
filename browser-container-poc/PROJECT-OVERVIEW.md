@@ -4,6 +4,22 @@ Last summarized: **September 11, 2026**. This is the starting point for what exi
 which demo to use, and what is still being integrated. Older receipts describe
 the exact revision they tested; they are not blanket acceptance of newer UI code.
 
+## Compatibility end state: install and run upstream code
+
+Applications should install or mount upstream packages and dependencies, configure
+them, and launch their ordinary command or supported entrypoint. **No prerequisite
+package-hacking scripts:** compatibility belongs in Vivari's runtime loader,
+builtins and reusable JS/WASM backends, rather than consumer-side source rewrites.
+Normal upstream builds, generic dependency/asset delivery and optional bundling
+are compatible with this goal. Lazy server execution should not require unused
+TUI/native feature paths to work.
+
+This is the target, not today's complete capability: the qualified OpenCode server
+still uses custom packaging and ripgrep transformations. The next investigation
+tests direct upstream execution and removes demonstrated workarounds. See the
+[OpenCode workflow and case study](doc/opencode-runtime-case-study.md) and
+[main cleanup plan](doc/opencode2-server-runtime-cleanup.md).
+
 ## Current iteration
 
 **Runtime HTTP bridge (September 11):** P1 passes focused browser streaming checks
@@ -11,7 +27,8 @@ and the complete OpenCode server regression: read/edit/grep/glob, streamed outpu
 clean shutdown/restart, old-endpoint rejection, and session/edit retention.
 Endpoint.fetch now uses the existing listener worker with directional credits and
 real local-socket backpressure, without per-request processes. Runtime fork commit
-`48d4ca1` is qualified. Next is P2 execution/stream semantics. See the
+`48d4ca1` is qualified. Next is P2 execution/stream semantics, alongside the direct
+upstream-execution investigation above. See the
 [HTTP bridge handoff](doc/runtime-http-stream-handoff.md).
 
 **Runtime workflow (September 10):** Vivari is now maintained as a directly

@@ -1,6 +1,20 @@
 # Vivari feasibility POC
 
-## Latest: matched V2 TUI → model edit → Vite HMR
+## Current runtime direction — September 11, 2026
+
+The server-only baseline and runtime HTTP bridge are accepted. The end state is
+to install/mount upstream applications and run their ordinary entrypoints with
+**runtime-owned compatibility and no prerequisite package-hacking scripts**.
+Generic asset/dependency delivery and normal upstream builds are fine; current
+OpenCode bundling and ripgrep rewrites are transitional, not the desired API.
+Direct upstream execution is the next investigation alongside P2 stream work.
+
+Start with [DEVELOPMENT.md](DEVELOPMENT.md), the
+[revamp plan](../doc/opencode2-server-runtime-cleanup.md) and the
+[OpenCode case study](../doc/opencode-runtime-case-study.md). Older demo URLs and
+results below describe historical checkpoints, not current server availability.
+
+## Historical: matched V2 TUI → model edit → Vite HMR
 
 **Demo: http://127.0.0.1:5206/** — run **`opencode2`** in its guest shell.
 The actual V2 TUI used Muse Spark Free to edit the guest fixture, and Vite

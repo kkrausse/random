@@ -15,6 +15,15 @@ The application should consume this as a library. Opening files, starting
 execution, and attaching clients have separate lifetimes. Vite and OpenCode are
 ordinary programs launched explicitly by the application or user.
 
+**Compatibility end state (September 11):** install or mount upstream packages and
+run their ordinary command/entrypoint without prerequisite package-hacking scripts.
+Shims and supported JS/WASM backends belong in the runtime. Generic installation,
+asset delivery and normal upstream builds are acceptable; consumer source rewrites
+are temporary exceptions to remove. Correct lazy loading must not require every
+optional feature to resolve upfront. Current OpenCode still uses custom packaging;
+see the [case study](opencode-runtime-case-study.md) and
+[active revamp plan](opencode2-server-runtime-cleanup.md) for the migration gates.
+
 ### Decisions carried forward from the discussion
 
 - **Workspace means files and persistence**, not running applications.

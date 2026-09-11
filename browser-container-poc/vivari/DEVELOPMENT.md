@@ -93,6 +93,22 @@ assets during a normal rebuild. Restart/reload to adopt the new runtime.
 
 ## Adding tools
 
+### Runtime-first compatibility target
+
+Consumers should install/mount upstream applications and dependencies and launch
+their ordinary command or supported entrypoint. No prerequisite package-hacking
+scripts should be needed. Implement missing module/API semantics and reusable
+JS/WASM backends in the runtime; normal upstream builds and generic asset delivery
+remain legitimate preparation. Preserve lazy imports rather than requiring unused
+TUI/native branches to resolve upfront. Application-specific runtime rewrites are
+still exceptions, not general compatibility fixes.
+
+Today's OpenCode and ripgrep packagers remain the qualified regression reference,
+not proof those transformations are required. Investigate direct execution before
+adding another transform, record concrete blockers and removal conditions, and
+retire the scripts' compatibility rewrites after the replacement passes. See the
+[OpenCode case study](../doc/opencode-runtime-case-study.md) for acceptance.
+
 Keep the distinction between two extension surfaces:
 
 - A model-facing OpenCode tool uses the pinned server's supported extension

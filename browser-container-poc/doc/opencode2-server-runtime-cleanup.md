@@ -1,13 +1,24 @@
 # OpenCode2 server: runtime cleanup plan
 
-Date: September 10, 2026  
-Status: P0a fork migration, P0 baseline and P1 HTTP bridge accepted; P2–P5 backlog
+Updated: September 11, 2026
+
+Status: P0a fork migration, P0 baseline and P1 HTTP bridge accepted; direct upstream
+execution investigation next alongside P2; P2–P5 implementation backlog
 
 ## Goal and scope
 
-Run the OpenCode2 server in Vivari with as little application modification as
-possible, using that workload to make the general runtime's filesystem,
-execution, HTTP, module-loading, and storage interfaces dependable.
+Run the OpenCode2 server in Vivari without prerequisite application/dependency
+package-hacking scripts. Install or mount upstream code and dependencies, configure
+them, and launch the ordinary server command or supported entrypoint. Compatibility
+must be supplied at runtime through general loader, builtin and JS/WASM backend
+support. Use this workload to make filesystem, execution, HTTP, module-loading,
+and storage interfaces dependable for other unmodified programs too.
+
+This is the ideal end state, not the current acceptance claim. P0/P1 qualify an
+unchanged OpenCode server source graph delivered by a custom packager; they do not
+prove the packager is necessary or that ordinary upstream installation works.
+See the [OpenCode case study](opencode-runtime-case-study.md) for the expected
+workflow, import semantics, adaptation inventory and removal gates.
 
 The target tool profile is dedicated read, edit, grep, and glob; JavaScript
 execution; and structured program execution with explicit argv. Do not advertise
@@ -22,11 +33,37 @@ Prefer, in order:
 1. Run the original package.
 2. Correct the missing runtime API or semantics.
 3. Automatically select and deliver a compatible upstream JS/WASM implementation.
-4. Use a narrowly scoped, version-checked package adapter with recorded limitations.
+4. If still blocked, record a narrowly scoped adapter as a temporary exception,
+   with a reproduction, limitations and an explicit removal condition.
 
-Configuration and asset packaging are acceptable. Track source patches,
-consumer dependency overrides, and behavioral build transformations explicitly,
-and reduce them as platform fixes land.
+Configuration, normal upstream builds and generic dependency/asset delivery are
+acceptable. Bundling/tree shaking may optimize delivery but must not be required
+to make unsupported, unexecuted branches disappear. Dynamic imports load when
+executed; eager static imports still require resolution. Whole-application audits
+are optional diagnostics, not a prerequisite for server startup.
+
+Track source patches, consumer dependency overrides and behavioral build
+transformations explicitly and retire them as platform fixes land. Moving a
+package-specific rewrite into a runtime hook alone does not meet the goal; prefer
+standard semantics and reusable backend selection. Native binaries still require
+a compatible implementation; runtime shims are not CPU/OS emulation.
+
+### Next investigation — direct upstream execution
+
+- [ ] Attempt the pinned upstream server command/entrypoint with normal package
+  layout and dependencies, without `package-opencode-server.ts`; identify actual
+  loading/execution blockers before introducing transforms.
+- [ ] Execute published JS/WASM ripgrep unchanged, including cold-cache Brotli,
+  dynamic imports and ordinary executable discovery; bypass no-op chmod by fixing
+  its semantics rather than relying on OpenCode's private binary cache.
+- [ ] Turn blockers into focused fork contracts and general runtime fixes. Keep
+  the current packaged P1 workflow as a regression reference during migration.
+- [ ] Pass the complete browser server workflow and reproduce from clean inputs
+  with zero consumer behavioral transformations, then qualify a newer OpenCode pin.
+
+Start this alongside P2, before P4's broader adaptation audit. Pull forward required
+P3/P4 fixes when the direct path demonstrates them. Detailed acceptance and the
+distinction between ordinary preparation and package rewriting live in the case study.
 
 ## Current architecture and cleanup assessment
 
@@ -407,9 +444,10 @@ with reference-Node runs, explicit outcome reporting, and browser qualification.
 Establish a small trustworthy baseline alongside P0; expand relevant regression
 gates through P1–P4. This complements the focused and application contracts below.
 
-Start with P0a and P0, then implement the HTTP bridge and shared stream mechanics in
-P1/P2. Use demonstrated server blockers to prioritize P3/P4; do not postpone a
-required correctness fix merely because it appears in a later section.
+P0a, P0 and P1 are accepted. Next investigate direct upstream execution alongside
+P2's process/stream mechanics. Use demonstrated server blockers to prioritize
+P3/P4; do not postpone a required correctness fix merely because it appears in a
+later section. Passing the old custom bundle alone does not qualify the direct path.
 
 For each change, use focused runtime contracts and real Node/Bun comparisons
 where applicable, then headless workers and real-browser qualification. Browser
