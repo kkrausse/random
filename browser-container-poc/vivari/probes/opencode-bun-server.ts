@@ -1,5 +1,6 @@
 import { Workspace, Runtime, opfsStore } from '../../workspace-api/src/index'
-import { globFixtures } from './opencode-bun-fixtures'
+import { combinedFixture, combinedSteps, globFixtures } from './opencode-bun-fixtures'
+import { combinedBytes, combinedEvidence, runCombined } from './opencode-bun-combined'
 
 const log = (text: string) => { document.querySelector('pre')!.textContent += text + '\n' }
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
@@ -9,7 +10,9 @@ async function bounded<T>(promise: Promise<T>, ms: number, label: string): Promi
   finally { clearTimeout(timer) }
 }
 
-async function qualify(runID: string, restart: boolean, sessionRetention: boolean, model: boolean, read: boolean, edit: boolean, grep: boolean, glob: boolean) {
+async function qualify(runID: string, restart: boolean, sessionRetention: boolean, model: boolean, read: boolean, edit: boolean, grep: boolean, glob: boolean, mode: 'single' | 'combined-tools' = 'single') {
+  const combined = mode === 'combined-tools' ? combinedEvidence() : undefined
+  const needsRipgrep = grep || glob || !!combined
   let stage = 'manifest', runtime: Awaited<ReturnType<typeof Runtime.start>> | undefined
   let workspace: Awaited<ReturnType<typeof Workspace.open>> | undefined
   let output: Promise<unknown> | undefined
@@ -21,7 +24,7 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
   const searchName = glob ? 'glob' : 'grep'
   const grepContent = glob ? '/workspace/glob-probe/match.ts' : 'Found 1 matches\n/workspace/grep-probe.txt:\n  Line 2: VIVARI_GREP_NEEDLE\n'
   // Shared ripgrep delivery and canonical tool-event validation for separate single-tool modes.
-  const grepEvidence = grep || glob ? { target: glob ? '/workspace/glob-probe' : '/workspace/grep-probe.txt', calls: 0, successes: 0, inputMatched: false, pathMatched: false, contentMatched: false, contentItems: 0, contentSha256: '', matchedFiles: 0, fixtureFiles: 0, correlationMatched: false,
+  const grepEvidence = needsRipgrep ? { target: glob ? '/workspace/glob-probe' : '/workspace/grep-probe.txt', calls: 0, successes: 0, inputMatched: false, pathMatched: false, contentMatched: false, contentItems: 0, contentSha256: '', matchedFiles: 0, fixtureFiles: 0, correlationMatched: false,
     seedBytes: 0, seedSha256: '', packageFiles: 0, manifestSha256: '', installerSha256: '', setupCheckpoint: false, setupStderrBytes: 0,
     setupExit: null as { exitCode: number; forced: boolean; signal: string | null } | null,
     providerExecuted: null as boolean | null, managedStop: 'pending', cleanupExitStatus: 'pending', exit: null as { exitCode: number; forced: boolean; signal: string | null } | null } : undefined
@@ -83,10 +86,15 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
         await workspace.fs.writeFile('/.server/config/opencode/opencode.json', JSON.stringify({
           model: 'opencode/' + modelEvidence.id, snapshots: false,
           providers: { opencode: { settings: { baseURL: `http://host.vivari.internal:${location.port}/api/model/opencode` } } },
-          ...(grep || glob ? { permissions: [{ action: searchName, resource: '*', effect: 'allow' }] } : read || edit ? { permissions: [{ action: 'read', resource: '*', effect: 'allow' }, ...(edit ? [{ action: 'edit', resource: '*', effect: 'allow' }] : [])] } : {}),
+          ...(combined ? { permissions: combinedSteps.map(({ name }) => ({ action: name, resource: '*', effect: 'allow' })) } : grep || glob ? { permissions: [{ action: searchName, resource: '*', effect: 'allow' }] } : read || edit ? { permissions: [{ action: 'read', resource: '*', effect: 'allow' }, ...(edit ? [{ action: 'edit', resource: '*', effect: 'allow' }] : [])] } : {}),
         }))
         if (read) await workspace.fs.writeFile('/read-probe.txt', readContent)
-        if (grepEvidence) {
+        if (combined) {
+          stage = 'seed and verify combined target'
+          await workspace.fs.mkdir('/combined-probe')
+          await workspace.fs.writeFile(combinedFixture.path, combinedFixture.before)
+          await combinedBytes(combined, 'before', new Uint8Array(await workspace.fs.readFile(combinedFixture.path)), hashBytes)
+        } else if (grepEvidence) {
           stage = 'seed and verify ' + searchName + ' target'
           const fixtures = glob ? globFixtures : [['/grep-probe.txt', 'before\nVIVARI_GREP_NEEDLE\nafter\n']]
           if (glob) await workspace.fs.mkdir('/glob-probe')
@@ -152,7 +160,7 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       } } })
       pass('all app output mounted unchanged; length and SHA-256 verified')
       const env = {
-        PATH: grep || glob ? '/direct/node_modules/.bin:/bin' : '/bin', ...(grep || glob ? { RIPGREP_NODE_WASI: '0' } : {}), HOME: '/workspace/.server/home', OPENCODE_TEST_HOME: '/workspace/.server/home',
+        PATH: needsRipgrep ? '/direct/node_modules/.bin:/bin' : '/bin', ...(needsRipgrep ? { RIPGREP_NODE_WASI: '0' } : {}), HOME: '/workspace/.server/home', OPENCODE_TEST_HOME: '/workspace/.server/home',
         XDG_CONFIG_HOME: '/workspace/.server/config', XDG_STATE_HOME: '/workspace/.server/state',
         XDG_DATA_HOME: '/workspace/.server/data', XDG_CACHE_HOME: '/workspace/.server/cache',
         TMPDIR: '/workspace/.server/tmp', OPENCODE_DB: '/workspace/.server/data/opencode.sqlite',
@@ -226,7 +234,14 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       const health = await endpoint.fetch('/api/health', { headers, signal: AbortSignal.timeout(20_000) })
       if (health.status !== 200 || (await health.json()).healthy !== true) throw Error()
       pass('authenticated health healthy=true')
-      if (modelEvidence) {
+      if (combined && modelEvidence) {
+        stage = 'combined one prompt and correlated terminal SSE (180s deadline)'
+        await runCombined(endpoint, headers, combined, modelEvidence)
+        pass('combined session created and one prompt completed with four ordered correlated local successes; SSE joined')
+        stage = 'exact combined final bytes through workspace.fs'
+        await combinedBytes(combined, 'after', new Uint8Array(await workspace.fs.readFile(combinedFixture.path)), hashBytes)
+        pass('combined final bytes and SHA-256 verified through public workspace.fs')
+      } else if (modelEvidence) {
         stage = 'create minimal model session'
         const created = await endpoint.fetch('/api/session', { method: 'POST', headers,
           body: JSON.stringify({ title: 'Minimal build model SSE', location: { directory: '/workspace' }, model: { providerID: modelEvidence.providerID, id: modelEvidence.id } }),
@@ -480,10 +495,10 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
       log('PASS ' + phase + ' full cleanup completed')
     }
     const last = phases[phases.length - 1]
-    return { status: 'PASS', restart, sessionRetention, session, model, modelEvidence, ...(read ? { read, readEvidence } : {}), ...(edit ? { edit, editEvidence } : {}), ...(grep ? { grep, grepEvidence } : {}), ...(glob ? { glob, globEvidence: grepEvidence } : {}), scope, runtime: manifest.version, checks, phases, database, exit: last.exit, outputBytes: last.outputBytes, assets: receipt.assets.length }
+    return { status: 'PASS', restart, sessionRetention, session, model, modelEvidence, ...(combined ? { mode, combinedEvidence: combined, deliveryEvidence: grepEvidence } : {}), ...(read ? { read, readEvidence } : {}), ...(edit ? { edit, editEvidence } : {}), ...(grep ? { grep, grepEvidence } : {}), ...(glob ? { glob, globEvidence: grepEvidence } : {}), scope, runtime: manifest.version, checks, phases, database, exit: last.exit, outputBytes: last.outputBytes, assets: receipt.assets.length }
   } catch {
     // Error objects and response bodies can contain credentials; report only the checkpoint.
-    return { status: 'FAIL', restart, sessionRetention, session, model, modelEvidence, ...(read ? { read, readEvidence } : {}), ...(edit ? { edit, editEvidence } : {}), ...(grep ? { grep, grepEvidence } : {}), ...(glob ? { glob, globEvidence: grepEvidence } : {}), scope, error: 'Failed at ' + phase + ': ' + stage, checks, phases, database }
+    return { status: 'FAIL', restart, sessionRetention, session, model, modelEvidence, ...(combined ? { mode, combinedEvidence: combined, deliveryEvidence: grepEvidence } : {}), ...(read ? { read, readEvidence } : {}), ...(edit ? { edit, editEvidence } : {}), ...(grep ? { grep, grepEvidence } : {}), ...(glob ? { glob, globEvidence: grepEvidence } : {}), scope, error: 'Failed at ' + phase + ': ' + stage, checks, phases, database }
   } finally {
     try { await managedStop?.() } catch { if (toolCleanup) toolCleanup.managedStop = 'failed'; /* runtime.stop below remains mandatory */ }
     try { await runtime?.stop() }
@@ -497,7 +512,9 @@ async function qualify(runID: string, restart: boolean, sessionRetention: boolea
 }
 
 async function run() {
-  const { runID, restart, sessionRetention, model, read = false, edit = false, grep = false, glob = false } = await fetch('/run-config').then(r => r.json())
+  const { runID, restart, sessionRetention, model, read = false, edit = false, grep = false, glob = false, mode = 'single' } = await fetch('/run-config').then(r => r.json())
+  if (!['single', 'combined-tools'].includes(mode) || new URL(location.href).searchParams.has('combined-tools') !== (mode === 'combined-tools') ||
+    (mode === 'combined-tools' && (!model || restart || sessionRetention || read || edit || grep || glob))) throw Error('Combined mode mismatch; use the printed URL')
   if (new URL(location.href).searchParams.get('runID') !== runID) throw Error('Run ID mismatch; use the printed URL')
   if (typeof restart !== 'boolean' || new URL(location.href).searchParams.has('restart') !== restart) throw Error('Restart mode mismatch; use the printed URL')
   if (typeof sessionRetention !== 'boolean' || new URL(location.href).searchParams.has('session-retention') !== sessionRetention || (sessionRetention && !restart)) throw Error('Session retention mode mismatch; use the printed URL')
@@ -507,7 +524,7 @@ async function run() {
   if (typeof grep !== 'boolean' || new URL(location.href).searchParams.has('grep') !== grep || (grep && (!model || restart || read || edit))) throw Error('Grep mode mismatch; use the printed URL')
   if (typeof glob !== 'boolean' || new URL(location.href).searchParams.has('glob') !== glob || (glob && (!model || restart || sessionRetention || read || edit || grep))) throw Error('Glob mode mismatch; use the printed URL')
   let result
-  try { result = await qualify(runID, restart, sessionRetention, model, read, edit, grep, glob) }
+  try { result = await qualify(runID, restart, sessionRetention, model, read, edit, grep, glob, mode) }
   catch (error) {
     const message = error instanceof Error && error.message.startsWith('Failed at ') ? error.message : 'Probe cleanup or startup failed'
     result = { status: 'FAIL', error: message }
