@@ -9,6 +9,16 @@ page.setDefaultTimeout(8000);
 const a = state.editorAcceptance ??= { run: Date.now().toString(36), url: cfg.url, receipts: [], done: {} };
 if (a.url !== cfg.url) throw Error('Harness state belongs to another URL');
 const assert = (ok, reason) => { if (!ok) throw Error(reason); };
+function shellSourceCommand(sourcePath, sha256, heading, stdout) {
+  const program = [
+    `const bytes = require("node:fs").readFileSync(${JSON.stringify(sourcePath)});`,
+    `const hash = require("node:crypto").createHash("sha256").update(bytes).digest("hex");`,
+    `if (hash !== ${JSON.stringify(sha256)}) throw new Error("Source SHA-256 mismatch");`,
+    `if (!bytes.toString("utf8").includes(${JSON.stringify(`<h1>${heading}</h1>`)})) throw new Error("Source heading mismatch");`,
+    `process.stdout.write(${JSON.stringify(stdout)});`,
+  ].join('\n');
+  return `node -e '${program.replace(/'/g, "'\\''")}'`;
+}
 const need = (...phases) => phases.forEach(p => assert(a.done[p], `Prerequisite not verified: ${p}`));
 const button = name => page.getByRole('button', { name, exact: true });
 const file = () => page.getByRole('textbox', { name: 'File contents', exact: true });
@@ -275,9 +285,18 @@ try {
     }
     case 'shell-send': {
       need('model-verify');
+      assert(!a.shell, 'Shell intent already exists; do not overwrite source baseline or resubmit');
+      const source = await readSource();
+      assert(source === a.retainedSource, 'Source changed since independent model verification; establish a fresh model/source baseline first');
+      const sha256 = await page.evaluate(async source => {
+        const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(source));
+        return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, '0')).join('');
+      }, source);
       a.shellStdout = `editor-shell-${a.run}\n`;
-      a.shellCommand = `printf 'editor-shell-${a.run}\\n'`;
-      receipt.turn = await startTurn('shell', `Use the native built-in shell tool exactly once in foreground (background:false, timeout:8000) to run this exact command: ${a.shellCommand}\nDo not use a custom tool, JavaScript emulation, or file edits. We need actual tool output and the actual process exit code, not prose.`);
+      a.shellCheck = { path: `/workspace${cfg.sourcePath ?? '/src/home.tsx'}`, sha256, heading: a.modelHeading, stdout: a.shellStdout };
+      receipt.sourceCheck = a.shellCheck;
+      a.shellCommand = shellSourceCommand(a.shellCheck.path, sha256, a.modelHeading, a.shellStdout);
+      receipt.turn = await startTurn('shell', `Use the native built-in shell tool exactly once in foreground (background:false, timeout:8000) to run this exact command:\n${a.shellCommand}\nThis must launch ordinary guest Node through the shell. The command reads the real source, checks its SHA-256 and heading, and emits its marker only after both checks pass. Do not replace or change the command, use a custom tool, emulate execution, or edit files. We need actual tool output and the actual process exit code, not prose.`);
       receipt.status = 'SUBMITTED';
       break;
     }
@@ -292,12 +311,17 @@ try {
       assert(terminalLocalTool(t), `Native local shell not terminal: ${t.state.status}, executed:${t.executed}`);
       // beta-19425 tool/plugin/shell.ts toolResult + shell/result.ts:
       // content[0] is combined process capture; content[1] is the exit notice.
-      // This stdout-only printf emits no stderr. Do not strip/normalize capture.
+      // Node emits the stdout marker only after fs + crypto source verification.
+      // Success emits no stderr. Do not strip/normalize capture.
+      assert(a.shellCheck, 'Missing Node source-check baseline (an older printf intent cannot qualify this gate)');
+      receipt.sourceCheck = a.shellCheck;
       receipt.output = t.state.content;
       receipt.exit = t.state.metadata?.exit;
       assert(receipt.exit === 0 && t.state.metadata.status === 'completed' && t.state.metadata.truncated === false && t.state.metadata.timeout !== true, 'Shell metadata does not prove completed, non-truncated exit 0');
       assert(t.state.content?.length === 2 && t.state.content[0].type === 'text' && t.state.content[0].text === a.shellStdout &&
         t.state.content[1].type === 'text' && t.state.content[1].text === 'Command exited with code 0.', 'Shell native capture/notice differs from exact stdout and exit notice');
+      receipt.source = await readSource();
+      assert(receipt.source === a.retainedSource, 'Independent workspace source changed during Node shell check');
       break;
     }
     case 'close': {
