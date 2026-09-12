@@ -46,12 +46,22 @@ export interface PreparedManifest {
   project: Record<string, string>;
 }
 
+/** Derived locks reference these binary inputs relative to the project root. */
+export function validatePreparedBackendArchives(manifest: Pick<PreparedManifest, 'dependencies' | 'assets'>) {
+  for (const archive of manifest.dependencies.backendArchives ?? []) {
+    if (archive.path !== `.browser-editor-backends/${archive.sha256}.tgz`) throw Error('Invalid prepared backend archive path');
+    const asset = manifest.assets.find(entry => entry.destination === '/workspace/' + archive.path);
+    if (asset?.kind !== 'file' || asset.sha256 !== archive.sha256 || asset.bytes !== archive.bytes) throw Error('Prepared backend archive input missing or mismatched');
+  }
+}
+
 export async function loadPrepared(base: string, signal: AbortSignal): Promise<PreparedManifest> {
   const response = await fetch(base + 'manifest.json', { signal });
   if (!response.ok) throw Error(`Editor preparation unavailable: HTTP ${response.status}`);
   const manifest = await response.json() as PreparedManifest;
   if (manifest.format !== 'browser-editor-v2') throw Error('Unsupported editor preparation; regenerate with the current preparer');
   validateTree(manifest.assets);
+  validatePreparedBackendArchives(manifest);
   await validatePreparedOpenCode(manifest);
   if (manifest.dependencies.policy.runtimeVersion !== manifest.runtimeVersion) throw Error('Prepared backend policy runtime mismatch');
   for (const path of Object.keys(manifest.project)) if (!path.startsWith('/') || path.split('/').slice(1).some(part => !part || part === '.' || part === '..' || /[\\\0]/.test(part)) || path === '/node_modules' || path.startsWith('/node_modules/')) throw Error('Invalid prepared source path');
@@ -62,6 +72,7 @@ export function preparedApps(manifest: PreparedManifest, base: string, signal: A
   return { name: 'browser-editor-apps', version: manifest.runtimeVersion, async bind(context) {
     return async () => {
       validateTree(manifest.assets);
+      validatePreparedBackendArchives(manifest);
       async function metadata(phase: 'reset' | 'metadata') {
         const script = new TextEncoder().encode(treeInstaller(manifest.assets, phase));
         const identity = [...new Uint8Array(await crypto.subtle.digest('SHA-256', script))].map(byte => byte.toString(16).padStart(2, '0')).join('');

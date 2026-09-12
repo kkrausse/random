@@ -5,7 +5,7 @@ import type { ToolContext } from '@kev-browser-agent-kit/workspace';
 
 test('guest delivery uses distinct immutable installer scripts and checks completion and file hashes', async () => {
   const bytes = new TextEncoder().encode('verified dependency'), hash = sha256(bytes);
-  const manifest = { runtimeVersion: 'test', assets: [
+  const manifest = { runtimeVersion: 'test', dependencies: { backendArchives: [] }, assets: [
     { kind: 'directory', destination: '/workspace/node_modules', mode: 0o755 },
     { kind: 'file', destination: '/workspace/node_modules/file', mode: 0o640, file: hash + '.bin', sha256: hash, bytes: bytes.length },
   ] } as PreparedManifest;

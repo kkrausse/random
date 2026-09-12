@@ -31,11 +31,40 @@ explains the supported-platform boundary. The added upstream regression covers
 initial scanning, unchanged reuse, and editing `flex` to `grid`. The earlier
 v4.3.3 experiment is **not** the adopted source.
 
+### Embedding preparation checkpoint (September 12)
+
+The public build-time `prepareBrowserEditor` now accepts explicit `backendArchives`,
+and `/prepare` exports the pinned verifier. The TODO consumer selects the PR with
+`TAILWIND_CANDIDATE_RECEIPT` and `TAILWIND_CANDIDATE_SHA256`. The verified tarball
+is retained as a hashed binary prepared asset under `/workspace/.browser-editor-backends/`;
+the derived manifest/lock retain its portable path and its own archive integrity.
+The browser validates that each receipted archive has a matching delivered input.
+
+A complete host preparation using the actual PR archive passed with **10,468 tree
+entries** and all **115 source-backend package files** checked by the installer.
+The resulting prepared manifest SHA-256 is
+`e7dde6be8e68a8f0d77a7529a962d805f14e9364ba6f13a1098d44e75ca5d3aa`.
+Evidence and disposable output are under
+`/private/var/folders/t_/x48jtnps7n5_0g_pt9xpvbg00000gn/T/opencode/todo-editor-clean-acceptance.d1vGpL/`
+(`prepare-pr-host.ts`, `prepare-pr-host.json`, `prepared-pr-host/`).
+This checkpoint leaves the live published-backend browser diagnostic unchanged.
+
+The pin now lives inside the toolkit's source root and is bundled into its host
+helper. A relocated-consumer test passes, and emitted declarations retain the
+package's flat public layout. This avoids requiring an adjacent Vivari checkout
+or emitting declarations under an unexpected parent directory. The pin bytes and
+existing artifact identities are unchanged by that source-file move.
+
+Package checks after this integration: **73 passed, one retained-artifact test
+skipped without its explicit environment input, 311 assertions**. The actual
+retained candidate was additionally consumed by the full preparation checkpoint.
+Browser CSS HMR acceptance remains pending the separate Vite startup diagnosis.
+
 ### Maintained build and package verification
 
 New source files:
 
-- `vivari/tailwind-wasm-candidate.json`: explicit repository, commit, tree, base,
+- `opencode-chat/src/tailwind-wasm-candidate.json`: explicit repository, commit, tree, base,
   PR identity, target, tool versions, and hashed pnpm bootstrap tarball.
 - `vivari/scripts/build-tailwind-wasm-candidate.ts`: Bun host recipe; immutable
   Git checkout, upstream frozen pnpm/Cargo locks, two clean WASM builds, same-source
@@ -44,7 +73,7 @@ New source files:
 - `opencode-chat/src/tailwind-application.ts`: host-only
   `readTailwindWasmCandidate(receiptPath, expectedReceiptSha256)` verifier returning
   the explicit package root and provenance for a generic dependency override.
-- `opencode-chat/test/tailwind-application.test.ts`: five focused receipt/package
+- `opencode-chat/test/tailwind-application.test.ts`: seven focused receipt/package
   contract tests, including stale source, changed bytes, extra files, and symlinks.
 
 Reproduce from `browser-container-poc/vivari`:

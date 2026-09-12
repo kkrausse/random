@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import pin from '../../vivari/tailwind-wasm-candidate.json';
+import pin from '../src/tailwind-wasm-candidate.json';
 import { readTailwindWasmCandidate } from '../src/tailwind-application';
 
 const roots: string[] = [];
@@ -31,7 +31,7 @@ function fixture() {
   const receipt = {
     schema: 1, kind: 'tailwind-wasm-source-candidate', id: pin.id,
     source: { repository: pin.repository, revision: pin.revision, tree: pin.tree, upstreamBase: pin.upstreamBase, pullRequest: pin.pullRequest, dirty: false },
-    recipe: { pinSha256: sha(readFileSync(new URL('../../vivari/tailwind-wasm-candidate.json', import.meta.url))), scriptSha256: '0'.repeat(64) },
+    recipe: { pinSha256: sha(readFileSync(new URL('../src/tailwind-wasm-candidate.json', import.meta.url))), scriptSha256: '0'.repeat(64) },
     package: { name: pin.packageName, version: pin.packageVersion, path: 'package', registryArtifact: false, metadata, metadataSha256: sha(metadataBytes), originalMetadataPath: 'evidence/original-package.json', originalMetadataSha256: sha(metadataBytes), files, manifestSha256: sha(JSON.stringify(files)), wasmSha256: sha(wasmBytes), tarball: 'package.tgz', tarballSha256: sha(archiveBytes) },
     verification: { sameInstanceNativeParity: true, checkpoints: 8, browserHmrAccepted: false },
   };

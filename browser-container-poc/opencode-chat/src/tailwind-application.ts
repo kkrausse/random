@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import pin from '../../vivari/tailwind-wasm-candidate.json';
+import pin from './tailwind-wasm-candidate.json';
 
 type CandidateFile = { path: string; bytes: number; sha256: string };
 type CandidateReceipt = {
