@@ -35,6 +35,22 @@ function setup() {
 }
 
 describe('IME cursor presentation', () => {
+  test('keeps input focus zoom-safe across cursor updates without enlarging preedit', () => {
+    const { textarea, position, ime, overlay, compose } = setup();
+    position.fontSize = 12;
+    compose('compositionstart');
+    compose('compositionupdate', '한');
+    expect(textarea.style.fontSize).toBe('16px');
+    expect(overlay.style.fontSize).toBe('12px');
+    ime.position({ ...position, left: 96, fontSize: 14 });
+    expect(textarea.style.fontSize).toBe('16px');
+    expect(textarea.style.left).toBe('96px');
+    expect(overlay.style.fontSize).toBe('14px');
+    ime.position({ ...position, fontSize: 20 });
+    expect(textarea.style.fontSize).toBe('20px');
+    expect(overlay.style.fontSize).toBe('20px');
+  });
+
   test('open wires a real input caret, forwards parent focus, and restores host layout on dispose', async () => {
     const parent = document.createElement('div');
     document.body.append(parent);

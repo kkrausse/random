@@ -2,6 +2,7 @@ import type { Terminal } from "@random/ghostty-web";
 import { DictationController } from "./dictation";
 import type { TerminalConnection } from "./connection";
 import { installTerminalTouchControls } from "./touch";
+import { terminalViewport } from "./viewport";
 
 // Leave key encoding, composition, bracketed paste, and mouse reporting to Ghostty.
 export function installMobileControls(container: HTMLElement, terminal: Terminal, notice: (message: string) => void, connection: TerminalConnection) {
@@ -60,7 +61,6 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
     },
   });
   const focus = () => terminal.textarea?.focus({ preventScroll: true });
-  if (terminal.textarea) terminal.textarea.style.fontSize = "16px"; // Avoid iOS focus zoom.
 
   // Prevent pointer focus from dismissing the keyboard before the click handler.
   toolbar.addEventListener("pointerdown", (event) => event.preventDefault());
@@ -106,14 +106,21 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
   // visualViewport shrinks with the software keyboard even when 100dvh does not.
   const viewport = window.visualViewport;
   const layout = () => {
-    if (viewport && viewport.scale !== 1) return; // Preserve browser pinch zoom.
-    document.body.style.height = `${viewport?.height ?? window.innerHeight}px`;
-    document.body.style.top = `${viewport?.offsetTop ?? 0}px`;
+    const { height, top } = terminalViewport(viewport, window.innerHeight);
+    document.body.style.height = `${height}px`;
+    document.body.style.top = `${top}px`;
   };
-  viewport?.addEventListener("resize", layout);
-  viewport?.addEventListener("scroll", layout);
-  window.addEventListener("resize", layout);
-  window.addEventListener("pageshow", layout);
+  let layoutFrame = 0;
+  const scheduleLayout = () => {
+    if (layoutFrame) return;
+    layoutFrame = requestAnimationFrame(() => { layoutFrame = 0; layout(); });
+  };
+  viewport?.addEventListener("resize", scheduleLayout);
+  viewport?.addEventListener("scroll", scheduleLayout);
+  window.addEventListener("resize", scheduleLayout);
+  window.addEventListener("pageshow", scheduleLayout);
+  container.addEventListener("focusin", scheduleLayout);
+  container.addEventListener("focusout", scheduleLayout);
   window.addEventListener("blur", () => { setControl(false); });
   layout();
 

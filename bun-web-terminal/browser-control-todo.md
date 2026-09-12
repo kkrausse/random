@@ -1,5 +1,18 @@
 # Browser verification blocker
 
+- 2026-09-11, Browser Control 0.7.0, session `lucky-comet-321`, disposable
+  localhost:3107 mobile-zoom check: after `page.setViewportSize` and raw CDP
+  `Emulation.setDeviceMetricsOverride` (390×844, mobile, DPR 3) plus
+  `Emulation.setPageScaleFactor` transitions 1 → 1.5 → 1,
+  `getByRole("button", {name:"Keyboard", exact:true}).click()` timed out:
+  `canvas ... from main#terminal subtree intercepts pointer events`.
+  Expected a toolbar click; actual hit testing targeted the canvas. The initial
+  desktop CSS viewport was 487.5×1055 for a requested 390×844, suggesting browser
+  zoom/emulation coordinate interaction; no tooling root cause was established.
+  Recovered by verifying DOM geometry separately, clearing device metrics and
+  page scale, and checking toggle logic with DOM clicks (not trusted touch).
+  Real phone keyboard verification remains outstanding. No relay restart.
+
 - 2026-09-08, Browser Control 0.7.0, official Ghostty WASM migration:
   `browser-control execute 'return {url:page.url(),title:await page.title()}'`
   exited with `Browser Control extension is not connected. Load extension/dist in Chromium; it reconnects automatically after relay or browser startup.`
