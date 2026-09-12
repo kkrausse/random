@@ -3,11 +3,13 @@ import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { readRuntimeAssets, readRuntimeBackendPolicy } from '@kev-browser-agent-kit/workspace/assets';
 import type { PreparedManifest } from './prepared';
-import { prepareDependencies } from './prepare-dependencies';
+import { prepareDependencies, type BackendArchiveInput } from './prepare-dependencies';
 import { captureTree, sha256 as hash } from './prepare-tree';
 import { validateTree, treeRoots } from './package-tree';
 import { readQualifiedOpenCodeApplication } from './opencode-application';
 import { openCodeCandidateLaunch } from './opencode-launch';
+export { readTailwindWasmCandidate } from './tailwind-application';
+export type { BackendArchiveInput } from './prepare-dependencies';
 
 /** Ordinary registry installation, with the archive integrity retained by qualification. */
 export async function prepareOpenCodeRipgrep(prepared: string, bun = process.execPath) {
@@ -41,6 +43,8 @@ export interface PrepareBrowserEditorOptions {
   source: string[];
   /** Host Bun executable; defaults to the Bun running this preparer. */
   bunExecutable?: string;
+  /** Explicit source-built backend archives, verified separately from registry packages. */
+  backendArchives?: BackendArchiveInput[];
 }
 
 /** Bun build-time preparation. Application source is unchanged; native bundlers use WASM. */
@@ -75,6 +79,7 @@ export async function prepareBrowserEditor(options: PrepareBrowserEditorOptions)
     }
   }
   assets.push(...await captureTree(join(dependencies.install, 'node_modules'), '/workspace/node_modules', async (file, bytes) => { await Bun.write(join(prepared, file), bytes); }));
+  for (const input of dependencies.archiveInputs) await add('/workspace/' + input.path, input.bytes);
   for (const asset of application.assets) await add(asset.destination, asset.bytes);
   await Bun.write(join(prepared, 'opencode-build-receipt.json'), application.receiptBytes);
   const support = await prepareOpenCodeRipgrep(prepared, options.bunExecutable);

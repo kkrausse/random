@@ -1,13 +1,14 @@
 # Todo app: IRS Tools stack + browser agent kit
 
-**V2 preparation and beta-19425 editor wiring pass host checks; combined browser
-acceptance is pending.** Preparation now preserves project manifest/lock bytes,
-isolated dependency links and executable modes, with explicit runtime backend and
-OpenCode provenance. Normal upstream `@tailwindcss/vite` and published Oxide WASM
-4.3.3 remain selected. The earlier new-utility CSS HMR failure remains open; no PR
-backend is adopted here. See the [candidate integration and exact checks](../doc/opencode-editor-candidate-migration.md),
-[CSS HMR attempt](../doc/todo-upstream-tailwind-attempt.md), and
-[original API audit/baseline comparison](../doc/todo-editor-clean-integration.md).
+**Current clean-integration qualification: blocked at preview hydration.** Preparation
+v2 and the qualified beta-19425 server are integrated and host-tested. The first
+clean-origin browser attempt installed the full package tree and started Vite, but
+optimized dependency requests returned HTTP 504 before preview/chat readiness.
+The separate upstream Tailwind WASM scanner repair is available through the explicit
+source-pinned selection below. Combined browser HMR and retention remain pending.
+See the [candidate migration](../doc/opencode-editor-candidate-migration.md),
+[preparation contract](../doc/workspace-preparation-v2.md), and
+[scanner repair](../doc/todo-tailwind-followup.md).
 
 A minimal unauthenticated todo app using the relevant wiring from `../irs-tools` (the sibling repository of `random`):
 
@@ -80,6 +81,29 @@ bun run prepare:editor
 bun run build
 LOCAL_EDITOR_ADMIN=1 PORT=4390 bun start
 ```
+
+### Select the source-pinned Tailwind repair
+
+After building the authorized upstream PR with
+`bun ../vivari/scripts/build-tailwind-wasm-candidate.ts --node /absolute/path/to/node`,
+select its receipt and hash explicitly before `prepare:editor`. The verified build
+from this iteration uses:
+
+```sh
+export TAILWIND_CANDIDATE_RECEIPT="$PWD/../vivari/.runtime/tailwind-wasm-candidate/11050dda2c4e26a3412b1745e84ea41d8fed6335/a6719da6db7b71197e68f29625597633cb31de6cb13f434f485d02e80e4856e3/receipt.json"
+export TAILWIND_CANDIDATE_SHA256=456722dd32ebba38e957bf9560eaab820936e8c16132d14b5c861381793adc9a
+bun run prepare:editor
+```
+
+A fresh build writes its own exact artifact/receipt identity to
+`../vivari/.runtime/tailwind-wasm-candidate/current.json`; use that receipt and
+digest together. The pinned PR source is verified by the toolkit. The chosen
+archive is retained as a binary input under `/workspace/.browser-editor-backends/`,
+and the derived lock records its distinct SHA-512 and source provenance. It is not
+identified as the published registry archive. Omit both environment variables to
+select the published backend. Browser CSS HMR acceptance of the PR build is pending.
+
+### Open the editor
 
 Open http://127.0.0.1:4390 and choose **Open editor**. The editor starts closed;
 the explicit button mounts its lazy entry. `LOCAL_EDITOR_ADMIN=1`

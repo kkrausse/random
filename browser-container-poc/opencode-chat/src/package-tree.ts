@@ -4,7 +4,7 @@ export type PreparedEntry =
   | { kind: 'directory'; destination: string; mode: number }
   | { kind: 'symlink'; destination: string; target: string };
 
-export const treeRoots = ['/workspace/node_modules', '/opencode-v2', '/app'];
+export const treeRoots = ['/workspace/node_modules', '/workspace/.browser-editor-backends', '/opencode-v2', '/app'];
 
 export function validateTree(entries: PreparedEntry[]) {
   const paths = new Map<string, PreparedEntry>();

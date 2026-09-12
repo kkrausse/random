@@ -7,7 +7,7 @@ import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
 const root = resolve(import.meta.dir, '..');
-const pinPath = join(root, 'tailwind-wasm-candidate.json');
+const pinPath = join(root, '../opencode-chat/src/tailwind-wasm-candidate.json');
 const pin = JSON.parse(readFileSync(pinPath, 'utf8'));
 const args = process.argv.slice(2);
 if (args.includes('--help')) {
