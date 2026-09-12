@@ -1,10 +1,168 @@
-# Tailwind WASM follow-up: buildable upstream correction, publication still blocked
+# Tailwind WASM follow-up: adopted source-pinned user PR backend
 
 September 11, 2026 local time. Independent follow-up to the
 [root-cause investigation](todo-tailwind-hmr-root-cause.md) and
 [published release check](todo-tailwind-wasm-release-check.md).
 
-## Decision
+## Current decision: adopt the user's PR, qualify browser HMR next
+
+The user explicitly authorized adopting their existing
+[PR #20487](https://github.com/tailwindlabs/tailwindcss/pull/20487), after confirming
+its identity. **The prior bounded search missed that PR.** Its source correction
+and regression test supersede the duplicate one-line experiment below. No corrected
+registry release was found, but publication is no longer the acquisition blocker:
+a separately identified backend from the exact authorized PR is built and retained.
+
+Confirmed through `gh pr view 20487 --repo tailwindlabs/tailwindcss`:
+
+| Field | Immutable adoption pin |
+| --- | --- |
+| Author / head repository | `kkrausse` / `kkrausse/tailwindcss` |
+| Branch (informational only) | `fix/wasm-incremental-scanning` |
+| Commit | `11050dda2c4e26a3412b1745e84ea41d8fed6335` |
+| Git tree | `98aa087afde005c8ae3956ae98db37b4d23bb3fb` |
+| Upstream base | `41d9cae8e53378d16087fcf359eb785c2fd42ce4` |
+| Candidate ID | `tailwindcss-pr-20487@11050dda2c4e26a3412b1745e84ea41d8fed6335` |
+
+The tracked PR diff contains only `crates/oxide/src/scanner/mod.rs` and
+`integrations/oxide/wasm.test.ts`. Its actual selection condition is
+`self.has_scanned_once && cfg!(any(unix, windows))`; the surrounding comment
+explains the supported-platform boundary. The added upstream regression covers
+initial scanning, unchanged reuse, and editing `flex` to `grid`. The earlier
+v4.3.3 experiment is **not** the adopted source.
+
+### Maintained build and package verification
+
+New source files:
+
+- `vivari/tailwind-wasm-candidate.json`: explicit repository, commit, tree, base,
+  PR identity, target, tool versions, and hashed pnpm bootstrap tarball.
+- `vivari/scripts/build-tailwind-wasm-candidate.ts`: Bun host recipe; immutable
+  Git checkout, upstream frozen pnpm/Cargo locks, two clean WASM builds, same-source
+  native control, normal upstream artifact moving/packing, artifact assertions,
+  and durable content-addressed receipt/package output.
+- `opencode-chat/src/tailwind-application.ts`: host-only
+  `readTailwindWasmCandidate(receiptPath, expectedReceiptSha256)` verifier returning
+  the explicit package root and provenance for a generic dependency override.
+- `opencode-chat/test/tailwind-application.test.ts`: five focused receipt/package
+  contract tests, including stale source, changed bytes, extra files, and symlinks.
+
+Reproduce from `browser-container-poc/vivari`:
+
+```sh
+bun scripts/build-tailwind-wasm-candidate.ts --node /absolute/path/to/native/node
+```
+
+The pin currently requires **Node v24.13.0** (native, not Bun), **Rust 1.95.0** and
+installed `wasm32-wasip1-threads`. The recipe's `--source /existing/tailwind-checkout`
+option clones committed objects into a fresh temporary checkout, never changes
+the supplied checkout, and ignores its working-tree edits. Without that option it
+clones the pinned repository. `--temp-root` selects another approved scratch root.
+The successful runs used isolated source originally cloned into approved temp
+directory `tailwind-pr20487.kGrqSU`, not a user's editable fork.
+
+The PR's frozen lock selects pnpm **11.9.0**, NAPI CLI **3.7.4**, emnapi/core/runtime
+**1.11.3**, and NAPI WASM runtime **1.2.2**. Both Cargo builds use `--locked` in
+separate clean output trees. The script invokes upstream's generated-artifact mover
+and `pnpm pack --config.node-linker=hoisted`, as upstream requires for bundled
+dependencies. No source patch, loader rewrite, binary edit, or metadata version
+rewrite is applied. It verifies the Git checkout remains clean after building.
+
+The resulting 115-file package preserves original package name/version
+**`@tailwindcss/oxide-wasm32-wasi@4.3.3`**, loaders, browser loader/worker, and all
+six bundled dependency packages. The source JSON bytes are separately preserved
+as `evidence/original-package.json`; upstream `pnpm pack` removes the final newline,
+so metadata hashes differ while parsed metadata is asserted exactly equal.
+Candidate identity lives in the receipt, never in a fabricated registry version.
+
+| Bundled dependency | Exact frozen version |
+| --- | --- |
+| `@napi-rs/wasm-runtime` | 1.2.2 |
+| `@emnapi/core` | 1.11.3 |
+| `@emnapi/runtime` | 1.11.3 |
+| `@tybys/wasm-util` | 0.10.3 |
+| `@emnapi/wasi-threads` | 1.2.3 |
+| `tslib` | 2.8.1 |
+
+### Qualification and durable receipts
+
+The adopted package's same-instance scanner passes all eight checkpoints in the
+historical table below, with **exact complete candidate/file/scanned-file parity
+against the native addon compiled from the same PR commit**. Neither probe forces
+exit: both emit `TAILWIND_SCANNER_SAME_INSTANCE_PASS` and exit naturally zero.
+The build script emits `TAILWIND_WASM_CANDIDATE_READY` only after those checks,
+package integrity checks, source-drift checks, and receipt publication.
+
+The two independent clean WASM builds match in every section except `build_id`.
+Full binary hashes are retained without stripping that section; cross-host
+bit-for-bit reproduction is not claimed. The receipt records native Node binary
+hash, Rust/Cargo information, environment, host Cargo config, tool metadata hashes,
+commands/logs, source archive and tree, original manifests/locks, all package bytes,
+the packaged tarball, both WASM hashes, and the retained native control.
+
+Durable ignored root: `vivari/.runtime/tailwind-wasm-candidate/`:
+
+```text
+current.json                     # atomic pointer + exact receipt SHA-256
+<revision>/<package-manifest-sha256>/
+  receipt.json                   # source/tool/build/package/verification provenance
+  package.tgz                    # unchanged output of upstream pnpm pack
+  package/                       # extracted self-contained backend, 115 files
+  evidence/                      # source.tar, locks, recipe, probes, binaries, logs
+```
+
+The earlier successful PR build has receipt SHA-256
+`4cbfc578756519b55f1fd106aa5d4acc898be606bfb5f455e2ee7860ed605082`
+and WASM SHA-256
+`d3b80f7e7f7f429c967050e46c4f8410d6deb869b69107a85ae25ec9fbfe9844`
+(1,718,880 bytes). Its immutable directory remains available if preparation has
+already selected it. The final maintained recipe's receipt is selected by
+`current.json`. Final maintained-recipe artifact:
+
+| Field | SHA-256 |
+| --- | --- |
+| Receipt | `456722dd32ebba38e957bf9560eaab820936e8c16132d14b5c861381793adc9a` |
+| Package file manifest / directory key | `a6719da6db7b71197e68f29625597633cb31de6cb13f434f485d02e80e4856e3` |
+| WASM (1,718,880 bytes) | `cfde7c6f47206120876212f3ee943bbc666b1489622c462d825ed394d12cc583` |
+| Upstream-packed tarball | `6e5ce92301d411cf21c29c148f9eddd9d8744698980966f7bb58e4ccd2f2e998` |
+| Maintained build recipe | `9aa467c0a951ee85e3ea510ff9a6a3e1d3615e6fd60c3b6cb395841f329f68fe` |
+
+Its package directory is
+`vivari/.runtime/tailwind-wasm-candidate/11050dda2c4e26a3412b1745e84ea41d8fed6335/a6719da6db7b71197e68f29625597633cb31de6cb13f434f485d02e80e4856e3/package`.
+All 115 package files total 6,561,483 bytes. The final build reran both clean WASM
+builds, the native build, the upstream pack step, and eight-checkpoint parity;
+the exact final package also passed the host verifier.
+
+Validation: the actual durable package passes the new host verifier; all five
+focused verifier tests pass; isolated TypeScript checking of the three new TS
+files passes. An initial build/probe run exposed the macOS `/var` versus
+`/private/var` fixture-path alias; canonicalizing the scratch root fixed the fixture
+comparison. This was not a scanner failure or package modification.
+
+### Preparation integration contract and remaining gate
+
+The integration owner should explicitly select a receipt/digest (the mutable
+`current.json` pointer is a discovery aid), call `readTailwindWasmCandidate`, and
+use its `packageRoot` as a **generic package override for
+`@tailwindcss/oxide-wasm32-wasi` only**. Preserve the bundled nested dependency tree
+and original manifest. Carry `id`, source commit/tree, receipt SHA-256, package
+manifest SHA-256, and WASM SHA-256 into preparation provenance. The backend's source
+version is still 4.3.3; do not merge its identity with cached registry 4.3.3 bytes.
+
+This helper does not alter preparation defaults or package graph types. The parent
+owns `prepare.ts` / `prepared.ts` integration and actual browser acceptance.
+The remaining gate is the ordinary TODO edit to `row text-[37px]`: require the
+utility in transformed CSS, actual HMR CSS response, installed CSSOM, matching
+selector, and **37px computed style**. The source acquisition/build blocker is
+resolved; that final browser gate remains open in these receipts.
+
+## Historical investigation before the authorized PR adoption
+
+The following sections retain the original bounded search and duplicate build
+experiment. Their publication/adoption blocker statements describe that earlier
+point in time; the authorized PR build above supersedes them.
+
+### Original decision
 
 **There is still no verified corrected published artifact. A minimal upstream
 source correction is now experimentally proven buildable and passes native-parity
