@@ -1,11 +1,11 @@
 # Todo app: IRS Tools stack + browser agent kit
 
-**Current clean-integration qualification: blocked at preview hydration.** Preparation
-v2 and the qualified beta-19425 server are integrated and host-tested. The first
-clean-origin browser attempt installed the full package tree and started Vite, but
-optimized dependency requests returned HTTP 504 before preview/chat readiness.
-The separate upstream Tailwind WASM scanner repair is available through the explicit
-source-pinned selection below. Combined browser HMR and retention remain pending.
+**Clean browser acceptance PASS.** Preparation v2, the qualified beta-19425 server,
+runtime native-realpath/shell-quoting fixes, and the source-pinned Tailwind PR passed
+startup, CRUD, genuine model edits, same-document HMR, native shell Node source
+verification, new CSS utility application, EOF shutdown, source/conversation
+retention and startup cancellation. The accepted runtime pin is `33305d5`.
+See the [combined browser receipt and run command](../doc/todo-clean-demo-acceptance.md).
 See the [candidate migration](../doc/opencode-editor-candidate-migration.md),
 [preparation contract](../doc/workspace-preparation-v2.md), and
 [scanner repair](../doc/todo-tailwind-followup.md).
@@ -101,7 +101,8 @@ digest together. The pinned PR source is verified by the toolkit. The chosen
 archive is retained as a binary input under `/workspace/.browser-editor-backends/`,
 and the derived lock records its distinct SHA-512 and source provenance. It is not
 identified as the published registry archive. Omit both environment variables to
-select the published backend. Browser CSS HMR acceptance of the PR build is pending.
+select the published backend. The PR build passed real-browser new-utility CSS HMR
+with the qualified runtime identified in the combined receipt.
 
 ### Open the editor
 

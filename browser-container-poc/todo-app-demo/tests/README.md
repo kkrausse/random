@@ -1,9 +1,15 @@
-# Combined editor browser acceptance (prepared, not run)
+# Combined editor browser acceptance
+
+The September 12 final runtime + Tailwind PR run passed startup, CRUD, manual and
+genuine model HMR, file-link navigation, native shell Node source verification,
+new-utility CSS generation/application, natural OpenCode EOF shutdown,
+source/conversation retention and startup cancellation. The earlier quoting failure
+was fixed in runtime `33305d5` and rerun without simplifying the command.
+See [the combined receipt](../../doc/todo-clean-demo-acceptance.md).
 
 `editor-acceptance.js` is a Browser Control execute body, prepared against the
 current `todo-app-demo/src/{home,editing,editor-panel}.tsx` and
-`opencode-chat/src/{editor,react,types}.tsx` / vendor types. It has **not been run
-in a browser**. Preparation/runtime/OpenCode migration is coordinated by the parent;
+`opencode-chat/src/{editor,react,types}.tsx` / vendor types. Preparation/runtime/OpenCode migration is coordinated by the parent;
 this file does not launch, rebuild, navigate, reset storage, or select its session.
 Historical context: `../../doc/editor-package-acceptance.md` and the bounded
 document-identity check in `../../hybrid-fs/scripts/hmr-browser.js`.
@@ -60,7 +66,7 @@ phase. Source flush means local workspace persistence, not remote publication.
 | `open` | Click launcher once; returns SUBMITTED. |
 | `ready` | Observe actual workspace lifecycle, both Vite/chat clients ready, real chat connected, enabled iframe todo form; normal app stays mounted in same host document. Repeat while PENDING. |
 | `crud-add` | Add uniquely named owned todo inside iframe; independently GET host `/api/getTodos` and retain its ID. |
-| `crud-toggle` | Check owned todo in iframe; independently prove host `completed:true`. Safe to repeat while PENDING. |
+| `crud-toggle` | Submit one completion click for the owned todo; independently prove host `completed:true` and checked DOM state. Repeats observe without toggling again. |
 | `crud-delete` | Delete only that exact owned title/ID and prove absence from host API. No broad cleanup. |
 | `source-open` | Open Source; current textarea must equal independent `/src/home.tsx` bytes. |
 | `hmr-edit` | Capture original bytes and preview document; fill textarea with one h1 edit, no explicit save/flush. SUBMITTED. |
@@ -110,7 +116,12 @@ also invalidates same-document evidence; there is intentionally no automatic rel
   source inclusion, same Document, rendered class, and computed `letter-spacing:7px`
   must all hold. Config override: `tailwind: {utility, property, value}`. A class in
   source/DOM alone never passes. Run this after retention or preserve the amended
-  retention baseline deliberately; do not perturb model's exact-one-edit comparison.
+   retention baseline deliberately; do not perturb model's exact-one-edit comparison.
+   The completed PR run used `{selector: '.row', utility: 'text-[37px]',
+   property: 'font-size', value: '37px'}` and the exact `className="row"` →
+   `className="row text-[37px]"` edit. The gate also requires a matching declaration
+   in the installed CSSOM. The unlayered h1 font-size rule makes `.row` the correct
+   target for this font-size test. Actual HMR CSS responses are captured separately.
 - **Shell migration blocker:** extraction follows beta-19425's real `toolResult`
   and `ShellResult.metadata/notice`: first content item is combined process capture,
   second is the tool-generated notice. As required by
@@ -150,11 +161,12 @@ also invalidates same-document evidence; there is intentionally no automatic rel
   plus independent read to verify. Preserve any later user edits; no automatic full
   source reset, conversation deletion, storage clearing, or server restart occurs.
 
-The execute body is syntax-checked with Bun's `AsyncFunction` parser. Browser
-acceptance, locator compatibility, model capability, shell output contract, and
-Tailwind behavior must be established by the parent's actual run.
+The execute body is syntax-checked with Bun's `AsyncFunction` parser. The linked
+combined receipt records the actual browser checks and corrected harness
+locator/timing assumptions. Receipt summaries distinguish initial guarded or
+failed observations from the subsequently verified final phase results.
 The Node command builder additionally receives host-only sanity checks using a
 temporary source fixture: exact output/exit 0 for matching bytes/heading, nonzero
 exit with no marker for changed bytes, wrong heading, or missing source. This
 validates command construction and quoting only, never guest Node or browser shell
-acceptance. No browser run has been performed for this shell-gate change.
+acceptance. The final runtime browser run subsequently passed that same gate.

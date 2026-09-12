@@ -1,5 +1,25 @@
 # Browser Control observations
 
+- [x] 2026-09-12 clean TODO acceptance, CLI 0.7.0, owned session
+  `cosmic-comet-351`, origin :54392: Playwright `checkbox.check()` reported
+  `Clicking the checkbox did not change its state` for the server-controlled
+  completion checkbox. A fresh DOM read and independent host API read both showed
+  completion succeeded. The helper's immediate checked-state assertion raced the
+  asynchronous mutation. Harness now submits one click and verifies eventual DOM
+  plus host state; CRUD passed without another mutation or browser restart.
+- [x] Same run: harness reported `No tool file-link button` while the button was
+  present inside a closed native details element. Read-only DOM inspection proved
+  its exact label and file path. Changed discovery to `includeHidden: true`, then
+  expanded the containing details before clicking. File navigation and independent
+  source-byte comparison passed. Caller locator issue, no missing product control.
+- [x] Final run on :54394, `brisk-otter-643`: file-link verification initially
+  compared textarea contents before the asynchronous read completed. The existing
+  eight-second bounded wait now observes the exact independently read bytes; the
+  corrected phase passed. A separate premature model-send was rejected by its
+  readiness guard during session creation, before any prompt submission; it was
+  admitted after readiness and passed. No duplicate model request, reload, relay
+  restart or production workaround was used.
+
 - [x] 2026-09-11 TODO upstream Tailwind, CLI 0.7.0, owned session
   `gentle-otter-161`, isolated loopback origins: harness called
   `page.waitForFunction(predicate, {timeout: 200000})`, putting options in

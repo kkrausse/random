@@ -31,19 +31,24 @@ and bounded stdin-EOF shutdown. Host package checks and the TODO production buil
 pass. See [preparation v2](doc/workspace-preparation-v2.md) and
 [candidate integration](doc/opencode-editor-candidate-migration.md).
 
-The first clean-origin browser attempt installed the verified 10,463-entry tree
-and started Vite, but optimized TanStack/tRPC dependency requests returned HTTP
-504. Preview hydration timed out before chat launch. Combined model editing,
-shell execution, HMR and retention acceptance remain pending that startup
-investigation. The ordinary host app stayed usable, and 13 real HTTP checks passed
-for non-admin and foreign-origin editor access denial.
+**The clean TODO acceptance flow now passes.** Runtime fixes for native-realpath
+symlink resolution (`0ae4c2f`) and quoted multiline shell arguments (`33305d5`)
+resolved the observed startup and shell failures. With the user's source-pinned
+[Tailwind PR #20487](https://github.com/tailwindlabs/tailwindcss/pull/20487), the
+final fresh-origin run passed startup, host API CRUD, manual and genuine model
+read/edit HMR, file navigation, native shell Node source verification, new Tailwind
+CSS generation/application, natural OpenCode EOF shutdown, source/conversation
+retention and startup cancellation. The new `text-[37px]` utility reached actual
+HMR responses and matching CSSOM, with computed font size **37px** in the same
+preview document. Thirteen real HTTP authorization checks also passed.
 
-The user approved source-pinned adoption of their upstream
-[Tailwind PR #20487](https://github.com/tailwindlabs/tailwindcss/pull/20487) for the
-separate incremental WASM scanner defect. The exact PR build and verified archive
-delivery are in progress; the browser attempt above used published Oxide 4.3.3.
-See [scanner follow-up](doc/todo-tailwind-followup.md) and the
-[phased browser acceptance harness](todo-app-demo/tests/README.md).
+The qualified runtime pin is `33305d5`; the current demo is available at
+**http://127.0.0.1:54394/**. See the
+[combined acceptance receipt and run command](doc/todo-clean-demo-acceptance.md),
+[startup diagnosis](doc/todo-clean-startup.md),
+[shell fix](doc/todo-shell-acceptance.md),
+[scanner follow-up](doc/todo-tailwind-followup.md), and
+[phased browser harness](todo-app-demo/tests/README.md).
 
 **Runtime HTTP bridge (September 11):** P1 passes focused browser streaming checks
 and the complete OpenCode server regression: read/edit/grep/glob, streamed output,

@@ -193,10 +193,16 @@ try {
     }
     case 'crud-toggle': {
       need('crud-add');
-      await frame().getByRole('checkbox', { name: a.todo.title, exact: true }).check({ timeout: 8000 });
+      const checkbox = frame().getByRole('checkbox', { name: a.todo.title, exact: true });
+      const before = await backendTodos();
+      if (!before.some(t => t.id === a.todo.id && t.completed === true) && !a.todoToggleSubmitted) {
+        // This is server-controlled state, so Playwright check()'s immediate
+        // checked assertion races the mutation response. Submit once, then observe.
+        a.todoToggleSubmitted = true;
+        if (!await checkbox.isChecked()) await click(checkbox);
+      }
       receipt.backend = await backendTodos();
-      // Query may race invalidation; repeat this phase safely (check is idempotent).
-      if (!receipt.backend.some(t => t.id === a.todo.id && t.completed === true)) { receipt.status = 'PENDING'; break; }
+      if (!receipt.backend.some(t => t.id === a.todo.id && t.completed === true) || !await checkbox.isChecked()) { receipt.status = 'PENDING'; break; }
       break;
     }
     case 'crud-delete': {
@@ -275,12 +281,14 @@ try {
     }
     case 'file-link': {
       need('model-verify');
-      const open = page.locator('.oc-tool').getByRole('button', { name: `Open /workspace${cfg.sourcePath ?? '/src/home.tsx'}`, exact: true });
+      const open = page.locator('.oc-tool').getByRole('button', { name: `Open /workspace${cfg.sourcePath ?? '/src/home.tsx'}`, exact: true, includeHidden: true });
       assert(await open.count() > 0, 'No tool file-link button; inspect tool card input schema');
       await open.last().locator('xpath=ancestor::details[1]').evaluate(e => { e.open = true; });
       await click(open.last());
       await file().waitFor({ timeout: 8000 });
-      assert(await file().inputValue() === await readSource(), 'File link did not load independent edited bytes');
+      const expected = await readSource();
+      await page.waitForFunction(text => document.querySelector('.oc-editor-source textarea')?.value === text, expected, { timeout: 8000 });
+      assert(await file().inputValue() === expected, 'File link did not load independent edited bytes');
       break;
     }
     case 'shell-send': {
@@ -385,10 +393,12 @@ try {
       assert(!source.includes(utility), 'Utility already in target source');
       const property = cfg.tailwind?.property ?? 'letter-spacing';
       const value = cfg.tailwind?.value ?? '7px';
-      const before = await frame().getByRole('heading', { level: 1 }).evaluate((e, p) => getComputedStyle(e).getPropertyValue(p), property);
+      const selector = cfg.tailwind?.selector ?? 'h1';
+      assert(await frame().locator(selector).count() === 1, 'Tailwind selector must identify exactly one element');
+      const before = await frame().locator(selector).evaluate((e, p) => getComputedStyle(e).getPropertyValue(p), property);
       assert(before !== value, 'Computed value already matches; choose a genuinely new gate');
-      a.tailwind = { utility, property, value, before, source, document: await previewIdentity() };
-      receipt.baseline = { utility, property, value, before };
+      a.tailwind = { utility, property, value, selector, before, source, document: await previewIdentity() };
+      receipt.baseline = { utility, property, value, selector, before };
       break;
     }
     case 'tailwind-verify': {
@@ -398,10 +408,18 @@ try {
       assert(receipt.source !== t.source && receipt.source.includes(t.utility), 'New utility not independently saved');
       receipt.sameDocument = await sameDocument(t.document);
       assert(receipt.sameDocument, 'Tailwind change replaced preview document');
-      receipt.style = await frame().getByRole('heading', { level: 1 }).evaluate((e, t) => ({
-        classApplied: e.classList.contains(t.utility), computed: getComputedStyle(e).getPropertyValue(t.property),
-      }), { utility: t.utility, property: t.property });
+      receipt.style = await frame().locator(t.selector).evaluate((e, t) => {
+        const matchingRules = [];
+        const walk = rules => { for (const rule of rules) {
+          if (rule.cssRules) walk(rule.cssRules);
+          if (rule.selectorText && e.matches(rule.selectorText) && rule.style?.getPropertyValue(t.property) === t.value)
+            matchingRules.push({ selector: rule.selectorText, cssText: rule.cssText });
+        } };
+        for (const sheet of e.ownerDocument.styleSheets) walk(sheet.cssRules);
+        return { classApplied: e.classList.contains(t.utility), computed: getComputedStyle(e).getPropertyValue(t.property), matchingRules };
+      }, { utility: t.utility, property: t.property, value: t.value });
       assert(receipt.style.classApplied && receipt.style.computed === t.value, 'New Tailwind utility not applied at computed-style layer');
+      assert(receipt.style.matchingRules.length > 0, 'No matching new utility declaration in installed CSSOM');
       break;
     }
     case 'inspect': break;
