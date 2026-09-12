@@ -1,5 +1,8 @@
 # September 11: unchanged beta-19425 same-page OPFS retention PASS
 
+Follow-up: [real model-driven read/edit/grep/glob and conversation retention PASS](SERVER-PROCESS-MODEL-TOOLS-PASS.md)
+on the exact same unchanged candidate, preserving all checks below.
+
 **PASS — one real-browser attempt, two natural server lifetimes, host-accepted
 receipt, host exit 0.** This extends the exact direct-server artifact qualified by
 `89bfa12651077107f13ca72482d3b28499f908fa` through full same-page Workspace/Runtime

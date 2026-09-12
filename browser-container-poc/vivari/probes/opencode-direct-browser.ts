@@ -1,5 +1,7 @@
 import { Workspace, Runtime, opfsStore } from '../../workspace-api/src/index'
-import type { Execution } from '../../workspace-api/src/types'
+import type { Execution, ToolContext } from '../../workspace-api/src/types'
+import { directModelEvidence, seedDirectModel, directModelPhase, modelDiagnostic } from './opencode-direct-model'
+import { combinedFixture } from './opencode-bun-fixtures'
 
 const hash = async (bytes: Uint8Array) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(bytes)))].map(n => n.toString(16).padStart(2, '0')).join('')
 async function bounded<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
@@ -20,6 +22,7 @@ async function qualify() {
     cleanup: { executionStop: 'not needed', runtimeStop: 'pending', workspaceFlush: 'pending', workspaceClose: 'pending', drains: 'pending' },
     workerObservation: 'Public execution/Workspace errors and stream completion only; private worker exit/messageerror events are not exposed',
     retention: undefined as undefined | { sessionID: string; title: string; entries: unknown; fileSha256: string; exits: unknown[]; oldEndpoint: string },
+    model: config.model ? directModelEvidence() : undefined,
   }
   const chunks: Record<string, Uint8Array[]> = { stdout: [], stderr: [] }
   const texts: Record<string, string> = { stdout: '', stderr: '' }
@@ -95,7 +98,7 @@ async function qualify() {
       let entries = 0
       for await (const _ of opfs.values()) entries++
       check(entries === 0, 'Origin OPFS is not empty; refusing existing state')
-      const manifestBytes = new Uint8Array(await fetch('/runtime/distribution.json').then(r => r.arrayBuffer()))
+      const manifestBytes = new Uint8Array(await fetch('/runtime/distribution.json').then(r => r.arrayBuffer()) as ArrayBuffer)
       check(await hash(manifestBytes) === config.runtime.manifestSha256, 'Distribution manifest hash mismatch')
       const manifest = JSON.parse(new TextDecoder().decode(manifestBytes))
       check(manifest.version === config.runtime.version && manifest.runtimeBuild.revision === config.runtime.revision, 'Runtime provenance mismatch')
@@ -113,12 +116,18 @@ async function qualify() {
         check((await workspace.fs.readdir('/')).length === 0, 'Workspace not fresh')
         await stage('opfs.fresh-durable')
         for (const name of ['home', 'config', 'state', 'data', 'cache', 'tmp']) await workspace.fs.mkdir('/.server/' + name)
+        if (result.model) await seedDirectModel(workspace, result.model, hash)
       } else {
         check(await hash(await workspace.fs.readFile('/retention.txt')) === result.retention!.fileSha256, 'Reopened file changed before runtime start')
         await stage('retention.workspace-reopened', { fileSha256: result.retention!.fileSha256 })
+        if (result.model && !result.model.failure) {
+          result.model.fileBeforeReopen = await hash(await workspace.fs.readFile(combinedFixture.path))
+          check(result.model.fileBeforeReopen === result.model.combined.afterSha256, 'Edited file changed before second runtime')
+          await stage('model.edited-file-reopened', { sha256: result.model.fileBeforeReopen })
+        }
       }
       runtime = await Runtime.start({ distribution, workspace, signal: abort.signal, tools: { delivery: {
-        name: 'direct-server-assets', version: '1', async bind(context) {
+        name: 'direct-server-assets', version: '1', async bind(context: ToolContext) {
           for (const asset of config.assets) {
             const response = await fetch('/app/' + encodeURIComponent(asset.file))
             check(response.ok, 'Application asset fetch failed')
@@ -131,13 +140,32 @@ async function qualify() {
           }
           // Ordinary directory provisioning for the artifact's fixed database path.
            if (!phase) await context.installFile('/runtime-probe/.qualification', new TextEncoder().encode(config.runID))
+          for (const asset of config.support ?? []) {
+            const response = await fetch('/support/' + encodeURIComponent(asset.file))
+            check(response.ok, 'Support asset fetch failed')
+            const bytes = new Uint8Array(await response.arrayBuffer())
+            check(bytes.length === asset.bytes && await hash(bytes) === asset.sha256, 'Support asset hash mismatch')
+            await context.installFile(asset.destination, bytes)
+            check(await hash(await context.readFile(asset.destination)) === asset.sha256, 'Installed support hash mismatch')
+          }
           return async () => result.assets.length
         },
       } } })
       check(result.assets.length === 5, 'Expected exactly five unchanged app assets')
       await stage('assets.verified', result.assets)
+      if (result.model) {
+        const setup = await runtime.node({ entry: '/direct/opencode-ripgrep-install.cjs', cwd: '/direct', env: { PATH: '/bin' } })
+        const collect = async (stream: AsyncIterable<Uint8Array>) => { let text = ''; for await (const bytes of stream) text += new TextDecoder().decode(bytes); return text }
+        const drains = Promise.all([collect(setup.stdout), collect(setup.stderr)])
+        setup.closeStdin()
+        const exit = await bounded(setup.exited, 20000, 'Ripgrep setup exit')
+        const [stdout, stderr] = await bounded(drains, 5000, 'Ripgrep setup drains')
+        check(exit.exitCode === 0 && !exit.forced && exit.signal === null && stdout === 'OPENCODE_RIPGREP_INSTALL_PASS\n' && stderr === '', 'Ordinary ripgrep installation failed')
+        result.model.setup = { assets: config.support, exit, checkpoint: true, stderrBytes: 0 }
+        await stage('model.ripgrep-installed', result.model.setup)
+      }
       execution = await runtime.node({ entry: '/bin/bun.js', args: ['/app/server.js'], cwd: '/app', signal: abort.signal, env: {
-        PATH: '/bin', HOME: '/workspace/.server/home', OPENCODE_TEST_HOME: '/workspace/.server/home',
+        PATH: result.model ? '/direct/node_modules/.bin:/bin' : '/bin', ...(result.model ? { RIPGREP_NODE_WASI: '0' } : {}), HOME: '/workspace/.server/home', OPENCODE_TEST_HOME: '/workspace/.server/home',
         XDG_CONFIG_HOME: '/workspace/.server/config', XDG_STATE_HOME: '/workspace/.server/state',
         XDG_DATA_HOME: '/workspace/.server/data', XDG_CACHE_HOME: '/workspace/.server/cache', TMPDIR: '/workspace/.server/tmp',
         OPENCODE_PASSWORD: 'isolated-probe-only',
@@ -161,6 +189,19 @@ async function qualify() {
       const health = await response.json()
       check(response.status === 200 && health.healthy === true && health.version === '0.0.0-beta-19425' && Number.isInteger(health.pid) && health.pid > 0, 'Authenticated health mismatch')
       await stage('health.authenticated', { status: response.status, ...health })
+      if (result.model && !result.model.failure) {
+        await stage(phase ? 'model.retention-started' : 'model.qualification-started')
+        try {
+          await directModelPhase(endpoint, workspace, result.model, phase, hash)
+          await stage(phase ? 'model.retention-verified' : 'model.tools-verified', result.model)
+        } catch (error) {
+          // Keep the real server alive for diagnostics, then use the same natural
+          // EOF teardown even when a model/tool check fails.
+          result.model.failure = error instanceof Error ? error.message : 'Model qualification failed'
+          result.model.diagnostic = await modelDiagnostic(endpoint, result.model, hash)
+          await stage('model.failed', result.model)
+        }
+      }
       if (config.retention) {
         const api = async (path: string, method = 'GET', body?: unknown) => {
           const response = await endpoint.fetch(path, { method, headers: { authorization: 'Basic ' + btoa('opencode:isolated-probe-only'), 'content-type': 'application/json' },
@@ -211,7 +252,8 @@ async function qualify() {
         await stage('retention.old-endpoint-closed')
       }
       }
-    })(), config.retention ? 180000 : 120000, 'Browser qualification')
+      if (result.model?.failure) throw Error(result.model.failure)
+    })(), config.model ? 300000 : config.retention ? 180000 : 120000, 'Browser qualification')
   } catch (error) { fail(error) }
   finally {
     const cleanup = async (key: keyof typeof result.cleanup, action: () => Promise<unknown>) => {
