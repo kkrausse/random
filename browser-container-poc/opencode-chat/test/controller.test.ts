@@ -26,7 +26,8 @@ test("headless bootstrap uses injected string fetch, marker, requests, immutable
   expect(f.calls.every((call) => call.url.host === "injected.invalid")).toBe(
     true,
   );
-  expect(f.calls.filter((call) => call.init.method === "POST")).toHaveLength(0);
+  expect(f.calls.filter((call) => call.init.method === "POST").map(call => call.url.pathname))
+    .toEqual(["/proxy/api/plugin/await-activation"]);
   expect(
     f.calls
       .find((call) => call.url.pathname.endsWith("/session"))!
@@ -133,19 +134,19 @@ test("pending requests hydrate; failed response retains request and can retry pi
 
 test("question rules and removal answered elsewhere", async () => {
   const f = fixture();
-  f.questions.push({
+  f.forms.push({
     id: "q",
     sessionID: "s1",
-    questions: [
+    title: "Questions", metadata: { kind: "question" },
+    fields: [
       {
-        header: "Pick",
-        question: "Which?",
+        key: "q0", type: "string", title: "Pick",
+        description: "Which?",
         options: [
-          { label: "A", description: "a" },
-          { label: "B", description: "b" },
+          { value: "A", label: "A", description: "a" },
+          { value: "B", label: "B", description: "b" },
         ],
         custom: false,
-        multiple: false,
       },
     ],
   });
@@ -153,10 +154,10 @@ test("question rules and removal answered elsewhere", async () => {
   await c.ready;
   await expect(c.replyQuestion("q", [["C"]])).rejects.toThrow("offered");
   await expect(c.replyQuestion("q", [["A", "B"]])).rejects.toThrow("Choose");
-  f.emit("question.replied", {
+  f.emit("form.replied", {
     sessionID: "s1",
-    requestID: "q",
-    answers: [["A"]],
+    id: "q",
+    answer: { q0: "A" },
   });
   await tick();
   expect(c.getSnapshot().questions).toHaveLength(0);
@@ -239,7 +240,7 @@ test("disposal during prompt aborts local request, never endpoint or execution",
 
 test("request answered during hydration cannot be resurrected by stale HTTP", async () => {
   const f = fixture();
-  f.questions.push({ id: "q", sessionID: "s1", questions: [] });
+  f.forms.push(questionForm("q"));
   const { c } = start(f);
   await c.ready;
   const pending = deferred<Response>();
@@ -247,24 +248,24 @@ test("request answered during hydration cannot be resurrected by stale HTTP", as
     url.pathname.endsWith("/message") ? pending.promise : undefined;
   const loading = c.selectSession("s1");
   await tick();
-  f.emit("question.replied", { sessionID: "s1", requestID: "q", answers: [] });
+  f.emit("form.replied", { sessionID: "s1", id: "q", answer: { q0: "A" } });
   await tick();
   pending.resolve(json({ data: [], cursor: {} }));
   await loading;
   expect(c.getSnapshot().questions).toHaveLength(0);
 });
 
-test("question multi/custom replies and reject use pinned native routes", async () => {
+test("question multi/custom replies and reject adapt to candidate form routes", async () => {
   const f = fixture();
-  f.questions.push({
+  f.forms.push({
     id: "q",
     sessionID: "s1",
-    questions: [
+    title: "Questions", metadata: { kind: "question" },
+    fields: [
       {
-        header: "Pick",
-        question: "Which?",
-        options: [{ label: "A", description: "a" }],
-        multiple: true,
+        key: "q0", type: "multiselect", title: "Pick",
+        description: "Which?",
+        options: [{ value: "A", label: "A", description: "a" }],
         custom: true,
       },
     ],
@@ -273,17 +274,75 @@ test("question multi/custom replies and reject use pinned native routes", async 
   await c.ready;
   await c.replyQuestion("q", [["A", "custom"]]);
   expect(f.calls.at(-1)!.url.pathname).toBe(
-    "/proxy/api/session/s1/question/q/reply",
+    "/proxy/api/session/s1/form/q/reply",
   );
   expect(JSON.parse(String(f.calls.at(-1)!.init.body))).toEqual({
-    answers: [["A", "custom"]],
+    answer: { q0: ["A", "custom"] },
   });
-  f.emit("question.asked", { id: "q2", sessionID: "s1", questions: [] });
+  f.emit("form.created", { form: questionForm("q2") });
   await tick();
   await c.rejectQuestion("q2");
   expect(f.calls.at(-1)!.url.pathname).toBe(
-    "/proxy/api/session/s1/question/q2/reject",
+    "/proxy/api/session/s1/form/q2/cancel",
   );
+  expect(f.calls.at(-1)!.init.method).toBe("POST");
+  expect(f.calls.at(-1)!.init.body).toBeUndefined();
+});
+
+function questionForm(id: string) {
+  return { id, sessionID: "s1", title: "Questions", metadata: { kind: "question" },
+    fields: [{ key: "q0", type: "string", title: "Pick", description: "Which?",
+      options: [{ value: "A", label: "A" }], custom: true }] };
+}
+
+test("unsupported forms remain visible, nested events are scoped, and settled forms disappear", async () => {
+  const f = fixture();
+  const form = { id: "numeric", sessionID: "s1", title: "Budget", fields: [{ key: "budget", type: "number" }] };
+  f.forms.push(form);
+  const { c } = start(f);
+  await c.ready;
+  expect(c.getSnapshot().unsupportedForms).toEqual([form]);
+  await expect(c.replyQuestion("numeric", [["1"]])).rejects.toThrow("no longer");
+  f.emit("form.created", { form: { ...questionForm("other"), sessionID: "s2" } });
+  f.emit("form.created", { form: questionForm("ours") });
+  f.emit("form.cancelled", { id: "numeric", sessionID: "s1" });
+  await tick();
+  expect(c.getSnapshot().questions.map(q => q.request.id)).toEqual(["ours"]);
+  expect(c.getSnapshot().unsupportedForms).toEqual([]);
+  await c.replyQuestion("ours", [["A"]]);
+  expect(JSON.parse(String(f.calls.at(-1)!.init.body))).toEqual({ answer: { q0: "A" } });
+  expect(f.calls.some(call => call.url.pathname.includes("/question"))).toBe(false);
+});
+
+test("form hydration failure is surfaced rather than treated as no requests", async () => {
+  const f = fixture();
+  f.override = url => url.pathname.endsWith("/form") ? json({ error: "missing" }, 404) : undefined;
+  const { c } = start(f);
+  await expect(c.ready).rejects.toThrow("404");
+  expect(c.getSnapshot().connection).toBe("disconnected");
+  expect(c.getSnapshot().error).toContain("404");
+});
+
+test("candidate session creation, model selection and inbox prompt acceptance hydrate real messages", async () => {
+  const { f, c } = start();
+  await c.ready;
+  expect(await c.createSession("Candidate chat")).toBe("new");
+  const created = f.calls.find(call => call.url.pathname === "/proxy/api/session" && call.init.method === "POST")!;
+  expect(JSON.parse(String(created.init.body))).toEqual({ title: "Candidate chat", location: { directory: "/hidden" } });
+  await c.selectModel({ providerID: "p", id: "m" });
+  expect(JSON.parse(String(f.calls.at(-1)!.init.body))).toEqual({ model: { providerID: "p", id: "m" } });
+  f.override = (url, init) => {
+    if (!url.pathname.endsWith("/prompt")) return;
+    expect(JSON.parse(String(init.body))).toEqual({ text: "Hello candidate" });
+    f.histories.new = [user("msg_actual", "Hello candidate")];
+    return json({ data: { id: "inbox_1", sessionID: "new", type: "user", payload: { text: "Hello candidate" }, delivery: "steer" } });
+  };
+  await c.send({ text: "Hello candidate" });
+  expect(c.getSnapshot().messages.map(m => m.id)).toEqual(["msg_actual"]);
+  f.histories.new = [user("msg_actual", "Hello candidate"), user("msg_second", "queued", 2)];
+  f.emit("session.inbox.delivered", { sessionID: "new", inboxID: "inbox_2" });
+  await new Promise(resolve => setTimeout(resolve, 160));
+  expect(c.getSnapshot().messages.map(m => m.id)).toEqual(["msg_actual", "msg_second"]);
 });
 
 test("controllers remain isolated and disposing one leaves the other subscribed", async () => {

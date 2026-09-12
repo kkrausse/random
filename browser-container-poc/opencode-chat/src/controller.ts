@@ -1,5 +1,7 @@
 import { OpenCodeAPI, type Page, type Message, type NativeEvent } from "./api";
 import { createV2SessionReducer } from "./vendor/reducer";
+import { questionFromForm, formAnswer } from "./forms";
+import type { FormInfo } from "./vendor/types";
 import type {
   ChatController,
   ChatOptions,
@@ -38,6 +40,7 @@ export function createChatController(options: ChatOptions): ChatController {
     hasOlder: false,
     permissions: [],
     questions: [],
+    unsupportedForms: [],
   });
   const listeners = new Set<() => void>();
   let disposed = false,
@@ -99,13 +102,13 @@ export function createChatController(options: ChatOptions): ChatController {
       sig = signal();
     requestEvents = [];
     const task = (async () => {
-      const [page, permissions, questions, active] = await Promise.all([
+      const [page, permissions, forms, active] = await Promise.all([
         api.request<Page<Message>>(
           `${base}/message?order=desc&limit=${options.pageSize ?? 50}`,
           sig,
         ),
         api.request<{ data: PermissionRequest[] }>(`${base}/permission`, sig),
-        api.request<{ data: QuestionRequest[] }>(`${base}/question`, sig),
+        api.request<{ data: FormInfo[] }>(`${base}/form`, sig),
         api.request<{ data: Record<string, { type: string }> }>(
           "session/active",
           sig,
@@ -130,7 +133,8 @@ export function createChatController(options: ChatOptions): ChatController {
             ...state.permissions.find((p) => p.request.id === request.id),
             request,
           })),
-        questions: questions.data
+        unsupportedForms: forms.data.filter(f => !answered.has(`question:${f.id}`) && !questionFromForm(f)),
+        questions: forms.data.flatMap(f => { const q = questionFromForm(f); return q ? [q] : []; })
           .filter((r) => !answered.has(`question:${r.id}`))
           .map((request) => ({
             submitting: false,
@@ -167,13 +171,18 @@ export function createChatController(options: ChatOptions): ChatController {
           { request: e.data, submitting: false },
         ],
       });
-    if (e.type === "question.asked")
-      publish({
+    if (e.type === "form.created") {
+      const form = e.data.form;
+      const request = questionFromForm(form);
+      if (answered.has(`question:${form.id}`)) return;
+      if (request) publish({
         questions: [
-          ...state.questions.filter((p) => p.request.id !== e.data.id),
-          { request: e.data, submitting: false },
+          ...state.questions.filter((p) => p.request.id !== form.id),
+          { request, submitting: false },
         ],
       });
+      else publish({ unsupportedForms: [...state.unsupportedForms.filter(f => f.id !== form.id), form] });
+    }
     if (e.type === "permission.replied") {
       answered.add(`permission:${e.data.requestID}`);
       publish({
@@ -182,25 +191,26 @@ export function createChatController(options: ChatOptions): ChatController {
         ),
       });
     }
-    if (e.type === "question.replied" || e.type === "question.rejected") {
-      answered.add(`question:${e.data.requestID}`);
+    if (e.type === "form.replied" || e.type === "form.cancelled") {
+      answered.add(`question:${e.data.id}`);
       publish({
+        unsupportedForms: state.unsupportedForms.filter(f => f.id !== e.data.id),
         questions: state.questions.filter(
-          (p) => p.request.id !== e.data.requestID,
+          (p) => p.request.id !== e.data.id,
         ),
       });
     }
   }
   function event(e: NativeEvent) {
+    const sessionID = e.type === "form.created" ? e.data.form.sessionID :
+      "sessionID" in e.data ? e.data.sessionID : undefined;
     if (
-      !("data" in e) ||
-      !("sessionID" in e.data) ||
-      e.data.sessionID !== state.sessionID
+      !sessionID || sessionID !== state.sessionID
     )
       return;
     revision++;
     requestEvent(e);
-    if (hydration && /^(permission|question)\./.test(e.type))
+    if (hydration && /^(permission|form)\./.test(e.type))
       requestEvents.push(e);
     if (e.type === "session.execution.started")
       publish({ execution: "running" });
@@ -255,7 +265,9 @@ export function createChatController(options: ChatOptions): ChatController {
     )
       recover();
     if (
-      e.type === "session.input.promoted" ||
+      e.type === "session.inbox.delivered" ||
+      e.type === "session.instructions.updated" ||
+      e.type === "session.moved" ||
       e.type === "session.model.selected"
     )
       recover();
@@ -283,6 +295,7 @@ export function createChatController(options: ChatOptions): ChatController {
       messages: [],
       permissions: [],
       questions: [],
+      unsupportedForms: [],
       loading: true,
       loadingOlder: false,
       hasOlder: false,
@@ -423,10 +436,11 @@ export function createChatController(options: ChatOptions): ChatController {
       };
       update(undefined, true);
       try {
-        await api.request(
-          `${path()}/${kind}/${encodeURIComponent(id)}/${suffix}`,
-          signal(),
-          body,
+        await api.response(
+          `${path()}/${kind === "question" ? "form" : kind}/${encodeURIComponent(id)}/${suffix}`,
+          { method: "POST", signal: signal(), ...(body === undefined ? {} : {
+            headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+          }) },
         );
         if (valid(g, s)) answered.add(`${kind}:${id}`);
         update(undefined, false, true);
@@ -579,10 +593,11 @@ export function createChatController(options: ChatOptions): ChatController {
           state.questions.find((q) => q.request.id === id)?.request,
           answers,
         );
-        await reply("question", id, "reply", { answers });
+        const request = state.questions.find(q => q.request.id === id)!.request;
+        await reply("question", id, "reply", { answer: formAnswer(request, answers) });
       });
     },
-    rejectQuestion: (id) => reply("question", id, "reject", {}),
+    rejectQuestion: (id) => reply("question", id, "cancel", undefined),
     clearError: () => publish({ error: undefined }),
     dispose() {
       if (disposed) return;

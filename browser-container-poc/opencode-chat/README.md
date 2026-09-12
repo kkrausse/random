@@ -8,8 +8,9 @@ no React, DOM implementation, CSS, workspace runtime, service discovery or VM
 library. `/react` provides a replaceable chat template. All traffic, including
 SSE, uses the caller's endpoint.
 
-**Pinned server:** `0.0.0-dev-19167`, revision
-`d7a7256bb6b0952f486c95718cfbf460b1570a56`. This is not a latest-beta API client.
+**Pinned server:** retained `beta-19425`, revision
+`20aff6d9f643afe9abf8a048e68f019d049f5329`. See [PROVENANCE.md](./PROVENANCE.md)
+for the candidate protocol audit and supported form subset.
 See [PROVENANCE.md](PROVENANCE.md) and the distributed full MIT upstream notice.
 
 ## Host integration
@@ -102,13 +103,13 @@ Actions return promises and reject on failure, also recording visible errors:
 | `interrupt()` | Explicit server stop request, retained until authoritative idle/interruption; failure can be retried |
 | `reconnect()` | Replace local subscription, hydrate authoritative history/requests/activity |
 | `replyPermission(id, 'once'\|'always'\|'reject')` | Pinned permission response |
-| `replyQuestion(id, string[][])` / `rejectQuestion(id)` | Ordered answers, respecting single/multi/custom rules |
+| `replyQuestion(id, string[][])` / `rejectQuestion(id)` | Backward-compatible question view; adapts question-tool forms to keyed form replies / cancellation |
 | `clearError()` | Dismiss local operation error |
 | `dispose()` | Abort only controller-owned requests/SSE/timers/listeners |
 
 Snapshot fields: connection, sessionID, sessions, models, model, native messages,
 execution (`idle/running/retrying/unknown`), interruptRequested, sending, loading,
-loadingOlder, hasOlder, permissions/questions with per-request submitting/error,
+loadingOlder, hasOlder, permissions/questions with per-request submitting/error, unsupportedForms,
 and operation error. Disconnection becomes **unknown execution**, not success.
 Step completion and prompt HTTP acceptance are not execution completion.
 

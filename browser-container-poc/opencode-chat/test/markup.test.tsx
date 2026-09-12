@@ -1,6 +1,22 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Markdown, safeHref } from "../src/markdown";
+import { ChatView } from "../src/react";
+import { createChatController } from "../src/controller";
+import { fixture } from "./fixture";
+
+test("unsupported candidate forms explain the limitation in the chat UI", async () => {
+  const f = fixture();
+  f.forms.push({ id: "budget", sessionID: "s1", title: "Choose budget", fields: [{ key: "amount", type: "number" }] });
+  const c = createChatController({ endpoint: f.endpoint, directory: "/workspace" });
+  try {
+    await c.ready;
+    const html = renderToStaticMarkup(<ChatView controller={c} />);
+    expect(html).toContain("Choose budget");
+    expect(html).toContain("This form cannot be answered by this chat client");
+    expect(html).toContain("amount (number)");
+  } finally { c.dispose(); }
+});
 test("Markdown never executes HTML or unsafe links, and supports incomplete fences", () => {
   const html = renderToStaticMarkup(
     <Markdown

@@ -566,6 +566,12 @@ export function ChatView({
             entry={entry}
           />
         ))}
+        {state.unsupportedForms.map(form => (
+          <div role="alert" key={form.id}>
+            <strong>{form.title}</strong>: This form cannot be answered by this chat client.
+            Open it in a compatible OpenCode client to continue. Unsupported fields: {form.fields.map(f => `${f.key} (${f.type})`).join(", ")}.
+          </div>
+        ))}
         {state.questions.map((entry) => (
           <QuestionCard
             key={entry.request.id}

@@ -4,14 +4,21 @@ import type {
   SessionInfo,
   SessionMessageInfo,
   PermissionRequest,
-  QuestionRequest,
+  FormInfo,
 } from "./vendor/types";
+/** Legacy public question view, explicitly adapted from question-tool forms. */
+export interface QuestionRequest {
+  id: string;
+  sessionID: string;
+  questions: { header: string; question: string; options: { label: string; description: string }[]; multiple?: boolean; custom?: boolean }[];
+  tool?: { messageID: string; id: string };
+}
 export type {
   ModelRef,
   SessionInfo,
   SessionMessageInfo,
   PermissionRequest,
-  QuestionRequest,
+  FormInfo,
   ModelInfo,
 };
 export type ChatEndpoint = ClientEndpoint;
@@ -46,6 +53,7 @@ export interface ChatSnapshot {
   hasOlder: boolean;
   permissions: readonly RequestState<PermissionRequest>[];
   questions: readonly RequestState<QuestionRequest>[];
+  unsupportedForms: readonly FormInfo[];
   error?: string;
 }
 export interface ChatController {
