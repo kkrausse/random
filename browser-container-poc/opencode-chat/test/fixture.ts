@@ -26,7 +26,7 @@ export function fixture() {
   const calls: { url: URL; init: RequestInit }[] = [];
   const histories: Record<string, SessionMessageInfo[]> = { s1: [], s2: [] };
   const permissions: unknown[] = [],
-    questions: unknown[] = [];
+    forms: unknown[] = [];
   let active: Record<string, unknown> = {};
   let override:
     | ((
@@ -83,7 +83,8 @@ export function fixture() {
       if (path.endsWith("/message"))
         return json({ data: [...(histories[id] ?? [])].reverse(), cursor: {} });
       if (path.endsWith("/permission")) return json({ data: permissions });
-      if (path.endsWith("/question")) return json({ data: questions });
+      if (path.endsWith("/form")) return json({ data: forms });
+      if (path.includes("/question")) return json({ error: "Removed endpoint" }, 404);
       return new Response(null, { status: 204 });
     },
   };
@@ -92,7 +93,7 @@ export function fixture() {
     calls,
     histories,
     permissions,
-    questions,
+    forms,
     emit,
     get cancels() {
       return cancels;

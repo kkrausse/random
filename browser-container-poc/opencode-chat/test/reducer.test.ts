@@ -17,6 +17,8 @@ test("pinned mixed ordinal identity, ended replacement, independent second text 
     agent: "build",
     model: { id: "m", providerID: "p" },
   });
+  emit("session.step.streamed", {});
+  expect((messages[0] as any).time.streamed).toBe(2);
   emit("session.reasoning.started", { ordinal: 0 });
   emit("session.reasoning.delta", { ordinal: 0, delta: "think" });
   emit("session.tool.input.started", { id: "t", name: "read" });
@@ -97,7 +99,8 @@ test("tool failure and retry survive a step boundary without flattening native c
     status: "error",
     content: [{ type: "text", text: "partial output" }],
   });
-  emit("session.step.ended", { finish: "tool-calls" });
+  emit("session.step.ended", { finish: "tool-calls", rawFinish: "provider-tool", providerState: { continuation: "opaque" } });
+  expect(messages[0]).toMatchObject({ rawFinish: "provider-tool", providerState: { continuation: "opaque" } });
   emit("session.step.started", {
     assistantMessageID: "b",
     agent: "build",
@@ -107,28 +110,14 @@ test("tool failure and retry survive a step boundary without flattening native c
   expect((messages[0] as any).content[0].name).toBe("unknown-future-tool");
 });
 
-test("input admission/promotion retains user context; clear prevents scope leakage", () => {
+test("candidate inbox delivery requests persisted messages instead of inventing message IDs", () => {
   const reducer = createV2SessionReducer();
-  const admitted = {
-    type: "session.input.admitted",
-    data: {
-      sessionID: "s",
-      inputID: "u",
-      input: { type: "user", data: { text: "hello" } },
-    },
-  } as V2Event;
   const promoted = {
     created: 2,
-    type: "session.input.promoted",
-    data: { sessionID: "s", inputID: "u" },
+    type: "session.inbox.delivered",
+    data: { sessionID: "s", inboxID: "u" },
   } as V2Event;
-  reducer.reduce([], admitted);
-  expect(reducer.reduce([], promoted)!.messages[0]).toMatchObject({
-    id: "u",
-    type: "user",
-    text: "hello",
-  });
-  reducer.reduce([], admitted);
+  expect(reducer.reduce([], promoted)!.messages).toEqual([]);
   reducer.clear("s");
   expect(reducer.reduce([], promoted)!.missing).toBe("u");
 });

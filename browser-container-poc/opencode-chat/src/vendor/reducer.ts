@@ -1,5 +1,5 @@
-// Vendored from OpenCode d7a7256; see LICENSE.upstream and PROVENANCE.md.
-import type { V2Event as OpenCodeEvent, SessionMessageInfo, SessionPendingMessage } from "./types"
+// Derived from OpenCode d7a7256, adapted to 20aff6d; see LICENSE.upstream and PROVENANCE.md.
+import type { V2Event as OpenCodeEvent, SessionMessageInfo } from "./types"
 
 type Assistant = Extract<SessionMessageInfo, { type: "assistant" }>
 type Compaction = Extract<SessionMessageInfo, { type: "compaction" }>
@@ -13,7 +13,6 @@ export type V2SessionReduction = {
 }
 
 export function createV2SessionReducer() {
-  const pending = new Map<string, SessionPendingMessage>()
 
   const reduce = (source: readonly SessionMessageInfo[], event: OpenCodeEvent): V2SessionReduction | undefined => {
     if (!("data" in event) || !("sessionID" in event.data) || typeof event.data.sessionID !== "string") return
@@ -27,41 +26,21 @@ export function createV2SessionReducer() {
       result(source.some((item) => item.id === message.id) ? [...source] : [...source, message], [message.id])
 
     switch (event.type) {
-      case "session.input.admitted":
-        pending.set(key(sessionID, event.data.inputID), event.data.input)
-        return result([...source])
-      case "session.input.cancelled":
-        pending.delete(key(sessionID, event.data.inputID))
-        return
-      case "session.input.promoted": {
-        const input = pending.get(key(sessionID, event.data.inputID))
-        pending.delete(key(sessionID, event.data.inputID))
-        if (!input) return { ...result([...source]), missing: event.data.inputID }
-        if (input.type === "user")
-          return append({
-            id: event.data.inputID,
-            type: "user",
-            metadata: input.data.metadata,
-            text: input.data.text,
-            files: input.data.files,
-            agents: input.data.agents,
-            time: { created: event.created },
-          })
-        return append({
-          id: event.data.inputID,
-          type: "synthetic",
-          metadata: input.data.metadata,
-          text: input.data.text,
-          description: input.data.description,
-          time: { created: event.created },
-        })
-      }
+      // Candidate inbox events are not message projections. The controller
+      // reloads persisted messages after delivery, as IDs differ from inbox IDs.
+      case "session.inbox.delivered":
+        return { ...result([...source]), missing: event.data.inboxID }
+      case "session.step.streamed":
+        return updateAssistant(source, event.data.assistantMessageID, sessionID, item => ({
+          ...item, time: { ...item.time, streamed: event.created },
+        }))
       case "session.agent.selected":
         return append({
           id: messageID(event.id),
           type: "agent-switched",
           metadata: event.metadata,
           agent: event.data.agent,
+          previous: event.data.previous,
           time: { created: event.created },
         })
       case "session.model.selected":
@@ -70,7 +49,7 @@ export function createV2SessionReducer() {
           type: "model-switched",
           metadata: event.metadata,
           model: event.data.model,
-          previous: source.findLast(
+          previous: event.data.previous ?? source.findLast(
             (item): item is Extract<SessionMessageInfo, { type: "model-switched" | "assistant" }> =>
               item.type === "model-switched" || item.type === "assistant",
           )?.model,
@@ -141,8 +120,10 @@ export function createV2SessionReducer() {
                     retry: undefined,
                     error: undefined,
                     finish: undefined,
+                    rawFinish: undefined,
+                    providerState: undefined,
                     snapshot: event.data.snapshot ? { ...item.snapshot, start: event.data.snapshot } : item.snapshot,
-                    time: { ...item.time, completed: undefined },
+                    time: { ...item.time, streamed: undefined, completed: undefined },
                   }
                 : item,
             ),
@@ -169,6 +150,8 @@ export function createV2SessionReducer() {
         return updateAssistant(source, event.data.assistantMessageID, sessionID, (item) => ({
           ...item,
           finish: event.data.finish,
+          rawFinish: event.data.rawFinish,
+          providerState: event.data.providerState,
           cost: event.data.cost,
           tokens: event.data.tokens,
           snapshot:
@@ -180,7 +163,9 @@ export function createV2SessionReducer() {
       case "session.step.failed":
         return updateAssistant(source, event.data.assistantMessageID, sessionID, (item) => ({
           ...item,
-          finish: "error",
+          finish: event.data.finish ?? "error",
+          rawFinish: event.data.rawFinish,
+          providerState: event.data.providerState,
           error: event.data.error,
           retry: undefined,
           cost: event.data.cost ?? item.cost,
@@ -205,6 +190,7 @@ export function createV2SessionReducer() {
         return updateContent(source, event.data.assistantMessageID, sessionID, "text", event.data.ordinal, (item) => ({
           ...item,
           text: event.data.text,
+          state: event.data.state,
         }))
       case "session.reasoning.started":
         return updateAssistant(source, event.data.assistantMessageID, sessionID, (item) => ({
@@ -316,7 +302,7 @@ export function createV2SessionReducer() {
               status: "error",
               input: typeof tool.state.input === "string" ? {} : tool.state.input,
               // structured: tool.state.status === "running" ? tool.state.structured : {},
-              metadata: event.data.metadata ?? (tool.state.status === "running" ? tool.state.metadata : {}),
+              metadata: event.data.metadata,
               content: event.data.content,
               error: event.data.error,
               // result: event.data.result,
@@ -371,6 +357,11 @@ export function createV2SessionReducer() {
             metadata: event.metadata,
             reason: event.data.reason,
             summary: event.data.text,
+            model: event.data.model,
+            providerState: event.data.providerState,
+            providerContext: event.data.providerContext,
+            cost: event.data.cost,
+            tokens: event.data.tokens,
             recent: event.data.recent,
             time: { created: event.created },
           })
@@ -380,6 +371,11 @@ export function createV2SessionReducer() {
             status: "completed",
             reason: event.data.reason,
             summary: event.data.text,
+            model: event.data.model,
+            providerState: event.data.providerState,
+            providerContext: event.data.providerContext,
+            cost: event.data.cost,
+            tokens: event.data.tokens,
             recent: event.data.recent,
           })),
           [current.id],
@@ -412,16 +408,8 @@ export function createV2SessionReducer() {
 
   return {
     reduce,
-    clear(sessionID: string) {
-      for (const id of pending.keys()) {
-        if (id.startsWith(`${sessionID}:`)) pending.delete(id)
-      }
-    },
+    clear(_sessionID: string) {},
   }
-}
-
-function key(sessionID: string, inputID: string) {
-  return `${sessionID}:${inputID}`
 }
 
 function messageID(eventID: string) {

@@ -101,9 +101,8 @@ export class OpenCodeAPI {
   }
   async models(signal?: AbortSignal) {
     const location = `location[directory]=${encodeURIComponent(this.directory)}`;
-    // Matched V2 model.default awaits catalog activation; model.list alone can
-    // return an empty catalog immediately after the first Location is created.
-    await this.request(`model/default?${location}`, signal);
+    // beta-19425 catalog reads are snapshots; activation has an explicit barrier.
+    await this.response(`plugin/await-activation?${location}`, { method: "POST", signal });
     return (
       await this.request<{ data: ModelInfo[] }>(`model?${location}`, signal)
     ).data;
