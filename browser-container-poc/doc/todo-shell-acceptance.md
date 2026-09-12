@@ -1,9 +1,14 @@
 # TODO built-in shell gate: multiline quoting failure and bounded source fix
 
-September 12, 2026. **Actual browser shell gate FAIL (exit 127); bounded runtime
-source fix and native/guest-worker parity checks PASS.** The corrected source has
-not been packaged into a distribution or rerun through the model-facing browser
-gate by this task. Parent browser ownership remains exclusive.
+September 12, 2026. **Final model-facing browser shell gate PASS (exit 0).** The
+parent packaged source fix `33305d5` into runtime
+`913a31409aa2fbae699e3e1675f8ec11fb48c7c7c0b8edc5c93e4ad36b93338d`
+and reran the same five-line command shape through unchanged OpenCode's built-in
+shell tool on a fresh origin. Exact source/hash/heading verification, stdout marker,
+numeric exit 0 and non-truncated native result all passed. See the
+[combined acceptance receipt](todo-clean-demo-acceptance.md), run `mty15y4n`,
+`mty15y4n-016-shell-verify.json`. The earlier failure and source diagnosis below are
+retained as historical evidence.
 
 ## Authoritative failure
 
@@ -117,15 +122,14 @@ preparation, live artifact, or browser operation was performed. The independent
 fixture is regression evidence for the quoting fix, not a substitute for the
 exact model-facing acceptance gate.
 
-## Parent decision and next gate
+## Completed parent integration
 
-The sustainable next step is an explicit runtime candidate rebuild containing
-`33305d5`, followed by preparation against its new runtime identity and a genuine
-rerun of the built-in shell gate. Preserve the multiline command and require the
-native primary capture plus numeric metadata exit 0; do not flatten the command,
-replace the tool, or skip the source/hash checks. Bind any rerun's expected source
-hash to independently read current workspace bytes, as the existing harness does.
+The parent rebuilt `33305d5`, regenerated preparation against its new runtime
+identity, and passed the genuine built-in shell gate on a fresh browser origin.
+The five-line argument, native primary capture, numeric metadata exit 0, and
+independent source/hash checks were retained. CSS HMR, close/reopen retention and
+startup cancellation also passed on that same final runtime. The accepted revision
+is now selected in `runtime-source.json` and the default distribution.
 
-Parent remains free to finish CSS/retention on exact runtime `0f0f9bc…` before
-adopting the source fix. A future dedicated Node tool is a separate product/API
-decision and would not close this existing built-in shell acceptance gate.
+A dedicated Node tool remains optional future API work; the existing built-in
+shell acceptance gate is complete.

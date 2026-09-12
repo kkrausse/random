@@ -4,7 +4,7 @@ September 11, 2026 local time. Independent follow-up to the
 [root-cause investigation](todo-tailwind-hmr-root-cause.md) and
 [published release check](todo-tailwind-wasm-release-check.md).
 
-## Current decision: adopt the user's PR, qualify browser HMR next
+## Current result: user's PR adopted and browser-qualified
 
 The user explicitly authorized adopting their existing
 [PR #20487](https://github.com/tailwindlabs/tailwindcss/pull/20487), after confirming
@@ -58,7 +58,11 @@ existing artifact identities are unchanged by that source-file move.
 Package checks after this integration: **73 passed, one retained-artifact test
 skipped without its explicit environment input, 311 assertions**. The actual
 retained candidate was additionally consumed by the full preparation checkpoint.
-Browser CSS HMR acceptance remains pending the separate Vite startup diagnosis.
+The later [combined browser run](todo-clean-demo-acceptance.md) passed new-utility
+CSS HMR: actual CSS responses and installed CSSOM contained `text-[37px]`, and the
+edited row computed to 37px without replacing the preview document. Runtime fixes
+resolved the independent native-realpath startup and multiline shell defects; the
+requested clean-demo acceptance flow now passes.
 
 ### Maintained build and package verification
 
@@ -368,7 +372,8 @@ The experimental second artifact and generated upstream loaders remain under
 upstream's 4.3.3 source version: **do not mistake it for the published 4.3.3 bytes**.
 The first artifact is separately retained as `patched-first.wasm`.
 
-Only this report is a repository change. Runtime/application pins, shared
-preparation, generated distribution, and the pre-existing untracked
-`vivari/scripts/probe-tailwind-direct.mjs` were not modified. No browser acceptance
-claim or app scanner workaround was added.
+The original duplicate experiment changed only this report and did not alter
+runtime/application pins, shared preparation or distribution. The later authorized
+PR adoption, maintained build, preparation wiring and browser acceptance are
+recorded above. The pre-existing untracked `vivari/scripts/probe-tailwind-direct.mjs`
+was preserved throughout.
