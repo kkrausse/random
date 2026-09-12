@@ -2,6 +2,38 @@ import type { Endpoint, Distribution } from '@kev-browser-agent-kit/workspace';
 import type { WorkspaceController, Connection } from '@kev-browser-agent-kit/workspace/react';
 import { sourcePaths } from './editor-source';
 import { loadPrepared, preparedApps, type PreparedManifest } from './prepared';
+import { createOpenCodeCandidateConfig, createOpenCodeCandidateLaunch, openCodeCandidateLaunch } from './opencode-launch';
+
+/** Readiness is a real configured provider barrier, not just an HTTP listener. */
+export async function verifyOpenCodeReady(endpoint: Pick<Endpoint, 'fetch'>, authorization: string, signal: AbortSignal) {
+  const descriptor = openCodeCandidateLaunch;
+  const request = (path: string, method = 'GET', timeout = 20000) => endpoint.fetch(path, {
+    method, headers: { authorization }, signal: AbortSignal.any([signal, AbortSignal.timeout(timeout)]),
+  });
+  const deadline = Date.now() + 30000;
+  while (true) {
+    signal.throwIfAborted();
+    const health = await request(descriptor.healthPath, 'GET', 3000);
+    await health.arrayBuffer();
+    if (health.ok) break;
+    if (Date.now() >= deadline) throw Error(`OpenCode health HTTP ${health.status}`);
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  const activated = await request(descriptor.activation.path, descriptor.activation.method);
+  await activated.arrayBuffer();
+  if (!activated.ok) throw Error(`OpenCode plugin activation HTTP ${activated.status}`);
+  const configuration = await request(descriptor.configAPIPath);
+  if (!configuration.ok) throw Error(`OpenCode configuration HTTP ${configuration.status}`);
+  const entries = await configuration.json();
+  if (!Array.isArray(entries) || !entries.some(entry => entry.type === 'document' && entry.path === descriptor.configPath
+    && entry.info?.providers?.opencode?.models?.[descriptor.model.id]?.package === '@opencode/ai/providers/openai'
+    && entry.info.providers.opencode.models[descriptor.model.id].websocket === false)) throw Error('OpenCode global model configuration not loaded');
+  const catalog = await request(descriptor.modelPath);
+  if (!catalog.ok) throw Error(`OpenCode model catalog HTTP ${catalog.status}`);
+  const { data } = await catalog.json();
+  if (!Array.isArray(data) || !data.some(model => model.providerID === descriptor.model.providerID && model.id === descriptor.model.id
+    && model.enabled && model.capabilities?.tools)) throw Error('Qualified OpenCode model is not enabled with tools');
+}
 
 function connection(endpoint: Endpoint, authorization?: string): Connection {
   return { url: endpoint.url, async fetch(input, init) {
@@ -15,6 +47,7 @@ function connection(endpoint: Endpoint, authorization?: string): Connection {
 
 /** Prepared Vite + pinned OpenCode orchestration over the existing workspace API. */
 export function createBrowserEditorRecipe(options: { base?: string; model?: string } = {}) {
+  if (options.model && options.model !== 'opencode/' + openCodeCandidateLaunch.model.id) throw Error('Browser editor requires the qualified OpenCode Muse Spark model');
   const base = options.base ?? '/editor/';
   return { async start(controller: WorkspaceController) {
     let manifest!: PreparedManifest, distribution!: Distribution;
@@ -36,9 +69,9 @@ export function createBrowserEditorRecipe(options: { base?: string; model?: stri
           await workspace.fs.mkdir(path.slice(0, path.lastIndexOf('/')) || '/');
           await workspace.fs.writeFile(path, text);
         }
-        await workspace.fs.writeFile('/opencode.json', JSON.stringify({ model: options.model ?? 'opencode/muse-spark-1.3-contributor-free', snapshots: false,
-          providers: { opencode: { settings: { baseURL: `http://host.vivari.internal:${location.port || (location.protocol === 'https:' ? '443' : '80')}${base}model/` } } },
-          permissions: [{ action: 'read', resource: '*', effect: 'allow' }, { action: 'edit', resource: '*', effect: 'allow' }] }));
+        for (const directory of openCodeCandidateLaunch.workspaceDirectories) await workspace.fs.mkdir(directory);
+        await workspace.fs.writeFile(openCodeCandidateLaunch.workspaceConfigPath, JSON.stringify(createOpenCodeCandidateConfig(
+          `http://host.vivari.internal:${location.port || (location.protocol === 'https:' ? '443' : '80')}${base}model/`, ['shell'])));
         await workspace.flush();
       }],
       ['Start runtime and deliver verified applications', async () => {
@@ -58,19 +91,10 @@ export function createBrowserEditorRecipe(options: { base?: string; model?: stri
       ['Start OpenCode', async () => {
         const password = crypto.randomUUID() + crypto.randomUUID();
         const authorization = 'Basic ' + btoa('opencode:' + password);
-        await controller.launch('chat', { entry: '/opencode-v2/run.cjs', args: ['serve', '--port', '4096'], cwd: '/workspace', env: {
-          OPENCODE_SERVER_PASSWORD: password, OPENCODE_MODELS_PATH: '/opencode-v2/models.json', OPENCODE_DISABLE_MODELS_FETCH: '1', OPENCODE_DISABLE_FFF: '1', OPENCODE_DISABLE_FILEWATCHER: '1', OTUI_TREE_SITTER_WORKER_PATH: '/opencode-v2/parser/entry.cjs',
-          XDG_DATA_HOME: '/workspace/.opencode-state/data', XDG_CONFIG_HOME: '/workspace/.opencode-state/config', XDG_CACHE_HOME: '/workspace/.opencode-state/cache', XDG_STATE_HOME: '/workspace/.opencode-state/state',
-        } }, 4096, async endpoint => {
-          const deadline = Date.now() + 30000;
-          while (true) {
-            controller.signal.throwIfAborted();
-            const response = await endpoint.fetch('/api/health', { headers: { authorization }, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(3000)]) });
-            if (response.ok) return connection(endpoint, authorization);
-            if (Date.now() >= deadline) throw Error(`OpenCode health HTTP ${response.status}`);
-            await new Promise(resolve => setTimeout(resolve, 100));
-          }
-        });
+        await controller.launch('chat', createOpenCodeCandidateLaunch({ password, ripgrepBinDirectory: manifest.opencode.support.binDirectory }), openCodeCandidateLaunch.port, async endpoint => {
+          await verifyOpenCodeReady(endpoint, authorization, controller.signal);
+          return connection(endpoint, authorization);
+        }, { shutdown: 'stdin-eof', timeoutMs: 10000 });
         await controller.waitForClient('chat');
       }],
     ]);

@@ -1,12 +1,13 @@
 # Todo app: IRS Tools stack + browser agent kit
 
-**Current clean-integration qualification: BLOCKED at CSS HMR.** Normal upstream
-`@tailwindcss/vite` is restored and the custom scanner is removed. Host typecheck/build
-pass. An isolated real-browser attempt with published WASM dependencies passed upstream
-scanning, Vite transforms and initial TODO rendering, but a new utility did not take
-effect after a source edit. The preparer's legacy package selection and older OpenCode
-candidate have not been promoted. See the [attempt and exact blocker](../doc/todo-upstream-tailwind-attempt.md)
-and [original API audit/baseline comparison](../doc/todo-editor-clean-integration.md).
+**V2 preparation and beta-19425 editor wiring pass host checks; combined browser
+acceptance is pending.** Preparation now preserves project manifest/lock bytes,
+isolated dependency links and executable modes, with explicit runtime backend and
+OpenCode provenance. Normal upstream `@tailwindcss/vite` and published Oxide WASM
+4.3.3 remain selected. The earlier new-utility CSS HMR failure remains open; no PR
+backend is adopted here. See the [candidate integration and exact checks](../doc/opencode-editor-candidate-migration.md),
+[CSS HMR attempt](../doc/todo-upstream-tailwind-attempt.md), and
+[original API audit/baseline comparison](../doc/todo-editor-clean-integration.md).
 
 A minimal unauthenticated todo app using the relevant wiring from `../irs-tools` (the sibling repository of `random`):
 
@@ -23,14 +24,15 @@ Build the local toolkit packages once, in dependency order, then install this co
 
 ```sh
 bun run --cwd ../workspace-api build
+bun --cwd ../opencode-chat install --linker isolated --force --frozen-lockfile
 bun run --cwd ../opencode-chat build
-bunx --package bun@1.3.9 bun install
+bun install --linker isolated --force --frozen-lockfile
 ```
 
 The dependencies point at compiled package directories, so toolkit source, tests, and
-build dependencies do not enter this app. Bun 1.3.9 is used for installation because
-the installed Bun 1.4.0 rejects sibling `file:` package paths. Build/run commands work
-with the installed Bun. After rebuilding a toolkit package, reinstall with `--force`.
+build dependencies do not enter this app. Bun 1.4.0 with the isolated linker supports
+these sibling `file:` package paths. After rebuilding a toolkit package, reinstall
+with `--force --linker isolated --frozen-lockfile`.
 
 Run the ordinary app from this directory:
 
@@ -66,13 +68,14 @@ The typed client batches requests to `/api/<procedure>`. Titles are trimmed and 
 
 ## Enable the browser editor
 
-The existing pinned runtime and OpenCode V2 package are prerequisites. Defaults are
-`../workspace-api/dist/runtime` and `../vivari/.runtime/opencode-v2-package`; override
-with `RUNTIME_DIR` and `OPENCODE_PACKAGE_DIR`. Use the workspace distribution command
-to deliver the current preview query adapter before preparing:
+The existing qualified runtime distribution and unchanged beta-19425 application
+are prerequisites. Runtime defaults to `../workspace-api/dist/runtime`; override
+with `RUNTIME_DIR`. Set `OPENCODE_PACKAGE_DIR` explicitly to the retained candidate
+root containing `build-receipt.json` and `.runtime/opencode-bun-server/`. It is not
+the old CLI package directory. After the package builds/install above:
 
 ```sh
-bun run --cwd ../workspace-api distribution
+export OPENCODE_PACKAGE_DIR=/private/var/folders/t_/x48jtnps7n5_0g_pt9xpvbg00000gn/T/opencode/server-process-candidate.0co24kti
 bun run prepare:editor
 bun run build
 LOCAL_EDITOR_ADMIN=1 PORT=4390 bun start
@@ -85,6 +88,23 @@ Without it the launcher is absent and direct editor JS/CSS, runtime/prepared ass
 and model endpoints return 403. Replace `src/server/editing.ts` with the app's real
 session/role policy when integrating authentication. The Vite development boundary
 uses that same policy for editor modules.
+
+The exact retained receipt and all five application outputs are verified before
+preparation. `.editor/prepared/manifest.json` is `browser-editor-v2`, retaining
+the receipt verbatim, source revision, dependency original/derived lock provenance,
+and the frozen ripgrep support installation. The standalone receipt is also saved
+at `.editor/prepared/opencode-build-receipt.json`. Guest application delivery is
+`/app`; ordinary `ripgrep@0.3.1` uses `/app/node_modules/.bin/rg` with preserved
+links and executable modes. The global model config is written under `/.server`
+in the workspace, isolated from source editing scans. Chat readiness requires
+authenticated health, plugin activation, loaded global config and an enabled
+tool-capable Muse Spark model. Other recipe model selections fail explicitly.
+
+This entrypoint fixes its database at `/runtime-probe/opencode.sqlite`. Application
+delivery creates only a marker in that directory and never resets its database.
+Chat uses the controller's bounded stdin-EOF shutdown mode; its lifecycle and
+conversation retention still need combined browser acceptance. Shell permission
+is configured for the upcoming built-in shell gate, not evidence that it passed.
 
 `prepare.ts` is a single toolkit call. It packages the existing `src`, Vite, React
 Router, and TypeScript configs; there is no second guest frontend. The shared
