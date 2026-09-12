@@ -50,7 +50,12 @@ export class ImeOverlay {
     };
     // SelectionManager temporarily borrows this input for the native copy menu.
     if (this.textarea.style.position !== 'fixed') {
-      Object.assign(this.textarea.style, style, { width: `${width}px` });
+      // iOS zooms focused form controls below 16 CSS px. This is a hidden
+      // input, so keep its font independent of the visible terminal/preedit.
+      // Apply on every cursor update, not just once when mobile controls mount.
+      Object.assign(this.textarea.style, style, {
+        width: `${width}px`, fontSize: `${Math.max(16, fontSize)}px`,
+      });
     }
     Object.assign(this.overlay.style, style, {
       color: foreground, backgroundColor: background,
