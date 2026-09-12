@@ -1,5 +1,97 @@
 # Host package preparation preflight
 
+## Follow-up diagnosis (2026-09-11)
+
+**Confirmed Bun architecture-filtering limitation; exact tarball override works.**
+The original preflight below records the registry-version failure. Further host
+experiments establish a Bun-native delivery path for this backend, superseding
+the installation blocker for this bounded graph. Browser runtime readiness is
+still unverified by these host experiments.
+
+### Root cause
+
+The published `@tailwindcss/oxide-wasm32-wasi@4.3.3` metadata has
+`cpu: ["wasm32"]`. Bun does not recognize that architecture:
+
+1. Its architecture name table contains native architectures but no `wasm32`.
+2. Parsing an exclusively unrecognized CPU constraint yields an empty bitmask,
+   serialized into `bun.lock` as `cpu: "none"`.
+3. Architecture matching uses a nonzero bitwise intersection. `--cpu '*'` selects
+   all **recognized** architectures; it cannot match the empty mask.
+
+Source reference: Bun commit
+[`1d487c40d9499d9bfd713deb3d4f0b42d8cc76ae`](https://github.com/oven-sh/bun/blob/1d487c40d9499d9bfd713deb3d4f0b42d8cc76ae/src/install_types/resolver_hooks.rs),
+`Negatable::apply`, `Negatable::combine`, `Negatable::to_json`, and
+`Architecture::is_match` / `ARCHITECTURE_NAMES`.
+
+Fresh minimal projects on installed Bun **1.4.0 (34cbb9a40)** reproduce the
+failure with a required direct dependency, independent of the TODO graph:
+
+| Install arguments (also using `--ignore-scripts`) | Exit | Backend installed |
+| --- | --- | --- |
+| default | 0 | No |
+| `--cpu '*' --os '*'` | 0 | No |
+| `--force --cpu '*'` | 0 | No |
+| `--cpu wasm32` | 1, invalid architecture | No |
+
+Thus upgrading from the previously tested 1.3.9 to this 1.4.0 does not solve it.
+The successful exit despite an absent required direct dependency is a separate
+diagnostic problem. `--force` does not disable platform filtering.
+
+### Verified workaround
+
+Add this entry alongside the three existing WASM overrides in the **derived
+staging manifest**:
+
+```json
+{
+  "overrides": {
+    "@tailwindcss/oxide-wasm32-wasi": "https://registry.npmjs.org/@tailwindcss/oxide-wasm32-wasi/-/oxide-wasm32-wasi-4.3.3.tgz"
+  }
+}
+```
+
+Bun's tarball dependency path installs the archive without carrying the registry
+CPU filter into its lock entry. The installed package's own `package.json` still
+contains `cpu: ["wasm32"]`; no published metadata or package sources were edited.
+The generated lock entry retains the archive's published SHA-512 integrity.
+
+Verified:
+
+- Minimal direct tarball installs succeed on Bun **1.3.9** and **1.4.0**.
+- A separate 1.4.0 install using that generated lockfile,
+  `--frozen-lockfile`, and a fresh cache succeeds.
+- Independently downloaded archive SHA-512 equals the registry integrity recorded
+  in the original preflight. All **113 regular files**, including bundled
+  dependencies, match the fresh frozen installation byte-for-byte.
+- A copy of the staged TODO manifest and derived lockfile, retaining the three
+  original WASM aliases and adding this override, installs the backend with Bun
+  1.3.9. The experimental direct registry dependency was removed first, so this
+  verifies delivery through the actual transitive optional dependency.
+
+These experiments used `--ignore-scripts` to isolate package delivery. They do
+not establish browser execution, filesystem metadata round-trip, or fix the
+separate Oxide incremental-scanning bug. An npm comparison was unavailable
+because no `npm` executable was on PATH.
+
+Recommended next implementation step: use the exact tarball override during host
+preparation, retain the derived lockfile/integrity, and explicitly assert backend
+presence before exporting the runtime tree. A custom archive installer is not
+needed for this demonstrated package-delivery case. An upstream fix should add
+`wasm32` targeting and tests for wildcard installation and missing required
+dependencies; compatibility with existing `cpu: "none"` lock entries also needs
+consideration because those entries have lost the original architecture name.
+
+Follow-up evidence directory:
+
+```text
+/private/var/folders/t_/x48jtnps7n5_0g_pt9xpvbg00000gn/T/opencode/bun-wasm-diagnosis.i3fpw4ti/
+```
+
+Each completed install case contains `result.json`, its manifest, and any
+generated lockfile. `archive-verification.json` records the integrity and file
+comparison; `full-graph/result.json` records the staged TODO installation.
+
 ## Result
 
 **Locked host installation and exact WASM overrides PASS. Complete runtime tree
