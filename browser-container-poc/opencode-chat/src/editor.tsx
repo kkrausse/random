@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Workspace } from "@kev-browser-agent-kit/workspace";
-import type { Service, WorkspaceController } from "@kev-browser-agent-kit/workspace/react";
+import { WorkspaceProvider, useWorkspace, type Service, type WorkspaceController } from "@kev-browser-agent-kit/workspace/react";
 import type { ChatController } from "./types";
 import { ChatView, type OpenFile } from "./react";
 import { attachChat, editorLifecycle } from "./editor-adapter";
@@ -8,6 +8,7 @@ import { SourceDocument, sourcePaths } from "./editor-source";
 import { Button } from "./components/ui/button";
 import { Textarea } from "./components/ui/textarea";
 import { ChoiceSelect } from "./components/ui/select";
+import { createBrowserEditorRecipe } from "./recipe";
 export { attachChat, chatFor, type WorkspaceChatOptions } from "./editor-adapter";
 export { sourcePaths } from "./editor-source";
 
@@ -29,6 +30,25 @@ export interface BrowserEditorProps {
   /** Optional application-specific rendered-content check. Default: iframe load. */
   isPreviewReady?(frame: HTMLIFrameElement): boolean;
 }
+export type PreparedBrowserEditorProps = Omit<BrowserEditorProps, "controller" | "recipe"> & {
+  /** Prepared assets, runtime and model proxy root. Default: /editor/. Captured on mount. */
+  base?: string;
+  /** Default model for the prepared workspace. Captured on mount. */
+  model?: string;
+};
+
+/** Mount only while editing is authorized and open. Composes the default prepared
+ * recipe and workspace lifecycle; the host owns authorization and the launcher. */
+export function PreparedBrowserEditor(props: PreparedBrowserEditorProps) {
+  return <WorkspaceProvider><PreparedEditor {...props} /></WorkspaceProvider>;
+}
+
+function PreparedEditor({ base, model, ...props }: PreparedBrowserEditorProps) {
+  const { controller } = useWorkspace();
+  const [recipe] = useState(() => createBrowserEditorRecipe({ base, model }));
+  return <BrowserEditor {...props} controller={controller} recipe={recipe} />;
+}
+
 const noHostPaths: string[] = [];
 export function BrowserEditor({ controller, recipe, onExit, onRetry, onReset, previewService = "vite", chatService = "chat", directory = "/workspace", hostPaths = noHostPaths, initialPath, listFiles = sourcePaths, autosaveMs = 1000, isPreviewReady }: BrowserEditorProps) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);

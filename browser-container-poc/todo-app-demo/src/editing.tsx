@@ -18,7 +18,7 @@ export default function Editing() {
   return <>
     <aside style={{ padding: '1rem' }}>
       <small>Local admin fixture · browser-local source saves</small>{' '}
-      <button onClick={() => setIsEditing(true)} disabled={isEditing}>Enable editing</button>
+      <button onClick={() => setIsEditing(true)} disabled={isEditing}>Open editor</button>
     </aside>
     {isEditing && <Suspense fallback={<p>Loading editor…</p>}>
       <EditorPanel onExit={() => { setIsEditing(false); void queryClient.invalidateQueries() }} />

@@ -1,5 +1,11 @@
 # Todo app: IRS Tools stack + browser agent kit
 
+**Current clean-integration qualification: BLOCKED.** The API/launcher cleanup
+builds and typechecks, but the existing guest Tailwind source-discovery workaround
+does not preserve upstream behavior. Runtime/browser qualification stopped under
+the no-hacks requirement; beta-19425 has not been promoted into this app. See the
+[audit, genuine baseline diff and verification scope](../doc/todo-editor-clean-integration.md).
+
 A minimal unauthenticated todo app using the relevant wiring from `../irs-tools` (the sibling repository of `random`):
 
 - React 19 and React Router 7 framework mode: `appDirectory: 'src'`, `ssr: false`, `prerender: true`. React Router supplies the default client entry. IRS's `entry.server.tsx` is used only for build-time prerendering, producing static HTML plus client assets.
@@ -70,7 +76,8 @@ bun run build
 LOCAL_EDITOR_ADMIN=1 PORT=4390 bun start
 ```
 
-Open http://127.0.0.1:4390 and choose **Enable editing**. `LOCAL_EDITOR_ADMIN=1`
+Open http://127.0.0.1:4390 and choose **Open editor**. The editor starts closed;
+the explicit button mounts its lazy entry. `LOCAL_EDITOR_ADMIN=1`
 is explicitly a **local loopback admin fixture**, not a production identity system.
 Without it the launcher is absent and direct editor JS/CSS, runtime/prepared assets,
 and model endpoints return 403. Replace `src/server/editing.ts` with the app's real
@@ -85,13 +92,14 @@ SPA rendering, tRPC React Query, CSS, and HMR all run from the same frontend sou
 Guest `/api` calls go through the existing preview bridge to this real Bun server.
 
 The app owns the launcher, authorization, editing state, and readiness predicate.
-`src/editor-panel.tsx` mounts the library editor with a workspace provider and the
-toolkit recipe. The editor's **Reload file** picks up agent edits before manual
+`src/editor-panel.tsx` mounts `PreparedBrowserEditor`; the toolkit composes its
+workspace provider, controller and default recipe. The editor's **Reload file** picks up agent edits before manual
 editing; manual text autosaves locally. Exit refreshes the normal app's backend
 queries. The normal host page continues to use its built source.
 
 `.editor/` is ignored preparation output, not checked-in scaffolding. OPFS source
-and chat history survive closing/reopening the editor on the same origin; dependencies
-are restored on each open. **A local flush is not a server save or Git commit.**
+and chat history retention are intended lifecycle behavior, not a completed browser
+qualification of this revision; dependencies are restored on each open.
+**A local flush is not a server save or Git commit.**
 Remote Git patch persistence is a future, separate milestone. Todo data remains the
 ordinary server-owned in-memory map and resets only when that Bun server restarts.
