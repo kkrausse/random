@@ -1,7 +1,10 @@
-import { readdir, realpath, stat, mkdir, readFile } from 'node:fs/promises';
-import { resolve, join, dirname } from 'node:path';
-import { readRuntimeAssets } from '@kev-browser-agent-kit/workspace/assets';
+import { readdir, realpath, stat, readFile } from 'node:fs/promises';
+import { resolve, join } from 'node:path';
+import { readRuntimeAssets, readRuntimeBackendPolicy } from '@kev-browser-agent-kit/workspace/assets';
 import type { PreparedManifest } from './prepared';
+import { prepareDependencies } from './prepare-dependencies';
+import { captureTree, sha256 as hash } from './prepare-tree';
+import { validateTree, treeRoots } from './package-tree';
 
 export interface PrepareBrowserEditorOptions {
   appRoot: string;
@@ -10,6 +13,8 @@ export interface PrepareBrowserEditorOptions {
   openCodeDirectory: string;
   /** Explicit source delivery allowlist, relative to appRoot. Never includes server secrets. */
   source: string[];
+  /** Host Bun executable; defaults to the Bun running this preparer. */
+  bunExecutable?: string;
 }
 
 /** Bun build-time preparation. Application source is unchanged; native bundlers use WASM. */
@@ -18,43 +23,34 @@ export async function prepareBrowserEditor(options: PrepareBrowserEditorOptions)
   const runtime = await readRuntimeAssets(options.runtimeDirectory);
   const receipt = JSON.parse(await readFile(join(options.openCodeDirectory, 'receipt.json'), 'utf8'));
   if (receipt.revision !== 'd7a7256bb6b0952f486c95718cfbf460b1570a56') throw Error('Expected pinned OpenCode V2 package d7a7256');
-  const pkg = await Bun.file(join(root, 'package.json')).json();
-  const dependencies: Record<string, string> = {};
-  for (const name of Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })) {
-    if (name.startsWith('@kev-browser-agent-kit/') || name.startsWith('@types/') || name === 'concurrently') continue;
-    dependencies[name] = (await Bun.file(join(root, 'node_modules', name, 'package.json')).json()).version;
-  }
-  const install = join(out, 'dependencies');
-  await mkdir(install, { recursive: true });
-  await Bun.write(join(install, 'package.json'), JSON.stringify({ private: true, type: 'module', dependencies,
-    overrides: { esbuild: 'npm:esbuild-wasm@0.25.12', rollup: 'npm:@rollup/wasm-node@4.63.1' } }));
-  const process = Bun.spawn(['bun', 'install'], { cwd: install, stdout: 'inherit', stderr: 'inherit' });
-  if (await process.exited) throw Error('Guest dependency installation failed');
+  const policy = await readRuntimeBackendPolicy(options.runtimeDirectory);
+  const dependencies = await prepareDependencies({ ...options, policy });
+  try {
   const assets: PreparedManifest['assets'] = [];
-  const hash = (bytes: Uint8Array) => new Bun.CryptoHasher('sha256').update(bytes).digest('hex');
   const prepared = join(out, 'prepared');
   async function add(destination: string, bytes: Uint8Array) {
     const sha256 = hash(bytes), file = sha256 + '.bin';
     await Bun.write(join(prepared, file), bytes);
-    assets.push({ file, destination, sha256, bytes: bytes.length });
+    // Application receipt v1 has no modes; keep its existing non-executable JS
+    // semantics until the independent application descriptor migration.
+    const parents: string[] = [];
+    for (let parent = destination.slice(0, destination.lastIndexOf('/')); treeRoots.some(root => parent === root || parent.startsWith(root + '/')); parent = parent.slice(0, parent.lastIndexOf('/'))) parents.unshift(parent);
+    for (const destination of parents) if (!assets.some(entry => entry.destination === destination)) assets.push({ kind: 'directory', destination, mode: 0o755 });
+    assets.push({ kind: 'file', mode: 0o644, file, destination, sha256, bytes: bytes.length });
   }
-  async function walk(directory: string, destination: string, visit: (path: string, destination: string) => Promise<void>) {
+  async function walk(directory: string, destination: string, visit: (path: string, destination: string) => Promise<void>, ancestors = new Set<string>()) {
+    const canonical = await realpath(directory);
+    if (ancestors.has(canonical)) throw Error('Cyclic source directory link');
+    const next = new Set(ancestors).add(canonical);
     for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
-      if (['.bin', '.cache', '.git'].includes(entry.name)) continue;
+      if (['.git', 'node_modules'].includes(entry.name)) continue;
       const path = await realpath(join(directory, entry.name));
-      if ((await stat(path)).isDirectory()) await walk(path, destination + '/' + entry.name, visit);
+      if (!path.startsWith(root + '/')) throw Error('Source symlink escapes application');
+      if ((await stat(path)).isDirectory()) await walk(path, destination + '/' + entry.name, visit, next);
       else await visit(path, destination + '/' + entry.name);
     }
   }
-  await walk(join(install, 'node_modules'), '/workspace/node_modules', async (path, destination) => {
-    // Host-native binaries cannot execute in the browser; their packages remain for resolution.
-    if (/\.(node|exe)$/.test(path)) return;
-    await add(destination, new Uint8Array(await Bun.file(path).arrayBuffer()));
-  });
-  // The shared Vite config imports this build-only entry. No editor/browser payload enters the guest.
-  await add('/workspace/node_modules/@kev-browser-agent-kit/opencode-chat/package.json', new TextEncoder().encode(JSON.stringify({ type: 'module', exports: { './vite': './vite.js', './config': './config.js' } })));
-  await add('/workspace/node_modules/@kev-browser-agent-kit/opencode-chat/vite.js', new Uint8Array(await Bun.file(join(import.meta.dirname, 'vite.js')).arrayBuffer()));
-  await add('/workspace/node_modules/@kev-browser-agent-kit/opencode-chat/config.js', new Uint8Array(await Bun.file(join(import.meta.dirname, 'config.js')).arrayBuffer()));
+  assets.push(...await captureTree(join(dependencies.install, 'node_modules'), '/workspace/node_modules', async (file, bytes) => { await Bun.write(join(prepared, file), bytes); }));
   for (const asset of receipt.assets) {
     const bytes = new Uint8Array(await Bun.file(join(options.openCodeDirectory, asset.file)).arrayBuffer());
     if (bytes.length !== asset.bytes || hash(bytes) !== asset.sha256) throw Error(`OpenCode integrity failure: ${asset.file}`);
@@ -69,10 +65,15 @@ export async function prepareBrowserEditor(options: PrepareBrowserEditorOptions)
     if ((await stat(path)).isDirectory()) await walk(path, '/' + name, visit);
     else await visit(path, '/' + name);
   }
-  project['/package.json'] = JSON.stringify({ ...pkg, scripts: undefined, dependencies, devDependencies: undefined });
-  const manifest: PreparedManifest = { format: 'browser-editor-v1', runtimeVersion: runtime.version, assets, project,
+  project['/package.json'] = dependencies.provenance.original.manifest;
+  project['/bun.lock'] = dependencies.provenance.original.lock;
+  project['/.browser-editor/runtime-package.json'] = dependencies.provenance.derived.manifest;
+  project['/.browser-editor/runtime-bun.lock'] = dependencies.provenance.derived.lock;
+  validateTree(assets);
+  const manifest: PreparedManifest = { format: 'browser-editor-v2', runtimeVersion: runtime.version, assets, project, dependencies: dependencies.provenance,
     preview: { entry: '/workspace/node_modules/vite/bin/vite.js', args: ['--configLoader', 'native', '--host', '0.0.0.0', '--port', '5173', '--strictPort'], cwd: '/workspace', env: { BROWSER_AGENT_GUEST: '1', NODE_ENV: 'development' } } };
   await Bun.write(join(prepared, 'manifest.json'), JSON.stringify(manifest));
-  console.log(`Prepared shared application and ${assets.length} verified dependency/runtime files`);
+  console.log(`Prepared shared application and ${assets.length} verified dependency/runtime tree entries`);
   return manifest;
+  } finally { await dependencies.cleanup(); }
 }

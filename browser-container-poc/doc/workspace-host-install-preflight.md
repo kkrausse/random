@@ -1,5 +1,15 @@
 # Host package preparation preflight
 
+## Implemented continuation (2026-09-11)
+
+[Preparation v2](workspace-preparation-v2.md) now passes the full host graph using
+Bun 1.4.0's supported **isolated linker**, exact WASM aliases and the exact Oxide
+tarball override. It retains original/derived provenance and filesystem metadata.
+Important correction to the summary below: **1.3.9's full-graph tarball lock entry
+does not retain integrity**; only the 1.4.0 cases do. The isolated linker solves
+1.4.0's separate hoisted-local-package rejection and provides both properties in
+one normal installer. Browser acceptance is the subsequent integration checkpoint.
+
 ## Follow-up diagnosis (2026-09-11)
 
 **Confirmed Bun architecture-filtering limitation; exact tarball override works.**

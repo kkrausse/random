@@ -25,7 +25,10 @@ if (/new URL\(\s*["']\/assets\//.test(kernelBytes.toString())) {
 }
 const serviceWorker = preservePreviewQuery(await readFile(resolve(source, 'assets/sw.js'), 'utf8'));
 const version = createHash("sha256").update(receiptBytes).update(serviceWorker).digest("hex");
+const backendPolicy = await readFile(runtimeSourcePath('packages/runtime/toolchain-shims.js'));
+if (runtimeBuild.source?.files?.find((file: { name: string }) => file.name === 'packages/runtime/toolchain-shims.js')?.sha256 !== sha256(backendPolicy)) throw Error('Backend policy differs from runtime build receipt');
 await mkdir(destination, { recursive: true });
+await writeFile(resolve(destination, 'backend-policy.mjs'), backendPolicy);
 await cp(resolve(source, "assets"), resolve(destination, "assets"), { recursive: true });
 await writeFile(resolve(destination, 'assets/sw.js'), serviceWorker);
 await writeFile(resolve(destination, "distribution.json"), JSON.stringify({
