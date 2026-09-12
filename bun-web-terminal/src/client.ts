@@ -2,6 +2,7 @@ import { init, Terminal, type ITheme } from "@random/ghostty-web";
 import { TerminalConnection } from "./connection";
 import { installScrolling } from "./scroll";
 import { installMobileControls } from "./mobile";
+import { ApplicationClipboard, ClipboardRequests } from "./clipboard";
 
 type Session = {
   id: string;
@@ -106,6 +107,26 @@ async function startTerminalPage() {
 
   const copyToast = document.querySelector<HTMLElement>("#copy-toast");
   let copyToastTimer: ReturnType<typeof setTimeout> | undefined;
+  const notice = (message: string) => {
+    if (!copyToast) return;
+    clearTimeout(copyToastTimer);
+    copyToast.textContent = message;
+    copyToastTimer = setTimeout(() => { copyToast.textContent = ""; }, 3000);
+  };
+  const copyApplication = document.createElement("button");
+  copyApplication.type = "button";
+  copyApplication.className = "terminal-notice";
+  copyApplication.textContent = "Tap to copy";
+  copyApplication.setAttribute("aria-label", "Copy text from terminal application");
+  copyApplication.hidden = true;
+  copyToast?.after(copyApplication);
+  const applicationClipboard = new ApplicationClipboard(
+    text => navigator.clipboard.writeText(text),
+    pending => { copyApplication.hidden = !pending; },
+    notice,
+  );
+  copyApplication.addEventListener("click", () => { void applicationClipboard.copy(); });
+  const clipboardRequests = new ClipboardRequests(text => applicationClipboard.receive(text));
   const terminal = new Terminal({
     cursorBlink: true,
     fontFamily: theme.fontFamily,
@@ -164,6 +185,8 @@ async function startTerminalPage() {
   const connection = new TerminalConnection(id!, {
     size: () => ({ cols: terminal.cols, rows: terminal.rows }),
     reset() {
+      clipboardRequests.reset();
+      applicationClipboard.reset();
       terminal.options.selectOnDrag = false;
       titleBuffer = "";
       titleDecoder.decode();
@@ -171,6 +194,7 @@ async function startTerminalPage() {
       terminal.write("\x1bc");
     },
     write(data) {
+      clipboardRequests.write(data);
       inspectTitles(titleDecoder.decode(data, { stream: true }));
       terminal.write(data);
     },
@@ -236,6 +260,8 @@ async function startTerminalPage() {
   });
   void document.fonts?.ready.then(scheduleLayout);
   window.addEventListener("pagehide", () => {
+    clipboardRequests.reset();
+    applicationClipboard.reset();
     clearTimeout(copyToastTimer);
     if (copyToast) copyToast.textContent = "";
     connection.suspend();
