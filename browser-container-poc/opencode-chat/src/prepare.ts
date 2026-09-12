@@ -1,10 +1,36 @@
-import { readdir, realpath, stat, readFile } from 'node:fs/promises';
+import { readdir, realpath, stat, readFile, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { readRuntimeAssets, readRuntimeBackendPolicy } from '@kev-browser-agent-kit/workspace/assets';
 import type { PreparedManifest } from './prepared';
 import { prepareDependencies } from './prepare-dependencies';
 import { captureTree, sha256 as hash } from './prepare-tree';
 import { validateTree, treeRoots } from './package-tree';
+import { readQualifiedOpenCodeApplication } from './opencode-application';
+import { openCodeCandidateLaunch } from './opencode-launch';
+
+/** Ordinary registry installation, with the archive integrity retained by qualification. */
+export async function prepareOpenCodeRipgrep(prepared: string, bun = process.execPath) {
+  const directory = await mkdtemp(join(tmpdir(), 'browser-editor-ripgrep-'));
+  const manifest = JSON.stringify({ name: 'browser-editor-opencode-support', private: true, dependencies: { ripgrep: '0.3.1' } });
+  const integrity = 'sha512-6bDtNIBh1qPviVIU685/4uv0Ap5t8eS4wiJhy/tR2LdIeIey9CVasENlGS+ul3HnTmGANIp7AjnfsztsRmALfQ==';
+  const lock = JSON.stringify({ lockfileVersion: 1, workspaces: { '': { name: 'browser-editor-opencode-support', dependencies: { ripgrep: '0.3.1' } } },
+    packages: { ripgrep: ['ripgrep@0.3.1', '', { bin: { rg: 'lib/rg.mjs', ripgrep: 'lib/rg.mjs' } }, integrity] } });
+  try {
+    await Bun.write(join(directory, 'package.json'), manifest);
+    await Bun.write(join(directory, 'bun.lock'), lock);
+    const child = Bun.spawn([bun, 'install', '--frozen-lockfile', '--linker', 'isolated', '--cache-dir', join(directory, 'cache')], { cwd: directory, stdout: 'inherit', stderr: 'inherit' });
+    if (await child.exited) throw Error('Qualified ripgrep installation failed');
+    if (await readFile(join(directory, 'bun.lock'), 'utf8') !== lock) throw Error('Frozen ripgrep lock changed');
+    const pkg = JSON.parse(await readFile(join(directory, 'node_modules/ripgrep/package.json'), 'utf8'));
+    if (pkg.name !== 'ripgrep' || pkg.version !== '0.3.1') throw Error('Qualified ripgrep package mismatch');
+    const assets = await captureTree(join(directory, 'node_modules'), '/app/node_modules', async (file, bytes) => { await Bun.write(join(prepared, file), bytes); });
+    const rg = assets.find(entry => entry.destination === '/app/node_modules/.bin/rg');
+    if (rg?.kind !== 'symlink' || !((await stat(join(directory, 'node_modules/.bin/rg'))).mode & 0o111)) throw Error('Ripgrep executable metadata missing');
+    return { assets, provenance: { name: 'ripgrep' as const, version: '0.3.1' as const, integrity, linker: 'isolated' as const,
+      manifest, manifestSha256: hash(manifest), lock, lockSha256: hash(lock), binDirectory: '/app/node_modules/.bin' } };
+  } finally { await rm(directory, { recursive: true, force: true }); }
+}
 
 export interface PrepareBrowserEditorOptions {
   appRoot: string;
@@ -21,8 +47,7 @@ export interface PrepareBrowserEditorOptions {
 export async function prepareBrowserEditor(options: PrepareBrowserEditorOptions) {
   const root = resolve(options.appRoot), out = resolve(options.output);
   const runtime = await readRuntimeAssets(options.runtimeDirectory);
-  const receipt = JSON.parse(await readFile(join(options.openCodeDirectory, 'receipt.json'), 'utf8'));
-  if (receipt.revision !== 'd7a7256bb6b0952f486c95718cfbf460b1570a56') throw Error('Expected pinned OpenCode V2 package d7a7256');
+  const application = await readQualifiedOpenCodeApplication(options.openCodeDirectory);
   const policy = await readRuntimeBackendPolicy(options.runtimeDirectory);
   const dependencies = await prepareDependencies({ ...options, policy });
   try {
@@ -31,8 +56,7 @@ export async function prepareBrowserEditor(options: PrepareBrowserEditorOptions)
   async function add(destination: string, bytes: Uint8Array) {
     const sha256 = hash(bytes), file = sha256 + '.bin';
     await Bun.write(join(prepared, file), bytes);
-    // Application receipt v1 has no modes; keep its existing non-executable JS
-    // semantics until the independent application descriptor migration.
+    // The unchanged application is passed as data to /bin/bun.js.
     const parents: string[] = [];
     for (let parent = destination.slice(0, destination.lastIndexOf('/')); treeRoots.some(root => parent === root || parent.startsWith(root + '/')); parent = parent.slice(0, parent.lastIndexOf('/'))) parents.unshift(parent);
     for (const destination of parents) if (!assets.some(entry => entry.destination === destination)) assets.push({ kind: 'directory', destination, mode: 0o755 });
@@ -51,12 +75,10 @@ export async function prepareBrowserEditor(options: PrepareBrowserEditorOptions)
     }
   }
   assets.push(...await captureTree(join(dependencies.install, 'node_modules'), '/workspace/node_modules', async (file, bytes) => { await Bun.write(join(prepared, file), bytes); }));
-  for (const asset of receipt.assets) {
-    const bytes = new Uint8Array(await Bun.file(join(options.openCodeDirectory, asset.file)).arrayBuffer());
-    if (bytes.length !== asset.bytes || hash(bytes) !== asset.sha256) throw Error(`OpenCode integrity failure: ${asset.file}`);
-    await add(asset.destination, bytes);
-  }
-  await add('/opencode-v2/run.cjs', new TextEncoder().encode(`const child=require('child_process').spawn('bun',['/opencode-v2/cli/entry.cjs',...process.argv.slice(2)],{stdio:['pipe','inherit','inherit'],env:process.env});process.stdin.on('data',c=>child.stdin.write(c));process.stdin.once('end',()=>child.stdin.end());process.on('SIGINT',()=>child.kill('SIGINT'));child.on('error',e=>{console.error(e.message);process.exitCode=1});child.on('exit',code=>{process.stdin.pause();process.exitCode=code??1});`));
+  for (const asset of application.assets) await add(asset.destination, asset.bytes);
+  await Bun.write(join(prepared, 'opencode-build-receipt.json'), application.receiptBytes);
+  const support = await prepareOpenCodeRipgrep(prepared, options.bunExecutable);
+  assets.push(...support.assets);
   const project: Record<string, string> = {};
   for (const name of options.source) {
     if (name.startsWith('/') || name.split('/').includes('..')) throw Error('Source must be app-relative');
@@ -71,6 +93,7 @@ export async function prepareBrowserEditor(options: PrepareBrowserEditorOptions)
   project['/.browser-editor/runtime-bun.lock'] = dependencies.provenance.derived.lock;
   validateTree(assets);
   const manifest: PreparedManifest = { format: 'browser-editor-v2', runtimeVersion: runtime.version, assets, project, dependencies: dependencies.provenance,
+    opencode: { ...application.provenance, format: openCodeCandidateLaunch.format, receipt: application.receiptBytes.toString('utf8'), support: support.provenance },
     preview: { entry: '/workspace/node_modules/vite/bin/vite.js', args: ['--configLoader', 'native', '--host', '0.0.0.0', '--port', '5173', '--strictPort'], cwd: '/workspace', env: { BROWSER_AGENT_GUEST: '1', NODE_ENV: 'development' } } };
   await Bun.write(join(prepared, 'manifest.json'), JSON.stringify(manifest));
   console.log(`Prepared shared application and ${assets.length} verified dependency/runtime tree entries`);

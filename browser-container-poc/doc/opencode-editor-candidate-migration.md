@@ -1,8 +1,80 @@
 # Qualified OpenCode candidate: reusable verification and launch contract
 
-September 11, 2026. **Host verification and focused checks PASS.** This increment
-adds supporting modules for the next TODO editor integration. The combined editor,
-built-in shell, and browser lifecycle have not been qualified by this change.
+September 11, 2026. **V2 preparation, candidate integration, host checks PASS.**
+The reusable modules are now wired through `prepare.ts`, `prepared.ts`, and
+`recipe.ts`, following preparation commit `d7ce99a` and client commit `fa4a0ab`.
+The combined editor, built-in shell, and browser lifecycle have not been qualified
+by this change; browser acceptance belongs to the parent task.
+
+## Completed integration and runnable handoff
+
+- Old `receipt.json`/d7a7256 delivery and generated CLI wrapper are replaced by
+  exact retained-root verification. The V2 manifest's `opencode` field retains
+  candidate/format/revision/receipt hash and the exact receipt text. An identical
+  standalone `opencode-build-receipt.json` accompanies it. Browser loading pins
+  the receipt and five declared output identities, and delivery verifies both
+  fetched bytes and installed application/support read-back.
+- `prepareOpenCodeRipgrep` performs ordinary Bun 1.4 installation with
+  `--frozen-lockfile --linker isolated` and an isolated cache, using the archive
+  SHA-512 retained by qualification. Generic `captureTree` preserves the nine
+  unchanged package files, isolated package links, `.bin/rg` and executable modes.
+  The support manifest and lock, including their SHA-256 values, are retained.
+  Guest support now lives at `/app/node_modules`; the launch factory receives
+  `/app/node_modules/.bin`. All nine files independently match the earlier
+  `/direct` qualification. The new layout still needs combined browser acceptance.
+- Global config and required `/.server` directories are written via workspace
+  filesystem APIs. `.server` is excluded from `sourcePaths`. The config includes
+  shell permission for the upcoming built-in shell check; qualification still
+  covers only read/edit/grep/glob. Unsupported recipe model options fail before
+  workspace startup.
+- `verifyOpenCodeReady` awaits authenticated health, plugin activation, the loaded
+  global model config, and the enabled tool-capable model catalog. Chat launch
+  uses the parent's fifth controller argument
+  `{shutdown:'stdin-eof', timeoutMs:10000}`.
+- Delivery provisions only `/runtime-probe/.browser-editor`. Tree reset targets
+  do not include `/runtime-probe`, so the fixed database is not overwritten or
+  removed. Actual retained history/lifecycle remains a browser acceptance gate.
+
+From `todo-app-demo`, with Bun 1.4.0 and the existing runtime distribution:
+
+```sh
+bun run --cwd ../workspace-api build
+bun --cwd ../opencode-chat install --linker isolated --force --frozen-lockfile
+bun run --cwd ../opencode-chat build
+bun install --linker isolated --force --frozen-lockfile
+export OPENCODE_PACKAGE_DIR=/private/var/folders/t_/x48jtnps7n5_0g_pt9xpvbg00000gn/T/opencode/server-process-candidate.0co24kti
+bun run prepare:editor
+bun run build
+LOCAL_EDITOR_ADMIN=1 PORT=4390 bun start
+```
+
+Open `http://127.0.0.1:4390`, then **Open editor**. Preparation and production build
+were executed successfully. The production server/browser command is the runnable
+acceptance handoff, not a claim of a completed browser run. The existing authorized
+loopback admin fixture controls editor/model/asset access.
+
+Full preparation produced **10,463 tree entries**, **8,843 regular files**,
+**173,466,519 delivered file bytes**. An independent post-preparation pass validated
+every file's bytes/hash, all tree links/modes, all nine ripgrep qualification hashes,
+and exact source `package.json`/`bun.lock` preservation.
+
+| Prepared provenance | SHA-256 |
+| --- | --- |
+| `.editor/prepared/manifest.json` | `f88f82bee65e30dd2fb9be7d204b3f54e3c9d2c88b03f0fad6f9b491323f9a9b` |
+| Original project manifest | `b064036c5f1dccd0ffb5e11803e06cc8a2cdc86f33686d8bff450f6f3e1e5173` |
+| Original project lock | `3ccd16d5559b7eeeb603640d6ad6cd881bd345d06cd77c259b31051ac9987bba` |
+| Derived runtime manifest | `36abc28f8504b85b5acec37dee17d10b505d7f2a51047afa0ec8396d0eded5b1` |
+| Derived runtime lock | `051ff8cd9177197bdc2e8046b64caaadbf3338b08b910bc85c0091188b479d32` |
+| Ripgrep support lock | `7af069d6ee7a3c194fb875c2f5b7688491e4ea07c714ae062ec4cef3fbd8142b` |
+| Runtime backend policy | `a52960f669405f22d165d384408ccff5f3ffe2a7b91fa177c7207d66452d2a0a` |
+
+Runtime version remains
+`098e0b60a0ff8703994ea681d9c974ae9267bfe5dbdd799e87ff00982ff938a3`.
+Derived backend versions are esbuild-wasm 0.28.2, @rollup/wasm-node 4.63.1,
+lightningcss-wasm 1.32.0, and published @tailwindcss/oxide-wasm32-wasi 4.3.3.
+The derived lock records four changed backend entries, `lightningcss/napi-wasm`
+added, and replaced native backend optional packages removed. No Tailwind PR
+backend or production source transform was adopted.
 
 ## Identity and evidence
 
@@ -144,7 +216,7 @@ explicit extensions to the qualified config. Model changes require a new
 explicit supported model definition and separate qualification.
 
 The existing build bundles local imports into `prepare.js` and `recipe.js`.
-Once those parents import these modules, no new public package export is needed.
+These parents now import the modules; no new public package export is needed.
 Neither helper is currently a package subpath export. Host imports must stay
 out of browser code; the launch module has only a workspace type import.
 
@@ -157,9 +229,17 @@ bun test test/opencode-application.test.ts test/opencode-launch.test.ts
 bun run typecheck
 ```
 
-Result: **10 tests, 32 assertions PASS**, package typecheck PASS. Tests cover
+Initial isolated result: **10 tests, 32 assertions PASS**, package typecheck PASS. Tests cover
 same-size output tampering, receipt-byte tampering, wrong source/dirty build,
 wrong output records, generic receipt rejection by the exact wrapper, escaping
 paths, and actual launch/model/config/activation requirements. The real retained
 root passed all six integrity checks (receipt plus five outputs). Full editor
 acceptance, shell execution, and combined retention remain parent integration gates.
+
+Integration checks: `OPENCODE_PACKAGE_DIR=<retained-root> bun test` in
+`opencode-chat`: **63 tests / 263 assertions PASS**, including the actual retained
+candidate test (skipped when that external artifact is not supplied), ordinary
+ripgrep installation, altered V2 receipt/output/link rejection, activation/config/
+model failures, unsupported model rejection and server-state source exclusion.
+Workspace package build, toolkit package build/typecheck, TODO production build
+and typecheck all passed. TODO HTTP/tRPC tests: **3 tests / 23 assertions PASS**.

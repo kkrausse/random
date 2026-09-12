@@ -1,12 +1,47 @@
 import type { ToolDescriptor, NodeLaunchOptions } from '@kev-browser-agent-kit/workspace';
 import { treeInstaller, validateTree, type PreparedEntry } from './package-tree';
 import type { DependencyProvenance } from './prepare-dependencies';
+import { openCodeCandidateLaunch } from './opencode-launch';
+
+export interface PreparedOpenCode {
+  id: string; format: typeof openCodeCandidateLaunch.format; receiptSha256: string; sourceRevision: string; receipt: string;
+  support: { name: 'ripgrep'; version: '0.3.1'; integrity: string; linker: 'isolated'; manifest: string; manifestSha256: string; lock: string; lockSha256: string; binDirectory: string };
+}
+
+async function sha256(bytes: Uint8Array) {
+  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(bytes)))].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** Bind browser delivery to the exact retained receipt, not a manifest's self-declared pin. */
+export async function validatePreparedOpenCode(manifest: Pick<PreparedManifest, 'opencode' | 'assets'>) {
+  const candidate = manifest.opencode, expected = openCodeCandidateLaunch;
+  if (!candidate || candidate.format !== expected.format || candidate.id !== expected.candidate
+    || candidate.sourceRevision !== expected.sourceRevision || candidate.receiptSha256 !== expected.receiptSha256
+    || typeof candidate.receipt !== 'string' || await sha256(new TextEncoder().encode(candidate.receipt)) !== expected.receiptSha256) throw Error('Prepared OpenCode candidate receipt mismatch');
+  const receipt = JSON.parse(candidate.receipt);
+  const outputs = Object.entries(receipt.outputs) as [string, { bytes: number; sha256: string }][];
+  if (outputs.length !== 5) throw Error('Prepared OpenCode output count mismatch');
+  for (const [file, output] of outputs) {
+    const asset = manifest.assets.find(entry => entry.destination === '/app/' + file);
+    if (asset?.kind !== 'file' || asset.bytes !== output.bytes || asset.sha256 !== output.sha256) throw Error(`Prepared OpenCode output mismatch: ${file}`);
+  }
+  if (manifest.assets.some(entry => entry.destination.startsWith('/opencode-v2/'))) throw Error('Legacy OpenCode delivery is unsupported');
+  const support = candidate.support;
+  if (!support || support.name !== 'ripgrep' || support.version !== '0.3.1' || support.linker !== 'isolated'
+    || support.binDirectory !== '/app/node_modules/.bin'
+    || support.integrity !== 'sha512-6bDtNIBh1qPviVIU685/4uv0Ap5t8eS4wiJhy/tR2LdIeIey9CVasENlGS+ul3HnTmGANIp7AjnfsztsRmALfQ=='
+    || await sha256(new TextEncoder().encode(support.manifest)) !== support.manifestSha256
+    || await sha256(new TextEncoder().encode(support.lock)) !== support.lockSha256) throw Error('Prepared ripgrep provenance mismatch');
+  const rg = manifest.assets.find(entry => entry.destination === support.binDirectory + '/rg');
+  if (rg?.kind !== 'symlink') throw Error('Prepared ripgrep executable link missing');
+}
 
 export interface PreparedManifest {
   format: 'browser-editor-v2';
   runtimeVersion: string;
   assets: PreparedEntry[];
   dependencies: DependencyProvenance;
+  opencode: PreparedOpenCode;
   preview: NodeLaunchOptions;
   project: Record<string, string>;
 }
@@ -17,6 +52,7 @@ export async function loadPrepared(base: string, signal: AbortSignal): Promise<P
   const manifest = await response.json() as PreparedManifest;
   if (manifest.format !== 'browser-editor-v2') throw Error('Unsupported editor preparation; regenerate with the current preparer');
   validateTree(manifest.assets);
+  await validatePreparedOpenCode(manifest);
   if (manifest.dependencies.policy.runtimeVersion !== manifest.runtimeVersion) throw Error('Prepared backend policy runtime mismatch');
   for (const path of Object.keys(manifest.project)) if (!path.startsWith('/') || path.split('/').slice(1).some(part => !part || part === '.' || part === '..' || /[\\\0]/.test(part)) || path === '/node_modules' || path.startsWith('/node_modules/')) throw Error('Invalid prepared source path');
   return manifest;
@@ -42,6 +78,8 @@ export function preparedApps(manifest: PreparedManifest, base: string, signal: A
         if (result.exitCode !== 0 || result.signal || result.forced || !output.includes(`prepared-tree-${phase}-complete`)) throw Error(`Prepared tree ${phase} failed: ${output}`);
       }
       await metadata('reset');
+      // Provision only a marker, never reset the entrypoint's fixed database directory.
+      await context.installFile('/runtime-probe/.browser-editor', new TextEncoder().encode(openCodeCandidateLaunch.candidate));
       let done = 0;
       for (const asset of manifest.assets) {
         if (asset.kind !== 'file') continue;
@@ -52,6 +90,10 @@ export function preparedApps(manifest: PreparedManifest, base: string, signal: A
         const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
         if (bytes.length !== asset.bytes || hash !== asset.sha256) throw Error(`Asset integrity failure: ${asset.destination}`);
         await context.installFile(asset.destination, bytes);
+        if (asset.destination.startsWith('/app/')) {
+          const installed = await context.readFile(asset.destination);
+          if (installed.length !== asset.bytes || await sha256(installed) !== asset.sha256) throw Error(`Installed OpenCode integrity failure: ${asset.destination}`);
+        }
         if (++done % 250 === 0) report(`Installed ${done}/${manifest.assets.length} verified files`);
       }
       await metadata('metadata');
