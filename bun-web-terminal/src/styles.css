@@ -71,7 +71,8 @@ body {
 .terminal-notice::before { content: ""; flex: 0 0 6px; height: 6px; border-radius: 50%; background: currentColor; }
 #copy-toast:empty { display: none; }
 #copy-toast[data-status="success"]::before { background: var(--notice-blue); }
-#connection-status { cursor: pointer; pointer-events: auto; }
+button.terminal-notice { cursor: pointer; pointer-events: auto; min-height: 44px; }
+.terminal-notice[hidden] { display: none; }
 #connection-status[data-status="connected"] { display: none; }
 #copy-toast[data-status="error"],
 #connection-status[data-status="closed"],

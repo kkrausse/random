@@ -89,7 +89,7 @@ Terminal pages reconnect automatically after network interruptions or a suspende
 
 For a phone check, open the Tailscale HTTPS URL below, try swiping inside a mouse-aware application, open/close the keyboard and rotate the phone, then try **Ctrl+C**, selection/copy, and paste. Actual software-keyboard behavior should be checked on the target phone; desktop touch-event simulation cannot fully reproduce it.
 
-Compact light-blue notices in the top-right show connection status and confirm successful browser selection copies with a brief “Copied” toast. Copy failures show an error instead; application-owned clipboard operations do not trigger this toast.
+Compact light-blue notices in the top-right show connection status and confirm successful browser clipboard writes with a brief “Copied” toast. Application copy actions (including OpenCode) are handled through OSC 52. If iOS blocks the automatic write, tap the persistent **Tap to copy** button in the top-right to copy the exact application-selected text. No terminal highlighting is needed. The button retains the latest request until copied or the terminal reconnects/leaves the page. Clipboard access requires HTTPS (or localhost). tmux must have `set-clipboard on` and clipboard support for the attached terminal (`xterm-256color`); `external` ignores application copy requests.
 
 ## Streaming dictation
 

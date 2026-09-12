@@ -1,6 +1,36 @@
 import { expect, test } from "bun:test";
 import { Ghostty } from "@random/ghostty-web/ghostty";
 import { SessionManager, type Attachment, type Session } from "./sessions";
+import { ClipboardRequests } from "./clipboard";
+
+test("application OSC 52 crosses the real tmux attachment into the browser clipboard parser", async () => {
+  const socket = `bun-web-terminal-clipboard-${crypto.randomUUID()}`;
+  const manager = new SessionManager(import.meta.dir, socket);
+  const received: string[] = [];
+  const parser = new ClipboardRequests(text => received.push(text));
+  let attachment: Attachment | undefined;
+  try {
+    const session = manager.create();
+    // Enable application clipboard forwarding only on this isolated test server.
+    expect(Bun.spawnSync(["tmux", "-L", socket, "set-option", "-s", "set-clipboard", "on"]).exitCode).toBe(0);
+    attachment = manager.attach(session, {
+      send(data) {
+        if (typeof data === "string") return;
+        parser.write(data);
+        queueMicrotask(() => attachment?.acknowledge(data.byteLength));
+      },
+      close() {},
+    }, 100, 30);
+    await Bun.sleep(300);
+    const text = "OpenCode application copy 🌍\nsecond line";
+    attachment.input(new TextEncoder().encode(`printf '\\033]52;c;${Buffer.from(text).toString("base64")}\\007'\r`));
+    await until(() => received.length > 0);
+    expect(received).toEqual([text]);
+  } finally {
+    manager.dispose();
+    Bun.spawnSync(["tmux", "-L", socket, "kill-server"]);
+  }
+});
 
 async function until(check: () => boolean, timeout = 5000) {
   const deadline = Date.now() + timeout;
