@@ -1,5 +1,11 @@
 # TODO clean integration — BLOCKED, September 11, 2026
 
+**Continuation:** the custom scanner described below has now been removed and the
+TODO config again uses upstream `@tailwindcss/vite`. The
+[real-browser WASM attempt](todo-upstream-tailwind-attempt.md) passed startup,
+scanning and initial rendering, then stopped at CSS HMR. This document retains the
+original audit's observations and verification scope as history.
+
 The high-level API cleanup is complete and passes focused checks. **End-to-end
 acceptance is not PASS.** Runtime qualification stopped when the build audit found
 an existing application compatibility workaround, as required by the user's

@@ -272,10 +272,12 @@ The optional toolkit entries own the reusable build/server/runtime orchestration
 - `/config`: `browserPreviewBase()` supplies a framework router's deployment basename
   (`/` on the host, `/preview/5173/` in the guest). The Vite boundary uses that same base,
   restoring it after the workspace bridge strips its transport prefix, including HMR.
-- `/vite`: `browserCompatibleTailwind()` uses the ordinary Tailwind Vite plugin on the
-  host and the official Tailwind JS compiler in the guest, with JS token discovery and
-  CSS HMR. This avoids native oxide/lightningcss addons. It covers ordinary source-class
-  discovery; it is not a replacement for every native scanner/configuration feature.
+- Use upstream `@tailwindcss/vite` directly in the application's Vite config. The
+  custom `browserCompatibleTailwind()` scanner has been removed because it lost valid
+  candidates. Published Oxide/Lightning CSS WASM backends pass browser startup and
+  initial transforms; TODO CSS HMR remains blocked in the bounded
+  [browser attempt](../doc/todo-upstream-tailwind-attempt.md). The current preparer's
+  hardcoded dependency delivery has not been promoted to that diagnostic package set.
 
 Example consumer: `../todo-app-demo`. It retains React Router framework SPA/prerender
 and its existing tRPC React Query frontend against the real host `/api`. Supply
