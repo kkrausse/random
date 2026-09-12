@@ -1,6 +1,6 @@
 # kev-browser-agent-kit: project overview
 
-Last summarized: **September 11, 2026**. This is the starting point for what exists,
+Last summarized: **September 12, 2026**. This is the starting point for what exists,
 which demo to use, and what is still being integrated. Older receipts describe
 the exact revision they tested; they are not blanket acceptance of newer UI code.
 
@@ -21,6 +21,29 @@ tests direct upstream execution and removes demonstrated workarounds. See the
 [main cleanup plan](doc/opencode2-server-runtime-cleanup.md).
 
 ## Current iteration
+
+**Clean TODO integration (September 12):** The current qualification target is
+`todo-app-demo/`. Preparation v2 preserves the original manifest/lock, complete
+dependency graph, executable modes and symbolic links, with separately recorded
+WASM backend selection. The qualified unchanged OpenCode beta-19425 artifact is
+integrated with global model configuration, a matching forms-aware chat client,
+and bounded stdin-EOF shutdown. Host package checks and the TODO production build
+pass. See [preparation v2](doc/workspace-preparation-v2.md) and
+[candidate integration](doc/opencode-editor-candidate-migration.md).
+
+The first clean-origin browser attempt installed the verified 10,463-entry tree
+and started Vite, but optimized TanStack/tRPC dependency requests returned HTTP
+504. Preview hydration timed out before chat launch. Combined model editing,
+shell execution, HMR and retention acceptance remain pending that startup
+investigation. The ordinary host app stayed usable, and 13 real HTTP checks passed
+for non-admin and foreign-origin editor access denial.
+
+The user approved source-pinned adoption of their upstream
+[Tailwind PR #20487](https://github.com/tailwindlabs/tailwindcss/pull/20487) for the
+separate incremental WASM scanner defect. The exact PR build and verified archive
+delivery are in progress; the browser attempt above used published Oxide 4.3.3.
+See [scanner follow-up](doc/todo-tailwind-followup.md) and the
+[phased browser acceptance harness](todo-app-demo/tests/README.md).
 
 **Runtime HTTP bridge (September 11):** P1 passes focused browser streaming checks
 and the complete OpenCode server regression: read/edit/grep/glob, streamed output,
