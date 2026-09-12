@@ -1,4 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { generateCredentials, type Credentials } from "./credentials";
 
 const sessionLifetime = 30 * 24 * 60 * 60;
 const loopback = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
@@ -10,11 +11,13 @@ function equal(a: string, b: string) {
 }
 
 export class TerminalAuth {
-  readonly secret = randomBytes(32).toString("base64url");
-  private readonly signingKey = randomBytes(32);
+  readonly secret: string;
+  private readonly signingKey: Buffer;
   private readonly origins: Map<string, string>;
 
-  constructor(port: number, publicUrl?: string) {
+  constructor(port: number, publicUrl?: string, credentials: Credentials = generateCredentials()) {
+    this.secret = credentials.secret;
+    this.signingKey = Buffer.from(credentials.signingKey, "base64url");
     const origins = [`http://127.0.0.1:${port}`, `http://localhost:${port}`, `http://[::1]:${port}`];
     if (publicUrl) origins.push(new URL(publicUrl).origin);
     this.origins = new Map(origins.map((origin) => [new URL(origin).host, origin]));
