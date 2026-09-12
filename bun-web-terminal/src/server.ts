@@ -6,6 +6,7 @@ import { DictationService } from "./dictation-service";
 import { DictationProxy } from "./dictation-server";
 import { printStartupLink, publicSessionsUrl } from "./startup";
 import { TerminalAuth } from "./auth";
+import { loadCredentials } from "./credentials";
 
 type SocketData = { kind: "terminal"; sessionId: string; cols: number; rows: number; attachment?: Attachment }
   | { kind: "dictation"; proxy?: DictationProxy };
@@ -21,7 +22,7 @@ if (host !== "127.0.0.1" && host !== "::1" && host !== "localhost" && host !== "
   throw new Error("HOST must be a loopback address or 0.0.0.0.");
 }
 const publicUrl = await publicSessionsUrl(port);
-const auth = new TerminalAuth(port, publicUrl);
+const auth = new TerminalAuth(port, publicUrl, await loadCredentials(port));
 
 await buildClient();
 const theme = loadGhosttyTheme();

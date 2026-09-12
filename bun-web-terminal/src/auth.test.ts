@@ -1,6 +1,25 @@
 import { expect, spyOn, test } from "bun:test";
 import { TerminalAuth } from "./auth";
 import { signInUrl } from "./startup";
+import { decodeCredentials, generateCredentials } from "./credentials";
+
+test("persisted credentials preserve login across restart; rotation revokes it", async () => {
+  const credentials = generateCredentials();
+  const saved = Buffer.from(JSON.stringify({ version: 1, ...credentials })).toString("base64");
+  const first = new TerminalAuth(3000, remote, credentials);
+  const restarted = new TerminalAuth(3000, remote, decodeCredentials(saved));
+  const request = new Request(`${local}/api/sessions`, { headers: { cookie: cookie(await login(first)) } });
+  expect(restarted.secret).toBe(first.secret);
+  expect(await restarted.guard(request, peer)).toBeUndefined();
+  expect((await new TerminalAuth(3000, remote, generateCredentials()).guard(request, peer))?.status).toBe(401);
+});
+
+test("invalid stored credentials fail closed", () => {
+  for (const data of [null, {}, { version: 2, ...generateCredentials() }, { version: 1, secret: "short", signingKey: "short" }]) {
+    expect(() => decodeCredentials(Buffer.from(JSON.stringify(data)).toString("base64"))).toThrow();
+  }
+  expect(() => decodeCredentials("invalid")).toThrow();
+});
 
 const local = "http://127.0.0.1:3000";
 const remote = "https://terminal.tail.ts.net";

@@ -41,17 +41,27 @@ If startup reports a missing `@random/ghostty-web` package or WASM, ensure the s
 
 ## Sign-in and access
 
-Every startup generates a cryptographically random 256-bit access secret. The
+On first startup, the server generates a cryptographically random 256-bit access secret
+and signing key and stores both in macOS Keychain. Later starts reuse them. The
 printed sign-in links and QR contain it in a URL fragment (`/login#key=…`). The
 sign-in page immediately removes the fragment from the address bar and exchanges
 the secret for a signed, HttpOnly, SameSite=Strict cookie. HTTPS cookies are also
 Secure; direct localhost HTTP uses a separate cookie restricted by the server to
 loopback connections. Phone/Tailscale and localhost require separate initial
-sign-ins. Cookies last up to 30 days, or until Bun restarts.
+sign-ins. Cookies last up to 30 days and survive Bun restarts and watch reloads.
 
-**Restart Bun to rotate the secret and revoke all existing sign-ins.** This also
-applies to `bun --watch` reloads. Running tmux sessions survive, but browsers must
-use the newly printed link. No password or session keys are saved to disk.
+Credentials use a generic-password item with service `bun-web-terminal.auth.v1`
+and account `port-3000` (or your configured `PORT`) in the default macOS Keychain.
+macOS may request Keychain access; a locked or inaccessible Keychain stops startup
+rather than silently rotating credentials or writing a plaintext fallback.
+No credential file is stored in the repo. This server now requires macOS.
+
+**To revoke all sign-ins:** stop the server, run `bun run auth:reset`, then start
+it again. Use the same `PORT` for the reset command if customized. The next start
+creates new credentials; browsers must use the new sign-in link. Resetting the
+Keychain item alone does not revoke a running server's in-memory credentials.
+Running tmux sessions survive either kind of restart. Upgrading from the old
+in-memory authentication requires one final sign-in on the first restart.
 
 All application pages, assets, APIs, terminal WebSockets, and dictation WebSockets
 require authentication. Direct unauthenticated API requests receive `401`;
