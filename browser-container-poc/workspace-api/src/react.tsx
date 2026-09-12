@@ -1,11 +1,13 @@
 import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Workspace, Runtime, opfsStore, type Distribution, type Endpoint, type Execution, type NodeLaunchOptions, type ToolSet } from "@kev-browser-agent-kit/workspace";
 import { createControllerDiagnostics, safeText, type ControllerDiagnosticOptions } from "./react-diagnostics.js";
+import { shutdownAtEOF } from "./service-shutdown.js";
 
 /** Reusable React boundary: public API ownership, serialization and subscriptions.
  * No sample source, package paths, provider configuration or application ports here. */
 export type Connection = { url: string; fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> };
 export type Service = { execution: Execution; endpoint: Endpoint; connection: Connection; drained: Promise<void> };
+export type ServiceLifecycle = { shutdown: 'stdin-eof'; timeoutMs?: number };
 export type Progress = { label: string; state: "waiting" | "running" | "done" | "failed" };
 export type WorkspaceSnapshot = {
   workspace?: Workspace; runtime?: Runtime; services: Readonly<Record<string, Service>>;
@@ -21,6 +23,7 @@ export class WorkspaceController {
   private snapshot = initial();
   private listeners = new Set<() => void>();
   private attachments = new Map<string, () => void>();
+  private shutdowns = new Map<string, () => Promise<void>>();
   private clients = new Map<string, { resolve(): void; reject(error: Error): void; promise: Promise<void> }>();
   private distribution?: Distribution;
   private lifetime = new AbortController();
@@ -100,12 +103,24 @@ export class WorkspaceController {
     catch (error) { this.log(`[${label}] ${message(error)}`); }
     finally { this.log(`[${label}] drained ${totalBytes} bytes (raw output omitted from diagnostics)`); }
   }
-  async launch(name: string, options: NodeLaunchOptions, port: number, connect: (endpoint: Endpoint) => Promise<Connection>) {
+  async launch(name: string, options: NodeLaunchOptions, port: number, connect: (endpoint: Endpoint) => Promise<Connection>, lifecycle?: ServiceLifecycle) {
     const diagnostics = this.diagnostics;
     if (this.snapshot.services[name]) return this.snapshot.services[name]!;
     if (!this.runtime) throw Error("Start the runtime before launching services");
     diagnostics.record("service.launch", { name, port });
-    const execution = await this.runtime.node({ ...options, signal: this.signal });
+    const timeoutMs = lifecycle?.timeoutMs ?? 10000;
+    if (lifecycle && (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120000)) throw Error('Service shutdown timeout must be 1–120000ms');
+    // Cancel incomplete startup immediately. A published EOF-managed service is
+    // closed serially by stopService, so lifetime cancellation cannot preempt it.
+    const lifetime = this.signal, startup = new AbortController();
+    const abortStartup = () => startup.abort(lifetime.reason);
+    if (lifecycle) {
+      lifetime.throwIfAborted();
+      lifetime.addEventListener('abort', abortStartup, { once: true });
+    }
+    const execution = await this.runtime.node({ ...options, signal: lifecycle ? startup.signal : lifetime }).catch(error => {
+      lifetime.removeEventListener('abort', abortStartup); throw error;
+    });
     const drained = Promise.all([this.drain(execution.stdout, `${name}:stdout`), this.drain(execution.stderr, `${name}:stderr`)]).then(() => {});
     const controller = new AbortController();
     let endpoint: Endpoint | undefined;
@@ -122,6 +137,7 @@ export class WorkspaceController {
       void promise.catch(() => {});
       this.clients.set(name, { promise, resolve, reject });
       const service = { execution, endpoint, connection, drained };
+      if (lifecycle) this.shutdowns.set(name, () => shutdownAtEOF(execution, drained, timeoutMs));
       this.publish({ services: { ...this.snapshot.services, [name]: service }, clients: { ...this.snapshot.clients, [name]: "connecting" } });
       const exited = (result: unknown) => {
         this.log(`${name} exited: ${JSON.stringify(result)}`);
@@ -132,7 +148,7 @@ export class WorkspaceController {
       void execution.exited.then(exited, error => exited(message(error)));
       return service;
     } catch (error) { diagnostics.record("service.failed", { name, error }); endpoint?.dispose(); try { await execution.stop(); await drained; } catch (cleanupError) { diagnostics.record("service.cleanup.failed", { name, error: cleanupError }); } throw error; }
-    finally { controller.abort(); }
+    finally { controller.abort(); lifetime.removeEventListener('abort', abortStartup); }
   }
   registerAttachment(name: string, dispose: () => void) {
     let disposed = false;
@@ -152,15 +168,18 @@ export class WorkspaceController {
     finally { clearTimeout(timer); this.signal.removeEventListener("abort", aborted); }
   }
   private detach(name: string) {
+    this.shutdowns.delete(name);
     this.attachments.get(name)?.();
     this.clients.get(name)?.reject(new Error(`${name} detached`)); this.clients.delete(name);
     const services = { ...this.snapshot.services }, clients = { ...this.snapshot.clients };
     delete services[name]; delete clients[name]; this.publish({ services, clients });
   }
   async stopService(name: string) {
-    const service = this.snapshot.services[name]; this.detach(name);
+    const service = this.snapshot.services[name], shutdown = this.shutdowns.get(name); this.detach(name);
     if (!service) return;
-    service.endpoint.dispose(); await service.execution.stop(); await service.drained;
+    service.endpoint.dispose();
+    if (shutdown) await shutdown();
+    else { await service.execution.stop(); await service.drained; }
   }
   async stopRuntime() {
     const results = await Promise.allSettled(Object.keys(this.snapshot.services).map(name => this.stopService(name)));
