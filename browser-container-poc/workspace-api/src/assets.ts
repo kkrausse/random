@@ -11,6 +11,21 @@ export interface RuntimeAssetManifest {
   serviceWorker: string;
   kernelSha256: string;
   upstream?: string;
+  runtimeBuild?: { source?: { files?: { name: string; sha256: string }[] } };
+}
+
+/** Unchanged runtime-owned policy, authenticated against the consumed build receipt. */
+export async function readRuntimeBackendPolicy(source: string) {
+  const runtime = await readRuntimeAssets(source);
+  const path = resolve(source, 'backend-policy.mjs');
+  const bytes = await readFile(path);
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const recorded = runtime.runtimeBuild?.source?.files?.find(file => file.name === 'packages/runtime/toolchain-shims.js');
+  if (!recorded || recorded.sha256 !== sha256) throw Error('Runtime backend policy hash mismatch');
+  const policy = await import('data:text/javascript;base64,' + bytes.toString('base64'));
+  const aliases = policy.NATIVE_WASM_ALIASES as Record<string, string>;
+  if (!aliases || Object.entries(aliases).some(([key, value]) => !/^(@[\w-]+\/)?[\w.-]+$/.test(key) || typeof value !== 'string' || !/^(@[\w-]+\/)?[\w.-]+$/.test(value))) throw Error('Invalid runtime backend policy');
+  return { runtimeVersion: runtime.version, sha256, aliases };
 }
 
 function assetPath(root: string, path: string): string {
@@ -35,8 +50,10 @@ export async function copyRuntimeAssets(options: { source: string; destination: 
   const rel = relative(source, destination);
   if (!rel || (!rel.startsWith("..") && !rel.startsWith("/"))) throw Error("Runtime destination must be outside the source directory");
   const manifest = await readRuntimeAssets(source, options.expectedVersion);
+  await readRuntimeBackendPolicy(source);
   await mkdir(destination, { recursive: false });
   await cp(resolve(source, "assets"), resolve(destination, "assets"), { recursive: true, dereference: true });
   await cp(resolve(source, "distribution.json"), resolve(destination, "distribution.json"));
+  await cp(resolve(source, 'backend-policy.mjs'), resolve(destination, 'backend-policy.mjs'));
   return manifest;
 }
