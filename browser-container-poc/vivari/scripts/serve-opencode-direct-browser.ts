@@ -5,13 +5,30 @@ import { execFileSync } from 'node:child_process'
 import { runtimeSourcePath } from './runtime-source.mjs'
 import { preservePreviewQuery } from '../../workspace-api/scripts/preview-query'
 import { validateDirectBrowser } from './opencode-direct-browser-validation'
+import { directAssets } from './ripgrep-direct-assets.mjs'
+import { modelProxy } from './model-proxy'
+import { validateDirectModel } from './opencode-direct-model-validation'
 
 const hash = (bytes: Uint8Array | string) => createHash('sha256').update(bytes).digest('hex')
 const integration = resolve(import.meta.dir, '..')
 const retained = resolve(process.argv[2] || '')
 if (!process.argv[2]) throw Error('Expected retained build root argument')
 const runID = crypto.randomUUID()
-const retention = process.argv.includes('--retention')
+const model = process.argv.includes('--model-tools')
+const retention = model || process.argv.includes('--retention')
+const proxy = modelProxy(new Map(model ? [['opencode', { baseURL: 'https://opencode.ai/zen/v1', headers: { authorization: 'Bearer public' } }]] : []))
+const providerRequests: { method: string; path: string; status: number }[] = []
+const supportFiles = new Map<string, Uint8Array>()
+const support = model ? directAssets().filter(a => a.file.startsWith('ripgrep/')).map(a => {
+  supportFiles.set(a.file, a.bytes)
+  return { file: a.file, destination: a.path, bytes: a.bytes.length, sha256: a.sha256 }
+}) : []
+if (model) {
+  if (support.length !== 9) throw Error('Expected nine unchanged ripgrep files')
+  const bytes = readFileSync(resolve(integration, 'probes/runtime/opencode-ripgrep-install.cjs'))
+  supportFiles.set('installer.cjs', bytes)
+  support.push({ file: 'installer.cjs', destination: '/direct/opencode-ripgrep-install.cjs', bytes: bytes.length, sha256: hash(bytes) })
+}
 const runRoot = resolve(integration, '.runtime/browser-direct', runID)
 mkdirSync(runRoot, { recursive: true })
 const source = resolve(retained, '.runtime/opencode-v2-source'), artifact = resolve(retained, '.runtime/opencode-bun-server')
@@ -54,7 +71,7 @@ runtimeAssets.set(distribution.serviceWorker, hash(sw))
 for (const item of distribution.runtimeBuild.assets.filter((a: any) => a.name.startsWith('assets/') && !a.retained && a.name !== distribution.serviceWorker))
   equal(hash(readFileSync(resolve(runtimeRoot, item.name))), item.sha256, 'Runtime asset ' + item.name)
 equal(hash(readFileSync(resolve(runtimeRoot, distribution.kernelWorker))), distribution.kernelSha256, 'Active kernel')
-const manifest = { runID, retention, assets, runtime: { version: distribution.version, revision,
+const manifest = { runID, retention, model, support, assets, runtime: { version: distribution.version, revision,
   manifestSha256: hash(distributionBytes), runtimeBuildSha256: distribution.runtimeBuildSha256,
   kernelWorker: distribution.kernelWorker, kernelSha256: distribution.kernelSha256, serviceWorkerSha256: hash(sw) },
   provenance: { artifact, source, buildReceiptSha256: hash(buildBytes), build, runtimeBuild: distribution.runtimeBuild } }
@@ -88,9 +105,10 @@ const report = (browser: any, reason?: string) => {
     try { closeSync(file.fd) } catch (error) { sinkErrors.push(String(error)) }
   }
   const channels = Object.fromEntries(['stdout', 'stderr'].map(channel => [channel, { bytes: files[channel].bytes, sha256: hash(readFileSync(files[channel].path)), path: files[channel].path }]))
-   const accepted = !reason && !sinkErrors.length && validateDirectBrowser(browser, { runtime: distribution.version, assets, channels, retention })
+   const accepted = !reason && !sinkErrors.length && validateDirectBrowser(browser, { runtime: distribution.version, assets, channels, retention }) &&
+     (!model || validateDirectModel(browser.model, providerRequests))
   const receipt = { runID, result: accepted ? 'PASS' : 'FAIL', reason: reason ?? (accepted ? null : 'Browser acceptance incomplete or rejected'),
-    manifest, browser: browser ?? null, stages, channels, sinkErrors, runtimeRequests: requests,
+    manifest, browser: browser ?? null, stages, channels, sinkErrors, runtimeRequests: requests, providerRequests,
     harness: { browserSha256: hash(browserCode), host: 'serve-opencode-direct-browser.ts' },
     cleanup: browser?.cleanup ?? { status: 'unreported; browser completion unavailable' }, finishedAt: new Date().toISOString() }
   const path = resolve(runRoot, 'receipt.json')
@@ -129,9 +147,18 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) 
     }
     if (path.startsWith('/app/')) {
       const bytes = appFiles.get(decodeURIComponent(path.slice(5)))
-      return bytes ? new Response(bytes, { headers }) : new Response('Unknown app asset', { status: 404, headers })
+      return bytes ? new Response(new Uint8Array(bytes), { headers }) : new Response('Unknown app asset', { status: 404, headers })
     }
     if (finished) return new Response('Already finished', { status: 409, headers })
+    if (model && path.startsWith('/api/model/')) {
+      const response = await proxy(request)
+      providerRequests.push({ method: request.method, path, status: response.status })
+      return response
+    }
+    if (model && path.startsWith('/support/')) {
+      const bytes = supportFiles.get(decodeURIComponent(path.slice('/support/'.length)))
+      return bytes ? new Response(new Uint8Array(bytes), { headers }) : new Response('Unknown support file', { status: 404, headers })
+    }
     if (path.startsWith('/output/') && request.method === 'POST') {
       const channel = path.slice(8)
       if (!['stdout', 'stderr'].includes(channel) || url.searchParams.get('runID') !== runID || Number(url.searchParams.get('offset')) !== files[channel].bytes)
@@ -159,6 +186,6 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) 
     return new Response('Qualification host failure', { status: 500, headers })
   }
 } })
-timer = setTimeout(() => report(null, 'Host deadline; last durable stage retained, browser cleanup unreported'), retention ? 240000 : 180000)
+timer = setTimeout(() => report(null, 'Host deadline; last durable stage retained, browser cleanup unreported'), model ? 360000 : retention ? 240000 : 180000)
 process.once('SIGTERM', () => report(null, 'Host terminated; browser cleanup unreported'))
 console.log(JSON.stringify({ url: server.url.href, runID, runRoot, runtime: manifest.runtime, assets, browserHarnessSha256: hash(browserCode) }))

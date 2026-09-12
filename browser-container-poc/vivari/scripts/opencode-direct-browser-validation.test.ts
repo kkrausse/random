@@ -22,7 +22,7 @@ test('retention requires a second natural lifecycle and identical persisted sess
   const retained = { sessionID: 'ses_retained', title: 'retention', fileSha256: 'a'.repeat(64), entries: [{ key: 'retention', value: { runID: 'run' } }] }
   result.retention = { ...retained, exits: [result.exit, result.exit], oldEndpoint: 'CLOSED' }
   result.stages.splice(8, 0, { name: 'retention.created', detail: retained })
-  const second = complete().stages.slice(3, 11)
+  const second: { name: string; detail: unknown }[] = complete().stages.slice(3, 11)
   second.splice(5, 0, { name: 'retention.verified', detail: retained })
   result.stages.splice(12, 0, ...['retention.first-runtime-stopped', 'retention.first-workspace-flushed',
     'retention.first-workspace-closed', 'retention.old-endpoint-closed', 'retention.workspace-reopened'].map(name => ({ name, detail: {} })), ...second)
