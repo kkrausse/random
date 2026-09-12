@@ -1,10 +1,12 @@
 # Todo app: IRS Tools stack + browser agent kit
 
-**Current clean-integration qualification: BLOCKED.** The API/launcher cleanup
-builds and typechecks, but the existing guest Tailwind source-discovery workaround
-does not preserve upstream behavior. Runtime/browser qualification stopped under
-the no-hacks requirement; beta-19425 has not been promoted into this app. See the
-[audit, genuine baseline diff and verification scope](../doc/todo-editor-clean-integration.md).
+**Current clean-integration qualification: BLOCKED at CSS HMR.** Normal upstream
+`@tailwindcss/vite` is restored and the custom scanner is removed. Host typecheck/build
+pass. An isolated real-browser attempt with published WASM dependencies passed upstream
+scanning, Vite transforms and initial TODO rendering, but a new utility did not take
+effect after a source edit. The preparer's legacy package selection and older OpenCode
+candidate have not been promoted. See the [attempt and exact blocker](../doc/todo-upstream-tailwind-attempt.md)
+and [original API audit/baseline comparison](../doc/todo-editor-clean-integration.md).
 
 A minimal unauthenticated todo app using the relevant wiring from `../irs-tools` (the sibling repository of `random`):
 

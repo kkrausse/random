@@ -1,5 +1,15 @@
 # Browser Control observations
 
+- [x] 2026-09-11 TODO upstream Tailwind, CLI 0.7.0, owned session
+  `gentle-otter-161`, isolated loopback origins: harness called
+  `page.waitForFunction(predicate, {timeout: 200000})`, putting options in
+  Playwright's argument position. Actual error: `waitForFunction: Timeout 30000ms
+  exceeded`; expected a longer bounded wait. A short read confirmed the page and
+  guest were healthy. Corrected the call to
+  `page.waitForFunction(predicate, undefined, {timeout: 180000})`; it returned the
+  completed result. Caller signature error, no relay restart or page replacement.
+  Session deleted after explicit runtime/workspace cleanup.
+
 - [x] 2026-09-06 WASM renderer, CLI 0.7.0, `lucky-falcon-533`, :5202:
   inspection mistakenly used `window.probe.shells` (undefined); correct API is
   `window.shells.sessions`. Guest remained running; corrected the inspection.
