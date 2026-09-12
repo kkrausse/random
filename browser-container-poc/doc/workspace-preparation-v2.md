@@ -88,7 +88,7 @@ of the original lock is equivalent. Existing source is still seed-if-missing; us
 a clean workspace for the next acceptance run so old reduced project metadata does
 not mask the new contract. v1 manifests are rejected with a regenerate instruction.
 
-Bounded constraints: Bun text lockfile v1, a single application rather than a
+Bounded constraints: Bun text lockfile v1 or v2, a single application rather than a
 workspace root, relative local `file:` inputs, and one locked version per replaced
 backend. Conflicting existing overrides, ambiguous backend versions, and Oxide
 versions other than the demonstrated 4.3.3 fail explicitly. Source delivery remains
@@ -158,3 +158,159 @@ Rebuild/reinstall the combined local packages, regenerate preparation using Bun
 symlink/mode installation checkpoints and isolated package resolution before the
 preview/chat/model/shell/CRUD/retention checks. The separate upstream Oxide
 incremental CSS scanning issue remains the Tailwind investigation's scope.
+
+## Explicit source-built backend archives
+
+The next authorized increment adds generic source archive delivery to
+`prepare-dependencies.ts`. It does not select or rebuild a Tailwind candidate.
+The parent/Tailwind verifier owns qualification of PR #20487 at immutable commit
+`11050dda2c4e26a3412b1745e84ea41d8fed6335` and supplies its authenticated receipt
+identity and archive digests. Source archives are **distinct derived artifacts**,
+never described as the original registry package bytes.
+
+The exact build-time interface is:
+
+```ts
+import type { BackendArchiveInput } from './prepare-dependencies'
+
+const backendArchives: BackendArchiveInput[] = [{
+  override: '@tailwindcss/oxide-wasm32-wasi',
+  packageName: '@tailwindcss/oxide-wasm32-wasi',
+  version: '4.3.3',
+  archivePath: '/absolute/verified/host/archive.tgz',
+  sha256: '<64 lowercase hexadecimal characters>',
+  sha512: 'sha512-<base64 SHA-512 digest>',
+  source: {
+    repository: 'https://github.com/tailwindlabs/tailwindcss',
+    revision: '11050dda2c4e26a3412b1745e84ea41d8fed6335',
+    buildReceiptSha256: '<authenticated build receipt SHA-256>',
+  },
+}]
+
+const result = await prepareDependencies({
+  appRoot, source, policy, backendArchives,
+})
+```
+
+An archive may replace only an already selected backend at exactly the selected
+package name/version. Duplicate selections, mismatched names/versions, malformed
+source provenance and original project override conflicts fail before installation.
+`verifyBackendArchive(input)` independently verifies both archive digests, reads
+the npm `package/package.json` identity with Bun's read-only `Archive.files()` API,
+and inventories every regular archive file's bytes/hash. It does not extract or
+install packages, interpret package dependency ranges, or edit package sources.
+
+The verified bytes are staged under the portable application-relative path
+`.browser-editor-backends/<sha256>.tgz`; the derived override uses
+`file:.browser-editor-backends/<sha256>.tgz`. Bun's normal installer writes the
+derived lock and installs the dependency closure. Preparation requires that lock
+entry to use the same relative path and **the source archive's own SHA-512**.
+Registry-SHA-512 equality remains mandatory for the ordinary Oxide tarball path,
+but is deliberately not applied to a supplied source archive. The original
+manifest and lock remain exact retained provenance in either case.
+
+After the fresh-cache frozen install, preparation rechecks staged archive bytes
+and compares **every inventoried regular file** against its installed backend
+counterpart; unexpected installed regular files also fail. An installer/lifecycle
+mutation fails even if installation exited zero. The normal backend WASM-presence
+assertion remains active. Required runtime dependencies and non-optional peers
+are resolved with Bun's supported `resolveSync` API, matched to actual
+installed package roots, and recursively checked/recorded; optional dependencies
+retain Bun's platform rules. This is a closure presence check using Bun's resolver,
+not a second dependency resolver. A required package without a resolvable runtime
+entry fails explicitly. Final package-tree capture continues to own symlink and
+mode preservation/validation.
+
+### Return values the parent must retain
+
+- `result.provenance.backendArchives`: optional array containing package/override,
+  immutable source/build-receipt identity, app-relative archive path, archive byte
+  length, SHA-256/SHA-512, verified regular file hashes and installed dependency
+  closure paths/identities. Host `archivePath` is not persisted.
+- `result.archiveInputs`: always an array, empty without supplied archives. Each
+  item is `{ path, bytes: Uint8Array, sha256, sha512 }`. These are the **original
+  verified archive bytes**, owned independently of the staging directory and still
+  usable after `cleanup()`.
+
+Parent wiring must forward the optional `backendArchives` input through its public
+preparation options, retain `archiveInputs` as content-addressed binary assets in
+prepared output, and deliver each at `/workspace/<input.path>` (including its
+explicit parent directory). The parent-owned tree validation/delivery contract
+must admit `/workspace/.browser-editor-backends`; this module does not expand a
+runtime API or edit the application/recipe/manifest integration. Do not JSON-encode
+the raw typed arrays into provenance or treat them as text-source files.
+
+To reproduce the derived installation elsewhere, write retained derived manifest
+and lock to the new application's `package.json` and `bun.lock`, retain its ordinary
+local package inputs, write each archive at its unchanged relative `input.path`,
+and run Bun 1.4.0 with `install --linker isolated --frozen-lockfile`. Neither the
+source archive's host filesystem path nor an ephemeral HTTP server is needed in
+the derived archive lock entry.
+
+### Archive-option checks
+
+`bun test test/prepare-dependencies.test.ts` passes **5 tests / 35 assertions**.
+Three new tests cover both digest failures, immutable revision metadata, archive
+identity, selection/version/duplicate/conflict rejection, and a fully local fixture
+registry. The fixture verifies a CPU-filtered source backend with two levels of
+required dependencies plus a required peer, original input retention, source-vs-registry SRI separation,
+fresh-cache frozen installation, and relocation using only returned relative
+archive bytes. It also preserves and executes an ordinary project postinstall
+script, then confirms that its mutation of the installed WASM or introduction of
+unreceipted regular files is rejected.
+
+The fixture uses tiny synthetic archives and a short-lived local registry; it does
+not download or build Tailwind. The actual PR archive remains the other agent's
+build and the parent's integration/acceptance input. Temporary fixture files,
+install trees, and registry listeners are cleaned up.
+
+### Actual PR artifact host checkpoint
+
+The completed PR artifact was subsequently tested through this generic interface
+against the full original TODO graph, in a disposable staging tree. **PASS**:
+original frozen install, relative source override, source-SRI lock assertion,
+fresh-cache frozen reinstall, all **115** regular archive files compared against
+installed bytes, required dependency/peer closure, and complete package-tree
+capture/validation. No live `.editor` output, package build, browser process, or
+existing `.runtime` artifact was changed.
+
+- Source revision: `11050dda2c4e26a3412b1745e84ea41d8fed6335`.
+- Receipt SHA-256: `456722dd32ebba38e957bf9560eaab820936e8c16132d14b5c861381793adc9a`.
+- Archive: **6,651,803 bytes**, SHA-256
+  `6e5ce92301d411cf21c29c148f9eddd9d8744698980966f7bb58e4ccd2f2e998`.
+- Archive SHA-512:
+  `sha512-N/w/5cxIslJel+O3fc17dNkg7BqNB5vXEdSp7kSGO+vxeldigyCGq62tQMbrO58RqOlDfy43MTupLvAZq1IrUQ==`.
+- Derived lock SHA-256:
+  `49f5a29a057df7a0f0296b01abb7d4db7370949635a4068098033f03ede9fbdd`.
+- Original lock SHA-256 remains
+  `3ccd16d5559b7eeeb603640d6ad6cd881bd345d06cd77c259b31051ac9987bba`.
+- Installed source closure: Oxide WASI 4.3.3, `@emnapi/core` 1.11.3,
+  `@emnapi/runtime` 1.11.3, `@emnapi/wasi-threads` 1.2.3,
+  `@napi-rs/wasm-runtime` 1.2.2, `@tybys/wasm-util` 0.10.3, and `tslib` 2.8.1.
+  These are actual installed/bundled package identities, independently recorded
+  from Bun's retained lock metadata.
+- Captured installed dependency tree: **10,436 entries** with the compiled local
+  packages present at this checkpoint. Browser execution/HMR remains the parent's
+  concurrent qualification task.
+
+Evidence (original/derived bytes, archive provenance, all file hashes, closure,
+lock deltas and counts):
+`/private/var/folders/t_/x48jtnps7n5_0g_pt9xpvbg00000gn/T/opencode/tailwind-source-archive-preparation-check.json`.
+
+Mapping from the parent's `readTailwindWasmCandidate(...)` return value is direct:
+
+```ts
+backendArchives: [{
+  override: candidate.packageName,
+  packageName: candidate.packageName,
+  version: candidate.packageVersion,
+  archivePath: candidate.archive.path,
+  sha256: candidate.archive.sha256,
+  sha512: candidate.archive.sha512,
+  source: {
+    repository: candidate.source.repository,
+    revision: candidate.source.revision,
+    buildReceiptSha256: candidate.receiptSha256,
+  },
+}]
+```
