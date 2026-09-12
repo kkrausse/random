@@ -69,8 +69,8 @@ phase. Source flush means local workspace persistence, not remote publication.
 | `model-send` | Submit genuine read + minimal edit prompt once, storing prior session/message/tool IDs first. |
 | `model-verify` | New user message in same session, idle execution, completed assistant, new native read/edit tools targeting exact file, `executed:false` (local), ran/completed timestamps, correlated edit old/new strings, exact independent source bytes, changed heading, same preview Document. No model prose is used as evidence. |
 | `file-link` | Open actual tool file button and compare textarea with independently read edited file. |
-| `shell-send` | Ask for native built-in `shell` running an exact `printf` command once, foreground with timeout 8000ms. |
-| `shell-verify` | Correlate sole new native local tool to same session and exact command; require completed status/timestamps, numeric `metadata.exit === 0`, non-truncated completed metadata, first text content equal to exact stdout including newline, second text content equal to the candidate's exit notice. Unknown contracts BLOCK. |
+| `shell-send` | Independently reread the model-verified source, require unchanged bytes, compute its SHA-256, then ask native built-in `shell` to execute the exact ordinary `node -e` source-check command once, foreground with timeout 8000ms. Node reads `/workspace/src/home.tsx` with `node:fs`, checks the complete byte hash with `node:crypto` and the expected h1, then emits a unique marker. |
+| `shell-verify` | Correlate sole new native local tool to same session and exact Node command; require completed status/timestamps, numeric `metadata.exit === 0`, non-truncated completed metadata, first text content equal to exact success marker including newline, second text content equal to the candidate's exit notice. Independently reread unchanged workspace source afterward. Unknown contracts BLOCK. |
 | `close` | Capture session/message IDs, exact source, and live lifecycle handle; click Exit only when chat idle. |
 | `closed` | Retained controller reports no workspace/runtime/services, persistence closed; iframe detached, normal main retained, launcher enabled; captured pre-close service executions have exited and output drains joined (record exitCode/signal/forced). Repeat while PENDING. |
 | `reopen` | Click launcher once; then run `ready` and `source-open` again. |
@@ -113,11 +113,21 @@ also invalidates same-document evidence; there is intentionally no automatic rel
   retention baseline deliberately; do not perturb model's exact-one-edit comparison.
 - **Shell migration blocker:** extraction follows beta-19425's real `toolResult`
   and `ShellResult.metadata/notice`: first content item is combined process capture,
-  second is the tool-generated notice. For this stdout-only `printf`, capture must
-  equal exact expected stdout. This does not independently qualify stderr separation.
+  second is the tool-generated notice. As required by
+  `../../doc/todo-editor-delivery-contract-audit.md`, ordinary guest Node must read
+  the exact target source through `node:fs` and verify its SHA-256 through standard
+  `node:crypto` before printing anything. The expected hash comes from independently
+  read workspace source, not from the model. Source-check path/hash/heading/marker
+  are saved with both shell receipts; exact command is in the turn/native tool
+  record. Missing Node, fs/crypto support, or mismatched source must block this gate;
+  there is no host-runtime substitute or injected tool fallback. Capture must equal
+  the exact success marker. This does not independently qualify stderr separation.
   Do not accept a model-authored “exit 0,” a custom JS stand-in, shell-looking prose,
   or normalize away banners/truncation. Missing metadata, failure to launch the
   platform shell, or different native payloads retain BLOCKED for parent diagnosis.
+  Phase names/order are unchanged. An existing old printf-only shell intent cannot
+  qualify the strengthened gate; preserve its receipts and coordinate a new run
+  rather than resubmitting or rewriting its baseline silently.
 - **Forms migration:** no `/question` endpoint is called. Permissions, the current
   question UI's form projection, unsupported forms, or a future native `forms` array
   stop verification for parent coordination. Unsupported forms must never be ignored
@@ -140,6 +150,11 @@ also invalidates same-document evidence; there is intentionally no automatic rel
   plus independent read to verify. Preserve any later user edits; no automatic full
   source reset, conversation deletion, storage clearing, or server restart occurs.
 
-Preparation validation is syntax-only with Bun's `AsyncFunction` parser. Browser
+The execute body is syntax-checked with Bun's `AsyncFunction` parser. Browser
 acceptance, locator compatibility, model capability, shell output contract, and
 Tailwind behavior must be established by the parent's actual run.
+The Node command builder additionally receives host-only sanity checks using a
+temporary source fixture: exact output/exit 0 for matching bytes/heading, nonzero
+exit with no marker for changed bytes, wrong heading, or missing source. This
+validates command construction and quoting only, never guest Node or browser shell
+acceptance. No browser run has been performed for this shell-gate change.
