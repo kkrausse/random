@@ -1,5 +1,5 @@
-import type { SessionInfo, SessionTransferData } from "@opencode-ai/client"
-import type { Plugin } from "@opencode-ai/plugin/tui"
+import type { SessionInfo, SessionTransferData } from "@opencode/client"
+import type { Plugin } from "@opencode/plugin/tui"
 import { mkdir, open, readdir, readFile, rename, unlink } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
@@ -64,8 +64,8 @@ export function fileArchiveStore(directory = archiveDirectory): ArchiveStore {
 
 type Client = Plugin.Context["client"]
 function missing(error: unknown) {
-  const e = error as { _tag?: string; status?: number; response?: { status?: number } }
-  return e?._tag === "SessionNotFoundError" || e?.status === 404 || e?.response?.status === 404
+  // A proxy's generic 404 is not evidence that the session was deleted.
+  return (error as { _tag?: string })?._tag === "SessionNotFoundError"
 }
 
 export async function archiveSession(client: Client, store: ArchiveStore, root: SessionInfo): Promise<Archive> {
@@ -74,10 +74,13 @@ export async function archiveSession(client: Client, store: ArchiveStore, root: 
   for (const session of family.values()) {
     await client.session.interrupt({ sessionID: session.id, continue: false })
     let cursor: string | undefined
+    const cursors = new Set<string>()
     do {
       const page = await client.session.list({ parentID: session.id, limit: 100, cursor })
       for (const child of page.data) family.set(child.id, child)
       cursor = page.cursor.next ?? undefined
+      if (cursor && cursors.has(cursor)) throw new Error("Archive session pagination repeated a cursor")
+      if (cursor) cursors.add(cursor)
     } while (cursor)
   }
   const locations = new Map([...family.values()].map((session) => [
@@ -111,7 +114,15 @@ export async function archiveSession(client: Client, store: ArchiveStore, root: 
 }
 
 export async function restoreSession(client: Client, store: ArchiveStore, archive: Archive) {
-  const session = await client.session.import(archive.transcript)
+  const parentID = archive.transcript.info.parentID
+  if (parentID) {
+    try { await client.session.get({ sessionID: parentID }) } catch (error) {
+      if (missing(error)) throw new Error(`Restore parent session ${parentID} before restoring this child archive.`, { cause: error })
+      throw error
+    }
+  }
+  // Import defaults to the connected server's location, NOT info.location.
+  const session = await client.session.import({ ...archive.transcript, location: archive.transcript.info.location })
   await store.remove(archive.transcript.info.id)
   return session
 }

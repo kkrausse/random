@@ -71,3 +71,25 @@ test("non-Error rejections and cyclic causes still produce readable failures", (
   error.cause = error
   assert.match(failureMessage(Cause.fail(error)), /cycle/)
 })
+
+test("detached lifecycle transactions finish and report errors after picker disposal", async () => {
+  const reports: string[] = []
+  const runner = makeRunner((message) => reports.push(message))
+  let finish!: () => void
+  let started!: () => void
+  const ready = new Promise<void>((resolve) => { started = resolve })
+  let surfaced = ""
+  let finalized = false
+  const job = runner.start(operation({ operation: "Restore session" }, async () => {
+    started()
+    await new Promise<void>((resolve) => { finish = resolve })
+    throw new Error("import failed after close")
+  }).pipe(Effect.ensuring(Effect.sync(() => { finalized = true }))), (message) => { surfaced = message }, { detached: true })
+  await ready
+  runner.dispose()
+  finish()
+  await job.done
+  assert.equal(finalized, true)
+  assert.match(surfaced, /import failed after close/)
+  assert.equal(reports.length, 1)
+})

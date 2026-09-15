@@ -1,5 +1,5 @@
-import type { SessionMessageInfo, TokenUsageInfo } from "@opencode-ai/client"
-import type { Plugin } from "@opencode-ai/plugin/tui"
+import type { SessionMessageInfo, TokenUsageInfo } from "@opencode/client"
+import type { Plugin } from "@opencode/plugin/tui"
 
 export const WEEK_MS = 7 * 24 * 60 * 60 * 1_000
 

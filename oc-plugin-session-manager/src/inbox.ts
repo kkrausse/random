@@ -1,5 +1,5 @@
-import type { Plugin } from "@opencode-ai/plugin/tui"
-import type { FormInfo, PermissionRequest, SessionInfo } from "@opencode-ai/client"
+import type { Plugin } from "@opencode/plugin/tui"
+import type { FormInfo, PermissionRequest, SessionInfo } from "@opencode/client"
 import { Effect } from "effect"
 import { operation } from "./effects"
 

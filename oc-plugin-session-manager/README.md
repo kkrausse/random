@@ -2,6 +2,9 @@
 
 Package/directory: `oc-plugin-session-manager`.
 
+Targets the released **OpenCode 2.0.3** plugin/client API (`@opencode/*`).
+See [the V2 compatibility audit](docs/v2-audit.md) for verification and remaining limitations.
+
 Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 
 - The normal session sidebar includes a live current-context breakdown for fresh input, cache reads, cache writes, output, and reasoning. Current context remains scoped to the open session; cumulative tokens and cost show separate session-only and **Incl. subagents** totals when descendants exist. Unpriced subscription responses use matching OpenCode Zen catalog rates and are labeled **Zen equivalent ≈**.
@@ -129,13 +132,17 @@ Archival uses the connected client's APIs:
 4. `DELETE /api/session/{parentID}` recursively deletes the family; verify each
    family member returns session-not-found. Sweep owned shells again to catch
    any created by late notifications before deletion completed.
-5. Restore with `POST /api/session/import` using the saved `transcript` object.
+5. Restore with `POST /api/session/import` using the saved `transcript` object
+   and an explicit `location: transcript.info.location`. V2 otherwise imports
+   into the server's default location, even when `info.location` is present.
    On success, move the archive into `archives/restored/` as a retained backup.
 
 Only the parent transcript and metadata return. Pending inbox work, child sessions,
 and processes do not return. Import does not submit a prompt. Failed deletion or
 import retains the archive; errors are surfaced for manual retry. If deletion fails,
 the remaining live row takes precedence when the picker next loads it.
+An existing child archive requires its parent to be live; restore the parent
+archive first. The plugin explains this ordering when the parent is missing.
 
 ## Effect execution and diagnostics
 
@@ -154,11 +161,27 @@ background refresh failures and unexpected defects, are logged with the
 failures retain the previous data. Archive and restore failures include the
 selected session ID and the underlying API/filesystem error.
 
-Closing the picker interrupts its Effect jobs; switching selection cancels obsolete
+Closing the picker interrupts its read jobs; switching selection cancels obsolete
 preview/context jobs. Read HTTP calls receive cancellation signals. Once started,
 the archive/restore transaction continues independently of picker dismissal so
 closing the dialog does not strand it between export and deletion. Host cache and
-storage methods also have no cancellation API. Mutations are not automatically retried.
+storage methods also have no cancellation API. Lifecycle completion and failures
+remain observable after closing the picker. Mutations are not automatically retried.
+
+## Verification
+
+```sh
+bun run check
+bun test --preload @opentui/solid/preload
+bun run verify:v2
+```
+
+`verify:v2` is an opt-in integration check against the discovered running service.
+It creates disposable sessions, transcript fixtures, and short-lived shells,
+checks the real archive/restore round trip, and cleans up its fixtures. It uses
+a temporary archive directory and never submits a model prompt. The server
+must be able to access the temporary directory on the machine running the check;
+this script is intended for a local service, not a different remote host.
 
 ## Local setup
 

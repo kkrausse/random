@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert"
 import { describe, test } from "node:test"
-import type { ModelInfo, SessionMessageInfo } from "@opencode-ai/client"
+import type { ModelInfo, SessionMessageInfo } from "@opencode/client"
 import { estimateUsageCost } from "./tui"
 
 const sol = {

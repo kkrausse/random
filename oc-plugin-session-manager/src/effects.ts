@@ -55,22 +55,23 @@ export function failureMessage(cause: Cause.Cause<unknown>) {
 }
 
 // One execution boundary for commands, reactive loads, and event callbacks.
-// Closing the picker interrupts all work; selection changes cancel read jobs.
+// Read jobs belong to the picker. Lifecycle transactions must finish and report
+// failures even when their initiating dialog has been dismissed.
 export function makeRunner(report: (message: string, cause: Cause.Cause<unknown>) => void) {
   const controllers = new Set<AbortController>()
   let disposed = false
-  function start<A, E>(effect: Effect.Effect<A, E>, onFailure?: (message: string) => void) {
+  function start<A, E>(effect: Effect.Effect<A, E>, onFailure?: (message: string) => void, options?: { detached?: boolean }) {
     const controller = new AbortController()
     if (disposed) return { done: Promise.resolve(), cancel() {} }
-    controllers.add(controller)
+    if (!options?.detached) controllers.add(controller)
     const done = Effect.runPromiseExit(effect, { signal: controller.signal }).then((exit) => {
       controllers.delete(controller)
-      if (disposed || controller.signal.aborted || Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause)) return
+      if ((disposed && !options?.detached) || controller.signal.aborted || Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause)) return
       const message = failureMessage(exit.cause)
       report(message, exit.cause)
       onFailure?.(message)
     })
-    return { done, cancel: () => controller.abort() }
+    return { done, cancel: () => { if (!options?.detached) controller.abort() } }
   }
   return {
     start,

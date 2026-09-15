@@ -8,14 +8,16 @@
   },
   "scripts": {
     "check": "tsc --noEmit",
-    "test": "bun test --preload @opentui/solid/preload"
+    "test": "bun test --preload @opentui/solid/preload",
+    "verify:v2": "bun scripts/verify-v2.ts"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "0.0.0-beta-18999",
+    "@opencode/client": "2.0.3",
+    "@opencode/plugin": "2.0.3",
     "effect": "4.0.0-rc.112"
   },
   "devDependencies": {
-    "@opencode-ai/theme": "0.0.0-beta-18999",
+    "@opencode/theme": "2.0.3",
     "@opentui/core": "0.5.10",
     "@opentui/solid": "0.5.10",
     "@types/node": "24.12.2",

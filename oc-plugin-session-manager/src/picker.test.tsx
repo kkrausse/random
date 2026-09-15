@@ -102,8 +102,8 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
           running = false
           activeChildren.delete(sessionID)
         },
-        get: async ({ sessionID }: any) => { if (deleted.has(sessionID)) throw { response: { status: 404 } }; return [...sessions, ...children].find((s) => s.id === sessionID) },
-        export: async ({ sessionID }: any) => ({ info: sessions.find((s) => s.id === sessionID), messages: [] }),
+        get: async ({ sessionID }: any) => { if (deleted.has(sessionID)) throw { _tag: "SessionNotFoundError", sessionID }; return [...sessions, ...children].find((s) => s.id === sessionID) },
+        export: async ({ sessionID }: any) => ({ info: sessions.find((s) => s.id === sessionID), messages: [{ id: "msg_preview", type: "user", text: "Archived transcript remains visible" }] }),
         remove: async ({ sessionID }: any) => {
           for (const id of sessionID === "s0" ? [sessionID, "child", "grandchild"] : [sessionID]) deleted.add(id)
         },
@@ -255,6 +255,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     commands.find((c) => c.bind === "down").run()
     await new Promise((resolve) => setTimeout(resolve, 20))
     await setup.renderOnce()
+    assert.match(setup.captureCharFrame(), /Archived transcript remains visible/)
     const restore = setup.renderer.root.findDescendantById("claude-session-preview-lifecycle")!
     await setup.mockMouse.click(restore.x + 2, restore.y)
     await new Promise((resolve) => setTimeout(resolve, 20))

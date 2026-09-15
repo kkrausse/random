@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert"
 import { test } from "node:test"
-import type { ModelInfo, SessionMessageInfo } from "@opencode-ai/client"
-import type { Plugin } from "@opencode-ai/plugin/tui"
+import type { ModelInfo, SessionMessageInfo } from "@opencode/client"
+import type { Plugin } from "@opencode/plugin/tui"
 import { createWeeklyUsageLoader, sumUsageTokens, weeklyMessages, WEEK_MS } from "./weekly-usage"
 import { estimateUsageCost } from "./tui"
 
