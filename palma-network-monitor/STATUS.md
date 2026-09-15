@@ -1,9 +1,10 @@
 # Palma monitoring — current configuration and session handoff
 
-## Latest review — September 15, approximately 08:22 PDT
+## Latest review — September 15, USB follow-up at 08:26–08:27 PDT
 
 See [REVIEW-2026-09-15.md](REVIEW-2026-09-15.md) for the latest reconnect,
-historical privacy findings, and fuller local-discovery review.
+historical privacy findings, citations, and fuller local-discovery review.
+[LATEST-REPORT.md](LATEST-REPORT.md) is the short entry point.
 
 - AP and capture remain active; one Palma station reconnected around 08:18:31.
 - Latest extracted window: 08:18:30–08:21:36, 920 device-associated packets.
@@ -11,10 +12,14 @@ historical privacy findings, and fuller local-discovery review.
   STUN. No visible BOOX traffic or direct Kindle sync connection appeared.
 - Kindle-sync DNS metadata remains visible to the Pi resolver. Local IPv6
   setup attempts appeared, without observed global IPv6 traffic.
-- Live AP guard denials are present and cover current LAN/container routes.
-  No fresh ADB device was available; latest device-side policy verification is
-  still September 11. No exit node was configured at that verification.
-- Historical baseline includes Thread mDNS discovery and Google location-related
+- USB now independently confirms Tailscale always-on/lockdown, reader/Gmail/
+  1Password inclusion, Chrome/Kindle exclusion, and no tun0 default exit route.
+  Google validation probes are confirmed in today's OS logs; a live Google
+  messaging socket maps to the shared Play services/Services Framework UID.
+- The extended preserved packet window through 08:27:54 contains 971 device
+  packets, still only Google/Tailscale public peers. Live AP guard denials cover
+  current LAN/container routes. Fresh end-to-end app tests remain pending.
+- Historical baseline includes 12 Thread mDNS queries (six IPv4, six IPv6) and Google location-related
   API connections; neither establishes an inventory or coordinates upload.
   Later private-address UDP attempts fit Tailscale peer candidate testing.
 - Recording continues; final capture-loss statistics remain pending. This
