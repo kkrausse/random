@@ -3,6 +3,7 @@ import { TerminalConnection } from "./connection";
 import { installScrolling } from "./scroll";
 import { installMobileControls } from "./mobile";
 import { ApplicationClipboard, ClipboardRequests } from "./clipboard";
+import { hasAutomaticSessionName, sessionLabel } from "./session-display";
 
 type Session = {
   id: string;
@@ -79,8 +80,8 @@ function renderSessions(container: HTMLElement, sessions: Session[]) {
   container.innerHTML = sessions
     .sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)))
     .map((session) => {
-      const automatic = /^\d+$/.test(session.name) || /^web-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(session.name);
-      const label = automatic ? session.command || "Shell" : session.name;
+      const automatic = hasAutomaticSessionName(session.name);
+      const label = sessionLabel(session);
       const context = [!automatic ? session.command : "", session.cwd].filter(Boolean).join(" · ");
       const detail = session.status === "running"
         ? `${session.clients} ${session.clients === 1 ? "connection" : "connections"}`
@@ -103,6 +104,23 @@ async function startTerminalPage() {
   const theme = await getTheme();
   applyPageTheme(theme);
   setFavicon("shell");
+  let processLabel = "";
+  let namedLabel = "";
+  let terminalTitle = "";
+  const refreshTabTitle = async () => {
+    try {
+      const response = await fetch(`/api/sessions/${id}`, { cache: "no-store" });
+      if (!response.ok) return;
+      const session = await response.json() as Session;
+      processLabel = session.command || "Shell";
+      namedLabel = hasAutomaticSessionName(session.name) ? "" : session.name;
+      renderTitle();
+    } catch {
+      // Keep the last title while the server or network is temporarily unavailable.
+    }
+  };
+  window.setInterval(() => { void refreshTabTitle(); }, 2000);
+  await refreshTabTitle();
   await init();
 
   const copyToast = document.querySelector<HTMLElement>("#copy-toast");
@@ -313,9 +331,15 @@ async function startTerminalPage() {
   }
 
   function updateTitle(title: string) {
-    document.title = `${id} · ${title}`;
+    terminalTitle = title;
+    renderTitle();
     const kind = iconKind(title);
     setFavicon(kind === "terminal" ? "shell" : kind);
+  }
+
+  function renderTitle() {
+    const detail = terminalTitle && ![processLabel, namedLabel].includes(terminalTitle) ? terminalTitle : "";
+    document.title = [id, processLabel, namedLabel, detail].filter(Boolean).join(" · ");
   }
 }
 
