@@ -72,6 +72,10 @@ const server = Bun.serve<SocketData>({
       const session = manager.create(typeof label === "string" ? label : isMobileDevice(request) ? "phone" : undefined);
       return Response.json(publicSession(session), { status: 201 });
     }
+    if (url.pathname.startsWith("/api/sessions/") && request.method === "GET") {
+      const session = sessions.get(url.pathname.slice(14));
+      return session ? Response.json(publicSession(session)) : new Response("Session not found", { status: 404 });
+    }
     if (url.pathname.startsWith("/api/sessions/") && url.pathname.endsWith("/attachments") && request.method === "POST") {
       if (!isSameOrigin(request)) return new Response("Forbidden", { status: 403 });
       const sessionId = url.pathname.slice(14, -12);
