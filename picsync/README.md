@@ -72,6 +72,26 @@ The verifier streams local media through SHA-256, validates content-record finge
 
 Run verification after pausing or completing the transfer so the set of manifests is stable. The phone's UI continues to label these files as copied; verification results currently live in the Pi-side report.
 
+## Consolidating the existing iPhone Uploads index
+
+`scripts/import-iphone-index.ts` is a one-time Pi-side import from
+`<Photos root>/iphone-uploads/.picsync` into an **absent** `<Photos root>/.picsync`.
+Run with all PicSync uploads paused. It validates record fingerprints and media
+sizes, backs up the source index, prefixes resource paths with `iphone-uploads/`,
+and publishes a staged parent index. It preserves media and the original index,
+and refuses to replace an existing parent index. It is not a general-purpose
+merge tool. Run `verify.ts` afterward for full checksum validation.
+
+The import into `/home/pi/photos` completed on September 15, 2026 (UTC):
+10,704 records, 492,550,574,206 resource bytes. Source backup:
+`/home/pi/photos/.picsync-import-backup-2026-09-15T01-55-49.729Z`.
+Full checksum verification was started separately; consult its finished report
+under `.picsync/verification-reports/` for results.
+
+Use the **Photos** SMB share for subsequent syncs, including syncs into its
+`iphone-uploads` subfolder. The old **iPhone Uploads** share retains its original
+index but will not learn about new parent-share uploads.
+
 ## Before a full-library transfer
 
 Use a 500–1,000-asset pilot containing iCloud-only originals, Live Photos, RAW companions, Unicode/repeated filenames, and large videos. Check:
