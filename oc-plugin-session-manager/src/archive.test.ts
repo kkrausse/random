@@ -33,7 +33,7 @@ function fixture() {
       export: async ({ sessionID, sanitize }: any) => { assert.equal(sanitize, false); calls.push(`export:${sessionID}`); return transcript },
       remove: async () => { calls.push("delete"); live.clear() },
       get: async ({ sessionID }: any) => { if (!live.has(sessionID)) throw { _tag: "SessionNotFoundError", sessionID }; return live.get(sessionID) },
-      import: async (data: any) => { calls.push("import"); assert.deepEqual(data, transcript); live.set(root.id, data.info); return data.info },
+      import: async ({ location, ...data }: any) => { calls.push("import"); assert.deepEqual(location, transcript.info.location); assert.deepEqual(data, transcript); live.set(root.id, data.info); return data.info },
     },
     shell: {
       list: async ({ location }: any) => ({ data: [...shells.values()].filter(s => s.directory === location.directory) }),
@@ -89,4 +89,32 @@ test("delete and import failures retain the saved archive", async () => {
   f.client.session.import = async () => { throw new Error("import failed") }
   await assert.rejects(restoreSession(f.client, store, saved), /import failed/)
   assert.equal(saved.transcript.info.id, f.root.id)
+})
+
+test("a generic HTTP 404 does not confirm session deletion", async () => {
+  const f = fixture()
+  let saved = false
+  f.client.session.get = async () => { throw { status: 404, message: "Proxy route not found" } }
+  await assert.rejects(archiveSession(f.client, { list: async () => [], remove: async () => {}, save: async () => { saved = true } }, f.root))
+  assert.ok(saved)
+})
+
+test("repeated child cursors stop before export or deletion", async () => {
+  const f = fixture()
+  f.client.session.list = async () => ({ data: [], cursor: { next: "same" } })
+  await assert.rejects(archiveSession(f.client, { list: async () => [], remove: async () => {}, save: async () => {} }, f.root), /repeated a cursor/)
+  assert.ok(!f.calls.includes("delete"))
+  assert.ok(!f.calls.some((call) => call.startsWith("export:")))
+})
+
+test("restoring a child with a missing parent explains the required order and retains its archive", async () => {
+  const f = fixture()
+  const transcript = await f.client.session.export({ sessionID: f.root.id, sanitize: false })
+  transcript.info = { ...transcript.info, parentID: "ses_missing_parent" }
+  let removed = false
+  await assert.rejects(restoreSession(f.client, {
+    list: async () => [], save: async () => {}, remove: async () => { removed = true },
+  }, { version: 1, archivedAt: 1, familyIDs: [f.root.id], transcript }), /Restore parent session ses_missing_parent/)
+  assert.equal(removed, false)
+  assert.ok(!f.calls.includes("import"))
 })

@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
-import type { FormInfo, ModelCost, ModelInfo, PermissionRequest, SessionInfo, SessionMessageAssistant, SessionMessageInfo, TokenUsageInfo } from "@opencode-ai/client"
-import { Plugin } from "@opencode-ai/plugin/tui"
+import type { FormInfo, ModelCost, ModelInfo, PermissionRequest, SessionInfo, SessionMessageAssistant, SessionMessageInfo, TokenUsageInfo } from "@opencode/client"
+import { Plugin } from "@opencode/plugin/tui"
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { Index, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
@@ -372,7 +372,8 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
   const dialogHeight = () => mobile()
     ? height()
     : Math.max(1, Math.min(40, height() - 2))
-  const previewHeight = () => Math.min(permission() ? 20 : mobile() ? 8 : 6, Math.max(mobile() && permission() ? 9 : 5, Math.floor(height() * (mobile() ? 0.5 : 0.4))))
+  const detailedPreview = () => !!permission() || !!(selectedSession() && isArchived(selectedSession()!.id))
+  const previewHeight = () => Math.min(detailedPreview() ? 20 : mobile() ? 8 : 6, Math.max(mobile() && detailedPreview() ? 9 : 5, Math.floor(height() * (mobile() ? 0.5 : 0.4))))
   const approvalButtonHeight = () => mobile() && dimensions().height >= 20 ? 3 : 1
   const runner = makeRunner((message, cause) => {
     console.error(`[claude.sessions] ${message}\n${Cause.pretty(cause)}`)
@@ -670,16 +671,16 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
     }).pipe(Effect.ensuring(Effect.sync(() => {
       setChangingLifecycle(false)
       setReviewVersion((version) => version + 1)
-    }))), showFailure).done
+    }))), showFailure, { detached: true }).done
   }
 
   function applyAttentionLookup(location: SessionInfo["location"], key: string) {
     runner.start(Effect.gen(function* () {
       const [permissions, forms] = yield* Effect.all([
         operation({ operation: "Refresh permission badges", directory: location.directory },
-          (signal) => props.context.client.permission.request.list({ location }, { signal })),
+          (signal) => props.context.client.permission.request.list({ location: { directory: location.directory, workspace: location.workspaceID } }, { signal })),
         operation({ operation: "Refresh question badges", directory: location.directory },
-          (signal) => props.context.client.form.request.list({ location }, { signal })),
+          (signal) => props.context.client.form.request.list({ location: { directory: location.directory, workspace: location.workspaceID } }, { signal })),
       ], { concurrency: "unbounded" })
       setAttention((current) => {
         const next = new Map(current)
@@ -691,7 +692,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
         )
         for (const id of locationSessionIDs) next.delete(id)
         for (const request of permissions.data) next.set(request.sessionID, "permission")
-        for (const request of forms.data) next.set(request.sessionID, "question")
+        for (const request of forms.data) if (!next.has(request.sessionID)) next.set(request.sessionID, "question")
         return next
       })
     }), () => { queriedLocations.delete(key) })
