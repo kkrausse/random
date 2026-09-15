@@ -1,5 +1,25 @@
 # Palma monitoring — current configuration and session handoff
 
+## Latest review — September 15, approximately 08:22 PDT
+
+See [REVIEW-2026-09-15.md](REVIEW-2026-09-15.md) for the latest reconnect,
+historical privacy findings, and fuller local-discovery review.
+
+- AP and capture remain active; one Palma station reconnected around 08:18:31.
+- Latest extracted window: 08:18:30–08:21:36, 920 device-associated packets.
+  Public traffic was Google validation/messaging and Tailscale relay/control/
+  STUN. No visible BOOX traffic or direct Kindle sync connection appeared.
+- Kindle-sync DNS metadata remains visible to the Pi resolver. Local IPv6
+  setup attempts appeared, without observed global IPv6 traffic.
+- Live AP guard denials are present and cover current LAN/container routes.
+  No fresh ADB device was available; latest device-side policy verification is
+  still September 11. No exit node was configured at that verification.
+- Historical baseline includes Thread mDNS discovery and Google location-related
+  API connections; neither establishes an inventory or coordinates upload.
+  Later private-address UDP attempts fit Tailscale peer candidate testing.
+- Recording continues; final capture-loss statistics remain pending. This
+  report is local to the Mac project, not deployed to the Pi.
+
 ## Evening review — September 11, approximately 22:30 PDT
 
 SSH review after the user reported returning to the Palma and opening Kindle:
