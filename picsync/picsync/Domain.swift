@@ -168,6 +168,9 @@ struct SyncRun: Codable, Identifiable, Sendable, Equatable, Hashable {
     var completedCount: Int
     var skippedCount: Int
     var failedCount: Int
+    var selectedCount: Int? = nil
+    var pauseReason: String? = nil
+    var itemCount: Int { selectedCount ?? assetIdentifiers.count }
 }
 
 private extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }

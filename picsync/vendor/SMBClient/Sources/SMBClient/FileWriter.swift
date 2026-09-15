@@ -38,13 +38,22 @@ public class FileWriter {
     try await upload(fileHandle: fileHandle, progressHandler: { _ in })
   }
 
-  public func upload(fileHandle: FileHandle, progressHandler: (_ progress: Double) -> Void) async throws {
+  public func upload(fileHandle: FileHandle, resumingAt offset: UInt64 = 0, progressHandler: (_ progress: Double) throws -> Void) async throws {
     let fileSize = try fileHandle.fileSize()
-    let fileProxy = try await fileProxy()
+    guard offset <= fileSize else { throw CocoaError(.fileReadCorruptFile) }
+    let fileProxy = try await fileProxy(resumingAt: offset)
+    if offset > 0, fileProxy.size != offset { throw CocoaError(.fileReadCorruptFile) }
+    try fileHandle.seek(toOffset: offset)
 
     while true {
+      try Task.checkCancellation()
       let offset = UInt64(try fileHandle.offsetInFile())
-      let data = fileHandle.readData(ofLength: Int(session.maxWriteSize))
+      let data: Data
+      if #available(macOS 10.15.4, iOS 13.4, watchOS 6.2, tvOS 13.4, *) {
+        data = try fileHandle.read(upToCount: Int(session.maxWriteSize)) ?? Data()
+      } else {
+        data = fileHandle.readData(ofLength: Int(session.maxWriteSize))
+      }
       if data.isEmpty { break }
 
       let response = try await session.write(
@@ -54,7 +63,7 @@ public class FileWriter {
       )
 
       guard response.count == data.count else { throw CocoaError(.fileWriteUnknown) }
-      progressHandler(Double(offset + UInt64(response.count)) / Double(fileSize))
+      try progressHandler(Double(offset + UInt64(response.count)) / Double(fileSize))
     }
   }
 
@@ -111,7 +120,7 @@ public class FileWriter {
     createResponse = nil
   }
 
-  private func fileProxy() async throws -> FileProxy {
+  private func fileProxy(resumingAt offset: UInt64 = 0) async throws -> FileProxy {
     guard let createResponse else {
       let response = try await session.create(
         desiredAccess: [
@@ -122,8 +131,8 @@ public class FileWriter {
           .readControl
         ],
         fileAttributes: [.archive, .normal],
-        shareAccess: [.read, .write, .delete],
-        createDisposition: .create,
+        shareAccess: [.read],
+        createDisposition: offset > 0 ? .open : .create,
         createOptions: [],
         name: path
       )

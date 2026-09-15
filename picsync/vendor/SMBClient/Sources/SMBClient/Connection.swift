@@ -82,6 +82,18 @@ public class Connection {
   }
 
   public func send(_ data: Data) async throws -> Data {
+    try await withThrowingTaskGroup(of: Data.self) { group in
+      group.addTask { try await self.sendRequest(data) }
+      group.addTask {
+        try await Task.sleep(nanoseconds: 30_000_000_000)
+        throw URLError(.timedOut)
+      }
+      defer { group.cancelAll() }
+      return try await group.next()!
+    }
+  }
+
+  private func sendRequest(_ data: Data) async throws -> Data {
     try await withTaskCancellationHandler {
       await semaphore.wait()
       defer { Task { await semaphore.signal() } }

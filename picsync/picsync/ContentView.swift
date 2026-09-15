@@ -44,6 +44,10 @@ struct ContentView: View {
 
                 Section("Transfer Settings") {
                     Stepper("Parallel transfers: \(model.parallelism)", value: $model.parallelism, in: 1...20)
+                    Stepper("Staging limit: \(model.stagingLimitGB) GB", value: $model.stagingLimitGB, in: 2...128, step: 2)
+                    Text("Staging includes originals retained by paused or failed runs. PicSync also preserves 2 GB of free iPhone storage. Start with 2–4 workers on a Raspberry Pi.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                     Text("Applied to new syncs and the next time a paused or failed sync resumes. Running workers are unchanged until you pause.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -657,15 +661,39 @@ private struct RunDetailView: View {
         List {
             Section("Progress") {
                 let finishedCount = currentRun.completedCount + currentRun.skippedCount + currentRun.failedCount
-                ProgressView(value: currentRun.assetIdentifiers.isEmpty ? 0 : Double(finishedCount) / Double(currentRun.assetIdentifiers.count))
+                ProgressView(value: currentRun.itemCount == 0 ? 0 : Double(finishedCount) / Double(currentRun.itemCount))
+                LabeledContent("Assets", value: "\(finishedCount) / \(currentRun.itemCount)")
                 LabeledContent("State", value: currentRun.state.displayName)
                 LabeledContent("Active workers", value: "\(currentRun.activeWorkerCount ?? 0)")
                 if currentRun.state.isResumable {
                     LabeledContent("Next resume limit", value: "\(model.parallelism)")
                 }
-                LabeledContent("Completed", value: "\(currentRun.completedCount)")
+                LabeledContent("Copied", value: "\(currentRun.completedCount)")
                 LabeledContent("Skipped duplicates", value: "\(currentRun.skippedCount)")
                 LabeledContent("Failed", value: "\(currentRun.failedCount)")
+                LabeledContent("Copied or already managed", value: ByteCountFormatter.string(fromByteCount: currentRun.completedBytes, countStyle: .file))
+                LabeledContent("Bytes discovered so far", value: ByteCountFormatter.string(fromByteCount: currentRun.totalBytes, countStyle: .file))
+                Text("Copied files are size-checked. Run the Pi-side verifier for a full SHA-256 integrity check; copied does not yet mean checksum-verified.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                if let reason = currentRun.pauseReason {
+                    Text(reason).foregroundStyle(.orange).textSelection(.enabled)
+                }
+            }
+            if let progress = model.progressByRun[currentRun.id], !progress.items.isEmpty {
+                Section("Active Transfers") {
+                    LabeledContent("Upload speed", value: "\(ByteCountFormatter.string(fromByteCount: Int64(progress.bytesPerSecond), countStyle: .file))/s")
+                    ForEach(progress.items) { item in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.filename).lineLimit(1)
+                            Text(item.phase).font(.caption).foregroundStyle(.secondary)
+                            if item.total > 0 {
+                                ProgressView(value: Double(item.bytes), total: Double(item.total))
+                                Text("\(ByteCountFormatter.string(fromByteCount: item.bytes, countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: item.total, countStyle: .file))")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
             }
             Section("Actions") {
                 if currentRun.state.isResumable {
@@ -676,7 +704,7 @@ private struct RunDetailView: View {
                     Button("Pause") { Task { await model.pause(runID: currentRun.id) } }
                 }
                 if currentRun.state == .pausing {
-                    LabeledContent("Finishing active items", value: "Pausing")
+                    LabeledContent("Checkpointing active items", value: "Pausing")
                 }
                 Button("Delete Run", role: .destructive) {
                     Task {
@@ -689,10 +717,10 @@ private struct RunDetailView: View {
                 let transfers = model.transfers(for: currentRun.id)
                 let failures = transfers.filter { $0.state == .failed }
                 if failures.isEmpty {
-                    Text(transfers.isEmpty ? "No transfer output yet." : "No asset errors recorded.")
+                    Text("No asset errors recorded.")
                         .foregroundStyle(.secondary)
                 } else {
-                    DisclosureGroup("\(failures.count) failed items", isExpanded: $showsErrors) {
+                    DisclosureGroup("\(currentRun.failedCount) failed items", isExpanded: $showsErrors) {
                         ForEach(failures.prefix(5)) { transfer in
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(transfer.manifest.first?.filename ?? "Photo item")
@@ -703,8 +731,8 @@ private struct RunDetailView: View {
                             }
                             .padding(.vertical, 3)
                         }
-                        if failures.count > 5 {
-                            Text("Showing the first 5 errors. \(failures.count - 5) additional items have the same run-level result.")
+                        if currentRun.failedCount > 5 {
+                            Text("Showing 5 of \(currentRun.failedCount) errors. Resume retries failed items.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
