@@ -111,50 +111,55 @@ struct PhotoLibraryService {
 struct PhotoResourceExporter {
     private let manager = PHAssetResourceManager.default()
 
-    func stage(asset: PHAsset, runID: UUID, transferID: UUID) async throws -> [ResourceManifest] {
+    func stage(asset: PHAsset, runID: UUID, transferID: UUID, budget: StagingBudget, runtime: TransferRuntime) async throws -> [ResourceManifest] {
         let resources = PHAssetResource.assetResources(for: asset).filter { PhotoResourceSelector.includes(type: $0.type) }
         guard !resources.isEmpty else { throw PicSyncError.sourceUnavailable }
-        let directory = try stagingDirectory(runID: runID, transferID: transferID)
+        let directory = budget.root.appendingPathComponent(runID.uuidString).appendingPathComponent(transferID.uuidString)
+        // A crash during export may leave files which never made it into a manifest.
+        try budget.remove(directory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var manifests = [ResourceManifest]()
         do {
             for (index, resource) in resources.enumerated() {
-                try Task.checkCancellation()
+                try runtime.check()
                 let role = PhotoResourceSelector.role(for: resource.type)
                 let ext = URL(fileURLWithPath: resource.originalFilename).pathExtension
                 let fallback = "\(asset.creationDate.map { Self.fallbackDate.string(from: $0) } ?? "asset")_\(String(asset.localIdentifier.prefix(8)))_\(role)\(ext.isEmpty ? "" : ".\(ext)")"
                 let filename = SafeFilename.make(resource.originalFilename, fallback: fallback)
                 let localURL = directory.appendingPathComponent("\(index)-\(UUID().uuidString).\(URL(fileURLWithPath: filename).pathExtension)")
                 let temporaryURL = localURL.appendingPathExtension("partial")
-                try await export(resource, to: temporaryURL)
+                runtime.update(transferID, filename: filename, phase: "Exporting original")
+                try await export(resource, to: temporaryURL, budget: budget, runtime: runtime)
                 try FileManager.default.moveItem(at: temporaryURL, to: localURL)
-                let hash = try ContentHasher.hash(file: localURL)
+                runtime.update(transferID, filename: filename, phase: "Hashing original")
+                let hash = try await ContentHasher.hashAsync(file: localURL, check: { try runtime.check() })
                 let size = try localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize.map(Int64.init) ?? 0
                 manifests.append(ResourceManifest(role: role, filename: filename, stagingPath: localURL.path, byteCount: size, sha256: hash, finalPath: nil, temporaryPath: nil))
             }
         } catch {
-            try? FileManager.default.removeItem(at: directory)
+            try? budget.remove(directory)
             throw error
         }
         return manifests
     }
 
-    private func export(_ resource: PHAssetResource, to url: URL) async throws {
+    private func export(_ resource: PHAssetResource, to url: URL, budget: StagingBudget, runtime: TransferRuntime) async throws {
         let options = PHAssetResourceRequestOptions()
         options.isNetworkAccessAllowed = true
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            manager.writeData(for: resource, toFile: url, options: options) { error in
-                if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+        let writer = try PhotoExportWriter(url: url, budget: budget, runtime: runtime, manager: manager)
+        let pauseHandler = runtime.onPause { writer.cancel() }
+        defer { runtime.removePauseHandler(pauseHandler) }
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                let id = manager.requestData(for: resource, options: options, dataReceivedHandler: { writer.receive($0) }) { error in
+                    do { try writer.finish(error); continuation.resume() }
+                    catch { continuation.resume(throwing: error) }
+                }
+                writer.setRequest(id)
             }
+        } onCancel: {
+            writer.cancel()
         }
-    }
-
-    private func stagingDirectory(runID: UUID, transferID: UUID) throws -> URL {
-        let root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-            .appendingPathComponent("Transfers", isDirectory: true)
-            .appendingPathComponent(runID.uuidString, isDirectory: true)
-            .appendingPathComponent(transferID.uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        return root
     }
 
     private static let fallbackDate: DateFormatter = {
@@ -165,15 +170,79 @@ struct PhotoResourceExporter {
     }()
 }
 
+private final class PhotoExportWriter: @unchecked Sendable {
+    private let lock = NSLock()
+    private let handle: FileHandle
+    private let budget: StagingBudget
+    private let runtime: TransferRuntime
+    private let manager: PHAssetResourceManager
+    private var request: PHAssetResourceDataRequestID?
+    private var failure: Error?
+
+    init(url: URL, budget: StagingBudget, runtime: TransferRuntime, manager: PHAssetResourceManager) throws {
+        guard FileManager.default.createFile(atPath: url.path, contents: nil) else { throw CocoaError(.fileWriteUnknown) }
+        handle = try FileHandle(forWritingTo: url)
+        self.budget = budget; self.runtime = runtime; self.manager = manager
+    }
+    func setRequest(_ id: PHAssetResourceDataRequestID) {
+        let cancel = lock.withLock { request = id; return failure != nil }
+        if cancel { manager.cancelDataRequest(id) }
+    }
+    func cancel() {
+        let id = lock.withLock { failure = failure ?? TransferError.paused; return request }
+        if let id { manager.cancelDataRequest(id) }
+    }
+    func receive(_ data: Data) {
+        let cancelID: PHAssetResourceDataRequestID? = lock.withLock {
+            guard failure == nil else { return request }
+            do {
+                try runtime.check()
+                let before = try handle.offset()
+                try budget.reserve(Int64(data.count), runtime: runtime)
+                do { try handle.write(contentsOf: data) }
+                catch {
+                    // Account for partial local writes as well as successfully written chunks.
+                    let written = (try? handle.offset()).map { Int64($0 - before) } ?? Int64(data.count)
+                    budget.release(max(0, Int64(data.count) - written))
+                    throw error
+                }
+                return nil
+            } catch {
+                failure = error
+                return request
+            }
+        }
+        if let cancelID { manager.cancelDataRequest(cancelID) }
+    }
+    func finish(_ error: Error?) throws {
+        try lock.withLock {
+            try handle.close()
+            if let error = failure ?? error { throw error }
+        }
+    }
+}
+
 enum ContentHasher {
-    static func hash(file url: URL, chunkSize: Int = 1_048_576) throws -> String {
+    static func hashAsync(file url: URL, prefixBytes: Int64? = nil, check: @escaping @Sendable () throws -> Void = {}) async throws -> String {
+        try await Task.detached(priority: .utility) {
+            try hash(file: url, prefixBytes: prefixBytes, check: check)
+        }.value
+    }
+    static func hash(file url: URL, chunkSize: Int = 1_048_576, prefixBytes: Int64? = nil, check: () throws -> Void = {}) throws -> String {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         var hasher = SHA256()
+        var remaining = prefixBytes ?? Int64.max
         while true {
-            let data = try handle.read(upToCount: chunkSize) ?? Data()
-            guard !data.isEmpty else { break }
+            try check()
+            guard remaining > 0 else { break }
+            let data = try handle.read(upToCount: Int(min(Int64(chunkSize), remaining))) ?? Data()
+            guard !data.isEmpty else {
+                if prefixBytes != nil { throw CocoaError(.fileReadCorruptFile) }
+                break
+            }
             hasher.update(data: data)
+            remaining -= Int64(data.count)
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }

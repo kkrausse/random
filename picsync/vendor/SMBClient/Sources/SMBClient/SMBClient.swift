@@ -158,10 +158,10 @@ public class SMBClient {
     try await upload(fileHandle: fileHandle, path: path, progressHandler: { _ in })
   }
 
-  public func upload(fileHandle: FileHandle, path: String, progressHandler: (_ progress: Double) -> Void) async throws {
+  public func upload(fileHandle: FileHandle, path: String, resumingAt offset: UInt64 = 0, progressHandler: (_ progress: Double) throws -> Void) async throws {
     let fileWriter = fileWriter(path: Pathname.normalize(path))
     do {
-      try await fileWriter.upload(fileHandle: fileHandle, progressHandler: progressHandler)
+      try await fileWriter.upload(fileHandle: fileHandle, resumingAt: offset, progressHandler: progressHandler)
       try await fileWriter.close()
     } catch {
       try? await fileWriter.close()

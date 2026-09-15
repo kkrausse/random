@@ -41,21 +41,28 @@ struct picsyncTests {
         #expect(try ContentHasher.hash(file: url, chunkSize: 1024) == "38a637965059125eeb67f54c30e7f48a61859a467a800ba09740ba48a924f2b9")
     }
 
-    @Test func workersPullEachTransferFromQueueExactlyOnce() async {
+    @Test func workersClaimEachTransferFromSQLiteExactlyOnce() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = SyncStore(url: directory.appendingPathComponent("journal.sqlite"))
+        try await store.load()
         let runID = UUID()
         let transfers = (0..<50).map {
             AssetTransfer(id: UUID(), runID: runID, localIdentifier: "\($0)", state: .queued, manifest: [], fingerprint: nil, attempts: 0, errorMessage: nil, updatedAt: Date())
         }
-        let queue = TransferWorkQueue(transfers)
-        let identifiers = await withTaskGroup(of: [String].self, returning: [String].self) { group in
+        let now = Date()
+        let run = SyncRun(id: runID, sourceLabel: "Test", assetIdentifiers: transfers.map(\.localIdentifier), profileID: UUID(), share: "Photos", destinationPath: "", parallelism: 7, activeWorkerCount: 0, state: .preparing, createdAt: now, updatedAt: now, completedBytes: 0, totalBytes: 0, completedCount: 0, skippedCount: 0, failedCount: 0)
+        try await store.save(run: run, transfers: transfers)
+        let identifiers = try await withThrowingTaskGroup(of: [String].self, returning: [String].self) { group in
             for _ in 0..<7 {
                 group.addTask {
                     var values = [String]()
-                    while let transfer = await queue.next() { values.append(transfer.localIdentifier) }
+                    while let transfer = try await store.claimNext(runID) { values.append(transfer.localIdentifier) }
                     return values
                 }
             }
-            return await group.reduce(into: []) { $0.append(contentsOf: $1) }
+            return try await group.reduce(into: []) { $0.append(contentsOf: $1) }
         }
 
         #expect(identifiers.count == transfers.count)
@@ -79,22 +86,25 @@ struct picsyncTests {
             var transfers: [AssetTransfer] = []
         }
 
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: url) }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("journal.sqlite")
+        let legacy = directory.appendingPathComponent("journal.json")
         let first = profile(host: "100.64.0.1", updatedAt: Date(timeIntervalSince1970: 1))
         let second = profile(host: "192.168.1.207", updatedAt: Date(timeIntervalSince1970: 2))
-        try JSONEncoder().encode(LegacySnapshot(profiles: [first, second])).write(to: url)
+        try JSONEncoder().encode(LegacySnapshot(profiles: [first, second])).write(to: legacy)
 
         let store = SyncStore(url: url)
         try await store.load()
-        #expect(await store.profiles().map(\.id) == [second.id, first.id])
-        #expect(await store.activeProfileID() == nil)
+        #expect(try await store.profiles().map(\.id) == [second.id, first.id])
+        #expect(try await store.activeProfileID() == nil)
 
         try await store.selectProfile(first.id)
         let reloaded = SyncStore(url: url)
         try await reloaded.load()
-        #expect(await reloaded.activeProfileID() == first.id)
-        #expect(await reloaded.profiles().count == 2)
+        #expect(try await reloaded.activeProfileID() == first.id)
+        #expect(try await reloaded.profiles().count == 2)
     }
 
     private func profile(host: String, updatedAt: Date) -> ServerProfile {

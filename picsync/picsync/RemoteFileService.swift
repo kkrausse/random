@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import SMBClient
 
 struct RemoteItem: Sendable, Equatable, Identifiable {
@@ -17,7 +18,8 @@ protocol RemoteFileService: Sendable {
     func createDirectory(path: String) async throws
     func stat(path: String) async throws -> RemoteItem?
     func read(path: String) async throws -> Data
-    func upload(file: URL, to path: String, progress: @escaping @Sendable (Int64) -> Void) async throws
+    func upload(file: URL, to path: String, offset: Int64, progress: @escaping @Sendable (Int64) throws -> Void) async throws
+    func hash(path: String, prefixBytes: Int64?, check: @escaping @Sendable () throws -> Void) async throws -> String
     func rename(from: String, to: String) async throws
     func delete(path: String) async throws
 }
@@ -51,8 +53,7 @@ actor SMBRemoteFileService: RemoteFileService {
 
     func disconnect() async {
         guard let client else { return }
-        _ = try? await client.disconnectShare()
-        _ = try? await client.logoff()
+        // Close the transport immediately, including when the server is unavailable.
         client.session.disconnect()
         self.client = nil
     }
@@ -79,9 +80,6 @@ actor SMBRemoteFileService: RemoteFileService {
     func stat(path: String) async throws -> RemoteItem? {
         let client = try connectedClient()
         do {
-            let isFile = try await client.existFile(path: path)
-            let isDirectory = try await client.existDirectory(path: path)
-            guard isFile || isDirectory else { return nil }
             let file = try await client.fileStat(path: path)
             return RemoteItem(name: URL(fileURLWithPath: path).lastPathComponent, path: path, byteCount: Int64(file.size), isDirectory: file.isDirectory)
         } catch let error as ErrorResponse where Self.isMissingPath(error) {
@@ -92,12 +90,35 @@ actor SMBRemoteFileService: RemoteFileService {
 
     func read(path: String) async throws -> Data { try await connectedClient().download(path: path) }
 
-    func upload(file: URL, to path: String, progress: @escaping @Sendable (Int64) -> Void) async throws {
+    func upload(file: URL, to path: String, offset: Int64, progress: @escaping @Sendable (Int64) throws -> Void) async throws {
         let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize.map(Int64.init) ?? 0
         let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
-        try await connectedClient().upload(fileHandle: handle, path: path) { fraction in
-            progress(Int64(Double(size) * fraction))
+        try progress(offset)
+        try await connectedClient().upload(fileHandle: handle, path: path, resumingAt: UInt64(offset)) { fraction in
+            try progress(Int64(Double(size) * fraction))
+        }
+    }
+
+    func hash(path: String, prefixBytes: Int64?, check: @escaping @Sendable () throws -> Void) async throws -> String {
+        let reader = try connectedClient().fileReader(path: path)
+        do {
+            let size = try await reader.fileSize
+            let count = prefixBytes.map(UInt64.init) ?? size
+            guard count <= size else { throw CocoaError(.fileReadCorruptFile) }
+            var hasher = SHA256(), offset: UInt64 = 0
+            while offset < count {
+                try check()
+                let data = try await reader.read(offset: offset, length: UInt32(min(1_048_576, count - offset)))
+                guard !data.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
+                hasher.update(data: data)
+                offset += UInt64(data.count)
+            }
+            try await reader.close()
+            return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        } catch {
+            try? await reader.close()
+            throw error
         }
     }
 
