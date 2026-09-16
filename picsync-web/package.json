@@ -1,0 +1,6 @@
+{
+  "name": "picsync-web-experiment",
+  "private": true,
+  "type": "module",
+  "dependencies": { "libraw-wasm": "1.0.5" }
+}

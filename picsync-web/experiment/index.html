@@ -8,16 +8,19 @@
   article { background: white; border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 16px 0; }
   button, a { font: inherit; margin-right: 16px; }
   button { padding: 8px 12px; }
-  img { display: block; max-width: 100%; max-height: 70vh; object-fit: contain; margin-top: 16px; }
+  img, canvas { display: block; max-width: 100%; max-height: 70vh; object-fit: contain; margin-top: 16px; }
+  button { margin-bottom: 8px; }
   pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 </style>
 <h1>Original image test</h1>
-<p>Untouched files from PicSync. No conversion, extracted previews, or JavaScript image decoder. Tap one at a time to test Safari’s native <code>&lt;img&gt;</code> support.</p>
+<p>Untouched files from PicSync. Test Safari’s native <code>&lt;img&gt;</code> support or develop RAW directly in your browser with LibRaw WebAssembly. The Pi only serves files.</p>
+<p>Try <strong>WASM · half resolution</strong> first, then full resolution. Both develop sensor data, not an embedded JPEG. Only one RAW render is kept at a time. Pinch to zoom into the result.</p>
 <p>“Open original” separately tests direct navigation. An OS preview or download there does not necessarily mean a photo gallery can display the file.</p>
 <pre id="browser"></pre>
 <main id="samples">Finding samples…</main>
-<p>A successful RAW load may still use an embedded JPEG. Reported dimensions help investigate; success alone does not prove full RAW development.</p>
+<p>A successful <em>native</em> RAW load may still use an embedded JPEG. The WASM buttons explicitly develop sensor data with camera white balance and sRGB output.</p>
 <script type="module">
+  import { addWasmControls } from '/wasm-viewer.js';
   document.querySelector('#browser').textContent = navigator.userAgent;
   const main = document.querySelector('#samples');
   try {
@@ -60,6 +63,7 @@
         card.append(image);
       };
       card.append(title, detail, button, link, status);
+      addWasmControls(card, sample);
       main.append(card);
     }
   } catch (error) {

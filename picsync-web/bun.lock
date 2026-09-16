@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "picsync-web-experiment",
+      "dependencies": {
+        "libraw-wasm": "1.0.5",
+      },
+    },
+  },
+  "packages": {
+    "libraw-wasm": ["libraw-wasm@1.0.5", "", {}, "sha512-Gdyj4gf9+MU0u0/zRTB+XsnESWznOA2FzyFM9xAo1ozZzoSrv5/sIoeRADz76IrWtrUjawa8MrITUnDeBHBlLA=="],
+  }
+}

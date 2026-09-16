@@ -5,14 +5,25 @@
 Run with Bun on the machine holding the archive:
 
 ```sh
+bun install --frozen-lockfile
 MEDIA_ROOT=/home/pi/photos HOST=192.168.1.207 LAN_CIDR=192.168.1.0/24 bun experiment/server.ts
 ```
 
 Open `http://192.168.1.207:8788` on an iPhone on that LAN. Tap **Test inline image** for a JPEG control, HEIC, and RAW. Record the Safari/iOS version, outcome, and decoded dimensions. **Open original** tests direct navigation separately. Desktop Safari or an OS Quick Look preview is not a substitute for this iPhone inline-image test.
 
-This dependency-free experiment discovers up to two files per MIME type (ARW, DNG, HEIC, JPEG), excludes hidden files and symlinks, and exposes only those sampled originals. It never changes the archive. No image conversion takes place. RAW success could reflect a decoder using an embedded preview rather than developing sensor data. Missing formats have no sample card.
+This experiment discovers up to two files per MIME type (ARW, DNG, HEIC, JPEG), excludes hidden files and symlinks, and exposes only those sampled originals. It never changes the archive. No server-side image conversion takes place. Native RAW success could reflect a decoder using an embedded preview rather than developing sensor data. Missing formats have no sample card.
 
-It binds to the configured address and checks the actual socket peer against the configured IPv4 subnet; forwarded headers are ignored. Defaults are loopback-only. This is a temporary direct-LAN experiment, not a reverse-proxy deployment. Stop the process when finished. No dependencies or build step are required.
+It binds to the configured address and checks the actual socket peer against the configured IPv4 subnet; forwarded headers are ignored. Defaults are loopback-only. This is a temporary direct-LAN experiment, not a reverse-proxy deployment. Stop the process when finished. No build step is required.
+
+## Browser-side RAW development
+
+ARW/DNG cards offer half-resolution and full-resolution WASM decoding. Both develop sensor data using camera white balance, sRGB and 8-bit RGB output, then display an RGBA canvas. Download/decode/total times are reported. A fresh dedicated worker handles each request and is terminated on completion, failure, cancellation, page exit or the 120-second timeout. Only one RAW job and one rendered RAW canvas are retained at a time.
+
+`libraw-wasm` is deliberately pinned to **1.0.5**, a single-threaded build that works over ordinary LAN HTTP in a worker. Inspected 1.3.1 and 1.6.0 builds use shared WASM memory, which needs a secure, cross-origin-isolated context. This pin is for the experiment; a maintained single-threaded build or HTTPS would be preferable for the eventual viewer. JS and WASM are served locally from the installed package, with no runtime CDN dependency.
+
+The wrapper declares the **ISC** license and its [source/build scripts](https://github.com/ybouane/LibRaw-Wasm) are public. [LibRaw](https://www.libraw.org/about#licensing) is open source under your choice of **LGPL 2.1 or CDDL 1.0**. Both are modifiable; distributing rebuilt bundles requires retaining applicable notices and following the selected license. The wrapper's ISC declaration does not replace the underlying libraries' licenses.
+
+Desktop Chromium verification against `KEV03734.ARW` (Sony ILCE-6700): half resolution returned 3328×2304 in 21.5s decode + 2.5s download; full resolution returned 6656×4608 in 33.6s decode + 3.0s download. The canvas was visually inspected and cancellation/clearing tested. Output contains sensor-edge black margins; no camera crop or lens correction is applied. These are desktop observations, not iPhone Safari results. Test mobile rendering and memory behavior on the actual phone.
 
 ### Running experiment on lrpi
 
