@@ -1,5 +1,33 @@
 import { expect, test } from "bun:test";
-import { createImageDownloads } from "./image-downloads";
+import { createImageDownloads, downloadImage, downloadThumbnail } from "./image-downloads";
+
+test("ten thumbnail downloads and two full downloads have independent capacity", async () => {
+  const originalFetch = globalThis.fetch;
+  const starts: string[] = [];
+  const controller = new AbortController();
+  globalThis.fetch = ((url: string, options: RequestInit) => {
+    starts.push(url);
+    return new Promise<Response>((_, reject) => {
+      options.signal!.addEventListener("abort", () => reject(new Error("cancelled")), { once: true });
+    });
+  }) as typeof fetch;
+  try {
+    const requests = [
+      ...Array.from({ length: 12 }, (_, i) => downloadThumbnail(`thumb-${i}`, { signal: controller.signal }, 5).catch(() => null)),
+      ...Array.from({ length: 4 }, (_, i) => downloadImage(`full-${i}`, { signal: controller.signal }, i).catch(() => null)),
+    ];
+    expect(starts.filter(url => url.startsWith("thumb"))).toHaveLength(10);
+    expect(starts.filter(url => url.startsWith("full"))).toEqual(["full-0", "full-1"]);
+    controller.abort();
+    await Promise.all(requests);
+    await Bun.sleep(0);
+    expect(starts).toHaveLength(12);
+  } finally {
+    controller.abort();
+    await Bun.sleep(0);
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test("one worker holds its slot through body download and foreground preempts background", async () => {
   const starts: string[] = [];

@@ -106,7 +106,8 @@ export class Pipeline {
     for (const [key, job] of this.jobs) {
       // A new focus must not wait for an old lookahead transfer, even if that
       // photo is still inside the new lookahead window. Requeue it below.
-      if (this.backend === "server" && this.downloading.has(key) && key !== this.pinned) {
+      if (this.backend === "server" && this.downloading.has(key) &&
+          (key !== this.pinned || job.priority !== 0)) {
         this.controllers.get(key)?.abort();
         this.jobs.delete(key);
         this.states.delete(key);
@@ -157,6 +158,11 @@ export class Pipeline {
       (a, b) => a.priority - b.priority,
     );
     for (const job of jobs) {
+      // A promoted lookahead request must finish cancelling before its new
+      // priority-zero request can start. Do not let another background job
+      // take a freed slot during that brief cancellation window.
+      if (this.backend === "server" && this.pinned && job.key !== this.pinned &&
+          this.controllers.get(this.pinned)?.signal.aborted) continue;
       if (this.decoding.has(job.key) || this.downloading.has(job.key)) continue;
       if (job.full || (this.backend === "browser" && !job.photo.raw)) job.bytes ??= this.originals.get(job.photo.path);
       if (job.bytes) {

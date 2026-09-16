@@ -1,5 +1,5 @@
 import type { ImageBackend } from "./image-backend";
-import { IMAGE_DOWNLOAD_WORKERS } from "./image-downloads";
+import { FULL_DOWNLOAD_WORKERS } from "./image-downloads";
 
 const MB = 1024 * 1024;
 const desktop = {
@@ -19,7 +19,7 @@ export function pipelineLimits(device: { userAgent: string; platform: string; ma
     (device.platform === "MacIntel" && device.maxTouchPoints > 1));
   const limits = { ...(mobileApple ? ios : desktop) };
   if (backend === "server") {
-    limits.downloads = IMAGE_DOWNLOAD_WORKERS;
+    limits.downloads = FULL_DOWNLOAD_WORKERS;
     limits.workers = mobileApple ? 2 : 10;
     limits.originalBytes = mobileApple ? 64 * MB : 192 * MB;
   }

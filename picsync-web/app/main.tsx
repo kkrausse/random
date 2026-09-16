@@ -479,6 +479,9 @@ function Thumbnail({ photo }: { photo: Photo }) {
         }, () => {
           failed = true;
           setStatus("error");
+        }, () => {
+          const rect = image.current!.getBoundingClientRect();
+          return Math.max(0, rect.top - window.innerHeight, -rect.bottom);
         });
       }
     });
