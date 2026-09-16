@@ -14,13 +14,13 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Press `Alt+S` to open the picker globally, including from permission and question prompts.
 - The picker opens as a vertically and horizontally centered, extra-large dialog. It can grow to 116 columns and 40 rows on laptops and wide terminals, while narrow screens use the full terminal width and height by extending through the host's one-cell dialog insets. **Close**, `Left`, or `Escape` dismisses it without leaving the originating session (or Home).
 - Labeled sections with prominent dividers show **Active → Archived** (including legacy inactive markers).
-- Click **Archive** or press `x` to stop the session family, archive the parent's transcript locally, and delete the live family. Click **Restore to active** or press `r` to import the parent without starting work. These actions keep the picker open.
-- Cleanup interrupts every family member, including idle sessions. If V2 returns 500 for an inactive local session whose directory no longer exists, archival skips that unavailable runtime and preserves the original directory in the archive. Reachable descendants still receive normal cleanup. Active sessions and other cleanup failures stop archival before deletion.
+- Click **Archive** or press `x` to **soft archive**: recursively stop the family, remove its tracked shells, cancel all pending durable inbox items, and verify inactivity. Parent and child transcripts stay in OpenCode. **Restore** / `r` clears the parent's marker without starting work. These actions keep the picker open.
+- Cleanup repeats the stop/shell/inbox sweep and requires two consecutive clean checks, with a short settling interval. It discovers late descendants and retries up to four sweeps. If cleanup fails or work keeps arriving, the picker reports the error rather than marking the family archived. Unreachable runtimes (including deleted directories) are errors in this stricter soft-archive flow.
 - After `x` or `r` succeeds, selection moves to the next row in the original section, or the previous row at the end of that section, while preserving the scroll offset. If the section had only one row, selection falls back to **New session**. Navigating while the request is pending keeps your newer selection.
-- Archived parents appear under **Archived** with subdued titles, a message count, and a scrollable user/assistant transcript preview. `Enter` reminds you to restore with `r` before opening the session in OpenCode.
+- Legacy local archive files appear under **Archived** with subdued titles, a message count, and a scrollable user/assistant transcript preview. `Enter` reminds you to restore these with `r` before opening. Soft-archived sessions open their normal history directly.
 - Press `/` to filter loaded live sessions and all archived parents by title or directory; submit an empty filter to clear it.
-- Legacy inactive markers remain readable. They still describe live sessions, so running/attention status takes precedence. Press `x` to archive one, or `r` to clear its old marker. Existing markers are not automatically converted into deleted sessions.
-- Archiving a child acts on its highest loaded parent. Cleanup discovers descendants through the paginated API, including children outside the picker's loaded pages. Children are deleted but **not archived or restored**.
+- Existing inactive markers remain readable. Running/attention status takes precedence, so renewed activity remains visible. Press `x` to run cleanup again, or `r` to clear the marker.
+- Archiving or restoring a child resolves its top-level parent through the API, including unloaded ancestors. Cleanup follows all paginated descendants. **Only the root owns the inactive marker**; old child markers are cleared for that family. Children inherit the parent's lifecycle section and remain nested under it.
 - Shell cleanup lists each family's locations, matches `shell.metadata.sessionID`, and calls `shell.remove`. OpenCode handles termination; the plugin does not implement signal escalation. This covers tracked owned shells, not arbitrary untracked processes.
 - Status indicators use a single-cell far-left gutter: `!` for permissions, `?` for questions, and a yellow Braille spinner for running sessions. There is no selection sidebar, so status changes do not shift session titles or consume extra horizontal space.
 - Indicators use the active theme's semantic status colors.
@@ -109,7 +109,42 @@ estimates use current prices rather than historical billing rates.
 
 ## Archive storage and API sequence
 
-Archives are local to the TUI machine, including when connected to a remote server:
+### Soft archive (current picker behavior)
+
+`src/soft-archive.ts` preserves the complete live family and uses the connected
+2.0.3 client's APIs:
+
+1. Resolve the root through the API.
+2. Recursively enumerate paginated descendants, interrupting each member with
+   `continue: false` before listing its children. Refresh locations on each sweep.
+3. Remove tracked shells whose `metadata.sessionID` belongs to the family, at each family's location.
+4. List and cancel every pending durable inbox item (user, synthetic, compaction, or move).
+5. Interrupt again and drain inboxes again after completion notifications.
+6. Wait briefly, rediscover descendants, and verify no family member is active,
+   no owned shell remains, and every inbox is empty. Require two consecutive clean
+   sweeps; fail after four sweeps if the family does not settle.
+7. Persist only the root's `session-lifecycle.inactive` marker in TUI plugin storage.
+
+The existing parent controls the UI section and child ordering. `r` clears its
+marker and any stale child markers. Opening a soft-archived session reads its
+normal OpenCode history directly; no export/import is needed. These sessions
+continue to appear in native history/search and weekly usage totals.
+
+This is a best-effort cleanup, not a server-enforced execution lock: a different
+client or a later producer can submit new work. The picker still surfaces running
+or attention state over an inactive marker. Cleanup covers tracked owned shells,
+not arbitrary untracked processes. The marker is written only after verification;
+if marker storage fails, history stays intact and cleanup can be retried.
+
+### Legacy export/delete archives
+
+`archiveSession` in `src/archive.ts` is **deprecated** and no longer called by the
+picker. It remains available for legacy verification/recovery. Existing files
+still appear in the picker with transcript previews and can be restored with `r`.
+They are not automatically imported or converted. Unlike soft archives, these
+sessions must be imported before opening their history in OpenCode.
+
+Legacy archives are local to the TUI machine, including when connected to a remote server:
 
 ```text
 ${XDG_DATA_HOME:-~/.local/share}/opencode/claude-sessions/archives/<sessionID>.json
@@ -121,7 +156,7 @@ with mode `0600`, synced, atomically renamed, and read back before deletion.
 Back up this directory to preserve archived history. The picker reads it when opened;
 OpenCode's normal session search does not include these files.
 
-Archival uses the connected client's APIs:
+The deprecated export/delete flow uses the connected client's APIs:
 
 1. `POST /api/session/{id}/interrupt?continue=false` for each family member;
    recursively discover children with `GET /api/session?parentID={id}` and pagination.
@@ -171,7 +206,7 @@ selected session ID and the underlying API/filesystem error.
 
 Closing the picker interrupts its read jobs; switching selection cancels obsolete
 preview/context jobs. Read HTTP calls receive cancellation signals. Once started,
-the archive/restore transaction continues independently of picker dismissal so
+the cleanup/restore transaction continues independently of picker dismissal so
 closing the dialog does not strand it between export and deletion. Host cache and
 storage methods also have no cancellation API. Lifecycle completion and failures
 remain observable after closing the picker. Mutations are not automatically retried.
@@ -182,6 +217,7 @@ remain observable after closing the picker. Mutations are not automatically retr
 bun run check
 bun test --preload @opentui/solid/preload
 bun run verify:v2
+bun run verify:soft-archive
 ```
 
 `verify:v2` is an opt-in integration check against the discovered running service.
@@ -190,6 +226,12 @@ checks the real archive/restore round trip, and cleans up its fixtures. It uses
 a temporary archive directory and never submits a model prompt. The server
 must be able to access the temporary directory on the machine running the check;
 this script is intended for a local service, not a different remote host.
+
+`verify:soft-archive` checks the new cleanup against disposable parent/child sessions,
+parked synthetic inbox items, and tracked shells. It verifies retained transcripts,
+empty inboxes, inactive execution, and preservation of an unrelated shell. It does
+not generate model responses or restart the shared service; restart recovery and
+future external submissions are outside this check.
 
 ## Local setup
 

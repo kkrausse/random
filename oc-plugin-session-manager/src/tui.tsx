@@ -8,7 +8,8 @@ import { descendantIDs, groupLabel, inheritLifecycle, lifecycleOwner, nestRows, 
 import { sectionNeighbor } from "./picker-selection"
 import { Cause, Effect } from "effect"
 import { makeRunner, operation } from "./effects"
-import { archiveSession, fileArchiveStore, restoreSession, type Archive, type ArchiveStore } from "./archive"
+import { fileArchiveStore, restoreSession, type Archive, type ArchiveStore } from "./archive"
+import { sessionFamily, softArchiveSession } from "./soft-archive"
 import { loadInbox, pendingOrder, requestKey } from "./inbox"
 import { createWeeklyUsageLoader, sumUsageTokens } from "./weekly-usage"
 
@@ -638,7 +639,8 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
 
   function changeLifecycle(inactive: boolean) {
     const selected = selectedSession()
-    if (!selected || changingLifecycle() || replying() || !archivesReady()) return
+    if (!selected || changingLifecycle() || replying()) return
+    if (!inactive && isArchived(selected.id) && !archivesReady()) return
     const session = lifecycleOwner(sessions(), selected)
     const family = [session.id, ...descendantIDs(sessions(), session.id)]
     const affected = new Set(family)
@@ -646,17 +648,15 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
     if (inactive && isArchived(session.id)) return
     setChangingLifecycle(true)
     return runner.start(Effect.gen(function* () {
+      let owner = session
       if (inactive) {
-        const saved = yield* operation({ operation: "Archive session", sessionID: session.id },
-          () => archiveSession(props.context.client, archiveStore, session))
-        for (const id of saved.familyIDs) affected.add(id)
-        for (const id of affected) deletedIDs.add(id)
-        // Move the preview before replacing the live row with its archive. Otherwise
-        // the archived transcript flashes while the lifecycle marker is persisted.
-        // Preserve a selection change the user made while the archive request ran.
-        if (selectedValue() === selected.id) setSelectedValue(neighbor)
-        setArchives((items) => [...items.filter((item) => item.transcript.info.id !== session.id), saved])
-        setSessions((items) => items.filter((item) => !affected.has(item.id)))
+        const stopped = yield* operation({ operation: "Archive session", sessionID: session.id },
+          () => softArchiveSession(props.context.client, session))
+        owner = stopped[0]!
+        for (const member of stopped) affected.add(member.id)
+        // Keep the authoritative parent available even when the picker began on
+        // a child whose ancestors were outside its loaded pages.
+        setSessions((items) => [...new Map([...items, ...stopped].map((item) => [item.id, item])).values()])
         setAttention((current) => new Map([...current].filter(([id]) => !affected.has(id))))
       } else if (isArchived(session.id)) {
         const restored = yield* operation({ operation: "Restore archived session", sessionID: session.id },
@@ -664,14 +664,22 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
         deletedIDs.delete(restored.id)
         setSessions((items) => [...items.filter((item) => item.id !== restored.id), restored])
         setArchives((items) => items.filter((item) => item.transcript.info.id !== session.id))
+      } else {
+        const family = yield* operation({ operation: "Load family to restore", sessionID: session.id },
+          () => sessionFamily(props.context.client, session))
+        owner = family[0]!
+        for (const member of family) affected.add(member.id)
+        setSessions((items) => [...new Map([...items, ...family].map((item) => [item.id, item])).values()])
       }
       yield* operation({ operation: "Update lifecycle marker", sessionID: session.id }, () => updateLifecycle((draft) => {
-        if (inactive) draft.inactive[session.id] = true
-        else delete draft.inactive[session.id]
+        for (const id of affected) {
+          delete draft.inactive[id]
+        }
+        if (inactive) draft.inactive[owner.id] = true
       }))
       // Don't steal selection if the user navigated while the request ran.
       if (selectedValue() === selected.id) setSelectedValue(neighbor)
-      props.context.ui.toast.show({ message: inactive ? "Session archived; family deleted" : "Session restored to active", variant: "success" })
+      props.context.ui.toast.show({ message: inactive ? "Session soft archived; family stopped, history retained" : "Session restored to active", variant: "success" })
     }).pipe(Effect.ensuring(Effect.sync(() => {
       setChangingLifecycle(false)
       setReviewVersion((version) => version + 1)
@@ -1202,7 +1210,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
             <text wrapMode="none" fg={props.context.theme.text.subdued}>
               {selectedSession() && isArchived(selectedSession()!.id)
                 ? `Archived · ${selectedMessages()?.length ?? 0} messages`
-                : previewLoading() ? "Checking for approval requests…" : previewError() ? `Preview unavailable: ${previewError()}` : visiblePreview()?.forms.length ? `Question · ${visiblePreview()!.forms[0]!.title}` : isInbox() && inboxErrors().length ? `${inboxErrors().length} location${inboxErrors().length === 1 ? "" : "s"} unavailable` : selectedSession() ? (options()[selectedIndex()] as { status?: string })?.status ?? "" : ""}
+                : previewLoading() ? "Checking for approval requests…" : previewError() ? `Preview unavailable: ${previewError()}` : visiblePreview()?.forms.length ? `Question · ${visiblePreview()!.forms[0]!.title}` : isInbox() && inboxErrors().length ? `${inboxErrors().length} location${inboxErrors().length === 1 ? "" : "s"} unavailable` : options()[selectedIndex()]?.state === "inactive" ? "Soft archived · history retained" : selectedSession() ? (options()[selectedIndex()] as { status?: string })?.status ?? "" : ""}
             </text>
             {isInbox() && visiblePreview()?.forms.length ? (
               <scrollbox flexGrow={1} minHeight={0} scrollY scrollX={false}>

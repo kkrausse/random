@@ -6,6 +6,15 @@ packages. Both the installed terminal and `/api/health` reported 2.0.3.
 
 ## Verdict
 
+**Current picker update:** `x` now uses history-preserving soft archival from
+`src/soft-archive.ts`. The export/delete function audited below is deprecated and
+retained for recovery/testing; existing local archives still restore normally.
+Soft archival resolves the full ancestry, recursively stops descendants, removes
+owned shells, drains durable inboxes, and requires two clean verification sweeps.
+Only the parent receives a UI marker. See the README for current behavior and
+`bun run verify:soft-archive` for its separate real-server check. The findings and
+limitations below describe the older export/delete implementation.
+
 The core picker and parent-transcript archive/restore flow work with V2.0.3
 after the fixes in this audit. This is a version-specific compatibility result,
 not a guarantee for future API releases or a lossless session-family backup.
