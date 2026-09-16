@@ -6,8 +6,9 @@
     "typecheck": "tsc --noEmit",
     "build": "bun app/build.ts",
     "start": "bun app/server.ts",
+    "auth:reset": "bun app/reset-auth.ts",
     "bench": "bun experiment/benchmark.ts",
-    "test": "bun test experiment/strip-plan.test.ts app/archive.test.ts"
+    "test": "bun test experiment/strip-plan.test.ts app/archive.test.ts app/auth.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -17,6 +18,7 @@
     "libraw-modern": "npm:libraw-wasm@1.6.0",
     "libraw-wasm": "1.0.5",
     "lucide-react": "^1.46.0",
+    "qrcode": "^1.5.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "tailwind-merge": "^3.7.0",
@@ -24,6 +26,7 @@
   },
   "devDependencies": {
     "@types/bun": "^1.4.2",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "typescript": "^7.0.2"

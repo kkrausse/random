@@ -14,7 +14,7 @@ photo opens, including before you zoom in.
 bun install --frozen-lockfile
 bun run build
 MEDIA_ROOT=/path/to/mounted/smb/archive bun run start
-# Open http://127.0.0.1:8789
+# Open the sign-in link printed at startup.
 ```
 
 `MEDIA_ROOT` is the mounted SMB share, or the underlying archive directory when
@@ -37,9 +37,8 @@ bookmarkable. This is a read-only archive viewer.
   are shared between simultaneous preview/full-resolution requests.
 - Eager preview processing for the selected folder, viewport priority, and
   full-resolution look-ahead for the previous/next photo.
-- Recent originals have a 192 MB in-memory cache. HTTP responses permit private
-  browser caching for one hour with ETags; browser storage policy determines
-  whether a later fetch actually hits disk cache.
+- Recent originals have a 192 MB in-memory cache. Protected HTTP responses use
+  `Cache-Control: no-store`; authentication runs before conditional requests too.
 - Full-resolution results are retained as **ImageBitmaps and drawn directly to
   canvas**, not encoded as PNG. Up to three are cached within 256 MB, with the
   open photo pinned (a single oversized image is allowed). Preview JPEGs have a
@@ -65,6 +64,7 @@ MEDIA_ROOT=/home/pi/photos HOST=192.168.1.207 LAN_CIDR=192.168.1.0/24 \
 ```
 
 Defaults accept loopback peers only; `HOST` and `LAN_CIDR` configure direct-LAN
+access. Also set `PICSYNC_PUBLIC_URL` to the trusted HTTPS origin for direct-LAN
 access. The server ignores forwarded headers. Mobile viewport/touch testing in
 Chromium is covered below; actual iPhone Safari performance remains to be tested.
 
@@ -83,7 +83,8 @@ to the separate app on local port 3000 is retained.
 
 ```sh
 # With the Photos share mounted, run from picsync-web on the Mac:
-MEDIA_ROOT=/Volumes/Photos HOST=127.0.0.1 PORT=8794 bun run start
+MEDIA_ROOT=/Volumes/Photos HOST=127.0.0.1 PORT=8794 \
+  PICSYNC_PUBLIC_URL=https://kevins-macbook-pro-2.tail7e28fb.ts.net:8443 bun run start
 # In another terminal (already configured):
 tailscale serve --bg --https=8443 http://127.0.0.1:8794
 # Inspect or disable only the gallery proxy:
@@ -95,6 +96,34 @@ The Mac must be awake, the SMB share mounted, and the Bun process running. No
 launch agent or persistent app service was installed. The Tailscale Serve mapping
 persists independently of the app process. Verified over this HTTPS URL: secure
 context, cross-origin isolation, archive folders, and a 6240 × 4168 RAW canvas.
+
+### Sign-in gate
+
+`app/auth.ts` is a standalone request guard based on bun-web-terminal's auth.
+It runs before every gallery route, including HTML, JS, CSS, workers, WASM,
+folder listings, and original photos. Only `/login` (minimal standalone HTML)
+and `POST /api/auth/login` are public. Unauthenticated navigations redirect to
+sign-in; other requests receive 401. Network restrictions still apply first.
+
+Startup prints a sign-in link and QR code containing a random 256-bit access
+key in a URL fragment. The login page clears the fragment and exchanges the key
+for a signed, origin-bound, HttpOnly, SameSite=Strict cookie (Secure on HTTPS).
+Cookies last 30 days. Links grant access to the entire archive; keep them private.
+
+macOS Keychain stores independent PicSync credentials under service
+`picsync-web.auth.v1`, account `port-<PORT>`. Keeping the same port preserves
+links and browser sessions across code changes and restarts. Keychain errors
+fail startup rather than silently switching credentials. To revoke all access:
+stop the server, run `PORT=8794 bun run auth:reset` (use your server's port),
+then start it again and use the new link. Restarting alone does not revoke access.
+
+Set `PICSYNC_PUBLIC_URL` to the exact externally used HTTPS origin, including
+its port. This is required for Tailscale Serve or future Funnel use; arbitrary
+hosts and forwarded headers are not trusted. When exposing via Funnel, retain
+the loopback bind and let Tailscale terminate HTTPS. Funnel is not enabled by
+this change. The same sign-in gate applies to public traffic. Already-open
+photos may remain in the app's memory until the page closes; revocation blocks
+subsequent server requests, not copies already downloaded.
 
 ### Verification
 
