@@ -75,8 +75,13 @@ test("saved credentials preserve sign-ins across restart; rotation revokes links
 
 test("invalid codes, tampered and expired cookies fail", async () => {
   const auth = fixture();
+  expect(auth.sessionStatus(new Request(remote))).toBe("missing");
   for (const key of ["", "wrong", "x".repeat(129)]) expect((await login(auth, remote, key)).status).toBe(401);
   const valid = cookie(await login(auth));
+  expect(auth.sessionStatus(new Request(remote, { headers: { cookie: valid } }))).toBe("valid");
+  expect(auth.sessionStatus(new Request(remote, { headers: { cookie: valid + "tampered" } }))).toBe("invalid-signature");
+  expect(auth.sessionStatus(new Request(remote, { headers: { cookie: valid.replace(/=\d+\./, "=1.") } }))).toBe("expired");
+  expect(auth.sessionStatus(new Request(remote, { headers: { cookie: "__Host-picsync-session=broken" } }))).toBe("malformed");
   for (const value of [valid + "tampered", valid.replace(/=\d+\./, "=1.")]) {
     expect((await auth.guard(new Request(remote, { headers: { cookie: value } }), peer))?.status).toBe(401);
   }

@@ -19,6 +19,7 @@ type Job = {
   bytes?: Uint8Array<ArrayBuffer>;
 };
 const MB = 1024 * 1024;
+const PREVIEW_EDGE = 320;
 export class Pipeline {
   renders = new Map<string, Render>();
   errors = new Map<string, string>();
@@ -235,8 +236,14 @@ export class Pipeline {
         ),
       );
       const image = stitchStrips(strips);
+      const ratio = Math.min(1, PREVIEW_EDGE / Math.max(image.width, image.height));
       const bitmap = await createImageBitmap(
         new ImageData(image.rgba, image.width, image.height),
+        job.full ? {} : {
+          resizeWidth: Math.max(1, Math.round(image.width * ratio)),
+          resizeHeight: Math.max(1, Math.round(image.height * ratio)),
+          resizeQuality: "low",
+        },
       );
       reusable = true;
       return bitmap;
@@ -271,7 +278,8 @@ export class Pipeline {
       if (format === "raw") bitmap = await this.raw(job);
       else {
         try {
-          bitmap = await createImageBitmap(new Blob([job.bytes!], { type: format }));
+          bitmap = await createImageBitmap(new Blob([job.bytes!], { type: format }),
+            job.full ? {} : { resizeWidth: PREVIEW_EDGE, resizeQuality: "low" });
         } catch (error) {
           throw new Error(`This file contains ${format}, regardless of its filename. The browser could not decode it (it may be unsupported or damaged): ${errorMessage(error)}`);
         }
@@ -289,19 +297,21 @@ export class Pipeline {
         });
         bitmap = undefined; // Ownership transfers to the bounded full-resolution cache.
       } else {
-        const ratio = Math.min(1, 480 / Math.max(bitmap.width, bitmap.height));
+        const ratio = Math.min(1, PREVIEW_EDGE / Math.max(bitmap.width, bitmap.height));
         const canvas = document.createElement("canvas");
-        canvas.width = Math.round(bitmap.width * ratio);
-        canvas.height = Math.round(bitmap.height * ratio);
+        canvas.width = Math.max(1, Math.round(bitmap.width * ratio));
+        canvas.height = Math.max(1, Math.round(bitmap.height * ratio));
         const context = canvas.getContext("2d");
         if (!context) throw new Error("Unable to allocate image canvas");
         context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        bitmap.close();
+        bitmap = undefined;
         const blob = await new Promise<Blob>((resolve, reject) =>
           canvas.toBlob(
             (b) =>
               b ? resolve(b) : reject(new Error("Image encoding failed")),
             "image/jpeg",
-            0.82,
+            0.72,
           ),
         );
         const width = canvas.width,
@@ -312,7 +322,8 @@ export class Pipeline {
           url: URL.createObjectURL(blob),
           width,
           height,
-          size: blob.size,
+          // Include displayed pixels, not only the much smaller JPEG payload.
+          size: blob.size + width * height * 4,
         });
       }
       // Keep up to three full-size images within 256 MB (always retain the open
