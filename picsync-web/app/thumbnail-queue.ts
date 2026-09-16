@@ -1,4 +1,5 @@
 import { renderURL } from "./image-backend";
+import { downloadImage } from "./image-downloads";
 
 type Request = {
   path: string;
@@ -49,7 +50,7 @@ export function createThumbnailQueue(concurrency = 6, download: (url: string, op
   };
 }
 
-const queue = createThumbnailQueue();
+const queue = createThumbnailQueue(6, (url, options) => downloadImage(url, options, 20));
 const callbacks = new Map<Element, (visible: boolean) => void>();
 let observer: IntersectionObserver | undefined;
 
