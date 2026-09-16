@@ -1,6 +1,7 @@
 import { stitchStrips } from "../experiment/stitch-strips.js";
 import { errorMessage } from "./error-details.js";
 import { imageFormat } from "./image-format";
+import { rawWorkers } from "./raw-workers";
 import { pipelineLimits, type PipelineLimits } from "./pipeline-limits";
 
 export type Photo = { name: string; path: string; bytes: number; raw: boolean };
@@ -22,6 +23,7 @@ type Job = {
   embedded?: boolean;
   orientation?: number;
   previewUnavailable?: boolean;
+  downloadOnly?: boolean;
 };
 const PREVIEW_EDGE = 320;
 export class Pipeline {
@@ -35,14 +37,15 @@ export class Pipeline {
   private decoding = new Map<string, number>();
   private controllers = new Set<AbortController>();
   private stops = new Set<() => void>();
-  private idleWorkers: Worker[] = [];
   private reserved = 0;
   private dead = false;
   private pinned: string | undefined;
   private lookahead: string[] = [];
   private reported = 0;
   private reportWindow = 0;
-  constructor(private changed: () => void, readonly limits: PipelineLimits = pipelineLimits()) {}
+  constructor(private changed: () => void, readonly limits: PipelineLimits = pipelineLimits()) {
+    if (typeof window !== "undefined" && crossOriginIsolated) rawWorkers();
+  }
   key(photo: Photo, full = false) {
     return `${photo.path}:${full ? "full" : "thumb"}`;
   }
@@ -59,7 +62,10 @@ export class Pipeline {
     const key = this.key(photo, full);
     if (this.dead || this.renders.has(key) || this.errors.has(key)) return;
     const existing = this.jobs.get(key);
-    if (existing) existing.priority = Math.min(existing.priority, priority);
+    if (existing) {
+      existing.priority = Math.min(existing.priority, priority);
+      existing.downloadOnly = false;
+    }
     else this.jobs.set(key, { photo, full, priority, key });
     this.pump();
   }
@@ -87,10 +93,10 @@ export class Pipeline {
     this.pinned = photo ? this.key(photo, true) : undefined;
   }
   view(photos: Photo[], index: number | null) {
-    const upcoming = index === null ? [] : photos.slice(index, index + 3);
+    const upcoming = index === null ? [] : photos.slice(index, index + 11);
     this.pin(upcoming[0]);
     const wanted = new Set(upcoming.map((photo) => this.key(photo, true)));
-    this.lookahead = [...wanted];
+    this.lookahead = [...wanted].slice(0, 3);
     for (const [key, job] of this.jobs) {
       if (job.full && !wanted.has(key) &&
           !this.downloading.has(key) && !this.decoding.has(key)) {
@@ -106,8 +112,10 @@ export class Pipeline {
         const key = this.key(photo, true);
         if (this.renders.has(key) || this.errors.has(key)) return;
         const existing = this.jobs.get(key);
-        if (existing) existing.priority = priority;
-        else this.jobs.set(key, { photo, full: true, priority, key });
+        if (existing) {
+          existing.priority = priority;
+          existing.downloadOnly = priority > 2;
+        } else this.jobs.set(key, { photo, full: true, priority, key, downloadOnly: priority > 2 });
       });
     }
     this.pump();
@@ -131,6 +139,7 @@ export class Pipeline {
       if (this.decoding.has(job.key) || this.downloading.has(job.key)) continue;
       if (job.full || !job.photo.raw) job.bytes ??= this.originals.get(job.photo.path);
       if (job.bytes) {
+        if (job.downloadOnly) continue;
         const foreground = this.pinned ? this.jobs.get(this.pinned) : undefined;
         // Keep draining ready previews while the foreground is downloading:
         // otherwise their admission budget could block that download forever.
@@ -152,6 +161,20 @@ export class Pipeline {
           0,
         );
         const admittedBytes = readyBytes + this.reserved;
+        // A jump to a new foreground photo must not get stuck behind downloaded
+        // lookahead that is intentionally waiting for a later viewer position.
+        if (!job.downloadOnly && admittedBytes + this.downloadBytes(job) > this.limits.downloadBytes) {
+          const ahead = jobs.filter(j => j.downloadOnly && j.bytes).reverse();
+          let retained = admittedBytes;
+          for (const cached of ahead) {
+            retained -= cached.bytes!.byteLength;
+            cached.bytes = undefined;
+            if (retained === 0 || retained + this.downloadBytes(job) <= this.limits.downloadBytes) break;
+          }
+          if (retained === 0 || retained + this.downloadBytes(job) <= this.limits.downloadBytes)
+            void this.download(job);
+          continue;
+        }
         if (admittedBytes === 0 || admittedBytes + this.downloadBytes(job) <= this.limits.downloadBytes)
           void this.download(job);
       }
@@ -194,6 +217,10 @@ export class Pipeline {
         for (const waiting of this.jobs.values())
           if (waiting.photo.path === job.photo.path && !waiting.bytes &&
               (waiting.full || !waiting.photo.raw)) waiting.bytes = job.bytes;
+        if (job.downloadOnly) {
+          this.states.set(job.key, "Downloaded ahead");
+          return;
+        }
         this.originals.delete(job.photo.path);
         this.originals.set(job.photo.path, job.bytes);
         let total = [...this.originals.values()].reduce(
@@ -248,44 +275,13 @@ export class Pipeline {
   private async raw(job: Job): Promise<ImageBitmap> {
     if (!crossOriginIsolated)
       throw new Error("RAW development requires trusted HTTPS or localhost.");
-    const workers: Worker[] = [];
-    const count = 1;
-    const cancels: (() => void)[] = [];
-    let reusable = false;
-    let stopped = false;
-    const stop = () => {
-      stopped = true;
-      for (const worker of workers) worker.terminate();
-      for (const cancel of cancels) cancel();
-    };
+    const controller = new AbortController();
+    const stop = () => controller.abort();
     this.stops.add(stop);
-    const timeout = setTimeout(stop, 120000);
     try {
-      const strips = await Promise.all(
-        Array.from({ length: count }, (_, index) => index).map(
-          (index) =>
-            new Promise<any>((resolve, reject) => {
-              const worker = this.idleWorkers.pop() ??
-                new Worker("/strip-worker.js", { type: "module" });
-              workers.push(worker);
-              cancels.push(() =>
-                reject(new Error("Decode cancelled or timed out")),
-              );
-              worker.onerror = (event) => {
-                event.preventDefault();
-                reject(new Error(`RAW worker failed to load or execute: ${event.message || "No browser error details"}${event.filename ? ` (${event.filename}:${event.lineno})` : ""}`));
-              };
-              worker.onmessage = ({ data }) => {
-                data.error ? reject(new Error(data.error)) : resolve(data);
-              };
-              const bytes = job.bytes!.slice();
-              worker.postMessage(
-                { bytes, halfSize: !job.full, count, index },
-                [bytes.buffer],
-              );
-            }),
-        ),
-      );
+      const strip = await rawWorkers().decode(job.bytes!, !job.full, controller.signal);
+      controller.signal.throwIfAborted();
+      const strips = [strip];
       const image = stitchStrips(strips);
       const ratio = Math.min(1, PREVIEW_EDGE / Math.max(image.width, image.height));
       const bitmap = await createImageBitmap(
@@ -296,17 +292,8 @@ export class Pipeline {
           resizeQuality: "low",
         },
       );
-      reusable = true;
       return bitmap;
     } finally {
-      clearTimeout(timeout);
-      if (reusable && !this.dead && !stopped) {
-        for (const worker of workers) {
-          worker.onmessage = null;
-          worker.onerror = null;
-          this.idleWorkers.push(worker);
-        }
-      } else stop();
       this.stops.delete(stop);
     }
   }
@@ -435,8 +422,6 @@ export class Pipeline {
     this.dead = true;
     for (const c of this.controllers) c.abort();
     for (const stop of this.stops) stop();
-    for (const worker of this.idleWorkers) worker.terminate();
-    this.idleWorkers = [];
     for (const render of this.renders.values()) {
       if (render.url) URL.revokeObjectURL(render.url);
       render.bitmap?.close();
