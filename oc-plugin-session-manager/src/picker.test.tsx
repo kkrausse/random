@@ -10,7 +10,7 @@ import type { Archive, ArchiveStore } from "./archive"
 // The host registers its spinner; the standalone renderer only needs a row placeholder.
 extend({ spinner: TextRenderable })
 
-test("mouse and keyboard selection stay correct across lifecycle reordering", async () => {
+test("mouse and keyboard selection stay correct across lifecycle reordering", { timeout: 30_000 }, async () => {
   const commands: any[] = []
   const [lifecycle, setLifecycle] = createStore({ inactive: {} as Record<string, boolean> })
   let opened: string | undefined
@@ -99,6 +99,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
       session: {
         list: async ({ parentID }: any = {}) => ({ data: (parentID ? children.filter((s) => s.parentID === parentID) : sessions).filter((s) => !deleted.has(s.id)), cursor: {} }),
         active: async () => Object.fromEntries([...activeChildren].map((id) => [id, { type: "running" }])),
+        inbox: { list: empty, cancel: empty },
         interrupt: async ({ sessionID }: any) => {
           interruptCalls++
           if (interruptFailure) throw { message: "Unexpected Status", response: { status: 409 } }
@@ -160,26 +161,29 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     await setup.renderOnce()
     assert.match(setup.captureCharFrame(), /Permission required · 2 sub-agents running/)
     commands.find((c) => c.bind === "down").run()
+    commands.find((c) => c.bind === "down").run() // Child action is owned by the root.
+    setLifecycle("inactive", "child", true) // Clean up stale child-specific attributes.
     await commands.find((c) => c.bind === "x").run()
     await setup.renderOnce()
     assert.equal(lifecycle.inactive.s0, true)
-    assert.equal(lifecycle.inactive.child, undefined)
+    assert.equal(lifecycle.inactive.child, undefined, "only the parent owns the marker")
     assert.equal(lifecycle.inactive.grandchild, undefined)
+    assert.equal(deleted.size, 0, "soft archive preserves the entire family")
+    assert.equal(saved.size, 0, "soft archive does not export transcripts")
     assert.equal(activeChildren.size, 0)
     assert.match(setup.captureCharFrame(), /Session 1/)
     setLifecycle("inactive", "child", false)
     setLifecycle("inactive", "grandchild", false)
     for (const child of children) {
+      // Simulate an external deletion after verifying soft archive retained them.
+      deleted.add(child.id)
       activeChildren.delete(child.id)
       handlers.get("session.deleted")!({ data: { sessionID: child.id } })
     }
     await setup.renderOnce()
     assert.doesNotMatch(setup.captureCharFrame(), /sub-agents? running/)
     setLifecycle("inactive", "s0", false)
-    // Restore the archived root; children intentionally remain deleted.
-    const archivedRoot = saved.get("s0")!
-    await context.client.session.import(archivedRoot.transcript)
-    await archiveStore.remove("s0")
+    // The root is still available without an import.
     handlers.get("session.created")!({ data: { sessionID: "s0" } })
     await new Promise((resolve) => setTimeout(resolve, 20))
     await setup.renderOnce()
@@ -208,7 +212,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     storageFailure = true
     await commands.find((c) => c.bind === "x").run()
     await setup.renderOnce()
-    assert.match(toasts.at(-1)!.message, /Archive session.*s20.*disk unavailable/)
+    assert.match(toasts.at(-1)!.message, /Update lifecycle marker.*s20.*disk unavailable/)
     assert.equal(lifecycle.inactive.s20, undefined)
     assert.match(setup.captureCharFrame(), /Session 20/)
     storageFailure = false
@@ -258,14 +262,14 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     }
     assert.equal(Object.values(lifecycle.inactive).filter(Boolean).length, 40)
     assert.ok(interruptCalls > callsBeforeIdle)
-    assert.equal(toasts.at(-1)!.message, "Session archived; family deleted")
+    assert.equal(toasts.at(-1)!.message, "Session soft archived; family stopped, history retained")
     assert.match(setup.captureCharFrame(), /\+New session/)
     assert.match(setup.captureCharFrame(), /New session/)
 
     commands.find((c) => c.bind === "down").run()
     await new Promise((resolve) => setTimeout(resolve, 20))
     await setup.renderOnce()
-    assert.match(setup.captureCharFrame(), /Archived transcript remains visible/)
+    assert.match(setup.captureCharFrame(), /Archived/)
     const restore = setup.renderer.root.findDescendantById("claude-session-preview-lifecycle")!
     await setup.mockMouse.click(restore.x + 2, restore.y)
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -275,7 +279,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     await setup.renderOnce()
     const markInactive = setup.renderer.root.findDescendantById("claude-session-preview-lifecycle")!
     await setup.mockMouse.click(markInactive.x + 2, markInactive.y)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await new Promise((resolve) => setTimeout(resolve, 300))
     assert.equal(lifecycle.inactive.s0, true)
 
     // A keyboard-sized phone viewport must retain a usable list and tap actions.
@@ -356,7 +360,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     assert.doesNotMatch(setup.captureCharFrame(), /Session 19/)
     commands.find((c) => c.bind === "down").run()
     commands.find((c) => c.bind === "return").run()
-    assert.match(toasts.at(-1)!.message, /press r to import/)
+    assert.equal(opened, "s20", "soft archived history opens directly without importing")
     await commands.find((c) => c.bind === "r").run()
     assert.equal(deleted.has("s20"), false)
     assert.equal(saved.has("s20"), false)

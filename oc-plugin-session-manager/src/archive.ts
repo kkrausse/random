@@ -68,6 +68,7 @@ function missing(error: unknown) {
   return (error as { _tag?: string })?._tag === "SessionNotFoundError"
 }
 
+/** @deprecated Export/delete archival. The picker now uses softArchiveSession; retained for legacy verification/recovery. */
 export async function archiveSession(client: Client, store: ArchiveStore, root: SessionInfo): Promise<Archive> {
   const family = new Map([[root.id, root]])
   const unavailable = new Set<string>()
