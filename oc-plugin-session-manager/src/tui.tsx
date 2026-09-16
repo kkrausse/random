@@ -1079,8 +1079,11 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
                     flexShrink={0}
                   >
                     {(() => {
+                      if (updating()) return (
+                        <spinner id={`claude-session-spinner-${option().value}`} frames={SPINNER_FRAMES} interval={80} color="#ef4444" />
+                      )
                       const state = option().state
-                      const icon = updating() || state === "running" ? "spinner"
+                      const icon = state === "running" ? "spinner"
                         : state === "permission" ? "!"
                         : state === "question" ? "?"
                         : state === "new" ? "+" : active() ? "❯" : ""
