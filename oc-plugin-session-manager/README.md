@@ -15,7 +15,7 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - The picker opens as a vertically and horizontally centered, extra-large dialog. It can grow to 116 columns and 40 rows on laptops and wide terminals, while narrow screens use the full terminal width and height by extending through the host's one-cell dialog insets. **Close**, `Left`, or `Escape` dismisses it without leaving the originating session (or Home).
 - Labeled sections with prominent dividers show **Active → Archived** (including legacy inactive markers).
 - Click **Archive** or press `x` to stop the session family, archive the parent's transcript locally, and delete the live family. Click **Restore to active** or press `r` to import the parent without starting work. These actions keep the picker open.
-- Cleanup interrupts every family member, including idle sessions. An unavailable location/runtime or failed cleanup stops archival before deletion and shows an error.
+- Cleanup interrupts every family member, including idle sessions. If V2 returns 500 for an inactive local session whose directory no longer exists, archival skips that unavailable runtime and preserves the original directory in the archive. Reachable descendants still receive normal cleanup. Active sessions and other cleanup failures stop archival before deletion.
 - After `x` or `r` succeeds, selection moves to the next row in the original section, or the previous row at the end of that section, while preserving the scroll offset. If the section had only one row, selection falls back to **New session**. Navigating while the request is pending keeps your newer selection.
 - Archived parents appear under **Archived** with subdued titles, a message count, and a scrollable user/assistant transcript preview. `Enter` reminds you to restore with `r` before opening the session in OpenCode.
 - Press `/` to filter loaded live sessions and all archived parents by title or directory; submit an empty filter to clear it.
@@ -136,6 +136,14 @@ Archival uses the connected client's APIs:
    and an explicit `location: transcript.info.location`. V2 otherwise imports
    into the server's default location, even when `info.location` is present.
    On success, move the archive into `archives/restored/` as a retained backup.
+
+For a local directory that has been removed, V2's interrupt endpoint can return
+500 while export and deletion still work. The plugin tolerates that response
+only when the local filesystem reports `ENOENT`, no workspace is attached, and
+the server's active-session list confirms the session is inactive. It skips
+runtime/shell calls for that session's unavailable location and checks inactivity
+again before saving and deleting. Other errors still abort archival. Restoring
+such an archive uses its original location, so recreate that directory first.
 
 Only the parent transcript and metadata return. Pending inbox work, child sessions,
 and processes do not return. Import does not submit a prompt. Failed deletion or

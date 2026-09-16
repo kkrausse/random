@@ -107,6 +107,43 @@ test("repeated child cursors stop before export or deletion", async () => {
   assert.ok(!f.calls.some((call) => call.startsWith("export:")))
 })
 
+test("archives inactive sessions in deleted directories while cleaning reachable children", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "session-archive-missing-"))
+  await rm(directory, { recursive: true })
+  const f = fixture()
+  f.root.location.directory = directory
+  f.client.session.active = async () => ({})
+  const interrupt = f.client.session.interrupt
+  f.client.session.interrupt = async (input: any) => {
+    if (input.sessionID === f.root.id) throw new Error("UnexpectedStatus", { cause: { status: 500 } })
+    await interrupt(input)
+  }
+  const list = f.client.shell.list
+  f.client.shell.list = async (input: any) => {
+    assert.notEqual(input.location.directory, directory, "must not start a runtime in the missing directory")
+    return list(input)
+  }
+  let saved: any
+  await archiveSession(f.client, { list: async () => [], remove: async () => {}, save: async (a) => { saved = a } }, f.root)
+  assert.equal(saved.transcript.info.location.directory, directory)
+  assert.ok(f.calls.includes("delete"))
+  assert.ok(f.calls.includes("shell:sh_child"))
+})
+
+test("missing-directory fallback refuses active sessions and unrelated server errors", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "session-archive-missing-"))
+  await rm(directory, { recursive: true })
+  for (const [path, status, active] of [[directory, 500, true], [directory, 503, false], [tmpdir(), 500, false]] as const) {
+    const f = fixture()
+    f.root.location.directory = path
+    f.client.session.active = async () => active ? { [f.root.id]: { type: "running" } } : {}
+    f.client.session.interrupt = async () => { throw new Error("UnexpectedStatus", { cause: { status } }) }
+    await assert.rejects(archiveSession(f.client, { list: async () => [], remove: async () => {}, save: async () => {} }, f.root), /UnexpectedStatus/)
+    assert.ok(!f.calls.includes("delete"))
+    assert.ok(!f.calls.includes("export:ses_root"))
+  }
+})
+
 test("restoring a child with a missing parent explains the required order and retains its archive", async () => {
   const f = fixture()
   const transcript = await f.client.session.export({ sessionID: f.root.id, sanitize: false })
