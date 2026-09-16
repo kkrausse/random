@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PicSync · Original image test</title>
+<style>
+  body { font: 16px system-ui; margin: 24px auto; padding: 0 16px; max-width: 760px; background: #f5f5f5; color: #222; }
+  article { background: white; border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 16px 0; }
+  button, a { font: inherit; margin-right: 16px; }
+  button { padding: 8px 12px; }
+  img { display: block; max-width: 100%; max-height: 70vh; object-fit: contain; margin-top: 16px; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+</style>
+<h1>Original image test</h1>
+<p>Untouched files from PicSync. No conversion, extracted previews, or JavaScript image decoder. Tap one at a time to test Safari’s native <code>&lt;img&gt;</code> support.</p>
+<p>“Open original” separately tests direct navigation. An OS preview or download there does not necessarily mean a photo gallery can display the file.</p>
+<pre id="browser"></pre>
+<main id="samples">Finding samples…</main>
+<p>A successful RAW load may still use an embedded JPEG. Reported dimensions help investigate; success alone does not prove full RAW development.</p>
+<script type="module">
+  document.querySelector('#browser').textContent = navigator.userAgent;
+  const main = document.querySelector('#samples');
+  try {
+    const response = await fetch('/samples');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const samples = await response.json();
+    main.textContent = samples.length ? '' : 'No supported sample files found.';
+    for (const sample of samples) {
+      const card = document.createElement('article');
+      const title = document.createElement('h2');
+      title.textContent = sample.name;
+      const detail = document.createElement('p');
+      detail.textContent = `${sample.type} · ${(sample.bytes / 1048576).toFixed(1)} MiB`;
+      const button = document.createElement('button');
+      button.textContent = 'Test inline image';
+      const link = document.createElement('a');
+      link.href = `/original/${sample.id}`;
+      link.textContent = 'Open original';
+      link.target = '_blank';
+      link.rel = 'noopener';
+      const status = document.createElement('p');
+      status.setAttribute('role', 'status');
+      status.textContent = 'Not tested';
+      button.onclick = () => {
+        card.querySelector('img')?.remove();
+        const image = new Image();
+        image.alt = sample.name;
+        const start = performance.now();
+        status.textContent = 'Loading original…';
+        button.disabled = true;
+        image.onload = () => {
+          status.textContent = `PASS: ${image.naturalWidth} × ${image.naturalHeight} decoded pixels · ${((performance.now() - start) / 1000).toFixed(1)} s`;
+          button.disabled = false;
+        };
+        image.onerror = () => {
+          status.textContent = 'FAIL: browser could not load/decode this image (check original link for transfer errors).';
+          button.disabled = false;
+        };
+        image.src = link.href;
+        card.append(image);
+      };
+      card.append(title, detail, button, link, status);
+      main.append(card);
+    }
+  } catch (error) {
+    main.textContent = `Could not load samples: ${error.message}`;
+  }
+</script>
+</html>
