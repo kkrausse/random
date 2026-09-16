@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { SourceDocument, type SourceWorkspace } from "../src/editor-source";
 import { attachChat, chatFor, editorLifecycle } from "../src/editor-adapter";
 import type { Service, WorkspaceController } from "@kev-browser-agent-kit/workspace/react";
 import { fixture as chatFixture } from "./fixture";
@@ -10,54 +9,6 @@ const deferred = <T = void>() => {
   return { promise, resolve, reject };
 };
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
-function fixture() {
-  const files = new Map([["/one", "original"], ["/two", "other"]]);
-  const writes: string[] = [];
-  let block: Promise<void> = Promise.resolve();
-  const workspace = {
-    fs: {
-      readFile: async (path: string) => new TextEncoder().encode(files.get(path)),
-      writeFile: async (path: string, text: string) => { await block; files.set(path, text); writes.push(text); },
-    },
-    flush: async () => {},
-  } as unknown as SourceWorkspace;
-  return { document: new SourceDocument(workspace), workspace, writes, files, block: (promise: Promise<void>) => { block = promise; } };
-}
-describe("source operation safety", () => {
-  test("typing during a slow save stays dirty and writes in order", async () => {
-    const f = fixture(); await f.document.open("/one");
-    const gate = deferred(); f.block(gate.promise);
-    f.document.edit("first"); const first = f.document.flush();
-    f.document.edit("second");
-    gate.resolve(); await first;
-    expect(f.document.dirty).toBe(true);
-    await f.document.flush();
-    expect(f.writes).toEqual(["first", "second"]);
-    expect(f.document.dirty).toBe(false);
-  });
-  test("late reads cannot overwrite typing or a newer selection", async () => {
-    const f = fixture(); await f.document.open("/one");
-    const gate = deferred<Uint8Array>();
-    f.workspace.fs.readFile = () => gate.promise;
-    const old = f.document.open("/two"); await tick();
-    f.document.edit("typed while read pending");
-    gate.resolve(new TextEncoder().encode("late"));
-    expect(await old).toBe(false);
-    expect(f.document.path).toBe("/one");
-    expect(f.document.text).toBe("typed while read pending");
-    await expect(f.document.open("/two")).rejects.toThrow("autosave");
-  });
-  test("flush failures retain dirty text and permit a retry", async () => {
-    const f = fixture(); await f.document.open("/one"); f.document.edit("retained");
-    f.workspace.flush = async () => { throw Error("disk unavailable"); };
-    await expect(f.document.flush()).rejects.toThrow("disk unavailable");
-    expect(f.document.dirty).toBe(true);
-    expect(f.document.text).toBe("retained");
-    f.workspace.flush = async () => {};
-    await f.document.flush(); expect(f.document.dirty).toBe(false);
-  });
-});
-
 describe("mounted editor lifecycle", () => {
   const owner = () => {
     const calls: string[] = [];
@@ -75,7 +26,7 @@ describe("mounted editor lifecycle", () => {
     await tick(); expect(f.calls).toEqual(["close", "start"]);
     cleanup(); await tick(); expect(f.calls).toEqual(["close", "start", "close"]);
   });
-  test("remount waits for the previous dirty document flush before restarting", async () => {
+  test("remount waits for the previous host cleanup before restarting", async () => {
     const f = owner(), gate = deferred();
     const cleanup = editorLifecycle(f.controller, f.start, () => gate.promise);
     await tick(); cleanup();

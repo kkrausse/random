@@ -8,7 +8,7 @@ const isPreviewReady = (frame: HTMLIFrameElement) => !!frame.contentDocument?.ge
 /** App recipe wiring only; the package owns all mounted editing UI. */
 export default function Editor({ exit, retry, recipe }: { exit(): void; retry(): void; recipe: ReturnType<typeof createSampleRecipe> }) {
   const { controller } = useWorkspace();
-  return <BrowserEditor controller={controller} hostPaths={hostPaths} initialPath="/src/App.tsx"
+  return <BrowserEditor controller={controller} hostPaths={hostPaths}
     isPreviewReady={isPreviewReady} onExit={exit} onRetry={retry}
     onReset={() => controller.run("Reset source", () => recipe.reset(controller))} />;
 }

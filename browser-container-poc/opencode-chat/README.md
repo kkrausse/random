@@ -31,7 +31,6 @@ import '@kev-browser-agent-kit/opencode-chat/editor.css';
 // The host owns eligibility, useState(false), its Open editor button and lazy mount.
 {allowed && isEditing && <PreparedBrowserEditor
   hostPaths={['/api']}
-  initialPath="/src/home.tsx"
   onExit={() => setIsEditing(false)}
 />}
 ```
@@ -225,16 +224,15 @@ and uses its existing `connection.fetch`, including authentication. For custom
 names/directories pass `{ serviceName, directory }` to both the recipe adapter
 and matching editor props. Default OpenCode directory is `/workspace`.
 
-With `recipe`, the mounted editor starts once (including React StrictMode),
-offers startup retry, and flushes the source document before closing through
+With `recipe`, the mounted panel starts once (including React StrictMode),
+offers startup retry, and closes through
 `controller.cancelAndClose()` on unmount. Retry/remount waits for prior cleanup.
 The controller itself remains reusable; its provider owns final disposal.
 Without `recipe`, the host owns starting/closing the workspace (for example via
 the existing `WorkspaceEditing`). Supply `onRetry` for that lifecycle. Chat
 clients live until their service is stopped or controller is aborted, so toggling
 the chat pane does not reconnect. The iframe attachment is released on unmount.
-The Exit button flushes pending source writes before calling `onExit`; arbitrary
-host-managed unmounts should occur after local autosave has completed.
+The Exit button calls the host's `onExit` callback.
 
 Preview readiness defaults to the attached iframe's load event. For an app that
 renders asynchronously, provide a stable `isPreviewReady(frame)` predicate;
@@ -242,18 +240,20 @@ the package observes document mutations until it returns true. Such a predicate
 requires a same-origin preview. `hostPaths` is passed unchanged to
 `endpoint.attachPreview`, so API routing continues to use the existing bridge.
 
-Source files are discovered recursively, excluding `node_modules`, `.git`, and
-`.opencode-state`. Override `listFiles(workspace)` and `initialPath` as needed.
-There is no app-specific seed/reset list. Dirty edits autosave every `autosaveMs`
-(default 1000), serializing writes and filesystem flushes. File switching waits
-for dirty text to flush; late reads cannot replace newer edits. Reload file
-explicitly picks up agent changes. Local autosave failures retain dirty text;
-the next interval retries automatically. Exit reports a flush failure rather than leaving.
+The panel provides chat and a live application preview. Ask the agent to edit
+workspace files; the preview uses the application's existing HMR. Manual source
+editing, file selection and autosave have been removed, including the
+`initialPath`, `listFiles` and `autosaveMs` props. Hosts can still provide an
+explicit `onReset` action. `sourcePaths` remains available for recipe seeding.
+
+Workspace mount startup/cleanup, chat attachment and OpenCode readiness use named
+Effect programs behind the existing Promise-based host API. Unmount interrupts
+startup; remount waits for cleanup. Readiness cancellation aborts HTTP/body reads
+and health-check backoff.
 
 **Persistence scope:** “flushed” means the existing workspace filesystem's local
 flush completed. It does not mean published, remotely saved, committed, or
-persisted to an application server. Concurrent agent/manual writes do not have
-revision conflict detection in the existing filesystem API. This integration
+persisted to an application server. This integration
 does not add a remote persistence endpoint or change the OpenCode wire protocol.
 
 `editor.css` includes the chat styles plus minimal scoped editor styles, and

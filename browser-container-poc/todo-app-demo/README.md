@@ -143,8 +143,8 @@ Guest `/api` calls go through the existing preview bridge to this real Bun serve
 
 The app owns the launcher, authorization, editing state, and readiness predicate.
 `src/editor-panel.tsx` mounts `PreparedBrowserEditor`; the toolkit composes its
-workspace provider, controller and default recipe. The editor's **Reload file** picks up agent edits before manual
-editing; manual text autosaves locally. Exit refreshes the normal app's backend
+workspace provider, controller and default recipe. The panel provides chat and
+live preview; ask the agent to edit application files. Exit refreshes the normal app's backend
 queries. The normal host page continues to use its built source.
 
 `.editor/` is ignored preparation output, not checked-in scaffolding. OPFS source
