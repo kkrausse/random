@@ -477,6 +477,7 @@ export function ChatView({
   footer,
 }: ChatViewProps) {
   const state = useChatSnapshot(controller);
+  const showConnection = !footer || state.connection !== "connected" || state.execution !== "idle";
   return (
     <section className="oc-chat" aria-label="OpenCode chat">
       <header className="oc-header">
@@ -512,22 +513,24 @@ export function ChatView({
       </div>
       <Composer key={state.sessionID ?? "none"} controller={controller} />
       <footer className="oc-footer">
-        <div className="oc-connection"><span role="status">
-          {state.connection === "connected"
-            ? state.execution === "idle"
-              ? "Ready"
-              : state.execution === "unknown"
-                ? "Checking execution…"
-                : state.execution === "retrying"
-                  ? "Retrying…"
-                  : "Working…"
-            : state.connection}
-        </span>
-        {state.connection !== "connected" && state.connection !== "connecting" && <Button
-          onClick={() => run(controller.reconnect())}
-        >
-          Reconnect
-        </Button>}</div>
+        {showConnection && (
+          <div className="oc-connection"><span role="status">
+            {state.connection === "connected"
+              ? state.execution === "idle"
+                ? "Ready"
+                : state.execution === "unknown"
+                  ? "Checking execution…"
+                  : state.execution === "retrying"
+                    ? "Retrying…"
+                    : "Working…"
+              : state.connection}
+          </span>
+          {state.connection !== "connected" && state.connection !== "connecting" && <Button
+            onClick={() => run(controller.reconnect())}
+          >
+            Reconnect
+          </Button>}</div>
+        )}
         {footer}
       </footer>
     </section>

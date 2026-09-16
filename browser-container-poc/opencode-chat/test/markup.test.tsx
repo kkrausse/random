@@ -19,6 +19,9 @@ test("unsupported candidate forms explain the limitation in the chat UI", async 
     expect(html).toContain("Choose budget");
     expect(html).toContain("This form cannot be answered by this chat client");
     expect(html).toContain("amount (number)");
+    const hosted = renderToStaticMarkup(<ChatView controller={c} footer={<p>Workspace ready</p>} />);
+    expect(hosted).toContain("Workspace ready");
+    expect(hosted).not.toContain('class="oc-connection"');
   } finally { c.dispose(); }
 });
 test("Markdown never executes HTML or unsafe links, and supports incomplete fences", () => {
