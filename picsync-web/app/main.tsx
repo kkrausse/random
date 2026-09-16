@@ -102,25 +102,27 @@ function App() {
   useEffect(() => {
     const engine = pipeline.current;
     if (!listing || !engine) return;
-    // Eagerly queue the folder; viewport intersections and the viewer jump the queue.
-    listing.photos.forEach((p) => engine.request(p, false, 50));
+    const nearby = new Map<string, Photo>();
+    const byPath = new Map(listing.photos.map((p) => [p.path, p]));
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            const p = listing.photos.find(
-              (p) => p.path === (entry.target as HTMLElement).dataset.path,
-            );
-            if (p) engine.request(p, false, 5);
-          }
+          const path = (entry.target as HTMLElement).dataset.path!;
+          const p = byPath.get(path);
+          if (entry.isIntersecting && p) nearby.set(path, p);
+          else nearby.delete(path);
         });
+        engine.previews([...nearby.values()]);
       },
       { rootMargin: "500px" },
     );
     grid.current
       ?.querySelectorAll("[data-path]")
       .forEach((node) => observer.observe(node));
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      engine.previews([]);
+    };
   }, [listing, search]);
   useEffect(() => {
     const engine = pipeline.current;
@@ -312,6 +314,7 @@ function App() {
                     key={p.path}
                     onClick={() => select(i)}
                     aria-label={`Open ${p.name}`}
+                    title={failure || p.name}
                   >
                     {render ? (
                       <img src={render.url} alt={p.name} loading="lazy" />
@@ -323,7 +326,7 @@ function App() {
                         <Image size={26} />
                         <span>
                           {failure
-                            ? "Preview unavailable"
+                            ? `Preview unavailable: ${failure}`
                             : (key && engine?.states.get(key)) || "Queued"}
                         </span>
                       </div>
@@ -351,7 +354,7 @@ function App() {
           <span>
             <span className="dot" /> {activity || "Ready to explore"}
           </span>
-          <span>LibRaw 1.6 · 2 workers / photo</span>
+          <span>LibRaw 1.6 · 10-worker pool</span>
         </footer>
       </main>
       <Dialog.Root

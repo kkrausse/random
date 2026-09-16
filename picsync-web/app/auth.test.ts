@@ -5,7 +5,7 @@ import { decodeCredentials, generateCredentials } from "./credentials";
 const local = "http://127.0.0.1:8789";
 const remote = "https://photos.example.com";
 const peer = "127.0.0.1";
-const paths = ["/", "/app.js", "/app.css", "/strip-worker.js", "/decode-strip.js", "/strip-plan.js", "/stitch-strips.js", "/modern/libraw.js", "/modern/libraw.wasm", "/api/folder", "/api/photo?path=private.ARW", "/unknown"];
+const paths = ["/", "/app.js", "/app.css", "/strip-worker.js", "/error-details.js", "/decode-strip.js", "/strip-plan.js", "/stitch-strips.js", "/modern/libraw.js", "/modern/libraw.wasm", "/api/folder", "/api/photo?path=private.ARW", "/api/client-error", "/unknown"];
 const fixture = () => new PicSyncAuth(8789, remote, generateCredentials());
 async function login(auth: PicSyncAuth, origin = remote, key = auth.secret) {
   return (await auth.guard(new Request(`${origin}/api/auth/login`, {
@@ -60,6 +60,15 @@ test("saved credentials preserve sign-ins across restart; rotation revokes links
   expect((await login(restarted, remote, auth.secret)).status).toBe(200);
   const rotated = fixture();
   expect((await rotated.guard(request, peer))?.status).toBe(401);
+  for (const path of paths) {
+    const revalidation = new Request(remote + path, {
+      headers: { cookie: request.headers.get("cookie")!, "if-none-match": '"cached"' },
+    });
+    expect(await restarted.guard(revalidation, peer)).toBeUndefined();
+    const denied = await rotated.guard(revalidation, peer);
+    expect(denied?.status).toBe(401);
+    expect(denied?.headers.get("cache-control")).toBe("no-store");
+  }
   expect((await login(rotated, remote, auth.secret)).status).toBe(401);
   for (const value of ["garbage", "e30="]) expect(() => decodeCredentials(value)).toThrow();
 });

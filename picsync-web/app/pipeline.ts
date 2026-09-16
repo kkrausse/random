@@ -1,4 +1,6 @@
 import { stitchStrips } from "../experiment/stitch-strips.js";
+import { errorMessage } from "./error-details.js";
+import { imageFormat } from "./image-format";
 
 export type Photo = { name: string; path: string; bytes: number; raw: boolean };
 export type Render = {
@@ -25,12 +27,15 @@ export class Pipeline {
   private jobs = new Map<string, Job>();
   private downloading = new Set<string>();
   private downloadingPaths = new Set<string>();
-  private decoding = new Set<string>();
+  private decoding = new Map<string, number>();
   private controllers = new Set<AbortController>();
   private stops = new Set<() => void>();
+  private idleWorkers: Worker[] = [];
   private reserved = 0;
   private dead = false;
   private pinned: string | undefined;
+  private reported = 0;
+  private reportWindow = 0;
   constructor(private changed: () => void) {}
   key(photo: Photo, full = false) {
     return `${photo.path}:${full ? "full" : "thumb"}`;
@@ -56,6 +61,19 @@ export class Pipeline {
     this.errors.delete(this.key(photo, full));
     this.request(photo, full, 0);
   }
+  previews(photos: Photo[]) {
+    const wanted = new Set(photos.map((photo) => this.key(photo)));
+    // Let active work finish, but discard offscreen work that has not started.
+    for (const [key, job] of this.jobs) {
+      if (!job.full && !wanted.has(key) &&
+          !this.downloading.has(key) && !this.decoding.has(key)) {
+        this.jobs.delete(key);
+        this.states.delete(key);
+      }
+    }
+    for (const photo of photos) this.request(photo, false, 5);
+    this.pump();
+  }
   reprioritize() {
     for (const job of this.jobs.values()) job.priority = 100;
   }
@@ -63,7 +81,13 @@ export class Pipeline {
     this.pinned = photo ? this.key(photo, true) : undefined;
   }
   get activity() {
-    return `${this.downloading.size}/8 downloads · ${this.decoding.size * 2}/10 decoder slots · ${this.jobs.size} queued`;
+    return `${this.downloading.size}/8 downloads · ${this.decoderSlots}/10 decoder slots · ${this.jobs.size} queued`;
+  }
+  private get decoderSlots() {
+    return [...this.decoding.values()].reduce((sum, count) => sum + count, 0);
+  }
+  private workerCount(job: Job) {
+    return job.full ? 2 : 1;
   }
   private pump() {
     if (this.dead) return;
@@ -81,7 +105,7 @@ export class Pipeline {
           foreground &&
           (foreground.bytes || this.originals.has(foreground.photo.path));
         if (
-          this.decoding.size < 5 &&
+          this.decoderSlots + this.workerCount(job) <= 10 &&
           (!foregroundReady || job.key === this.pinned)
         )
           void this.decode(job);
@@ -142,11 +166,30 @@ export class Pipeline {
     }
   }
   private fail(job: Job, error: unknown) {
-    if (!this.dead)
+    if (!this.dead) {
+      const message = error instanceof Error ? error.message : errorMessage(error);
+      const report = {
+        path: job.photo.path, mode: job.full ? "full" : "preview",
+        stage: this.states.get(job.key) ?? "Unknown", bytes: job.bytes?.byteLength ?? null,
+        expectedBytes: job.photo.bytes, error: errorMessage(error),
+        browser: typeof navigator === "undefined" ? "unknown" : navigator.userAgent.slice(0, 256),
+      };
+      console.error("[PicSync] Photo job failed", report);
+      if (Date.now() - this.reportWindow >= 60000) {
+        this.reportWindow = Date.now();
+        this.reported = 0;
+      }
+      if (this.reported++ < 20) {
+        void fetch("/api/client-error", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          credentials: "same-origin", body: JSON.stringify(report), keepalive: true,
+        }).catch(() => {}); // Reporting failures must never trigger more reports.
+      }
       this.errors.set(
         job.key,
-        error instanceof Error ? error.message : String(error),
+        message,
       );
+    }
     this.jobs.delete(job.key);
     this.states.delete(job.key);
   }
@@ -154,8 +197,12 @@ export class Pipeline {
     if (!crossOriginIsolated)
       throw new Error("RAW development requires trusted HTTPS or localhost.");
     const workers: Worker[] = [];
+    const count = this.workerCount(job);
     const cancels: (() => void)[] = [];
+    let reusable = false;
+    let stopped = false;
     const stop = () => {
+      stopped = true;
       for (const worker of workers) worker.terminate();
       for (const cancel of cancels) cancel();
     };
@@ -163,42 +210,50 @@ export class Pipeline {
     const timeout = setTimeout(stop, 120000);
     try {
       const strips = await Promise.all(
-        [0, 1].map(
+        Array.from({ length: count }, (_, index) => index).map(
           (index) =>
             new Promise<any>((resolve, reject) => {
-              const worker = new Worker("/strip-worker.js", { type: "module" });
+              const worker = this.idleWorkers.pop() ??
+                new Worker("/strip-worker.js", { type: "module" });
               workers.push(worker);
               cancels.push(() =>
                 reject(new Error("Decode cancelled or timed out")),
               );
               worker.onerror = (event) => {
                 event.preventDefault();
-                reject(new Error(event.message));
+                reject(new Error(`RAW worker failed to load or execute: ${event.message || "No browser error details"}${event.filename ? ` (${event.filename}:${event.lineno})` : ""}`));
               };
               worker.onmessage = ({ data }) => {
-                worker.terminate();
                 data.error ? reject(new Error(data.error)) : resolve(data);
               };
               const bytes = job.bytes!.slice();
               worker.postMessage(
-                { bytes, halfSize: !job.full, count: 2, index },
+                { bytes, halfSize: !job.full, count, index },
                 [bytes.buffer],
               );
             }),
         ),
       );
       const image = stitchStrips(strips);
-      return await createImageBitmap(
+      const bitmap = await createImageBitmap(
         new ImageData(image.rgba, image.width, image.height),
       );
+      reusable = true;
+      return bitmap;
     } finally {
       clearTimeout(timeout);
-      stop();
+      if (reusable && !this.dead && !stopped) {
+        for (const worker of workers) {
+          worker.onmessage = null;
+          worker.onerror = null;
+          this.idleWorkers.push(worker);
+        }
+      } else stop();
       this.stops.delete(stop);
     }
   }
   private async decode(job: Job) {
-    this.decoding.add(job.key);
+    this.decoding.set(job.key, this.workerCount(job));
     this.states.set(
       job.key,
       job.full ? "Developing full resolution" : "Preparing preview",
@@ -206,9 +261,21 @@ export class Pipeline {
     const started = performance.now();
     let bitmap: ImageBitmap | undefined;
     try {
-      bitmap = job.photo.raw
-        ? await this.raw(job)
-        : await createImageBitmap(new Blob([job.bytes!]));
+      // Reserve slots synchronously, but do not re-enter pump on a synchronous
+      // signature failure while it is still walking the current queue.
+      await Promise.resolve();
+      if (this.dead) return;
+      this.states.set(job.key, "Identify image format");
+      const format = imageFormat(job.bytes!);
+      this.states.set(job.key, format === "raw" ? "Develop RAW pixels" : `Decode ${format}`);
+      if (format === "raw") bitmap = await this.raw(job);
+      else {
+        try {
+          bitmap = await createImageBitmap(new Blob([job.bytes!], { type: format }));
+        } catch (error) {
+          throw new Error(`This file contains ${format}, regardless of its filename. The browser could not decode it (it may be unsupported or damaged): ${errorMessage(error)}`);
+        }
+      }
       if (this.dead) return;
       if (job.full) {
         // Retain decoded pixels directly, matching the experiment. Full-size PNG
@@ -286,6 +353,8 @@ export class Pipeline {
     this.dead = true;
     for (const c of this.controllers) c.abort();
     for (const stop of this.stops) stop();
+    for (const worker of this.idleWorkers) worker.terminate();
+    this.idleWorkers = [];
     for (const render of this.renders.values()) {
       if (render.url) URL.revokeObjectURL(render.url);
       render.bitmap?.close();
