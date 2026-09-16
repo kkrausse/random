@@ -125,22 +125,24 @@ export const MessagePart = memo(function MessagePart({
 const MessageRow = memo(function MessageRow({
   message,
   onOpenFile,
+  continuation = false,
 }: {
   message: SessionMessageInfo;
   onOpenFile?: OpenFile;
+  continuation?: boolean;
 }) {
   return (
     <article
-      className={`oc-message oc-message-${message.type}`}
+      className={`oc-message oc-message-${message.type}${continuation ? " oc-message-continuation" : ""}`}
       aria-label={`${message.type} message`}
     >
-      <div className="oc-role">
+      {!continuation && <div className="oc-role">
         {message.type === "user"
           ? "You"
           : message.type === "assistant"
             ? "OpenCode"
             : message.type}
-      </div>
+      </div>}
       {"text" in message && <Markdown text={message.text} />}
       {message.type === "assistant" &&
         <div className="oc-message-parts">{message.content.map((part, i) => (
@@ -273,11 +275,12 @@ export function Transcript({
             </p>
           </div>
         )}
-        {state.messages.map((message) => (
+        {state.messages.map((message, index) => (
           <MessageRow
             key={message.id}
             message={message}
             onOpenFile={onOpenFile}
+            continuation={message.type === "assistant" && state.messages[index - 1]?.type === "assistant"}
           />
         ))}
       </div>

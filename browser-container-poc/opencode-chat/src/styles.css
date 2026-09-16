@@ -73,10 +73,11 @@
   overflow-anchor: none;
 }
 .oc-message {
-  margin: 0 auto 22px;
+  margin: 0 auto 12px;
   max-width: 850px;
   overflow-wrap: anywhere;
 }
+.oc-message:has(+ .oc-message-continuation) { margin-bottom: 4px; }
 .oc-role {
   font-size: 12px;
   font-weight: 650;
