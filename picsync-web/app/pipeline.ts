@@ -1,6 +1,7 @@
 import { stitchStrips } from "../experiment/stitch-strips.js";
 import { errorMessage } from "./error-details.js";
 import { imageFormat } from "./image-format";
+import { pipelineLimits, type PipelineLimits } from "./pipeline-limits";
 
 export type Photo = { name: string; path: string; bytes: number; raw: boolean };
 export type Render = {
@@ -18,7 +19,6 @@ type Job = {
   key: string;
   bytes?: Uint8Array<ArrayBuffer>;
 };
-const MB = 1024 * 1024;
 const PREVIEW_EDGE = 320;
 export class Pipeline {
   renders = new Map<string, Render>();
@@ -37,7 +37,7 @@ export class Pipeline {
   private pinned: string | undefined;
   private reported = 0;
   private reportWindow = 0;
-  constructor(private changed: () => void) {}
+  constructor(private changed: () => void, readonly limits: PipelineLimits = pipelineLimits()) {}
   key(photo: Photo, full = false) {
     return `${photo.path}:${full ? "full" : "thumb"}`;
   }
@@ -82,13 +82,13 @@ export class Pipeline {
     this.pinned = photo ? this.key(photo, true) : undefined;
   }
   get activity() {
-    return `${this.downloading.size}/8 downloads · ${this.decoderSlots}/10 decoder slots · ${this.jobs.size} queued`;
+    return `${this.downloading.size}/${this.limits.downloads} downloads · ${this.decoderSlots}/${this.limits.workers} decoder slots · ${this.jobs.size} queued`;
   }
   private get decoderSlots() {
     return [...this.decoding.values()].reduce((sum, count) => sum + count, 0);
   }
   private workerCount(job: Job) {
-    return job.full ? 2 : 1;
+    return job.full ? Math.min(2, this.limits.workers) : 1;
   }
   private pump() {
     if (this.dead) return;
@@ -106,21 +106,22 @@ export class Pipeline {
           foreground &&
           (foreground.bytes || this.originals.has(foreground.photo.path));
         if (
-          this.decoderSlots + this.workerCount(job) <= 10 &&
+          this.decoderSlots + this.workerCount(job) <= this.limits.workers &&
           (!foregroundReady || job.key === this.pinned)
         )
           void this.decode(job);
       } else if (
         !this.downloadingPaths.has(job.photo.path) &&
-        this.downloading.size < 8 &&
-        (this.reserved + job.photo.bytes <= 256 * MB || this.reserved === 0)
+        this.downloading.size < this.limits.downloads
       ) {
         // Bound downloaded-but-not-decoded bytes as well as active HTTP requests.
         const readyBytes = [...this.jobs.values()].reduce(
           (n, j) => n + (j.bytes?.byteLength ?? 0),
           0,
         );
-        if (readyBytes + this.reserved < 256 * MB) void this.download(job);
+        const admittedBytes = readyBytes + this.reserved;
+        if (admittedBytes === 0 || admittedBytes + job.photo.bytes <= this.limits.downloadBytes)
+          void this.download(job);
       }
     }
     this.changed();
@@ -150,7 +151,7 @@ export class Pipeline {
           0,
         );
         for (const [key, bytes] of this.originals) {
-          if (total <= 192 * MB) break;
+          if (total <= this.limits.originalBytes) break;
           this.originals.delete(key);
           total -= bytes.byteLength;
         }
@@ -326,8 +327,8 @@ export class Pipeline {
           size: blob.size + width * height * 4,
         });
       }
-      // Keep up to three full-size images within 256 MB (always retain the open
-      // photo, even if it exceeds the budget); previews have a separate 48 MB budget.
+      // Separate device-specific budgets; always retain the open full-size photo
+      // even if it exceeds the budget.
       for (const full of [true, false]) {
         const entries = [...this.renders].filter(([key]) =>
           key.endsWith(full ? ":full" : ":thumb"),
@@ -337,8 +338,8 @@ export class Pipeline {
         for (const [key, render] of entries) {
           if (
             full
-              ? count <= 3 && (size <= 256 * MB || count === 1)
-              : size <= 48 * MB
+              ? count <= this.limits.fullCount && (size <= this.limits.fullBytes || count === 1)
+              : size <= this.limits.previewBytes
           )
             break;
           if (key === this.pinned) continue;
