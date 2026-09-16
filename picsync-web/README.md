@@ -33,8 +33,8 @@ initialized with its WASM module when the gallery loads. At most six downloads
 with a 192 MB admission budget, a 32 MB original cache, a 16 MB preview cache,
 and up to three full-resolution images (384 MB budget; a single oversized image
 is allowed). Downloads look up to ten photos ahead, bounded by the 192 MB
-admission budget; only the next two photos are developed ahead. Previews load within 160px
-of the viewport. Includes iPadOS in
+admission budget; only the next two photos are developed ahead. Previews load within two viewport heights
+above and below the viewport, updating on resize. Includes iPadOS in
 desktop browsing mode. The bundled WASM requires at least 256 MB per worker, so
 mobile uses one worker and desktop uses two. RAW decoding
 can grow its heap beyond 256 MB. The limits below describe the desktop profile.
@@ -43,7 +43,7 @@ can grow its heap beyond 256 MB. The limits below describe the desktop profile.
   visible while full-resolution pixels develop; no blank-screen replacement.
 - RAW thumbnails first request an embedded JPEG from authenticated `/api/preview`.
   ExifTool on the server tries `PreviewImage`, then `JpgFromRaw`, then `ThumbnailImage`.
-  Two extractions run concurrently, with a bounded queue and a 32 MB / 256-entry
+  Up to ten extractions run concurrently, with a bounded queue and a 32 MB / 256-entry
   in-memory cache keyed by file metadata. No preview files are written to disk.
   Responses remain `no-store`, and camera orientation is applied to thumbnails.
   A missing embedded JPEG (204) falls back to the original; extraction errors are
@@ -58,7 +58,7 @@ can grow its heap beyond 256 MB. The limits below describe the desktop profile.
   downloaded/queued data (one oversized original can exceed it). Download slots
   are independent of decoder slots. Embedded previews reserve at most 16 MB each;
   missing-preview fallbacks re-enter admission using the full original size.
-- Preview processing within 500px of the viewport (unstarted offscreen previews
+- Preview processing within two viewport heights above and below the viewport (unstarted offscreen previews
   leave the queue), and
   full-resolution development for the next two photos. Download-only lookahead
   extends up to ten photos ahead, within the download byte budget. Those bytes

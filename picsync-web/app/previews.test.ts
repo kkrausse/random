@@ -7,7 +7,7 @@ import { createPreviews } from "./previews";
 let root: string;
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), "picsync-previews-"));
-  for (let i = 0; i < 6; i++) await writeFile(join(root, `${i}.ARW`), "fixture");
+  for (let i = 0; i < 16; i++) await writeFile(join(root, `${i}.ARW`), "fixture");
 });
 afterAll(() => rm(root, { recursive: true, force: true }));
 
@@ -28,7 +28,7 @@ test("preview extraction shares requests, caches results, and invalidates change
   expect(calls).toBe(2);
 });
 
-test("extraction is limited to two processes and missing previews are cached", async () => {
+test("extraction is limited to ten processes and missing previews are cached", async () => {
   let active = 0, peak = 0, calls = 0;
   const preview = createPreviews(async () => {
     calls++;
@@ -37,10 +37,10 @@ test("extraction is limited to two processes and missing previews are cached", a
     active--;
     return null;
   });
-  expect(await Promise.all(Array.from({ length: 6 }, (_, i) => preview(join(root, `${i}.ARW`))))).toEqual(Array(6).fill(null));
-  expect(peak).toBe(2);
+  expect(await Promise.all(Array.from({ length: 16 }, (_, i) => preview(join(root, `${i}.ARW`))))).toEqual(Array(16).fill(null));
+  expect(peak).toBe(10);
   await preview(join(root, "1.ARW"));
-  expect(calls).toBe(6);
+  expect(calls).toBe(16);
 });
 
 test("failed extraction releases capacity and can be retried", async () => {
