@@ -481,13 +481,15 @@ export function ChatView({
     <section className="oc-chat" aria-label="OpenCode chat">
       <header className="oc-header">
         <div className="oc-toolbar">
-          <strong>OpenCode</strong>
-          {(showSessions || showModels) && (
-            <details className="oc-settings">
-              <summary>Session & model</summary>
-              <ChatSettings controller={controller} showSessions={showSessions} showModels={showModels} />
-            </details>
-          )}
+          <div className="oc-toolbar-copy">
+            <strong>OpenCode</strong>
+            {(showSessions || showModels) && (
+              <details className="oc-settings">
+                <summary>Session & model</summary>
+                <ChatSettings controller={controller} showSessions={showSessions} showModels={showModels} />
+              </details>
+            )}
+          </div>
           {headerActions}
         </div>
       </header>
