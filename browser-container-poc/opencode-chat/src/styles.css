@@ -29,6 +29,8 @@
 }
 .oc-toolbar {
   padding: 12px 16px;
+}
+.oc-header {
   border-bottom: 1px solid var(--oc-border);
 }
 .oc-footer {
@@ -43,7 +45,7 @@
 .oc-connection { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .oc-toolbar > strong { margin-right: auto; }
 .oc-settings > summary { cursor: pointer; padding: 5px 16px; color: var(--oc-muted); font-size: 12px; }
-.oc-toolbar, .oc-settings, .oc-composer { flex-shrink: 0; }
+.oc-header, .oc-composer { flex-shrink: 0; }
 .oc-controls {
   padding: 10px 16px;
   background: #f8fafc;
