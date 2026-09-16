@@ -12,10 +12,21 @@ Vendored from https://github.com/anomalyco/opencode:
 | `src/vendor/types.ts` | [`packages/client/src/promise/generated/types.ts`](https://github.com/anomalyco/opencode/blob/d44b52ca66b6bf69626c0384626d1a9cd9555977/packages/client/src/promise/generated/types.ts) | Exact 2.0.3 generated source; imported only as types, with no runtime SDK dependency. Reproduce with `bun scripts/sync-vendor-types.ts`, which verifies its SHA-256. |
 | `LICENSE.upstream` | [`LICENSE`](https://github.com/anomalyco/opencode/blob/d7a7256bb6b0952f486c95718cfbf460b1570a56/LICENSE) | Exact complete MIT notice, Copyright (c) 2025 opencode. Distributed in tarballs. |
 
-`src/api.ts` derives from this repository's `chat-client-demo/src/api.ts`:
-same injected string-only endpoint URL resolution, pagination, model-catalog
-activation and SSE parser. Replaced workspace imports and minimal hand-written
-message/event types with the pinned native contract; formatted the local copy. No code from the Solid UI,
+`src/api.ts` now uses the published **`@opencode/client/effect@2.0.3`** and
+**`effect@4.0.0-rc.112`**, pinned in `package.json` and `bun.lock`. The original
+handwritten HTTP wrapper and SSE parser have been replaced by official resource
+methods and the shared native event Stream. The local layer retains caller-owned
+string/init fetch routing, session pagination and the model activation barrier.
+`src/controller.ts` uses Effect programs, scopes, fibers and a ManagedRuntime.
+Vendored wire types remain the public React snapshot/reducer representation;
+official schemas perform HTTP decoding and schema-to-wire encoding.
+
+These runtime dependencies are bundled, with their notices collected in
+`THIRD-PARTY-LICENSES.txt`. Published 2.0.3 client/protocol/schema packages omit
+their license file; the release tag's root LICENSE was checked against the
+existing `LICENSE.upstream` and is used for those three packages.
+
+No code from the Solid UI,
 private packages, fonts or media is included. Markdown rendering is locally
 authored with Marked 17.0.4 tokenization and React escaping; upstream Markdown
 helpers were reviewed but not copied.

@@ -7,7 +7,7 @@ import { fixture } from "./fixture";
 
 test("unsupported candidate forms explain the limitation in the chat UI", async () => {
   const f = fixture();
-  f.forms.push({ id: "budget", sessionID: "s1", title: "Choose budget", fields: [{ key: "amount", type: "number" }] });
+  f.forms.push({ id: "frm_budget", sessionID: "ses1", title: "Choose budget", fields: [{ key: "amount", type: "number" }] });
   const c = createChatController({ endpoint: f.endpoint, directory: "/workspace" });
   try {
     await c.ready;
