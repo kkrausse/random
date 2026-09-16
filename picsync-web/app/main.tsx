@@ -114,7 +114,7 @@ function App() {
         });
         engine.previews([...nearby.values()]);
       },
-      { rootMargin: "500px" },
+      { rootMargin: `${engine.limits.previewMargin}px` },
     );
     grid.current
       ?.querySelectorAll("[data-path]")
@@ -131,8 +131,9 @@ function App() {
     if (selected === null || !photos[selected]) return;
     engine.reprioritize();
     engine.request(photos[selected], true, 0);
-    for (const i of [selected + 1, selected - 1])
-      if (photos[i]) engine.request(photos[i], true, 1);
+    if (engine.limits.prefetchFull)
+      for (const i of [selected + 1, selected - 1])
+        if (photos[i]) engine.request(photos[i], true, 1);
   }, [selected, listing, search]);
   useEffect(() => {
     setActivity(pipeline.current?.activity ?? "");
@@ -354,7 +355,7 @@ function App() {
           <span>
             <span className="dot" /> {activity || "Ready to explore"}
           </span>
-          <span>LibRaw 1.6 · 10-worker pool</span>
+          <span>LibRaw 1.6 · {engine?.limits.workers ?? 10}-worker pool</span>
         </footer>
       </main>
       <Dialog.Root

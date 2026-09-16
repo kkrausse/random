@@ -26,6 +26,15 @@ bookmarkable. This is a read-only archive viewer.
 
 ### Loading and caching
 
+**iPhone/iPad memory profile:** four pooled RAW workers total (one per preview,
+two per full-resolution photo), at most two downloads with a 64 MB admission budget, a 32 MB original
+cache, a 16 MB preview cache, and only the open full-resolution image (128 MB
+budget; a single oversized image is allowed). Full-resolution neighbor prefetch
+is disabled and previews load within 160px of the viewport. Includes iPadOS in
+desktop browsing mode. The bundled WASM requires at least 256 MB per worker, so
+this avoids the desktop pool's multi-gigabyte startup allocation. RAW decoding
+can grow its heap beyond 256 MB. The limits below describe the desktop profile.
+
 - Animated photo skeletons transition to 320px previews (JPEG quality 0.72). The preview stays
   visible while full-resolution pixels develop; no blank-screen replacement.
 - Modern **LibRaw 1.6**, **one worker per RAW preview, two per full-resolution photo**, a lazy pool of at
@@ -163,6 +172,12 @@ into that fixture using its startup link, then run in that same session:
 ```sh
 browser-control execute --session <session-id> --file app/verify.browser.js
 ```
+
+To exercise the iPhone scheduling profile in Chromium, use a fresh authenticated
+session, run `browser-control execute --session <session-id> 'state.verifyIOS = true'`,
+then the same script. Verified: peak four workers reused for twelve 320px previews,
+one full-resolution photo, no full-resolution neighbor prefetch, and one download
+per original. This simulates device detection; it does not verify Safari's memory ceiling.
 
 Verified at 390 × 844: folder selection, twelve previews, 6240 × 4168 full-size
 canvas, 1:1 pixel zoom, click-drag panning, real Chromium two-touch pinch back to
