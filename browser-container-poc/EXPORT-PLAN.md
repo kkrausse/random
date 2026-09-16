@@ -1,7 +1,31 @@
 # Export the browser container POC into Browser Agent Toolkit
 
-Status: planning for review. No repository creation, extraction, push, package
-publication, or deployment is authorized by this document.
+Status: local extraction implemented on September 16, 2026, following explicit
+approval to split out the source. The new local repository is the sibling
+`../browser-agent-toolkit`, intended for `kkrausse/browser-agent-toolkit`.
+GitHub repository creation, pushing, package publication, and deployment remain
+pending explicit approval. The original POC is retained here for history/review.
+
+## Local extraction result
+
+- Clean source snapshot; original history and chronological reports remain here.
+- Library source directories remain `workspace-api/` and `opencode-chat/`.
+- TODO example lives at `examples/todo-app/`, with proof-of-concept copy.
+- Retained runtime build tools, current OpenCode recipe, ripgrep packaging, and
+  Tailwind backend preparation; old unrelated experiments were omitted.
+- Root setup/build commands rebuild packages and automatically refresh Bun's
+  installed local copies. No version bumps or manual dependency update required.
+- Generated OpenCode inputs are still exact-hash qualified; a small import command
+  copies only the verified prerequisite payload into ignored local build storage.
+- Library/example builds, typechecks, unit tests, runtime resolver tests, and
+  production example HTTP smoke passed. Installed package outputs were compared
+  byte-for-byte with current build output. Browser agent acceptance was not rerun.
+- Live cross-package watchers and the `irs-tools` integration are future work.
+- A hosted demo is optional and deferred; OpenAI API-key/browser auth feasibility
+  can be investigated later. No BYOK UI or static deployment was implemented.
+
+The remaining sections preserve the design discussion; use the new repository's
+README for current commands and prerequisite limitations.
 
 ## Goal
 
@@ -26,7 +50,7 @@ exercise integration behavior.
   copy a self-contained deployment to AWS EC2, and run it there.
 - A clean static proof-of-concept demo is desirable, with visitors supplying
   their own model credentials. It needs a feasibility check before deployment.
-- Keep all work local for review until explicitly asked to create/push the repo.
+- Keep all work local for review until explicitly asked to create/push the GitHub repo.
 
 ## Proposed extraction scope
 
