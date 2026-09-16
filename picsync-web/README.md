@@ -24,6 +24,18 @@ ssh lrpi 'systemctl --user stop picsync-image-experiment'
 
 Initial discovery found two Sony ARW originals and two existing JPEG thumbnails used as controls; no HEIC or DNG samples were present. Verified HTTP response bytes match the sampled ARW's SHA-256, unknown IDs return 404, POST returns 405, and a request sourced from the Pi's Tailscale address returns 403. Actual iPhone Safari rendering remains to be tested on the device.
 
+The Pi's UFW default-deny policy also requires this LAN-only rule (installed for the experiment):
+
+```sh
+sudo ufw allow in on eth0 from 192.168.1.0/24 to 192.168.1.207 port 8788 proto tcp comment 'PicSync image experiment LAN only'
+```
+
+After adding it, both `/` and `/samples` were verified with curl from the development Mac over the LAN, not just from the Pi itself. Remove the rule when retiring the experiment:
+
+```sh
+sudo ufw delete allow in on eth0 from 192.168.1.0/24 to 192.168.1.207 port 8788 proto tcp
+```
+
 ## Existing reusable pipeline ideas
 
 - `fieldcut/server/scan.ts`: scan-time JPEG thumbnails and FFmpeg video proxies; Sony RAW conversion uses macOS `sips`, which is not available on the Pi.
