@@ -8,7 +8,7 @@
     "start": "bun app/server.ts",
     "auth:reset": "bun app/reset-auth.ts",
     "bench": "bun experiment/benchmark.ts",
-    "test": "bun test experiment/strip-plan.test.ts app/archive.test.ts app/auth.test.ts"
+    "test": "bun test experiment/strip-plan.test.ts app/archive.test.ts app/auth.test.ts app/pipeline.test.ts app/error-details.test.ts app/image-format.test.ts app/client-errors.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

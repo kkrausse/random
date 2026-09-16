@@ -4,10 +4,12 @@ import { BlockList } from "node:net";
 import { formats, listArchive, resolveArchive } from "./archive";
 import { PicSyncAuth } from "./auth";
 import { loadCredentials } from "./credentials";
+import { createClientErrorHandler } from "./client-errors";
 
 const port = Number(process.env.PORT ?? 8789);
 const publicUrl = process.env.PICSYNC_PUBLIC_URL;
 const auth = new PicSyncAuth(port, publicUrl, await loadCredentials(port));
+const clientError = createClientErrorHandler();
 
 const root = await realpath(process.env.MEDIA_ROOT ?? "/home/pi/photos");
 const modern = dirname(Bun.resolveSync("libraw-modern", import.meta.dir));
@@ -15,8 +17,9 @@ const assets = new Map<string, string>([
   ["/", join(import.meta.dir, "index.html")],
   ["/app.js", join(import.meta.dir, "dist/app.js")],
   ["/app.css", join(import.meta.dir, "dist/app.css")],
+  ["/strip-worker.js", join(import.meta.dir, "strip-worker.js")],
+  ["/error-details.js", join(import.meta.dir, "error-details.js")],
   ...[
-    "strip-worker.js",
     "decode-strip.js",
     "strip-plan.js",
     "stitch-strips.js",
@@ -53,7 +56,14 @@ const server = Bun.serve({
     if (!peer || !allowed.check(peer, "ipv4"))
       return new Response("LAN only", { status: 403, headers });
     const denied = await auth.guard(request, peer);
-    if (denied) return denied;
+    if (denied) {
+      if (denied.status >= 400)
+        console.warn("[PicSync] Request denied", { method: request.method,
+          route: new URL(request.url).pathname, status: denied.status });
+      return denied;
+    }
+    if (new URL(request.url).pathname === "/api/client-error" && request.method === "POST")
+      return clientError(request);
     if (!["GET", "HEAD"].includes(request.method))
       return new Response(null, { status: 405, headers });
     const url = new URL(request.url);
@@ -84,8 +94,24 @@ const server = Bun.serve({
         return new Response(file, { headers: photoHeaders });
       }
       const asset = assets.get(url.pathname);
-      if (asset) return new Response(Bun.file(asset), { headers });
-    } catch {
+      if (asset) {
+        const file = Bun.file(asset);
+        // Authentication above must run even for cache revalidation. HTML and
+        // private archive data remain no-store; only application code is cached.
+        if (url.pathname === "/") return new Response(file, { headers });
+        const etag = `"${file.size}-${file.lastModified}"`;
+        const assetHeaders = {
+          ...headers,
+          "Cache-Control": "private, no-cache, must-revalidate",
+          ETag: etag,
+          Vary: "Cookie",
+        };
+        if (request.headers.get("if-none-match") === etag)
+          return new Response(null, { status: 304, headers: assetHeaders });
+        return new Response(file, { headers: assetHeaders });
+      }
+    } catch (error) {
+      console.error("[PicSync] Archive request failed", { route: url.pathname, error });
       return new Response("Folder or photo unavailable", {
         status: 404,
         headers,

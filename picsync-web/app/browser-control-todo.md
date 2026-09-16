@@ -14,3 +14,18 @@
   producing false double-download/worker-leak counts. This was a test-script
   bug: added an idempotency guard and reran in fresh session `gentle-otter-701`.
   Result: peak ten workers, zero active after completion, one fetch per photo.
+# Same-origin navigation during pool verification (2026-09-15)
+
+- Browser Control v0.7.0, session `quiet-walrus-746`, disposable localhost fixture on port 8792.
+- Repeated `page.goto` from an authenticated isolated page returned HTTP 403;
+  the fixture button wait then timed out. Same-origin `page.reload()` recovered
+  and the complete worker-pool verification passed. The public-URL tab still
+  returned 403, so its photo failures were not reproduced in this session.
+- A direct `page.evaluate(() => location.reload())` produced
+  `execution-context/context-destroyed`; the next snapshot recovered normally.
+- Expected: navigation retains appropriate fetch metadata. Actual: explicit
+  navigation was denied by the app's origin/fetch-site gate. Use authenticated
+  fixture reload for this test; no authentication checks were weakened.
+- Updating the metrics init script in the same session retained the older init
+  script too, so its idempotence guard left `metrics.jobs` undefined. Created a
+  fresh session `calm-tiger-293` for the changed instrumentation.

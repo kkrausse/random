@@ -2,13 +2,14 @@
 // a "Test album" folder with twelve supported RAW originals (Photo 1.ARW, etc.).
 await page.addInitScript(() => {
   if (window.galleryMetrics) return;
-  window.galleryMetrics = { active: 0, peak: 0, downloads: {} };
+    window.galleryMetrics = { active: 0, peak: 0, created: 0, downloads: {}, jobs: [] };
   const NativeWorker = window.Worker;
   window.Worker = class extends NativeWorker {
     constructor(...args) {
       super(...args);
       this.stopped = false;
-      window.galleryMetrics.active++;
+       window.galleryMetrics.active++;
+      window.galleryMetrics.created++;
       window.galleryMetrics.peak = Math.max(
         window.galleryMetrics.peak,
         window.galleryMetrics.active,
@@ -21,6 +22,10 @@ await page.addInitScript(() => {
       }
       return super.terminate();
     }
+    postMessage(data, ...rest) {
+      window.galleryMetrics.jobs.push({ halfSize: data.halfSize, count: data.count });
+      return super.postMessage(data, ...rest);
+    }
   };
   const nativeFetch = window.fetch;
   window.fetch = (...args) => {
@@ -32,7 +37,9 @@ await page.addInitScript(() => {
   };
 });
 await page.setViewportSize({ width: 390, height: 844 });
-await page.goto("http://127.0.0.1:8792");
+// Sign in to the fixture first. Reload preserves same-origin fetch metadata
+// when Browser Control is driving a cross-origin-isolated page.
+await page.reload();
 await page.getByRole("button", { name: "Test album", exact: true }).waitFor();
 await page.getByRole("button", { name: "Test album", exact: true }).click();
 await page
@@ -85,8 +92,10 @@ await page.waitForFunction(
   { timeout: 120000 },
 );
 const metrics = await page.evaluate(() => window.galleryMetrics);
-if (metrics.peak > 10 || metrics.active !== 0)
+if (metrics.peak > 10 || metrics.created > 10 || metrics.active === 0)
   throw new Error(`Worker lifecycle failed: ${JSON.stringify(metrics)}`);
+if (metrics.jobs.some((job) => job.count !== (job.halfSize ? 1 : 2)))
+  throw new Error("Expected one worker per preview and two per full-resolution RAW");
 if (Object.values(metrics.downloads).some((n) => n !== 1))
   throw new Error(
     "Original downloaded more than once during thumbnail/full upgrade",
@@ -95,6 +104,9 @@ const overflow = await page.evaluate(
   () => document.documentElement.scrollWidth > innerWidth,
 );
 if (overflow) throw new Error("Mobile layout overflows");
+const previews = await page.locator(".tile img").count();
+await page.getByRole("button", { name: "Archive", exact: true }).click();
+await page.waitForFunction(() => window.galleryMetrics.active === 0);
 await cdp.detach();
 return {
   dimensions,
@@ -102,5 +114,5 @@ return {
   dragged,
   metrics,
   overflow,
-  photos: await page.locator(".tile img").count(),
+  photos: previews,
 };

@@ -28,29 +28,46 @@ bookmarkable. This is a read-only archive viewer.
 
 - Animated photo skeletons transition to 480px previews. The preview stays
   visible while full-resolution pixels develop; no blank-screen replacement.
-- Modern **LibRaw 1.6**, **two strip workers per RAW photo**, at most **ten
-  decoder workers**. The open photo is prioritized; new background decode jobs
+- Modern **LibRaw 1.6**, **one worker per RAW preview, two per full-resolution photo**, a lazy pool of at
+  most **ten decoder workers** reusing initialized WASM modules. The open photo is prioritized; new background decode jobs
   pause once its original is ready, until its full-resolution render completes.
   Existing jobs finish normally.
 - Up to **eight parallel downloads**, with a 256 MB admission budget for
   downloaded/queued originals (one oversized original can exceed it). Downloads
   are shared between simultaneous preview/full-resolution requests.
-- Eager preview processing for the selected folder, viewport priority, and
+- Preview processing within 500px of the viewport (unstarted offscreen previews
+  leave the queue), and
   full-resolution look-ahead for the previous/next photo.
-- Recent originals have a 192 MB in-memory cache. Protected HTTP responses use
-  `Cache-Control: no-store`; authentication runs before conditional requests too.
+- Recent originals have a 192 MB in-memory cache. Photos, listings and HTML use
+  `Cache-Control: no-store`. JS/CSS/WASM use private caching with mandatory
+  revalidation, avoiding repeated decoder payload transfers. Authentication runs
+  before conditional requests too; revoked sessions cannot get a 304 response.
 - Full-resolution results are retained as **ImageBitmaps and drawn directly to
   canvas**, not encoded as PNG. Up to three are cached within 256 MB, with the
   open photo pinned (a single oversized image is allowed). Preview JPEGs have a
   separate 48 MB budget. WASM heaps, active downloads and visible canvases add
-  memory beyond these cache budgets. Workers terminate after every job, on
-  folder changes, or after a 120-second timeout.
+  memory beyond these cache budgets. Idle workers retain their WASM heaps for
+  reuse; workers terminate on folder changes/page exit, decode failure, or a
+  120-second timeout.
 
 ARW/DNG use the existing Bayer strip implementation and its fixed-brightness
 settings; unsupported RAW geometry produces a retryable error. JPEG, PNG, WebP,
 AVIF and HEIC/HEIF use the browser's image decoder (HEIC support varies by
 browser). Videos are not listed. Thumbnails are generated client-side from
 downloaded originals, so the first visit still transfers the RAW files.
+Decoder selection checks file signatures: JPEG/HEIC/etc. uploaded with `.ARW`
+names use the browser decoder, without starting RAW workers. HEIC still requires
+browser support. Unknown signatures fail before allocating a WASM decoder.
+
+Decode failures show the actual error on preview tiles and in the viewer.
+Browser console entries prefixed `[PicSync]` include the photo path, resolution,
+byte count and worker stage (WASM initialization, RAW open, metadata, or pixel
+development), preserving object-valued LibRaw errors. Failures also POST to the
+authenticated `/api/client-error` endpoint and appear as `[PicSync] Browser photo
+failure` in the Bun terminal, including browser identity for phone diagnostics.
+Reports are bounded to 16 KB, 20/minute per pipeline and 60/minute per server.
+Server logs report denied
+requests and archive failures without logging cookies, keys, or URL queries.
 
 ### Phone / LAN access
 
@@ -135,15 +152,17 @@ bun test
 
 `app/verify.browser.js` is a Browser Control CLI integration check. Serve a
 disposable fixture at port 8792 containing a `Test album` folder with twelve RAW
-files named `Photo 1.ARW` through `Photo 12.ARW`, then run:
+files named `Photo 1.ARW` through `Photo 12.ARW`. Sign the Browser Control session
+into that fixture using its startup link, then run in that same session:
 
 ```sh
-browser-control execute --file app/verify.browser.js
+browser-control execute --session <session-id> --file app/verify.browser.js
 ```
 
 Verified at 390 × 844: folder selection, twelve previews, 6240 × 4168 full-size
 canvas, 1:1 pixel zoom, click-drag panning, real Chromium two-touch pinch back to
-the grid, no horizontal overflow, peak ten workers, zero lingering workers,
+the grid, no horizontal overflow, at most ten workers created and reused across jobs,
+zero lingering workers after leaving the folder,
 and exactly one fetch per original during preview/full upgrades.
 
 Performance correction: the initial gallery PNG conversion added about 2.2s to
