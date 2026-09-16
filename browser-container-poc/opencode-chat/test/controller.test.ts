@@ -325,6 +325,20 @@ test("form hydration failure is surfaced rather than treated as no requests", as
   expect(c.getSnapshot().error).toContain("404");
 });
 
+test("untitled creation lets the server name sessions and rename events update selected and background chats", async () => {
+  const { f, c } = start();
+  await c.ready;
+  await c.createSession();
+  const created = f.calls.find(call => call.url.pathname === "/proxy/api/session" && call.init.method === "POST")!;
+  // The official Effect client encodes absent optional fields as null.
+  expect(JSON.parse(String(created.init.body))).toMatchObject({ title: null, location: { directory: "/hidden" } });
+  f.emit("session.renamed", { sessionID: "ses_new", title: "Generated title" });
+  f.emit("session.renamed", { sessionID: "ses1", title: "Background title" });
+  await tick();
+  expect(c.getSnapshot().sessions.find(s => s.id === "ses_new")?.title).toBe("Generated title");
+  expect(c.getSnapshot().sessions.find(s => s.id === "ses1")?.title).toBe("Background title");
+});
+
 test("candidate session creation, model selection and inbox prompt acceptance hydrate real messages", async () => {
   const { f, c } = start();
   await c.ready;
