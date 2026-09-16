@@ -4,6 +4,7 @@ import { imageFormat } from "./image-format";
 import { rawWorkers } from "./raw-workers";
 import { pipelineLimits, type PipelineLimits } from "./pipeline-limits";
 import { imageBackend, renderURL, type ImageBackend } from "./image-backend";
+import { downloadImage } from "./image-downloads";
 
 export type Photo = { name: string; path: string; bytes: number; raw: boolean };
 export type Render = {
@@ -103,6 +104,14 @@ export class Pipeline {
     const wanted = new Set(upcoming.map((photo) => this.key(photo, true)));
     this.lookahead = [...wanted].slice(0, 3);
     for (const [key, job] of this.jobs) {
+      // A new focus must not wait for an old lookahead transfer, even if that
+      // photo is still inside the new lookahead window. Requeue it below.
+      if (this.backend === "server" && this.downloading.has(key) && key !== this.pinned) {
+        this.controllers.get(key)?.abort();
+        this.jobs.delete(key);
+        this.states.delete(key);
+        continue;
+      }
       if (this.backend === "server" && job.full && !wanted.has(key) && !this.decoding.has(key)) {
         this.controllers.get(key)?.abort();
         this.jobs.delete(key);
@@ -219,10 +228,9 @@ export class Pipeline {
         job.previewUnavailable = true;
         return;
       }
-      const response = await fetch(
-        this.backend === "server" ? renderURL(job.photo.path, job.full, job.priority) : `/api/photo?path=${encodeURIComponent(job.photo.path)}`,
-        { signal: controller.signal },
-      );
+      const response = this.backend === "server"
+        ? await downloadImage(renderURL(job.photo.path, job.full, job.priority), { signal: controller.signal }, job.priority)
+        : await fetch(`/api/photo?path=${encodeURIComponent(job.photo.path)}`, { signal: controller.signal });
       if (!response.ok) throw new Error(`Download failed (${response.status})`);
       job.bytes = new Uint8Array(await response.arrayBuffer());
       job.source = response.headers.get("X-PicSync-Source") ?? undefined;
