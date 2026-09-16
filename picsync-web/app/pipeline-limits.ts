@@ -1,3 +1,5 @@
+import type { ImageBackend } from "./image-backend";
+
 const MB = 1024 * 1024;
 const desktop = {
   workers: 10, downloads: 8, downloadBytes: 256 * MB,
@@ -11,8 +13,14 @@ const ios = {
 };
 export type PipelineLimits = typeof desktop;
 export function pipelineLimits(device: { userAgent: string; platform: string; maxTouchPoints: number } | undefined =
-  typeof navigator === "undefined" ? undefined : navigator): PipelineLimits {
+  typeof navigator === "undefined" ? undefined : navigator, backend: ImageBackend = "server"): PipelineLimits {
   const mobileApple = device && (/iPhone|iPad|iPod/.test(device.userAgent) ||
     (device.platform === "MacIntel" && device.maxTouchPoints > 1));
-  return { ...(mobileApple ? ios : desktop) };
+  const limits = { ...(mobileApple ? ios : desktop) };
+  if (backend === "server") {
+    limits.downloads = mobileApple ? 8 : 10;
+    limits.workers = mobileApple ? 2 : 10;
+    limits.originalBytes = mobileApple ? 64 * MB : 192 * MB;
+  }
+  return limits;
 }

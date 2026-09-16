@@ -6,12 +6,16 @@ import { PicSyncAuth } from "./auth";
 import { loadCredentials } from "./credentials";
 import { createClientErrorHandler } from "./client-errors";
 import { createPreviews } from "./previews";
+import { createConversions } from "./conversions";
 
 const port = Number(process.env.PORT ?? 8789);
 const publicUrl = process.env.PICSYNC_PUBLIC_URL;
-const auth = new PicSyncAuth(port, publicUrl, await loadCredentials(port));
+const lanUrl = process.env.PICSYNC_LAN_URL;
+const auth = new PicSyncAuth(port, publicUrl, await loadCredentials(port),
+  lanUrl ? { origin: lanUrl, cidr: process.env.LAN_CIDR ?? "127.0.0.0/8" } : undefined);
 const clientError = createClientErrorHandler();
 const preview = createPreviews();
+const render = createConversions();
 
 const root = await realpath(process.env.MEDIA_ROOT ?? "/home/pi/photos");
 const modern = dirname(Bun.resolveSync("libraw-modern", import.meta.dir));
@@ -36,13 +40,13 @@ const assets = new Map<string, string>([
 const allowed = new BlockList();
 const [network, prefix] = (process.env.LAN_CIDR ?? "127.0.0.0/8").split("/");
 allowed.addSubnet(network!, Number(prefix), "ipv4");
-const headers = {
-  "Cross-Origin-Opener-Policy": "same-origin",
-  "Cross-Origin-Embedder-Policy": "require-corp",
+allowed.addSubnet("127.0.0.0", 8, "ipv4");
+const baseHeaders = {
   "X-Content-Type-Options": "nosniff",
   "Cache-Control": "no-store",
 };
 const server = Bun.serve({
+  idleTimeout: 255,
   hostname: process.env.HOST ?? "127.0.0.1",
   port,
   ...(process.env.TLS_CERT && process.env.TLS_KEY
@@ -54,6 +58,11 @@ const server = Bun.serve({
       }
     : {}),
   async fetch(request, server) {
+    const isolated = !lanUrl || ["localhost", "127.0.0.1", "[::1]"].includes(new URL(request.url).hostname);
+    const headers: Record<string, string> = { ...baseHeaders, ...(isolated ? {
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp",
+    } : {}) };
     const peer = server.requestIP(request)?.address.replace(/^::ffff:/, "");
     if (!peer || !allowed.check(peer, "ipv4"))
       return new Response("LAN only", { status: 403, headers });
@@ -97,6 +106,24 @@ const server = Bun.serve({
         if (request.headers.get("if-none-match") === etag)
           return new Response(null, { status: 304, headers: photoHeaders });
         return new Response(file, { headers: photoHeaders });
+      }
+      if (url.pathname === "/api/render") {
+        const path = await resolveArchive(root, url.searchParams.get("path") ?? "");
+        if (!formats[extname(path).toLowerCase()]) return new Response("Unsupported photo", { status: 404, headers });
+        const size = url.searchParams.get("size");
+        if (size !== "full" && size !== "thumb") return new Response("Invalid render size", { status: 400, headers });
+        const value = Number(url.searchParams.get("priority") ?? 0);
+        const priority = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 100;
+        try {
+          const image = await render(path, size === "full", priority, request.signal);
+          return new Response(request.method === "HEAD" ? null : new Uint8Array(image.bytes), { headers: {
+            ...headers, "Content-Type": "image/jpeg", "Content-Length": String(image.bytes.byteLength),
+            "X-PicSync-Source": image.source, "X-PicSync-Width": String(image.width), "X-PicSync-Height": String(image.height),
+          } });
+        } catch (error) {
+          if (!request.signal.aborted) console.error("[PicSync] Server conversion failed", { path, size, error });
+          return new Response("Server image conversion failed", { status: 503, headers });
+        }
       }
       if (url.pathname === "/api/preview") {
         const path = await resolveArchive(root, url.searchParams.get("path") ?? "");
@@ -142,4 +169,4 @@ const server = Bun.serve({
   },
 });
 console.log(`PicSync: ${server.url} · archive ${root}`);
-await auth.printSignIn(publicUrl ?? `http://127.0.0.1:${server.port}`);
+await auth.printSignIn(lanUrl ?? publicUrl ?? `http://127.0.0.1:${server.port}`);

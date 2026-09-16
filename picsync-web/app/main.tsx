@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { Pipeline, type Photo } from "./pipeline";
+import { imageBackend } from "./image-backend";
 
 type Listing = {
   path: string;
@@ -90,7 +91,9 @@ function App() {
     return () => window.removeEventListener("popstate", pop);
   }, []);
   const navigate = (value: string) => {
-    history.pushState(null, "", `?folder=${encodeURIComponent(value)}`);
+    const params = new URLSearchParams(location.search);
+    params.set("folder", value);
+    history.pushState(null, "", `?${params}`);
     setPath(value);
   };
   const photos =
@@ -196,7 +199,7 @@ function App() {
             <RefreshCw size={18} />
           </Button>
         </div>
-        {!crossOriginIsolated && (
+        {imageBackend() === "browser" && !crossOriginIsolated && (
           <p className="notice">
             RAW photos need a secure connection. Open this app over trusted
             HTTPS (or localhost) to enable LibRaw 1.6 development.
@@ -355,7 +358,9 @@ function App() {
           <span>
             <span className="dot" /> {activity || "Ready to explore"}
           </span>
-          <span>LibRaw 1.6 · {engine?.limits.workers ?? 10}-worker pool</span>
+          <span>{engine?.backend === "browser"
+            ? `Browser LibRaw · ${engine.limits.workers}-slot pool`
+            : "Server LibRaw · 10-job pool"}</span>
         </footer>
       </main>
       <Dialog.Root
@@ -605,7 +610,7 @@ function Viewer({
             <>
               <span className="dot" />
               <span>
-                <span className="desktop">Full resolution · {full.source} original · </span>
+                <span className="desktop">Full resolution · {full.source} · </span>
                 {full.width} × {full.height}
               </span>
             </>

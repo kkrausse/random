@@ -29,3 +29,16 @@
 - Updating the metrics init script in the same session retained the older init
   script too, so its idempotence guard left `metrics.jobs` undefined. Created a
   fresh session `calm-tiger-293` for the changed instrumentation.
+
+## LAN server-conversion verification (2026-09-15)
+
+- Browser Control v0.7.0, session `tidy-sparrow-927`, direct LAN gallery.
+  Unscoped `page.getByRole("status").innerText()` failed with a strict-mode
+  violation: it matched both the gallery render status and Browser Control's
+  own `BC · RUN` status overlay. Reproduction: open a photo and read that
+  unscoped role during execute. Expected: one application status; actual: two.
+  Recovery: scope to `page.getByRole("dialog").getByRole("status")` and wait
+  for `/^Full resolution/` (a substring also matches "Queued for full resolution").
+  Verification then passed without a relay restart: zero workers/WASM/original
+  requests, native 6240 × 4168 canvas, ten-photo eager lookahead, and 70 ms to
+  display an already-prefetched next photo. Inspected the rendered photo visually.

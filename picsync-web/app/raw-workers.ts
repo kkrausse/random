@@ -3,7 +3,7 @@ import { pipelineLimits } from "./pipeline-limits";
 type Slot = { worker: Worker; ready: Promise<void>; tail: Promise<unknown> };
 
 // Page-lifetime pool: folder pipelines borrow it but never destroy its heaps.
-export function createRawWorkers(count = Math.min(2, pipelineLimits().workers)) {
+export function createRawWorkers(count = Math.min(2, pipelineLimits(undefined, "browser").workers)) {
   const slots: Slot[] = Array.from({ length: count }, () => {
     const worker = new Worker("/strip-worker.js", { type: "module" });
     const ready = exchange(worker, { type: "init" }).then(() => {});

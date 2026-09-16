@@ -3,6 +3,7 @@ import { errorMessage } from "./error-details.js";
 import { imageFormat } from "./image-format";
 import { rawWorkers } from "./raw-workers";
 import { pipelineLimits, type PipelineLimits } from "./pipeline-limits";
+import { imageBackend, renderURL, type ImageBackend } from "./image-backend";
 
 export type Photo = { name: string; path: string; bytes: number; raw: boolean };
 export type Render = {
@@ -24,6 +25,7 @@ type Job = {
   orientation?: number;
   previewUnavailable?: boolean;
   downloadOnly?: boolean;
+  source?: string;
 };
 const PREVIEW_EDGE = 320;
 export class Pipeline {
@@ -35,7 +37,7 @@ export class Pipeline {
   private downloading = new Set<string>();
   private downloadingPaths = new Set<string>();
   private decoding = new Map<string, number>();
-  private controllers = new Set<AbortController>();
+  private controllers = new Map<string, AbortController>();
   private stops = new Set<() => void>();
   private reserved = 0;
   private dead = false;
@@ -43,8 +45,11 @@ export class Pipeline {
   private lookahead: string[] = [];
   private reported = 0;
   private reportWindow = 0;
-  constructor(private changed: () => void, readonly limits: PipelineLimits = pipelineLimits()) {
-    if (typeof window !== "undefined" && crossOriginIsolated) rawWorkers();
+  readonly limits: PipelineLimits;
+  constructor(private changed: () => void, limits: PipelineLimits | undefined = undefined,
+    readonly backend: ImageBackend = imageBackend()) {
+    this.limits = limits ?? pipelineLimits(undefined, backend);
+    if (backend === "browser" && typeof window !== "undefined" && crossOriginIsolated) rawWorkers();
   }
   key(photo: Photo, full = false) {
     return `${photo.path}:${full ? "full" : "thumb"}`;
@@ -98,6 +103,12 @@ export class Pipeline {
     const wanted = new Set(upcoming.map((photo) => this.key(photo, true)));
     this.lookahead = [...wanted].slice(0, 3);
     for (const [key, job] of this.jobs) {
+      if (this.backend === "server" && job.full && !wanted.has(key) && !this.decoding.has(key)) {
+        this.controllers.get(key)?.abort();
+        this.jobs.delete(key);
+        this.states.delete(key);
+        continue;
+      }
       if (job.full && !wanted.has(key) &&
           !this.downloading.has(key) && !this.decoding.has(key)) {
         this.jobs.delete(key);
@@ -127,6 +138,7 @@ export class Pipeline {
     return [...this.decoding.values()].reduce((sum, count) => sum + count, 0);
   }
   private downloadBytes(job: Job) {
+    if (this.backend === "server") return job.full ? 24 * 1024 * 1024 : 256 * 1024;
     return !job.full && job.photo.raw && !job.previewUnavailable
       ? Math.min(job.photo.bytes, 16 * 1024 * 1024) : job.photo.bytes;
   }
@@ -137,7 +149,7 @@ export class Pipeline {
     );
     for (const job of jobs) {
       if (this.decoding.has(job.key) || this.downloading.has(job.key)) continue;
-      if (job.full || !job.photo.raw) job.bytes ??= this.originals.get(job.photo.path);
+      if (job.full || (this.backend === "browser" && !job.photo.raw)) job.bytes ??= this.originals.get(job.photo.path);
       if (job.bytes) {
         if (job.downloadOnly) continue;
         const foreground = this.pinned ? this.jobs.get(this.pinned) : undefined;
@@ -183,15 +195,15 @@ export class Pipeline {
   }
   private async download(job: Job) {
     const controller = new AbortController();
-    this.controllers.add(controller);
+    this.controllers.set(job.key, controller);
     this.downloading.add(job.key);
     this.downloadingPaths.add(job.photo.path);
     const reservedBytes = this.downloadBytes(job);
     this.reserved += reservedBytes;
     this.states.set(job.key, "Downloading");
-    const timeout = setTimeout(() => controller.abort(), 120000);
+    const timeout = setTimeout(() => controller.abort(new Error("Image request timed out")), this.backend === "server" ? 240000 : 120000);
     try {
-      if (!job.full && job.photo.raw && !job.previewUnavailable) {
+      if (this.backend === "browser" && !job.full && job.photo.raw && !job.previewUnavailable) {
         this.states.set(job.key, "Loading embedded JPEG preview");
         const response = await fetch(`/api/preview?path=${encodeURIComponent(job.photo.path)}`, { signal: controller.signal });
         if (response.status !== 204) {
@@ -208,19 +220,24 @@ export class Pipeline {
         return;
       }
       const response = await fetch(
-        `/api/photo?path=${encodeURIComponent(job.photo.path)}`,
+        this.backend === "server" ? renderURL(job.photo.path, job.full, job.priority) : `/api/photo?path=${encodeURIComponent(job.photo.path)}`,
         { signal: controller.signal },
       );
       if (!response.ok) throw new Error(`Download failed (${response.status})`);
       job.bytes = new Uint8Array(await response.arrayBuffer());
+      job.source = response.headers.get("X-PicSync-Source") ?? undefined;
       if (!this.dead) {
         for (const waiting of this.jobs.values())
           if (waiting.photo.path === job.photo.path && !waiting.bytes &&
-              (waiting.full || !waiting.photo.raw)) waiting.bytes = job.bytes;
+              (this.backend === "server" ? job.full && waiting.full : waiting.full || !waiting.photo.raw)) {
+            waiting.bytes = job.bytes;
+            waiting.source = job.source;
+          }
         if (job.downloadOnly) {
           this.states.set(job.key, "Downloaded ahead");
           return;
         }
+        if (this.backend === "server" && !job.full) return;
         this.originals.delete(job.photo.path);
         this.originals.set(job.photo.path, job.bytes);
         let total = [...this.originals.values()].reduce(
@@ -234,10 +251,10 @@ export class Pipeline {
         }
       }
     } catch (e) {
-      this.fail(job, e);
+      if (!controller.signal.aborted || this.jobs.get(job.key) === job) this.fail(job, e);
     } finally {
       clearTimeout(timeout);
-      this.controllers.delete(controller);
+      this.controllers.delete(job.key);
       this.downloading.delete(job.key);
       this.downloadingPaths.delete(job.photo.path);
       this.reserved -= reservedBytes;
@@ -273,6 +290,7 @@ export class Pipeline {
     this.states.delete(job.key);
   }
   private async raw(job: Job): Promise<ImageBitmap> {
+    if (this.backend !== "browser") throw new Error("Server returned RAW bytes instead of a rendered image");
     if (!crossOriginIsolated)
       throw new Error("RAW development requires trusted HTTPS or localhost.");
     const controller = new AbortController();
@@ -317,7 +335,7 @@ export class Pipeline {
       else {
         try {
           bitmap = await createImageBitmap(new Blob([job.bytes!], { type: format }),
-            job.full ? {} : { resizeWidth: PREVIEW_EDGE, resizeQuality: "low",
+            job.full || this.backend === "server" ? {} : { resizeWidth: PREVIEW_EDGE, resizeQuality: "low",
               ...(job.embedded ? { imageOrientation: "none" as const } : {}) });
         } catch (error) {
           throw new Error(`This file contains ${format}, regardless of its filename. The browser could not decode it (it may be unsupported or damaged): ${errorMessage(error)}`);
@@ -333,9 +351,19 @@ export class Pipeline {
           height: bitmap.height,
           size: bitmap.width * bitmap.height * 4,
           decodeMs: performance.now() - started,
-          source: format === "raw" ? "RAW" : format.slice("image/".length).toUpperCase(),
+          source: job.source ?? (this.backend === "server" ? "Server JPEG" : format === "raw" ? "RAW" : format.slice("image/".length).toUpperCase()),
         });
         bitmap = undefined; // Ownership transfers to the bounded full-resolution cache.
+      } else if (this.backend === "server") {
+        // Already oriented and resized by Sharp; reuse the JPEG rather than
+        // upscaling portrait previews and re-encoding them in the browser.
+        this.renders.set(job.key, {
+          url: URL.createObjectURL(new Blob([job.bytes!], { type: format })),
+          width: bitmap.width, height: bitmap.height,
+          size: job.bytes!.byteLength + bitmap.width * bitmap.height * 4,
+        });
+        bitmap.close();
+        bitmap = undefined;
       } else {
         const orientation = job.embedded ? job.orientation ?? 1 : 1;
         const rotated = orientation >= 5 && orientation <= 8;
@@ -420,7 +448,7 @@ export class Pipeline {
   }
   dispose() {
     this.dead = true;
-    for (const c of this.controllers) c.abort();
+    for (const c of this.controllers.values()) c.abort();
     for (const stop of this.stops) stop();
     for (const render of this.renders.values()) {
       if (render.url) URL.revokeObjectURL(render.url);
