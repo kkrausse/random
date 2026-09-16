@@ -5,11 +5,14 @@
     "": {
       "name": "picsync-web-experiment",
       "dependencies": {
+        "libraw-modern": "npm:libraw-wasm@1.6.0",
         "libraw-wasm": "1.0.5",
       },
     },
   },
   "packages": {
+    "libraw-modern": ["libraw-wasm@1.6.0", "", {}, "sha512-VfvWq2XGGkc07wexymRLn1H82j6smmC1LAbVl41vnW2Z5RrEPLN+YHi1Hmga2TbxxrY4rOjmTwHwSyTZmypE1g=="],
+
     "libraw-wasm": ["libraw-wasm@1.0.5", "", {}, "sha512-Gdyj4gf9+MU0u0/zRTB+XsnESWznOA2FzyFM9xAo1ozZzoSrv5/sIoeRADz76IrWtrUjawa8MrITUnDeBHBlLA=="],
   }
 }

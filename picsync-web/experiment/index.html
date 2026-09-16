@@ -15,13 +15,14 @@
 <h1>Original image test</h1>
 <p>Untouched files from PicSync. Test Safari’s native <code>&lt;img&gt;</code> support or develop RAW directly in your browser with LibRaw WebAssembly. The Pi only serves files.</p>
 <p>Try <strong>WASM · half resolution</strong> first, then full resolution. Both develop sensor data, not an embedded JPEG. Only one RAW render is kept at a time. Pinch to zoom into the result.</p>
+<p>On localhost or HTTPS, compare <strong>Modern 1.6.0</strong> with <strong>Parallel strips · 2 workers</strong>. The strip modes develop different regions of the same photo, with fixed brightness and 32-pixel overlap. Compare against <strong>Strip baseline · 1 worker</strong> for matching settings. They currently require a three-color Bayer RAW. Four workers use substantially more memory.</p>
 <p>“Open original” separately tests direct navigation. An OS preview or download there does not necessarily mean a photo gallery can display the file.</p>
 <pre id="browser"></pre>
 <main id="samples">Finding samples…</main>
 <p>A successful <em>native</em> RAW load may still use an embedded JPEG. The WASM buttons explicitly develop sensor data with camera white balance and sRGB output.</p>
 <script type="module">
   import { addWasmControls } from '/wasm-viewer.js';
-  document.querySelector('#browser').textContent = navigator.userAgent;
+  document.querySelector('#browser').textContent = `${navigator.userAgent}\nSecure: ${isSecureContext} · isolated: ${crossOriginIsolated} · logical CPUs: ${navigator.hardwareConcurrency}\n${crossOriginIsolated ? 'Modern and parallel decoders enabled.' : 'Modern and parallel decoders need HTTPS + isolation headers (or localhost).'}`;
   const main = document.querySelector('#samples');
   try {
     const response = await fetch('/samples');

@@ -1,17 +1,19 @@
-import LibRaw from "/vendor/index.js";
-
 // One decode per worker. Termination releases the entire WASM heap afterward.
-self.onmessage = async ({ data: { id, halfSize } }) => {
+self.onmessage = async ({ data: { id, halfSize, modern = false } }) => {
+  let raw;
   try {
+    if (modern && !crossOriginIsolated) throw new Error("Modern decoder requires localhost or isolated HTTPS");
     const started = performance.now();
     self.postMessage({ stage: "Downloading original…" });
     const response = await fetch(`/original/${id}`);
     if (!response.ok) throw new Error(`Original request: HTTP ${response.status}`);
     const bytes = new Uint8Array(await response.arrayBuffer());
     const downloaded = performance.now();
+    const { default: LibRaw } = await import(modern ? "/modern/index.js" : "/vendor/index.js");
     self.postMessage({ stage: "Developing RAW in WebAssembly…" });
-    const raw = new LibRaw();
+    raw = new LibRaw();
     await raw.open(bytes, { halfSize, useCameraWb: true, outputColor: 1, outputBps: 8 });
+    const opened = performance.now();
     const metadata = await raw.metadata();
     const image = await raw.imageData();
     if (!image || image.bits !== 8 || image.colors !== 3 ||
@@ -30,8 +32,11 @@ self.onmessage = async ({ data: { id, halfSize } }) => {
       width: image.width, height: image.height, rgba,
       camera: `${metadata.camera_make} ${metadata.camera_model}`,
       downloadMs: downloaded - started, decodeMs: decoded - downloaded,
+      openMs: opened - downloaded, imageMs: decoded - opened,
     }, [rgba.buffer]);
   } catch (error) {
     self.postMessage({ error: error instanceof Error ? error.message : String(error) });
+  } finally {
+    raw?.dispose?.();
   }
 };

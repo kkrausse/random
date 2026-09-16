@@ -2,5 +2,12 @@
   "name": "picsync-web-experiment",
   "private": true,
   "type": "module",
-  "dependencies": { "libraw-wasm": "1.0.5" }
+  "scripts": {
+    "bench": "bun experiment/benchmark.ts",
+    "test": "bun test experiment/strip-plan.test.ts"
+  },
+  "dependencies": {
+    "libraw-modern": "npm:libraw-wasm@1.6.0",
+    "libraw-wasm": "1.0.5"
+  }
 }
