@@ -102,22 +102,30 @@ function App() {
     if (!listing || !engine) return;
     const nearby = new Map<string, Photo>();
     const byPath = new Map(listing.photos.map((p) => [p.path, p]));
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          const path = (entry.target as HTMLElement).dataset.path!;
-          const p = byPath.get(path);
-          if (entry.isIntersecting && p) nearby.set(path, p);
-          else nearby.delete(path);
-        });
-        engine.previews([...nearby.values()]);
-      },
-      { rootMargin: `${engine.limits.previewMargin}px` },
-    );
-    grid.current
-      ?.querySelectorAll("[data-path]")
-      .forEach((node) => observer.observe(node));
+    let observer: IntersectionObserver;
+    const observe = () => {
+      observer?.disconnect();
+      nearby.clear();
+      observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            const path = (entry.target as HTMLElement).dataset.path!;
+            const p = byPath.get(path);
+            if (entry.isIntersecting && p) nearby.set(path, p);
+            else nearby.delete(path);
+          });
+          engine.previews([...nearby.values()]);
+        },
+        { rootMargin: `${window.innerHeight * engine.limits.previewScreens}px 0px` },
+      );
+      grid.current
+        ?.querySelectorAll("[data-path]")
+        .forEach((node) => observer.observe(node));
+    };
+    observe();
+    window.addEventListener("resize", observe);
     return () => {
+      window.removeEventListener("resize", observe);
       observer.disconnect();
       engine.previews([]);
     };

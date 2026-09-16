@@ -24,7 +24,7 @@ export function createPreviews(read = extract) {
   let active = 0;
   let cacheBytes = 0;
   async function run(path: string) {
-    if (active >= 2) {
+    if (active >= 10) {
       if (waiting.length >= 32) throw new Error("Preview extraction queue is full");
       await new Promise<void>((resolve) => waiting.push(resolve));
     } else active++;
