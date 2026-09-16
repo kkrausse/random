@@ -1,4 +1,116 @@
-# PicSync web experiments
+# PicSync web
+
+## Photo archive gallery
+
+A mobile-friendly React gallery using Base UI/shadcn controls, Tailwind, and
+Lucide icons. Browse folders, search filenames, resize or pinch the grid, and
+open a photo with tap/click. In the viewer, pinch/scroll/double-click to zoom,
+click-drag or touch-drag to pan, swipe or use arrow keys to browse, and pinch out
+to return to the grid. **1:1** maps one source pixel to one physical display pixel;
+**Fit** resets the view. Full sensor resolution develops automatically when a
+photo opens, including before you zoom in.
+
+```sh
+bun install --frozen-lockfile
+bun run build
+MEDIA_ROOT=/path/to/mounted/smb/archive bun run start
+# Open http://127.0.0.1:8789
+```
+
+`MEDIA_ROOT` is the mounted SMB share, or the underlying archive directory when
+running directly on the file server (on lrpi: `/home/pi/photos`). The browser
+chooses folders inside that root; it does not speak SMB or store SMB credentials.
+Only supported photo files are served, hidden entries are excluded, and resolved
+paths must remain inside the archive. Folder navigation is nonrecursive and
+bookmarkable. This is a read-only archive viewer.
+
+### Loading and caching
+
+- Animated photo skeletons transition to 480px previews. The preview stays
+  visible while full-resolution pixels develop; no blank-screen replacement.
+- Modern **LibRaw 1.6**, **two strip workers per RAW photo**, at most **ten
+  decoder workers**. The open photo is prioritized; new background decode jobs
+  pause once its original is ready, until its full-resolution render completes.
+  Existing jobs finish normally.
+- Up to **eight parallel downloads**, with a 256 MB admission budget for
+  downloaded/queued originals (one oversized original can exceed it). Downloads
+  are shared between simultaneous preview/full-resolution requests.
+- Eager preview processing for the selected folder, viewport priority, and
+  full-resolution look-ahead for the previous/next photo.
+- Recent originals have a 192 MB in-memory cache. HTTP responses permit private
+  browser caching for one hour with ETags; browser storage policy determines
+  whether a later fetch actually hits disk cache.
+- Full-resolution results are retained as **ImageBitmaps and drawn directly to
+  canvas**, not encoded as PNG. Up to three are cached within 256 MB, with the
+  open photo pinned (a single oversized image is allowed). Preview JPEGs have a
+  separate 48 MB budget. WASM heaps, active downloads and visible canvases add
+  memory beyond these cache budgets. Workers terminate after every job, on
+  folder changes, or after a 120-second timeout.
+
+ARW/DNG use the existing Bayer strip implementation and its fixed-brightness
+settings; unsupported RAW geometry produces a retryable error. JPEG, PNG, WebP,
+AVIF and HEIC/HEIF use the browser's image decoder (HEIC support varies by
+browser). Videos are not listed. Thumbnails are generated client-side from
+downloaded originals, so the first visit still transfers the RAW files.
+
+### Phone / LAN access
+
+Modern LibRaw requires shared WASM memory: **trusted HTTPS and cross-origin
+isolation**, or localhost. The server supplies COOP/COEP headers. To serve on
+the LAN with a certificate trusted by the phone:
+
+```sh
+MEDIA_ROOT=/home/pi/photos HOST=192.168.1.207 LAN_CIDR=192.168.1.0/24 \
+  TLS_CERT=/path/to/cert.pem TLS_KEY=/path/to/key.pem PORT=8789 bun run start
+```
+
+Defaults accept loopback peers only; `HOST` and `LAN_CIDR` configure direct-LAN
+access. The server ignores forwarded headers. Mobile viewport/touch testing in
+Chromium is covered below; actual iPhone Safari performance remains to be tested.
+
+### Running archive instance
+
+The gallery is deployed separately at `/home/pi/picsync-web-gallery`, running
+as transient user service `picsync-web-gallery` on `127.0.0.1:8789`. Access from
+the development Mac through an SSH tunnel:
+
+```sh
+ssh -N -L 8791:127.0.0.1:8789 lrpi
+# Open http://127.0.0.1:8791 (localhost qualifies for isolated WASM)
+ssh lrpi 'systemctl --user stop picsync-web-gallery'
+```
+
+The transient service must be started again after a Pi reboot. Phone HTTPS is
+not provisioned by this deployment.
+
+### Verification
+
+```sh
+bun run typecheck
+bun run build
+bun test
+```
+
+`app/verify.browser.js` is a Browser Control CLI integration check. Serve a
+disposable fixture at port 8792 containing a `Test album` folder with twelve RAW
+files named `Photo 1.ARW` through `Photo 12.ARW`, then run:
+
+```sh
+browser-control execute --file app/verify.browser.js
+```
+
+Verified at 390 × 844: folder selection, twelve previews, 6240 × 4168 full-size
+canvas, 1:1 pixel zoom, click-drag panning, real Chromium two-touch pinch back to
+the grid, no horizontal overflow, peak ten workers, zero lingering workers,
+and exactly one fetch per original during preview/full upgrades.
+
+Performance correction: the initial gallery PNG conversion added about 2.2s to
+one full-resolution image. Direct bitmap/canvas display removed that conversion;
+a foreground localhost measurement after previews loaded reached full resolution
+in **0.91s from click**. These are exploratory desktop measurements, not a phone
+benchmark; browser background throttling materially affects results.
+
+## Earlier experiments
 
 ## Native image decoding on mobile Safari
 
