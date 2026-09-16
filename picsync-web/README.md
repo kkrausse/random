@@ -28,13 +28,15 @@ bookmarkable. This is a read-only archive viewer.
 
 ### Loading and caching
 
-**iPhone/iPad memory profile:** two pooled RAW workers total (one per fallback RAW preview,
-two per full-resolution photo), at most six downloads with a 192 MB admission budget, a 32 MB original
-cache, a 16 MB preview cache, and only the open full-resolution image (128 MB
-budget; a single oversized image is allowed). Full-resolution neighbor prefetch
-is disabled and previews load within 160px of the viewport. Includes iPadOS in
+**iPhone/iPad memory profile:** one page-lifetime RAW worker,
+initialized with its WASM module when the gallery loads. At most six downloads
+with a 192 MB admission budget, a 32 MB original cache, a 16 MB preview cache,
+and up to three full-resolution images (384 MB budget; a single oversized image
+is allowed). Downloads look up to ten photos ahead, bounded by the 192 MB
+admission budget; only the next two photos are developed ahead. Previews load within 160px
+of the viewport. Includes iPadOS in
 desktop browsing mode. The bundled WASM requires at least 256 MB per worker, so
-this avoids the desktop pool's multi-gigabyte startup allocation. RAW decoding
+mobile uses one worker and desktop uses two. RAW decoding
 can grow its heap beyond 256 MB. The limits below describe the desktop profile.
 
 - Animated photo skeletons transition to 320px previews (JPEG quality 0.72). The preview stays
@@ -46,8 +48,10 @@ can grow its heap beyond 256 MB. The limits below describe the desktop profile.
   Responses remain `no-store`, and camera orientation is applied to thumbnails.
   A missing embedded JPEG (204) falls back to the original; extraction errors are
   reported rather than triggering a burst of phone-side RAW decodes.
-- Modern **LibRaw 1.6**, **one worker per fallback RAW preview, two per full-resolution photo**, a lazy pool of at
-  most **ten decoder workers** reusing initialized WASM modules. The open photo is prioritized; new background decode jobs
+- Modern **LibRaw 1.6**, **one worker per RAW photo**, with **one RAW worker on iOS, two on desktop**
+  eagerly initialized and reused across photos and folder changes. Desktop allows ten
+  total image-processing slots, with RAW jobs queued onto the two workers.
+  The open photo is prioritized; new background decode jobs
   pause once its original is ready, until its full-resolution render completes.
   Existing jobs finish normally.
 - Up to **eight parallel downloads**, with a 256 MB admission budget for
@@ -56,7 +60,10 @@ can grow its heap beyond 256 MB. The limits below describe the desktop profile.
   missing-preview fallbacks re-enter admission using the full original size.
 - Preview processing within 500px of the viewport (unstarted offscreen previews
   leave the queue), and
-  full-resolution look-ahead for the previous/next photo.
+  full-resolution development for the next two photos. Download-only lookahead
+  extends up to ten photos ahead, within the download byte budget. Those bytes
+  are reused when a photo enters the development window and discarded when no
+  longer ahead; large originals can fill the budget before all ten download.
 - Recent originals have a 192 MB in-memory cache. Photos, listings and HTML use
   `Cache-Control: no-store`. JS/CSS/WASM use private caching with mandatory
   revalidation, avoiding repeated decoder payload transfers. Authentication runs
@@ -68,20 +75,22 @@ can grow its heap beyond 256 MB. The limits below describe the desktop profile.
   Preview bitmap creation requests downsampling; temporary bitmaps are released
   before JPEG encoding. WASM heaps, active downloads and visible canvases add
   memory beyond these cache budgets. Idle workers retain their WASM heaps for
-  reuse; workers terminate on folder changes/page exit, decode failure, or a
-  120-second timeout.
+  reuse, including after ordinary photo decode errors. Folder changes cancel queued
+  work; active RAW jobs finish before their workers are reused. A crashed worker or
+  a 120-second worker timeout stops that worker without allocating a replacement;
+  reload the page to recover. Closing/reloading the page releases the pool.
 
 ARW/DNG use the existing Bayer strip implementation and its fixed-brightness
 settings; unsupported RAW geometry produces a retryable error. JPEG, PNG, WebP,
 AVIF and HEIC/HEIF use the browser's image decoder (HEIC support varies by
 browser). Videos are not listed. Embedded JPEGs avoid transferring RAW originals
-or initializing WASM for thumbnails. Opening full resolution always requests the
+for thumbnails. WASM initialization happens at gallery load. Opening full resolution always requests the
 original and disables LibRaw half-size processing; embedded JPEGs never enter the
 original/full-resolution cache. The viewer labels the decoded source format and
 pixel dimensions. A JPEG mislabeled `.ARW` can only provide its stored JPEG resolution.
 Decoder selection checks file signatures: JPEG/HEIC/etc. uploaded with `.ARW`
-names use the browser decoder, without starting RAW workers. HEIC still requires
-browser support. Unknown signatures fail before allocating a WASM decoder.
+names use the browser decoder. HEIC still requires browser support. Unknown
+signatures fail before dispatching a RAW job.
 
 Decode failures show the actual error on preview tiles and in the viewer.
 Browser console entries prefixed `[PicSync]` include the photo path, resolution,
@@ -188,16 +197,16 @@ browser-control execute --session <session-id> --file app/verify.browser.js
 
 To exercise the iPhone scheduling profile in Chromium, use a fresh authenticated
 session, run `browser-control execute --session <session-id> 'state.verifyIOS = true'`,
-then the same script. Verified: twelve 320px embedded previews with no RAW workers
-or original downloads for the grid. Opening one full-resolution photo downloads
-one original and starts two workers, without neighbor prefetch. This simulates
-device detection; it does not verify Safari's memory ceiling.
+then the same script. The check expects twelve 320px embedded previews with no RAW
+decode jobs or original downloads for the grid, one eagerly initialized iOS worker
+(two on desktop), at most three developed photos, and worker reuse across folder
+changes. This simulates device detection; it does not verify Safari's memory ceiling.
 
-Verified at 390 × 844: folder selection, twelve previews, 6240 × 4168 full-size
+Previously verified at 390 × 844: folder selection, twelve previews, 6240 × 4168 full-size
 canvas, 1:1 pixel zoom, click-drag panning, real Chromium two-touch pinch back to
-the grid, no horizontal overflow, at most ten workers created and reused across jobs,
-zero lingering workers after leaving the folder,
-and exactly one embedded-preview request per photo. A portrait ARW verifies camera
+the grid, no horizontal overflow, and exactly one embedded-preview request per
+photo. The new page-lifetime worker behavior still needs browser/device verification.
+A portrait ARW verifies camera
 orientation and a JPEG named `.ARW` verifies the no-embedded-preview fallback.
 
 Performance correction: the initial gallery PNG conversion added about 2.2s to

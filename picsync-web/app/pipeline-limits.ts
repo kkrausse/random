@@ -5,7 +5,7 @@ const desktop = {
   fullBytes: 256 * MB, fullCount: 3, prefetchFull: true, previewMargin: 500,
 };
 const ios = {
-  workers: 2, downloads: 6, downloadBytes: 192 * MB,
+  workers: 1, downloads: 6, downloadBytes: 192 * MB,
   originalBytes: 32 * MB, previewBytes: 16 * MB,
   fullBytes: 384 * MB, fullCount: 3, prefetchFull: true, previewMargin: 160,
 };

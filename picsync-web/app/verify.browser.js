@@ -31,7 +31,7 @@ await page.addInitScript((ios) => {
       return super.terminate();
     }
     postMessage(data, ...rest) {
-      window.galleryMetrics.jobs.push({ halfSize: data.halfSize, count: data.count });
+      if (data.type !== "init") window.galleryMetrics.jobs.push({ halfSize: data.halfSize, count: data.count });
       return super.postMessage(data, ...rest);
     }
   };
@@ -54,8 +54,8 @@ await page.getByRole("button", { name: "Test album", exact: true }).waitFor();
 await page.getByRole("button", { name: "Test album", exact: true }).click();
 await page.locator(".tile").first().locator("img").waitFor({ timeout: 120000 });
 const gridMetrics = await page.evaluate(() => window.galleryMetrics);
-if (gridMetrics.created !== 0 || Object.keys(gridMetrics.downloads).length !== 0)
-  throw new Error("Embedded thumbnail initialized RAW workers or downloaded originals");
+if (gridMetrics.created !== (ios ? 1 : 2) || gridMetrics.jobs.length !== 0 || Object.keys(gridMetrics.downloads).length !== 0)
+  throw new Error("Expected eager worker initialization but no RAW jobs or originals for embedded thumbnails");
 await page
   .getByRole("button", { name: "Open Photo 1.ARW", exact: true })
   .click();
@@ -112,7 +112,7 @@ await page.waitForFunction(
   { timeout: 120000 },
 );
 const metrics = await page.evaluate(() => window.galleryMetrics);
-const workerLimit = ios ? 2 : 10;
+const workerLimit = ios ? 1 : 2;
 if (metrics.peak > workerLimit || metrics.created > workerLimit || metrics.active === 0)
   throw new Error(`Worker lifecycle failed: ${JSON.stringify(metrics)}`);
 if (metrics.jobs.some((job) => job.count !== 1))
@@ -137,7 +137,10 @@ const thumbnailSizes = await page.locator(".tile img").evaluateAll((images) =>
 if (thumbnailSizes.some(([width, height]) => width < 1 || height < 1 || Math.max(width, height) > 320))
   throw new Error(`Unexpected thumbnail dimensions: ${JSON.stringify(thumbnailSizes)}`);
 await page.getByRole("button", { name: "Archive", exact: true }).click();
-await page.waitForFunction(() => window.galleryMetrics.active === 0);
+await page.getByRole("button", { name: "Test album", exact: true }).waitFor();
+const afterFolderChange = await page.evaluate(() => window.galleryMetrics);
+if (afterFolderChange.active !== workerLimit || afterFolderChange.created !== workerLimit)
+  throw new Error("Folder navigation must retain the initialized worker pool");
 await cdp.detach();
 return {
   profile: ios ? "iOS (Chromium simulation)" : "desktop",
