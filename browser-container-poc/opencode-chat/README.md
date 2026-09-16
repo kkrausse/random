@@ -8,9 +8,9 @@ no React, DOM implementation, CSS, workspace runtime, service discovery or VM
 library. `/react` provides a replaceable chat template. All traffic, including
 SSE, uses the caller's endpoint.
 
-**Pinned server:** retained `beta-19425`, revision
-`20aff6d9f643afe9abf8a048e68f019d049f5329`. See [PROVENANCE.md](./PROVENANCE.md)
-for the candidate protocol audit and supported form subset.
+**Pinned server:** published OpenCode `2.0.3`, tag revision
+`d44b52ca66b6bf69626c0384626d1a9cd9555977`. See [PROVENANCE.md](./PROVENANCE.md)
+for the release protocol audit and supported form subset.
 See [PROVENANCE.md](PROVENANCE.md) and the distributed full MIT upstream notice.
 
 ## Host integration
@@ -35,9 +35,9 @@ import '@kev-browser-agent-kit/opencode-chat/editor.css';
 `base` defaults to `/editor/`; optional `base` and `model` are captured on mount.
 The existing `BrowserEditor` accepts a host-owned controller and optional recipe
 for lower-level composition. Both surfaces use the same editor lifecycle.
-The wrapper uses the existing preparation/recipe pin; it does **not** promote the
-separately qualified beta-19425 candidate. The TODO clean-build qualification is
-[blocked by the existing guest Tailwind adapter](../doc/todo-editor-clean-integration.md).
+The wrapper uses the qualified OpenCode 2.0.3 preparation/recipe pin. The TODO
+flow passes real model edits, shell execution, Tailwind HMR and local retention;
+see [release acceptance](../doc/opencode-2.0.3-upgrade.md).
 
 ### Standalone chat
 

@@ -3,9 +3,9 @@ import type { NodeLaunchOptions } from '@kev-browser-agent-kit/workspace';
 /** Browser-safe exact candidate contract. Host filesystem verification lives separately. */
 export const openCodeCandidateLaunch = {
   format: 'opencode-server-process-v1',
-  candidate: 'opencode-server-process-beta-19425',
-  receiptSha256: 'd6dcd8f0458d7bb3238229eebb0d01766eb4bd8861abc8e74646fe65fe8d7949',
-  sourceRevision: '20aff6d9f643afe9abf8a048e68f019d049f5329',
+  candidate: 'opencode-server-process-2.0.3',
+  receiptSha256: 'df6a3d88f014f95c1dd5957a06c6e3baa3ca4d4dd45ca4be5ea88d6518627813',
+  sourceRevision: 'd44b52ca66b6bf69626c0384626d1a9cd9555977',
   port: 4096,
   databasePath: '/runtime-probe/opencode.sqlite',
   projectConfig: false,

@@ -1,5 +1,9 @@
 # Combined editor browser acceptance
 
+The same harness also passed the September 15 OpenCode **2.0.3** upgrade with
+real read/edit/shell tools, CSS generation, EOF, retained source/conversation and
+startup cancellation. See [release acceptance](../../doc/opencode-2.0.3-upgrade.md).
+
 The September 12 final runtime + Tailwind PR run passed startup, CRUD, manual and
 genuine model HMR, file-link navigation, native shell Node source verification,
 new-utility CSS generation/application, natural OpenCode EOF shutdown,

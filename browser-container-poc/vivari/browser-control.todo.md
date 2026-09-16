@@ -1,5 +1,13 @@
 # Browser Control observations
 
+- [x] 2026-09-15 OpenCode 2.0.3 qualification, CLI 0.7.0, owned session
+  `cosmic-otter-081`, origin :54403: immediately after `page.goto`, `snapshot()`
+  reported `Page navigated while snapshot() was capturing; call snapshot() again`.
+  A fresh read succeeded at the intended URL with empty OPFS; no reload or relay
+  restart. Later a caller toggled the already-expanded Chat panel closed before
+  selecting New chat, causing an 8-second locator timeout. Fresh aria inspection,
+  reopening Chat and one New chat click recovered; no duplicate prompt was sent.
+
 - [x] 2026-09-12 clean TODO acceptance, CLI 0.7.0, owned session
   `cosmic-comet-351`, origin :54392: Playwright `checkbox.check()` reported
   `Clicking the checkbox did not change its state` for the server-controlled

@@ -1,7 +1,7 @@
 # Source provenance
 
-Compatibility target: retained OpenCode **beta-19425**, repository revision
-**20aff6d9f643afe9abf8a048e68f019d049f5329**. This is an explicit candidate
+Compatibility target: published OpenCode **2.0.3**, upstream tag revision
+**d44b52ca66b6bf69626c0384626d1a9cd9555977**. This is an explicit release
 protocol pin, not a claim of compatibility with arbitrary V2 releases.
 
 Vendored from https://github.com/anomalyco/opencode:
@@ -9,7 +9,7 @@ Vendored from https://github.com/anomalyco/opencode:
 | Local file | Upstream path | Modifications |
 | --- | --- | --- |
 | `src/vendor/reducer.ts` | [`packages/app/src/context/server-session-v2-reducer.ts`](https://github.com/anomalyco/opencode/blob/d7a7256bb6b0952f486c95718cfbf460b1570a56/packages/app/src/context/server-session-v2-reducer.ts) | Original derivation at d7a7256; local type imports. Adapted against candidate `packages/core/src/session/message-updater.ts`: inbox delivery triggers authoritative history recovery instead of inventing messages, streamed timestamps and terminal provider state are retained, failed-tool metadata is self-contained, compaction metadata is retained. |
-| `src/vendor/types.ts` | [`packages/client/src/promise/generated/types.ts`](https://github.com/anomalyco/opencode/blob/20aff6d9f643afe9abf8a048e68f019d049f5329/packages/client/src/promise/generated/types.ts) | Exact candidate generated source; imported only as types, with no runtime SDK dependency. Full generated contract retained to keep transitive message/event/schema relationships coherent. |
+| `src/vendor/types.ts` | [`packages/client/src/promise/generated/types.ts`](https://github.com/anomalyco/opencode/blob/d44b52ca66b6bf69626c0384626d1a9cd9555977/packages/client/src/promise/generated/types.ts) | Exact 2.0.3 generated source; imported only as types, with no runtime SDK dependency. Reproduce with `bun scripts/sync-vendor-types.ts`, which verifies its SHA-256. |
 | `LICENSE.upstream` | [`LICENSE`](https://github.com/anomalyco/opencode/blob/d7a7256bb6b0952f486c95718cfbf460b1570a56/LICENSE) | Exact complete MIT notice, Copyright (c) 2025 opencode. Distributed in tarballs. |
 
 `src/api.ts` derives from this repository's `chat-client-demo/src/api.ts`:
@@ -23,12 +23,29 @@ helpers were reviewed but not copied.
 The React bundle includes the Marked tokenizer. Its complete Marked/Markdown
 notices from `marked@17.0.4/LICENSE.md` are distributed as `LICENSE.marked`.
 
-## Candidate protocol audit
+## 2.0.3 release audit (September 15)
+
+Compared the complete generated contract against beta-19425. Changes add idle
+history records, session permission rules/events, session diffs, file-not-found
+errors and preferences APIs. Existing session, prompt, message, model, form,
+permission-reply and event payloads used by this client remain compatible.
+Authoritative history recovery retains the new idle records; the generic transcript
+renderer displays them. New preferences/session-rule editing APIs are not exposed
+as UI controls. The generated contract SHA-256 is
+`9238842bf9d4dbef486f4c20fb4051a5ccb051a30a9d84a9d4267c089ef37fed`.
+
+The server now builds from frozen published packages, with explicit archive
+integrity instead of a claimed clean source checkout. The existing jsonc-parser
+ESM selection remains; application/dependency source and emitted bytes are not
+rewritten. See [the release acceptance](../doc/opencode-2.0.3-upgrade.md) for real
+model/tool/browser retention checks and the beta-to-release database migration.
+
+## Historical beta-19425 protocol audit
 
 The retained source is authoritative for wire shapes. Public V2 client and API
 guides were consulted on 2026-09-11:
 <https://opencode.ai/v2/docs/build/client> and <https://opencode.ai/v2/docs/api>.
-The exact generated `src/vendor/types.ts` SHA-256 is
+The previous generated `src/vendor/types.ts` SHA-256 was
 `c3542397d6c1e208e6decbc9105a63499bfa5969c02ce28d204308151c16c7c0`.
 
 Verified candidate `packages/protocol/src/groups/{session,model,plugin,form,permission,event}.ts`,

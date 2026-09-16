@@ -1,6 +1,6 @@
 # kev-browser-agent-kit: project overview
 
-Last summarized: **September 12, 2026**. This is the starting point for what exists,
+Last summarized: **September 15, 2026**. This is the starting point for what exists,
 which demo to use, and what is still being integrated. Older receipts describe
 the exact revision they tested; they are not blanket acceptance of newer UI code.
 
@@ -21,6 +21,15 @@ tests direct upstream execution and removes demonstrated workarounds. See the
 [main cleanup plan](doc/opencode2-server-runtime-cleanup.md).
 
 ## Current iteration
+
+**OpenCode 2.0.3 upgrade (September 15):** The TODO demo now consumes the stable
+published `@opencode/server@2.0.3` and matching generated chat contract. Fresh-origin
+browser startup, CRUD, manual/model read/edit HMR, native multiline shell Node
+execution, Tailwind CSSOM/computed style, natural OpenCode EOF shutdown,
+source/conversation reopen retention and startup cancellation pass. A headless
+beta-19425 database upgraded through the new upstream migration with its session
+retained. Runtime stays at `33305d5`. Current demo: **http://127.0.0.1:54403/**.
+See [exact inputs, remaining adaptations and run steps](doc/opencode-2.0.3-upgrade.md).
 
 **Clean TODO integration (September 12):** The current qualification target is
 `todo-app-demo/`. Preparation v2 preserves the original manifest/lock, complete
