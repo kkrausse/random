@@ -130,8 +130,8 @@ old experiment/gallery services are stopped; it only provides archive storage.
 **https://kevins-macbook-pro-2.tail7e28fb.ts.net:8443/**
 
 Tailscale Serve terminates trusted HTTPS and forwards to the Mac's loopback-only
-Bun process. This is **private to the tailnet**, subject to its access rules;
-Funnel/public internet access is not enabled. The existing HTTPS port 443 route
+Bun process. **Funnel is enabled on port 8443**, making the gallery URL reachable
+from the public internet; the PicSync sign-in gate still applies. The existing HTTPS port 443 route
 to the separate app on local port 3000 is retained.
 
 ```sh
@@ -139,10 +139,10 @@ to the separate app on local port 3000 is retained.
 MEDIA_ROOT=/Volumes/Photos HOST=127.0.0.1 PORT=8794 \
   PICSYNC_PUBLIC_URL=https://kevins-macbook-pro-2.tail7e28fb.ts.net:8443 bun run start
 # In another terminal (already configured):
-tailscale serve --bg --https=8443 http://127.0.0.1:8794
+tailscale funnel --bg --https=8443 http://127.0.0.1:8794
 # Inspect or disable only the gallery proxy:
-tailscale serve status
-tailscale serve --https=8443 off
+tailscale funnel status
+tailscale funnel --https=8443 off
 ```
 
 The Mac must be awake, the SMB share mounted, and the Bun process running. No
@@ -173,8 +173,8 @@ then start it again and use the new link. Restarting alone does not revoke acces
 Set `PICSYNC_PUBLIC_URL` to the exact externally used HTTPS origin, including
 its port. This is required for Tailscale Serve or future Funnel use; arbitrary
 hosts and forwarded headers are not trusted. When exposing via Funnel, retain
-the loopback bind and let Tailscale terminate HTTPS. Funnel is not enabled by
-this change. The same sign-in gate applies to public traffic. Already-open
+the loopback bind and let Tailscale terminate HTTPS. The same sign-in gate applies
+to public traffic. Already-open
 photos may remain in the app's memory until the page closes; revocation blocks
 subsequent server requests, not copies already downloaded.
 
