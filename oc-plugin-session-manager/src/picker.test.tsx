@@ -224,12 +224,15 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
     while (!releaseLifecycle) await new Promise((resolve) => setTimeout(resolve, 1))
     await setup.renderOnce()
     assert.doesNotMatch(setup.captureCharFrame(), /Archived transcript remains visible/, "archived preview does not flash before selection advances")
+    assert.doesNotMatch(setup.captureCharFrame(), /Updating session…/)
+    assert.ok(setup.renderer.root.findDescendantById("claude-session-spinner-s20"), "archive progress stays on the affected row")
     releaseLifecycle()
     await archiving
     pauseLifecycle = false
     releaseLifecycle = undefined
     await setup.renderOnce()
     assert.equal(lifecycle.inactive.s20, true)
+    assert.equal(setup.renderer.root.findDescendantById("claude-session-spinner-s20"), undefined)
     assert.equal(opened, undefined)
     assert.equal(scroll.scrollTop, before)
     assert.match(setup.captureCharFrame(), /Session 21/)
