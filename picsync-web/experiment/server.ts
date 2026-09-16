@@ -4,11 +4,16 @@ import { basename, dirname, extname, join, relative, isAbsolute } from "node:pat
 
 // Serve only the experiment assets and a fixed sample of untouched originals.
 const librawRoot = dirname(Bun.resolveSync("libraw-wasm", import.meta.dir));
+const modernRoot = dirname(Bun.resolveSync("libraw-modern", import.meta.dir));
 const assets = new Map([
   ["/raw-worker.js", join(import.meta.dir, "raw-worker.js")],
   ["/wasm-viewer.js", join(import.meta.dir, "wasm-viewer.js")],
+  ...["parallel-worker.js", "strip-worker.js", "strip-plan.js", "decode-strip.js", "stitch-strips.js"].map(name =>
+    [`/${name}`, join(import.meta.dir, name)] as [string, string]),
   ["/vendor/index.js", join(librawRoot, "index.js")],
   ["/vendor/libraw.wasm", join(librawRoot, "libraw.wasm")],
+  ...["index.js", "worker.js", "libraw.js", "libraw.wasm"].map(name =>
+    [`/modern/${name}`, join(modernRoot, name)] as [string, string]),
 ]);
 const root = await realpath(process.env.MEDIA_ROOT ?? "/home/pi/photos");
 const hostname = process.env.HOST ?? "127.0.0.1";
@@ -47,7 +52,11 @@ const server = Bun.serve({
     if (!address || !allowed.check(address, "ipv4")) return new Response("LAN only", { status: 403 });
     if (request.method !== "GET" && request.method !== "HEAD") return new Response(null, { status: 405 });
     const url = new URL(request.url);
-    const headers = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
+    const headers = {
+      "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp",
+    };
     if (url.pathname === "/") return new Response(Bun.file(join(import.meta.dir, "index.html")), { headers });
     const asset = assets.get(url.pathname);
     if (asset) return new Response(Bun.file(asset), { headers });

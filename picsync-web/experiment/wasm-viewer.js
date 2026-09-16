@@ -4,6 +4,21 @@ let displayed = null;
 export function addWasmControls(card, sample) {
   if (!/\.(arw|dng)$/i.test(sample.name)) return;
   const controls = document.createElement("div");
+  const label = document.createElement("label");
+  label.textContent = "Decoder: ";
+  const decoder = document.createElement("select");
+  for (const [value, text] of [
+    ["legacy", "Legacy 1.0.5"], ["modern", "Modern 1.6.0"],
+    ["1", "Strip baseline · 1 worker"], ["2", "Parallel strips · 2 workers"],
+    ["4", "Parallel strips · 4 workers"],
+  ]) {
+    const option = new Option(text, value);
+    option.disabled = value !== "legacy" && !crossOriginIsolated;
+    decoder.append(option);
+  }
+  decoder.value = crossOriginIsolated ? "modern" : "legacy";
+  label.append(decoder);
+  controls.append(label, document.createElement("br"));
   const status = document.createElement("p");
   status.setAttribute("role", "status");
   const cancel = document.createElement("button");
@@ -24,11 +39,17 @@ export function addWasmControls(card, sample) {
       status.textContent = "Starting RAW worker…";
       cancel.hidden = false;
       const started = performance.now();
-      const worker = new Worker("/raw-worker.js", { type: "module" });
+      let wasHidden = document.hidden;
+      const visibilityChanged = () => { wasHidden ||= document.hidden; };
+      document.addEventListener("visibilitychange", visibilityChanged);
+      const count = Number(decoder.value);
+      const mode = decoder.selectedOptions[0].textContent;
+      const worker = new Worker(count ? "/parallel-worker.js" : "/raw-worker.js", { type: "module" });
       let timeout;
       const stop = () => {
         worker.terminate();
         clearTimeout(timeout);
+        document.removeEventListener("visibilitychange", visibilityChanged);
         if (active === abort) active = null;
       };
       const abort = () => { stop(); status.textContent = "Cancelled"; cancel.hidden = true; };
@@ -49,12 +70,12 @@ export function addWasmControls(card, sample) {
           if (!context) throw new Error("Browser could not allocate a canvas");
           context.putImageData(new ImageData(data.rgba, data.width, data.height), 0, 0);
           card.append(canvas);
-          status.textContent = `WASM PASS: ${data.width} × ${data.height} · ${data.camera} · download ${(data.downloadMs / 1000).toFixed(1)} s · decode ${(data.decodeMs / 1000).toFixed(1)} s · total ${((performance.now() - started) / 1000).toFixed(1)} s`;
+          status.textContent = `WASM PASS: ${mode} · ${data.width} × ${data.height} · ${data.camera} · download ${(data.downloadMs / 1000).toFixed(1)} s · decode ${(data.decodeMs / 1000).toFixed(1)} s · total ${((performance.now() - started) / 1000).toFixed(1)} s · ${wasHidden ? "tab was backgrounded; timing may be throttled" : "foreground throughout"}`;
           displayed = () => { clear(); cancel.hidden = true; };
           stop();
         } catch (error) { fail(error.message); }
       };
-      worker.postMessage({ id: sample.id, halfSize });
+      worker.postMessage({ id: sample.id, halfSize, modern: decoder.value === "modern", count });
     };
     controls.append(button);
   }

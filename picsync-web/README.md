@@ -17,9 +17,39 @@ It binds to the configured address and checks the actual socket peer against the
 
 ## Browser-side RAW development
 
-ARW/DNG cards offer half-resolution and full-resolution WASM decoding. Both develop sensor data using camera white balance, sRGB and 8-bit RGB output, then display an RGBA canvas. Download/decode/total times are reported. A fresh dedicated worker handles each request and is terminated on completion, failure, cancellation, page exit or the 120-second timeout. Only one RAW job and one rendered RAW canvas are retained at a time.
+ARW/DNG cards offer half-resolution and full-resolution WASM decoding. Both develop sensor data using camera white balance, sRGB and 8-bit RGB output, then display an RGBA canvas. Download/decode/total times are reported, with a flag if the tab was hidden during the job. Workers are terminated on completion, failure, cancellation, page exit or the 120-second timeout. Only one RAW job and one rendered RAW canvas are retained at a time.
 
-`libraw-wasm` is deliberately pinned to **1.0.5**, a single-threaded build that works over ordinary LAN HTTP in a worker. Inspected 1.3.1 and 1.6.0 builds use shared WASM memory, which needs a secure, cross-origin-isolated context. This pin is for the experiment; a maintained single-threaded build or HTTPS would be preferable for the eventual viewer. JS and WASM are served locally from the installed package, with no runtime CDN dependency.
+The decoder selector offers:
+
+- **Legacy 1.0.5**, retained for comparison and ordinary LAN HTTP.
+- **Modern 1.6.0**, installed under the `libraw-modern` package alias. This is the default on localhost / isolated HTTPS, and is dramatically faster in the initial browser measurements. The build uses shared WASM memory; that alone does not establish internal multithreaded processing.
+- **Strip baseline · 1 worker**, **Parallel strips · 2 workers**, and **Parallel strips · 4 workers**. These develop different overlapping regions of **one photo**, then stitch and apply camera orientation. They use identical fixed-brightness settings so their pixels can be compared fairly.
+
+The server sends COOP/COEP headers. Modern and strip modes require a secure, cross-origin-isolated browser context; localhost HTTP qualifies, ordinary LAN HTTP does not. All JS/WASM assets are served from installed packages without a runtime CDN dependency.
+
+Parallel strips currently support even-sized three-color Bayer RAWs. Each worker still unpacks the complete original, but only develops its crop, with 32 sensor rows of overlap on either side. Automatic brightness and automatic maximum adjustment are disabled to avoid strip-dependent exposure. This is a same-image parallel-development experiment, not a shared-heap parallel unpacker. Four instances allocate four WASM heaps; mobile memory behavior needs device testing. The matching one-worker strip baseline also disables these automatic adjustments, unlike the normal Modern mode.
+
+### Local Bun benchmark
+
+Copy test originals into a local directory outside the repository. Run the actual **1.6.0 WASM binary in Bun worker threads**, using the same `decode-strip.js`, strip planning, stitching and orientation code as the browser:
+
+```sh
+bun install --frozen-lockfile
+bun run bench --rounds 3 --warmups 1 --output /path/to/results.json /path/to/KEV03734.ARW /path/to/KEV03156.ARW
+bun test
+```
+
+Each sample/resolution runs 1, 2 and 4 workers, with one warmup per configuration and rotating order across measured rounds. SHA-256 of the complete oriented RGBA output must match the one-worker baseline for every run; mismatches fail the benchmark. The JSON records runtime, CPU, WASM/input hashes, per-worker initialization/open and image-development timing, wall-clock decode time, packing/orientation time and total time. Input/WASM disk reads and output hashing are excluded; worker startup, input cloning and WASM initialization are included. Fresh workers/heaps mirror the viewer's lifecycle. This avoids browser background-tab throttling; it does not predict Safari latency.
+
+Results: [local Bun measurements](experiment/BENCHMARK.md). On an Apple M4 Pro, full-resolution totals were **0.99–1.13s with one worker** and **0.54–0.68s with four**, with identical pixels across all 48 runs (including warmups). Half-resolution gains were small.
+
+For browser integration, serve the copied originals locally:
+
+```sh
+MEDIA_ROOT=/path/to/local/samples PORT=8789 bun experiment/server.ts
+```
+
+Open `http://127.0.0.1:8789`. An optional Browser Control benchmark is in `experiment/benchmark.browser.js`; it brings its session tab forward and records focus/visibility per decode. Browser timings without controlled foreground state are exploratory. The local changes have not been deployed to the Pi.
 
 The wrapper declares the **ISC** license and its [source/build scripts](https://github.com/ybouane/LibRaw-Wasm) are public. [LibRaw](https://www.libraw.org/about#licensing) is open source under your choice of **LGPL 2.1 or CDDL 1.0**. Both are modifiable; distributing rebuilt bundles requires retaining applicable notices and following the selected license. The wrapper's ISC declaration does not replace the underlying libraries' licenses.
 
