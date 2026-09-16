@@ -10,7 +10,7 @@ await page.addInitScript((ios) => {
     Object.defineProperty(navigator, "maxTouchPoints", { get: () => 5 });
   }
   if (window.galleryMetrics) return;
-  window.galleryMetrics = { active: 0, peak: 0, created: 0, downloads: {}, jobs: [] };
+  window.galleryMetrics = { active: 0, peak: 0, created: 0, downloads: {}, previews: {}, jobs: [] };
   const NativeWorker = window.Worker;
   window.Worker = class extends NativeWorker {
     constructor(...args) {
@@ -41,6 +41,8 @@ await page.addInitScript((ios) => {
     if (url.startsWith("/api/photo"))
       window.galleryMetrics.downloads[url] =
         (window.galleryMetrics.downloads[url] || 0) + 1;
+    if (url.startsWith("/api/preview"))
+      window.galleryMetrics.previews[url] = (window.galleryMetrics.previews[url] || 0) + 1;
     return nativeFetch(...args);
   };
 }, ios);
@@ -50,6 +52,10 @@ await page.setViewportSize({ width: 390, height: 844 });
 await page.reload();
 await page.getByRole("button", { name: "Test album", exact: true }).waitFor();
 await page.getByRole("button", { name: "Test album", exact: true }).click();
+await page.locator(".tile").first().locator("img").waitFor({ timeout: 120000 });
+const gridMetrics = await page.evaluate(() => window.galleryMetrics);
+if (gridMetrics.created !== 0 || Object.keys(gridMetrics.downloads).length !== 0)
+  throw new Error("Embedded thumbnail initialized RAW workers or downloaded originals");
 await page
   .getByRole("button", { name: "Open Photo 1.ARW", exact: true })
   .click();
@@ -106,11 +112,15 @@ await page.waitForFunction(
   { timeout: 120000 },
 );
 const metrics = await page.evaluate(() => window.galleryMetrics);
-const workerLimit = ios ? 4 : 10;
+const workerLimit = ios ? 2 : 10;
 if (metrics.peak > workerLimit || metrics.created > workerLimit || metrics.active === 0)
   throw new Error(`Worker lifecycle failed: ${JSON.stringify(metrics)}`);
 if (metrics.jobs.some((job) => job.count !== (job.halfSize ? 1 : 2)))
   throw new Error("Expected one worker per preview and two per full-resolution RAW");
+if (metrics.jobs.some((job) => job.halfSize))
+  throw new Error("Embedded thumbnails should not use RAW workers");
+if (Object.keys(metrics.previews).length !== 12 || Object.values(metrics.previews).some((n) => n !== 1))
+  throw new Error("Expected one embedded-preview download per photo");
 if (ios && metrics.jobs.filter((job) => !job.halfSize).length !== 2)
   throw new Error("iOS should develop only the opened photo, without full-resolution prefetch");
 if (Object.values(metrics.downloads).some((n) => n !== 1))

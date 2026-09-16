@@ -624,7 +624,7 @@ function Viewer({
           {full ? (
             <>
               <span className="dot" />
-              Full resolution · {full.width} × {full.height}
+              Full resolution · {full.source} original · {full.width} × {full.height}
             </>
           ) : error ? (
             <>
