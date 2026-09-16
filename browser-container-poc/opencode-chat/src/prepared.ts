@@ -1,5 +1,5 @@
 import type { ToolDescriptor, NodeLaunchOptions } from '@kev-browser-agent-kit/workspace';
-import { treeInstaller, validateTree, type PreparedEntry } from './package-tree';
+import { treeInstaller, treeRoots, validateTree, type PreparedEntry } from './package-tree';
 import type { DependencyProvenance } from './prepare-dependencies';
 import { openCodeCandidateLaunch } from './opencode-launch';
 import { readPreparedBundle, type PreparedBundle } from './prepared-bundle';
@@ -93,6 +93,22 @@ export function preparedApps(manifest: PreparedManifest, base: string, signal: A
       report(manifest.bundle ? 'Checking prepared workspace bundle cache…' : 'Downloading prepared workspace files…');
       const bundled = manifest.bundle ? await readPreparedBundle(manifest.bundle, manifest.assets, base, signal, report) : undefined;
       signal.throwIfAborted();
+      if (bundled) {
+        report('Loading prepared workspace into filesystem…');
+        for (const asset of manifest.assets) if (asset.kind === 'file' && bundled.get(asset.file)?.byteLength !== asset.bytes) throw Error(`Asset size failure: ${asset.destination}`);
+        const result = await context.installTree({
+          roots: treeRoots,
+          entries: manifest.assets.map(asset => asset.kind === 'file'
+            ? { kind: 'file', path: asset.destination, mode: asset.mode, bytes: bundled.get(asset.file)!, sha256: asset.sha256, verifyReadback: asset.destination.startsWith('/app/') }
+            : asset.kind === 'directory'
+              ? { kind: 'directory', path: asset.destination, mode: asset.mode }
+              : { kind: 'symlink', path: asset.destination, target: asset.target }),
+        });
+        signal.throwIfAborted();
+        await context.installFile('/runtime-probe/.browser-editor', new TextEncoder().encode(openCodeCandidateLaunch.candidate));
+        report(`Loaded ${result.files} verified files in one filesystem operation (verify ${Math.round(result.verifyMs)}ms, install ${Math.round(result.installMs)}ms, readback ${Math.round(result.readbackMs)}ms)`);
+        return;
+      }
       await metadata('reset');
       // Provision only a marker, never reset the entrypoint's fixed database directory.
       await context.installFile('/runtime-probe/.browser-editor', new TextEncoder().encode(openCodeCandidateLaunch.candidate));
@@ -104,17 +120,12 @@ export function preparedApps(manifest: PreparedManifest, base: string, signal: A
           while (next < files.length) {
             const asset = files[next++]!;
             signal.throwIfAborted();
-            let bytes = bundled?.get(asset.file);
-            if (!bytes) {
-              const response = await fetch(base + asset.file, { signal });
-              if (!response.ok) throw Error(`Prepared asset HTTP ${response.status}`);
-              bytes = new Uint8Array(await response.arrayBuffer());
-            }
+            const response = await fetch(base + asset.file, { signal });
+            if (!response.ok) throw Error(`Prepared asset HTTP ${response.status}`);
+            const bytes = new Uint8Array(await response.arrayBuffer());
             const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
             if (bytes.length !== asset.bytes || hash !== asset.sha256) throw Error(`Asset integrity failure: ${asset.destination}`);
-            // Worker structured cloning copies the entire backing ArrayBuffer,
-            // not just a subarray's visible range. Keep each message file-sized.
-            await context.installFile(asset.destination, bundled ? bytes.slice() : bytes);
+            await context.installFile(asset.destination, bytes);
             if (asset.destination.startsWith('/app/')) {
               const installed = await context.readFile(asset.destination);
               if (installed.length !== asset.bytes || await sha256(installed) !== asset.sha256) throw Error(`Installed OpenCode integrity failure: ${asset.destination}`);

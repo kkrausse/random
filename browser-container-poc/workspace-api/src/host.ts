@@ -13,6 +13,7 @@ export class Host {
   private dead = false;
   private cleanup: (() => void)[] = [];
   nextExecution = 1;
+  readonly features = new Set<string>();
   private constructor(workerUrl: string, readonly serviceWorkerUrl: string) {
     this.worker = new Worker(workerUrl, { type: "module", name: "Workspace storage supervisor" });
     this.worker.onmessage = ({ data: m }: MessageEvent<Message>) => {
@@ -35,10 +36,11 @@ export class Host {
     diagnostics?.emit("manifest.fetch", { version: distribution.version });
     const response = await fetch(new URL("distribution.json", base), { signal });
     if (!response.ok) throw new Error(`Distribution manifest: HTTP ${response.status}`);
-    const manifest = await response.json() as { abi: string; version: string; kernelWorker: string; serviceWorker: string };
+    const manifest = await response.json() as { abi: string; version: string; kernelWorker: string; serviceWorker: string; features?: string[] };
     if (manifest.abi !== "workspace-v1" || manifest.version !== distribution.version) throw new WorkspaceError("DISTRIBUTION_MISMATCH", "Distribution ABI/version mismatch");
     diagnostics?.emit("worker.create");
     const host = new Host(new URL(manifest.kernelWorker, base).href, new URL(manifest.serviceWorker, base).href);
+    for (const feature of manifest.features ?? []) host.features.add(feature);
     try {
       await new Promise<void>((resolve, reject) => {
         const milestones = new Set<string>();

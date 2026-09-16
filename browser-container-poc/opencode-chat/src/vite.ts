@@ -7,7 +7,7 @@ import type { EditorAuthorization } from '@kev-browser-agent-kit/workspace/serve
 export function browserEditorBoundary(module: string, privateEntry?: string, authorize?: EditorAuthorization): Plugin {
   let boundary: string;
   return { name: 'browser-editor-boundary', enforce: 'pre',
-    config() { return process.env.BROWSER_AGENT_GUEST === '1' ? { base: browserPreviewBase() }
+    config() { return process.env.BROWSER_AGENT_GUEST === '1' ? { base: browserPreviewBase(), cacheDir: '.browser-editor-cache/vite' }
       : { optimizeDeps: { exclude: ['@kev-browser-agent-kit/opencode-chat', '@kev-browser-agent-kit/workspace'] } }; },
     configureServer(server) {
       if (process.env.BROWSER_AGENT_GUEST !== '1') {
