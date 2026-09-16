@@ -1,6 +1,7 @@
-// Shared by server thumbnails and full-resolution images. Change this to try
-// other bandwidth budgets; conversion/bitmap worker counts are independent.
-export const IMAGE_DOWNLOAD_WORKERS = 1;
+// Separate network budgets keep gallery loading independent of full images.
+// Conversion/bitmap worker counts are independent.
+export const THUMBNAIL_DOWNLOAD_WORKERS = 10;
+export const FULL_DOWNLOAD_WORKERS = 2;
 
 type Job = {
   url: string;
@@ -12,7 +13,7 @@ type Job = {
   cleanup: () => void;
 };
 
-export function createImageDownloads(workers = IMAGE_DOWNLOAD_WORKERS,
+export function createImageDownloads(workers = FULL_DOWNLOAD_WORKERS,
   fetchImage: (url: string, options: RequestInit) => Promise<Response> = (url, options) => fetch(url, options)) {
   if (!Number.isInteger(workers) || workers < 1) throw new Error("Image download workers must be a positive integer");
   const queued = new Set<Job>();
@@ -70,4 +71,5 @@ export function createImageDownloads(workers = IMAGE_DOWNLOAD_WORKERS,
   });
 }
 
-export const downloadImage = createImageDownloads();
+export const downloadImage = createImageDownloads(FULL_DOWNLOAD_WORKERS);
+export const downloadThumbnail = createImageDownloads(THUMBNAIL_DOWNLOAD_WORKERS);

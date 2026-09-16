@@ -45,3 +45,28 @@ test("failed downloads release capacity and report errors only for live tiles", 
   await Bun.sleep(0);
   expect(results).toEqual(["failed", "loaded"]);
 });
+
+test("visible thumbnails precede lookahead and queued distances update after scrolling", async () => {
+  const started: string[] = [];
+  const finish: (() => void)[] = [];
+  const queue = createThumbnailQueue(1, async url => {
+    started.push(new URL(url, "http://localhost").searchParams.get("path")!);
+    return new Promise<Response>(resolve => finish.push(() => resolve(new Response("jpeg"))));
+  });
+  let distance = 500;
+  const cancel = [
+    queue.request("lookahead", () => {}, () => {}, () => distance),
+    queue.request("visible", () => {}, () => {}, () => 0),
+    queue.request("nearby", () => {}, () => {}, () => 100),
+  ];
+  await Bun.sleep(0);
+  expect(started).toEqual(["visible"]);
+  distance = 0;
+  finish[0]!();
+  await Bun.sleep(0);
+  expect(started).toEqual(["visible", "lookahead"]);
+  cancel.forEach(stop => stop());
+  finish[1]!();
+  await Bun.sleep(0);
+  expect(started).toHaveLength(2);
+});

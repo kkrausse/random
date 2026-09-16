@@ -46,23 +46,24 @@ archive file. No RAW web workers or WASM modules start in server mode.
   thumbnails use embedded JPEGs when available, with native RAW development as
   fallback. Native images are identified by signature, including JPEGs with
   misleading `.ARW` filenames. macOS `sips` handles HEIC/HEIF conversion.
-- Grid thumbnails use a shared viewport observer and bounded admission queue. Only
-  visible tiles request previews; scrolling away cancels unfinished requests and
+- Grid thumbnails use **ten concurrent downloads** and preload **one screen above
+  and below the viewport**, updating the lookahead distance on resize. Visible
+  tiles take precedence over queued lookahead. Scrolling beyond that window cancels unfinished requests and
   removes unstarted server work, so a distant viewport does not wait behind a
   backlog of skipped tiles. Already-running native conversions finish into cache.
   Each React tile owns its loaded image URL until unmount; pipeline cache eviction
   cannot replace it with a queued placeholder. Refresh the folder to retry failed
   previews.
-- Server images share a priority download queue with **one network worker** for
-  this bandwidth experiment (`IMAGE_DOWNLOAD_WORKERS` in `app/image-downloads.ts`).
-  A slot stays occupied through the complete response body. The focused photo
-  takes first priority, interrupting a lower-priority transfer; interrupted work
-  resumes afterward. Thumbnail and eager full-resolution downloads share this
-  budget. Native server conversion remains a separate ten-job pool, and already
+- Full-resolution server images use a separate priority queue with **two network
+  workers**. Download budgets are `THUMBNAIL_DOWNLOAD_WORKERS` and
+  `FULL_DOWNLOAD_WORKERS` in `app/image-downloads.ts`. A slot stays occupied
+  through the complete response body. The focused photo takes first priority;
+  changing focus cancels stale transfers and promotes the new photo ahead of
+  lookahead. Native server conversion remains a separate ten-job pool, and already
   running conversions finish into cache even when their HTTP request is aborted.
 - Opening a photo queues its full-resolution server conversion and
   the **next ten photos**, bounded by the admission budget. Eager transfers run
-  sequentially after the focused download. Only the current
+  in the remaining full-resolution slot while the focused photo downloads. Only the current
   photo and next two expand into browser bitmaps; farther-ahead JPEGs remain
   compressed. Foreground jobs take priority over queued server work.
 - A metadata-keyed **512 MB / 1,024-entry server RAM cache** retains converted

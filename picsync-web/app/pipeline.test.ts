@@ -3,7 +3,7 @@ import { Pipeline, type Photo } from "./pipeline";
 import { pipelineLimits as deviceLimits } from "./pipeline-limits";
 const pipelineLimits = (device?: Parameters<typeof deviceLimits>[0]) => deviceLimits(device, "browser");
 
-test("server mode queues lookahead behind one focused download and cancels obsolete focus", async () => {
+test("server mode uses two full downloads and promotes new focus ahead of lookahead", async () => {
   const originalFetch = globalThis.fetch;
   const fetched: { url: string; signal: AbortSignal }[] = [];
   const limits = deviceLimits({ userAgent: "iPhone", platform: "iPhone", maxTouchPoints: 5 }, "server");
@@ -17,17 +17,18 @@ test("server mode queues lookahead behind one focused download and cancels obsol
   const photos = Array.from({ length: 20 }, (_, i) => ({ path: `${i}.ARW`, name: `${i}.ARW`, raw: true, bytes: 37 * 1024 * 1024 }));
   try {
     engine.view(photos, 0);
-    expect(limits.downloads).toBe(1);
-    expect(fetched).toHaveLength(1);
+    expect(limits.downloads).toBe(2);
+    expect(fetched).toHaveLength(2);
     expect(fetched.every(({ url }) => url.startsWith("/api/render?") && url.includes("size=full"))).toBe(true);
     expect(fetched[0]!.url).toContain("priority=0");
     expect(engine.activity).toContain("11 queued");
     engine.view(photos, 1);
     expect(fetched[0]!.signal.aborted).toBe(true);
     await Bun.sleep(0);
-    expect(fetched).toHaveLength(2);
-    expect(fetched[1]!.url).toContain("path=1.ARW");
-    expect(fetched[1]!.url).toContain("priority=0");
+    expect(fetched).toHaveLength(4);
+    expect(fetched[1]!.signal.aborted).toBe(true);
+    expect(fetched[2]!.url).toContain("path=1.ARW");
+    expect(fetched[2]!.url).toContain("priority=0");
     engine.view(photos, null);
     expect(fetched.every(({ signal }) => signal.aborted)).toBe(true);
     await Bun.sleep(0);
