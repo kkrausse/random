@@ -15,7 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { Pipeline, type Photo } from "./pipeline";
-import { imageBackend } from "./image-backend";
+import { imageBackend, renderURL } from "./image-backend";
 
 type Listing = {
   path: string;
@@ -102,7 +102,7 @@ function App() {
     ) ?? [];
   useEffect(() => {
     const engine = pipeline.current;
-    if (!listing || !engine) return;
+    if (!listing || !engine || engine.backend === "server") return;
     const nearby = new Map<string, Photo>();
     const byPath = new Map(listing.photos.map((p) => [p.path, p]));
     let observer: IntersectionObserver;
@@ -320,7 +320,9 @@ function App() {
                     aria-label={`Open ${p.name}`}
                     title={failure || p.name}
                   >
-                    {render ? (
+                    {engine?.backend === "server" ? (
+                      <Thumbnail photo={p} />
+                    ) : render ? (
                       <img src={render.url} alt={p.name} loading="lazy" />
                     ) : (
                       <div
@@ -396,6 +398,34 @@ function App() {
     </div>
   );
 }
+// The mounted image owns its request and decoded pixels. Pipeline cache eviction
+// must never turn a successfully loaded tile back into a queued placeholder.
+function Thumbnail({ photo }: { photo: Photo }) {
+  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
+  return (
+    <>
+      <img
+        src={renderURL(photo.path, false, 5)}
+        alt={photo.name}
+        loading="lazy"
+        decoding="async"
+        style={{ opacity: status === "loaded" ? 1 : 0 }}
+        onLoad={() => setStatus("loaded")}
+        onError={() => setStatus("error")}
+      />
+      {status !== "loaded" && (
+        <div
+          className={`placeholder thumbnail-placeholder ${status === "loading" ? "skeleton" : ""}`}
+          aria-busy={status === "loading"}
+        >
+          <Image size={26} />
+          <span>{status === "error" ? "Preview unavailable" : "Loading preview…"}</span>
+        </div>
+      )}
+    </>
+  );
+}
+
 function Viewer({
   photo,
   engine,
@@ -578,10 +608,10 @@ function Viewer({
               transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
             }}
           />
-        ) : render ? (
+        ) : render || engine.backend === "server" ? (
           <img
             className="full-photo"
-            src={render.url}
+            src={render?.url ?? renderURL(photo.path, false, 5)}
             alt={photo.name}
             draggable={false}
             style={{
