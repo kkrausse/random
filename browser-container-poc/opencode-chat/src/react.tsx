@@ -1,4 +1,5 @@
 import {
+  type ReactNode,
   memo,
   useLayoutEffect,
   useRef,
@@ -28,6 +29,8 @@ export interface ChatViewProps {
   showSessions?: boolean;
   showModels?: boolean;
   onOpenFile?: OpenFile;
+  headerActions?: ReactNode;
+  footer?: ReactNode;
 }
 export const useChatSnapshot = (controller: ChatController) =>
   useSyncExternalStore(
@@ -140,13 +143,13 @@ const MessageRow = memo(function MessageRow({
       </div>
       {"text" in message && <Markdown text={message.text} />}
       {message.type === "assistant" &&
-        message.content.map((part, i) => (
+        <div className="oc-message-parts">{message.content.map((part, i) => (
           <MessagePart
             key={part.type === "tool" ? part.id : `${part.type}-${i}`}
             part={part}
             onOpenFile={onOpenFile}
           />
-        ))}
+        ))}</div>}
       {"files" in message &&
         message.files?.map((file, i) => (
           <div key={i} className="oc-file">
@@ -467,13 +470,42 @@ export function ChatView({
   showSessions = true,
   showModels = true,
   onOpenFile,
+  headerActions,
+  footer,
 }: ChatViewProps) {
   const state = useChatSnapshot(controller);
   return (
     <section className="oc-chat" aria-label="OpenCode chat">
       <header className="oc-toolbar">
         <strong>OpenCode</strong>
-        <span role="status">
+        {headerActions}
+      </header>
+      {(showSessions || showModels) && (
+        <details className="oc-settings">
+          <summary>Session & model</summary>
+          <ChatSettings controller={controller} showSessions={showSessions} showModels={showModels} />
+        </details>
+      )}
+      {state.error && (
+        <div className="oc-error" role="alert">
+          <span>{state.error}</span>
+          <Button onClick={() => controller.clearError()}>Dismiss</Button>
+        </div>
+      )}
+      <Transcript controller={controller} onOpenFile={onOpenFile} />
+      <div className="oc-requests">
+        {state.permissions.map((entry) => <PermissionCard key={entry.request.id} controller={controller} entry={entry} />)}
+        {state.unsupportedForms.map(form => (
+          <div role="alert" key={form.id}>
+            <strong>{form.title}</strong>: This form cannot be answered by this chat client.
+            Open it in a compatible OpenCode client to continue. Unsupported fields: {form.fields.map(f => `${f.key} (${f.type})`).join(", ")}.
+          </div>
+        ))}
+        {state.questions.map((entry) => <QuestionCard key={entry.request.id} controller={controller} entry={entry} />)}
+      </div>
+      <Composer key={state.sessionID ?? "none"} controller={controller} />
+      <footer className="oc-footer">
+        <div className="oc-connection"><span role="status">
           {state.connection === "connected"
             ? state.execution === "idle"
               ? "Ready"
@@ -484,14 +516,20 @@ export function ChatView({
                   : "Working…"
             : state.connection}
         </span>
-        <Button
-          disabled={state.connection === "connecting"}
+        {state.connection !== "connected" && state.connection !== "connecting" && <Button
           onClick={() => run(controller.reconnect())}
         >
           Reconnect
-        </Button>
-      </header>
-      {(showSessions || showModels) && (
+        </Button>}</div>
+        {footer}
+      </footer>
+    </section>
+  );
+}
+
+function ChatSettings({ controller, showSessions, showModels }: ChatViewProps) {
+  const state = useChatSnapshot(controller);
+  return (
         <nav className="oc-controls" aria-label="Chat settings">
           {showSessions && (
             <>
@@ -550,37 +588,5 @@ export function ChatView({
             </label>
           )}
         </nav>
-      )}
-      {state.error && (
-        <div className="oc-error" role="alert">
-          <span>{state.error}</span>
-          <Button onClick={() => controller.clearError()}>Dismiss</Button>
-        </div>
-      )}
-      <Transcript controller={controller} onOpenFile={onOpenFile} />
-      <div className="oc-requests">
-        {state.permissions.map((entry) => (
-          <PermissionCard
-            key={entry.request.id}
-            controller={controller}
-            entry={entry}
-          />
-        ))}
-        {state.unsupportedForms.map(form => (
-          <div role="alert" key={form.id}>
-            <strong>{form.title}</strong>: This form cannot be answered by this chat client.
-            Open it in a compatible OpenCode client to continue. Unsupported fields: {form.fields.map(f => `${f.key} (${f.type})`).join(", ")}.
-          </div>
-        ))}
-        {state.questions.map((entry) => (
-          <QuestionCard
-            key={entry.request.id}
-            controller={controller}
-            entry={entry}
-          />
-        ))}
-      </div>
-      <Composer key={state.sessionID ?? "none"} controller={controller} />
-    </section>
   );
 }
