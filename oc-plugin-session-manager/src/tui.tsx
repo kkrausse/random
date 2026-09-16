@@ -651,6 +651,10 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
           () => archiveSession(props.context.client, archiveStore, session))
         for (const id of saved.familyIDs) affected.add(id)
         for (const id of affected) deletedIDs.add(id)
+        // Move the preview before replacing the live row with its archive. Otherwise
+        // the archived transcript flashes while the lifecycle marker is persisted.
+        // Preserve a selection change the user made while the archive request ran.
+        if (selectedValue() === selected.id) setSelectedValue(neighbor)
         setArchives((items) => [...items.filter((item) => item.transcript.info.id !== session.id), saved])
         setSessions((items) => items.filter((item) => !affected.has(item.id)))
         setAttention((current) => new Map([...current].filter(([id]) => !affected.has(id))))

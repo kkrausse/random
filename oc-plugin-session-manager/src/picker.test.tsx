@@ -23,6 +23,8 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
   let storageFailure = false
   let running = false
   let interruptCalls = 0
+  let pauseLifecycle = false
+  let releaseLifecycle: (() => void) | undefined
   const toasts: Array<{ message: string; variant: string }> = []
   const sessions = Array.from({ length: 40 }, (_, i) => ({
     id: `s${i}`,
@@ -52,6 +54,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
         lifecycle,
         async (update: any) => {
           if (storageFailure) throw new Error("disk unavailable")
+          if (pauseLifecycle) await new Promise<void>((resolve) => { releaseLifecycle = resolve })
           const draft = { inactive: { ...lifecycle.inactive } }
           update(draft)
           setLifecycle("inactive", reconcile(draft.inactive))
@@ -210,8 +213,15 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", as
     assert.match(setup.captureCharFrame(), /Session 20/)
     storageFailure = false
     running = true
-    await commands.find((c) => c.bind === "x").run()
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    pauseLifecycle = true
+    const archiving = commands.find((c) => c.bind === "x").run()
+    while (!releaseLifecycle) await new Promise((resolve) => setTimeout(resolve, 1))
+    await setup.renderOnce()
+    assert.doesNotMatch(setup.captureCharFrame(), /Archived transcript remains visible/, "archived preview does not flash before selection advances")
+    releaseLifecycle()
+    await archiving
+    pauseLifecycle = false
+    releaseLifecycle = undefined
     await setup.renderOnce()
     assert.equal(lifecycle.inactive.s20, true)
     assert.equal(opened, undefined)
