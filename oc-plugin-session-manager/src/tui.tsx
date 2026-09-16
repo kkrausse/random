@@ -386,7 +386,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
   const [lifecycle, updateLifecycle] = props.context.storage.store("session-lifecycle", {
     initial: { inactive: {} as Record<string, boolean> },
   })
-  const [changingLifecycle, setChangingLifecycle] = createSignal(false)
+  const [changingLifecycle, setChangingLifecycle] = createSignal<Set<string>>()
   const route = props.context.ui.router.current()
   const currentSessionID = props.returnSessionID ?? (route.type === "session" ? route.sessionID : undefined)
   const currentSession = currentSessionID ? props.context.data.session.get(currentSessionID) : undefined
@@ -651,7 +651,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
     const affected = new Set(family)
     const neighbor = sectionNeighbor(options().filter((option) => option.value === session.id || !affected.has(option.value)), session.id) ?? NEW_SESSION_VALUE
     if (inactive && isArchived(session.id)) return
-    setChangingLifecycle(true)
+    setChangingLifecycle(new Set(affected))
     return runner.start(Effect.gen(function* () {
       let owner = session
       if (inactive) {
@@ -659,6 +659,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
           () => softArchiveSession(props.context.client, session))
         owner = stopped[0]!
         for (const member of stopped) affected.add(member.id)
+        setChangingLifecycle(new Set(affected))
         // Keep the authoritative parent available even when the picker began on
         // a child whose ancestors were outside its loaded pages.
         setSessions((items) => [...new Map([...items, ...stopped].map((item) => [item.id, item])).values()])
@@ -674,6 +675,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
           () => sessionFamily(props.context.client, session))
         owner = family[0]!
         for (const member of family) affected.add(member.id)
+        setChangingLifecycle(new Set(affected))
         setSessions((items) => [...new Map([...items, ...family].map((item) => [item.id, item])).values()])
       }
       yield* operation({ operation: "Update lifecycle marker", sessionID: session.id }, () => updateLifecycle((draft) => {
@@ -688,7 +690,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
       if (selectedValue() === selected.id) setSelectedValue(neighbor)
       props.context.ui.toast.show({ message: inactive ? "Session soft archived; family stopped, history retained" : "Session restored to active", variant: "success" })
     }).pipe(Effect.ensuring(Effect.sync(() => {
-      setChangingLifecycle(false)
+      setChangingLifecycle(undefined)
       setReviewVersion((version) => version + 1)
     }))), showFailure, { detached: true }).done
   }
@@ -1004,11 +1006,6 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
       overflow="hidden"
       backgroundColor={props.context.theme.contextual.overlay.background.default}
     >
-      {changingLifecycle() ? (
-        <box height={1} flexShrink={0} flexDirection="column" paddingLeft={0} paddingRight={0}>
-          <text wrapMode="none" fg={props.context.theme.text.subdued}>Updating session…</text>
-        </box>
-      ) : null}
       {failure() ? (
         <box paddingLeft={0} paddingRight={0}>
           <text fg={props.context.theme.text.feedback.error.default}>{failure()}</text>
@@ -1040,7 +1037,9 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
                  return label !== groupLabel(options()[index - 1]?.state ?? "new") ? label : undefined
                }
               const descriptionColor = () => active() ? props.context.theme.text.default : props.context.theme.text.subdued
+              const updating = () => changingLifecycle()?.has(option().value) ?? false
               const iconColor = () => {
+                if (updating()) return "#ef4444"
                 if (option().state === "permission") return props.context.theme.text.status.permission
                 if (option().state === "question") return props.context.theme.text.status.question
                 if (option().state === "running") return SELECTED
@@ -1081,7 +1080,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
                   >
                     {(() => {
                       const state = option().state
-                      const icon = state === "running" ? "spinner"
+                      const icon = updating() || state === "running" ? "spinner"
                         : state === "permission" ? "!"
                         : state === "question" ? "?"
                         : state === "new" ? "+" : active() ? "❯" : ""
@@ -1091,7 +1090,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
                       )
                       return (
                         icon === "spinner" ? (
-                          <spinner frames={SPINNER_FRAMES} interval={80} color={iconColor()} />
+                          <spinner id={`claude-session-spinner-${option().value}`} frames={SPINNER_FRAMES} interval={80} color={iconColor()} />
                         ) : (
                           <text fg={iconColor()}>{icon}</text>
                         )
@@ -1260,7 +1259,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
                 event.preventDefault()
                 void changeLifecycle(options()[selectedIndex()]?.state !== "inactive")
               }}>
-              {changingLifecycle() ? "[Updating…]" : options()[selectedIndex()]?.state === "inactive" ? "[Restore]" : "[Archive]"}
+              {changingLifecycle()?.has(selectedValue()) ? "[Updating…]" : options()[selectedIndex()]?.state === "inactive" ? "[Restore]" : "[Archive]"}
             </text>
           ) : null}
           {mobile() ? (
