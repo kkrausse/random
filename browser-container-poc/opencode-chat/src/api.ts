@@ -101,7 +101,7 @@ export class OpenCodeAPI {
   }
   async models(signal?: AbortSignal) {
     const location = `location[directory]=${encodeURIComponent(this.directory)}`;
-    // beta-19425 catalog reads are snapshots; activation has an explicit barrier.
+    // V2 catalog reads are snapshots; activation has an explicit barrier.
     await this.response(`plugin/await-activation?${location}`, { method: "POST", signal });
     return (
       await this.request<{ data: ModelInfo[] }>(`model?${location}`, signal)

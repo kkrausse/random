@@ -1,11 +1,13 @@
 # Todo app: IRS Tools stack + browser agent kit
 
-**Clean browser acceptance PASS.** Preparation v2, the qualified beta-19425 server,
+**OpenCode 2.0.3 browser acceptance PASS (September 15).** Preparation v2, the published 2.0.3 server,
 runtime native-realpath/shell-quoting fixes, and the source-pinned Tailwind PR passed
 startup, CRUD, genuine model edits, same-document HMR, native shell Node source
 verification, new CSS utility application, EOF shutdown, source/conversation
 retention and startup cancellation. The accepted runtime pin is `33305d5`.
 See the [combined browser receipt and run command](../doc/todo-clean-demo-acceptance.md).
+The latest [2.0.3 upgrade receipt](../doc/opencode-2.0.3-upgrade.md) supersedes its
+OpenCode identity and records the beta-to-release database migration.
 See the [candidate migration](../doc/opencode-editor-candidate-migration.md),
 [preparation contract](../doc/workspace-preparation-v2.md), and
 [scanner repair](../doc/todo-tailwind-followup.md).
@@ -69,14 +71,16 @@ The typed client batches requests to `/api/<procedure>`. Titles are trimmed and 
 
 ## Enable the browser editor
 
-The existing qualified runtime distribution and unchanged beta-19425 application
+The existing qualified runtime distribution and built OpenCode 2.0.3 application
 are prerequisites. Runtime defaults to `../workspace-api/dist/runtime`; override
 with `RUNTIME_DIR`. Set `OPENCODE_PACKAGE_DIR` explicitly to the retained candidate
-root containing `build-receipt.json` and `.runtime/opencode-bun-server/`. It is not
-the old CLI package directory. After the package builds/install above:
+root containing `build-receipt.json` and `.runtime/opencode-bun-server/`. Build it
+from frozen registry packages once, then run preparation after the toolkit builds:
 
 ```sh
-export OPENCODE_PACKAGE_DIR=/private/var/folders/t_/x48jtnps7n5_0g_pt9xpvbg00000gn/T/opencode/server-process-candidate.0co24kti
+bun --cwd ../vivari/experiments/opencode-release-server install --frozen-lockfile --linker isolated
+bun run --cwd ../vivari/experiments/opencode-release-server build
+export OPENCODE_PACKAGE_DIR="$PWD/../vivari/.runtime/opencode-release-2.0.3"
 bun run prepare:editor
 bun run build
 LOCAL_EDITOR_ADMIN=1 PORT=4390 bun start
@@ -127,9 +131,8 @@ tool-capable Muse Spark model. Other recipe model selections fail explicitly.
 
 This entrypoint fixes its database at `/runtime-probe/opencode.sqlite`. Application
 delivery creates only a marker in that directory and never resets its database.
-Chat uses the controller's bounded stdin-EOF shutdown mode; its lifecycle and
-conversation retention still need combined browser acceptance. Shell permission
-is configured for the upcoming built-in shell gate, not evidence that it passed.
+Chat uses the controller's bounded stdin-EOF shutdown mode. Lifecycle,
+conversation retention and native shell Node execution passed the 2.0.3 browser run.
 
 `prepare.ts` is a single toolkit call. It packages the existing `src`, Vite, React
 Router, and TypeScript configs; there is no second guest frontend. The shared
@@ -145,8 +148,8 @@ editing; manual text autosaves locally. Exit refreshes the normal app's backend
 queries. The normal host page continues to use its built source.
 
 `.editor/` is ignored preparation output, not checked-in scaffolding. OPFS source
-and chat history retention are intended lifecycle behavior, not a completed browser
-qualification of this revision; dependencies are restored on each open.
+and chat history retention passed same-page close/reopen on 2.0.3; dependencies
+are restored on each open. Page-reload retention is a separate qualification.
 **A local flush is not a server save or Git commit.**
 Remote Git patch persistence is a future, separate milestone. Todo data remains the
 ordinary server-owned in-memory map and resets only when that Bun server restarts.

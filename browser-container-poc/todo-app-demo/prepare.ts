@@ -2,7 +2,7 @@ import { prepareBrowserEditor, readTailwindWasmCandidate } from '@kev-browser-ag
 import { resolve } from 'node:path'
 
 const candidate = process.env.OPENCODE_PACKAGE_DIR
-if (!candidate) throw Error('Set OPENCODE_PACKAGE_DIR to the qualified beta-19425 root containing build-receipt.json')
+if (!candidate) throw Error('Set OPENCODE_PACKAGE_DIR to the qualified OpenCode 2.0.3 root containing build-receipt.json')
 const receipt = process.env.TAILWIND_CANDIDATE_RECEIPT
 const digest = process.env.TAILWIND_CANDIDATE_SHA256
 if (!!receipt !== !!digest) throw Error('Set both TAILWIND_CANDIDATE_RECEIPT and TAILWIND_CANDIDATE_SHA256 to select a source-built backend')

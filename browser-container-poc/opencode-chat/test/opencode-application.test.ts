@@ -51,6 +51,24 @@ test('exact candidate wrapper rejects a generic passing receipt', async () => {
   expect(Object.keys(qualifiedOpenCodeCandidate.outputs)).toHaveLength(5);
 });
 
+test('published builds require the independently pinned archive and frozen-lock identity, not a fake clean checkout', async () => {
+  const publishedPackage = qualifiedOpenCodeCandidate.publishedPackage;
+  const source = { kind: 'published-packages', package: publishedPackage.name, version: publishedPackage.version, integrity: publishedPackage.integrity };
+  const recipe = { 'bun.lock': hash('frozen package inputs') };
+  const input = await fixture({ sourceStatus: undefined, source, recipe });
+  const contract = { ...input.contract, publishedPackage };
+  expect((await verifyApplicationDelivery({ ...input, contract })).assets).toHaveLength(1);
+  for (const change of [
+    { source: { ...source, version: '2.0.2' }, recipe },
+    { source: { ...source, integrity: 'swapped' }, recipe },
+    { source, recipe: {} },
+    { source: undefined, recipe, sourceStatus: '' },
+  ]) {
+    const changed = await fixture(change);
+    await expect(verifyApplicationDelivery({ ...changed, contract: { ...changed.contract, publishedPackage } })).rejects.toThrow('receipt contract');
+  }
+});
+
 test('rejects escaping delivery targets and output names', async () => {
   const input = await fixture();
   await expect(verifyApplicationDelivery({ ...input, guestDirectory: '/app/../escape' })).rejects.toThrow('guest directory');

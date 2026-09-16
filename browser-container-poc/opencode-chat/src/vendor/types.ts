@@ -147,6 +147,14 @@ export type SessionProviderContextProvenance = {
   endpoint: string
 }
 
+export type SessionMessageIdle = {
+  id: string
+  metadata?: { [x: string]: JsonValue }
+  time: { created: number }
+  type: "idle"
+  outcome: "succeeded" | "failed" | "interrupted"
+}
+
 export type SessionActive = { type: "running" }
 
 export type SessionInboxDelivery = "steer" | "queue"
@@ -431,6 +439,10 @@ export type WebSearchResult = { url: string; title?: string; content?: string; t
 
 export type ConfigWorktree = { directory: string }
 
+export type ConfigPreferences = { shell?: string; websearch?: false | { provider: "random" | (string & {}) } }
+
+export type ConfigShellOption = { path: string; name: string; acceptable: boolean }
+
 export type ProviderRequest = {
   settings: ProviderSettings
   headers: { [x: string]: string }
@@ -550,28 +562,6 @@ export type SessionInboxCompaction = {
 export type InstructionEntryInfo = { key: InstructionEntryKey; value: JsonValue }
 
 export type InstructionEntrySnapshot = Array<{ key: InstructionEntryKey; value: JsonValue; removed: boolean }>
-
-export type SessionCreated = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "session.created"
-  durable: { aggregateID: string; seq: number; version: 1 }
-  location?: LocationRef
-  data: {
-    sessionID: string
-    projectID: string
-    location: LocationRef
-    subpath?: string
-    parentID?: string
-    slug: string
-    title?: string
-    agent?: string
-    model?: ModelRef
-    metadata?: SessionMetadata
-    version: string
-  }
-}
 
 export type SessionAgentSelected = {
   id: string
@@ -1651,24 +1641,6 @@ export type SessionInboxMove = {
   delivery: SessionInboxDelivery
 }
 
-export type SessionInfo = {
-  id: string
-  parentID?: string
-  fork?: { sessionID: string; boundary: SessionForkBoundary }
-  projectID: string
-  agent?: string
-  model?: ModelRef
-  cost: MoneyUSD
-  tokens: TokenUsageInfo
-  outcome?: "succeeded" | "failed" | "interrupted"
-  time: { created: number; updated: number; idle?: number; viewed?: number; archived?: number }
-  title?: string
-  location: LocationRef
-  subpath?: string
-  metadata?: SessionMetadata
-  revert?: SessionRevert
-}
-
 export type SessionRevertStaged = {
   id: string
   created: number
@@ -1912,6 +1884,58 @@ export type AgentInfo = {
   permissions: PermissionRuleset
 }
 
+export type SessionPermissionsUpdated = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.permissions.updated"
+  durable: { aggregateID: string; seq: number; version: 1 }
+  location?: LocationRef
+  data: { sessionID: string; permissions: PermissionRuleset }
+}
+
+export type SessionInfo = {
+  id: string
+  parentID?: string
+  fork?: { sessionID: string; boundary: SessionForkBoundary }
+  projectID: string
+  agent?: string
+  model?: ModelRef
+  cost: MoneyUSD
+  tokens: TokenUsageInfo
+  outcome?: "succeeded" | "failed" | "interrupted"
+  time: { created: number; updated: number; idle?: number; viewed?: number; archived?: number }
+  title?: string
+  location: LocationRef
+  subpath?: string
+  metadata?: SessionMetadata
+  permissions?: PermissionRuleset
+  revert?: SessionRevert
+}
+
+export type SessionCreated = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.created"
+  durable: { aggregateID: string; seq: number; version: 1 }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    projectID: string
+    location: LocationRef
+    subpath?: string
+    parentID?: string
+    slug: string
+    title?: string
+    agent?: string
+    model?: ModelRef
+    metadata?: SessionMetadata
+    permissions?: PermissionRuleset
+    version: string
+  }
+}
+
 export type ConfigEntry =
   | {
       type: "document"
@@ -2084,8 +2108,6 @@ export type ConfigEntry =
   | { type: "agents"; path: string }
   | { type: "claude"; path: string }
 
-export type SessionsResponse = { data: Array<SessionInfo>; cursor: { previous?: string | null; next?: string | null } }
-
 export type SessionInboxUser = {
   id: string
   sessionID: string
@@ -2139,6 +2161,8 @@ export type SessionMessageAssistantTool1 = {
 export type FormFields = [FormField, ...Array<FormField>]
 
 export type FormFields2 = [FormField1, ...Array<FormField1>]
+
+export type SessionsResponse = { data: Array<SessionInfo>; cursor: { previous?: string | null; next?: string | null } }
 
 export type SessionInboxInfo = SessionInboxUser | SessionInboxSynthetic | SessionInboxCompaction | SessionInboxMove
 
@@ -2194,6 +2218,7 @@ export type SessionMessageInfo =
   | SessionMessageShell
   | SessionMessageAssistant
   | SessionMessageCompaction
+  | SessionMessageIdle
 
 export type SessionMessageContentUpdated = {
   id: string
@@ -2233,6 +2258,7 @@ export type SessionEventDurable =
   | SessionModelSelected
   | SessionMoved
   | SessionRenamed
+  | SessionPermissionsUpdated
   | SessionViewed
   | SessionDeleted
   | SessionForked
@@ -2292,6 +2318,7 @@ export type V2Event =
   | SessionModelSelected
   | SessionMoved
   | SessionRenamed
+  | SessionPermissionsUpdated
   | SessionViewed
   | SessionUsageUpdated
   | SessionDeleted
@@ -2535,6 +2562,10 @@ export type PermissionNotFoundError = {
 }
 export const isPermissionNotFoundError = (value: unknown): value is PermissionNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "PermissionNotFoundError"
+
+export type FileNotFoundError = { readonly _tag: "FileNotFoundError"; readonly path: string; readonly message: string }
+export const isFileNotFoundError = (value: unknown): value is FileNotFoundError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "FileNotFoundError"
 
 export type RpcError = {
   readonly _tag: "RpcError"
@@ -2804,6 +2835,11 @@ export type SessionCreateInput = {
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
     readonly metadata?: { readonly [x: string]: JsonValue } | null
+    readonly permissions?: ReadonlyArray<{
+      readonly action: string
+      readonly resource: string
+      readonly effect: "allow" | "deny" | "ask"
+    }> | null
   }["id"]
   readonly title?: {
     readonly id?: string | null
@@ -2812,6 +2848,11 @@ export type SessionCreateInput = {
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
     readonly metadata?: { readonly [x: string]: JsonValue } | null
+    readonly permissions?: ReadonlyArray<{
+      readonly action: string
+      readonly resource: string
+      readonly effect: "allow" | "deny" | "ask"
+    }> | null
   }["title"]
   readonly agent?: {
     readonly id?: string | null
@@ -2820,6 +2861,11 @@ export type SessionCreateInput = {
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
     readonly metadata?: { readonly [x: string]: JsonValue } | null
+    readonly permissions?: ReadonlyArray<{
+      readonly action: string
+      readonly resource: string
+      readonly effect: "allow" | "deny" | "ask"
+    }> | null
   }["agent"]
   readonly model?: {
     readonly id?: string | null
@@ -2828,6 +2874,11 @@ export type SessionCreateInput = {
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
     readonly metadata?: { readonly [x: string]: JsonValue } | null
+    readonly permissions?: ReadonlyArray<{
+      readonly action: string
+      readonly resource: string
+      readonly effect: "allow" | "deny" | "ask"
+    }> | null
   }["model"]
   readonly location?: {
     readonly id?: string | null
@@ -2836,6 +2887,11 @@ export type SessionCreateInput = {
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
     readonly metadata?: { readonly [x: string]: JsonValue } | null
+    readonly permissions?: ReadonlyArray<{
+      readonly action: string
+      readonly resource: string
+      readonly effect: "allow" | "deny" | "ask"
+    }> | null
   }["location"]
   readonly metadata?: {
     readonly id?: string | null
@@ -2844,7 +2900,25 @@ export type SessionCreateInput = {
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
     readonly metadata?: { readonly [x: string]: JsonValue } | null
+    readonly permissions?: ReadonlyArray<{
+      readonly action: string
+      readonly resource: string
+      readonly effect: "allow" | "deny" | "ask"
+    }> | null
   }["metadata"]
+  readonly permissions?: {
+    readonly id?: string | null
+    readonly title?: string | null
+    readonly agent?: string | null
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
+    readonly metadata?: { readonly [x: string]: JsonValue } | null
+    readonly permissions?: ReadonlyArray<{
+      readonly action: string
+      readonly resource: string
+      readonly effect: "allow" | "deny" | "ask"
+    }> | null
+  }["permissions"]
 }
 
 export type SessionCreateOutput = { data: SessionInfo }["data"]
@@ -2882,6 +2956,11 @@ export type SessionImportInput = {
       readonly location: { readonly directory: string; readonly workspaceID?: string }
       readonly subpath?: string
       readonly metadata?: { readonly [x: string]: JsonValue }
+      readonly permissions?: ReadonlyArray<{
+        readonly action: string
+        readonly resource: string
+        readonly effect: "allow" | "deny" | "ask"
+      }>
       readonly revert?: {
         readonly messageID: string
         readonly partID?: string
@@ -3152,6 +3231,13 @@ export type SessionImportInput = {
               }
             }
         )
+      | {
+          readonly id: string
+          readonly metadata?: { readonly [x: string]: JsonValue }
+          readonly time: { readonly created: number }
+          readonly type: "idle"
+          readonly outcome: "succeeded" | "failed" | "interrupted"
+        }
     >
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
   }["info"]
@@ -3187,6 +3273,11 @@ export type SessionImportInput = {
       readonly location: { readonly directory: string; readonly workspaceID?: string }
       readonly subpath?: string
       readonly metadata?: { readonly [x: string]: JsonValue }
+      readonly permissions?: ReadonlyArray<{
+        readonly action: string
+        readonly resource: string
+        readonly effect: "allow" | "deny" | "ask"
+      }>
       readonly revert?: {
         readonly messageID: string
         readonly partID?: string
@@ -3457,6 +3548,13 @@ export type SessionImportInput = {
               }
             }
         )
+      | {
+          readonly id: string
+          readonly metadata?: { readonly [x: string]: JsonValue }
+          readonly time: { readonly created: number }
+          readonly type: "idle"
+          readonly outcome: "succeeded" | "failed" | "interrupted"
+        }
     >
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
   }["messages"]
@@ -3492,6 +3590,11 @@ export type SessionImportInput = {
       readonly location: { readonly directory: string; readonly workspaceID?: string }
       readonly subpath?: string
       readonly metadata?: { readonly [x: string]: JsonValue }
+      readonly permissions?: ReadonlyArray<{
+        readonly action: string
+        readonly resource: string
+        readonly effect: "allow" | "deny" | "ask"
+      }>
       readonly revert?: {
         readonly messageID: string
         readonly partID?: string
@@ -3762,6 +3865,13 @@ export type SessionImportInput = {
               }
             }
         )
+      | {
+          readonly id: string
+          readonly metadata?: { readonly [x: string]: JsonValue }
+          readonly time: { readonly created: number }
+          readonly type: "idle"
+          readonly outcome: "succeeded" | "failed" | "interrupted"
+        }
     >
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
   }["location"]
@@ -4250,6 +4360,27 @@ export type SessionRevertCommitOutput = void
 export type SessionContextInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
 export type SessionContextOutput = { data: Array<SessionMessageInfo> }["data"]
+
+export type SessionDiffInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly from?: {
+    readonly from?: string | undefined
+    readonly to?: string | undefined
+    readonly context?: number | undefined
+  }["from"]
+  readonly to?: {
+    readonly from?: string | undefined
+    readonly to?: string | undefined
+    readonly context?: number | undefined
+  }["to"]
+  readonly context?: {
+    readonly from?: string | undefined
+    readonly to?: string | undefined
+    readonly context?: number | undefined
+  }["context"]
+}
+
+export type SessionDiffOutput = { data: Array<FileDiffInfo> }["data"]
 
 export type SessionInboxListInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
@@ -5753,6 +5884,19 @@ export type PermissionReplyInput = {
 
 export type PermissionReplyOutput = void
 
+export type PermissionRulesInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly permissions: {
+    readonly permissions: ReadonlyArray<{
+      readonly action: string
+      readonly resource: string
+      readonly effect: "allow" | "deny" | "ask"
+    }>
+  }["permissions"]
+}
+
+export type PermissionRulesOutput = void
+
 export type FileReadInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
@@ -6384,3 +6528,20 @@ export type ConfigGetInput = {
 }
 
 export type ConfigGetOutput = Array<ConfigEntry>
+
+export type ConfigPreferencesOutput = ConfigPreferences
+
+export type ConfigUpdatePreferencesInput = {
+  readonly shell?: {
+    readonly shell?: string | null
+    readonly websearch?: false | { readonly provider: "random" | (string & {}) } | null
+  }["shell"]
+  readonly websearch?: {
+    readonly shell?: string | null
+    readonly websearch?: false | { readonly provider: "random" | (string & {}) } | null
+  }["websearch"]
+}
+
+export type ConfigUpdatePreferencesOutput = ConfigPreferences
+
+export type ConfigShellsOutput = Array<ConfigShellOption>
