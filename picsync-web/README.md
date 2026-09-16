@@ -70,18 +70,19 @@ Chromium is covered below; actual iPhone Safari performance remains to be tested
 
 ### Running archive instance
 
-The gallery is deployed separately at `/home/pi/picsync-web-gallery`, running
-as transient user service `picsync-web-gallery` on `127.0.0.1:8789`. Access from
-the development Mac through an SSH tunnel:
+The gallery is deployed at `/home/pi/picsync-web-gallery` and runs as an ordinary
+background Bun process at **http://192.168.1.207:8788/**. The old experiment and
+transient gallery services have been stopped. No persistent service or Tailscale
+Serve configuration was installed. The existing LAN firewall rule permits access.
 
 ```sh
-ssh -N -L 8791:127.0.0.1:8789 lrpi
-# Open http://127.0.0.1:8791 (localhost qualifies for isolated WASM)
-ssh lrpi 'systemctl --user stop picsync-web-gallery'
+ssh lrpi 'cat /home/pi/picsync-web-gallery/gallery.log'
+ssh lrpi 'kill "$(cat /home/pi/picsync-web-gallery/gallery.pid)"'
 ```
 
-The transient service must be started again after a Pi reboot. Phone HTTPS is
-not provisioned by this deployment.
+The process must be started again after a Pi reboot. This plain LAN HTTP URL
+supports folder browsing and browser-native photos; modern RAW decoding requires
+HTTPS or localhost, as described above. HTTPS is not provisioned.
 
 ### Verification
 
