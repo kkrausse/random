@@ -83,6 +83,49 @@ test('unqualified model options fail before starting workspace work', () => {
   expect(() => createBrowserEditorRecipe({ model: 'opencode/muse-spark-1.3-contributor-free' })).not.toThrow();
 });
 
+test('readiness cancellation aborts an in-flight response body', async () => {
+  const lifetime = new AbortController();
+  let requestSignal: AbortSignal | undefined;
+  let reading!: () => void;
+  const started = new Promise<void>(resolve => { reading = resolve; });
+  const endpoint = { async fetch(_path: string, init?: RequestInit) {
+    requestSignal = init!.signal!;
+    return new Response(new ReadableStream({
+      start(controller) {
+        requestSignal!.addEventListener('abort', () => controller.error(requestSignal!.reason), { once: true });
+        reading();
+      },
+    }));
+  } };
+  const result = verifyOpenCodeReady(endpoint, 'Basic test', lifetime.signal);
+  const outcome = result.then(() => 'resolved', () => 'rejected');
+  await started;
+  lifetime.abort();
+  expect(await outcome).toBe('rejected');
+  expect(requestSignal?.aborted).toBe(true);
+});
+
+test('readiness cancellation during health backoff prevents subsequent requests', async () => {
+  const lifetime = new AbortController();
+  let requests = 0;
+  let drained!: () => void;
+  const consumed = new Promise<void>(resolve => { drained = resolve; });
+  const endpoint = { async fetch() {
+    requests++;
+    const response = new Response('', { status: 503 });
+    const consume = response.arrayBuffer.bind(response);
+    response.arrayBuffer = async () => { const bytes = await consume(); drained(); return bytes; };
+    return response;
+  } };
+  const result = verifyOpenCodeReady(endpoint, 'Basic test', lifetime.signal);
+  const outcome = result.then(() => 'resolved', () => 'rejected');
+  await consumed;
+  lifetime.abort();
+  expect(await outcome).toBe('rejected');
+  await new Promise(resolve => setTimeout(resolve, 130));
+  expect(requests).toBe(1);
+});
+
 test('source scanning excludes server state and still discovers application files', async () => {
   const scanned: string[] = [];
   const workspace = { fs: {

@@ -105,7 +105,7 @@ export function createSampleRecipe() {
         ["Launch guest Vite and render preview", () => this.vite(controller)],
         ["Launch guest OpenCode and connect chat", () => this.chat(controller)],
       ]);
-      controller.status("Workspace ready. Source edits autosave locally; ask OpenCode to change the app or open Source. Existing files and sessions were preserved.");
+      controller.status("Workspace ready. Ask OpenCode to change the app. Existing files and sessions were preserved.");
     },
   };
 }

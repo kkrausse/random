@@ -1,38 +1,48 @@
 import type { Endpoint, Distribution } from '@kev-browser-agent-kit/workspace';
+import { Effect } from 'effect';
 import type { WorkspaceController, Connection } from '@kev-browser-agent-kit/workspace/react';
 import { sourcePaths } from './editor-source';
 import { loadPrepared, preparedApps, type PreparedManifest } from './prepared';
 import { createOpenCodeCandidateConfig, createOpenCodeCandidateLaunch, openCodeCandidateLaunch } from './opencode-launch';
 
 /** Readiness is a real configured provider barrier, not just an HTTP listener. */
-export async function verifyOpenCodeReady(endpoint: Pick<Endpoint, 'fetch'>, authorization: string, signal: AbortSignal) {
+const verifyOpenCodeReadyEffect = Effect.fn('Workspace.verifyOpenCodeReady')(function*(endpoint: Pick<Endpoint, 'fetch'>, authorization: string) {
   const descriptor = openCodeCandidateLaunch;
-  const request = (path: string, method = 'GET', timeout = 20000) => endpoint.fetch(path, {
-    method, headers: { authorization }, signal: AbortSignal.any([signal, AbortSignal.timeout(timeout)]),
+  // Keep body consumption inside the interruptible request so cancellation also
+  // aborts a response whose headers arrived but whose body is still streaming.
+  const request = <A>(path: string, consume: (response: Response) => Promise<A>, method = 'GET', timeout = 20000) => Effect.tryPromise({
+    try: async signal => consume(await endpoint.fetch(path, {
+      method, headers: { authorization }, signal: AbortSignal.any([signal, AbortSignal.timeout(timeout)]),
+    })),
+    catch: (cause: unknown) => cause instanceof Error ? cause : new Error(String(cause)),
   });
+  const drained = async (response: Response) => { await response.arrayBuffer(); return response; };
   const deadline = Date.now() + 30000;
   while (true) {
-    signal.throwIfAborted();
-    const health = await request(descriptor.healthPath, 'GET', 3000);
-    await health.arrayBuffer();
+    const health = yield* request(descriptor.healthPath, drained, 'GET', 3000);
     if (health.ok) break;
-    if (Date.now() >= deadline) throw Error(`OpenCode health HTTP ${health.status}`);
-    await new Promise(resolve => setTimeout(resolve, 100));
+    if (Date.now() >= deadline) return yield* Effect.fail(new Error(`OpenCode health HTTP ${health.status}`));
+    yield* Effect.sleep(100);
   }
-  const activated = await request(descriptor.activation.path, descriptor.activation.method);
-  await activated.arrayBuffer();
-  if (!activated.ok) throw Error(`OpenCode plugin activation HTTP ${activated.status}`);
-  const configuration = await request(descriptor.configAPIPath);
-  if (!configuration.ok) throw Error(`OpenCode configuration HTTP ${configuration.status}`);
-  const entries = await configuration.json();
+  const activated = yield* request(descriptor.activation.path, drained, descriptor.activation.method);
+  if (!activated.ok) return yield* Effect.fail(new Error(`OpenCode plugin activation HTTP ${activated.status}`));
+  const entries = yield* request(descriptor.configAPIPath, async response => {
+    if (!response.ok) { await response.arrayBuffer(); throw Error(`OpenCode configuration HTTP ${response.status}`); }
+    return response.json();
+  });
   if (!Array.isArray(entries) || !entries.some(entry => entry.type === 'document' && entry.path === descriptor.configPath
     && entry.info?.providers?.opencode?.models?.[descriptor.model.id]?.package === '@opencode/ai/providers/openai'
-    && entry.info.providers.opencode.models[descriptor.model.id].websocket === false)) throw Error('OpenCode global model configuration not loaded');
-  const catalog = await request(descriptor.modelPath);
-  if (!catalog.ok) throw Error(`OpenCode model catalog HTTP ${catalog.status}`);
-  const { data } = await catalog.json();
+    && entry.info.providers.opencode.models[descriptor.model.id].websocket === false)) return yield* Effect.fail(new Error('OpenCode global model configuration not loaded'));
+  const { data } = yield* request(descriptor.modelPath, async response => {
+    if (!response.ok) { await response.arrayBuffer(); throw Error(`OpenCode model catalog HTTP ${response.status}`); }
+    return response.json();
+  });
   if (!Array.isArray(data) || !data.some(model => model.providerID === descriptor.model.providerID && model.id === descriptor.model.id
-    && model.enabled && model.capabilities?.tools)) throw Error('Qualified OpenCode model is not enabled with tools');
+    && model.enabled && model.capabilities?.tools)) return yield* Effect.fail(new Error('Qualified OpenCode model is not enabled with tools'));
+});
+
+export function verifyOpenCodeReady(endpoint: Pick<Endpoint, 'fetch'>, authorization: string, signal: AbortSignal) {
+  return Effect.runPromise(verifyOpenCodeReadyEffect(endpoint, authorization), { signal });
 }
 
 function connection(endpoint: Endpoint, authorization?: string): Connection {
@@ -98,6 +108,6 @@ export function createBrowserEditorRecipe(options: { base?: string; model?: stri
         await controller.waitForClient('chat');
       }],
     ]);
-    controller.status('Ready. Source changes save locally in this browser; remote Git persistence is not connected.');
+    controller.status('Ready. Ask the agent to change the app; changes stay local to this browser.');
   } };
 }

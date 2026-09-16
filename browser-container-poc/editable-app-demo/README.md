@@ -119,8 +119,8 @@ host after source changes. Missing/stale assets produce an early actionable erro
   These are deliberately outside the core API and generic React provider.
 - `src/main.tsx`: normal app, app-owned permission/enable state and lazy editor load.
   `src/editor.tsx` is a small adapter to the package's `BrowserEditor`: controller,
-  host API paths, initial source path, rendered-root readiness, exit/retry and the
-  existing reset recipe. Preview, source controls/autosave, chat, errors and activity
+  host API paths, rendered-root readiness, exit/retry and the
+  existing reset recipe. Preview, chat, errors and activity
   UI live in `opencode-chat`; no copied editor-components or chat-adapter remains.
   The recipe uses package `attachChat`, which shares a client for the service
   lifetime and disposes on release/abort. The app retains `WorkspaceEditing` as its

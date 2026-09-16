@@ -82,14 +82,11 @@ test("question radio and checkbox primitives preserve pinned reply answer arrays
   expect(replies).toEqual([[["B"], ["C", "D"]]]);
 });
 
-test("editor keeps startup-gated source discovery, interval retry and host reset with shadcn controls", async () => {
-  let text = "initial", discovered = 0, flushes = 0, resets = 0;
+test("chat and preview panel gates host reset during startup and exposes no manual source editor", async () => {
+  let resets = 0;
   const listeners = new Set<() => void>();
   let state = {
-    workspace: { id: "local", fs: {
-      readFile: async () => new TextEncoder().encode(text),
-      writeFile: async (_path: string, value: string) => { text = value; },
-    }, flush: async () => { if (++flushes === 1) throw Error("temporary flush failure"); } },
+    workspace: { id: "local" },
     runtime: {}, services: {}, clients: {}, busy: true, status: "Starting", error: "", progress: [], logs: [], persistence: "local",
   } as unknown as WorkspaceSnapshot;
   const controller = {
@@ -97,25 +94,14 @@ test("editor keeps startup-gated source discovery, interval retry and host reset
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
     reportError: (error: unknown) => { throw error; },
   } as unknown as WorkspaceController;
-  const container = await mount(<BrowserEditor controller={controller} autosaveMs={10}
-    listFiles={async () => { discovered++; return ["/source.tsx"]; }}
-    onReset={async () => { resets++; text = "reset"; }} />);
-  expect(discovered).toBe(0);
+  const container = await mount(<BrowserEditor controller={controller} onReset={async () => { resets++; }} />);
+  const reset = [...container.querySelectorAll("button")].find(button => button.textContent === "Reset source")!;
+  expect(reset.disabled).toBe(true);
   await act(async () => { state = { ...state, busy: false }; listeners.forEach(listener => listener()); });
-  expect(discovered).toBe(1);
-  const input = container.querySelector<HTMLTextAreaElement>('[aria-label="File contents"]')!;
-  expect(input.value).toBe("initial");
-  expect(input.getAttribute("data-slot")).toBe("textarea");
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, "edited");
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  expect(container.querySelector('[aria-label="Source file"]')!.hasAttribute("disabled")).toBe(true);
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 45)); });
-  expect(flushes).toBeGreaterThanOrEqual(2);
-  expect(text).toBe("edited");
-  expect(container.textContent).toContain("Not published to a remote server");
-  await click([...container.querySelectorAll("button")].find(button => button.textContent === "Reset source")!);
+  expect(reset.disabled).toBe(false);
+  await click(reset);
   expect(resets).toBe(1);
-  expect(container.querySelector<HTMLTextAreaElement>('[aria-label="File contents"]')!.value).toBe("reset");
+  expect(container.querySelector('[aria-label="Source editor"]')).toBeNull();
+  expect(container.querySelector('iframe[title="Workspace preview"]')).not.toBeNull();
+  expect(container.textContent).toContain("Waiting for OpenCode connection");
 });
