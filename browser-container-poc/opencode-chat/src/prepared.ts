@@ -112,7 +112,9 @@ export function preparedApps(manifest: PreparedManifest, base: string, signal: A
             }
             const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
             if (bytes.length !== asset.bytes || hash !== asset.sha256) throw Error(`Asset integrity failure: ${asset.destination}`);
-            await context.installFile(asset.destination, bytes);
+            // Worker structured cloning copies the entire backing ArrayBuffer,
+            // not just a subarray's visible range. Keep each message file-sized.
+            await context.installFile(asset.destination, bundled ? bytes.slice() : bytes);
             if (asset.destination.startsWith('/app/')) {
               const installed = await context.readFile(asset.destination);
               if (installed.length !== asset.bytes || await sha256(installed) !== asset.sha256) throw Error(`Installed OpenCode integrity failure: ${asset.destination}`);

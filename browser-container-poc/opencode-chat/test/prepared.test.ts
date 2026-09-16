@@ -13,6 +13,8 @@ test('guest delivery uses distinct immutable installer scripts and checks comple
   let complete = true;
   const context: ToolContext = {
     async installFile(path, value) {
+      // Real worker postMessage clones the backing buffer, including invisible bytes.
+      if (path === '/workspace/node_modules/file') expect(structuredClone(value).buffer.byteLength).toBe(value.byteLength);
       // Match the public API's immutable install semantics, including scripts.
       if (files.has(path) && sha256(files.get(path)!) !== sha256(value)) throw Error('Bundle conflict');
       files.set(path, value);
@@ -34,13 +36,17 @@ test('guest delivery uses distinct immutable installer scripts and checks comple
     expect(launches).toHaveLength(2);
     expect(launches[0]).not.toBe(launches[1]);
     expect(files.get('/workspace/node_modules/file')).toEqual(bytes);
-    const compressed = Bun.gzipSync(bytes), bundleHash = sha256(compressed);
+    const extra = new TextEncoder().encode('another file in the same bundle'), extraHash = sha256(extra);
+    manifest.assets.push({ kind: 'file', destination: '/workspace/node_modules/extra', mode: 0o644, file: extraHash + '.bin', sha256: extraHash, bytes: extra.length });
+    const compressed = Bun.gzipSync(new Uint8Array([...bytes, ...extra])), bundleHash = sha256(compressed);
     manifest.bundle = { file: bundleHash + '.bundle.gz', sha256: bundleHash, bytes: compressed.length };
     fetch.mockImplementation(response(compressed));
     fetch.mockClear();
     await install();
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(files.get('/workspace/node_modules/file')).toEqual(bytes);
+    expect(files.get('/workspace/node_modules/extra')).toEqual(extra);
+    manifest.assets.pop();
     delete manifest.bundle;
     fetch.mockImplementation(response(bytes));
     complete = false;
