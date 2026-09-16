@@ -25,6 +25,8 @@
 !boox-plugin-test/**
 !picsync/
 !picsync/**
+!picsync-web/
+!picsync-web/**
 !travel-map/
 !travel-map/**
 !bird-log/
