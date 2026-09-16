@@ -34,6 +34,15 @@ test('guest delivery uses distinct immutable installer scripts and checks comple
     expect(launches).toHaveLength(2);
     expect(launches[0]).not.toBe(launches[1]);
     expect(files.get('/workspace/node_modules/file')).toEqual(bytes);
+    const compressed = Bun.gzipSync(bytes), bundleHash = sha256(compressed);
+    manifest.bundle = { file: bundleHash + '.bundle.gz', sha256: bundleHash, bytes: compressed.length };
+    fetch.mockImplementation(response(compressed));
+    fetch.mockClear();
+    await install();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(files.get('/workspace/node_modules/file')).toEqual(bytes);
+    delete manifest.bundle;
+    fetch.mockImplementation(response(bytes));
     complete = false;
     await expect(install()).rejects.toThrow('reset failed');
     complete = true;
