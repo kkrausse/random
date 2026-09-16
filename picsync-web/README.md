@@ -12,10 +12,10 @@ photo opens, including before you zoom in.
 
 ```sh
 bun install --frozen-lockfile
-# Mac server: needed to extract embedded RAW previews (already installed here).
-brew install exiftool
+# Mac server: native RAW development and embedded previews.
+brew install libraw exiftool
 bun run build
-MEDIA_ROOT=/path/to/mounted/smb/archive bun run start
+MEDIA_ROOT=/Volumes/Photos bun run start:lan
 # Open the sign-in link printed at startup.
 ```
 
@@ -27,6 +27,41 @@ paths must remain inside the archive. Folder navigation is nonrecursive and
 bookmarkable. This is a read-only archive viewer.
 
 ### Loading and caching
+
+**Default: native server conversion on the Mac.** Bun runs a bounded pool of
+**ten concurrent conversion jobs**. RAW development uses LibRaw's `dcraw_emu`
+with camera white balance, AHD demosaicing, full sensor resolution, and sRGB.
+Sharp/libvips encodes full-resolution JPEGs at quality 92 with 4:4:4 chroma;
+these are display derivatives, while **Download original** retains the exact
+archive file. No RAW web workers or WASM modules start in server mode.
+
+- Thumbnails are oriented, resized to 320px, and encoded on the server. RAW
+  thumbnails use embedded JPEGs when available, with native RAW development as
+  fallback. Native images are identified by signature, including JPEGs with
+  misleading `.ARW` filenames. macOS `sips` handles HEIC/HEIF conversion.
+- Up to **10 requests on desktop / 8 on iPhone/iPad**, within the existing
+  download admission budgets. The grid prefetches **two viewport heights above
+  and below** the viewport, updating when the window resizes.
+- Opening a photo eagerly requests its full-resolution server conversion and
+  the **next ten photos**, bounded by the admission budget. Only the current
+  photo and next two expand into browser bitmaps; farther-ahead JPEGs remain
+  compressed. Foreground jobs take priority over queued server work.
+- A metadata-keyed **512 MB / 1,024-entry server RAM cache** retains converted
+  JPEGs across browsers and folder visits. Concurrent identical requests share
+  work. Temporary TIFFs are removed after conversion; originals are never
+  modified. Restarting clears the RAM cache.
+- Navigating away drops stale queued focus requests. Already-running native
+  conversions finish into the shared cache. Each native process and Sharp
+  encoder uses one processing thread; ten jobs do not each start an all-core pool.
+- `/api/render` uses the same authentication and archive path restrictions as
+  original downloads. All photo responses remain `no-store`.
+
+**Optional browser backend:** add `?decoder=browser` (or
+`&decoder=browser` with a folder query). Folder navigation preserves this choice.
+Use **localhost or trusted HTTPS** for this mode; plain LAN HTTP cannot run the
+shared-memory WASM decoder. Both backends use the same grid, viewer, bounded
+pipeline, and full-resolution canvas interface. The following limits describe
+the retained browser-RAW backend:
 
 **iPhone/iPad memory profile:** one page-lifetime RAW worker,
 initialized with its WASM module when the gallery loads. At most six downloads
@@ -107,19 +142,43 @@ identity, so a rejected request can be distinguished from a missing cookie.
 
 ### Phone / LAN access
 
-Modern LibRaw requires shared WASM memory: **trusted HTTPS and cross-origin
-isolation**, or localhost. The server supplies COOP/COEP headers. To serve on
-the LAN with a certificate trusted by the phone:
+For normal **server conversion**, run on the MacBook:
+
+```sh
+MEDIA_ROOT=/Volumes/Photos bun run start:lan
+```
+
+This detects the Mac's private LAN IPv4 address (preferring `en0`), listens on
+port **8794**, allows peers on that interface's subnet plus localhost, and
+prints a **LAN-IP sign-in link and QR code**. Open the link or scan the QR on
+the same Wi-Fi/LAN. No Tailscale or HTTPS setup is required for server conversion.
+The existing sign-in gate and Keychain credentials remain in use.
+
+Select another interface/port with `LAN_IP=192.168.1.184 PORT=8794` if needed.
+For explicit configuration instead of automatic detection:
+
+```sh
+MEDIA_ROOT=/Volumes/Photos HOST=0.0.0.0 PORT=8794 LAN_CIDR=192.168.1.0/24 \
+  PICSYNC_LAN_URL=http://192.168.1.184:8794 bun run start
+```
+
+Only an explicitly configured private IPv4 LAN origin is accepted for remote
+HTTP sign-in. The socket peer must be in the configured subnet; forwarded
+headers do not grant access. `bun run start` without LAN settings stays
+loopback-only. If the Mac's LAN IP changes, restart `start:lan` and use its new QR.
+
+For the optional **browser RAW backend**, Modern LibRaw requires shared WASM
+memory: trusted HTTPS and cross-origin isolation, or localhost. To serve that
+mode over LAN HTTPS with a certificate already trusted by the phone:
 
 ```sh
 MEDIA_ROOT=/home/pi/photos HOST=192.168.1.207 LAN_CIDR=192.168.1.0/24 \
   TLS_CERT=/path/to/cert.pem TLS_KEY=/path/to/key.pem PORT=8789 bun run start
 ```
 
-Defaults accept loopback peers only; `HOST` and `LAN_CIDR` configure direct-LAN
-access. Also set `PICSYNC_PUBLIC_URL` to the trusted HTTPS origin for direct-LAN
-access. The server ignores forwarded headers. Mobile viewport/touch testing in
-Chromium is covered below; actual iPhone Safari performance remains to be tested.
+Also set `PICSYNC_PUBLIC_URL` to the trusted HTTPS origin. Mobile viewport/touch
+testing in Chromium is covered below; actual iPhone Safari performance remains
+to be tested.
 
 ### Running archive instance
 
@@ -127,28 +186,31 @@ The gallery now runs on the **MacBook**, reading the Pi's SMB archive mounted at
 `/Volumes/Photos` (`smb://pi@192.168.1.207/Photos`). The Pi's gallery process and
 old experiment/gallery services are stopped; it only provides archive storage.
 
-**https://kevins-macbook-pro-2.tail7e28fb.ts.net:8443/**
+**LAN: http://192.168.1.184:8794/** (current MacBook address; use the startup
+sign-in link/QR to authenticate). Local Mac access also works at
+**http://localhost:8794/**, with a separate origin-bound sign-in.
 
-Tailscale Serve terminates trusted HTTPS and forwards to the Mac's loopback-only
-Bun process. **Funnel is enabled on port 8443**, making the gallery URL reachable
-from the public internet; the PicSync sign-in gate still applies. The existing HTTPS port 443 route
-to the separate app on local port 3000 is retained.
+**Funnel is disabled and the gallery's Tailscale Serve route on 8443 is removed.**
+Verified with `tailscale funnel status` and `tailscale serve status --json`:
+only the separate tailnet-only port 443 app on local port 3000 remains. There is
+no gallery Funnel/public route or gallery Tailscale proxy.
 
 ```sh
 # With the Photos share mounted, run from picsync-web on the Mac:
-MEDIA_ROOT=/Volumes/Photos HOST=127.0.0.1 PORT=8794 \
-  PICSYNC_PUBLIC_URL=https://kevins-macbook-pro-2.tail7e28fb.ts.net:8443 bun run start
-# In another terminal (already configured):
-tailscale funnel --bg --https=8443 http://127.0.0.1:8794
-# Inspect or disable only the gallery proxy:
+MEDIA_ROOT=/Volumes/Photos bun run start:lan
+# Confirm public sharing remains disabled:
 tailscale funnel status
-tailscale funnel --https=8443 off
+tailscale serve status --json
 ```
 
 The Mac must be awake, the SMB share mounted, and the Bun process running. No
-launch agent or persistent app service was installed. The Tailscale Serve mapping
-persists independently of the app process. Verified over this HTTPS URL: secure
-context, cross-origin isolation, archive folders, and a 6240 × 4168 RAW canvas.
+launch agent or persistent app service was installed. Verified direct LAN
+reachability from the Pi and a browser-rendered **6240 × 4168** server-developed
+RAW canvas with zero RAW-worker/WASM/original downloads. Focus mode requested
+the open photo plus ten full-resolution derivatives; a prefetched next photo
+displayed in approximately 78 ms in an exploratory desktop check. A separate
+cold native conversion of one ARW took approximately 4.4 seconds; eager
+conversion/caching avoids that repeat cost, but cold photos still require work.
 
 ### Sign-in gate
 
@@ -170,7 +232,7 @@ fail startup rather than silently switching credentials. To revoke all access:
 stop the server, run `PORT=8794 bun run auth:reset` (use your server's port),
 then start it again and use the new link. Restarting alone does not revoke access.
 
-Set `PICSYNC_PUBLIC_URL` to the exact externally used HTTPS origin, including
+For optional HTTPS deployment, set `PICSYNC_PUBLIC_URL` to the exact externally used HTTPS origin, including
 its port. This is required for Tailscale Serve or future Funnel use; arbitrary
 hosts and forwarded headers are not trusted. When exposing via Funnel, retain
 the loopback bind and let Tailscale terminate HTTPS. The same sign-in gate applies
@@ -186,7 +248,8 @@ bun run build
 bun test
 ```
 
-`app/verify.browser.js` is a Browser Control CLI integration check. Serve a
+`app/verify.browser.js` is a Browser Control CLI integration check for the optional
+**browser backend**; select `?decoder=browser` in the authenticated fixture. Serve a
 disposable fixture at port 8792 containing a `Test album` folder with twelve RAW
 files named `Photo 1.ARW` through `Photo 12.ARW`. Sign the Browser Control session
 into that fixture using its startup link, then run in that same session:

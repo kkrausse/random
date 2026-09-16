@@ -5,7 +5,7 @@ import { decodeCredentials, generateCredentials } from "./credentials";
 const local = "http://127.0.0.1:8789";
 const remote = "https://photos.example.com";
 const peer = "127.0.0.1";
-const paths = ["/", "/app.js", "/app.css", "/strip-worker.js", "/error-details.js", "/decode-strip.js", "/strip-plan.js", "/stitch-strips.js", "/modern/libraw.js", "/modern/libraw.wasm", "/api/folder", "/api/photo?path=private.ARW", "/api/preview?path=private.ARW", "/api/client-error", "/unknown"];
+const paths = ["/", "/app.js", "/app.css", "/strip-worker.js", "/error-details.js", "/decode-strip.js", "/strip-plan.js", "/stitch-strips.js", "/modern/libraw.js", "/modern/libraw.wasm", "/api/folder", "/api/photo?path=private.ARW", "/api/preview?path=private.ARW", "/api/render?path=private.ARW&size=full", "/api/client-error", "/unknown"];
 const fixture = () => new PicSyncAuth(8789, remote, generateCredentials());
 async function login(auth: PicSyncAuth, origin = remote, key = auth.secret) {
   return (await auth.guard(new Request(`${origin}/api/auth/login`, {
@@ -99,4 +99,23 @@ test("host, remote plaintext, cross-origin and sibling-site requests are denied"
   expect(() => new PicSyncAuth(8789, "http://photos.example.com", generateCredentials())).toThrow();
   // TLS termination at the explicitly configured reverse proxy is supported.
   expect(await auth.guard(new Request("http://photos.example.com/app.js", { headers: { cookie: signedIn } }), peer)).toBeUndefined();
+});
+
+test("explicit LAN origin signs in LAN peers without accepting other hosts or subnets", async () => {
+  const origin = "http://192.168.1.184:8789";
+  const auth = new PicSyncAuth(8789, undefined, generateCredentials(), { origin, cidr: "192.168.1.0/24" });
+  const request = () => new Request(`${origin}/api/auth/login`, {
+    method: "POST", headers: { origin, "content-type": "text/plain" }, body: auth.secret,
+  });
+  const response = (await auth.guard(request(), "192.168.1.25"))!;
+  expect(response.status).toBe(200);
+  expect(response.headers.get("set-cookie")).not.toContain("Secure");
+  const signedIn = cookie(response);
+  expect(await auth.guard(new Request(origin + "/api/render?path=a.ARW&size=full", { headers: { cookie: signedIn } }), "192.168.1.25")).toBeUndefined();
+  for (const peer of ["192.168.2.25", "203.0.113.25"]) expect((await auth.guard(request(), peer))?.status).toBe(403);
+  expect((await auth.guard(new Request("http://192.168.1.185:8789/", { headers: { cookie: signedIn } }), "192.168.1.25"))?.status).toBe(403);
+  expect((await auth.guard(new Request(local, { headers: { cookie: signedIn } }), "127.0.0.1"))?.status).toBe(401);
+  for (const url of ["http://8.8.8.8:8789", "http://photos.example.com:8789", "http://192.168.1.184:9999", origin + "/path"]) {
+    expect(() => new PicSyncAuth(8789, undefined, generateCredentials(), { origin: url, cidr: "192.168.1.0/24" })).toThrow();
+  }
 });

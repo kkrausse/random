@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import QRCode from "qrcode";
 import type { Credentials } from "./credentials";
+import { BlockList, isIP } from "node:net";
 
 const lifetime = 30 * 24 * 60 * 60;
 const loopback = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
@@ -16,8 +17,10 @@ export class PicSyncAuth {
   readonly secret: string;
   private readonly signingKey: Buffer;
   private readonly origins: Map<string, string>;
+  private readonly lanPeers = new BlockList();
+  private readonly lanOrigin?: string;
 
-  constructor(port: number, publicUrl: string | undefined, credentials: Credentials) {
+  constructor(port: number, publicUrl: string | undefined, credentials: Credentials, lan?: { origin: string; cidr: string }) {
     this.secret = credentials.secret;
     this.signingKey = Buffer.from(credentials.signingKey, "base64url");
     const origins = [`http://127.0.0.1:${port}`, `http://localhost:${port}`, `http://[::1]:${port}`];
@@ -26,6 +29,21 @@ export class PicSyncAuth {
       if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
         throw new Error("PICSYNC_PUBLIC_URL must be an HTTPS origin without credentials, path, query, or fragment");
       }
+      origins.push(url.origin);
+    }
+    if (lan) {
+      const url = new URL(lan.origin);
+      const privateIPs = new BlockList();
+      privateIPs.addSubnet("10.0.0.0", 8, "ipv4");
+      privateIPs.addSubnet("172.16.0.0", 12, "ipv4");
+      privateIPs.addSubnet("192.168.0.0", 16, "ipv4");
+      if (url.protocol !== "http:" || isIP(url.hostname) !== 4 || !privateIPs.check(url.hostname, "ipv4") ||
+          url.username || url.password || url.pathname !== "/" || url.search || url.hash || Number(url.port || 80) !== port)
+        throw new Error("PICSYNC_LAN_URL must be an HTTP origin with a private LAN IPv4 address and the server port");
+      const [network, prefix] = lan.cidr.split("/");
+      this.lanPeers.addSubnet(network!, Number(prefix), "ipv4");
+      if (!this.lanPeers.check(url.hostname, "ipv4")) throw new Error("LAN URL must be within LAN_CIDR");
+      this.lanOrigin = url.origin;
       origins.push(url.origin);
     }
     this.origins = new Map(origins.map(origin => [new URL(origin).host, origin]));
@@ -56,7 +74,8 @@ export class PicSyncAuth {
   async guard(request: Request, peer?: string): Promise<Response | undefined> {
     const url = new URL(request.url);
     const origin = this.origins.get(url.host);
-    if (!origin || (origin.startsWith("http:") && !loopback.has(peer ?? ""))
+    const lanPeer = origin === this.lanOrigin && !!peer && this.lanPeers.check(peer.replace(/^::ffff:/, ""), "ipv4");
+    if (!origin || (origin.startsWith("http:") && !loopback.has(peer ?? "") && !lanPeer)
       || (request.headers.has("origin") && request.headers.get("origin") !== origin)) {
       return this.response("Forbidden", 403);
     }
