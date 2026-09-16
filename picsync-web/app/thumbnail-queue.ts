@@ -1,0 +1,74 @@
+import { renderURL } from "./image-backend";
+
+type Request = {
+  path: string;
+  controller: AbortController;
+  loaded: (blob: Blob) => void;
+  failed: () => void;
+};
+
+// Only visible tiles enter this queue. Cancellation removes queued work and
+// aborts in-flight HTTP requests so the server can drop its unstarted conversions.
+export function createThumbnailQueue(concurrency = 6, download: (url: string, options: RequestInit) => Promise<Response> = fetch) {
+  const pending = new Set<Request>();
+  let active = 0;
+  const pump = () => {
+    for (const request of pending) {
+      if (active >= concurrency) break;
+      pending.delete(request);
+      active++;
+      const { controller } = request;
+      void (async () => {
+        try {
+          const response = await download(renderURL(request.path, false, 5), {
+            signal: controller.signal,
+          });
+          if (!response.ok) throw new Error(`Thumbnail HTTP ${response.status}`);
+          const blob = await response.blob();
+          if (!controller.signal.aborted) request.loaded(blob);
+        } catch {
+          if (!controller.signal.aborted) request.failed();
+        } finally {
+          active--;
+          pump();
+        }
+      })();
+    }
+  };
+  return {
+    request(path: string, loaded: Request["loaded"], failed: Request["failed"]) {
+      const request = { path, loaded, failed, controller: new AbortController() };
+      pending.add(request);
+      // Batch intersection changes before admitting new work.
+      queueMicrotask(pump);
+      return () => {
+        pending.delete(request);
+        request.controller.abort();
+      };
+    },
+  };
+}
+
+const queue = createThumbnailQueue();
+const callbacks = new Map<Element, (visible: boolean) => void>();
+let observer: IntersectionObserver | undefined;
+
+export function observeThumbnail(element: Element, callback: (visible: boolean) => void) {
+  observer ??= new IntersectionObserver(entries => {
+    // Drop old viewport work before admitting the destination viewport.
+    for (const entry of entries) {
+      if (!entry.isIntersecting) callbacks.get(entry.target)?.(false);
+    }
+    for (const entry of entries) {
+      if (entry.isIntersecting) callbacks.get(entry.target)?.(true);
+    }
+  });
+  callbacks.set(element, callback);
+  observer.observe(element);
+  return () => {
+    observer!.unobserve(element);
+    callbacks.delete(element);
+  };
+}
+
+export const requestThumbnail = queue.request;

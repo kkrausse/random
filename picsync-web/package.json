@@ -9,7 +9,7 @@
     "start:lan": "bun app/start-lan.ts",
     "auth:reset": "bun app/reset-auth.ts",
     "bench": "bun experiment/benchmark.ts",
-    "test": "bun test experiment/strip-plan.test.ts app/archive.test.ts app/auth.test.ts app/pipeline.test.ts app/raw-workers.test.ts app/error-details.test.ts app/image-format.test.ts app/client-errors.test.ts app/previews.test.ts app/conversions.test.ts"
+    "test": "bun test experiment/strip-plan.test.ts app/archive.test.ts app/auth.test.ts app/pipeline.test.ts app/raw-workers.test.ts app/error-details.test.ts app/image-format.test.ts app/client-errors.test.ts app/previews.test.ts app/conversions.test.ts app/thumbnail-queue.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

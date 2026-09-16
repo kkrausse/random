@@ -10,6 +10,13 @@ to return to the grid. **1:1** maps one source pixel to one physical display pix
 **Fit** resets the view. Full sensor resolution develops automatically when a
 photo opens, including before you zoom in.
 
+Opening a photo adds `photo=<archive-relative-path>` to the URL, so copying the
+link or refreshing reopens that photo. Viewer navigation updates that parameter;
+Back returns to the gallery. The `scroll=<vertical-pixels>` parameter preserves
+the gallery position across refreshes and history navigation (the exact photo at
+that offset depends on the screen width and tile size). Scroll updates replace
+the current history entry rather than adding an entry for every movement.
+
 ```sh
 bun install --frozen-lockfile
 # Mac server: native RAW development and embedded previews.
@@ -39,11 +46,13 @@ archive file. No RAW web workers or WASM modules start in server mode.
   thumbnails use embedded JPEGs when available, with native RAW development as
   fallback. Native images are identified by signature, including JPEGs with
   misleading `.ARW` filenames. macOS `sips` handles HEIC/HEIF conversion.
-- Grid thumbnails use stable, native lazy-loaded images. Each React tile owns
-  its loading/error state for its mounted lifetime; pipeline cache eviction cannot
-  replace a loaded image with a queued placeholder. The browser schedules thumbnail
-  requests, and the server's ten-job pool bounds conversion work. Refresh the
-  folder to retry failed previews.
+- Grid thumbnails use a shared viewport observer and a six-request queue. Only
+  visible tiles request previews; scrolling away cancels unfinished requests and
+  removes unstarted server work, so a distant viewport does not wait behind a
+  backlog of skipped tiles. Already-running native conversions finish into cache.
+  Each React tile owns its loaded image URL until unmount; pipeline cache eviction
+  cannot replace it with a queued placeholder. Refresh the folder to retry failed
+  previews.
 - Opening a photo eagerly requests its full-resolution server conversion and
   the **next ten photos**, bounded by the admission budget. Only the current
   photo and next two expand into browser bitmaps; farther-ahead JPEGs remain

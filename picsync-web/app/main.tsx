@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { Pipeline, type Photo } from "./pipeline";
 import { imageBackend, renderURL } from "./image-backend";
+import { observeThumbnail, requestThumbnail } from "./thumbnail-queue";
 
 type Listing = {
   path: string;
@@ -31,7 +32,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [revision, refresh] = useState(0);
   const [reload, setReload] = useState(0);
-  const [selected, select] = useState<number | null>(null);
+  const [selected, setSelected] = useState<number | null>(null);
   const [density, setDensity] = useState(160);
   const [search, setSearch] = useState("");
   const pipeline = useRef<Pipeline>(null);
@@ -51,7 +52,7 @@ function App() {
     setLoading(true);
     setListing(undefined);
     setError("");
-    select(null);
+    setSelected(null);
     setSearch("");
     fetch(`/api/folder?path=${encodeURIComponent(path)}`, {
       signal: controller.signal,
@@ -63,6 +64,9 @@ function App() {
           );
         const data = await r.json();
         setListing(data);
+        const requested = new URLSearchParams(location.search).get("photo");
+        const index = data.photos.findIndex((p: Photo) => p.path === requested);
+        setSelected(index < 0 ? null : index);
         setLoading(false);
       })
       .catch((e) => {
@@ -85,14 +89,22 @@ function App() {
     };
   }, [path, reload]);
   useEffect(() => {
-    const pop = () =>
+    const previous = history.scrollRestoration;
+    history.scrollRestoration = "manual";
+    const pop = () => {
       setPath(new URLSearchParams(location.search).get("folder") ?? "");
+    };
     window.addEventListener("popstate", pop);
-    return () => window.removeEventListener("popstate", pop);
+    return () => {
+      history.scrollRestoration = previous;
+      window.removeEventListener("popstate", pop);
+    };
   }, []);
   const navigate = (value: string) => {
     const params = new URLSearchParams(location.search);
     params.set("folder", value);
+    params.delete("photo");
+    params.delete("scroll");
     history.pushState(null, "", `?${params}`);
     setPath(value);
   };
@@ -100,6 +112,54 @@ function App() {
     listing?.photos.filter((p) =>
       p.name.toLowerCase().includes(search.toLowerCase()),
     ) ?? [];
+  const select = (value: React.SetStateAction<number | null>) => {
+    const next = typeof value === "function" ? value(selected) : value;
+    const params = new URLSearchParams(location.search);
+    if (selected === null && next !== null) {
+      params.set("scroll", String(Math.round(window.scrollY)));
+      history.replaceState(history.state, "", `?${params}`);
+    }
+    if (next === null) params.delete("photo");
+    else params.set("photo", photos[next]!.path);
+    // Opening creates a Back-to-gallery entry; viewer navigation updates it.
+    const method = selected === null && next !== null ? "pushState" : "replaceState";
+    history[method](null, "", `?${params}`);
+    setSelected(next);
+  };
+  useLayoutEffect(() => {
+    if (!listing) return;
+    const restore = () => {
+      const params = new URLSearchParams(location.search);
+      if ((params.get("folder") ?? "") !== listing.path) return;
+      const index = photos.findIndex(p => p.path === params.get("photo"));
+      setSelected(index < 0 ? null : index);
+      const y = Number(params.get("scroll") ?? 0);
+      window.scrollTo(0, Number.isFinite(y) ? Math.max(0, y) : 0);
+    };
+    restore();
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, [listing, search]);
+  useEffect(() => {
+    if (!listing || loading || selected !== null) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const save = () => {
+      const params = new URLSearchParams(location.search);
+      const y = Math.round(window.scrollY);
+      if (y) params.set("scroll", String(y));
+      else params.delete("scroll");
+      history.replaceState(history.state, "", `?${params}`);
+    };
+    const scroll = () => {
+      clearTimeout(timer);
+      timer = setTimeout(save, 150);
+    };
+    window.addEventListener("scroll", scroll, { passive: true });
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("scroll", scroll);
+    };
+  }, [listing, loading, selected]);
   useEffect(() => {
     const engine = pipeline.current;
     if (!listing || !engine || engine.backend === "server") return;
@@ -402,12 +462,38 @@ function App() {
 // must never turn a successfully loaded tile back into a queued placeholder.
 function Thumbnail({ photo }: { photo: Photo }) {
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
+  const [url, setURL] = useState<string>();
+  const image = useRef<HTMLImageElement>(null);
+  useEffect(() => {
+    let cancel: (() => void) | undefined;
+    let ownedURL: string | undefined;
+    let failed = false;
+    const unobserve = observeThumbnail(image.current!, visible => {
+      if (!visible) {
+        cancel?.();
+        cancel = undefined;
+      } else if (!ownedURL && !failed && !cancel) {
+        cancel = requestThumbnail(photo.path, blob => {
+          ownedURL = URL.createObjectURL(blob);
+          setURL(ownedURL);
+        }, () => {
+          failed = true;
+          setStatus("error");
+        });
+      }
+    });
+    return () => {
+      unobserve();
+      cancel?.();
+      if (ownedURL) URL.revokeObjectURL(ownedURL);
+    };
+  }, [photo.path]);
   return (
     <>
       <img
-        src={renderURL(photo.path, false, 5)}
+        ref={image}
+        src={url}
         alt={photo.name}
-        loading="lazy"
         decoding="async"
         style={{ opacity: status === "loaded" ? 1 : 0 }}
         onLoad={() => setStatus("loaded")}
