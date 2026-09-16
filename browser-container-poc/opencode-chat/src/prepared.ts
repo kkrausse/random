@@ -90,8 +90,8 @@ export function preparedApps(manifest: PreparedManifest, base: string, signal: A
         await readers;
         if (result.exitCode !== 0 || result.signal || result.forced || !output.includes(`prepared-tree-${phase}-complete`)) throw Error(`Prepared tree ${phase} failed: ${output}`);
       }
-      report(manifest.bundle ? 'Downloading prepared workspace bundle…' : 'Downloading prepared workspace files…');
-      const bundled = manifest.bundle ? await readPreparedBundle(manifest.bundle, manifest.assets, base, signal) : undefined;
+      report(manifest.bundle ? 'Checking prepared workspace bundle cache…' : 'Downloading prepared workspace files…');
+      const bundled = manifest.bundle ? await readPreparedBundle(manifest.bundle, manifest.assets, base, signal, report) : undefined;
       signal.throwIfAborted();
       await metadata('reset');
       // Provision only a marker, never reset the entrypoint's fixed database directory.
