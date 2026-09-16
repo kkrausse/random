@@ -12,6 +12,9 @@ test("unsupported candidate forms explain the limitation in the chat UI", async 
   try {
     await c.ready;
     const html = renderToStaticMarkup(<ChatView controller={c} />);
+    const header = html.slice(html.indexOf('<header class="oc-header">'), html.indexOf("</header>") + 9);
+    expect(header).toContain("OpenCode");
+    expect(header).toContain("Session &amp; model");
     expect(html).toContain("Choose budget");
     expect(html).toContain("This form cannot be answered by this chat client");
     expect(html).toContain("amount (number)");
