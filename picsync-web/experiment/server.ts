@@ -1,8 +1,15 @@
 import { readdir, realpath } from "node:fs/promises";
 import { BlockList } from "node:net";
-import { basename, extname, join, relative, isAbsolute } from "node:path";
+import { basename, dirname, extname, join, relative, isAbsolute } from "node:path";
 
-// Small, dependency-free experiment: serve a fixed sample of untouched originals.
+// Serve only the experiment assets and a fixed sample of untouched originals.
+const librawRoot = dirname(Bun.resolveSync("libraw-wasm", import.meta.dir));
+const assets = new Map([
+  ["/raw-worker.js", join(import.meta.dir, "raw-worker.js")],
+  ["/wasm-viewer.js", join(import.meta.dir, "wasm-viewer.js")],
+  ["/vendor/index.js", join(librawRoot, "index.js")],
+  ["/vendor/libraw.wasm", join(librawRoot, "libraw.wasm")],
+]);
 const root = await realpath(process.env.MEDIA_ROOT ?? "/home/pi/photos");
 const hostname = process.env.HOST ?? "127.0.0.1";
 const allowed = new BlockList();
@@ -42,6 +49,8 @@ const server = Bun.serve({
     const url = new URL(request.url);
     const headers = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
     if (url.pathname === "/") return new Response(Bun.file(join(import.meta.dir, "index.html")), { headers });
+    const asset = assets.get(url.pathname);
+    if (asset) return new Response(Bun.file(asset), { headers });
     if (url.pathname === "/samples") {
       return Response.json(samples.map(({ path, ...sample }, id) => ({ ...sample, id })), { headers });
     }
