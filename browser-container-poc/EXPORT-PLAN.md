@@ -146,6 +146,17 @@ describes browser-side API calls and an optional PKCE connection flow:
 <https://openrouter.ai/docs/guides/overview/auth/oauth>.
 
 PKCE can be a later UX improvement; it is not required for the first demo.
+“Sign in with OpenAI” is not assumed to be an available third-party demo auth
+flow. Account/subscription sign-in is distinct from supplying an API key: both
+supported authorization for this application and browser access to the relevant
+model endpoints would need verification. Do not infer API-key endpoint CORS
+behavior from subscription/auth endpoint behavior, or vice versa.
+
+The user recalls testing OpenCode Zen cross-origin requests and finding they did
+not work. Treat Zen as previously unsuccessful, not a qualified static-demo
+provider; the exact endpoint, failure, and test receipt have not been located for
+this plan. Reconsider only if new evidence warrants it.
+
 Anthropic direct browser access is another candidate, using its explicit browser
 access header, but organization restrictions and the actual integration must be
 tested. Do not promise every provider works cross-origin.
