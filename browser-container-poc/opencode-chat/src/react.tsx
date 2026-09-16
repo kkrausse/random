@@ -482,14 +482,14 @@ export function ChatView({
       <header className="oc-header">
         <div className="oc-toolbar">
           <strong>OpenCode</strong>
+          {(showSessions || showModels) && (
+            <details className="oc-settings">
+              <summary>Session & model</summary>
+              <ChatSettings controller={controller} showSessions={showSessions} showModels={showModels} />
+            </details>
+          )}
           {headerActions}
         </div>
-        {(showSessions || showModels) && (
-          <details className="oc-settings">
-            <summary>Session & model</summary>
-            <ChatSettings controller={controller} showSessions={showSessions} showModels={showModels} />
-          </details>
-        )}
       </header>
       {state.error && (
         <div className="oc-error" role="alert">
