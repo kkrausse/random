@@ -226,6 +226,10 @@
     color: #777f89;
     font-size: 12px;
   }
+  .thumbnail-placeholder {
+    position: absolute;
+    inset: 0;
+  }
   .filetype {
     position: absolute;
     top: 10px;

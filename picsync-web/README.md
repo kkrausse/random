@@ -39,9 +39,11 @@ archive file. No RAW web workers or WASM modules start in server mode.
   thumbnails use embedded JPEGs when available, with native RAW development as
   fallback. Native images are identified by signature, including JPEGs with
   misleading `.ARW` filenames. macOS `sips` handles HEIC/HEIF conversion.
-- Up to **10 requests on desktop / 8 on iPhone/iPad**, within the existing
-  download admission budgets. The grid prefetches **two viewport heights above
-  and below** the viewport, updating when the window resizes.
+- Grid thumbnails use stable, native lazy-loaded images. Each React tile owns
+  its loading/error state for its mounted lifetime; pipeline cache eviction cannot
+  replace a loaded image with a queued placeholder. The browser schedules thumbnail
+  requests, and the server's ten-job pool bounds conversion work. Refresh the
+  folder to retry failed previews.
 - Opening a photo eagerly requests its full-resolution server conversion and
   the **next ten photos**, bounded by the admission budget. Only the current
   photo and next two expand into browser bitmaps; farther-ahead JPEGs remain
@@ -59,8 +61,8 @@ archive file. No RAW web workers or WASM modules start in server mode.
 **Optional browser backend:** add `?decoder=browser` (or
 `&decoder=browser` with a folder query). Folder navigation preserves this choice.
 Use **localhost or trusted HTTPS** for this mode; plain LAN HTTP cannot run the
-shared-memory WASM decoder. Both backends use the same grid, viewer, bounded
-pipeline, and full-resolution canvas interface. The following limits describe
+shared-memory WASM decoder. Both backends use the same grid, viewer, and bounded
+full-resolution pipeline/canvas interface. The following limits describe
 the retained browser-RAW backend:
 
 **iPhone/iPad memory profile:** one page-lifetime RAW worker,
