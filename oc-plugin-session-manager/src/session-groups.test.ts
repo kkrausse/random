@@ -1,6 +1,24 @@
 import { strict as assert } from "node:assert"
 import { test } from "node:test"
-import { descendantIDs, groupLabel, inheritLifecycle, lifecycleOwner, nestRows, propagateAttention, sessionState, sortRows, visibleSessions, type SessionState } from "./session-groups"
+import { descendantIDs, groupLabel, imputedInactiveRoots, INACTIVE_AFTER_MS, inheritLifecycle, lifecycleOwner, nestRows, propagateAttention, sessionState, sortRows, visibleSessions, type SessionState } from "./session-groups"
+
+test("week cutoff is a read-time family default using newest descendant activity", () => {
+  const now = 3 * INACTIVE_AFTER_MS
+  const cutoff = now - INACTIVE_AFTER_MS
+  const session = (id: string, updated: number, parentID?: string) => ({ id, parentID, time: { updated } })
+  const sessions = [
+    session("old", cutoff - 1), session("boundary", cutoff), session("recent", cutoff + 1),
+    session("parent", 0), session("child", 0, "parent"), session("grandchild", now, "child"),
+    session("current-parent", 0), session("current-child", 0, "current-parent"),
+    session("unknown", NaN), session("future", now + 1),
+  ]
+  const before = structuredClone(sessions)
+  assert.deepEqual([...imputedInactiveRoots(sessions, "current-child", now)].sort(), ["boundary", "old"])
+  assert.deepEqual(sessions, before, "imputing inactivity never edits session data")
+  // A newly loaded recent descendant moves its root back to active by default.
+  assert.ok(imputedInactiveRoots(sessions, undefined, now).has("old"))
+  assert.ok(!imputedInactiveRoots([...sessions, session("late-child", now, "old")], undefined, now).has("old"))
+})
 
 test("parent lifecycle governs descendants at read time, including stale markers and late-loaded children", () => {
   const parent = { id: "parent" }
@@ -53,7 +71,7 @@ test("input comes first and each tranche is ordered by recency", () => {
   for (const state of ["permission", "question", "running", "idle"] as const) {
     assert.equal(groupLabel(state), "Active")
   }
-  assert.equal(groupLabel("inactive"), "Archived")
+  assert.equal(groupLabel("inactive"), "Inactive")
   assert.equal(groupLabel("new"), undefined)
 })
 

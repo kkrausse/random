@@ -4,7 +4,7 @@ import { Plugin } from "@opencode/plugin/tui"
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { Index, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
-import { descendantIDs, groupLabel, inheritLifecycle, lifecycleOwner, nestRows, propagateAttention, sessionState, sortRows } from "./session-groups"
+import { descendantIDs, groupLabel, imputedInactiveRoots, inheritLifecycle, lifecycleOwner, nestRows, propagateAttention, sessionState, sortRows } from "./session-groups"
 import { sectionNeighbor } from "./picker-selection"
 import { Cause, Effect } from "effect"
 import { makeRunner, operation } from "./effects"
@@ -427,16 +427,20 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
     tick()
     liveVersion()
     const loaded = sessions()
+    const imputed = imputedInactiveRoots(loaded, currentSessionID)
     const effective = propagateAttention(loaded, attention(), currentSessionID)
     return nestRows(sortRows(inheritLifecycle(
       loaded.map((session) => {
+        const owner = lifecycleOwner(loaded, session)
+        const override = lifecycle.inactive[owner.id]
+        const inactiveByAge = override === undefined && imputed.has(owner.id)
         const ownRunning = !isArchived(session.id) && props.context.data.session.status(session.id) === "running"
         const runningChildren = descendantIDs(loaded, session.id)
           .filter((id) => props.context.data.session.status(id) === "running").length
         return {
-          session, ownRunning, runningChildren,
+          session, ownRunning, runningChildren, inactiveByAge,
            state: isArchived(session.id) ? "inactive" as const : sessionState(attention().get(session.id) ?? effective.get(session.id),
-            ownRunning || runningChildren > 0, !!lifecycle.inactive[session.id]),
+             ownRunning || runningChildren > 0, override ?? inactiveByAge),
         }
       }),
     )))
@@ -451,11 +455,11 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
         state: "new" as const,
         depth: 0,
       },
-      ...rows().filter(({ session }) => !search() || `${session.title ?? "Untitled session"} ${session.location.directory}`.toLowerCase().includes(search().toLowerCase())).map(({ session, state, ownRunning, runningChildren, depth }) => {
+      ...rows().filter(({ session }) => !search() || `${session.title ?? "Untitled session"} ${session.location.directory}`.toLowerCase().includes(search().toLowerCase())).map(({ session, state, ownRunning, runningChildren, depth, inactiveByAge }) => {
         const baseStatus = {
           permission: "Permission required",
           question: "Question waiting",
-          inactive: "Archived",
+          inactive: inactiveByAge && !isArchived(session.id) ? "Inactive · 7d+" : "Archived",
           idle: "Ready",
         }[state as "permission" | "question" | "inactive" | "idle"]
         const childStatus = `${runningChildren} sub-agent${runningChildren === 1 ? "" : "s"} running`
@@ -471,6 +475,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
           description: details.join(" · "),
           status,
           state,
+          inactiveByAge,
           value: session.id,
           depth,
           updated: relativeTime(session.time.updated),
@@ -675,7 +680,9 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
         for (const id of affected) {
           delete draft.inactive[id]
         }
-        if (inactive) draft.inactive[owner.id] = true
+        // Explicit restore overrides the age-based default, without changing
+        // OpenCode timestamps or triggering execution. Children have no override.
+        draft.inactive[owner.id] = inactive
       }))
       // Don't steal selection if the user navigated while the request ran.
       if (selectedValue() === selected.id) setSelectedValue(neighbor)
@@ -1210,7 +1217,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
             <text wrapMode="none" fg={props.context.theme.text.subdued}>
               {selectedSession() && isArchived(selectedSession()!.id)
                 ? `Archived · ${selectedMessages()?.length ?? 0} messages`
-                : previewLoading() ? "Checking for approval requests…" : previewError() ? `Preview unavailable: ${previewError()}` : visiblePreview()?.forms.length ? `Question · ${visiblePreview()!.forms[0]!.title}` : isInbox() && inboxErrors().length ? `${inboxErrors().length} location${inboxErrors().length === 1 ? "" : "s"} unavailable` : options()[selectedIndex()]?.state === "inactive" ? "Soft archived · history retained" : selectedSession() ? (options()[selectedIndex()] as { status?: string })?.status ?? "" : ""}
+                : previewLoading() ? "Checking for approval requests…" : previewError() ? `Preview unavailable: ${previewError()}` : visiblePreview()?.forms.length ? `Question · ${visiblePreview()!.forms[0]!.title}` : isInbox() && inboxErrors().length ? `${inboxErrors().length} location${inboxErrors().length === 1 ? "" : "s"} unavailable` : options()[selectedIndex()]?.state === "inactive" ? (options()[selectedIndex()] as { inactiveByAge?: boolean })?.inactiveByAge ? "Inactive by age · no cleanup performed" : "Soft archived · history retained" : selectedSession() ? (options()[selectedIndex()] as { status?: string })?.status ?? "" : ""}
             </text>
             {isInbox() && visiblePreview()?.forms.length ? (
               <scrollbox flexGrow={1} minHeight={0} scrollY scrollX={false}>

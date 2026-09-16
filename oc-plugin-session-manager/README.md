@@ -13,13 +13,14 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Press `Left` while the prompt contains text to move the cursor normally.
 - Press `Alt+S` to open the picker globally, including from permission and question prompts.
 - The picker opens as a vertically and horizontally centered, extra-large dialog. It can grow to 116 columns and 40 rows on laptops and wide terminals, while narrow screens use the full terminal width and height by extending through the host's one-cell dialog insets. **Close**, `Left`, or `Escape` dismisses it without leaving the originating session (or Home).
-- Labeled sections with prominent dividers show **Active → Archived** (including legacy inactive markers).
-- Click **Archive** or press `x` to **soft archive**: recursively stop the family, remove its tracked shells, cancel all pending durable inbox items, and verify inactivity. Parent and child transcripts stay in OpenCode. **Restore** / `r` clears the parent's marker without starting work. These actions keep the picker open.
+- Labeled sections with prominent dividers show **Active → Inactive** (including explicit archives and legacy inactive markers).
+- With no explicit parent override, inactivity is **imputed at read time after seven days** since the newest `time.updated` in the loaded family. Recent descendants keep their parent active; loading more sessions recomputes the result. The current conversation's family, running families, and families needing input remain active. This default performs no cleanup and writes no marker or session timestamp.
+- Click **Archive** or press `x` to **soft archive**: recursively stop the family, remove its tracked shells, cancel all pending durable inbox items, and verify inactivity. Parent and child transcripts stay in OpenCode. **Restore** / `r` sets an explicit active override on the parent without starting work, so an old conversation does not immediately fall back to inactive. These actions keep the picker open.
 - Cleanup repeats the stop/shell/inbox sweep and requires two consecutive clean checks, with a short settling interval. It discovers late descendants and retries up to four sweeps. If cleanup fails or work keeps arriving, the picker reports the error rather than marking the family archived. Unreachable runtimes (including deleted directories) are errors in this stricter soft-archive flow.
 - After `x` or `r` succeeds, selection moves to the next row in the original section, or the previous row at the end of that section, while preserving the scroll offset. If the section had only one row, selection falls back to **New session**. Navigating while the request is pending keeps your newer selection.
-- Legacy local archive files appear under **Archived** with subdued titles, a message count, and a scrollable user/assistant transcript preview. `Enter` reminds you to restore these with `r` before opening. Soft-archived sessions open their normal history directly.
+- Legacy local archive files appear under **Inactive** with an **Archived** status, subdued titles, a message count, and a scrollable user/assistant transcript preview. `Enter` reminds you to restore these with `r` before opening. Soft-archived and age-inactive sessions open their normal history directly. Age-inactive rows show **Inactive · 7d+**, and their preview explains that no cleanup was performed.
 - Press `/` to filter loaded live sessions and all archived parents by title or directory; submit an empty filter to clear it.
-- Existing inactive markers remain readable. Running/attention status takes precedence, so renewed activity remains visible. Press `x` to run cleanup again, or `r` to clear the marker.
+- Existing inactive markers remain readable. Running/attention status takes precedence, so renewed activity remains visible. Press `x` to run cleanup again, or `r` to explicitly mark the family active.
 - Archiving or restoring a child resolves its top-level parent through the API, including unloaded ancestors. Cleanup follows all paginated descendants. **Only the root owns the inactive marker**; old child markers are cleared for that family. Children inherit the parent's lifecycle section and remain nested under it.
 - Shell cleanup lists each family's locations, matches `shell.metadata.sessionID`, and calls `shell.remove`. OpenCode handles termination; the plugin does not implement signal escalation. This covers tracked owned shells, not arbitrary untracked processes.
 - Status indicators use a single-cell far-left gutter: `!` for permissions, `?` for questions, and a yellow Braille spinner for running sessions. There is no selection sidebar, so status changes do not shift session titles or consume extra horizontal space.
@@ -125,8 +126,10 @@ estimates use current prices rather than historical billing rates.
    sweeps; fail after four sweeps if the family does not settle.
 7. Persist only the root's `session-lifecycle.inactive` marker in TUI plugin storage.
 
-The existing parent controls the UI section and child ordering. `r` clears its
-marker and any stale child markers. Opening a soft-archived session reads its
+The existing parent controls the UI section and child ordering. Its stored
+`inactive` value is a three-way override: absent uses the imputed seven-day default,
+`true` means explicitly inactive, and `false` means explicitly active. `r` sets
+the parent's override to `false` and clears stale child markers. Opening a soft-archived session reads its
 normal OpenCode history directly; no export/import is needed. These sessions
 continue to appear in native history/search and weekly usage totals.
 
