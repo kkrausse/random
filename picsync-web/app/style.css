@@ -340,20 +340,6 @@
   .grabbing {
     cursor: grabbing;
   }
-  .arrow {
-    position: absolute;
-    top: 48%;
-    background: #181a1dbb;
-    border-radius: 50%;
-    width: 44px;
-    padding: 8px;
-  }
-  .previous {
-    left: 16px;
-  }
-  .next {
-    right: 16px;
-  }
   .viewer-bottom {
     padding: 16px 12px max(16px, env(safe-area-inset-bottom));
     display: flex;
@@ -463,7 +449,6 @@
       white-space: nowrap;
     }
     .viewer-top > .button,
-    .viewer .arrow,
     .viewer .hint {
       display: none;
     }

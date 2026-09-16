@@ -11,8 +11,6 @@ import {
   Grid2X2,
   HardDrive,
   Image,
-  Minus,
-  Plus,
   RefreshCw,
   X,
 } from "lucide-react";
@@ -451,16 +449,6 @@ function Viewer({
     setZoom(Math.max(0.65, Math.min(64, value)));
     if (value <= 1) setPan({ x: 0, y: 0 });
   };
-  const actualPixels = () => {
-    const image = stage.current?.querySelector<HTMLElement>(".full-photo");
-    if (image && full)
-      applyZoom(
-        Math.max(
-          full.width / image.clientWidth,
-          full.height / image.clientHeight,
-        ) / window.devicePixelRatio,
-      );
-  };
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight") move(1);
@@ -597,22 +585,6 @@ function Viewer({
           </div>
         )}
       </div>
-      <Button
-        className="previous arrow"
-        aria-label="Previous photo"
-        disabled={index === 0}
-        onClick={() => move(-1)}
-      >
-        <ChevronLeft />
-      </Button>
-      <Button
-        className="next arrow"
-        aria-label="Next photo"
-        disabled={index === count - 1}
-        onClick={() => move(1)}
-      >
-        <ChevronRight />
-      </Button>
       <div className="viewer-bottom">
         <div className="mobile-photo-details" aria-hidden="true">
           <div className="mobile-photo-name">{photo.name}</div>
@@ -644,28 +616,21 @@ function Viewer({
         </div>
         <div className="zoom-controls">
           <Button
-            className="desktop"
-            aria-label="Zoom out"
-            onClick={() => (zoom <= 1 ? close() : applyZoom(zoom / 1.5))}
+            aria-label="Previous photo"
+            disabled={index === 0}
+            onClick={() => move(-1)}
           >
-            <Minus size={18} />
-          </Button>
-          <Button className="desktop" aria-label="Fit photo" onClick={() => applyZoom(1)}>
-            {zoom === 1 ? "Fit" : `${Math.round(zoom * 100)}%`}
-          </Button>
-          <Button className="desktop" aria-label="Zoom in" onClick={() => applyZoom(zoom * 1.5)}>
-            <Plus size={18} />
+            <ChevronLeft />
           </Button>
           <Button
-            className="desktop"
-            aria-label="Actual pixels"
-            disabled={!full}
-            onClick={actualPixels}
+            aria-label="Next photo"
+            disabled={index === count - 1}
+            onClick={() => move(1)}
           >
-            1:1
+            <ChevronRight />
           </Button>
-          <Button onClick={close} aria-label="Return to grid">
-            <Grid2X2 size={18} />
+          <Button onClick={close}>
+            Done
           </Button>
           <a
             className="button"
