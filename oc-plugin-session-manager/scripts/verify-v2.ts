@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { randomUUID } from "node:crypto"
@@ -58,6 +58,16 @@ try {
   assert.deepEqual(await client.session.inbox.list({ sessionID: restored.id }), [])
   assert.deepEqual(await store.list(), [])
   await assert.rejects(client.session.import({ ...archive.transcript, location }), (error: any) => error?._tag === "ConflictError")
+  const missingDirectory = join(directory, "removed-project")
+  await mkdir(missingDirectory)
+  const orphan = await client.session.create({ title: "Disposable removed-directory archive check", location: { directory: missingDirectory } })
+  ids.add(orphan.id)
+  await rm(missingDirectory, { recursive: true })
+  const orphanArchive = await archiveSession(client, store, orphan)
+  assert.equal(orphanArchive.transcript.info.location.directory, missingDirectory)
+  await assert.rejects(client.session.get({ sessionID: orphan.id }), (error: any) => error?._tag === "SessionNotFoundError")
+  assert.ok((await store.list()).some((item) => item.transcript.info.id === orphan.id))
+  console.log("PASS: inactive session in a deleted directory archives successfully and retains its original location")
   console.log("PASS: V2 archive/export/delete/import round trip, child cleanup, shell ownership, location, and idle restore")
 } finally {
   for (const id of shells) await client.shell.remove({ id, location }).catch(() => {})

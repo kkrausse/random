@@ -1,6 +1,6 @@
 import type { SessionInfo, SessionTransferData } from "@opencode/client"
 import type { Plugin } from "@opencode/plugin/tui"
-import { mkdir, open, readdir, readFile, rename, unlink } from "node:fs/promises"
+import { mkdir, open, readdir, readFile, rename, stat, unlink } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { randomUUID } from "node:crypto"
@@ -70,9 +70,25 @@ function missing(error: unknown) {
 
 export async function archiveSession(client: Client, store: ArchiveStore, root: SessionInfo): Promise<Archive> {
   const family = new Map([[root.id, root]])
+  const unavailable = new Set<string>()
+  async function interrupt(session: SessionInfo) {
+    try {
+      await client.session.interrupt({ sessionID: session.id, continue: false })
+    } catch (error) {
+      // V2 returns a generic 500 when starting a runtime in a deleted directory.
+      // Only tolerate that case for inactive local sessions; other failures stop cleanup.
+      if (session.location.workspaceID || (error as { cause?: { status?: number } })?.cause?.status !== 500) throw error
+      const absent = await stat(session.location.directory).then(() => false, (cause) => {
+        if (cause.code === "ENOENT") return true
+        throw cause
+      })
+      if (!absent || (await client.session.active())[session.id]) throw error
+      unavailable.add(session.id)
+    }
+  }
   // Interrupt parents before enumerating children so they cannot keep spawning work.
   for (const session of family.values()) {
-    await client.session.interrupt({ sessionID: session.id, continue: false })
+    await interrupt(session)
     let cursor: string | undefined
     const cursors = new Set<string>()
     do {
@@ -83,7 +99,7 @@ export async function archiveSession(client: Client, store: ArchiveStore, root: 
       if (cursor) cursors.add(cursor)
     } while (cursor)
   }
-  const locations = new Map([...family.values()].map((session) => [
+  const locations = new Map([...family.values()].filter((session) => !unavailable.has(session.id)).map((session) => [
     `${session.location.workspaceID ?? ""}\0${session.location.directory}`,
     { directory: session.location.directory, workspace: session.location.workspaceID },
   ]))
@@ -99,7 +115,13 @@ export async function archiveSession(client: Client, store: ArchiveStore, root: 
   }
   await removeShells()
   // Shell completion can deliver fresh input. Interrupt once more before exporting.
-  for (const id of family.keys()) await client.session.interrupt({ sessionID: id, continue: false })
+  for (const session of family.values()) {
+    if (!unavailable.has(session.id)) await interrupt(session)
+  }
+  if (unavailable.size) {
+    const active = await client.session.active()
+    if ([...unavailable].some((id) => active[id])) throw new Error("Session became active in an unavailable directory; retry archive.")
+  }
   const transcript = await client.session.export({ sessionID: root.id, sanitize: false })
   const archive: Archive = { version: 1, archivedAt: Date.now(), familyIDs: [...family.keys()], transcript }
   await store.save(archive)
