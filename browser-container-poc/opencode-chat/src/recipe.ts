@@ -2,6 +2,7 @@ import type { Endpoint, Distribution } from '@kev-browser-agent-kit/workspace';
 import { Effect } from 'effect';
 import type { WorkspaceController, Connection } from '@kev-browser-agent-kit/workspace/react';
 import { sourcePaths } from './editor-source';
+import { preparePreviewCache } from './preview-cache';
 import { loadPrepared, preparedApps, type PreparedManifest } from './prepared';
 import { createOpenCodeCandidateConfig, createOpenCodeCandidateLaunch, openCodeCandidateLaunch } from './opencode-launch';
 
@@ -73,6 +74,7 @@ export function createBrowserEditorRecipe(options: { base?: string; model?: stri
       ['Open local workspace', async () => { await controller.open(distribution); }],
       ['Seed missing application source', async () => {
         const workspace = controller.workspace!;
+        controller.log(await preparePreviewCache(workspace, JSON.stringify([manifest.runtimeVersion, manifest.bundle?.sha256 ?? manifest.assets])));
         const existing = new Set(await sourcePaths(workspace));
         for (const [path, text] of Object.entries(manifest.project)) {
           if (existing.has(path)) continue;
@@ -87,25 +89,37 @@ export function createBrowserEditorRecipe(options: { base?: string; model?: stri
       ['Start runtime and deliver verified applications', async () => {
         if (!controller.runtime) {
           const runtime = await controller.startRuntime({ apps: preparedApps(manifest, base + 'prepared/', controller.signal, controller.log) });
-          await runtime.tools.apps();
+          try { await runtime.tools.apps(); }
+          catch (error) { await controller.stopRuntime(); throw error; }
         }
       }],
-      ['Start application preview', async () => {
-        await controller.launch('vite', manifest.preview, 5173, async endpoint => {
-          const response = await endpoint.fetch('/', { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(60000)]) });
-          if (!response.ok) throw Error(`Preview HTTP ${response.status}: ${(await response.text()).slice(0, 1000)}`);
-          return connection(endpoint);
-        });
-        await controller.waitForClient('vite');
-      }],
-      ['Start OpenCode', async () => {
-        const password = crypto.randomUUID() + crypto.randomUUID();
-        const authorization = 'Basic ' + btoa('opencode:' + password);
-        await controller.launch('chat', createOpenCodeCandidateLaunch({ password, ripgrepBinDirectory: manifest.opencode.support.binDirectory }), openCodeCandidateLaunch.port, async endpoint => {
-          await verifyOpenCodeReady(endpoint, authorization, controller.signal);
-          return connection(endpoint, authorization);
-        }, { shutdown: 'stdin-eof', timeoutMs: 10000 });
-        await controller.waitForClient('chat');
+      ['Start application preview and OpenCode', async () => {
+        const started = performance.now();
+        const preview = async () => {
+          await controller.launch('vite', manifest.preview, 5173, async endpoint => {
+            const response = await endpoint.fetch('/', { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(60000)]) });
+            if (!response.ok) throw Error(`Preview HTTP ${response.status}: ${(await response.text()).slice(0, 1000)}`);
+            return connection(endpoint);
+          });
+          await controller.waitForClient('vite');
+          await controller.workspace!.flush();
+          controller.log(`Application preview ready (${Math.round(performance.now() - started)}ms)`);
+        };
+        const chat = async () => {
+          const password = crypto.randomUUID() + crypto.randomUUID();
+          const authorization = 'Basic ' + btoa('opencode:' + password);
+          await controller.launch('chat', createOpenCodeCandidateLaunch({ password, ripgrepBinDirectory: manifest.opencode.support.binDirectory }), openCodeCandidateLaunch.port, async endpoint => {
+            await verifyOpenCodeReady(endpoint, authorization, controller.signal);
+            return connection(endpoint, authorization);
+          }, { shutdown: 'stdin-eof', timeoutMs: 10000 });
+          await controller.waitForClient('chat');
+          controller.log(`OpenCode ready (${Math.round(performance.now() - started)}ms)`);
+        };
+        // Both services depend on delivery, not on each other. Drain both starts
+        // on failure so a retry never races an unfinished launch from this step.
+        const results = await Promise.allSettled([preview(), chat()]);
+        const failed = results.find(result => result.status === 'rejected');
+        if (failed?.status === 'rejected') throw failed.reason;
       }],
     ]);
     controller.status('Ready. Ask the agent to change the app; changes stay local to this browser.');

@@ -12,6 +12,15 @@ test('guest delivery uses distinct immutable installer scripts and checks comple
   const files = new Map<string, Uint8Array>(), launches: string[] = [];
   let complete = true;
   const context: ToolContext = {
+    async installTree(tree) {
+      expect(launches).toHaveLength(2);
+      const entries = tree.entries.filter(e => e.kind === 'file');
+      expect(entries).toHaveLength(2);
+      const cloned = structuredClone(entries);
+      expect(cloned[0]!.bytes.buffer).toBe(cloned[1]!.bytes.buffer);
+      for (const e of entries) files.set(e.path, e.bytes);
+      return { files: entries.length, verifyMs: 0, installMs: 0, readbackMs: 0 };
+    },
     async installFile(path, value) {
       // Real worker postMessage clones the backing buffer, including invisible bytes.
       if (path === '/workspace/node_modules/file') expect(structuredClone(value).buffer.byteLength).toBe(value.byteLength);

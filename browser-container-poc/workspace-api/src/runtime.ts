@@ -83,6 +83,12 @@ export namespace Runtime {
     };
     const context: ToolContext = {
       node,
+      async installTree(tree) {
+        check();
+        if (!host.features.has("install-tree-v1")) throw new Error("Runtime lacks bulk tree installation; rebuild its distribution and editor preparation");
+        const result = await host.request("workspace-install-tree", tree);
+        return { files: Number(result.files), verifyMs: Number(result.verifyMs), installMs: Number(result.installMs), readbackMs: Number(result.readbackMs) };
+      },
       async readFile(path) { check(); return (await host.request("workspace-read", { path })).bytes as Uint8Array; },
       async installFile(path, bytes) {
         check();

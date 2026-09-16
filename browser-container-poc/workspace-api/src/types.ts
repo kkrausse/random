@@ -36,11 +36,19 @@ export interface Distribution {
   /** Directory containing distribution.json and immutable assets. */
   readonly assetBaseUrl: string;
 }
+export type InstallTreeEntry =
+  | { kind: "directory"; path: string; mode: number }
+  | { kind: "symlink"; path: string; target: string }
+  | { kind: "file"; path: string; mode: number; bytes: Uint8Array; sha256: string; verifyReadback?: boolean };
+export interface TreeInstallResult { files: number; verifyMs: number; installMs: number; readbackMs: number }
 export interface ToolContext {
   node(options: NodeLaunchOptions): Promise<Execution>;
   /** Runtime filesystem, including private installed tool payloads. */
   readFile(path: string): Promise<Uint8Array>;
   installFile(path: string, bytes: Uint8Array): Promise<void>;
+  /** Verify then replace disposable roots in one FS-worker operation, before
+   * launching readers. Not transactional on write failure. Caller retains bytes. */
+  installTree(tree: { roots: string[]; entries: InstallTreeEntry[] }): Promise<TreeInstallResult>;
 }
 export interface ToolDescriptor<TOptions, TResult> {
   readonly name: string;

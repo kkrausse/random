@@ -114,3 +114,19 @@ For compiled ESM/declarations, the reusable `/react` integration, server-only
 `/assets` API, independent tarball install and explicit versioned runtime delivery,
 see [LOCAL-PACKAGES.md](./LOCAL-PACKAGES.md). Existing source-oriented examples below
 describe the core API; consumers should use `@kev-browser-agent-kit/workspace` public imports.
+## Bulk prepared-tree installation
+
+Tools can call `ToolContext.installTree({ roots, entries })` before starting
+processes to replace disposable runtime-absolute trees in one FS-worker operation.
+Entries are directories (path/mode), symlinks (path/relative target), or files
+(path/mode/Uint8Array/SHA-256, optionally `verifyReadback`). The runtime validates
+and hashes the complete input before deleting roots, then applies bytes and
+metadata directly in the VFS. The caller retains its input buffers; views sharing
+an archive buffer cross the page boundary in one structured clone. Results report
+file count and verification/install/readback timings.
+
+This is not a transactional live-tree replacement: call before readers launch,
+and retry a failed write by replacing the tree again. Watch invalidations are
+root-level. Keep source and database paths outside the disposable roots. Requires
+a rebuilt distribution advertising `install-tree-v1`; older distributions reject
+with a rebuild instruction. `installFile` retains its existing conflict semantics.

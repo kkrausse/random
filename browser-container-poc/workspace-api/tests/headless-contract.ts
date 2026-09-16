@@ -77,13 +77,14 @@ kernel.onCloseServer = (port: number) => {
 kernel.installCoreutils(); kernel.mkdirp("/workspace");
 const host = {
   listeners, nextExecution: 1,
+  features: new Set(['install-tree-v1']),
   on(callback: (m: Message) => void) { callbacks.add(callback); return () => callbacks.delete(callback); },
   async request(type: string, data: Record<string, unknown> = {}): Promise<Message> {
     if (type === "vv-stat") {
       if (!kernel.exists(data.path)) return { type: "vv-reply", exists: false };
       const stat = kernel.stat(data.path); return { type: "vv-reply", exists: true, isDir: stat.kind === "dir", size: stat.size };
     }
-    if (type === "workspace-read" || type === "test-flush") return new Promise((resolve, reject) => {
+    if (type === "workspace-read" || type === "test-flush" || type === "workspace-install-tree") return new Promise((resolve, reject) => {
       const reqId = requestSequence++; fsRequests.set(reqId,{ resolve,reject }); fsWorker.postMessage({type,reqId,...data});
     });
     if (type === "workspace-write") { await kernel.writeFilesBatch([{ path: data.path, bytes: data.bytes }]); return { type: "vv-reply" }; }
@@ -126,6 +127,26 @@ async function output(execution: Execution) {
 }
 let runtime: Awaited<ReturnType<typeof Runtime.start>> | undefined;
 async function testOfflineContract() {
+  const bulk = await Runtime.start({ workspace, distribution, tools: { tree: {
+    name: 'bulk-contract', version: '1', async bind(context) {
+      return async () => {
+        const bytes = new TextEncoder().encode('bulk-installed');
+        const sha256 = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
+        const result = await context.installTree({ roots: ['/workspace/deps'], entries: [
+          { kind: 'directory', path: '/workspace/deps', mode: 0o755 },
+          { kind: 'file', path: '/workspace/deps/file', bytes, sha256, mode: 0o755, verifyReadback: true },
+        ] });
+        assert.equal(result.files, 1);
+        assert.deepEqual(await context.readFile('/workspace/deps/file'), bytes);
+      };
+    },
+  } } });
+  await bulk.tools.tree();
+  host.features.clear();
+  await assert.rejects(bulk.tools.tree(), /rebuild its distribution/);
+  host.features.add('install-tree-v1');
+  await bulk.stop();
+  console.log('PASS bulk tool install through real FS worker and unsupported runtime rejection');
   runtime = await Runtime.start({ workspace, distribution });
   kernel.writeFile("/workspace/http-stream.cjs", readFileSync(runtimeSourcePath("scripts/fixtures/runtime-contracts/http-stream-server.cjs")));
   let httpServer = await runtime.node({ entry: "/workspace/http-stream.cjs" });
