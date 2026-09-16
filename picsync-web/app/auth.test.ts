@@ -5,7 +5,7 @@ import { decodeCredentials, generateCredentials } from "./credentials";
 const local = "http://127.0.0.1:8789";
 const remote = "https://photos.example.com";
 const peer = "127.0.0.1";
-const paths = ["/", "/app.js", "/app.css", "/strip-worker.js", "/error-details.js", "/decode-strip.js", "/strip-plan.js", "/stitch-strips.js", "/modern/libraw.js", "/modern/libraw.wasm", "/api/folder", "/api/photo?path=private.ARW", "/api/client-error", "/unknown"];
+const paths = ["/", "/app.js", "/app.css", "/strip-worker.js", "/error-details.js", "/decode-strip.js", "/strip-plan.js", "/stitch-strips.js", "/modern/libraw.js", "/modern/libraw.wasm", "/api/folder", "/api/photo?path=private.ARW", "/api/preview?path=private.ARW", "/api/client-error", "/unknown"];
 const fixture = () => new PicSyncAuth(8789, remote, generateCredentials());
 async function login(auth: PicSyncAuth, origin = remote, key = auth.secret) {
   return (await auth.guard(new Request(`${origin}/api/auth/login`, {

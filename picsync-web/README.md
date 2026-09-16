@@ -12,6 +12,8 @@ photo opens, including before you zoom in.
 
 ```sh
 bun install --frozen-lockfile
+# Mac server: needed to extract embedded RAW previews (already installed here).
+brew install exiftool
 bun run build
 MEDIA_ROOT=/path/to/mounted/smb/archive bun run start
 # Open the sign-in link printed at startup.
@@ -26,8 +28,8 @@ bookmarkable. This is a read-only archive viewer.
 
 ### Loading and caching
 
-**iPhone/iPad memory profile:** four pooled RAW workers total (one per preview,
-two per full-resolution photo), at most two downloads with a 64 MB admission budget, a 32 MB original
+**iPhone/iPad memory profile:** two pooled RAW workers total (one per fallback RAW preview,
+two per full-resolution photo), at most six downloads with a 192 MB admission budget, a 32 MB original
 cache, a 16 MB preview cache, and only the open full-resolution image (128 MB
 budget; a single oversized image is allowed). Full-resolution neighbor prefetch
 is disabled and previews load within 160px of the viewport. Includes iPadOS in
@@ -37,13 +39,21 @@ can grow its heap beyond 256 MB. The limits below describe the desktop profile.
 
 - Animated photo skeletons transition to 320px previews (JPEG quality 0.72). The preview stays
   visible while full-resolution pixels develop; no blank-screen replacement.
-- Modern **LibRaw 1.6**, **one worker per RAW preview, two per full-resolution photo**, a lazy pool of at
+- RAW thumbnails first request an embedded JPEG from authenticated `/api/preview`.
+  ExifTool on the server tries `PreviewImage`, then `JpgFromRaw`, then `ThumbnailImage`.
+  Two extractions run concurrently, with a bounded queue and a 32 MB / 256-entry
+  in-memory cache keyed by file metadata. No preview files are written to disk.
+  Responses remain `no-store`, and camera orientation is applied to thumbnails.
+  A missing embedded JPEG (204) falls back to the original; extraction errors are
+  reported rather than triggering a burst of phone-side RAW decodes.
+- Modern **LibRaw 1.6**, **one worker per fallback RAW preview, two per full-resolution photo**, a lazy pool of at
   most **ten decoder workers** reusing initialized WASM modules. The open photo is prioritized; new background decode jobs
   pause once its original is ready, until its full-resolution render completes.
   Existing jobs finish normally.
 - Up to **eight parallel downloads**, with a 256 MB admission budget for
-  downloaded/queued originals (one oversized original can exceed it). Downloads
-  are shared between simultaneous preview/full-resolution requests.
+  downloaded/queued data (one oversized original can exceed it). Download slots
+  are independent of decoder slots. Embedded previews reserve at most 16 MB each;
+  missing-preview fallbacks re-enter admission using the full original size.
 - Preview processing within 500px of the viewport (unstarted offscreen previews
   leave the queue), and
   full-resolution look-ahead for the previous/next photo.
@@ -64,8 +74,11 @@ can grow its heap beyond 256 MB. The limits below describe the desktop profile.
 ARW/DNG use the existing Bayer strip implementation and its fixed-brightness
 settings; unsupported RAW geometry produces a retryable error. JPEG, PNG, WebP,
 AVIF and HEIC/HEIF use the browser's image decoder (HEIC support varies by
-browser). Videos are not listed. Thumbnails are generated client-side from
-downloaded originals, so the first visit still transfers the RAW files.
+browser). Videos are not listed. Embedded JPEGs avoid transferring RAW originals
+or initializing WASM for thumbnails. Opening full resolution always requests the
+original and disables LibRaw half-size processing; embedded JPEGs never enter the
+original/full-resolution cache. The viewer labels the decoded source format and
+pixel dimensions. A JPEG mislabeled `.ARW` can only provide its stored JPEG resolution.
 Decoder selection checks file signatures: JPEG/HEIC/etc. uploaded with `.ARW`
 names use the browser decoder, without starting RAW workers. HEIC still requires
 browser support. Unknown signatures fail before allocating a WASM decoder.
@@ -175,15 +188,17 @@ browser-control execute --session <session-id> --file app/verify.browser.js
 
 To exercise the iPhone scheduling profile in Chromium, use a fresh authenticated
 session, run `browser-control execute --session <session-id> 'state.verifyIOS = true'`,
-then the same script. Verified: peak four workers reused for twelve 320px previews,
-one full-resolution photo, no full-resolution neighbor prefetch, and one download
-per original. This simulates device detection; it does not verify Safari's memory ceiling.
+then the same script. Verified: twelve 320px embedded previews with no RAW workers
+or original downloads for the grid. Opening one full-resolution photo downloads
+one original and starts two workers, without neighbor prefetch. This simulates
+device detection; it does not verify Safari's memory ceiling.
 
 Verified at 390 × 844: folder selection, twelve previews, 6240 × 4168 full-size
 canvas, 1:1 pixel zoom, click-drag panning, real Chromium two-touch pinch back to
 the grid, no horizontal overflow, at most ten workers created and reused across jobs,
 zero lingering workers after leaving the folder,
-and exactly one fetch per original during preview/full upgrades.
+and exactly one embedded-preview request per photo. A portrait ARW verifies camera
+orientation and a JPEG named `.ARW` verifies the no-embedded-preview fallback.
 
 Performance correction: the initial gallery PNG conversion added about 2.2s to
 one full-resolution image. Direct bitmap/canvas display removed that conversion;

@@ -11,6 +11,7 @@ export type Render = {
   height: number;
   size: number;
   decodeMs?: number;
+  source?: string;
 };
 type Job = {
   photo: Photo;
@@ -18,6 +19,9 @@ type Job = {
   priority: number;
   key: string;
   bytes?: Uint8Array<ArrayBuffer>;
+  embedded?: boolean;
+  orientation?: number;
+  previewUnavailable?: boolean;
 };
 const PREVIEW_EDGE = 320;
 export class Pipeline {
@@ -90,6 +94,10 @@ export class Pipeline {
   private workerCount(job: Job) {
     return job.full ? Math.min(2, this.limits.workers) : 1;
   }
+  private downloadBytes(job: Job) {
+    return !job.full && job.photo.raw && !job.previewUnavailable
+      ? Math.min(job.photo.bytes, 16 * 1024 * 1024) : job.photo.bytes;
+  }
   private pump() {
     if (this.dead) return;
     const jobs = [...this.jobs.values()].sort(
@@ -97,7 +105,7 @@ export class Pipeline {
     );
     for (const job of jobs) {
       if (this.decoding.has(job.key) || this.downloading.has(job.key)) continue;
-      job.bytes ??= this.originals.get(job.photo.path);
+      if (job.full || !job.photo.raw) job.bytes ??= this.originals.get(job.photo.path);
       if (job.bytes) {
         const foreground = this.pinned ? this.jobs.get(this.pinned) : undefined;
         // Keep draining ready previews while the foreground is downloading:
@@ -120,7 +128,7 @@ export class Pipeline {
           0,
         );
         const admittedBytes = readyBytes + this.reserved;
-        if (admittedBytes === 0 || admittedBytes + job.photo.bytes <= this.limits.downloadBytes)
+        if (admittedBytes === 0 || admittedBytes + this.downloadBytes(job) <= this.limits.downloadBytes)
           void this.download(job);
       }
     }
@@ -131,10 +139,27 @@ export class Pipeline {
     this.controllers.add(controller);
     this.downloading.add(job.key);
     this.downloadingPaths.add(job.photo.path);
-    this.reserved += job.photo.bytes;
+    const reservedBytes = this.downloadBytes(job);
+    this.reserved += reservedBytes;
     this.states.set(job.key, "Downloading");
     const timeout = setTimeout(() => controller.abort(), 120000);
     try {
+      if (!job.full && job.photo.raw && !job.previewUnavailable) {
+        this.states.set(job.key, "Loading embedded JPEG preview");
+        const response = await fetch(`/api/preview?path=${encodeURIComponent(job.photo.path)}`, { signal: controller.signal });
+        if (response.status !== 204) {
+          if (!response.ok) throw new Error(`Preview download failed (${response.status})`);
+          job.bytes = new Uint8Array(await response.arrayBuffer());
+          job.embedded = true;
+          job.orientation = Number(response.headers.get("X-PicSync-Orientation")) || 1;
+          // A preview must never enter the original cache or satisfy a full job.
+          return;
+        }
+        // Re-enter admission with the original's full size, rather than starting
+        // a large fallback download under the much smaller preview reservation.
+        job.previewUnavailable = true;
+        return;
+      }
       const response = await fetch(
         `/api/photo?path=${encodeURIComponent(job.photo.path)}`,
         { signal: controller.signal },
@@ -143,7 +168,8 @@ export class Pipeline {
       job.bytes = new Uint8Array(await response.arrayBuffer());
       if (!this.dead) {
         for (const waiting of this.jobs.values())
-          if (waiting.photo.path === job.photo.path) waiting.bytes = job.bytes;
+          if (waiting.photo.path === job.photo.path && !waiting.bytes &&
+              (waiting.full || !waiting.photo.raw)) waiting.bytes = job.bytes;
         this.originals.delete(job.photo.path);
         this.originals.set(job.photo.path, job.bytes);
         let total = [...this.originals.values()].reduce(
@@ -163,7 +189,7 @@ export class Pipeline {
       this.controllers.delete(controller);
       this.downloading.delete(job.key);
       this.downloadingPaths.delete(job.photo.path);
-      this.reserved -= job.photo.bytes;
+      this.reserved -= reservedBytes;
       this.pump();
     }
   }
@@ -280,7 +306,8 @@ export class Pipeline {
       else {
         try {
           bitmap = await createImageBitmap(new Blob([job.bytes!], { type: format }),
-            job.full ? {} : { resizeWidth: PREVIEW_EDGE, resizeQuality: "low" });
+            job.full ? {} : { resizeWidth: PREVIEW_EDGE, resizeQuality: "low",
+              ...(job.embedded ? { imageOrientation: "none" as const } : {}) });
         } catch (error) {
           throw new Error(`This file contains ${format}, regardless of its filename. The browser could not decode it (it may be unsupported or damaged): ${errorMessage(error)}`);
         }
@@ -295,16 +322,27 @@ export class Pipeline {
           height: bitmap.height,
           size: bitmap.width * bitmap.height * 4,
           decodeMs: performance.now() - started,
+          source: format === "raw" ? "RAW" : format.slice("image/".length).toUpperCase(),
         });
         bitmap = undefined; // Ownership transfers to the bounded full-resolution cache.
       } else {
+        const orientation = job.embedded ? job.orientation ?? 1 : 1;
+        const rotated = orientation >= 5 && orientation <= 8;
         const ratio = Math.min(1, PREVIEW_EDGE / Math.max(bitmap.width, bitmap.height));
         const canvas = document.createElement("canvas");
-        canvas.width = Math.max(1, Math.round(bitmap.width * ratio));
-        canvas.height = Math.max(1, Math.round(bitmap.height * ratio));
+        canvas.width = Math.max(1, Math.round((rotated ? bitmap.height : bitmap.width) * ratio));
+        canvas.height = Math.max(1, Math.round((rotated ? bitmap.width : bitmap.height) * ratio));
         const context = canvas.getContext("2d");
         if (!context) throw new Error("Unable to allocate image canvas");
-        context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        context.scale(ratio, ratio);
+        const w = bitmap.width, h = bitmap.height;
+        const transforms: Record<number, [number, number, number, number, number, number]> = {
+          2: [-1, 0, 0, 1, w, 0], 3: [-1, 0, 0, -1, w, h], 4: [1, 0, 0, -1, 0, h],
+          5: [0, 1, 1, 0, 0, 0], 6: [0, 1, -1, 0, h, 0],
+          7: [0, -1, -1, 0, h, w], 8: [0, -1, 1, 0, 0, w],
+        };
+        if (transforms[orientation]) context.transform(...transforms[orientation]);
+        context.drawImage(bitmap, 0, 0);
         bitmap.close();
         bitmap = undefined;
         const blob = await new Promise<Blob>((resolve, reject) =>

@@ -5,11 +5,13 @@ import { formats, listArchive, resolveArchive } from "./archive";
 import { PicSyncAuth } from "./auth";
 import { loadCredentials } from "./credentials";
 import { createClientErrorHandler } from "./client-errors";
+import { createPreviews } from "./previews";
 
 const port = Number(process.env.PORT ?? 8789);
 const publicUrl = process.env.PICSYNC_PUBLIC_URL;
 const auth = new PicSyncAuth(port, publicUrl, await loadCredentials(port));
 const clientError = createClientErrorHandler();
+const preview = createPreviews();
 
 const root = await realpath(process.env.MEDIA_ROOT ?? "/home/pi/photos");
 const modern = dirname(Bun.resolveSync("libraw-modern", import.meta.dir));
@@ -95,6 +97,22 @@ const server = Bun.serve({
         if (request.headers.get("if-none-match") === etag)
           return new Response(null, { status: 304, headers: photoHeaders });
         return new Response(file, { headers: photoHeaders });
+      }
+      if (url.pathname === "/api/preview") {
+        const path = await resolveArchive(root, url.searchParams.get("path") ?? "");
+        if (!/\.(arw|dng)$/i.test(path)) return new Response(null, { status: 204, headers });
+        try {
+          const image = await preview(path);
+          if (!image) return new Response(null, { status: 204, headers });
+          return new Response(request.method === "HEAD" ? null : new Uint8Array(image.bytes), { headers: {
+            ...headers, "Content-Type": "image/jpeg",
+            "Content-Length": String(image.bytes.byteLength),
+            "X-PicSync-Orientation": String(image.orientation),
+          } });
+        } catch (error) {
+          console.error("[PicSync] Preview extraction failed", { path, error });
+          return new Response("Preview extraction failed", { status: 503, headers });
+        }
       }
       const asset = assets.get(url.pathname);
       if (asset) {
