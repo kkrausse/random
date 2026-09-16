@@ -24,6 +24,14 @@ These are payload measurements, not browser startup timing results. Individual
 filesystem writes, per-file verification, and service startup still happen.
 Decompression currently holds the complete uncompressed bundle in browser memory.
 
+File views must be copied into file-sized buffers before `installFile`: worker
+`postMessage` structured cloning copies the entire backing ArrayBuffer, including
+bytes outside a subarray view. The initial bundle implementation missed this and
+could clone the whole ~171 MB bundle on every file write. The installer now slices
+each file immediately before crossing the worker boundary, with at most eight
+installs in flight. A regression test checks the cloned backing-buffer size using
+a multi-file bundle.
+
 To activate for a consumer, rebuild the `opencode-chat` package, refresh its local
 file dependency as usual, rerun `bun run prepare:editor` in the application, and
 rebuild the application client. Existing generated preparations do not acquire a
