@@ -1,12 +1,12 @@
-import { OpenCodeAPI, type Page, type Message, type NativeEvent } from "./api";
+import { Cause, Deferred, Effect, Exit, Fiber, ManagedRuntime, Scope, Stream } from "effect";
+import { ChatError, OpenCodeAPI, type ChatAPIError, type NativeEvent } from "./api";
 import { createV2SessionReducer } from "./vendor/reducer";
 import { questionFromForm, formAnswer } from "./forms";
-import type { FormInfo } from "./vendor/types";
 import type {
   ChatController,
   ChatOptions,
   ChatSnapshot,
-  PermissionRequest,
+  ModelRef,
   QuestionRequest,
   QuestionAnswers,
 } from "./types";
@@ -24,7 +24,8 @@ function freeze<T>(value: T): T {
 export function createChatController(options: ChatOptions): ChatController {
   if (!options.directory?.trim())
     throw new Error("Caller directory is required");
-  const api = new OpenCodeAPI(options.endpoint, options.directory);
+  const runtime = ManagedRuntime.make(OpenCodeAPI.layer(options.endpoint, options.directory));
+  const lifetime = Scope.makeUnsafe();
   const reducer = createV2SessionReducer();
   let state: ChatSnapshot = freeze({
     connection: "connecting",
@@ -47,12 +48,12 @@ export function createChatController(options: ChatOptions): ChatController {
     generation = 0,
     selection = 0,
     revision = 0;
-  let connection = new AbortController(),
-    scope = new AbortController();
-  let older: string | undefined | null, hydration: Promise<void> | undefined;
+  let connection = Scope.forkUnsafe(lifetime),
+    selectionScope = Scope.forkUnsafe(connection);
+  let older: string | undefined | null, hydration: Fiber.Fiber<void, ChatAPIError | ChatError> | undefined;
   let requestEvents: NativeEvent[] = [];
   const answered = new Set<string>();
-  let recovery: ReturnType<typeof setTimeout> | undefined;
+  let recovery: Fiber.Fiber<void, never> | undefined;
   let mutation: symbol | undefined;
   const publish = (patch: Partial<ChatSnapshot>) => {
     if (disposed) return;
@@ -62,58 +63,56 @@ export function createChatController(options: ChatOptions): ChatController {
   const check = () => {
     if (disposed) throw new Error("Chat controller is disposed");
   };
-  const signal = () => AbortSignal.any([connection.signal, scope.signal]);
-  const path = (id = state.sessionID) => {
-    if (!id) throw new Error("Select a session first");
-    return `session/${encodeURIComponent(id)}`;
-  };
+  const sessionID = Effect.fn("Chat.sessionID")(function*() {
+    const id = state.sessionID;
+    if (!id) return yield* new ChatError({ message: "Select a session first" });
+    return id;
+  });
   const valid = (g: number, s: number) =>
     !disposed && g === generation && s === selection;
-  async function action<T>(fn: () => Promise<T>): Promise<T> {
+  const action = <A, E>(effect: Effect.Effect<A, E, OpenCodeAPI>) => Effect.suspend(() => {
     check();
-    const g = generation,
-      s = selection;
-    try {
-      return await fn();
-    } catch (e) {
-      if (valid(g, s)) publish({ error: errorText(e) });
-      throw e;
-    }
-  }
+    const g = generation, s = selection;
+    return effect.pipe(Effect.tapCause(cause => Effect.sync(() => {
+      if (valid(g, s) && !Cause.hasInterrupts(cause)) publish({ error: Cause.pretty(cause) });
+    })));
+  });
+  // Promises exist only at the public React boundary; scopes own all request fibers.
+  const run = <A, E>(effect: Effect.Effect<A, E, OpenCodeAPI>, scope = selectionScope) =>
+    runtime.runPromise(action(effect).pipe(Effect.forkIn(scope), Effect.flatMap(Fiber.join),
+      Effect.catchCause(cause => Effect.fail(new ChatError({ message: Cause.pretty(cause) })))));
   function recover() {
     if (disposed || recovery || state.connection !== "connected") return;
     const g = generation,
       s = selection;
-    recovery = setTimeout(() => {
-      recovery = undefined;
-      if (!valid(g, s)) return;
-      void hydrate().catch((e) => {
-        if (valid(g, s)) publish({ error: errorText(e) });
-      });
-    }, 120);
+    const scope = selectionScope;
+    runtime.runFork(Effect.gen(function*() {
+      recovery = yield* Effect.gen(function*() {
+        yield* Effect.sleep(120);
+        recovery = undefined;
+        if (valid(g, s)) yield* hydrate();
+      }).pipe(
+        Effect.catchCause(cause => Effect.sync(() => {
+          if (valid(g, s) && !Cause.hasInterrupts(cause)) publish({ error: Cause.pretty(cause) });
+        })),
+        Effect.forkIn(scope),
+      );
+    }));
   }
-  async function hydrate(): Promise<void> {
-    if (hydration) return hydration;
+  const hydrate = Effect.fn("Chat.hydrate")(function*(): Effect.fn.Return<void, ChatAPIError | ChatError, OpenCodeAPI> {
+    if (hydration) return yield* Fiber.join(hydration);
     if (!state.sessionID) return;
     const g = generation,
       s = selection,
       rev = revision,
-      base = path(),
-      sig = signal();
+      id = yield* sessionID();
     requestEvents = [];
-    const task = (async () => {
-      const [page, permissions, forms, active] = await Promise.all([
-        api.request<Page<Message>>(
-          `${base}/message?order=desc&limit=${options.pageSize ?? 50}`,
-          sig,
-        ),
-        api.request<{ data: PermissionRequest[] }>(`${base}/permission`, sig),
-        api.request<{ data: FormInfo[] }>(`${base}/form`, sig),
-        api.request<{ data: Record<string, { type: string }> }>(
-          "session/active",
-          sig,
-        ),
-      ]);
+    const task = yield* Effect.gen(function*() {
+      const api = yield* OpenCodeAPI;
+      const [page, permissions, forms, active] = yield* Effect.all([
+        api.messages(id, { order: "desc", limit: options.pageSize ?? 50 }),
+        api.permissions(id), api.forms(id), api.active(),
+      ], { concurrency: "unbounded" });
       if (!valid(g, s)) return;
       // HTTP snapshots have no shared SSE cursor. Never replay overlapping deltas:
       // they may already be persisted. Refetch after the overlap instead.
@@ -126,15 +125,15 @@ export function createChatController(options: ChatOptions): ChatController {
       publish({
         messages: [...previous, ...messages],
         hasOlder: !!older,
-        permissions: permissions.data
+        permissions: permissions
           .filter((r) => !answered.has(`permission:${r.id}`))
           .map((request) => ({
             submitting: false,
             ...state.permissions.find((p) => p.request.id === request.id),
             request,
           })),
-        unsupportedForms: forms.data.filter(f => !answered.has(`question:${f.id}`) && !questionFromForm(f)),
-        questions: forms.data.flatMap(f => { const q = questionFromForm(f); return q ? [q] : []; })
+        unsupportedForms: forms.filter(f => !answered.has(`question:${f.id}`) && !questionFromForm(f)),
+        questions: forms.flatMap(f => { const q = questionFromForm(f); return q ? [q] : []; })
           .filter((r) => !answered.has(`question:${r.id}`))
           .map((request) => ({
             submitting: false,
@@ -143,10 +142,10 @@ export function createChatController(options: ChatOptions): ChatController {
           })),
         ...(revision === rev
           ? {
-              execution: active.data[state.sessionID!]
+              execution: active[id]
                 ? ("running" as const)
                 : ("idle" as const),
-              ...(!active.data[state.sessionID!]
+              ...(!active[id]
                 ? { interruptRequested: false }
                 : {}),
             }
@@ -155,14 +154,12 @@ export function createChatController(options: ChatOptions): ChatController {
       });
       for (const e of requestEvents) requestEvent(e);
       if (revision !== rev) recover();
-    })();
+    }).pipe(Effect.forkIn(selectionScope));
     hydration = task;
-    try {
-      await task;
-    } finally {
+    yield* Fiber.join(task).pipe(Effect.ensuring(Effect.sync(() => {
       if (hydration === task) hydration = undefined;
-    }
-  }
+    })));
+  });
   function requestEvent(e: NativeEvent) {
     if (e.type === "permission.asked")
       publish({
@@ -277,14 +274,13 @@ export function createChatController(options: ChatOptions): ChatController {
     )
       recover();
   }
-  async function selectSession(id: string) {
+  const selectSession = Effect.fn("Chat.selectSession")(function*(id: string) {
     check();
-    scope.abort();
-    scope = new AbortController();
+    const previous = selectionScope;
+    selectionScope = Scope.forkUnsafe(connection);
     selection++;
     hydration = undefined;
     mutation = undefined;
-    if (recovery) clearTimeout(recovery);
     recovery = undefined;
     if (state.sessionID) reducer.clear(state.sessionID);
     answered.clear();
@@ -305,25 +301,22 @@ export function createChatController(options: ChatOptions): ChatController {
     });
     const g = generation,
       s = selection;
-    try {
-      await action(hydrate);
-    } finally {
+    yield* Scope.close(previous, Exit.void);
+    yield* action(hydrate()).pipe(Effect.ensuring(Effect.sync(() => {
       if (valid(g, s)) publish({ loading: false });
-    }
-  }
-  async function reconnect() {
+    })));
+  });
+  const reconnect = Effect.fn("Chat.reconnect")(function*() {
     check();
     generation++;
-    connection.abort();
-    scope.abort();
-    connection = new AbortController();
-    scope = new AbortController();
+    const previous = connection;
+    connection = Scope.forkUnsafe(lifetime);
+    selectionScope = Scope.forkUnsafe(connection);
     mutation = undefined;
     hydration = undefined;
-    if (recovery) clearTimeout(recovery);
     recovery = undefined;
     const g = generation,
-      ctl = connection,
+      scope = connection,
       selectionAtStart = selection;
     if (state.sessionID) reducer.clear(state.sessionID);
     publish({
@@ -333,310 +326,230 @@ export function createChatController(options: ChatOptions): ChatController {
       execution: "unknown",
       sending: false,
     });
-    let resolve!: () => void, reject!: (e: unknown) => void;
-    const marker = new Promise<void>((yes, no) => {
-      resolve = yes;
-      reject = no;
-    });
-    void marker.catch(() => {});
-    const timer = setTimeout(() => {
-      reject(new Error("OpenCode event handshake timed out"));
-      ctl.abort();
-    }, options.handshakeTimeoutMs ?? 15000);
-    ctl.signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        reject(new Error("Connection cancelled"));
-      },
-      { once: true },
-    );
-    void api
-      .events(
-        ctl.signal,
-        () => {
-          clearTimeout(timer);
-          resolve();
-        },
-        (e) => {
-          if (g === generation && !ctl.signal.aborted) event(e);
-        },
-      )
-      .catch((e) => {
-        clearTimeout(timer);
-        reject(e);
-        if (g !== generation || disposed || ctl.signal.aborted) return;
-        publish({
-          connection: "disconnected",
-          execution: "unknown",
-          error: errorText(e),
-        });
-        ctl.abort();
-      });
-    try {
-      await marker;
-      const [sessions, models] = await Promise.all([
-        api.list(ctl.signal),
-        api.models(ctl.signal),
-      ]);
+    yield* Scope.close(previous, Exit.void);
+    const setup = Effect.gen(function*() {
+      const api = yield* OpenCodeAPI;
+      const marker = yield* Deferred.make<void, ChatAPIError | ChatError>();
+      yield* api.events.pipe(
+        Stream.runForEach(e => Effect.gen(function*() {
+          if (g !== generation || disposed) return;
+          if (e.type === "server.connected") yield* Deferred.succeed(marker, undefined);
+          event(e);
+        })),
+        Effect.andThen(new ChatError({ message: "OpenCode event connection closed. Reconnect to reload history." })),
+        Effect.catchCause(cause => Effect.gen(function*() {
+          yield* Deferred.failCause(marker, cause);
+          if (g !== generation || disposed || Cause.hasInterrupts(cause)) return;
+          publish({ connection: "disconnected", execution: "unknown", loading: false, error: Cause.pretty(cause) });
+          // Close from a separate lifetime fiber so the stream never joins itself.
+          yield* Scope.close(scope, Exit.void).pipe(Effect.forkIn(lifetime));
+        })),
+        Effect.forkIn(scope),
+      );
+      yield* Deferred.await(marker).pipe(Effect.timeoutOrElse({
+        duration: options.handshakeTimeoutMs ?? 15000,
+        orElse: () => new ChatError({ message: "OpenCode event handshake timed out" }),
+      }));
+      const [sessions, models] = yield* Effect.all([api.list(), api.models()], { concurrency: "unbounded" });
       if (g !== generation || disposed) return;
       publish({ sessions, models, connection: "connected" });
       if (selection !== selectionAtStart) return;
       const id = state.sessionID ?? sessions[0]?.id;
-      if (id) await selectSession(id);
-      else if (options.autoCreateSession) await controller.createSession();
+      if (id) yield* selectSession(id);
+      else if (options.autoCreateSession) yield* createSession();
       else publish({ loading: false, execution: "idle" });
-    } catch (e) {
+    });
+    yield* setup.pipe(Effect.forkIn(scope), Effect.flatMap(Fiber.join), Effect.catchCause(cause => Effect.gen(function*() {
       if (g === generation && !disposed) {
         publish({
           connection: "disconnected",
           loading: false,
-          error: errorText(e),
+          error: state.error ?? Cause.pretty(cause),
         });
-        ctl.abort();
+        yield* Scope.close(scope, Exit.void);
       }
-      throw e;
-    }
-  }
-  async function reply(
+      return yield* Effect.failCause(cause);
+    })));
+  });
+  const reply = Effect.fn("Chat.reply")(function*(
     kind: "permission" | "question",
     id: string,
-    suffix: string,
-    body: unknown,
+    submit: (api: OpenCodeAPI["Service"], sessionID: string) => Effect.Effect<void, ChatAPIError>,
   ) {
-    await action(async () => {
-      const list = kind === "permission" ? state.permissions : state.questions;
-      const entry = list.find((p) => p.request.id === id);
-      if (!entry) throw new Error("Request is no longer pending");
-      if (entry.submitting) throw new Error("Response is already submitting");
-      const g = generation,
-        s = selection;
-      const update = (error?: string, submitting = false, remove = false) => {
-        if (!valid(g, s)) return;
-        if (kind === "permission")
-          publish({
-            permissions: state.permissions.flatMap((p) =>
-              p.request.id !== id
-                ? [p]
-                : remove
-                  ? []
-                  : [{ ...p, error, submitting }],
-            ),
-          });
-        else
-          publish({
-            questions: state.questions.flatMap((p) =>
-              p.request.id !== id
-                ? [p]
-                : remove
-                  ? []
-                  : [{ ...p, error, submitting }],
-            ),
-          });
-      };
-      update(undefined, true);
-      try {
-        await api.response(
-          `${path()}/${kind === "question" ? "form" : kind}/${encodeURIComponent(id)}/${suffix}`,
-          { method: "POST", signal: signal(), ...(body === undefined ? {} : {
-            headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-          }) },
-        );
-        if (valid(g, s)) answered.add(`${kind}:${id}`);
-        update(undefined, false, true);
-      } catch (e) {
-        update(errorText(e));
-        throw e;
+    const list = kind === "permission" ? state.permissions : state.questions;
+    const entry = list.find((p) => p.request.id === id);
+    if (!entry) return yield* new ChatError({ message: "Request is no longer pending" });
+    if (entry.submitting) return yield* new ChatError({ message: "Response is already submitting" });
+    const g = generation, s = selection;
+    const update = (error?: string, submitting = false, remove = false) => {
+      if (!valid(g, s)) return;
+      if (kind === "permission")
+        publish({
+          permissions: state.permissions.flatMap((p) =>
+            p.request.id !== id ? [p] : remove ? [] : [{ ...p, error, submitting }],
+          ),
+        });
+      else
+        publish({
+          questions: state.questions.flatMap((p) =>
+            p.request.id !== id ? [p] : remove ? [] : [{ ...p, error, submitting }],
+          ),
+        });
+    };
+    update(undefined, true);
+    yield* submit(yield* OpenCodeAPI, yield* sessionID()).pipe(
+      Effect.tapCause(cause => Effect.sync(() => update(Cause.pretty(cause)))),
+    );
+    if (valid(g, s)) answered.add(`${kind}:${id}`);
+    update(undefined, false, true);
+  });
+  const createSession = Effect.fn("Chat.createSession")(function*(title?: string) {
+    if (mutation) return yield* new ChatError({ message: "A session operation is pending" });
+    const token = (mutation = Symbol());
+    const g = generation, s = selection;
+    return yield* Effect.gen(function*() {
+      const api = yield* OpenCodeAPI;
+      const session = yield* api.create(title ?? "New chat");
+      if (valid(g, s)) {
+        publish({ sessions: [session, ...state.sessions] });
+        yield* selectSession(session.id);
       }
-    });
-  }
+      return session.id;
+    }).pipe(Effect.ensuring(Effect.sync(() => {
+      if (mutation === token) mutation = undefined;
+    })));
+  });
+  const loadOlder = Effect.fn("Chat.loadOlder")(function*() {
+    if (!older || state.loadingOlder) return;
+    const cursor = older, g = generation, s = selection;
+    publish({ loadingOlder: true });
+    yield* Effect.gen(function*() {
+      const api = yield* OpenCodeAPI;
+      const page = yield* api.messages(yield* sessionID(), { cursor });
+      if (!valid(g, s)) return;
+      if (page.cursor.next === cursor)
+        return yield* new ChatError({ message: "Repeated history cursor" });
+      older = page.cursor.next;
+      const ids = new Set(state.messages.map((m) => m.id));
+      publish({
+        messages: [...page.data].reverse().filter((m) => !ids.has(m.id)).concat([...state.messages]),
+        hasOlder: !!older,
+      });
+    }).pipe(Effect.ensuring(Effect.sync(() => {
+      if (valid(g, s)) publish({ loadingOlder: false });
+    })));
+  });
+  const send = Effect.fn("Chat.send")(function*(draft: { text: string }) {
+    if (!draft.text.trim()) return yield* new ChatError({ message: "Enter a message" });
+    if (state.connection !== "connected" || state.loading || state.sending || mutation || state.execution !== "idle")
+      return yield* new ChatError({ message: "Chat is not ready to send" });
+    const g = generation, s = selection, id = yield* sessionID();
+    publish({ sending: true, error: undefined });
+    yield* Effect.gen(function*() {
+      const api = yield* OpenCodeAPI;
+      yield* api.prompt(id, draft.text);
+      if (valid(g, s)) {
+        yield* hydrate().pipe(Effect.catchCause(cause => Effect.sync(() => {
+          // Prompt acceptance is known. A refresh failure must not invite a
+          // duplicate submission of an already accepted prompt.
+          if (valid(g, s)) publish({
+            error: `Message accepted; refresh failed: ${Cause.pretty(cause)}`,
+            execution: "unknown",
+          });
+        })));
+      }
+    }).pipe(Effect.ensuring(Effect.sync(() => {
+      if (valid(g, s)) publish({ sending: false });
+    })));
+  });
+  const selectModel = Effect.fn("Chat.selectModel")(function*(model: ModelRef | undefined) {
+    if (!model)
+      return yield* new ChatError({ message: "Select an explicit model; the pinned API cannot reset a session model" });
+    if (state.execution !== "idle" || mutation || state.sending)
+      return yield* new ChatError({ message: "Wait for the current operation" });
+    const id = yield* sessionID();
+    const g = generation, s = selection, token = (mutation = Symbol());
+    yield* Effect.gen(function*() {
+      const api = yield* OpenCodeAPI;
+      yield* api.model(id, model);
+      if (valid(g, s)) publish({
+        model,
+        sessions: state.sessions.map(session => session.id === id ? { ...session, model } : session),
+      });
+    }).pipe(Effect.ensuring(Effect.sync(() => {
+      if (mutation === token) mutation = undefined;
+    })));
+  });
+  const interrupt = Effect.fn("Chat.interrupt")(function*() {
+    const id = yield* sessionID(), g = generation, s = selection;
+    publish({ interruptRequested: true });
+    const api = yield* OpenCodeAPI;
+    yield* api.interrupt(id);
+    if (valid(g, s)) yield* hydrate();
+  });
+  const replyQuestion = Effect.fn("Chat.replyQuestion")(function*(id: string, answers: QuestionAnswers) {
+    yield* validateAnswers(state.questions.find(q => q.request.id === id)?.request, answers);
+    const request = state.questions.find(q => q.request.id === id)!.request;
+    yield* reply("question", id, (api, sessionID) => api.replyForm(sessionID, id, formAnswer(request, answers)));
+  });
   const controller: ChatController = {
     ready: undefined as unknown as Promise<void>,
     getSnapshot: () => state,
     subscribe(notify) {
       check();
       listeners.add(notify);
-      return () => {
-        listeners.delete(notify);
-      };
+      return () => { listeners.delete(notify); };
     },
-    selectSession,
-    reconnect,
-    async createSession(title) {
-      return action(async () => {
-        if (mutation) throw new Error("A session operation is pending");
-        const token = (mutation = Symbol());
-        const g = generation,
-          s = selection;
-        try {
-          const session = await api.create(title ?? "New chat", signal());
-          if (valid(g, s)) {
-            publish({ sessions: [session, ...state.sessions] });
-            await selectSession(session.id);
-          }
-          return session.id;
-        } finally {
-          if (mutation === token) mutation = undefined;
-        }
-      });
-    },
-    async loadOlder() {
-      await action(async () => {
-        if (!older || state.loadingOlder) return;
-        const cursor = older,
-          g = generation,
-          s = selection;
-        publish({ loadingOlder: true });
-        try {
-          const page = await api.request<Page<Message>>(
-            `${path()}/message?cursor=${encodeURIComponent(cursor)}`,
-            signal(),
-          );
-          if (!valid(g, s)) return;
-          if (page.cursor.next === cursor)
-            throw new Error("Repeated history cursor");
-          older = page.cursor.next;
-          const ids = new Set(state.messages.map((m) => m.id));
-          publish({
-            messages: [...page.data]
-              .reverse()
-              .filter((m) => !ids.has(m.id))
-              .concat([...state.messages]),
-            hasOlder: !!older,
-          });
-        } finally {
-          if (valid(g, s)) publish({ loadingOlder: false });
-        }
-      });
-    },
-    async send(draft) {
-      await action(async () => {
-        if (!draft.text.trim()) throw new Error("Enter a message");
-        if (
-          state.connection !== "connected" ||
-          state.loading ||
-          state.sending ||
-          mutation ||
-          state.execution !== "idle"
-        )
-          throw new Error("Chat is not ready to send");
-        const g = generation,
-          s = selection,
-          base = path();
-        publish({ sending: true, error: undefined });
-        try {
-          await api.request(`${base}/prompt`, signal(), { text: draft.text });
-          if (valid(g, s)) {
-            try {
-              await hydrate();
-            } catch (e) {
-              // Prompt acceptance is known. Do not present a refresh failure as
-              // a failed submission, which would invite duplicate resubmission.
-              if (valid(g, s))
-                publish({
-                  error: `Message accepted; refresh failed: ${errorText(e)}`,
-                  execution: "unknown",
-                });
-            }
-          }
-        } finally {
-          if (valid(g, s)) publish({ sending: false });
-        }
-      });
-    },
-    async selectModel(model) {
-      await action(async () => {
-        if (!model)
-          throw new Error(
-            "Select an explicit model; the pinned API cannot reset a session model",
-          );
-        if (state.execution !== "idle" || mutation || state.sending)
-          throw new Error("Wait for the current operation");
-        path();
-        const g = generation,
-          s = selection,
-          token = (mutation = Symbol());
-        try {
-          await api.model(state.sessionID!, model, signal());
-          if (valid(g, s))
-            publish({
-              model,
-              sessions: state.sessions.map((session) =>
-                session.id === state.sessionID
-                  ? { ...session, model }
-                  : session,
-              ),
-            });
-        } finally {
-          if (mutation === token) mutation = undefined;
-        }
-      });
-    },
-    async interrupt() {
-      await action(async () => {
-        const base = path(),
-          g = generation,
-          s = selection;
-        publish({ interruptRequested: true });
-        await api.response(`${base}/interrupt`, {
-          method: "POST",
-          signal: signal(),
-        });
-        if (valid(g, s)) await hydrate();
-      });
-    },
+    selectSession: id => run(selectSession(id), connection),
+    reconnect: () => run(reconnect(), lifetime),
+    createSession: title => run(createSession(title), connection),
+    loadOlder: () => run(loadOlder()),
+    send: draft => run(send(draft)),
+    selectModel: model => run(selectModel(model)),
+    interrupt: () => run(interrupt()),
     replyPermission: (id, decision) =>
-      reply("permission", id, "reply", { reply: decision }),
-    replyQuestion(id, answers) {
-      return action(async () => {
-        validateAnswers(
-          state.questions.find((q) => q.request.id === id)?.request,
-          answers,
-        );
-        const request = state.questions.find(q => q.request.id === id)!.request;
-        await reply("question", id, "reply", { answer: formAnswer(request, answers) });
-      });
-    },
-    rejectQuestion: (id) => reply("question", id, "cancel", undefined),
+      run(reply("permission", id, (api, sessionID) => api.replyPermission(sessionID, id, decision))),
+    replyQuestion: (id, answers) => run(replyQuestion(id, answers)),
+    rejectQuestion: id => run(reply("question", id, (api, sessionID) => api.cancelForm(sessionID, id))),
     clearError: () => publish({ error: undefined }),
     dispose() {
       if (disposed) return;
       disposed = true;
       generation++;
-      connection.abort();
-      scope.abort();
-      if (recovery) clearTimeout(recovery);
+      // Closing the root scope interrupts and joins streams, timers and requests.
+      // ManagedRuntime then releases the official client's service layer.
+      void Effect.runPromise(Scope.close(lifetime, Exit.void)).then(() => runtime.dispose());
       if (state.sessionID) reducer.clear(state.sessionID);
       listeners.clear();
     },
   };
   Object.defineProperty(controller, "ready", {
-    value: reconnect(),
+    value: run(reconnect(), lifetime),
     enumerable: true,
   });
   void controller.ready.catch(() => {});
   return controller;
 }
 
-function validateAnswers(
+const validateAnswers = Effect.fn("Chat.validateAnswers")(function*(
   request: QuestionRequest | undefined,
   answers: QuestionAnswers,
 ) {
-  if (!request) throw new Error("Question is no longer pending");
+  if (!request) return yield* new ChatError({ message: "Question is no longer pending" });
   if (answers.length !== request.questions.length)
-    throw new Error("Answer every question");
-  request.questions.forEach((question, i) => {
+    return yield* new ChatError({ message: "Answer every question" });
+  for (const [i, question] of request.questions.entries()) {
     const answer = answers[i]!;
     if (
       !answer.length ||
       answer.some((a) => !a.trim()) ||
       (!question.multiple && answer.length !== 1)
     )
-      throw new Error("Choose an answer for each question");
+      return yield* new ChatError({ message: "Choose an answer for each question" });
     if (
       question.custom === false &&
       answer.some((a) => !question.options.some((o) => o.label === a))
     )
-      throw new Error("Choose one of the offered answers");
-  });
-}
+      return yield* new ChatError({ message: "Choose one of the offered answers" });
+  }
+});

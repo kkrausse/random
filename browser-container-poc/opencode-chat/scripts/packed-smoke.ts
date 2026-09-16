@@ -25,12 +25,18 @@ try {
     export const chat = (props: ChatViewProps) => <ChatView {...props} />;
   `);
   await $`bunx tsc --noEmit --jsx react-jsx --target es2023 --module esnext --moduleResolution bundler standalone.tsx`.cwd(directory);
+  // The editor entrypoint requires the optional workspace peer. Keep its install
+  // after the standalone checks so those still prove headless/chat isolation.
+  await $`bun pm pack --destination ${directory}`.cwd(join(import.meta.dir, "../../workspace-api/dist/lib"));
+  const workspaceTarball = [...new Bun.Glob("kev-browser-agent-kit-workspace-*.tgz").scanSync(directory)][0]!;
+  dependencies["@kev-browser-agent-kit/workspace"] = `file:${join(directory, workspaceTarball)}`;
+  await manifest(); await $`bun install --ignore-scripts`.cwd(directory);
   await Bun.write(join(directory, "consumer.tsx"), `
     import { renderToStaticMarkup } from "react-dom/server";
     import { ChatView, type ChatViewProps } from "@kev-browser-agent-kit/opencode-chat/react";
     import { BrowserEditor, type BrowserEditorProps } from "@kev-browser-agent-kit/opencode-chat/editor";
-    const state = { services: {}, clients: {}, busy: false, status: "Ready", error: "", progress: [], logs: [], persistence: "closed" };
-    const controller = { getSnapshot: () => state, subscribe: () => () => {} } as BrowserEditorProps["controller"];
+    import { WorkspaceController } from "@kev-browser-agent-kit/workspace/react";
+    const controller: BrowserEditorProps["controller"] = new WorkspaceController();
     const markup = renderToStaticMarkup(<BrowserEditor controller={controller} onExit={() => {}} />);
     if (!markup.includes('data-slot="button"')) throw Error("Missing bundled Base UI button");
     export const chat = (props: ChatViewProps) => <ChatView {...props} />;

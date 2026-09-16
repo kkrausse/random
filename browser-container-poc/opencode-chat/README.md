@@ -13,6 +13,10 @@ SSE, uses the caller's endpoint.
 for the release protocol audit and supported form subset.
 See [PROVENANCE.md](PROVENANCE.md) and the distributed full MIT upstream notice.
 
+**Client implementation:** official `@opencode/client/effect@2.0.3` with
+`effect@4.0.0-rc.112`, matching the server release. Both are bundled into the
+compiled browser/headless entries.
+
 ## Host integration
 
 ### Prepared browser editor
@@ -85,6 +89,22 @@ fetch types. There is no DOM access in root JavaScript.
   to visible. View unmount only unsubscribes, including Strict Mode remounts.
 
 ### Controller
+
+Each controller owns a `ManagedRuntime` with an `OpenCodeAPI` service layer.
+The layer supplies the caller's string/init transport to `FetchHttpClient` and
+the official Effect client; native service discovery is never involved. The
+official client encodes requests, validates responses and owns the shared SSE
+source. Schema values are encoded back to the existing wire-shaped immutable
+React snapshots, including numeric timestamps.
+
+Controller actions are named `Effect.fn` programs. Connection and selection
+scopes own request and subscription fibers; `Deferred` provides the connection
+handshake, `Effect.all` fetches independent snapshots concurrently, and an
+interruptible `Effect.sleep` coalesces recovery. Finalizers clear pending flags.
+Selection, reconnect and disposal interrupt obsolete work; the public promises
+for cancelled actions reject. Promises are the React/host boundary, rather than
+the internal orchestration model. The upstream reducer still handles transcript
+reconciliation and the React components retain their existing API.
 
 `getSnapshot()` is referentially stable between changes and recursively frozen.
 `subscribe(notify)` returns an unsubscribe function. Controllers are isolated.
@@ -160,6 +180,11 @@ transport/disposal, permission retry, question rules/removal, interrupt failure,
 disconnect/reconnect, pagination and markup safety. Consumer smoke installs the
 tarball outside this tree, checks headless installation without React, compiles
 headless declarations and bundles/SSR-renders a separate React consumer.
+
+The Effect migration additionally covers schema-invalid history, handshake
+timeout/disposal, cancelled recovery fibers and the official client's byte-body
+transport. See [Effect migration verification](../doc/official-effect-client.md)
+for the real-browser receipt and bundle measurement.
 
 **Not yet verified live:** real guest prompt/tool/permission/question/stop flow,
 browser clipboard and IME interactions, scroll/selection behavior and responsive

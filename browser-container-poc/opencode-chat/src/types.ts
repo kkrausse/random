@@ -1,4 +1,3 @@
-import type { ClientEndpoint, ModelInfo } from "./api";
 import type {
   ModelRef,
   SessionInfo,
@@ -19,9 +18,12 @@ export type {
   SessionMessageInfo,
   PermissionRequest,
   FormInfo,
-  ModelInfo,
 };
-export type ChatEndpoint = ClientEndpoint;
+export interface ModelInfo extends ModelRef { name: string; enabled: boolean }
+export interface ChatEndpoint {
+  url: string;
+  fetch(input: string, init?: RequestInit): Promise<Response>;
+}
 export type PermissionDecision = "once" | "always" | "reject";
 export type QuestionAnswers = string[][];
 export type PromptDraft = { text: string };
