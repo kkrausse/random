@@ -8,6 +8,7 @@ import { captureTree, sha256 as hash } from './prepare-tree';
 import { validateTree, treeRoots } from './package-tree';
 import { readQualifiedOpenCodeApplication } from './opencode-application';
 import { openCodeCandidateLaunch } from './opencode-launch';
+import { bundleFiles } from './prepared-bundle';
 export { readTailwindWasmCandidate } from './tailwind-application';
 export type { BackendArchiveInput } from './prepare-dependencies';
 
@@ -97,7 +98,13 @@ export async function prepareBrowserEditor(options: PrepareBrowserEditorOptions)
   project['/.browser-editor/runtime-package.json'] = dependencies.provenance.derived.manifest;
   project['/.browser-editor/runtime-bun.lock'] = dependencies.provenance.derived.lock;
   validateTree(assets);
+  const chunks: Uint8Array<ArrayBuffer>[] = [];
+  for (const entry of bundleFiles(assets)) chunks.push(new Uint8Array(await readFile(join(prepared, entry.file))));
+  const compressed = Bun.gzipSync(new Uint8Array(await new Blob(chunks).arrayBuffer()));
+  const bundleHash = hash(compressed), bundle = { file: bundleHash + '.bundle.gz', bytes: compressed.length, sha256: bundleHash };
+  await Bun.write(join(prepared, bundle.file), compressed);
   const manifest: PreparedManifest = { format: 'browser-editor-v2', runtimeVersion: runtime.version, assets, project, dependencies: dependencies.provenance,
+    bundle,
     opencode: { ...application.provenance, format: openCodeCandidateLaunch.format, receipt: application.receiptBytes.toString('utf8'), support: support.provenance },
     preview: { entry: '/workspace/node_modules/vite/bin/vite.js', args: ['--configLoader', 'native', '--host', '0.0.0.0', '--port', '5173', '--strictPort'], cwd: '/workspace', env: { BROWSER_AGENT_GUEST: '1', NODE_ENV: 'development' } } };
   await Bun.write(join(prepared, 'manifest.json'), JSON.stringify(manifest));

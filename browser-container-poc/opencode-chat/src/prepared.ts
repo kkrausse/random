@@ -2,6 +2,7 @@ import type { ToolDescriptor, NodeLaunchOptions } from '@kev-browser-agent-kit/w
 import { treeInstaller, validateTree, type PreparedEntry } from './package-tree';
 import type { DependencyProvenance } from './prepare-dependencies';
 import { openCodeCandidateLaunch } from './opencode-launch';
+import { readPreparedBundle, type PreparedBundle } from './prepared-bundle';
 
 export interface PreparedOpenCode {
   id: string; format: typeof openCodeCandidateLaunch.format; receiptSha256: string; sourceRevision: string; receipt: string;
@@ -40,6 +41,7 @@ export interface PreparedManifest {
   format: 'browser-editor-v2';
   runtimeVersion: string;
   assets: PreparedEntry[];
+  bundle?: PreparedBundle;
   dependencies: DependencyProvenance;
   opencode: PreparedOpenCode;
   preview: NodeLaunchOptions;
@@ -88,25 +90,41 @@ export function preparedApps(manifest: PreparedManifest, base: string, signal: A
         await readers;
         if (result.exitCode !== 0 || result.signal || result.forced || !output.includes(`prepared-tree-${phase}-complete`)) throw Error(`Prepared tree ${phase} failed: ${output}`);
       }
+      report(manifest.bundle ? 'Downloading prepared workspace bundle…' : 'Downloading prepared workspace files…');
+      const bundled = manifest.bundle ? await readPreparedBundle(manifest.bundle, manifest.assets, base, signal) : undefined;
+      signal.throwIfAborted();
       await metadata('reset');
       // Provision only a marker, never reset the entrypoint's fixed database directory.
       await context.installFile('/runtime-probe/.browser-editor', new TextEncoder().encode(openCodeCandidateLaunch.candidate));
       let done = 0;
-      for (const asset of manifest.assets) {
-        if (asset.kind !== 'file') continue;
-        signal.throwIfAborted();
-        const response = await fetch(base + asset.file, { signal });
-        if (!response.ok) throw Error(`Prepared asset HTTP ${response.status}`);
-        const bytes = new Uint8Array(await response.arrayBuffer());
-        const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
-        if (bytes.length !== asset.bytes || hash !== asset.sha256) throw Error(`Asset integrity failure: ${asset.destination}`);
-        await context.installFile(asset.destination, bytes);
-        if (asset.destination.startsWith('/app/')) {
-          const installed = await context.readFile(asset.destination);
-          if (installed.length !== asset.bytes || await sha256(installed) !== asset.sha256) throw Error(`Installed OpenCode integrity failure: ${asset.destination}`);
-        }
-        if (++done % 250 === 0) report(`Installed ${done}/${manifest.assets.length} verified files`);
+      const files = manifest.assets.filter(asset => asset.kind === 'file');
+      let next = 0;
+      async function install() {
+        try {
+          while (next < files.length) {
+            const asset = files[next++]!;
+            signal.throwIfAborted();
+            let bytes = bundled?.get(asset.file);
+            if (!bytes) {
+              const response = await fetch(base + asset.file, { signal });
+              if (!response.ok) throw Error(`Prepared asset HTTP ${response.status}`);
+              bytes = new Uint8Array(await response.arrayBuffer());
+            }
+            const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
+            if (bytes.length !== asset.bytes || hash !== asset.sha256) throw Error(`Asset integrity failure: ${asset.destination}`);
+            await context.installFile(asset.destination, bytes);
+            if (asset.destination.startsWith('/app/')) {
+              const installed = await context.readFile(asset.destination);
+              if (installed.length !== asset.bytes || await sha256(installed) !== asset.sha256) throw Error(`Installed OpenCode integrity failure: ${asset.destination}`);
+            }
+            if (++done % 250 === 0) report(`Installed ${done}/${files.length} verified files`);
+          }
+        } catch (error) { next = files.length; throw error; }
       }
+      // Bound worker messages and hashing memory; drain all work before surfacing errors.
+      const results = await Promise.allSettled(Array.from({ length: Math.min(8, files.length) }, install));
+      const failed = results.find(result => result.status === 'rejected');
+      if (failed?.status === 'rejected') throw failed.reason;
       await metadata('metadata');
     };
   } };
