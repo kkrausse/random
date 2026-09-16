@@ -7,7 +7,7 @@ const isPreviewReady = (frame: HTMLIFrameElement) => !!frame.contentDocument?.qu
 
 export default function EditorPanel({ onExit }: { onExit(): void }) {
   return <div className="todo-editor-sidebar">
-    <PreparedBrowserEditor hostPaths={hostPaths}
+    <PreparedBrowserEditor layout="sidebar" hostPaths={hostPaths}
       isPreviewReady={isPreviewReady} onExit={onExit} />
   </div>
 }

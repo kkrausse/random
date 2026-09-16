@@ -10,6 +10,8 @@ export { sourcePaths } from "./editor-source";
 
 export interface BrowserEditorProps {
   controller: WorkspaceController;
+  /** Sidebar fills its host; floating overlays the preview. */
+  layout?: "floating" | "sidebar";
   /** Supply to start on mount and close on unmount. Omit for host-managed lifecycle. */
   recipe?: { start(controller: WorkspaceController): Promise<void> };
   onExit?(): void;
@@ -43,14 +45,24 @@ function PreparedEditor({ base, model, ...props }: PreparedBrowserEditorProps) {
 }
 
 const noHostPaths: string[] = [];
-export function BrowserEditor({ controller, recipe, onExit, onRetry, onReset, previewService = "vite", chatService = "chat", directory = "/workspace", hostPaths = noHostPaths, isPreviewReady }: BrowserEditorProps) {
+export function BrowserEditor({ controller, layout = "floating", recipe, onExit, onRetry, onReset, previewService = "vite", chatService = "chat", directory = "/workspace", hostPaths = noHostPaths, isPreviewReady }: BrowserEditorProps) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const start = useRef(recipe); start.current = recipe;
   const [retry, setRetry] = useState(0);
   const panel = useRef<HTMLElement>(null);
+  const canvas = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const resize = (width: number, height: number) => {
     if (!panel.current) return;
+    if (layout === "sidebar" && canvas.current) {
+      const bounds = canvas.current.getBoundingClientRect();
+      if (window.matchMedia("(max-width: 720px)").matches) {
+        canvas.current.style.setProperty("--oc-sidebar-height", `${Math.min(bounds.height, Math.max(280, Math.min(bounds.height - 120, height)))}px`);
+      } else {
+        canvas.current.style.setProperty("--oc-sidebar-width", `${Math.min(bounds.width, Math.max(320, Math.min(bounds.width - 200, width)))}px`);
+      }
+      return;
+    }
     panel.current.style.width = `${Math.max(320, Math.min(window.innerWidth - 32, width))}px`;
     panel.current.style.height = `${Math.max(360, Math.min(window.innerHeight - 32, height))}px`;
   };
@@ -72,7 +84,7 @@ export function BrowserEditor({ controller, recipe, onExit, onRetry, onReset, pr
         <pre>{state.logs.join("\n")}</pre>
       </details>
     </>;
-  return <div className="oc-editor">
+  return <div ref={canvas} className={`oc-editor oc-editor-${layout}`}>
     <EditorPreview controller={controller} service={state.services[previewService]} name={previewService} hostPaths={hostPaths} isReady={isPreviewReady} />
     <aside ref={panel} className="oc-editor-panel" aria-label="Editing controls">
       <button className="oc-editor-resize" aria-label="Resize OpenCode panel" title="Drag to resize, or use arrow keys" onPointerDown={event => {
