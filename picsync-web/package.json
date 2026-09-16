@@ -3,11 +3,29 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "bun app/build.ts",
+    "start": "bun app/server.ts",
     "bench": "bun experiment/benchmark.ts",
-    "test": "bun test experiment/strip-plan.test.ts"
+    "test": "bun test experiment/strip-plan.test.ts app/archive.test.ts"
   },
   "dependencies": {
+    "@base-ui/react": "^1.8.0",
+    "@tailwindcss/cli": "^4.3.3",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "libraw-modern": "npm:libraw-wasm@1.6.0",
-    "libraw-wasm": "1.0.5"
+    "libraw-wasm": "1.0.5",
+    "lucide-react": "^1.46.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "tailwind-merge": "^3.7.0",
+    "tailwindcss": "^4.3.3"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "typescript": "^7.0.2"
   }
 }
