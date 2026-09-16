@@ -375,6 +375,9 @@
     display: flex;
     gap: 7px;
   }
+  .mobile-photo-details {
+    display: none;
+  }
   .hint {
     font-size: 10px;
   }
@@ -451,18 +454,57 @@
       border-radius: 4px;
     }
     .viewer-top {
-      padding-left: 10px;
-      padding-right: 10px;
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
     }
-    .arrow {
-      width: 38px;
-      min-height: 38px;
+    .viewer-top > .button,
+    .viewer .arrow,
+    .viewer .hint {
+      display: none;
     }
-    .previous {
-      left: 6px;
+    .viewer .stage {
+      margin-top: env(safe-area-inset-top);
     }
-    .next {
-      right: 6px;
+    .viewer-bottom {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 2px 12px;
+      padding: 8px max(12px, env(safe-area-inset-right))
+        max(8px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    }
+    .mobile-photo-details {
+      display: block;
+      min-width: 0;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .mobile-photo-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 12px;
+    }
+    .viewer .render-status {
+      grid-column: 1;
+      grid-row: 2;
+      min-width: 0;
+      font-size: 10px;
+      text-align: left;
+      overflow-wrap: anywhere;
+    }
+    .viewer .zoom-controls {
+      grid-column: 2;
+      grid-row: 1 / 3;
+      gap: 4px;
+    }
+    .viewer .zoom-controls > .button {
+      min-width: 44px;
+      min-height: 44px;
     }
   }
   @media (prefers-reduced-motion: reduce) {

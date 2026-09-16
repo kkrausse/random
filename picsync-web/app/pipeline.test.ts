@@ -8,12 +8,43 @@ test("Apple mobile devices use a two-worker budget, including desktop-mode iPads
   const mac = pipelineLimits({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X)", platform: "MacIntel", maxTouchPoints: 0 });
   expect(iphone.workers).toBe(2);
   expect(iphone.downloads).toBe(6);
-  expect(iphone.fullCount).toBe(1);
-  expect(iphone.prefetchFull).toBe(false);
+    expect(iphone.fullCount).toBe(3);
+    expect(iphone.prefetchFull).toBe(true);
   expect(ipad).toEqual(iphone);
   expect(mac.workers).toBe(10);
   expect(mac.downloads).toBe(8);
   expect(mac.prefetchFull).toBe(true);
+});
+
+test("viewer queues two originals ahead and replaces stale lookahead on navigation", async () => {
+  const originalFetch = globalThis.fetch;
+  const fetched: string[] = [];
+  const engine = new Pipeline(() => {}, {
+    ...pipelineLimits({ userAgent: "iPhone", platform: "iPhone", maxTouchPoints: 5 }),
+    downloads: 1,
+  });
+  globalThis.fetch = ((url: string, options: RequestInit) => {
+    fetched.push(url);
+    return new Promise<Response>((_, reject) => {
+      options.signal!.addEventListener("abort", () => reject(new Error("aborted")));
+    });
+  }) as typeof fetch;
+  const photos = Array.from({ length: 8 }, (_, i) => ({ path: `${i}.ARW`, name: `${i}.ARW`, raw: true, bytes: 100 }));
+  try {
+    engine.view(photos, 0);
+    expect(fetched).toEqual(["/api/photo?path=0.ARW"]);
+    expect(engine.activity).toContain("3 queued");
+    engine.view(photos, 5);
+    expect(engine.activity).toContain("4 queued"); // Active download plus the new window.
+    engine.view(photos, 7);
+    expect(engine.activity).toContain("2 queued"); // No wrapping at the end.
+    engine.view(photos, null);
+    expect(engine.activity).toContain("1 queued"); // Only active work finishes.
+  } finally {
+    engine.dispose();
+    await Promise.resolve();
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("iPhone admission allows one oversized original without simultaneous large downloads", async () => {

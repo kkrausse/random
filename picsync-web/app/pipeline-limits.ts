@@ -7,7 +7,7 @@ const desktop = {
 const ios = {
   workers: 2, downloads: 6, downloadBytes: 192 * MB,
   originalBytes: 32 * MB, previewBytes: 16 * MB,
-  fullBytes: 128 * MB, fullCount: 1, prefetchFull: false, previewMargin: 160,
+  fullBytes: 384 * MB, fullCount: 3, prefetchFull: true, previewMargin: 160,
 };
 export type PipelineLimits = typeof desktop;
 export function pipelineLimits(device: { userAgent: string; platform: string; maxTouchPoints: number } | undefined =

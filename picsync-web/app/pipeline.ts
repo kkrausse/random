@@ -39,6 +39,7 @@ export class Pipeline {
   private reserved = 0;
   private dead = false;
   private pinned: string | undefined;
+  private lookahead: string[] = [];
   private reported = 0;
   private reportWindow = 0;
   constructor(private changed: () => void, readonly limits: PipelineLimits = pipelineLimits()) {}
@@ -85,14 +86,37 @@ export class Pipeline {
   pin(photo?: Photo) {
     this.pinned = photo ? this.key(photo, true) : undefined;
   }
+  view(photos: Photo[], index: number | null) {
+    const upcoming = index === null ? [] : photos.slice(index, index + 3);
+    this.pin(upcoming[0]);
+    const wanted = new Set(upcoming.map((photo) => this.key(photo, true)));
+    this.lookahead = [...wanted];
+    for (const [key, job] of this.jobs) {
+      if (job.full && !wanted.has(key) &&
+          !this.downloading.has(key) && !this.decoding.has(key)) {
+        this.jobs.delete(key);
+        this.states.delete(key);
+      }
+    }
+    if (upcoming.length) {
+      this.reprioritize();
+      // Batch priorities before pumping so old background jobs cannot jump ahead.
+      upcoming.forEach((photo, priority) => {
+        if (priority && !this.limits.prefetchFull) return;
+        const key = this.key(photo, true);
+        if (this.renders.has(key) || this.errors.has(key)) return;
+        const existing = this.jobs.get(key);
+        if (existing) existing.priority = priority;
+        else this.jobs.set(key, { photo, full: true, priority, key });
+      });
+    }
+    this.pump();
+  }
   get activity() {
     return `${this.downloading.size}/${this.limits.downloads} downloads · ${this.decoderSlots}/${this.limits.workers} decoder slots · ${this.jobs.size} queued`;
   }
   private get decoderSlots() {
     return [...this.decoding.values()].reduce((sum, count) => sum + count, 0);
-  }
-  private workerCount(job: Job) {
-    return job.full ? Math.min(2, this.limits.workers) : 1;
   }
   private downloadBytes(job: Job) {
     return !job.full && job.photo.raw && !job.previewUnavailable
@@ -114,7 +138,7 @@ export class Pipeline {
           foreground &&
           (foreground.bytes || this.originals.has(foreground.photo.path));
         if (
-          this.decoderSlots + this.workerCount(job) <= this.limits.workers &&
+          this.decoderSlots + 1 <= this.limits.workers &&
           (!foregroundReady || job.key === this.pinned)
         )
           void this.decode(job);
@@ -225,7 +249,7 @@ export class Pipeline {
     if (!crossOriginIsolated)
       throw new Error("RAW development requires trusted HTTPS or localhost.");
     const workers: Worker[] = [];
-    const count = this.workerCount(job);
+    const count = 1;
     const cancels: (() => void)[] = [];
     let reusable = false;
     let stopped = false;
@@ -287,7 +311,7 @@ export class Pipeline {
     }
   }
   private async decode(job: Job) {
-    this.decoding.set(job.key, this.workerCount(job));
+    this.decoding.set(job.key, 1);
     this.states.set(
       job.key,
       job.full ? "Developing full resolution" : "Preparing preview",
@@ -371,6 +395,14 @@ export class Pipeline {
         const entries = [...this.renders].filter(([key]) =>
           key.endsWith(full ? ":full" : ":thumb"),
         );
+        if (full) {
+          const rank = (key: string) => {
+            const index = this.lookahead.indexOf(key);
+            return index === -1 ? Infinity : index;
+          };
+          // Evict old photos first, then the farthest ahead; keep the next ready.
+          entries.sort(([a], [b]) => rank(b) - rank(a));
+        }
         let size = entries.reduce((n, [, r]) => n + r.size, 0),
           count = entries.length;
         for (const [key, render] of entries) {

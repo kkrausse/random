@@ -127,13 +127,7 @@ function App() {
   useEffect(() => {
     const engine = pipeline.current;
     if (!engine) return;
-    engine.pin(selected === null ? undefined : photos[selected]);
-    if (selected === null || !photos[selected]) return;
-    engine.reprioritize();
-    engine.request(photos[selected], true, 0);
-    if (engine.limits.prefetchFull)
-      for (const i of [selected + 1, selected - 1])
-        if (photos[i]) engine.request(photos[i], true, 1);
+    engine.view(photos, selected);
   }, [selected, listing, search]);
   useEffect(() => {
     setActivity(pipeline.current?.activity ?? "");
@@ -620,11 +614,20 @@ function Viewer({
         <ChevronRight />
       </Button>
       <div className="viewer-bottom">
+        <div className="mobile-photo-details" aria-hidden="true">
+          <div className="mobile-photo-name">{photo.name}</div>
+          <div className="muted">
+            {index + 1} of {count} · {(photo.bytes / 1048576).toFixed(1)} MB
+          </div>
+        </div>
         <div className="render-status" role="status">
           {full ? (
             <>
               <span className="dot" />
-              Full resolution · {full.source} original · {full.width} × {full.height}
+              <span>
+                <span className="desktop">Full resolution · {full.source} original · </span>
+                {full.width} × {full.height}
+              </span>
             </>
           ) : error ? (
             <>
@@ -641,18 +644,20 @@ function Viewer({
         </div>
         <div className="zoom-controls">
           <Button
+            className="desktop"
             aria-label="Zoom out"
             onClick={() => (zoom <= 1 ? close() : applyZoom(zoom / 1.5))}
           >
             <Minus size={18} />
           </Button>
-          <Button aria-label="Fit photo" onClick={() => applyZoom(1)}>
+          <Button className="desktop" aria-label="Fit photo" onClick={() => applyZoom(1)}>
             {zoom === 1 ? "Fit" : `${Math.round(zoom * 100)}%`}
           </Button>
-          <Button aria-label="Zoom in" onClick={() => applyZoom(zoom * 1.5)}>
+          <Button className="desktop" aria-label="Zoom in" onClick={() => applyZoom(zoom * 1.5)}>
             <Plus size={18} />
           </Button>
           <Button
+            className="desktop"
             aria-label="Actual pixels"
             disabled={!full}
             onClick={actualPixels}
