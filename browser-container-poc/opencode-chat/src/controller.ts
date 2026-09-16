@@ -199,6 +199,12 @@ export function createChatController(options: ChatOptions): ChatController {
     }
   }
   function event(e: NativeEvent) {
+    if (e.type === "session.renamed") {
+      publish({ sessions: state.sessions.map(session =>
+        session.id === e.data.sessionID ? { ...session, title: e.data.title } : session,
+      ) });
+      return;
+    }
     const sessionID = e.type === "form.created" ? e.data.form.sessionID :
       "sessionID" in e.data ? e.data.sessionID : undefined;
     if (
@@ -409,7 +415,8 @@ export function createChatController(options: ChatOptions): ChatController {
     const g = generation, s = selection;
     return yield* Effect.gen(function*() {
       const api = yield* OpenCodeAPI;
-      const session = yield* api.create(title ?? "New chat");
+      // A custom title suppresses OpenCode's automatic first-prompt naming.
+      const session = yield* api.create(title);
       if (valid(g, s)) {
         publish({ sessions: [session, ...state.sessions] });
         yield* selectSession(session.id);

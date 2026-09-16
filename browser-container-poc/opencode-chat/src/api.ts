@@ -12,7 +12,7 @@ export interface ChatAPI {
   list(): Effect.Effect<SessionInfo[], ChatAPIError>;
   models(): Effect.Effect<ModelInfo[], ChatAPIError>;
   messages(id: string, options?: { cursor?: string; limit?: number; order?: "asc" | "desc" }): Effect.Effect<Page<Message>, ChatAPIError>;
-  create(title: string): Effect.Effect<SessionInfo, ChatAPIError>;
+  create(title?: string): Effect.Effect<SessionInfo, ChatAPIError>;
   model(id: string, model: ModelRef): Effect.Effect<void, ChatAPIError>;
   prompt(id: string, text: string): Effect.Effect<void, ChatAPIError>;
   interrupt(id: string): Effect.Effect<void, ChatAPIError>;
@@ -70,7 +70,7 @@ const makeAPI = Effect.fn("OpenCodeAPI.make")(function*(directory: string, baseU
   }, withAPIError);
   return {
     list, models, messages,
-    create: Effect.fn("OpenCodeAPI.create")(function*(title: string) {
+    create: Effect.fn("OpenCodeAPI.create")(function*(title?: string) {
       return sessionWire(yield* client.session.create({ title, location }));
     }, withAPIError),
     model: Effect.fn("OpenCodeAPI.model")(function*(id: string, model: ModelRef) {
