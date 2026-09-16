@@ -6,6 +6,7 @@ import { createStore, reconcile } from "solid-js/store"
 import { TextRenderable, type ScrollBoxRenderable } from "@opentui/core"
 import { SessionPicker } from "./tui"
 import type { Archive, ArchiveStore } from "./archive"
+import { INACTIVE_AFTER_MS } from "./session-groups"
 
 // The host registers its spinner; the standalone renderer only needs a row placeholder.
 extend({ spinner: TextRenderable })
@@ -26,11 +27,12 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
   let pauseLifecycle = false
   let releaseLifecycle: (() => void) | undefined
   const toasts: Array<{ message: string; variant: string }> = []
+  const now = Date.now() - 60_000
   const sessions = Array.from({ length: 40 }, (_, i) => ({
     id: `s${i}`,
     title: `Session ${i}`,
     location: { directory: "/test" },
-    time: { updated: 1000 - i },
+    time: { updated: now - i },
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
     cost: 0,
   }))
@@ -273,7 +275,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
     const restore = setup.renderer.root.findDescendantById("claude-session-preview-lifecycle")!
     await setup.mockMouse.click(restore.x + 2, restore.y)
     await new Promise((resolve) => setTimeout(resolve, 20))
-    assert.equal(lifecycle.inactive.s0, undefined)
+    assert.equal(lifecycle.inactive.s0, false)
     for (let i = 0; i < 50; i++) commands.find((c) => c.bind === "up").run()
     commands.find((c) => c.bind === "down").run()
     await setup.renderOnce()
@@ -364,6 +366,27 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
     await commands.find((c) => c.bind === "r").run()
     assert.equal(deleted.has("s20"), false)
     assert.equal(saved.has("s20"), false)
+
+    // Age is inferred on read: no marker, interrupt, export, or timestamp write.
+    withPermission = false
+    setup.resize(100, 55)
+    const oldTimestamp = Date.now() - INACTIVE_AFTER_MS - 1000
+    sessions[20]!.time.updated = oldTimestamp
+    const overrides = { ...lifecycle.inactive }
+    delete overrides.s20
+    setLifecycle("inactive", reconcile(overrides))
+    handlers.get("session.created")!({ data: { sessionID: "s20" } })
+    const beforeImputation = interruptCalls
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await setup.renderOnce()
+    assert.match(setup.captureCharFrame(), /Inactive · 7d\+/)
+    assert.equal(lifecycle.inactive.s20, undefined)
+    assert.equal(interruptCalls, beforeImputation)
+    commands.find((c) => c.bind === "down").run()
+    await commands.find((c) => c.bind === "r").run()
+    assert.equal(lifecycle.inactive.s20, false, "explicit restore overrides the inferred default")
+    assert.equal(sessions[20]!.time.updated, oldTimestamp)
+    assert.equal(interruptCalls, beforeImputation)
   } finally {
     setup.renderer.destroy()
   }

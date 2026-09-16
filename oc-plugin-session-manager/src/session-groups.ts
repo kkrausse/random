@@ -2,6 +2,27 @@ export type Attention = "permission" | "question"
 
 export type SessionState = "permission" | "question" | "running" | "idle" | "inactive"
 
+export const INACTIVE_AFTER_MS = 7 * 24 * 60 * 60 * 1000
+
+// A read-time default, not evidence of cleanup and never a persisted marker.
+// Newer descendants loaded on later pages automatically update their root.
+export function imputedInactiveRoots<T extends { id: string; parentID?: string | null; time: { updated: number } }>(
+  sessions: readonly T[],
+  currentSessionID?: string,
+  now = Date.now(),
+): Set<string> {
+  const activity = new Map<string, number>()
+  let currentRoot: string | undefined
+  for (const session of sessions) {
+    const root = lifecycleOwner(sessions, session).id
+    // Unknown timestamps should not make a family look old.
+    const updated = Number.isFinite(session.time.updated) ? session.time.updated : now
+    activity.set(root, Math.max(activity.get(root) ?? -Infinity, updated))
+    if (session.id === currentSessionID) currentRoot = root
+  }
+  return new Set([...activity].filter(([id, updated]) => id !== currentRoot && now - updated >= INACTIVE_AFTER_MS).map(([id]) => id))
+}
+
 export function isSubagent(session: { parentID?: string | null }): boolean {
   return !!session.parentID
 }
@@ -106,7 +127,7 @@ export function sortRows<T extends { state: SessionState; session: { id: string;
 
 export function groupLabel(state: SessionState | "new") {
   if (state === "new") return undefined
-  return state === "inactive" ? "Archived" : "Active"
+  return state === "inactive" ? "Inactive" : "Active"
 }
 
 export function lifecycleOwner<T extends { id: string; parentID?: string | null }>(sessions: readonly T[], session: T): T {
@@ -144,7 +165,7 @@ export function nestRows<T extends { state: SessionState; session: { id: string;
       if (child.session.parentID === row.session.id && groupLabel(child.state) === groupLabel(row.state)) visit(child, depth + 1)
     }
   }
-  for (const section of ["Active", "Archived"]) {
+  for (const section of ["Active", "Inactive"]) {
     const members = rows.filter((row) => groupLabel(row.state) === section)
     for (const row of members) {
       if (!members.some((parent) => parent.session.id === row.session.parentID)) visit(row, row.session.parentID ? 1 : 0)
