@@ -26,7 +26,7 @@ bookmarkable. This is a read-only archive viewer.
 
 ### Loading and caching
 
-- Animated photo skeletons transition to 480px previews. The preview stays
+- Animated photo skeletons transition to 320px previews (JPEG quality 0.72). The preview stays
   visible while full-resolution pixels develop; no blank-screen replacement.
 - Modern **LibRaw 1.6**, **one worker per RAW preview, two per full-resolution photo**, a lazy pool of at
   most **ten decoder workers** reusing initialized WASM modules. The open photo is prioritized; new background decode jobs
@@ -44,8 +44,10 @@ bookmarkable. This is a read-only archive viewer.
   before conditional requests too; revoked sessions cannot get a 304 response.
 - Full-resolution results are retained as **ImageBitmaps and drawn directly to
   canvas**, not encoded as PNG. Up to three are cached within 256 MB, with the
-  open photo pinned (a single oversized image is allowed). Preview JPEGs have a
-  separate 48 MB budget. WASM heaps, active downloads and visible canvases add
+  open photo pinned (a single oversized image is allowed). Previews have a
+  separate 48 MB budget counting both JPEG bytes and estimated decoded RGBA pixels.
+  Preview bitmap creation requests downsampling; temporary bitmaps are released
+  before JPEG encoding. WASM heaps, active downloads and visible canvases add
   memory beyond these cache budgets. Idle workers retain their WASM heaps for
   reuse; workers terminate on folder changes/page exit, decode failure, or a
   120-second timeout.
@@ -68,6 +70,9 @@ failure` in the Bun terminal, including browser identity for phone diagnostics.
 Reports are bounded to 16 KB, 20/minute per pipeline and 60/minute per server.
 Server logs report denied
 requests and archive failures without logging cookies, keys, or URL queries.
+Sign-in redirects and denials include session status (`missing`, `expired`,
+`malformed`, `invalid-signature`, or `valid`), fetch-site metadata and browser
+identity, so a rejected request can be distinguished from a missing cookie.
 
 ### Phone / LAN access
 

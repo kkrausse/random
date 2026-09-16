@@ -105,6 +105,10 @@ const overflow = await page.evaluate(
 );
 if (overflow) throw new Error("Mobile layout overflows");
 const previews = await page.locator(".tile img").count();
+const thumbnailSizes = await page.locator(".tile img").evaluateAll((images) =>
+  images.map((image) => [image.naturalWidth, image.naturalHeight]));
+if (thumbnailSizes.some(([width, height]) => width < 1 || height < 1 || Math.max(width, height) > 320))
+  throw new Error(`Unexpected thumbnail dimensions: ${JSON.stringify(thumbnailSizes)}`);
 await page.getByRole("button", { name: "Archive", exact: true }).click();
 await page.waitForFunction(() => window.galleryMetrics.active === 0);
 await cdp.detach();
@@ -115,4 +119,5 @@ return {
   metrics,
   overflow,
   photos: previews,
+  thumbnailSizes,
 };

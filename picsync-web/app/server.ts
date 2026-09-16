@@ -57,9 +57,12 @@ const server = Bun.serve({
       return new Response("LAN only", { status: 403, headers });
     const denied = await auth.guard(request, peer);
     if (denied) {
-      if (denied.status >= 400)
+      if (denied.status >= 400 || denied.status === 303)
         console.warn("[PicSync] Request denied", { method: request.method,
-          route: new URL(request.url).pathname, status: denied.status });
+          route: new URL(request.url).pathname, status: denied.status,
+          session: auth.sessionStatus(request),
+          fetchSite: request.headers.get("sec-fetch-site")?.slice(0, 32),
+          browser: request.headers.get("user-agent")?.slice(0, 256) });
       return denied;
     }
     if (new URL(request.url).pathname === "/api/client-error" && request.method === "POST")

@@ -39,13 +39,17 @@ export class PicSyncAuth {
     return createHmac("sha256", this.signingKey).update(`${origin}\n${payload}`).digest("base64url");
   }
 
-  private authenticated(request: Request, origin: string) {
+  sessionStatus(request: Request) {
+    const origin = this.origins.get(new URL(request.url).host);
+    if (!origin) return "untrusted-host";
     const prefix = `${this.cookieName(origin)}=`;
     const cookie = request.headers.get("cookie")?.split(";").map(part => part.trim()).find(part => part.startsWith(prefix))?.slice(prefix.length);
-    if (!cookie || cookie.length > 200) return false;
+    if (!cookie) return "missing";
+    if (cookie.length > 200) return "malformed";
     const [expiry, nonce, signature, extra] = cookie.split(".");
-    return !!expiry && !!nonce && !!signature && extra === undefined && /^\d+$/.test(expiry)
-      && Number(expiry) > Date.now() && equal(signature, this.signature(`${expiry}.${nonce}`, origin));
+    if (!expiry || !nonce || !signature || extra !== undefined || !/^\d+$/.test(expiry)) return "malformed";
+    if (Number(expiry) <= Date.now()) return "expired";
+    return equal(signature, this.signature(`${expiry}.${nonce}`, origin)) ? "valid" : "invalid-signature";
   }
 
   // Called before ALL application handling, including assets and conditional requests.
@@ -88,7 +92,7 @@ export class PicSyncAuth {
         "set-cookie": `${this.cookieName(origin)}=${payload}.${this.signature(payload, origin)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${lifetime}${origin.startsWith("https:") ? "; Secure" : ""}`,
       });
     }
-    if (this.authenticated(request, origin)) return;
+    if (this.sessionStatus(request) === "valid") return;
     if (request.method === "GET" && request.headers.get("accept")?.includes("text/html") && !request.headers.has("upgrade") && !url.pathname.startsWith("/api/")) {
       return this.response("Sign in", 303, { location: "/login" });
     }
