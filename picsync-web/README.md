@@ -70,19 +70,31 @@ Chromium is covered below; actual iPhone Safari performance remains to be tested
 
 ### Running archive instance
 
-The gallery is deployed at `/home/pi/picsync-web-gallery` and runs as an ordinary
-background Bun process at **http://192.168.1.207:8788/**. The old experiment and
-transient gallery services have been stopped. No persistent service or Tailscale
-Serve configuration was installed. The existing LAN firewall rule permits access.
+The gallery now runs on the **MacBook**, reading the Pi's SMB archive mounted at
+`/Volumes/Photos` (`smb://pi@192.168.1.207/Photos`). The Pi's gallery process and
+old experiment/gallery services are stopped; it only provides archive storage.
+
+**https://kevins-macbook-pro-2.tail7e28fb.ts.net:8443/**
+
+Tailscale Serve terminates trusted HTTPS and forwards to the Mac's loopback-only
+Bun process. This is **private to the tailnet**, subject to its access rules;
+Funnel/public internet access is not enabled. The existing HTTPS port 443 route
+to the separate app on local port 3000 is retained.
 
 ```sh
-ssh lrpi 'cat /home/pi/picsync-web-gallery/gallery.log'
-ssh lrpi 'kill "$(cat /home/pi/picsync-web-gallery/gallery.pid)"'
+# With the Photos share mounted, run from picsync-web on the Mac:
+MEDIA_ROOT=/Volumes/Photos HOST=127.0.0.1 PORT=8794 bun run start
+# In another terminal (already configured):
+tailscale serve --bg --https=8443 http://127.0.0.1:8794
+# Inspect or disable only the gallery proxy:
+tailscale serve status
+tailscale serve --https=8443 off
 ```
 
-The process must be started again after a Pi reboot. This plain LAN HTTP URL
-supports folder browsing and browser-native photos; modern RAW decoding requires
-HTTPS or localhost, as described above. HTTPS is not provisioned.
+The Mac must be awake, the SMB share mounted, and the Bun process running. No
+launch agent or persistent app service was installed. The Tailscale Serve mapping
+persists independently of the app process. Verified over this HTTPS URL: secure
+context, cross-origin isolation, archive folders, and a 6240 × 4168 RAW canvas.
 
 ### Verification
 
