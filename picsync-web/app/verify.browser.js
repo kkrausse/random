@@ -66,7 +66,7 @@ await page.waitForFunction(
 const dimensions = await page
   .locator(".full-photo")
   .evaluate((el) => [el.width, el.height]);
-await page.getByRole("button", { name: "Actual pixels", exact: true }).click();
+await page.locator(".stage").dblclick();
 const pixelZoom = await page
   .locator(".full-photo")
   .evaluate((el) => el.style.transform);
@@ -79,7 +79,7 @@ const dragged = await page
   .evaluate((el) => el.style.transform);
 if (dragged === pixelZoom)
   throw new Error("Click-drag did not pan the zoomed photo");
-await page.getByRole("button", { name: "Fit photo", exact: true }).click();
+await page.locator(".stage").dblclick();
 // Real Chromium touch input exercises the two-pointer pinch-to-grid path.
 const cdp = await context.newCDPSession(page);
 await cdp.send("Input.dispatchTouchEvent", {
@@ -115,14 +115,14 @@ const metrics = await page.evaluate(() => window.galleryMetrics);
 const workerLimit = ios ? 2 : 10;
 if (metrics.peak > workerLimit || metrics.created > workerLimit || metrics.active === 0)
   throw new Error(`Worker lifecycle failed: ${JSON.stringify(metrics)}`);
-if (metrics.jobs.some((job) => job.count !== (job.halfSize ? 1 : 2)))
-  throw new Error("Expected one worker per preview and two per full-resolution RAW");
+if (metrics.jobs.some((job) => job.count !== 1))
+  throw new Error("Expected one worker per image");
 if (metrics.jobs.some((job) => job.halfSize))
   throw new Error("Embedded thumbnails should not use RAW workers");
 if (Object.keys(metrics.previews).length !== 12 || Object.values(metrics.previews).some((n) => n !== 1))
   throw new Error("Expected one embedded-preview download per photo");
-if (ios && metrics.jobs.filter((job) => !job.halfSize).length !== 2)
-  throw new Error("iOS should develop only the opened photo, without full-resolution prefetch");
+if (metrics.jobs.filter((job) => !job.halfSize).length > 3)
+  throw new Error("Viewer should only develop the opened photo and two upcoming photos");
 if (Object.values(metrics.downloads).some((n) => n !== 1))
   throw new Error(
     "Original downloaded more than once during thumbnail/full upgrade",
