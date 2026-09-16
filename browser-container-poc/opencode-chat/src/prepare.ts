@@ -1,6 +1,7 @@
 import { readdir, realpath, stat, readFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { readRuntimeAssets, readRuntimeBackendPolicy } from '@kev-browser-agent-kit/workspace/assets';
 import type { PreparedManifest } from './prepared';
 import { prepareDependencies, type BackendArchiveInput } from './prepare-dependencies';
@@ -11,6 +12,9 @@ import { openCodeCandidateLaunch } from './opencode-launch';
 import { bundleFiles } from './prepared-bundle';
 export { readTailwindWasmCandidate } from './tailwind-application';
 export type { BackendArchiveInput } from './prepare-dependencies';
+
+/** Shipped beside the compiled preparer, independent of the consumer's cwd. */
+export const packagedOpenCodeDirectory = fileURLToPath(new URL('./application/', import.meta.url));
 
 /** Ordinary registry installation, with the archive integrity retained by qualification. */
 export async function prepareOpenCodeRipgrep(prepared: string, bun = process.execPath) {
@@ -39,7 +43,8 @@ export interface PrepareBrowserEditorOptions {
   appRoot: string;
   output: string;
   runtimeDirectory: string;
-  openCodeDirectory: string;
+  /** Optional qualified-build override; defaults to the application shipped in this package. */
+  openCodeDirectory?: string;
   /** Explicit source delivery allowlist, relative to appRoot. Never includes server secrets. */
   source: string[];
   /** Host Bun executable; defaults to the Bun running this preparer. */
@@ -52,7 +57,7 @@ export interface PrepareBrowserEditorOptions {
 export async function prepareBrowserEditor(options: PrepareBrowserEditorOptions) {
   const root = resolve(options.appRoot), out = resolve(options.output);
   const runtime = await readRuntimeAssets(options.runtimeDirectory);
-  const application = await readQualifiedOpenCodeApplication(options.openCodeDirectory);
+  const application = await readQualifiedOpenCodeApplication(options.openCodeDirectory ?? packagedOpenCodeDirectory);
   const policy = await readRuntimeBackendPolicy(options.runtimeDirectory);
   const dependencies = await prepareDependencies({ ...options, policy });
   try {

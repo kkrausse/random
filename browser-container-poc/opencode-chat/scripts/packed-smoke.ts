@@ -1,8 +1,9 @@
 import { $ } from "bun";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import postcss from "postcss";
+import { readQualifiedOpenCodeApplication } from '../src/opencode-application';
 
 const tempRoot = join(tmpdir(), "opencode");
 await mkdir(tempRoot, { recursive: true });
@@ -31,6 +32,10 @@ try {
   const workspaceTarball = [...new Bun.Glob("kev-browser-agent-kit-workspace-*.tgz").scanSync(directory)][0]!;
   dependencies["@kev-browser-agent-kit/workspace"] = `file:${join(directory, workspaceTarball)}`;
   await manifest(); await $`bun install --ignore-scripts`.cwd(directory);
+  // Resolve through the installed export from a consumer outside this repository.
+  const applicationRoot = (await $`bun -e ${'import { packagedOpenCodeDirectory } from "@kev-browser-agent-kit/opencode-chat/prepare"; console.log(packagedOpenCodeDirectory)'}`.cwd(directory).text()).trim();
+  if (!(await realpath(applicationRoot)).startsWith(await realpath(join(directory, 'node_modules')) + '/')) throw Error('Application resolved outside installed package');
+  await readQualifiedOpenCodeApplication(applicationRoot);
   await Bun.write(join(directory, "consumer.tsx"), `
     import { renderToStaticMarkup } from "react-dom/server";
     import { ChatView, type ChatViewProps } from "@kev-browser-agent-kit/opencode-chat/react";

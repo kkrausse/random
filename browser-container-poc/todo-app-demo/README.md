@@ -71,16 +71,16 @@ The typed client batches requests to `/api/<procedure>`. Titles are trimmed and 
 
 ## Enable the browser editor
 
-The existing qualified runtime distribution and built OpenCode 2.0.3 application
-are prerequisites. Runtime defaults to `../workspace-api/dist/runtime`; override
-with `RUNTIME_DIR`. Set `OPENCODE_PACKAGE_DIR` explicitly to the retained candidate
-root containing `build-receipt.json` and `.runtime/opencode-bun-server/`. Build it
-from frozen registry packages once, then run preparation after the toolkit builds:
+The qualified runtime distribution is a prerequisite. Runtime defaults to
+`../workspace-api/dist/runtime`; override with `RUNTIME_DIR`. The built toolkit
+package includes the verified OpenCode 2.0.3 application and resolves it relative
+to its own installed preparer. No `OPENCODE_PACKAGE_DIR` is needed. That variable
+remains an optional override for a qualified custom artifact root containing
+`build-receipt.json` and `.runtime/opencode-bun-server/`.
+
+After installing the built toolkit package:
 
 ```sh
-bun --cwd ../vivari/experiments/opencode-release-server install --frozen-lockfile --linker isolated
-bun run --cwd ../vivari/experiments/opencode-release-server build
-export OPENCODE_PACKAGE_DIR="$PWD/../vivari/.runtime/opencode-release-2.0.3"
 bun run prepare:editor
 bun run build
 LOCAL_EDITOR_ADMIN=1 PORT=4390 bun start

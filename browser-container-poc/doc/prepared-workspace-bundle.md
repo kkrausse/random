@@ -28,3 +28,7 @@ To activate for a consumer, rebuild the `opencode-chat` package, refresh its loc
 file dependency as usual, rerun `bun run prepare:editor` in the application, and
 rebuild the application client. Existing generated preparations do not acquire a
 bundle until regenerated. No runtime rebuild is needed.
+
+The built toolkit now includes the verified application payload beside its
+preparer. TODO preparation resolves it from the installed package automatically;
+`OPENCODE_PACKAGE_DIR` is only an optional custom-build override.
