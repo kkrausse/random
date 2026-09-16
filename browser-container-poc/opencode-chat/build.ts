@@ -1,6 +1,11 @@
 import { $ } from "bun";
 import postcss from "postcss";
 import { uiLicenses } from "./scripts/ui-licenses";
+import { readQualifiedOpenCodeApplication } from './src/opencode-application';
+import { fileURLToPath } from 'node:url';
+// Verify first; distribute only the receipted payload, never retained browser state.
+const application = await readQualifiedOpenCodeApplication(process.env.OPENCODE_PACKAGE_DIR
+  ?? fileURLToPath(new URL('../vivari/.runtime/opencode-release-2.0.3/', import.meta.url)));
 await $`rm -rf dist`;
 await $`bunx tsc --emitDeclarationOnly`;
 // Build the runtime implementation directly: Bun 1.4's sideEffects optimization
@@ -25,6 +30,8 @@ for (const entry of ['prepare', 'server', 'vite', 'config']) {
   const result = await Bun.build({ entrypoints: [`src/${entry}.ts`], outdir: 'dist', naming: `${entry}.js`, target: ['vite', 'config'].includes(entry) ? 'node' : 'bun', packages: 'external' });
   if (!result.success) throw new AggregateError(result.logs);
 }
+await Bun.write('dist/application/build-receipt.json', application.receiptBytes);
+for (const asset of application.assets) await Bun.write('dist/application/.runtime/opencode-bun-server/' + asset.file, asset.bytes);
 await $`bunx @tailwindcss/cli -i src/tailwind.css -o dist/ui.css --minify`;
 // Tailwind's internal property names are not covered by its utility prefix.
 // Isolate those too, including the fallback universal property initializer.

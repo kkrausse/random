@@ -274,7 +274,13 @@ fixed editing pane; applications can override its `oc-editor-*` classes.
 
 The optional toolkit entries own the reusable build/server/runtime orchestration:
 
-- `/prepare`: `prepareBrowserEditor({appRoot, output, runtimeDirectory, openCodeDirectory, source})`
+- `/prepare`: `prepareBrowserEditor({appRoot, output, runtimeDirectory, source, openCodeDirectory?})`.
+  The verified OpenCode application ships beside the compiled preparer and resolves
+  relative to the installed package, independent of cwd. `openCodeDirectory` is an
+  optional qualified-build override. Toolkit maintainers must build the retained
+  `../vivari/.runtime/opencode-release-2.0.3` artifact before building this package,
+  or supply `OPENCODE_PACKAGE_DIR` to the package build. Only verified application
+  outputs and their receipt are included; retained browser state is excluded.
   verifies the delivered workspace ABI and pinned OpenCode receipt, installs exact top-level
   application dependency versions with WASM esbuild/Rollup, and writes a content-addressed
   preparation manifest. `source` is an explicit app-relative allowlist. No guest frontend
