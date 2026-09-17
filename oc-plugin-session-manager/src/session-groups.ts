@@ -1,6 +1,6 @@
-export type Attention = "permission" | "question"
+export type Attention = "permission" | "question" | "unavailable" | "checking"
 
-export type SessionState = "permission" | "question" | "running" | "idle" | "inactive"
+export type SessionState = Attention | "running" | "idle" | "inactive"
 
 export const INACTIVE_AFTER_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -53,7 +53,7 @@ export function propagateAttention<T extends { id: string; parentID?: string | n
 ): Map<string, Attention> {
   const byID = new Map(sessions.map((session) => [session.id, session]))
   const next = new Map<string, Attention>()
-  const rank = (state: Attention) => (state === "permission" ? 0 : 1)
+  const rank = (state: Attention) => ({ permission: 0, question: 1, unavailable: 2, checking: 3 })[state]
   const ancestorOf = (id: string): string | undefined => {
     let current = byID.get(id)
     const seen = new Set<string>([id])
@@ -109,13 +109,13 @@ export function descendantIDs<T extends { id: string; parentID?: string | null }
 }
 
 export function stateRank(state: SessionState) {
-  if (state === "permission" || state === "question") return 0
+  if (state === "permission" || state === "question" || state === "unavailable" || state === "checking") return 0
   if (state === "running") return 1
   if (state === "idle") return 2
   return 3
 }
 
-export function sessionState(attention: "permission" | "question" | undefined, running: boolean, inactive: boolean): SessionState {
+export function sessionState(attention: Attention | undefined, running: boolean, inactive: boolean): SessionState {
   return attention ?? (running ? "running" : inactive ? "inactive" : "idle")
 }
 

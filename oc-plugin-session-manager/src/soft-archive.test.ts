@@ -31,7 +31,7 @@ function fixture() {
         const children = [...sessions.values()].filter((s) => s.parentID === parentID)
         return cursor ? { data: children.slice(1), cursor: {} } : { data: children.slice(0, 1), cursor: children.length > 1 ? { next: "page2" } : {} }
       },
-      interrupt: async ({ sessionID, continue: resume }: any) => {
+      interrupt: async ({ sessionID, resume }: any) => {
         assert.equal(resume, false)
         calls.push(`interrupt:${sessionID}`)
         active.delete(sessionID)

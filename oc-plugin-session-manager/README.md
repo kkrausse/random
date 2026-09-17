@@ -2,8 +2,8 @@
 
 Package/directory: `oc-plugin-session-manager`.
 
-Targets the released **OpenCode 2.0.3** plugin/client API (`@opencode/*`).
-See [the V2 compatibility audit](docs/v2-audit.md) for verification and remaining limitations.
+Targets the released **OpenCode 2.0.7** plugin/client API (`@opencode/*`).
+See [the V2 compatibility audit](docs/v2-audit.md) for the original audit and compatibility updates.
 
 Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 
@@ -25,6 +25,7 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Shell cleanup lists each family's locations, matches `shell.metadata.sessionID`, and calls `shell.remove`. OpenCode handles termination; the plugin does not implement signal escalation. This covers tracked owned shells, not arbitrary untracked processes.
 - Status indicators use a single-cell far-left gutter: `!` for permissions, `?` for questions, and a yellow Braille spinner for running sessions. There is no selection sidebar, so status changes do not shift session titles or consume extra horizontal space.
 - Indicators use the active theme's semantic status colors.
+- Status begins as **Checking status…** until verified. Missing runtime capabilities, failed refreshes, and malformed cache results show **Status unavailable** (`×`), rather than Ready/Inactive. Press `Ctrl+R` to retry status and preview reads without closing the picker.
 - Active sessions prioritize needs input, then working, then ready, ordered by latest interaction within each status. Inactive sessions are ordered by latest interaction.
 - Each session occupies one line with its title, status, and lifecycle button. The selected session's location, agent, and last-interaction time appear in the preview.
 - The preview has a pinned **Archive / Restore** button. On phones, a compact touch footer adds **Open / New** and **Close**.
@@ -113,11 +114,11 @@ estimates use current prices rather than historical billing rates.
 ### Soft archive (current picker behavior)
 
 `src/soft-archive.ts` preserves the complete live family and uses the connected
-2.0.3 client's APIs:
+2.0.7 client's APIs:
 
 1. Resolve the root through the API.
 2. Recursively enumerate paginated descendants, interrupting each member with
-   `continue: false` before listing its children. Refresh locations on each sweep.
+   `resume: false` before listing its children. Refresh locations on each sweep.
 3. Remove tracked shells whose `metadata.sessionID` belongs to the family, at each family's location.
 4. List and cancel every pending durable inbox item (user, synthetic, compaction, or move).
 5. Interrupt again and drain inboxes again after completion notifications.
@@ -161,7 +162,7 @@ OpenCode's normal session search does not include these files.
 
 The deprecated export/delete flow uses the connected client's APIs:
 
-1. `POST /api/session/{id}/interrupt?continue=false` for each family member;
+1. `POST /api/session/{id}/interrupt?resume=false` for each family member;
    recursively discover children with `GET /api/session?parentID={id}` and pagination.
 2. `GET /api/shell?location[directory]=…` (plus workspace when present), then
    `DELETE /api/shell/{id}` at the same location for matching owners; re-list to verify removal.
@@ -219,9 +220,38 @@ remain observable after closing the picker. Mutations are not automatically retr
 ```sh
 bun run check
 bun test --preload @opentui/solid/preload
+bun run check:api /path/to/project
 bun run verify:v2
 bun run verify:soft-archive
 ```
+
+### Attention API compatibility
+
+Badges and session previews use the documented TUI APIs:
+`data.session.permission.{list,sync,invalidate}`, `data.session.form.{list,sync,invalidate}`,
+and `data.session.status`. Host caches are the source of pending-request state;
+the plugin tracks refresh health, not a second event-maintained request inventory.
+Events trigger synchronization; reconnects reconcile missed events. Overlapping
+refreshes are serialized and rechecked when an event arrives mid-flight.
+
+`src/attention-api.ts` isolates direct attention client calls needed for
+cross-location discovery and permission replies. It uses the host's connected,
+authenticated client and checks runtime capabilities and returned list shapes.
+Known pending requests remain visible when another location is unavailable;
+failed/unknown status is never treated as verified idle. A parent inherits a
+descendant's attention or unavailable status.
+
+The dependency pins only govern local checks; OpenCode supplies the runtime
+client and TUI data APIs. After upgrading OpenCode, run `check:api` against the
+already-running service. This smoke check discovers and authenticates to that
+service without starting it, allows only GET/HEAD requests, samples session
+request reads, and checks approval/interrupt field names in its OpenAPI contract.
+It prints counts, not request contents. It does not prompt, approve, interrupt,
+or create/delete sessions. The optional argument chooses the location to probe
+(default: current directory). Empty services skip session-specific probes.
+This checks the actual HTTP API; TUI cache compatibility is checked in the
+plugin at runtime and by the rendered picker tests. No version-based stability
+guarantee is assumed.
 
 `verify:v2` is an opt-in integration check against the discovered running service.
 It creates disposable sessions, transcript fixtures, and short-lived shells,

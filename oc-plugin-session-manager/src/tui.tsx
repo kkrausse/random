@@ -4,7 +4,7 @@ import { Plugin } from "@opencode/plugin/tui"
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { Index, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
-import { descendantIDs, groupLabel, imputedInactiveRoots, inheritLifecycle, lifecycleOwner, nestRows, propagateAttention, sessionState, sortRows } from "./session-groups"
+import { descendantIDs, groupLabel, imputedInactiveRoots, inheritLifecycle, lifecycleOwner, nestRows, propagateAttention, sessionState, sortRows, type Attention } from "./session-groups"
 import { sectionNeighbor } from "./picker-selection"
 import { Cause, Effect } from "effect"
 import { makeRunner, operation } from "./effects"
@@ -12,6 +12,7 @@ import { fileArchiveStore, restoreSession, type Archive, type ArchiveStore } fro
 import { sessionFamily, softArchiveSession } from "./soft-archive"
 import { loadInbox, pendingOrder, requestKey } from "./inbox"
 import { createWeeklyUsageLoader, sumUsageTokens } from "./weekly-usage"
+import { attentionAPI } from "./attention-api"
 
 const PAGE_SIZE = 100
 const LOAD_MORE_THRESHOLD = 10
@@ -34,7 +35,7 @@ function relativeTime(timestamp: number) {
 }
 
 function locationKey(session: SessionInfo) {
-  return `${session.location.workspaceID ?? ""}\0${session.location.directory}`
+  return session.location.directory
 }
 
 function shortenLocation(location: string) {
@@ -402,14 +403,31 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
     for (const session of liveSessions()) merged.set(session.id, session)
     return [...merged.values()]
   })
-  const [attention, setAttention] = createSignal(new Map<string, "permission" | "question">())
+  const requestsAPI = attentionAPI(props.context)
+  const [liveVersion, setLiveVersion] = createSignal(0)
+  const [attentionChecks, setAttentionChecks] = createSignal(new Map<string, "checking" | "ready" | "unavailable">())
+  const [attentionErrors, setAttentionErrors] = createSignal(new Map<string, string>())
+  const attentionSnapshots = createMemo(() => {
+    liveVersion()
+    return new Map<string, { state: Attention | undefined; running: boolean }>(liveSessions().map((session) => {
+      const check = attentionChecks().get(session.id) ?? "checking"
+      if (check !== "ready") return [session.id, { state: check as Attention, running: false }]
+      try {
+        const current = requestsAPI.read(session)
+        return [session.id, { state: current.permissions.length ? "permission" as const : current.forms.length ? "question" as const
+          : attentionErrors().has(`location:${locationKey(session)}`) ? "unavailable" as const : undefined, running: current.running }]
+      } catch {
+        return [session.id, { state: "unavailable" as const, running: false }]
+      }
+    }))
+  })
+  const attention = createMemo(() => new Map([...attentionSnapshots()].flatMap(([id, snapshot]) => snapshot.state ? [[id, snapshot.state] as const] : [])))
   const [cursor, setCursor] = createSignal<string>()
   const [loading, setLoading] = createSignal(false)
   const [failure, setFailure] = createSignal<string>()
   const [selectedValue, setSelectedValue] = createSignal(currentSessionID ?? NEW_SESSION_VALUE)
   const [search, setSearch] = createSignal("")
   const [tick, setTick] = createSignal(0)
-  const [liveVersion, setLiveVersion] = createSignal(0)
   const [reviewVersion, setReviewVersion] = createSignal(0)
   const [preview, setPreview] = createSignal<{ sessionID: string; permissions: PermissionRequest[]; forms: FormInfo[] }>()
   const [inboxSessions, setInboxSessions] = createSignal<SessionInfo[]>([])
@@ -420,6 +438,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
   const [replying, setReplying] = createSignal(false)
   const [replyChoice, setReplyChoice] = createSignal<"once" | "always" | "reject">()
   const queriedLocations = new Set<string>()
+  const queriedSessions = new Set<string>()
   let scroll: ScrollBoxRenderable | undefined
   let previewScroll: ScrollBoxRenderable | undefined
 
@@ -434,12 +453,12 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
         const owner = lifecycleOwner(loaded, session)
         const override = lifecycle.inactive[owner.id]
         const inactiveByAge = override === undefined && imputed.has(owner.id)
-        const ownRunning = !isArchived(session.id) && props.context.data.session.status(session.id) === "running"
+        const ownRunning = !isArchived(session.id) && !!attentionSnapshots().get(session.id)?.running
         const runningChildren = descendantIDs(loaded, session.id)
-          .filter((id) => props.context.data.session.status(id) === "running").length
+          .filter((id) => attentionSnapshots().get(id)?.running).length
         return {
           session, ownRunning, runningChildren, inactiveByAge,
-           state: isArchived(session.id) ? "inactive" as const : sessionState(attention().get(session.id) ?? effective.get(session.id),
+            state: isArchived(session.id) ? "inactive" as const : sessionState(effective.get(session.id) ?? attention().get(session.id),
              ownRunning || runningChildren > 0, override ?? inactiveByAge),
         }
       }),
@@ -459,9 +478,11 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
         const baseStatus = {
           permission: "Permission required",
           question: "Question waiting",
+          unavailable: "Status unavailable",
+          checking: "Checking status…",
           inactive: inactiveByAge && !isArchived(session.id) ? "Inactive · 7d+" : "Archived",
           idle: "Ready",
-        }[state as "permission" | "question" | "inactive" | "idle"]
+        }[state as Attention | "inactive" | "idle"]
         const childStatus = `${runningChildren} sub-agent${runningChildren === 1 ? "" : "s"} running`
         // Running is indicated by the spinner icon, so it gets no text status.
         const status = runningChildren > 0
@@ -613,12 +634,13 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
     // still actionable from the parent preview.
     const related = [sessionID, ...descendantIDs(sessions(), sessionID)]
     const job = runner.start(Effect.gen(function* () {
-      const lookups = yield* Effect.all(related.map((id) => Effect.all([
-        operation({ operation: "Load preview permissions", sessionID: id }, (signal) => props.context.client.permission.list({ sessionID: id }, { signal })),
-        operation({ operation: "Load preview questions", sessionID: id }, (signal) => props.context.client.form.list({ sessionID: id }, { signal })),
-      ], { concurrency: "unbounded" })), { concurrency: "unbounded" })
-      const permissions = lookups.flatMap(([list]) => list)
-      const forms = lookups.flatMap(([, list]) => list)
+      const lookups = yield* Effect.all(related.map((id) => operation({ operation: "Sync preview requests", sessionID: id }, async () => {
+        const session = sessions().find((item) => item.id === id)!
+        await requestsAPI.sync(session)
+        return requestsAPI.read(session)
+      })), { concurrency: 4 })
+      const permissions = lookups.flatMap((requests) => requests.permissions)
+      const forms = lookups.flatMap((requests) => requests.forms)
       if (!cancelled) setPreview({ sessionID, permissions, forms })
     }).pipe(Effect.ensuring(Effect.sync(() => { if (!cancelled) setPreviewLoading(false) }))),
     (message) => { if (!cancelled) setPreviewError(message) })
@@ -632,7 +654,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
     setReplying(true)
     return runner.start(Effect.gen(function* () {
       yield* operation({ operation: `Reply to permission (${reply})`, sessionID: request.sessionID, requestID: request.id },
-        (signal) => props.context.client.permission.reply({ sessionID: request.sessionID, requestID: request.id, reply }, { signal }))
+        (signal) => requestsAPI.reply(request, reply, signal))
       answeredRequests.add(requestKey(request))
       props.context.ui.toast.show({ message: reply === "once" ? "Permission approved once" : reply === "always" ? "Permission approved always" : "Permission denied", variant: "success" })
     }).pipe(Effect.ensuring(Effect.sync(() => {
@@ -663,7 +685,13 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
         // Keep the authoritative parent available even when the picker began on
         // a child whose ancestors were outside its loaded pages.
         setSessions((items) => [...new Map([...items, ...stopped].map((item) => [item.id, item])).values()])
-        setAttention((current) => new Map([...current].filter(([id]) => !affected.has(id))))
+        yield* Effect.all(stopped.map((member) => operation({ operation: "Refresh archived attention", sessionID: member.id },
+          () => requestsAPI.sync(member))), { concurrency: 4 })
+        setAttentionChecks((current) => {
+          const next = new Map(current)
+          for (const member of stopped) next.set(member.id, "ready")
+          return next
+        })
       } else if (isArchived(session.id)) {
         const restored = yield* operation({ operation: "Restore archived session", sessionID: session.id },
           () => restoreSession(props.context.client, archiveStore, archived(session.id)!))
@@ -697,31 +725,39 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
 
   function applyAttentionLookup(location: SessionInfo["location"], key: string) {
     runner.start(Effect.gen(function* () {
-      const [permissions, forms] = yield* Effect.all([
-        operation({ operation: "Refresh permission badges", directory: location.directory },
-          (signal) => props.context.client.permission.request.list({ location: { directory: location.directory, workspace: location.workspaceID } }, { signal })),
-        operation({ operation: "Refresh question badges", directory: location.directory },
-          (signal) => props.context.client.form.request.list({ location: { directory: location.directory, workspace: location.workspaceID } }, { signal })),
-      ], { concurrency: "unbounded" })
-      setAttention((current) => {
-        const next = new Map(current)
-        // Reconcile: drop stale entries for sessions in this location, then apply fresh state.
-        const locationSessionIDs = new Set(
-          sessions()
-            .filter((session) => locationKey(session) === key)
-            .map((session) => session.id),
-        )
-        for (const id of locationSessionIDs) next.delete(id)
-        for (const request of permissions.data) next.set(request.sessionID, "permission")
-        for (const request of forms.data) if (!next.has(request.sessionID)) next.set(request.sessionID, "question")
-        return next
-      })
-    }), () => { queriedLocations.delete(key) })
+      const requests = yield* operation({ operation: "Discover attention owners", directory: location.directory },
+        (signal) => requestsAPI.discover(location, signal))
+      for (const id of new Set([...requests.permissions, ...requests.forms].map((request) => request.sessionID))) {
+        if (!liveSessions().some((session) => session.id === id)) void refreshSessionRow(id)
+      }
+      setAttentionErrors((current) => { const next = new Map(current); next.delete(`location:${key}`); return next })
+    }), (message) => {
+      queriedLocations.delete(key)
+      setAttentionErrors((current) => new Map(current).set(`location:${key}`, message))
+    })
   }
 
   function refreshAttention(loaded: SessionInfo[], force = false) {
+    const targets = loaded.filter((session) => !isArchived(session.id) && (force || !queriedSessions.has(session.id)))
+    for (const session of targets) {
+      queriedSessions.add(session.id)
+      setAttentionChecks((current) => current.get(session.id) === "ready" ? current : new Map(current).set(session.id, "checking"))
+    }
+    runner.start(Effect.all(targets.map((session) => operation({ operation: "Refresh attention status", sessionID: session.id },
+      () => requestsAPI.sync(session)).pipe(
+      Effect.tap(() => Effect.sync(() => {
+        setAttentionChecks((current) => new Map(current).set(session.id, "ready"))
+        setAttentionErrors((current) => { const next = new Map(current); next.delete(session.id); return next })
+      })),
+      Effect.catch((error) => Effect.sync(() => {
+        console.error(`[claude.sessions] ${error.message}`, error)
+        queriedSessions.delete(session.id)
+        setAttentionChecks((current) => new Map(current).set(session.id, "unavailable"))
+        setAttentionErrors((current) => new Map(current).set(session.id, error.message))
+      })),
+    )), { concurrency: 4 }))
     const locations = new Map<string, SessionInfo["location"]>()
-    for (const session of loaded) locations.set(locationKey(session), session.location)
+    for (const session of loaded) if (!isArchived(session.id)) locations.set(locationKey(session), session.location)
 
     for (const [key, location] of locations) {
       if (!force && queriedLocations.has(key)) continue
@@ -732,8 +768,8 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
 
   function refreshLocationForSession(sessionID: string) {
     const session = sessions().find((item) => item.id === sessionID)
-    if (!session) return
-    applyAttentionLookup(session.location, locationKey(session))
+    if (!session) { void refreshSessionRow(sessionID); return }
+    refreshAttention([session], true)
   }
 
   function refreshSessionRow(sessionID: string) {
@@ -752,6 +788,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
         id = fresh.parentID && !sessions().some((item) => item.id === fresh.parentID) ? fresh.parentID : undefined
       }
       setLiveVersion((version) => version + 1)
+      refreshAttention(liveSessions())
     })).done
   }
 
@@ -874,6 +911,10 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
         run: close,
       },
       { bind: "escape", run: close },
+      { bind: "ctrl+r", run: () => {
+        refreshAttention(liveSessions(), true)
+        setReviewVersion((version) => version + 1)
+      } },
       {
         bind: "n",
         run: newSession,
@@ -932,6 +973,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
     const unsubscribes = [
       props.context.data.on("server.connected", () => {
         refreshActiveSessions()
+        refreshAttention(sessions(), true)
         setReviewVersion((version) => version + 1)
       }),
       props.context.data.listen(({ details }) => {
@@ -940,13 +982,13 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
         }
       }),
       props.context.data.on("permission.asked", (event) => {
-        setAttention((current) => new Map(current).set(event.data.sessionID, "permission"))
+        refreshLocationForSession(event.data.sessionID)
       }),
       props.context.data.on("permission.replied", (event) => {
         refreshLocationForSession(event.data.sessionID)
       }),
       props.context.data.on("form.created", (event) => {
-        setAttention((current) => new Map(current).set(event.data.form.sessionID, "question"))
+        refreshLocationForSession(event.data.form.sessionID)
       }),
       props.context.data.on("form.replied", (event) => {
         refreshLocationForSession(event.data.sessionID)
@@ -976,12 +1018,9 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
         deletedIDs.add(event.data.sessionID)
         if (!changingLifecycle() && selectedValue() === event.data.sessionID) setSelectedValue(NEW_SESSION_VALUE)
         setSessions((loaded) => loaded.filter((item) => item.id !== event.data.sessionID))
-        setAttention((current) => {
-          if (!current.has(event.data.sessionID)) return current
-          const next = new Map(current)
-          next.delete(event.data.sessionID)
-          return next
-        })
+        queriedSessions.delete(event.data.sessionID)
+        setAttentionChecks((current) => { const next = new Map(current); next.delete(event.data.sessionID); return next })
+        setAttentionErrors((current) => { const next = new Map(current); next.delete(event.data.sessionID); return next })
       }),
     ]
 
@@ -1010,6 +1049,9 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
         <box paddingLeft={0} paddingRight={0}>
           <text fg={props.context.theme.text.feedback.error.default}>{failure()}</text>
         </box>
+      ) : null}
+      {attentionErrors().size || [...attention().values()].includes("unavailable") ? (
+        <text fg={props.context.theme.text.feedback.error.default}>Status unavailable · Ctrl+R to retry</text>
       ) : null}
         <scrollbox
           id="claude-session-list"
@@ -1042,6 +1084,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
                 if (updating()) return "#ef4444"
                 if (option().state === "permission") return props.context.theme.text.status.permission
                 if (option().state === "question") return props.context.theme.text.status.question
+                if (option().state === "unavailable") return props.context.theme.text.feedback.error.default
                 if (option().state === "running") return SELECTED
                 return descriptionColor()
               }
@@ -1085,7 +1128,9 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
                       const state = option().state
                       const icon = state === "running" ? "spinner"
                         : state === "permission" ? "!"
-                        : state === "question" ? "?"
+                         : state === "question" ? "?"
+                         : state === "unavailable" ? "×"
+                         : state === "checking" ? "…"
                         : state === "new" ? "+" : active() ? "❯" : ""
                       if (!icon) return null
                       if (icon === "❯") return (

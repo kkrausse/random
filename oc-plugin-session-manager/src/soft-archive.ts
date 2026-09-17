@@ -46,8 +46,7 @@ export async function softArchiveSession(client: Client, selected: SessionInfo):
   const root = await rootSession(client, selected)
   const family = new Map([[root.id, root]])
   const stop = async (sessionID: string) => {
-    // 2.0.3 calls this flag `continue`, not the newer API's `resume`.
-    await client.session.interrupt({ sessionID, continue: false })
+    await client.session.interrupt({ sessionID, resume: false })
   }
   const interrupt = async () => {
     for (const sessionID of family.keys()) {
@@ -55,8 +54,8 @@ export async function softArchiveSession(client: Client, selected: SessionInfo):
     }
   }
   const locations = () => new Map([...family.values()].map((session) => [
-    `${session.location.workspaceID ?? ""}\0${session.location.directory}`,
-    { directory: session.location.directory, workspace: session.location.workspaceID },
+    session.location.directory,
+    { directory: session.location.directory },
   ])).values()
   const ownedShells = async () => {
     const result = []
