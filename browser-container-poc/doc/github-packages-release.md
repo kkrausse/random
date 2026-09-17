@@ -53,5 +53,31 @@ After repair, independent Workspace tarball install, declarations, SSR, cross-co
 preview/HMR/lifetime checks, and relocated runtime validation all passed. Chat
 tests passed: 81 pass, one conditional retained-artifact test skipped, 373 assertions.
 
-GitHub Packages release tooling and workflow are being integrated. Package
-publication and `irs-tools` integration are not yet claimed complete.
+## First packages published and verified
+
+GitHub Packages publication completed for public packages
+`@kkrausse/browser-agent-runtime`, `@kkrausse/browser-agent-workspace`, and
+`@kkrausse/browser-agent-opencode-chat`, all `0.1.0-alpha.1` under `next`.
+Public visibility was verified in each package's GitHub settings.
+
+- Publishing job: <https://github.com/kkrausse/browser-agent-toolkit/actions/runs/35180637694>.
+- Source: `2b34318e7f8a35da972dda6171674a7363e9f9f0`.
+- Runtime: `fc46774c3fff5af30b7d0f559fcbcc1c607a261cf5cb9d2f1f99c58004c58680`.
+- Fresh registry-install verification with read-only `GITHUB_TOKEN` passed:
+  <https://github.com/kkrausse/browser-agent-toolkit/actions/runs/35180917092>.
+- Downloaded publishing-job artifacts were hash-verified against `release.json`.
+  All 18 browser tests passed against that exact runtime tarball; session
+  `workspace-tests-f6e2dba7-b90d-4749-95bb-64a84e321486`, port 50771, was cleaned up.
+- Toolkit/example typechecks and TODO production build also passed.
+
+The workflow now supports `verify_only: true` to install an existing version
+without rebuilding/publishing. The local equivalent is
+`bun scripts/verify-registry.ts 0.1.0-alpha.1` with `NODE_AUTH_TOKEN` supplied.
+
+Local registry installation was attempted using the existing gh login, without
+printing or persisting its credential. All three package metadata requests
+returned HTTP403; the CLI token lacks `read:packages`. An OAuth scope-refresh
+attempt reached GitHub's read-packages consent page, but Authorize remained
+disabled. No DOM bypass was attempted. The temporary terminal session was stopped;
+local installation still needs a working read-packages credential. CI registry
+installation succeeded independently. `irs-tools` integration remains next.
