@@ -1,5 +1,10 @@
 # Web app model transport
 
+Latest consumer checkpoint (2026-09-17 UTC): the current toolkit now uses
+`/editor/model/<providerID>/<native path>`. Zen's 403 was caused by Chromium
+replacing the actual OpenCode user agent; restoring it in the host route produced
+successful real chat and tool calls. See [403 resolution and evidence](model-proxy-403-resolution.md).
+
 Transport update (compiled TUI continuation): guest HTTP loopback fetch now reaches
 guest services. The harness supplies model proxy URLs using `host.vivari.internal`
 with the harness port and `/api/model/...` path, so model egress still reaches the
