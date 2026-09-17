@@ -48,14 +48,14 @@ test("New session drains a stable cross-location inbox without selecting its own
     client: {
       session: {
         form: { list: async ({ sessionID }: any) => questions.filter((question) => question.sessionID === sessionID) },
-        list: async ({ cursor }: any) => ({ data: cursor ? [sessions[1]] : [sessions[0]], cursor: cursor ? {} : { next: "page2" } }),
+        list: async () => ({ data: [sessions[0], sessions[1]], cursor: { next: "older-history" } }),
         active: async () => ({}), get: async ({ sessionID }: any) => sessions.find((session) => session.id === sessionID),
       },
       permission: {
         list: async ({ sessionID }: any) => requests.filter((request) => request.sessionID === sessionID),
         request: { list: async ({ location }: any) => {
           if (failRefresh || (failFirstLocation && location.directory === "/first")) throw new Error("inbox unavailable")
-          // Include locations discovered on later session pages.
+          // Include requests for children absent from the loaded session page.
           return { data: requests.filter((request) => request.sessionID === "s0" ? location.directory === "/first" : location.directory === "/second") }
         } },
         reply: async (input: any) => {
@@ -87,7 +87,7 @@ test("New session drains a stable cross-location inbox without selecting its own
     assert.equal(setup.renderer.root.findDescendantById("claude-session-preview-lifecycle"), undefined)
     await run("/")
     await settle()
-    assert.match(setup.captureCharFrame(), /first command/, "filtering rows does not hide global requests")
+    assert.match(setup.captureCharFrame(), /first command/, "filtering rows does not hide known-location requests")
     requests.reverse()
     changed()
     await settle()

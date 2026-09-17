@@ -6,20 +6,11 @@ import { attentionClient } from "./attention-api"
 
 export type Inbox = { sessions: SessionInfo[]; permissions: PermissionRequest[]; forms: FormInfo[]; errors: string[] }
 
-// Discover every live location, not just the picker's loaded/filtered rows.
-export function loadInbox(client: Plugin.Context["client"]) {
+// Query the controller's loaded/current/active locations independently of the
+// picker filter. Inbox discovery never fetches session history.
+export function loadInbox(client: Plugin.Context["client"], knownSessions: readonly SessionInfo[]) {
   return Effect.gen(function* () {
-    const sessions = new Map<string, SessionInfo>()
-    const cursors = new Set<string>()
-    let cursor: string | undefined
-    do {
-      const page = yield* operation({ operation: "Load inbox sessions" }, (signal) =>
-        client.session.list({ limit: 100, order: "desc", ...(cursor ? { cursor } : {}) }, { signal }))
-      for (const session of page.data) sessions.set(session.id, session)
-      cursor = page.cursor.next ?? undefined
-      if (cursor && cursors.has(cursor)) throw new Error("Inbox session pagination repeated a cursor")
-      if (cursor) cursors.add(cursor)
-    } while (cursor)
+    const sessions = new Map(knownSessions.map((session) => [session.id, session]))
     const locations = new Map([...sessions.values()].map((session) =>
       [session.location.directory, session.location]))
     const requests = yield* Effect.all([...locations.values()].map((location) =>

@@ -119,7 +119,12 @@ export function sessionState(attention: Attention | undefined, running: boolean,
   return attention ?? (running ? "running" : inactive ? "inactive" : "idle")
 }
 
-export function sortRows<T extends { state: SessionState; session: { id: string; time: { updated: number } } }>(rows: T[]): T[] {
+export function sortRows<T extends { state: SessionState; session: { id: string; time: { updated: number } } }>(rows: T[], openingTimes?: ReadonlyMap<string, number>): T[] {
+  // A picker opening can pin its recency keys. Live badges still update, but
+  // assistant output and status transitions won't shuffle the active section.
+  if (openingTimes) return rows.sort((a, b) => Number(a.state === "inactive") - Number(b.state === "inactive")
+    || (openingTimes.get(b.session.id) ?? b.session.time.updated) - (openingTimes.get(a.session.id) ?? a.session.time.updated)
+    || a.session.id.localeCompare(b.session.id))
   return rows.sort((a, b) => stateRank(a.state) - stateRank(b.state)
     || b.session.time.updated - a.session.time.updated
     || a.session.id.localeCompare(b.session.id))
