@@ -1,59 +1,17 @@
 /** @jsxImportSource @opentui/solid */
-import type { FormInfo, ModelCost, ModelInfo, PermissionRequest, SessionInfo, SessionMessageAssistant, SessionMessageInfo, TokenUsageInfo } from "@opencode/client"
+import type { ModelCost, ModelInfo, SessionInfo, SessionMessageInfo, TokenUsageInfo } from "@opencode/client"
 import { Plugin } from "@opencode/plugin/tui"
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
-import { Index, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
-import { descendantIDs, groupLabel, imputedInactiveRoots, inheritLifecycle, lifecycleOwner, nestRows, propagateAttention, sessionState, sortRows, type Attention } from "./session-groups"
-import { sectionNeighbor } from "./picker-selection"
-import { Cause, Effect } from "effect"
-import { makeRunner, operation } from "./effects"
-import { fileArchiveStore, restoreSession, type Archive, type ArchiveStore } from "./archive"
-import { sessionFamily, softArchiveSession } from "./soft-archive"
-import { loadInbox, pendingOrder, requestKey } from "./inbox"
-import { createWeeklyUsageLoader, sumUsageTokens } from "./weekly-usage"
-import { attentionAPI } from "./attention-api"
+import { Index, createEffect, createMemo, onCleanup } from "solid-js"
+import { groupLabel } from "./session-groups"
+import type { ArchiveStore } from "./archive"
+import { createSessionController, NEW_SESSION_VALUE, type SessionController } from "./session-controller"
+import { contextUsage, formatCompactTokens, formatCost, shortenLocation } from "./session-display"
 
-const PAGE_SIZE = 100
 const LOAD_MORE_THRESHOLD = 10
-const NEW_SESSION_VALUE = "__claude_sessions_new__"
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-
-function relativeTime(timestamp: number) {
-  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1_000))
-  if (seconds < 60) return "now"
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  if (days < 30) return `${days}d ago`
-  const months = Math.floor(days / 30)
-  if (months < 12) return `${months}mo ago`
-  return `${Math.floor(months / 12)}y ago`
-}
-
-function locationKey(session: SessionInfo) {
-  return session.location.directory
-}
-
-function shortenLocation(location: string) {
-  const parts = location.split("/").filter((part) => part !== "")
-  if (parts.length <= 4) return location
-  return `…/${parts.slice(-3).join("/")}`
-}
-
-function formatCompactTokens(value: number) {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`
-  return `${Math.round(value)}`
-}
-
-function formatCost(value: number) {
-  if (value < 0.01 && value > 0) return `$${value.toFixed(4)}`
-  return `$${value.toFixed(2)}`
-}
 
 export function sessionTokenBreakdown(session: Pick<SessionInfo, "tokens">, compact = false) {
   const tokens = session.tokens
@@ -68,45 +26,6 @@ export function processedTokens(sessions: ReadonlyArray<Pick<SessionInfo, "token
   return sessions.reduce((total, session) => total
     + session.tokens.input + session.tokens.output + session.tokens.reasoning
     + session.tokens.cache.read + session.tokens.cache.write, 0)
-}
-
-// Mirrors opencode's sidebar context calculation
-// (packages/tui/src/util/session.ts + feature-plugins/sidebar/context.tsx):
-// current window usage = last assistant message with token usage after the
-// last completed compaction, before any revert boundary. Percent resolves
-// against that message's model limit.
-function lastAssistantWithUsage(messages: ReadonlyArray<SessionMessageInfo>, boundary?: string) {
-  const boundaryIndex = boundary ? messages.findIndex((message) => message.id === boundary) : -1
-  if (boundary && boundaryIndex === -1) return undefined
-  const end = boundaryIndex === -1 ? messages.length : boundaryIndex
-  const compactionIndex = messages.findLastIndex(
-    (message, index) => message.type === "compaction" && message.status === "completed" && index < end,
-  )
-  return messages.findLast(
-    (message, index): message is SessionMessageAssistant & { tokens: NonNullable<SessionMessageAssistant["tokens"]> } =>
-      message.type === "assistant" && message.tokens !== undefined && index > compactionIndex && index < end,
-  )
-}
-
-function contextUsage(
-  messages: ReadonlyArray<SessionMessageInfo> | undefined,
-  models: ReadonlyArray<ModelInfo> | undefined,
-  boundary?: string,
-) {
-  if (!messages) return undefined
-  const last = lastAssistantWithUsage(messages, boundary)
-  if (!last) return undefined
-  const tokens =
-    last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
-  if (tokens <= 0) return undefined
-  const model = models?.find((candidate) => candidate.providerID === last.model.providerID && candidate.id === last.model.id)
-  return {
-    tokens,
-    breakdown: last.tokens,
-    percent: model?.limit.context ? Math.round((tokens / model.limit.context) * 100) : undefined,
-    limit: model?.limit.context,
-    model: last.model,
-  }
 }
 
 type UsageRates = Pick<ModelCost, "input" | "output" | "cache"> & { tier?: ModelCost["tier"] }
@@ -167,109 +86,18 @@ export function estimateUsageCost(
   return { cost, estimated, unpriced, zenEquivalent: zenEquivalent && !otherEstimate }
 }
 
-function WeeklyUsage(props: { context: Plugin.Context; models: ReadonlyArray<ModelInfo> }) {
-  const load = createWeeklyUsageLoader(props.context.client, (id) => props.context.data.session.status(id) === "running")
-  const [snapshot, setSnapshot] = createSignal<Awaited<ReturnType<typeof load>>>()
-  const [failure, setFailure] = createSignal(false)
-  let controller: AbortController | undefined
-  let disposed = false
-  async function refresh() {
-    if (controller) return
-    controller = new AbortController()
-    try {
-      const result = await load(Date.now(), controller.signal)
-      if (!disposed) { setSnapshot(result); setFailure(false) }
-    } catch (error) {
-      controller.abort()
-      if (!disposed) {
-        setFailure(true)
-        console.error("[claude.sessions] Failed to load weekly usage", error)
-      }
-    } finally { controller = undefined }
-  }
-  onMount(() => {
-    void refresh()
-    const timer = setInterval(() => void refresh(), 60_000)
-    onCleanup(() => { disposed = true; clearInterval(timer); controller?.abort() })
-  })
-  const total = createMemo(() => estimateUsageCost(snapshot()?.messages ?? [], props.models, usageRates(props.context.options)))
-  const tokenUsage = createMemo(() => sumUsageTokens(snapshot()?.messages ?? []))
-  const byModel = createMemo(() => {
-    const groups = new Map<string, SessionMessageInfo[]>()
-    for (const message of snapshot()?.messages ?? []) {
-      if (message.type !== "assistant") continue
-      const key = `${message.model.providerID}/${message.model.id}`
-      const group = groups.get(key) ?? []
-      group.push(message)
-      groups.set(key, group)
-    }
-    return [...groups].map(([name, messages]) => ({ name, ...estimateUsageCost(messages, props.models, usageRates(props.context.options)) }))
-      .sort((a, b) => b.cost - a.cost)
-  })
-  const money = (cost: number, estimated: boolean) => `${estimated ? "≈ " : ""}${formatCost(cost)}`
-  const row = (label: string, value: string) => (
-    <box flexDirection="row" justifyContent="space-between">
-      <text fg={props.context.theme.text.subdued}>{label}</text>
-      <text fg={props.context.theme.text.default}>{value}</text>
-    </box>
-  )
-  return (
-    <box paddingTop={1}>
-      <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>Rolling 7 days</text>
-      <text fg={props.context.theme.text.subdued}>All server sessions · incl. subagents</text>
-      <text fg={props.context.theme.text.subdued}>Excludes local archives / deleted sessions</text>
-      {snapshot() ? <box>
-        {row(total().estimated ? total().zenEquivalent ? "Zen equivalent" : "Estimated total" : "Calculated total", money(total().cost, total().estimated))}
-        {row("Daily average", money(total().cost / 7, total().estimated))}
-        {row("Sessions / responses", `${snapshot()!.sessions} / ${snapshot()!.messages.length}`)}
-        <box paddingTop={1}>
-          <text fg={props.context.theme.text.subdued}>Weekly tokens</text>
-          {row("Fresh input", formatCompactTokens(tokenUsage().tokens.input))}
-          {row("Cache read", formatCompactTokens(tokenUsage().tokens.cache.read))}
-          {row("Cache write", formatCompactTokens(tokenUsage().tokens.cache.write))}
-          {row("Output", formatCompactTokens(tokenUsage().tokens.output))}
-          {row("Reasoning", formatCompactTokens(tokenUsage().tokens.reasoning))}
-          {row("Total processed", formatCompactTokens(tokenUsage().processed))}
-          {row("Input from cache", `${tokenUsage().cacheReadPercent.toFixed(1)}%`)}
-        </box>
-        <box paddingTop={1}>
-          <text fg={props.context.theme.text.subdued}>By model</text>
-          <Index each={byModel()}>{(model) => <box>
-            <text fg={props.context.theme.text.subdued} wrapMode="word">{model().name}</text>
-            {row(model().unpriced ? `${model().unpriced} unpriced` : "", money(model().cost, model().estimated))}
-          </box>}</Index>
-        </box>
-        {total().unpriced > 0 ? <text fg={props.context.theme.text.subdued}>{total().unpriced} unpriced responses · partial total</text> : null}
-        <text fg={props.context.theme.text.subdued}>Updated {new Date(snapshot()!.updated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · refreshes every minute</text>
-      </box> : <text fg={props.context.theme.text.subdued}>{failure() ? "Weekly usage unavailable" : "Loading weekly usage…"}</text>}
-      {failure() && snapshot() ? <text fg={props.context.theme.text.subdued}>Refresh failed · showing previous total</text> : null}
-    </box>
-  )
-}
-
 function UsageBreakdown(props: { context: Plugin.Context; sessionID: string }) {
   const session = createMemo(() => props.context.data.session.get(props.sessionID))
   const messages = createMemo(() => props.context.data.session.message.list(props.sessionID))
-  const descendants = createMemo(() => descendantIDs(
-    props.context.data.session.family(props.sessionID)
-      .map((id) => props.context.data.session.get(id))
-      .filter((item): item is SessionInfo => item !== undefined),
-    props.sessionID,
-  ))
-  const familySessions = createMemo(() => [session(), ...descendants().map((id) => props.context.data.session.get(id))]
-    .filter((item): item is SessionInfo => item !== undefined))
-  const familyMessages = createMemo(() => familySessions().flatMap((item) => props.context.data.session.message.list(item.id)))
   const models = createMemo(() => props.context.data.location.model.list(session()?.location) ?? [])
   const usage = createMemo(() => contextUsage(messages(), models(), session()?.revert?.messageID))
   const estimate = createMemo(() => estimateUsageCost(messages(), models(), usageRates(props.context.options)))
-  const familyEstimate = createMemo(() => estimateUsageCost(familyMessages(), models(), usageRates(props.context.options)))
-  const hasDescendants = createMemo(() => descendants().length > 0)
   const requestedSessions = new Set<string>()
 
   createEffect(() => {
     const current = session()
     if (!current) return
-    const fresh = familySessions().filter((item) => !requestedSessions.has(item.id))
+    const fresh = [current].filter((item) => !requestedSessions.has(item.id))
     for (const item of fresh) requestedSessions.add(item.id)
     if (fresh.length === 0) return
     void Promise.all([
@@ -311,10 +139,6 @@ function UsageBreakdown(props: { context: Plugin.Context; sessionID: string }) {
           <text fg={props.context.theme.text.subdued}>Session processed</text>
           <text fg={props.context.theme.text.default}>{formatCompactTokens(session() ? processedTokens([session()!]) : 0)}</text>
         </box>
-        {hasDescendants() ? <box flexDirection="row" justifyContent="space-between">
-          <text fg={props.context.theme.text.subdued}>Incl. subagents</text>
-          <text fg={props.context.theme.text.default}>{formatCompactTokens(processedTokens(familySessions()))}</text>
-        </box> : null}
         <box flexDirection="row" justifyContent="space-between">
           <text fg={props.context.theme.text.subdued}>{estimate().estimated ? estimate().zenEquivalent ? "Zen equivalent" : "Estimated cost" : "Calculated cost"}</text>
           <text fg={props.context.theme.text.default}>{estimate().estimated ? "≈ " : ""}{formatCost(estimate().cost)}</text>
@@ -322,50 +146,12 @@ function UsageBreakdown(props: { context: Plugin.Context; sessionID: string }) {
         {estimate().unpriced > 0
           ? <text fg={props.context.theme.text.subdued}>{estimate().unpriced} unpriced response{estimate().unpriced === 1 ? "" : "s"}</text>
           : null}
-        {hasDescendants() ? <box flexDirection="row" justifyContent="space-between">
-          <text fg={props.context.theme.text.subdued}>Incl. subagents</text>
-          <text fg={props.context.theme.text.default}>{familyEstimate().estimated ? "≈ " : ""}{formatCost(familyEstimate().cost)}</text>
-        </box> : null}
-        {hasDescendants() && familyEstimate().unpriced > 0
-          ? <text fg={props.context.theme.text.subdued}>{familyEstimate().unpriced} family response{familyEstimate().unpriced === 1 ? "" : "s"} unpriced</text>
-          : null}
       </box>
-      <WeeklyUsage context={props.context} models={models()} />
     </box>
   )
 }
 
-function contextStats(
-  session: SessionInfo | undefined,
-  usage: { tokens: number; percent?: number; model?: { providerID: string; id: string } } | undefined,
-  cost: number,
-  syncing: boolean,
-): { left: string; right: string } {
-  if (!session) return { left: "New session", right: "" }
-  if (!usage) {
-    // Messages for this session aren't synced yet (or it has no assistant
-    // usage). Fall back to the session's cumulative totals so the row still
-    // shows something useful.
-    const tokens = session.tokens
-    const total = tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write
-    if (total <= 0) return syncing ? { left: "…", right: "" } : { left: "no usage yet", right: "" }
-    return {
-      left: `≈${formatCompactTokens(total)} · ${formatCost(cost || session.cost)}`,
-      right: syncing ? "…" : "",
-    }
-  }
-  const leftParts = [
-    `${formatCompactTokens(usage.tokens)}`,
-    usage.model ? `${usage.model.providerID}/${usage.model.id}` : undefined,
-    cost > 0 ? `${formatCost(cost)}` : undefined,
-  ]
-  return {
-    left: leftParts.filter(Boolean).join(" · "),
-    right: usage.percent !== undefined ? `${usage.percent}%` : syncing ? "…" : "",
-  }
-}
-
-export function SessionPicker(props: { context: Plugin.Context; archiveStore?: ArchiveStore; returnSessionID?: string; hostDialogInsets?: boolean }) {
+export function SessionPicker(props: { context: Plugin.Context; controller?: SessionController; archiveStore?: ArchiveStore; returnSessionID?: string; hostDialogInsets?: boolean }) {
   const dimensions = useTerminalDimensions()
   // The dialog tracks the terminal, including phone keyboard/rotation changes.
   const mobile = () => dimensions().width < 70
@@ -377,458 +163,25 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
   const detailedPreview = () => !!permission() || !!(selectedSession() && isArchived(selectedSession()!.id))
   const previewHeight = () => Math.min(detailedPreview() ? 20 : mobile() ? 8 : 6, Math.max(mobile() && detailedPreview() ? 9 : 5, Math.floor(height() * (mobile() ? 0.5 : 0.4))))
   const approvalButtonHeight = () => mobile() && dimensions().height >= 20 ? 3 : 1
-  const runner = makeRunner((message, cause) => {
-    console.error(`[claude.sessions] ${message}\n${Cause.pretty(cause)}`)
-  })
-  onCleanup(() => runner.dispose())
-  const showFailure = (message: string) => props.context.ui.toast.show({
-    title: "Sessions viewer", message, variant: "error", duration: 8000,
-  })
-  const [lifecycle, updateLifecycle] = props.context.storage.store("session-lifecycle", {
-    initial: { inactive: {} as Record<string, boolean> },
-  })
-  const [changingLifecycle, setChangingLifecycle] = createSignal<Set<string>>()
+  const controller = props.controller ?? createSessionController(props.context, props.archiveStore)
+  if (!props.controller) onCleanup(() => controller.dispose())
+  const {
+    sessions, options, selectedValue, selectedIndex, selectedSession, selectedMessages, selectedStats,
+    search, loading, failure, attention, attentionErrors, changingLifecycle, rowPercents,
+    visiblePreview, permission, inboxRequest, inboxOwner, inboxErrors, isInbox,
+    previewLoading, previewError, replying, replyChoice, isArchived, isDeleted,
+  } = controller.state
+  const { select: setSelectedValue, search: searchSessions, loadMore, refresh, changeLifecycle, replyToPermission } = controller.commands
   const route = props.context.ui.router.current()
   const currentSessionID = props.returnSessionID ?? (route.type === "session" ? route.sessionID : undefined)
-  const currentSession = currentSessionID ? props.context.data.session.get(currentSessionID) : undefined
-  const archiveStore = props.archiveStore ?? fileArchiveStore()
-  const [archives, setArchives] = createSignal<Archive[]>([])
-  const [archivesReady, setArchivesReady] = createSignal(false)
-  const deletedIDs = new Set<string>()
-  const [liveSessions, setSessions] = createSignal<SessionInfo[]>(currentSession ? [currentSession] : [])
-  const archived = (id: string) => archives().find((item) => item.transcript.info.id === id)
-  const isArchived = (id: string) => !!archived(id) && !liveSessions().some((session) => session.id === id)
-  const sessions = createMemo(() => {
-    const merged = new Map(archives().map((item) => [item.transcript.info.id, item.transcript.info]))
-    for (const session of liveSessions()) merged.set(session.id, session)
-    return [...merged.values()]
-  })
-  const requestsAPI = attentionAPI(props.context)
-  const [liveVersion, setLiveVersion] = createSignal(0)
-  const [attentionChecks, setAttentionChecks] = createSignal(new Map<string, "checking" | "ready" | "unavailable">())
-  const [attentionErrors, setAttentionErrors] = createSignal(new Map<string, string>())
-  const attentionSnapshots = createMemo(() => {
-    liveVersion()
-    return new Map<string, { state: Attention | undefined; running: boolean }>(liveSessions().map((session) => {
-      const check = attentionChecks().get(session.id) ?? "checking"
-      if (check !== "ready") return [session.id, { state: check as Attention, running: false }]
-      try {
-        const current = requestsAPI.read(session)
-        return [session.id, { state: current.permissions.length ? "permission" as const : current.forms.length ? "question" as const
-          : attentionErrors().has(`location:${locationKey(session)}`) ? "unavailable" as const : undefined, running: current.running }]
-      } catch {
-        return [session.id, { state: "unavailable" as const, running: false }]
-      }
-    }))
-  })
-  const attention = createMemo(() => new Map([...attentionSnapshots()].flatMap(([id, snapshot]) => snapshot.state ? [[id, snapshot.state] as const] : [])))
-  const [cursor, setCursor] = createSignal<string>()
-  const [loading, setLoading] = createSignal(false)
-  const [failure, setFailure] = createSignal<string>()
-  const [selectedValue, setSelectedValue] = createSignal(currentSessionID ?? NEW_SESSION_VALUE)
-  const [search, setSearch] = createSignal("")
-  const [tick, setTick] = createSignal(0)
-  const [reviewVersion, setReviewVersion] = createSignal(0)
-  const [preview, setPreview] = createSignal<{ sessionID: string; permissions: PermissionRequest[]; forms: FormInfo[] }>()
-  const [inboxSessions, setInboxSessions] = createSignal<SessionInfo[]>([])
-  const [inboxErrors, setInboxErrors] = createSignal<string[]>([])
-  const answeredRequests = new Set<string>()
-  const [previewLoading, setPreviewLoading] = createSignal(false)
-  const [previewError, setPreviewError] = createSignal<string>()
-  const [replying, setReplying] = createSignal(false)
-  const [replyChoice, setReplyChoice] = createSignal<"once" | "always" | "reject">()
-  const queriedLocations = new Set<string>()
-  const queriedSessions = new Set<string>()
+  onCleanup(controller.attach(currentSessionID))
   let scroll: ScrollBoxRenderable | undefined
   let previewScroll: ScrollBoxRenderable | undefined
-
-  const rows = createMemo(() => {
-    tick()
-    liveVersion()
-    const loaded = sessions()
-    const imputed = imputedInactiveRoots(loaded, currentSessionID)
-    const effective = propagateAttention(loaded, attention(), currentSessionID)
-    return nestRows(sortRows(inheritLifecycle(
-      loaded.map((session) => {
-        const owner = lifecycleOwner(loaded, session)
-        const override = lifecycle.inactive[owner.id]
-        const inactiveByAge = override === undefined && imputed.has(owner.id)
-        const ownRunning = !isArchived(session.id) && !!attentionSnapshots().get(session.id)?.running
-        const runningChildren = descendantIDs(loaded, session.id)
-          .filter((id) => attentionSnapshots().get(id)?.running).length
-        return {
-          session, ownRunning, runningChildren, inactiveByAge,
-            state: isArchived(session.id) ? "inactive" as const : sessionState(effective.get(session.id) ?? attention().get(session.id),
-             ownRunning || runningChildren > 0, override ?? inactiveByAge),
-        }
-      }),
-    )))
-  })
-
-  const options = createMemo(() => {
-    return [
-      {
-        title: "New session",
-        description: "Start with a blank prompt",
-        value: NEW_SESSION_VALUE,
-        state: "new" as const,
-        depth: 0,
-      },
-      ...rows().filter(({ session }) => !search() || `${session.title ?? "Untitled session"} ${session.location.directory}`.toLowerCase().includes(search().toLowerCase())).map(({ session, state, ownRunning, runningChildren, depth, inactiveByAge }) => {
-        const baseStatus = {
-          permission: "Permission required",
-          question: "Question waiting",
-          unavailable: "Status unavailable",
-          checking: "Checking status…",
-          inactive: inactiveByAge && !isArchived(session.id) ? "Inactive · 7d+" : "Archived",
-          idle: "Ready",
-        }[state as Attention | "inactive" | "idle"]
-        const childStatus = `${runningChildren} sub-agent${runningChildren === 1 ? "" : "s"} running`
-        // Running is indicated by the spinner icon, so it gets no text status.
-        const status = runningChildren > 0
-          ? state === "running" ? childStatus : `${baseStatus} · ${childStatus}`
-          : state === "running" ? undefined : baseStatus
-        const location = shortenLocation(props.context.ui.format.path(session.location.directory))
-        const details = [relativeTime(session.time.updated), location]
-        if (session.agent) details.push(session.agent)
-        return {
-          title: session.title?.trim() || "Untitled session",
-          description: details.join(" · "),
-          status,
-          state,
-          inactiveByAge,
-          value: session.id,
-          depth,
-          updated: relativeTime(session.time.updated),
-        }
-      }),
-    ]
-  })
-
-  const selectedIndex = createMemo(() => options().findIndex((option) => option.value === selectedValue()))
-  const selectedSession = createMemo(() => sessions().find((session) => session.id === selectedValue()))
-  const [contextSyncing, setContextSyncing] = createSignal(false)
-  const [contextVersion, setContextVersion] = createSignal(0)
-  const selectedMessages = createMemo(() => {
-    const sessionID = selectedSession()?.id
-    return sessionID ? isArchived(sessionID) ? archived(sessionID)?.transcript.messages : props.context.data.session.message.list(sessionID) : undefined
-  })
-  const selectedModels = createMemo(() => {
-    const session = selectedSession()
-    return session ? props.context.data.location.model.list(session.location) : undefined
-  })
-  const selectedCost = createMemo(() => {
-    const session = selectedSession()
-    if (!session) return 0
-    const live = props.context.data.session.cost(session.id)
-    return live > 0 ? live : session.cost
-  })
-  const selectedUsage = createMemo(() =>
-    contextUsage(selectedMessages(), selectedModels(), selectedSession()?.revert?.messageID),
-  )
-  const selectedStats = createMemo(() =>
-    contextStats(selectedSession(), selectedUsage(), selectedCost(), contextSyncing()),
-  )
-  const [rowPercents, setRowPercents] = createSignal(new Map<string, string>())
-  const rowFetching = new Set<string>()
-  const isInbox = () => selectedValue() === NEW_SESSION_VALUE
-  const visiblePreview = createMemo(() => preview()?.sessionID === selectedValue() ? preview() : undefined)
-  const permission = createMemo(() => visiblePreview()?.permissions[0])
-  const inboxRequest = createMemo(() => isInbox() ? permission() ?? visiblePreview()?.forms[0] : undefined)
-  const inboxOwner = createMemo(() => inboxSessions().find((session) => session.id === inboxRequest()?.sessionID))
-
-  createEffect(() => {
-    // Mirror the selected row's synced percent into the row cache so the
-    // list shows % without syncing every row.
-    const session = selectedSession()
-    const usage = selectedUsage()
-    if (session && usage?.percent !== undefined) {
-      const label = `${usage.percent}%`
-      setRowPercents((current) => {
-        if (current.get(session.id) === label) return current
-        return new Map(current).set(session.id, label)
-      })
-    }
-  })
-
-  createEffect(() => {
-    // Only sync context for rows that need attention (running / permission /
-    // question) plus the selected row — syncing all rows would be expensive.
-    const loaded = sessions()
-    const targets = rows()
-      .filter(({ state, session }) =>
-        session.id === selectedValue() || state === "running" || state === "permission" || state === "question")
-      .map(({ session }) => session)
-       .filter((session) => !isArchived(session.id) && !rowPercents().has(session.id) && !rowFetching.has(session.id))
-      .slice(0, 8)
-    for (const session of targets) {
-      rowFetching.add(session.id)
-      runner.start(Effect.all([
-        operation({ operation: "Sync row context messages", sessionID: session.id }, () => props.context.data.session.message.sync(session.id)),
-        operation({ operation: "Sync row models", directory: session.location.directory }, () => props.context.data.location.model.sync(session.location)),
-      ], { concurrency: "unbounded" }).pipe(
-        Effect.ensuring(Effect.sync(() => { rowFetching.delete(session.id) })),
-      ), () => { rowFetching.delete(session.id) }).done.then(() => {
-        const byID = new Map(loaded.map((item) => [item.id, item]))
-        const fresh = byID.get(session.id) ?? session
-        const messages = props.context.data.session.message.list(session.id)
-        const models = props.context.data.location.model.list(fresh.location)
-        const usage = contextUsage(messages, models, fresh.revert?.messageID)
-        if (usage?.percent !== undefined) {
-          const label = `${usage.percent}%`
-          setRowPercents((current) => new Map(current).set(session.id, label))
-        }
-      })
-    }
-  })
-
-  createEffect(() => {
-    const session = selectedSession()
-    contextVersion()
-    let cancelled = false
-    onCleanup(() => { cancelled = true })
-    if (!session || isArchived(session.id)) {
-      setContextSyncing(false)
-      return
-    }
-    setContextSyncing(true)
-    const job = runner.start(Effect.all([
-      operation({ operation: "Sync context messages", sessionID: session.id }, () => props.context.data.session.message.sync(session.id)),
-      operation({ operation: "Sync models", directory: session.location.directory }, () => props.context.data.location.model.sync(session.location)),
-    ], { concurrency: "unbounded" }).pipe(
-      Effect.ensuring(Effect.sync(() => { if (!cancelled) setContextSyncing(false) })),
-    ))
-    onCleanup(job.cancel)
-  })
 
   createEffect(() => {
     visiblePreview()
     previewScroll?.scrollTo(0)
   })
-
-  createEffect(() => {
-    const sessionID = isInbox() ? NEW_SESSION_VALUE : selectedSession()?.id
-    reviewVersion()
-    let cancelled = false
-    onCleanup(() => { cancelled = true })
-    setPreview((current) => current?.sessionID === sessionID ? current : undefined)
-    setPreviewError(undefined)
-    setPreviewLoading(!!sessionID && !isArchived(sessionID))
-    if (!sessionID || isArchived(sessionID)) return
-    if (sessionID === NEW_SESSION_VALUE) {
-      const job = runner.start(loadInbox(props.context.client).pipe(Effect.tap((inbox) => Effect.sync(() => {
-        if (cancelled) return
-        setInboxSessions(inbox.sessions)
-        setInboxErrors(inbox.errors)
-        setPreview((current) => ({
-          sessionID,
-          permissions: pendingOrder(current?.sessionID === sessionID ? current.permissions : [], inbox.permissions.filter((request) => !answeredRequests.has(requestKey(request)))),
-          forms: pendingOrder(current?.sessionID === sessionID ? current.forms : [], inbox.forms),
-        }))
-      })), Effect.ensuring(Effect.sync(() => { if (!cancelled) setPreviewLoading(false) }))),
-      (message) => { if (!cancelled) setPreviewError(message) })
-      onCleanup(job.cancel)
-      return
-    }
-    // Include subagent descendants so their approval requests are
-    // still actionable from the parent preview.
-    const related = [sessionID, ...descendantIDs(sessions(), sessionID)]
-    const job = runner.start(Effect.gen(function* () {
-      const lookups = yield* Effect.all(related.map((id) => operation({ operation: "Sync preview requests", sessionID: id }, async () => {
-        const session = sessions().find((item) => item.id === id)!
-        await requestsAPI.sync(session)
-        return requestsAPI.read(session)
-      })), { concurrency: 4 })
-      const permissions = lookups.flatMap((requests) => requests.permissions)
-      const forms = lookups.flatMap((requests) => requests.forms)
-      if (!cancelled) setPreview({ sessionID, permissions, forms })
-    }).pipe(Effect.ensuring(Effect.sync(() => { if (!cancelled) setPreviewLoading(false) }))),
-    (message) => { if (!cancelled) setPreviewError(message) })
-    onCleanup(job.cancel)
-  })
-
-  function replyToPermission(reply: "once" | "always" | "reject") {
-    const request = permission()
-    if (!request || replying() || changingLifecycle() || previewLoading() || previewError()) return
-    setReplyChoice(reply)
-    setReplying(true)
-    return runner.start(Effect.gen(function* () {
-      yield* operation({ operation: `Reply to permission (${reply})`, sessionID: request.sessionID, requestID: request.id },
-        (signal) => requestsAPI.reply(request, reply, signal))
-      answeredRequests.add(requestKey(request))
-      props.context.ui.toast.show({ message: reply === "once" ? "Permission approved once" : reply === "always" ? "Permission approved always" : "Permission denied", variant: "success" })
-    }).pipe(Effect.ensuring(Effect.sync(() => {
-      setReplying(false)
-      setReviewVersion((version) => version + 1)
-      refreshLocationForSession(request.sessionID)
-    }))), showFailure).done
-  }
-
-  function changeLifecycle(inactive: boolean) {
-    const selected = selectedSession()
-    if (!selected || changingLifecycle() || replying()) return
-    if (!inactive && isArchived(selected.id) && !archivesReady()) return
-    const session = lifecycleOwner(sessions(), selected)
-    const family = [session.id, ...descendantIDs(sessions(), session.id)]
-    const affected = new Set(family)
-    const neighbor = sectionNeighbor(options().filter((option) => option.value === session.id || !affected.has(option.value)), session.id) ?? NEW_SESSION_VALUE
-    if (inactive && isArchived(session.id)) return
-    setChangingLifecycle(new Set(affected))
-    return runner.start(Effect.gen(function* () {
-      let owner = session
-      if (inactive) {
-        const stopped = yield* operation({ operation: "Archive session", sessionID: session.id },
-          () => softArchiveSession(props.context.client, session))
-        owner = stopped[0]!
-        for (const member of stopped) affected.add(member.id)
-        setChangingLifecycle(new Set(affected))
-        // Keep the authoritative parent available even when the picker began on
-        // a child whose ancestors were outside its loaded pages.
-        setSessions((items) => [...new Map([...items, ...stopped].map((item) => [item.id, item])).values()])
-        yield* Effect.all(stopped.map((member) => operation({ operation: "Refresh archived attention", sessionID: member.id },
-          () => requestsAPI.sync(member))), { concurrency: 4 })
-        setAttentionChecks((current) => {
-          const next = new Map(current)
-          for (const member of stopped) next.set(member.id, "ready")
-          return next
-        })
-      } else if (isArchived(session.id)) {
-        const restored = yield* operation({ operation: "Restore archived session", sessionID: session.id },
-          () => restoreSession(props.context.client, archiveStore, archived(session.id)!))
-        deletedIDs.delete(restored.id)
-        setSessions((items) => [...items.filter((item) => item.id !== restored.id), restored])
-        setArchives((items) => items.filter((item) => item.transcript.info.id !== session.id))
-      } else {
-        const family = yield* operation({ operation: "Load family to restore", sessionID: session.id },
-          () => sessionFamily(props.context.client, session))
-        owner = family[0]!
-        for (const member of family) affected.add(member.id)
-        setChangingLifecycle(new Set(affected))
-        setSessions((items) => [...new Map([...items, ...family].map((item) => [item.id, item])).values()])
-      }
-      yield* operation({ operation: "Update lifecycle marker", sessionID: session.id }, () => updateLifecycle((draft) => {
-        for (const id of affected) {
-          delete draft.inactive[id]
-        }
-        // Explicit restore overrides the age-based default, without changing
-        // OpenCode timestamps or triggering execution. Children have no override.
-        draft.inactive[owner.id] = inactive
-      }))
-      // Don't steal selection if the user navigated while the request ran.
-      if (selectedValue() === selected.id) setSelectedValue(neighbor)
-      props.context.ui.toast.show({ message: inactive ? "Session soft archived; family stopped, history retained" : "Session restored to active", variant: "success" })
-    }).pipe(Effect.ensuring(Effect.sync(() => {
-      setChangingLifecycle(undefined)
-      setReviewVersion((version) => version + 1)
-    }))), showFailure, { detached: true }).done
-  }
-
-  function applyAttentionLookup(location: SessionInfo["location"], key: string) {
-    runner.start(Effect.gen(function* () {
-      const requests = yield* operation({ operation: "Discover attention owners", directory: location.directory },
-        (signal) => requestsAPI.discover(location, signal))
-      for (const id of new Set([...requests.permissions, ...requests.forms].map((request) => request.sessionID))) {
-        if (!liveSessions().some((session) => session.id === id)) void refreshSessionRow(id)
-      }
-      setAttentionErrors((current) => { const next = new Map(current); next.delete(`location:${key}`); return next })
-    }), (message) => {
-      queriedLocations.delete(key)
-      setAttentionErrors((current) => new Map(current).set(`location:${key}`, message))
-    })
-  }
-
-  function refreshAttention(loaded: SessionInfo[], force = false) {
-    const targets = loaded.filter((session) => !isArchived(session.id) && (force || !queriedSessions.has(session.id)))
-    for (const session of targets) {
-      queriedSessions.add(session.id)
-      setAttentionChecks((current) => current.get(session.id) === "ready" ? current : new Map(current).set(session.id, "checking"))
-    }
-    runner.start(Effect.all(targets.map((session) => operation({ operation: "Refresh attention status", sessionID: session.id },
-      () => requestsAPI.sync(session)).pipe(
-      Effect.tap(() => Effect.sync(() => {
-        setAttentionChecks((current) => new Map(current).set(session.id, "ready"))
-        setAttentionErrors((current) => { const next = new Map(current); next.delete(session.id); return next })
-      })),
-      Effect.catch((error) => Effect.sync(() => {
-        console.error(`[claude.sessions] ${error.message}`, error)
-        queriedSessions.delete(session.id)
-        setAttentionChecks((current) => new Map(current).set(session.id, "unavailable"))
-        setAttentionErrors((current) => new Map(current).set(session.id, error.message))
-      })),
-    )), { concurrency: 4 }))
-    const locations = new Map<string, SessionInfo["location"]>()
-    for (const session of loaded) if (!isArchived(session.id)) locations.set(locationKey(session), session.location)
-
-    for (const [key, location] of locations) {
-      if (!force && queriedLocations.has(key)) continue
-      queriedLocations.add(key)
-      applyAttentionLookup(location, key)
-    }
-  }
-
-  function refreshLocationForSession(sessionID: string) {
-    const session = sessions().find((item) => item.id === sessionID)
-    if (!session) { void refreshSessionRow(sessionID); return }
-    refreshAttention([session], true)
-  }
-
-  function refreshSessionRow(sessionID: string) {
-    return runner.start(Effect.gen(function* () {
-      // Active children may be outside the loaded page. Load their ancestry too
-      // so their activity reaches the correct parent instead of an orphan row.
-      let id: string | undefined = sessionID
-      const seen = new Set<string>()
-      while (id && !seen.has(id)) {
-        seen.add(id)
-        const target: string = id
-        const fresh = yield* operation({ operation: "Refresh session row", sessionID: target },
-          (signal) => props.context.client.session.get({ sessionID: target }, { signal }))
-        if (deletedIDs.has(target)) break
-        setSessions((loaded) => [...loaded.filter((item) => item.id !== fresh.id), fresh])
-        id = fresh.parentID && !sessions().some((item) => item.id === fresh.parentID) ? fresh.parentID : undefined
-      }
-      setLiveVersion((version) => version + 1)
-      refreshAttention(liveSessions())
-    })).done
-  }
-
-  function refreshActiveSessions() {
-    runner.start(Effect.gen(function* () {
-      const active = yield* operation({ operation: "Load active sessions" },
-        (signal) => props.context.client.session.active({ signal }))
-      for (const id of Object.keys(active)) void refreshSessionRow(id)
-    }))
-  }
-
-  function refreshContextForSession(sessionID: string) {
-    // Invalidate the cached messages so the next sync refetches, then bump
-    // the version to retrigger the selected-session context sync effect.
-    // The effect's sync() repopulates even without invalidate, but dropping
-    // the cache first avoids showing stale usage while refetching.
-    if (selectedSession()?.id !== sessionID) return
-    props.context.data.session.message.invalidate(sessionID)
-    setContextVersion((version) => version + 1)
-  }
-
-  function loadMore(initial = false) {
-    if (loading() || (!initial && !cursor())) return
-    setLoading(true)
-    setFailure(undefined)
-
-    return runner.start(Effect.gen(function* () {
-      const result = yield* operation({ operation: initial ? "Load sessions" : "Load more sessions" }, (signal) => props.context.client.session.list({
-        limit: PAGE_SIZE,
-        order: "desc",
-        ...(initial ? {} : { cursor: cursor() }),
-      }, { signal }))
-      const known = new Map(liveSessions().map((session) => [session.id, session]))
-      for (const session of result.data) if (!deletedIDs.has(session.id)) known.set(session.id, session)
-      const loaded = [...known.values()]
-      setSessions(loaded)
-      setCursor(result.cursor.next ?? undefined)
-      refreshAttention(loaded)
-    }).pipe(Effect.ensuring(Effect.sync(() => setLoading(false)))), setFailure).done
-  }
 
   function open(sessionID: string) {
     if (isArchived(sessionID)) {
@@ -841,7 +194,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
 
   function close() {
     props.context.ui.dialog.clear()
-    if (currentSessionID && deletedIDs.has(currentSessionID)) {
+    if (currentSessionID && isDeleted(currentSessionID)) {
       props.context.ui.router.navigate({ type: "home" })
     }
   }
@@ -911,10 +264,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
         run: close,
       },
       { bind: "escape", run: close },
-      { bind: "ctrl+r", run: () => {
-        refreshAttention(liveSessions(), true)
-        setReviewVersion((version) => version + 1)
-      } },
+      { bind: "ctrl+r", run: refresh },
       {
         bind: "n",
         run: newSession,
@@ -925,8 +275,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
       { bind: "/", run: async () => {
         const value = await props.context.ui.dialog.prompt({ title: "Search sessions (including archives)", placeholder: "Title or directory; empty clears filter" })
         if (value === undefined) return
-        setSearch(value ?? "")
-        setSelectedValue(NEW_SESSION_VALUE)
+        searchSessions(value ?? "")
       } },
       { bind: "j", run: () => moveSelection(1) },
       { bind: "shift+up", run: () => moveSelection(-8) },
@@ -951,85 +300,6 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
       initialScrollDone = true
       scrollToIndex(index)
     }
-  })
-
-  onMount(() => {
-    runner.start(operation({ operation: "Load session archives" }, () => archiveStore.list()).pipe(
-      Effect.map((items) => { setArchives(items); setArchivesReady(true) }),
-    ), showFailure)
-    if (currentSessionID && !currentSession) {
-      runner.start(Effect.gen(function* () {
-        const session = yield* operation({ operation: "Load current session", sessionID: currentSessionID },
-          (signal) => props.context.client.session.get({ sessionID: currentSessionID }, { signal }))
-        setSessions((loaded) => [session, ...loaded.filter((item) => item.id !== session.id)])
-      }))
-    }
-    void loadMore(true)
-    refreshActiveSessions()
-
-    // Live updates while the picker is open. Running/idle also flows through
-    // context.data.session.status, but permission/question badges and titles
-    // need explicit event handling.
-    const unsubscribes = [
-      props.context.data.on("server.connected", () => {
-        refreshActiveSessions()
-        refreshAttention(sessions(), true)
-        setReviewVersion((version) => version + 1)
-      }),
-      props.context.data.listen(({ details }) => {
-        if (["permission.asked", "permission.replied", "form.created", "form.replied", "form.cancelled"].includes(details.type)) {
-          setReviewVersion((version) => version + 1)
-        }
-      }),
-      props.context.data.on("permission.asked", (event) => {
-        refreshLocationForSession(event.data.sessionID)
-      }),
-      props.context.data.on("permission.replied", (event) => {
-        refreshLocationForSession(event.data.sessionID)
-      }),
-      props.context.data.on("form.created", (event) => {
-        refreshLocationForSession(event.data.form.sessionID)
-      }),
-      props.context.data.on("form.replied", (event) => {
-        refreshLocationForSession(event.data.sessionID)
-      }),
-      props.context.data.on("form.cancelled", (event) => {
-        refreshLocationForSession(event.data.sessionID)
-      }),
-      props.context.data.on("session.status", (event) => {
-        void refreshSessionRow(event.data.sessionID)
-        refreshContextForSession(event.data.sessionID)
-      }),
-      props.context.data.on("session.idle", (event) => {
-        void refreshSessionRow(event.data.sessionID)
-        refreshContextForSession(event.data.sessionID)
-      }),
-      props.context.data.on("session.created", (event) => {
-        deletedIDs.delete(event.data.sessionID)
-        void refreshSessionRow(event.data.sessionID)
-      }),
-      props.context.data.on("session.renamed", (event) => {
-        const title = event.data.title
-        setSessions((loaded) =>
-          loaded.map((item) => (item.id === event.data.sessionID ? { ...item, title } : item)),
-        )
-      }),
-      props.context.data.on("session.deleted", (event) => {
-        deletedIDs.add(event.data.sessionID)
-        if (!changingLifecycle() && selectedValue() === event.data.sessionID) setSelectedValue(NEW_SESSION_VALUE)
-        setSessions((loaded) => loaded.filter((item) => item.id !== event.data.sessionID))
-        queriedSessions.delete(event.data.sessionID)
-        setAttentionChecks((current) => { const next = new Map(current); next.delete(event.data.sessionID); return next })
-        setAttentionErrors((current) => { const next = new Map(current); next.delete(event.data.sessionID); return next })
-      }),
-    ]
-
-    // Keep "xm ago" labels fresh without refetching.
-    const timer = setInterval(() => setTick((value) => value + 1), 30_000)
-    onCleanup(() => {
-      clearInterval(timer)
-      for (const unsubscribe of unsubscribes) unsubscribe()
-    })
   })
 
   return (
@@ -1198,7 +468,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
         ) : null}
         {!(mobile() && permission() && dimensions().height < 20) ? (
           <text height={1} flexShrink={0} wrapMode="none" fg={props.context.theme.text.subdued}>{inboxRequest()
-            ? inboxOwner() ? shortenLocation(props.context.ui.format.path(inboxOwner()!.location.directory)) : ""
+            ? `Known-location inbox${inboxOwner() ? ` · ${shortenLocation(props.context.ui.format.path(inboxOwner()!.location.directory))}` : ""}`
             : options()[selectedIndex()]?.description}</text>
         ) : null}
         {!inboxRequest() && (!mobile() || !permission()) ? (
@@ -1264,7 +534,7 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
             <text wrapMode="none" fg={props.context.theme.text.subdued}>
               {selectedSession() && isArchived(selectedSession()!.id)
                 ? `Archived · ${selectedMessages()?.length ?? 0} messages`
-                : previewLoading() ? "Checking for approval requests…" : previewError() ? `Preview unavailable: ${previewError()}` : visiblePreview()?.forms.length ? `Question · ${visiblePreview()!.forms[0]!.title}` : isInbox() && inboxErrors().length ? `${inboxErrors().length} location${inboxErrors().length === 1 ? "" : "s"} unavailable` : options()[selectedIndex()]?.state === "inactive" ? (options()[selectedIndex()] as { inactiveByAge?: boolean })?.inactiveByAge ? "Inactive by age · no cleanup performed" : "Soft archived · history retained" : selectedSession() ? (options()[selectedIndex()] as { status?: string })?.status ?? "" : ""}
+                : previewLoading() ? "Checking for approval requests…" : previewError() ? `Preview unavailable: ${previewError()}` : visiblePreview()?.forms.length ? `Question · ${visiblePreview()!.forms[0]!.title}` : isInbox() && inboxErrors().length ? `${inboxErrors().length} location${inboxErrors().length === 1 ? "" : "s"} unavailable` : options()[selectedIndex()]?.state === "inactive" ? (options()[selectedIndex()] as { inactiveByAge?: boolean })?.inactiveByAge ? "Inactive by age · no cleanup performed" : "Soft archived · history retained" : selectedSession() ? (options()[selectedIndex()] as { status?: string })?.status ?? "" : "Known-location inbox"}
             </text>
             {isInbox() && visiblePreview()?.forms.length ? (
               <scrollbox flexGrow={1} minHeight={0} scrollY scrollX={false}>
@@ -1331,18 +601,18 @@ export function SessionPicker(props: { context: Plugin.Context; archiveStore?: A
   )
 }
 
-export function showSessionPicker(context: Plugin.Context) {
+export function showSessionPicker(context: Plugin.Context, controller?: SessionController) {
   const route = context.ui.router.current()
   if (route.type !== "home" && route.type !== "session") return false
 
   const returnSessionID = route.type === "session" ? route.sessionID : undefined
-  context.ui.dialog.show(() => <SessionPicker context={context} returnSessionID={returnSessionID} />)
+  context.ui.dialog.show(() => <SessionPicker context={context} controller={controller} returnSessionID={returnSessionID} />)
   // show() resets host presentation options, so apply these after mounting.
   context.ui.dialog.set({ size: "xlarge", centered: true })
 }
 
-function EmptyPromptBinding(props: { context: Plugin.Context }) {
-  const openPicker = () => showSessionPicker(props.context)
+function EmptyPromptBinding(props: { context: Plugin.Context; controller: SessionController }) {
+  const openPicker = () => showSessionPicker(props.context, props.controller)
 
   props.context.keymap.layer(() => ({
     priority: 100,
@@ -1383,9 +653,10 @@ function EmptyPromptBinding(props: { context: Plugin.Context }) {
 export default Plugin.define({
   id: "claude.sessions",
   setup(context) {
+    const controller = createSessionController(context)
     const unregisterSlot = context.ui.slot({
       append: "app",
-      render: () => <EmptyPromptBinding context={context} />,
+      render: () => <EmptyPromptBinding context={context} controller={controller} />,
     })
     const unregisterUsage = context.ui.slot({
       append: "sidebar.content",
@@ -1394,6 +665,7 @@ export default Plugin.define({
     return () => {
       unregisterSlot()
       unregisterUsage()
+      controller.dispose()
     }
   },
 })

@@ -7,7 +7,7 @@ See [the V2 compatibility audit](docs/v2-audit.md) for the original audit and co
 
 Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 
-- The normal session sidebar includes a live current-context breakdown for fresh input, cache reads, cache writes, output, and reasoning. Current context remains scoped to the open session; cumulative tokens and cost show separate session-only and **Incl. subagents** totals when descendants exist. Unpriced subscription responses use matching OpenCode Zen catalog rates and are labeled **Zen equivalent ≈**.
+- The sidebar shows the current session's context/token breakdown and dollar equivalents. It does not scan other sessions or load descendant transcripts. The picker's selected-session usage preview remains available.
 
 - Press `Left` while the focused prompt is empty to open a status-aware session picker.
 - Press `Left` while the prompt contains text to move the cursor normally.
@@ -26,13 +26,13 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Status indicators use a single-cell far-left gutter: `!` for permissions, `?` for questions, and a yellow Braille spinner for running sessions. There is no selection sidebar, so status changes do not shift session titles or consume extra horizontal space.
 - Indicators use the active theme's semantic status colors.
 - Status begins as **Checking status…** until verified. Missing runtime capabilities, failed refreshes, and malformed cache results show **Status unavailable** (`×`), rather than Ready/Inactive. Press `Ctrl+R` to retry status and preview reads without closing the picker.
-- Active sessions prioritize needs input, then working, then ready, ordered by latest interaction within each status. Inactive sessions are ordered by latest interaction.
+- Within Active / Inactive, rows use recent activity captured when the picker opens. Live badges and timestamps update without reordering on assistant output or attention changes; archive/restore can still move a family between sections. The API exposes `time.updated`, not last-user-input time, so this is stable activity ordering rather than exact user-input ordering.
 - Each session occupies one line with its title, status, and lifecycle button. The selected session's location, agent, and last-interaction time appear in the preview.
 - The preview has a pinned **Archive / Restore** button. On phones, a compact touch footer adds **Open / New** and **Close**.
 - The selected session's bottom preview shows both its current context-window usage and cumulative input, cache-read, cache-write, output, and reasoning tokens. Below 70 columns these labels compact to fit.
 - Below 70 columns, rows prioritize the title and short time; status icons remain, while text status and context usage move to the preview. The selected title wraps to two lines and section headers tighten. During approvals, model/usage details give way to the request.
 - The current session is selected initially; from Home, `New session` is selected.
-- While **New session** is selected, the preview acts as a cross-session inbox: **Allow / Deny / Always** handles the first pending permission and advances without moving selection. It shows the owning session and directory, retains request order while new requests arrive, and includes live locations beyond the loaded or filtered rows plus their children. Permissions come first; pending questions are counted and shown afterward with **Open** to answer in their session. **New** / `Enter` still starts a new session. Empty inboxes return to the blank-prompt preview.
+- While **New session** is selected, the preview acts as a cross-session inbox: **Allow / Deny / Always** handles the first pending permission and advances without moving selection. It queries locations known from loaded, current, and discovered active/attention sessions, independently of the text filter. Requests can include unloaded children at those locations; their owners are fetched directly. This is a **known-location inbox**, not a complete global history scan. Permissions come first; pending questions are shown afterward with **Open** to answer in their session. **New** / `Enter` still starts a new session.
 - Unavailable inbox locations are counted inline and logged; reachable locations remain actionable. Failed locations contribute no stale approval controls and are retried on the next request event or reopening.
 - Use `Up`/`Down` to select, `Right` or `Enter` to open, and `Left` or `Escape` to close.
 - Press `N` from the picker to start a new session.
@@ -41,7 +41,7 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Subagents appear beneath their parent in the same section with a small indent, with further nesting for descendants. Children whose parent is unloaded remain independently selectable until it loads. Parent previews still aggregate descendant requests for approval.
 - Pending questions show their title and field details; open the session to answer them. Approval shortcuts do not answer or dismiss questions.
 - Preview loading/errors disable permission actions, replies cannot overlap, and held-key repeat events are ignored. Errors appear as toasts and requests refresh after replying.
-- Older sessions load as you scroll.
+- Opening requests one page of up to 100 recent sessions. Current and discovered active/attention sessions can also appear outside that page. Older pages load when keyboard or pointer selection approaches the end of the list; wheel scrolling alone does not request another page.
 - The picker resizes with the terminal, including phone keyboard/rotation changes. Narrow or short terminals use a compact header and a smaller scrollable approval preview.
 - Tap/click a row to preview, double-tap or press `→`/`Enter` to enter it. Approval previews show the action and request count above a scrollable request, with a pinned **Allow / Deny / Always** bar below. **Allow** approves once. Equal-width cells are fully clickable, with three-line tap targets on phones when height permits; short keyboard-open layouts use one line. The chosen action shows **Sending…** in place and all approval cells disable during reply/refresh. Refresh retains the current request layout until the next result arrives.
 - In `bun-web-terminal`, use its **Keyboard** button to explicitly show/hide the phone keyboard. Taps select TUI controls without opening it, and swipes scroll without clicking.
@@ -83,31 +83,14 @@ Add fallback rates for models without provider or Zen pricing by changing the pl
 The estimate combines recorded costs with the estimates above. Explicit zero
 catalog rates are respected as free. Responses lacking pricing are counted as unpriced instead of
 silently presented as free. Cumulative "session processed" tokens count every
-request and therefore include context read repeatedly across turns. When the
-session has descendants, an additional **Incl. subagents** row rolls their
-cumulative tokens and estimated cost into the session-family total. The live
-current-context rows remain scoped to the open session because each subagent has
-its own context window.
+request and therefore include context read repeatedly across turns. All sidebar
+statistics are scoped to the open session.
 
-### Rolling 7 days
+### Cross-session usage
 
-The sidebar also sums response usage over the trailing 168 hours across all
-sessions on the connected server, including subagents and other projects. It
-shows total cost/equivalent, a daily average (total ÷ 7), session and response
-counts, and a per-model breakdown. Weekly token totals show fresh input, cache
-reads, cache writes, output, reasoning, and total tokens processed. The input
-cache percentage is cache reads ÷ (fresh input + cache reads + cache writes).
-Token totals include unpriced responses and use the same window and deduplicated
-responses as the cost total. Each response is priced separately so a
-week's cumulative tokens cannot accidentally trigger a long-context tier.
-The window uses response completion time, or creation time for in-progress
-responses. Shared message IDs are counted once.
-
-The summary refreshes every minute, caches unchanged sessions, and cancels
-requests when the sidebar unmounts. Unknown model pricing is reported as a
-partial total; failed refreshes retain the previous total with a status message.
-Deleted sessions and the plugin's local archives are excluded. Catalog-based
-estimates use current prices rather than historical billing rates.
+The rolling seven-day sidebar and its automatic full-history scans have been
+removed. The pure weekly-usage loader remains available for a future explicit,
+on-demand query; no standalone command is registered yet.
 
 ## Archive storage and API sequence
 
@@ -192,6 +175,13 @@ An existing child archive requires its parent to be live; restore the parent
 archive first. The plugin explains this ordering when the parent is missing.
 
 ## Effect execution and diagnostics
+
+The plugin owns the session controller and its reactive state. Picker views
+consume that state and dispatch commands; focus, keybindings, layout, and scroll
+handling stay in the view. Closing a picker detaches its reads and view bindings,
+while in-progress lifecycle actions remain owned by the controller so reopening
+observes the same operation. This uses Solid and the existing Effect runner,
+without a separate caching or scheduling framework.
 
 All asynchronous picker work runs through Effect: paging, preview/context loads,
 attention refreshes, permission replies, interrupts, and lifecycle storage.
