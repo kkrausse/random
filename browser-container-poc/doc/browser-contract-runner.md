@@ -87,3 +87,20 @@ Release direction clarified by the user: defer npm publication; aim for a
 reproducible code release followed by integration into `kkrausse/irs-tools`.
 A pinned `vendor/vivari` checkout with local-source override and optional GitHub
 Release runtime/package archives were discussed, not implemented or published.
+
+### Updated milestone 2 decision
+
+User subsequently chose GitHub Packages publication, then consuming pinned
+published versions in local `kkrausse/irs-tools`, with an explicit local-checkout
+override when toolkit/runtime changes are needed. This supersedes the tentative
+release-assets-only direction above. npmjs.org publication is not required.
+Package scope should match the GitHub owner (`@kkrausse`); exact package names and
+runtime asset layout remain implementation work. Default consumer installs must
+not depend on sibling source checkouts; the local override should preserve public
+imports and use a matching runtime distribution.
+
+GitHub's current documentation: public Packages usage is free; private packages
+use plan quotas (Free: 500 MB storage and 1 GB monthly transfer). Its npm registry
+requires authentication even to install public packages and limits each package
+tarball to under 256 MB. Package publication and site integration have not yet
+been performed.
