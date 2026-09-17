@@ -1,5 +1,24 @@
 # Browser-control checks
 
+- [x] 2026-09-17 UTC, browser-control 0.7.0, session `brisk-comet-900`,
+  `http://127.0.0.1:19437/`: clicking New chat then immediately filling/clicking
+  Send raced asynchronous chat creation. Waiting for the expected assistant
+  marker returned `waitFor: Timeout 90000ms exceeded`; a fresh panel read showed
+  `ChatError: Chat is not ready to send`, with no new model request. Expected
+  a ready new session before send. Recovery: dismissed the application error,
+  resent after the session had finished creation, and verified the exact reply
+  and `outcome: succeeded`. No relay restart/page replacement; this was an
+  application readiness/automation synchronization issue.
+
+- [ ] Same session/version: plain `snapshot()` returned only the host TODO page
+  while an open editor panel and conversation were present and interactable.
+  Reproduction: inspect with `snapshot()` then compare
+  `ariaSnapshot(page.locator(".oc-editor-panel"))` and locator `innerText()`.
+  Expected compact snapshot to include the editor's controls; actual omitted
+  the panel. Recovery: used the targeted aria snapshot and stable role locators.
+  No relay reset or page replacement. Investigate compact snapshot visibility
+  filtering for this full-viewport editor layout.
+
 - [x] 2026-09-09, browser-control 0.7.0, session `amber-wombat-312`, localhost:4317:
   startup wait returned `waitForFunction: Timeout 30000ms exceeded`. The script
   incorrectly passed `{timeout:180000}` as Playwright's second argument (the page
