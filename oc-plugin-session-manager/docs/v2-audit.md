@@ -1,5 +1,37 @@
 # OpenCode V2 compatibility audit
 
+## 2.0.7 attention hardening
+
+- Updated local plugin/client/theme pins to 2.0.7; runtime service confirmed 2.0.7.
+- Session attention and previews now use the documented TUI permission/form
+  caches and status accessor. Direct attention discovery/reply calls are isolated
+  in `src/attention-api.ts`.
+- Unknown and failed reads show Checking/Status unavailable rather than idle.
+  Reconnect and Ctrl+R resync state; overlapping cache refreshes are serialized.
+- `bun run check:api /path/to/project` is a read-only real-service compatibility
+  check, including mutation contract inspection without performing mutations.
+- Regression coverage exercises host-cache question discovery/removal, missing
+  capabilities, malformed data, refresh/answer races, failure/retry rendering,
+  and previews that prohibit direct session request HTTP calls.
+
+## 2.0.6 attention compatibility update
+
+The running 2.0.6 service returns 404 for the former `/api/form/request`
+endpoint. Updated dependency pins and callers to the installed contract:
+
+- Location questions: `client.form.list({ location })` (`/api/form`).
+- Session questions: `client.session.form.list({ sessionID })`.
+- Permission replies use `decision`; interrupts use `resume: false`.
+- Locations are directory-scoped; workspace selectors were removed.
+- Reconnecting refreshes attention badges as well as previews and active rows.
+
+Verified with `bun run check`, all 43 tests (including pending-question startup,
+reply, and reconnect regression coverage), and a read-only request to the live
+`/api/form` endpoint. Restart the TUI to load the path-loaded source changes.
+The original audit below describes 2.0.3, not the current API.
+
+## Original 2.0.3 audit
+
 Audited 2026-09-15 against released OpenCode **2.0.3**, its running-server
 OpenAPI contract, and the matching `@opencode/plugin` / `@opencode/client`
 packages. Both the installed terminal and `/api/health` reported 2.0.3.

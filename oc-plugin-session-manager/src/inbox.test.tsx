@@ -9,7 +9,7 @@ extend({ spinner: TextRenderable })
 
 test("New session drains a stable cross-location inbox without selecting its owners", async () => {
   const sessions = ["First owner", "Second owner", "Unloaded child"].map((title, i) => ({
-    id: `s${i}`, title, location: { directory: i === 0 ? "/first" : "/second", workspaceID: i === 0 ? undefined : "ws2" },
+    id: `s${i}`, title, location: { directory: i === 0 ? "/first" : "/second" },
     time: { updated: 100 - i }, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, cost: 0,
   }))
   let requests = [
@@ -47,6 +47,7 @@ test("New session drains a stable cross-location inbox without selecting its own
     },
     client: {
       session: {
+        form: { list: async ({ sessionID }: any) => questions.filter((question) => question.sessionID === sessionID) },
         list: async ({ cursor }: any) => ({ data: cursor ? [sessions[1]] : [sessions[0]], cursor: cursor ? {} : { next: "page2" } }),
         active: async () => ({}), get: async ({ sessionID }: any) => sessions.find((session) => session.id === sessionID),
       },
@@ -54,8 +55,8 @@ test("New session drains a stable cross-location inbox without selecting its own
         list: async ({ sessionID }: any) => requests.filter((request) => request.sessionID === sessionID),
         request: { list: async ({ location }: any) => {
           if (failRefresh || (failFirstLocation && location.directory === "/first")) throw new Error("inbox unavailable")
-          // The inbox must pass the workspace selector for locations on later pages.
-          return { data: requests.filter((request) => request.sessionID === "s0" ? location.directory === "/first" : location.workspace === "ws2") }
+          // Include locations discovered on later session pages.
+          return { data: requests.filter((request) => request.sessionID === "s0" ? location.directory === "/first" : location.directory === "/second") }
         } },
         reply: async (input: any) => {
           replies.push(input)
@@ -64,8 +65,16 @@ test("New session drains a stable cross-location inbox without selecting its own
           requests = requests.filter((request) => request.id !== input.requestID)
         },
       },
-      form: { list: empty, request: { list: async ({ location }: any) => ({ data: location.workspace === "ws2" ? questions : [] }) } },
+      form: { list: async ({ location }: any) => ({ data: location.directory === "/second" ? questions : [] }) },
     },
+  }
+  context.data.session.permission = {
+    list: (sessionID: string) => requests.filter((request) => request.sessionID === sessionID),
+    sync: empty, invalidate() {},
+  }
+  context.data.session.form = {
+    list: (sessionID: string) => questions.filter((question) => question.sessionID === sessionID),
+    sync: empty, invalidate() {},
   }
   const setup = await testRender(() => <SessionPicker context={context} archiveStore={{ list: empty, save: async () => {}, remove: async () => {} }} hostDialogInsets={false} />, { width: 36, height: 24 })
   const settle = async () => { await new Promise((resolve) => setTimeout(resolve, 30)); await setup.renderOnce() }
@@ -103,7 +112,7 @@ test("New session drains a stable cross-location inbox without selecting its own
     await settle()
     assert.match(setup.captureCharFrame(), /Unloaded child/)
     assert.match(setup.captureCharFrame(), /child command/)
-    assert.deepEqual(replies.at(-1), { sessionID: "s0", requestID: "p1", reply: "once" })
+    assert.deepEqual(replies.at(-1), { sessionID: "s0", requestID: "p1", decision: "once" })
     assert.equal(destination, undefined)
 
     failFirstLocation = true
@@ -126,7 +135,7 @@ test("New session drains a stable cross-location inbox without selecting its own
     finish!()
     await second
     await settle()
-    assert.deepEqual(replies.at(-1), { sessionID: "s2", requestID: "p2", reply: "always" })
+    assert.deepEqual(replies.at(-1), { sessionID: "s2", requestID: "p2", decision: "always" })
     assert.match(setup.captureCharFrame(), /Choose a branch/)
     assert.equal(setup.renderer.root.findDescendantById("claude-session-approve"), undefined)
     await run("a")

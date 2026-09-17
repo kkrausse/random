@@ -17,6 +17,17 @@ bun run check
 bun test --preload @opentui/solid/preload
 ```
 
+After changing OpenCode API calls or updating dependencies, also run the read-only
+installed-service check with an accessible project directory:
+
+```sh
+bun run check:api /path/to/project
+```
+
+Attention calls belong in `src/attention-api.ts`. Prefer the documented host TUI
+data caches for badges/previews. A missing or failed lookup must remain visibly
+unavailable, never become an empty list or a Ready/Inactive status.
+
 ## Committing
 
 Scope commits to this directory only:

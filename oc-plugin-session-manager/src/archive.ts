@@ -74,11 +74,11 @@ export async function archiveSession(client: Client, store: ArchiveStore, root: 
   const unavailable = new Set<string>()
   async function interrupt(session: SessionInfo) {
     try {
-      await client.session.interrupt({ sessionID: session.id, continue: false })
+      await client.session.interrupt({ sessionID: session.id, resume: false })
     } catch (error) {
       // V2 returns a generic 500 when starting a runtime in a deleted directory.
       // Only tolerate that case for inactive local sessions; other failures stop cleanup.
-      if (session.location.workspaceID || (error as { cause?: { status?: number } })?.cause?.status !== 500) throw error
+      if ((error as { cause?: { status?: number } })?.cause?.status !== 500) throw error
       const absent = await stat(session.location.directory).then(() => false, (cause) => {
         if (cause.code === "ENOENT") return true
         throw cause
@@ -101,8 +101,8 @@ export async function archiveSession(client: Client, store: ArchiveStore, root: 
     } while (cursor)
   }
   const locations = new Map([...family.values()].filter((session) => !unavailable.has(session.id)).map((session) => [
-    `${session.location.workspaceID ?? ""}\0${session.location.directory}`,
-    { directory: session.location.directory, workspace: session.location.workspaceID },
+    session.location.directory,
+    { directory: session.location.directory },
   ]))
   async function removeShells() {
     for (const location of locations.values()) {

@@ -17,6 +17,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
   let opened: string | undefined
   let closed = 0
   let withPermission = false
+  let badgePermission: string | undefined
   let approved = false
   let finishReply: (() => void) | undefined
   const replies: string[] = []
@@ -99,6 +100,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
     },
     client: {
       session: {
+        form: { list: empty },
         list: async ({ parentID }: any = {}) => ({ data: (parentID ? children.filter((s) => s.parentID === parentID) : sessions).filter((s) => !deleted.has(s.id)), cursor: {} }),
         active: async () => Object.fromEntries([...activeChildren].map((id) => [id, { type: "running" }])),
         inbox: { list: empty, cancel: empty },
@@ -107,6 +109,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
           if (interruptFailure) throw { message: "Unexpected Status", response: { status: 409 } }
           running = false
           activeChildren.delete(sessionID)
+          if (badgePermission === sessionID) badgePermission = undefined
         },
         get: async ({ sessionID }: any) => { if (deleted.has(sessionID)) throw { _tag: "SessionNotFoundError", sessionID }; return [...sessions, ...children].find((s) => s.id === sessionID) },
         export: async ({ sessionID }: any) => ({ info: sessions.find((s) => s.id === sessionID), messages: [{ id: "msg_preview", type: "user", text: "Archived transcript remains visible" }] }),
@@ -118,20 +121,60 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
       shell: { list: async () => ({ data: [] }), remove: empty },
       permission: {
         list: async ({ sessionID }: any) => withPermission ? [{ id: "p1", sessionID, action: "shell", resources: ["echo hello\n".repeat(30)] }] : [],
-        reply: async ({ reply }: any) => {
-          replies.push(reply)
+        reply: async ({ decision }: any) => {
+          replies.push(decision)
           await new Promise<void>((resolve) => { finishReply = resolve })
           approved = true
         },
         request: { list: async () => ({ data: [] }) },
       },
-      form: { list: empty, request: { list: async () => ({ data: [] }) } },
+      form: { list: async () => ({ data: [] }) },
     },
   }
+  let questions: any[] = [{ id: "q1", sessionID: "grandchild", title: "Choose an option", fields: [] }]
+  context.client.form.list = async () => ({ data: questions })
+  context.client.session.form.list = async ({ sessionID }: any) => questions.filter((form) => form.sessionID === sessionID)
+  context.data.session.permission = {
+    list: (sessionID: string) => withPermission || badgePermission === sessionID ? [{ id: "p1", sessionID, action: "shell", resources: ["echo hello\n".repeat(30)] }] : [],
+    sync: empty, invalidate() {},
+  }
+  context.data.session.form = {
+    list: (sessionID: string) => questions.filter((form) => form.sessionID === sessionID),
+    sync: empty, invalidate() {},
+  }
+  // Normal previews must use host caches, not session HTTP request methods.
+  context.client.permission.list = async () => { throw new Error("Direct preview permission lookup") }
+  context.client.session.form.list = async () => { throw new Error("Direct preview form lookup") }
   const setup = await testRender(() => <SessionPicker context={context} archiveStore={archiveStore} hostDialogInsets={false} />, { width: 100, height: 55 })
   try {
     await new Promise((resolve) => setTimeout(resolve, 20))
     await setup.renderOnce()
+    assert.match(setup.captureCharFrame(), /Question waiting/, "already-pending questions are discovered when the picker opens")
+    questions = []
+    handlers.get("form.replied")!({ data: { sessionID: "grandchild" } })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await setup.renderOnce()
+    assert.doesNotMatch(setup.captureCharFrame(), /Question waiting/)
+    questions = [{ id: "q2", sessionID: "grandchild", title: "Reconnect question", fields: [] }]
+    handlers.get("server.connected")!({})
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await setup.renderOnce()
+    assert.match(setup.captureCharFrame(), /Question waiting/, "reconnect reconciles missed question events")
+    questions = []
+    handlers.get("form.cancelled")!({ data: { sessionID: "grandchild" } })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await setup.renderOnce()
+    context.data.session.form.sync = async (id: string) => { if (id === "s0") throw new Error("cache API unavailable") }
+    handlers.get("server.connected")!({})
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await setup.renderOnce()
+    assert.match(setup.captureCharFrame(), /Status unavailable/)
+    assert.match(setup.captureCharFrame(), /Ctrl\+R to retry/)
+    context.data.session.form.sync = empty
+    commands.find((c) => c.bind === "ctrl+r").run()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await setup.renderOnce()
+    assert.doesNotMatch(setup.captureCharFrame(), /Status unavailable/)
     // A running grandchild outside the list page activates its idle parent.
     assert.match(setup.captureCharFrame(), /1 sub-agent running/)
     assert.match(setup.captureCharFrame(), /Grandchild/)
@@ -159,7 +202,9 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
     await setup.renderOnce()
     assert.match(setup.captureCharFrame(), /1 sub-agent running/)
     activeChildren.add("child")
+    badgePermission = "grandchild"
     handlers.get("permission.asked")!({ data: { sessionID: "grandchild" } })
+    await new Promise((resolve) => setTimeout(resolve, 20))
     await setup.renderOnce()
     assert.match(setup.captureCharFrame(), /Permission required · 2 sub-agents running/)
     commands.find((c) => c.bind === "down").run()
