@@ -45,3 +45,45 @@ is orderly close/reload (close also flushes), not abrupt crash recovery. Remaini
 work includes cancellation/backpressure/listener replacement, SQLite ownership
 and failure modes, multi-tab storage ownership, and explicit storage fault
 injection. The README beside the runner documents extension points and usage.
+
+## Follow-up — 18 browser cases passing
+
+Three delegated implementations added 14 cases using the existing runner:
+
+- HTTP (`d3ca0d5`, fixture correction `4e514fe`): abort before headers and
+  response-reader cancellation close the target guest socket; paced binary
+  response consumption checks bounded read-ahead and backpressure; stale endpoint
+  handles cannot reach a same-port replacement listener.
+- Process (`68668b6`): unread stdout overflow forces teardown and preserves the
+  error; stdout/stderr cancellation permits continued execution; execution/runtime
+  stop closes descendant listeners and permits port reuse/runtime restart.
+- Storage (`c8f818b`): OPFS lease ownership/reopen; concurrent mutations/flushes
+  and exact backing bytes/reload; backing-file obstruction and flush retry;
+  SQLite ownership, transactions and reopen; failed-commit quarantine and recovery
+  after orderly kernel restart. Narrow test-only OPFS layout/lock coupling is
+  documented in the case file.
+- Registration commits: `b5b108b`, `b6f9e8a`.
+
+The first parent-run HTTP case failed because background `GET /` readiness probes
+were included in the fixture's socket closure counter. Agent diagnostics observed
+the actual aborted socket close; unrelated probe closures pushed the counter past
+the expected exact value. The fixture now handles probes separately and uses
+`/identity` for listener identity assertions. Assertions were retained; no runtime
+source change was needed.
+
+Final delegated browser verification passed all 18 registered cases against the
+same runtime identity recorded above. TypeScript and whitespace checks passed.
+Session `workspace-tests-23e12cac-7686-4741-854c-f533dfdf830d` on port 53867,
+diagnostic sessions, and test-owned storage were cleaned up.
+
+Remaining qualification includes abrupt crash recovery, cross-document competing
+workspace opens, quota exhaustion/interrupted manifest writes, retained headless
+compatibility checks and clean-source rebuild/requalification. These passing
+orderly reload tests do not establish crash durability. Persistence status remains
+latched failed after a successful retry; recovery assertions use acknowledged
+flush and actual bytes. Failed SQLite commit outcome is treated as ambiguous.
+
+Release direction clarified by the user: defer npm publication; aim for a
+reproducible code release followed by integration into `kkrausse/irs-tools`.
+A pinned `vendor/vivari` checkout with local-source override and optional GitHub
+Release runtime/package archives were discussed, not implemented or published.
