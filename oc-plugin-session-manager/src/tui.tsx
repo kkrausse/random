@@ -3,7 +3,7 @@ import type { ModelCost, ModelInfo, SessionInfo, SessionMessageInfo, TokenUsageI
 import { Plugin } from "@opencode/plugin/tui"
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
-import { Index, createEffect, createMemo, onCleanup } from "solid-js"
+import { Index, Show, createEffect, createMemo, onCleanup } from "solid-js"
 import { groupLabel } from "./session-groups"
 import type { ArchiveStore } from "./archive"
 import { createSessionController, NEW_SESSION_VALUE, type SessionController } from "./session-controller"
@@ -167,7 +167,7 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
   if (!props.controller) onCleanup(() => controller.dispose())
   const {
     sessions, options, selectedValue, selectedIndex, selectedSession, selectedMessages, selectedStats,
-    search, loading, failure, attention, attentionErrors, changingLifecycle, rowPercents,
+    search, loading, ready, failure, attention, attentionErrors, changingLifecycle, rowPercents,
     visiblePreview, permission, inboxRequest, inboxOwner, inboxErrors, isInbox,
     previewLoading, previewError, replying, replyChoice, isArchived, isDeleted,
   } = controller.state
@@ -320,6 +320,7 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
           <text fg={props.context.theme.text.feedback.error.default}>{failure()}</text>
         </box>
       ) : null}
+      <Show when={ready()} fallback={<text fg={props.context.theme.text.subdued}>Loading sessions…</text>}>
       {attentionErrors().size || [...attention().values()].includes("unavailable") ? (
         <text fg={props.context.theme.text.feedback.error.default}>Status unavailable · Ctrl+R to retry</text>
       ) : null}
@@ -597,6 +598,7 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
           </text>
         </box>
       ) : null}
+      </Show>
     </box>
   )
 }

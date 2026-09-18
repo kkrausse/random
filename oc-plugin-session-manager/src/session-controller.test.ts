@@ -18,7 +18,7 @@ async function until(check: () => boolean) {
   assert.ok(check(), "controller operation settled")
 }
 
-function fixture() {
+function fixture(configure?: (context: any) => void) {
   const session = {
     id: "parent", title: "Parent", location: { directory: "/test" }, time: { updated: Date.now() },
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, cost: 0,
@@ -81,6 +81,7 @@ function fixture() {
       form: { list: async () => ({ data: [] }) },
     },
   }
+  configure?.(context)
   const controller = createSessionController(context, { list: empty, save: async () => {}, remove: async () => {} })
   return {
     controller, context, session, lifecycle, setLifecycle, lifecycleGate, replyGate, handlers,
@@ -160,122 +161,111 @@ test("permission reply survives view disposal and cannot be sent twice on reopen
 
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve))
 
-test("status fills top-down with active rows first and archived rows keep their section while checking or unavailable", async () => {
-  const f = fixture()
-  const active = Array.from({ length: 5 }, (_, index) => ({ ...f.session, id: `active-${index}`, time: { updated: Date.now() - index } }))
-  const archived = { ...f.session, id: "archived", time: { updated: Date.now() + 1000 } }
-  const gates = new Map([...active, archived].map((session) => [session.id, deferred()]))
+test("background warm-up waits for all row statuses, including failed lookups", async () => {
+  const gates = new Map(Array.from({ length: 6 }, (_, index) => [`row-${index}`, deferred()]))
   const started: string[] = []
-  f.setLifecycle("inactive", archived.id, true)
-  f.context.ui.router.current = () => ({ type: "home" })
-  f.context.client.session.list = async () => ({ data: [archived, ...active], cursor: {} })
-  f.context.client.permission.request.list = async () => ({ data: [] })
-  f.context.data.session.permission.list = () => []
-  f.context.data.session.permission.sync = async (id: string) => {
-    if (!started.includes(id)) started.push(id)
-    await gates.get(id)?.promise
-    if (id === archived.id) throw new Error("row status unavailable")
-  }
-  const close = mount(f.controller)
+  const f = fixture((context) => {
+    const session = context.data.session.get()
+    context.ui.router.current = () => ({ type: "home" })
+    context.client.session.list = async () => ({ data: [...gates.keys()].map((id, index) => ({ ...session, id, time: { updated: Date.now() - index } })), cursor: {} })
+    context.client.permission.request.list = async () => ({ data: [] })
+    context.data.session.permission.list = () => []
+    context.data.session.permission.sync = async (id: string) => {
+      if (!started.includes(id)) started.push(id)
+      await gates.get(id)?.promise
+      if (id === "row-5") throw new Error("row status unavailable")
+    }
+  })
+  f.setLifecycle("inactive", "row-5", true)
   try {
     await until(() => started.length === 4 && !f.controller.state.loading())
-    assert.deepEqual(started, active.slice(0, 4).map((session) => session.id))
+    assert.equal(f.controller.state.ready(), false, "no partially checked startup snapshot")
     const row = (id: string) => f.controller.state.options().find((row) => row.value === id)!
-    const order = f.controller.state.options().map((row) => row.value)
-    assert.equal(row(archived.id).state, "inactive")
-    assert.equal(row(archived.id).statusState, "checking")
-    gates.get(active[0]!.id)!.resolve()
-    await until(() => row(active[0]!.id).statusState === "idle")
-    assert.equal(row(active[1]!.id).statusState, "checking", "slow rows do not hold back completed badges")
+    gates.get("row-0")!.resolve()
     await until(() => started.length === 5)
-    assert.equal(started[4], active[4]!.id)
+    assert.equal(f.controller.state.ready(), false)
     for (const gate of gates.values()) gate.resolve()
-    await until(() => row(archived.id).statusState === "unavailable")
-    assert.equal(row(archived.id).state, "inactive", "failed status does not move an archived row")
-    assert.deepEqual(f.controller.state.options().map((row) => row.value), order)
+    await until(() => f.controller.state.ready())
+    assert.equal(row("row-5").statusState, "unavailable")
+    assert.equal(row("row-5").state, "inactive")
+    const close = mount(f.controller)
+    assert.equal(f.controller.state.ready(), true, "first opening uses the warmed snapshot")
+    close()
   } finally {
     for (const gate of gates.values()) gate.resolve()
-    close()
     f.controller.dispose()
   }
 })
 
-test("closing stops read activity; reopening ignores a late response from the old opening", async () => {
-  const f = fixture()
-  const oldGate = deferred()
-  const freshGate = deferred()
+test("closing keeps reads and events alive; reopening does not fetch; unloading cancels reads", async () => {
+  const gate = deferred()
   const calls: Array<{ cursor?: string; signal: AbortSignal }> = []
-  const oldRow = { ...f.session, id: "old-only", title: "Obsolete row" }
-  const freshRow = { ...f.session, id: "fresh-only", title: "Fresh row" }
-  const oldCurrent = { ...f.session, title: "Obsolete parent" }
-  const freshCurrent = { ...f.session, title: "Fresh parent" }
   let reads = 0
-  f.context.client.session.list = async (input: { cursor?: string }, options: { signal: AbortSignal }) => {
-    const index = calls.length
-    calls.push({ cursor: input.cursor, signal: options.signal })
-    // Deliberately ignore abort: the controller must reject stale publication.
-    await (index === 0 ? oldGate.promise : freshGate.promise)
-    return { data: index === 0 ? [oldCurrent, oldRow] : [freshCurrent, freshRow], cursor: {} }
-  }
-  const countReads = (object: any, key: string) => {
-    const original = object[key]
-    object[key] = (...args: any[]) => { reads++; return original(...args) }
-  }
-  for (const key of ["list", "get", "active"]) countReads(f.context.client.session, key)
-  countReads(f.context.client.permission.request, "list")
-  countReads(f.context.client.form, "list")
-  for (const key of ["permission", "form", "message"]) countReads(f.context.data.session[key], "sync")
-  countReads(f.context.data.location.model, "sync")
+  let title = "Initial"
+  const f = fixture((context) => {
+    const session = context.data.session.get()
+    context.client.session.list = async (input: { cursor?: string }, options: { signal: AbortSignal }) => {
+      calls.push({ cursor: input.cursor, signal: options.signal })
+      await gate.promise
+      return { data: [session], cursor: {} }
+    }
+    context.client.session.get = async () => { reads++; return { ...session, title } }
+  })
   let close = mount(f.controller)
   try {
     await until(() => calls.length === 1)
     assert.equal(calls[0]!.signal.aborted, false)
     close()
-    await until(() => calls[0]!.signal.aborted)
-    await flush()
+    assert.equal(calls[0]!.signal.aborted, false, "closing does not cancel warm-up")
+    gate.resolve()
+    await until(() => f.controller.state.ready())
+    title = "Updated while closed"
     const before = reads
-    for (const type of ["session.status", "session.idle"]) {
-      f.handlers.get(type)?.({ data: { sessionID: "parent" } })
-      f.handlers.get(type)?.({ data: { sessionID: "off-page" } })
-    }
+    f.handlers.get("session.idle")?.({ data: { sessionID: "parent" } })
+    await until(() => f.controller.state.sessions().some((row) => row.title === title))
+    assert.ok(reads > before)
     await flush()
-    assert.equal(reads, before, "closed status events neither fetch metadata nor synchronize host caches")
+    const settled = reads
     close = mount(f.controller)
-    await until(() => calls.length === 2)
-    assert.deepEqual(calls.map((call) => call.cursor), [undefined, undefined])
-    assert.equal(calls[1]!.signal.aborted, false)
-    freshGate.resolve()
-    await until(() => f.controller.state.sessions().some((row) => row.id === freshRow.id) && !f.controller.state.loading())
-    oldGate.resolve()
+    assert.equal(f.controller.state.ready(), true)
     await flush()
-    assert.deepEqual(f.controller.state.sessions().map((row) => row.id).sort(), ["fresh-only", "parent"])
-    assert.equal(f.controller.state.sessions().find((row) => row.id === "parent")?.title, "Fresh parent")
-    assert.equal(f.controller.state.loading(), false)
-    assert.equal(f.controller.state.failure(), undefined)
-    assert.equal(calls.length, 2)
+    assert.equal(reads, settled)
+    assert.equal(calls.length, 1)
+    const pending = deferred()
+    let signal: AbortSignal | undefined
+    f.context.client.session.get = async (_input: any, options: { signal: AbortSignal }) => {
+      signal = options.signal
+      await pending.promise
+      return { ...f.session, title: "Late" }
+    }
+    f.handlers.get("session.status")?.({ data: { sessionID: "parent" } })
+    await until(() => !!signal)
+    f.controller.dispose()
+    await until(() => !!signal?.aborted)
+    pending.resolve()
+    await flush()
+    assert.equal(f.controller.state.sessions()[0]?.title, title)
   } finally {
-    oldGate.resolve()
-    freshGate.resolve()
+    gate.resolve()
     close()
     f.controller.dispose()
   }
 })
 
-test("reopening resets the historical page and selects the current route for each opening", async () => {
-  const f = fixture()
+test("reopening retains loaded history and selects the current route without new reads", async () => {
   const firstGate = deferred()
   const secondGate = deferred()
-  const reopenGate = deferred()
-  const history = { ...f.session, id: "history", title: "Historical page" }
   const cursors: Array<string | undefined> = []
   let route: { type: "session"; sessionID: string } | { type: "home" } = { type: "session", sessionID: "parent" }
-  f.context.ui.router.current = () => route
-  f.context.client.session.list = async ({ cursor }: { cursor?: string }) => {
-    const index = cursors.length
-    cursors.push(cursor)
-    await (index === 0 ? firstGate.promise : cursor ? secondGate.promise : reopenGate.promise)
-    return cursor ? { data: [history], cursor: {} } : { data: [f.session], cursor: { next: "older" } }
-  }
+  const f = fixture((context) => {
+    const session = context.data.session.get()
+    context.ui.router.current = () => route
+    context.client.session.list = async ({ cursor }: { cursor?: string }) => {
+      cursors.push(cursor)
+      await (cursor ? secondGate.promise : firstGate.promise)
+      return cursor ? { data: [{ ...session, id: "history" }], cursor: {} } : { data: [session], cursor: { next: "older" } }
+    }
+  })
   let close = mount(f.controller)
   try {
     await until(() => cursors.length === 1)
@@ -286,17 +276,13 @@ test("reopening resets the historical page and selects the current route for eac
     await until(() => cursors.length === 2)
     secondGate.resolve()
     await page
-    assert.ok(f.controller.state.sessions().some((row) => row.id === history.id))
-    f.controller.commands.select(history.id)
+    assert.ok(f.controller.state.sessions().some((row) => row.id === "history"))
+    f.controller.commands.select("history")
     close()
     close = mount(f.controller)
-    await until(() => cursors.length === 3)
     assert.equal(f.controller.state.selectedValue(), "parent", "route selection replaces the previous historical selection")
-    assert.equal(f.controller.state.sessions().some((row) => row.id === history.id), false, "historical page is discarded before the fresh page finishes")
-    reopenGate.resolve()
-    await until(() => !f.controller.state.loading())
-    assert.deepEqual(cursors, [undefined, "older", undefined])
-    assert.equal(f.controller.state.sessions().some((row) => row.id === history.id), false)
+    assert.deepEqual(cursors, [undefined, "older"])
+    assert.equal(f.controller.state.sessions().some((row) => row.id === "history"), true)
     close()
     route = { type: "home" }
     close = mount(f.controller)
@@ -305,7 +291,6 @@ test("reopening resets the historical page and selects the current route for eac
   } finally {
     firstGate.resolve()
     secondGate.resolve()
-    reopenGate.resolve()
     close()
     f.controller.dispose()
   }
