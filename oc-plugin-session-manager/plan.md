@@ -2,6 +2,22 @@
 
 ## Handoff — implemented and live-checked
 
+### Latest checkpoint and next direction
+
+- This checkpoint contains the progressive-loading experiment described below,
+  including coalescing completed status updates within 16 ms to avoid rebuilding
+  the list for every response. That final coalescing adjustment has not yet been
+  live-checked; the preceding progressive version passed 52 tests and typecheck.
+- The user's latest requested direction supersedes that experiment: maintain a
+  bounded session/status snapshot in the plugin-lifetime controller, update it in
+  the background through events while the picker is closed, and open instantly
+  onto the ready snapshot without incremental startup UI. During initial warm-up,
+  show one loading state before revealing the complete list.
+- The background-controller change is NOT implemented. Reads still start on
+  attachment and stop on close; reopening still resets the live first page.
+  Resume from this checkpoint rather than assuming instant/background loading
+  exists. The user requested committing the current work and then pausing.
+
 - `src/session-controller.tsx` owns state, reads, events, and actions; the plugin
   creates/disposes it and views attach/detach. `src/session-display.ts` contains
   shared formatting/usage helpers. `src/tui.tsx` owns presentation/interactions.
@@ -23,8 +39,16 @@
   `~/Documents/anomaly/terminal-control`.
 - Final checks passed: TypeScript, all 51 tests, and the read-only installed-service
   API check against OpenCode 2.0.7. The user accepted updated-time ordering and
-  requested committing this version. Slight flicker was reported; measure refresh
-  rendering before a small follow-up optimization.
+  requested committing this version (committed as `fc80b84`).
+- Follow-up: live sampling reproduced archive-only / Checking / final-section
+  frames. The user preferred progressive top-down per-session status over an
+  all-results loading gate or combining location-level results. Rows now appear
+  on first-page completion; status checks follow displayed Active/Inactive order,
+  four at a time, publishing each completed badge. Checking/unavailable badges
+  retain the locally known lifecycle section; verified running/input can override
+  it. Legacy archives wait for the first live page, preventing archive-only flash.
+  Selected-session message/model sync is no longer duplicated by row preloading.
+  The installed list API has no archived filter; soft-archive markers are local.
 - Preserve the pre-existing sidebar-removal changes. Keep the
   already-written high-level lifecycle tests; do not expand test work without a
   concrete need. Exact last-user-input sorting remains unavailable in this API.

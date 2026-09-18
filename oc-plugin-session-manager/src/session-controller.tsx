@@ -45,13 +45,15 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
     const [archivesReady, setArchivesReady] = createSignal(false)
     const deletedIDs = new Set<string>()
     const [liveSessions, setSessions] = createSignal<SessionInfo[]>([])
+    const [firstPageReady, setFirstPageReady] = createSignal(false)
     // Metadata/status changes within the same locations need not rediscover the
     // inbox. Newly loaded or active locations do, without another history query.
     const inboxLocations = createMemo(() => [...new Set(liveSessions().map(locationKey))].sort().join("\0"))
     const archived = (id: string) => archives().find((item) => item.transcript.info.id === id)
     const isArchived = (id: string) => !!archived(id) && !liveSessions().some((session) => session.id === id)
     const sessions = createMemo(() => {
-      const merged = new Map(archives().map((item) => [item.transcript.info.id, item.transcript.info]))
+      // Don't flash the previous opening's archives before its fresh live page.
+      const merged = new Map((firstPageReady() ? archives() : []).map((item) => [item.transcript.info.id, item.transcript.info]))
       for (const session of liveSessions()) merged.set(session.id, session)
       return [...merged.values()]
     })
@@ -110,21 +112,27 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
           const ownRunning = !isArchived(session.id) && !!attentionSnapshots().get(session.id)?.running
           const runningChildren = descendantIDs(loaded, session.id)
             .filter((id) => attentionSnapshots().get(id)?.running).length
+          const rowAttention = effective.get(session.id) ?? attention().get(session.id)
+          const inactive = override ?? inactiveByAge
+          // Unknown status is a badge, not evidence that an archived family is
+          // active. Only verified running/input status overrides its section.
+          const sectionAttention = inactive && (rowAttention === "checking" || rowAttention === "unavailable") ? undefined : rowAttention
           return {
-            session, ownRunning, runningChildren, inactiveByAge,
-            state: isArchived(session.id) ? "inactive" as const : sessionState(effective.get(session.id) ?? attention().get(session.id),
-              ownRunning || runningChildren > 0, override ?? inactiveByAge),
+            session, ownRunning, runningChildren, inactiveByAge, rowAttention,
+            state: isArchived(session.id) ? "inactive" as const : sessionState(sectionAttention,
+              ownRunning || runningChildren > 0, inactive),
           }
         }),
       ), openingTimes))
     })
     const options = createMemo(() => [
-      { title: "New session", description: "Start with a blank prompt", value: NEW_SESSION_VALUE, state: "new" as const, depth: 0 },
-      ...rows().filter(({ session }) => !search() || `${session.title ?? "Untitled session"} ${session.location.directory}`.toLowerCase().includes(search().toLowerCase())).map(({ session, state, runningChildren, depth, inactiveByAge }) => {
+      { title: "New session", description: "Start with a blank prompt", value: NEW_SESSION_VALUE, state: "new" as const, statusState: "new" as const, depth: 0 },
+      ...rows().filter(({ session }) => !search() || `${session.title ?? "Untitled session"} ${session.location.directory}`.toLowerCase().includes(search().toLowerCase())).map(({ session, state, runningChildren, depth, inactiveByAge, rowAttention }) => {
+        const statusState = state === "inactive" && !isArchived(session.id) ? rowAttention ?? state : state
         const baseStatus = {
           permission: "Permission required", question: "Question waiting", unavailable: "Status unavailable", checking: "Checking status…",
           inactive: inactiveByAge && !isArchived(session.id) ? "Inactive · 7d+" : "Archived", idle: "Ready",
-        }[state as Attention | "inactive" | "idle"]
+        }[statusState as Attention | "inactive" | "idle"]
         const childStatus = `${runningChildren} sub-agent${runningChildren === 1 ? "" : "s"} running`
         const status = runningChildren > 0
           ? state === "running" ? childStatus : `${baseStatus} · ${childStatus}`
@@ -133,7 +141,7 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
         const details = [relativeTime(session.time.updated), location]
         if (session.agent) details.push(session.agent)
         return {
-          title: session.title?.trim() || "Untitled session", description: details.join(" · "), status, state, inactiveByAge,
+          title: session.title?.trim() || "Untitled session", description: details.join(" · "), status, state, statusState, inactiveByAge,
           value: session.id, depth, updated: relativeTime(session.time.updated),
         }
       }),
@@ -178,7 +186,8 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
       if (!attached()) return
       const loaded = sessions()
       const targets = rows()
-        .filter(({ state, session }) => session.id === selectedValue() || state === "running" || state === "permission" || state === "question")
+        // The selected-preview effect below already synchronizes this session.
+        .filter(({ state, session }) => session.id !== selectedValue() && (state === "running" || state === "permission" || state === "question"))
         .map(({ session }) => session)
         .filter((session) => !isArchived(session.id) && !rowPercents().has(session.id) && !rowFetching.has(session.id))
         .slice(0, 8)
@@ -342,7 +351,9 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
     }
     function refreshAttention(loaded: SessionInfo[], force = false) {
       if (!attached() || disposed) return
+      const order = new Map(rows().map((row, index) => [row.session.id, index]))
       const targets = loaded.filter((session) => !isArchived(session.id) && (force || !queriedSessions.has(session.id)))
+        .sort((a, b) => (order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity))
       const versions = new Map(targets.map((session) => {
         const version = (attentionRequests.get(session.id) ?? 0) + 1
         attentionRequests.set(session.id, version)
@@ -356,6 +367,31 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
         }
         return next
       })
+      const generation = opening
+      let completed: Array<{ id: string; error?: string }> = []
+      let publishTimer: ReturnType<typeof setTimeout> | undefined
+      const publish = () => {
+        clearTimeout(publishTimer)
+        publishTimer = undefined
+        const fresh = completed.filter((result) => attentionRequests.get(result.id) === versions.get(result.id))
+        completed = []
+        if (generation !== opening || !attached() || !fresh.length) return
+        batch(() => {
+          setAttentionChecks((current) => {
+            const next = new Map(current)
+            for (const result of fresh) next.set(result.id, result.error ? "unavailable" : "ready")
+            return next
+          })
+          setAttentionErrors((current) => {
+            const next = new Map(current)
+            for (const result of fresh) {
+              if (result.error) next.set(result.id, result.error)
+              else next.delete(result.id)
+            }
+            return next
+          })
+        })
+      }
       if (targets.length) reads.start(Effect.all(targets.map((session) => operation({ operation: "Refresh attention status", sessionID: session.id },
         () => requestsAPI.sync(session)).pipe(
         Effect.map(() => ({ id: session.id, error: undefined as string | undefined })),
@@ -364,24 +400,13 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
           if (attentionRequests.get(session.id) === versions.get(session.id)) queriedSessions.delete(session.id)
           return { id: session.id, error: error.message }
         })),
-      )), { concurrency: 4 }).pipe(Effect.tap((results) => Effect.sync(() => batch(() => {
-        // Publish one status snapshot rather than rebuild every row for every
-        // request completion during startup. A newer targeted refresh wins.
-        const fresh = results.filter((result) => attentionRequests.get(result.id) === versions.get(result.id))
-        setAttentionChecks((current) => {
-          const next = new Map(current)
-          for (const result of fresh) next.set(result.id, result.error ? "unavailable" : "ready")
-          return next
-        })
-        setAttentionErrors((current) => {
-          const next = new Map(current)
-          for (const result of fresh) {
-            if (result.error) next.set(result.id, result.error)
-            else next.delete(result.id)
-          }
-          return next
-        })
-      })))))
+        Effect.tap((result) => Effect.sync(() => {
+          // Coalesce fast completions into one paint instead of rebuilding the
+          // entire list per response. Slow rows never hold back completed ones.
+          completed.push(result)
+          publishTimer ??= setTimeout(publish, 16)
+        })),
+      )), { concurrency: 4 }).pipe(Effect.ensuring(Effect.sync(publish))))
       const locations = new Map<string, SessionInfo["location"]>()
       for (const session of loaded) if (!isArchived(session.id)) locations.set(locationKey(session), session.location)
       for (const [key, location] of locations) {
@@ -442,7 +467,10 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
         setSessions(loaded)
         setCursor(result.cursor.next ?? undefined)
         refreshAttention(loaded)
-      }).pipe(Effect.ensuring(Effect.sync(() => { if (generation === opening) setLoading(false) }))), setFailure).done
+      }).pipe(Effect.ensuring(Effect.sync(() => {
+        if (generation !== opening) return
+        batch(() => { setLoading(false); if (initial) setFirstPageReady(true) })
+      }))), setFailure).done
     }
     function refresh() {
       if (disposed || !attached()) return
@@ -516,6 +544,7 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
         const id = returnSessionID ?? (route.type === "session" ? route.sessionID : undefined)
         const current = id ? context.data.session.get(id) : undefined
         batch(() => {
+          setFirstPageReady(false)
           setCurrentSessionID(id)
           setSelectedValue(id ?? NEW_SESSION_VALUE)
           setSearch("")
