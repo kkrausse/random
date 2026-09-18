@@ -1,5 +1,15 @@
 # irs-tools local editor trial — 2026-09-17
 
+## Formatting follow-up
+
+At the user's request, rebuilt the local irs-tools history using its existing
+Prettier configuration (no single-quote override): `f7d8c75` formats the pre-editor
+baseline, then `6a49d9d` reapplies the editor integration. This replaces `7909f82`
+mentioned below. Verified that all 14 files differing from the original editor
+commit are exactly its contents passed through the existing Prettier config.
+The user's `AGENTS.md` formatting-section removal remains preserved as their
+uncommitted edit. Toolkit fix `c5be267` is unchanged. Nothing was pushed.
+
 User chose local installation for the first irs-tools trial, with public-package
 imports so npm distribution can replace local dependencies later. No GitHub
 package-read authentication or shell/registry configuration was added. Initial
