@@ -60,7 +60,11 @@ function fixture(configure?: (context: any) => void) {
         handlers.set(type, handler)
         return () => { unsubscriptions++; handlers.delete(type) }
       },
-      listen: () => { subscriptions++; return () => { unsubscriptions++ } },
+      listen: (handler: (event: any) => void) => {
+        subscriptions++
+        handlers.set("*", handler)
+        return () => { unsubscriptions++; handlers.delete("*") }
+      },
     },
     client: {
       session: {
@@ -221,7 +225,7 @@ test("closing keeps reads and events alive; reopening does not fetch; unloading 
     await until(() => f.controller.state.ready())
     title = "Updated while closed"
     const before = reads
-    f.handlers.get("session.idle")?.({ data: { sessionID: "parent" } })
+    f.handlers.get("*")!({ details: { type: "session.renamed", data: { sessionID: "parent" } } })
     await until(() => f.controller.state.sessions().some((row) => row.title === title))
     assert.ok(reads > before)
     await flush()
@@ -231,6 +235,10 @@ test("closing keeps reads and events alive; reopening does not fetch; unloading 
     await flush()
     assert.equal(reads, settled)
     assert.equal(calls.length, 1)
+    f.handlers.get("*")!({ details: { type: "session.step.streamed", data: { sessionID: "parent" } } })
+    f.handlers.get("*")!({ details: { type: "session.text.ended", data: { sessionID: "parent" } } })
+    await flush()
+    assert.equal(reads, settled, "streaming fragments do not fetch session summaries")
     const pending = deferred()
     let signal: AbortSignal | undefined
     f.context.client.session.get = async (_input: any, options: { signal: AbortSignal }) => {
@@ -238,7 +246,7 @@ test("closing keeps reads and events alive; reopening does not fetch; unloading 
       await pending.promise
       return { ...f.session, title: "Late" }
     }
-    f.handlers.get("session.status")?.({ data: { sessionID: "parent" } })
+    f.handlers.get("*")!({ details: { type: "session.status", data: { sessionID: "parent" } } })
     await until(() => !!signal)
     f.controller.dispose()
     await until(() => !!signal?.aborted)

@@ -503,6 +503,23 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
       setReviewVersion((version) => version + 1)
     }
 
+    // A session event during a read requests one follow-up, not a parallel read.
+    const sessionRefreshes = new Map<string, boolean>()
+    function refreshFromEvent(sessionID: string) {
+      if (disposed || deletedIDs.has(sessionID)) return
+      if (sessionRefreshes.has(sessionID)) { sessionRefreshes.set(sessionID, true); return }
+      sessionRefreshes.set(sessionID, false)
+      void (async () => {
+        try {
+          do {
+            sessionRefreshes.set(sessionID, false)
+            refreshContextForSession(sessionID)
+            await refreshSessionRow(sessionID)
+          } while (!disposed && !deletedIDs.has(sessionID) && sessionRefreshes.get(sessionID))
+        } finally { sessionRefreshes.delete(sessionID) }
+      })()
+    }
+
     let unsubscribe = () => {}
     function start() {
       if (started) return
@@ -518,15 +535,15 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
           if (["permission.asked", "permission.replied", "form.created", "form.replied", "form.cancelled"].includes(details.type)) {
             setReviewVersion((version) => version + 1)
           }
-          switch (details.type) {
-            case "session.moved":
-            case "session.agent.selected":
-            case "session.model.selected":
-            case "session.revert.staged":
-            case "session.revert.cleared":
-            case "session.revert.committed":
-              void refreshSessionRow(details.data.sessionID)
-              refreshContextForSession(details.data.sessionID)
+          // Public data.listen envelope; do not enumerate lifecycle event names.
+          // Token/text fragments and view notifications don't change our summary.
+          if (!details.type.startsWith("session.") || details.type === "session.deleted"
+            || details.type === "session.viewed" || details.type === "session.step.streamed"
+            || details.type.startsWith("session.text.") || details.type.startsWith("session.reasoning.")
+            || details.type.startsWith("session.tool.input.")) return
+          if ("sessionID" in details.data && typeof details.data.sessionID === "string") {
+            if (details.type === "session.created") deletedIDs.delete(details.data.sessionID)
+            refreshFromEvent(details.data.sessionID)
           }
         }),
         context.data.on("permission.asked", (event) => refreshLocationForSession(event.data.sessionID)),
@@ -534,22 +551,6 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
         context.data.on("form.created", (event) => refreshLocationForSession(event.data.form.sessionID)),
         context.data.on("form.replied", (event) => refreshLocationForSession(event.data.sessionID)),
         context.data.on("form.cancelled", (event) => refreshLocationForSession(event.data.sessionID)),
-        context.data.on("session.status", (event) => {
-          void refreshSessionRow(event.data.sessionID)
-          refreshContextForSession(event.data.sessionID)
-        }),
-        context.data.on("session.idle", (event) => {
-          void refreshSessionRow(event.data.sessionID)
-          refreshContextForSession(event.data.sessionID)
-        }),
-        context.data.on("session.created", (event) => {
-          deletedIDs.delete(event.data.sessionID)
-          void refreshSessionRow(event.data.sessionID)
-        }),
-        context.data.on("session.renamed", (event) => {
-          const title = event.data.title
-          setSessions((loaded) => loaded.map((item) => item.id === event.data.sessionID ? { ...item, title } : item))
-        }),
         context.data.on("session.deleted", (event) => {
           deletedIDs.add(event.data.sessionID)
           if (!changingLifecycle() && selectedValue() === event.data.sessionID) setSelectedValue(NEW_SESSION_VALUE)

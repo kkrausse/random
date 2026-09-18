@@ -225,6 +225,9 @@ the controller publishes completed request snapshots so cache invalidation does
 not briefly clear badges or approval previews during background refreshes.
 Events trigger synchronization; reconnects reconcile missed events. Overlapping
 refreshes are serialized and rechecked when an event arrives mid-flight.
+Session-scoped events refresh the whole session summary, with overlapping reads
+coalesced. Streamed text/reasoning/tool-input fragments, step-stream chunks, and
+view notifications are excluded so token streaming does not drive API reads.
 
 `src/attention-api.ts` isolates direct attention client calls needed for
 cross-location discovery and permission replies. It uses the host's connected,
