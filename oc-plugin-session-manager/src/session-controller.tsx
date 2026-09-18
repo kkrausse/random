@@ -19,7 +19,7 @@ const locationKey = (session: SessionInfo) => session.location.directory
 export type SessionController = ReturnType<typeof createSessionController>
 
 // An explicit root belongs to the plugin, never to the dialog that first opens it.
-// Reads start on attachment; selection effects pause while no view is attached.
+// Reads and event reconciliation belong to this root, independently of views.
 export function createSessionController(context: Plugin.Context, archiveStore: ArchiveStore = fileArchiveStore()) {
   return createRoot((disposeRoot) => {
     let disposed = false
@@ -32,7 +32,7 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
     const createRunner = () => makeRunner((message, cause) => {
       console.error(`[claude.sessions] ${message}\n${Cause.pretty(cause)}`)
     })
-    let reads = createRunner()
+    const reads = createRunner()
     const mutations = createRunner()
     const showFailure = (message: string) => context.ui.toast.show({
       title: "Sessions viewer", message, variant: "error", duration: 8000,
@@ -46,13 +46,17 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
     const deletedIDs = new Set<string>()
     const [liveSessions, setSessions] = createSignal<SessionInfo[]>([])
     const [firstPageReady, setFirstPageReady] = createSignal(false)
+    const [activeReady, setActiveReady] = createSignal(false)
+    const [inboxReady, setInboxReady] = createSignal(false)
+    const [ready, setReady] = createSignal(false)
+    const [discovering, setDiscovering] = createSignal(0)
     // Metadata/status changes within the same locations need not rediscover the
     // inbox. Newly loaded or active locations do, without another history query.
     const inboxLocations = createMemo(() => [...new Set(liveSessions().map(locationKey))].sort().join("\0"))
     const archived = (id: string) => archives().find((item) => item.transcript.info.id === id)
     const isArchived = (id: string) => !!archived(id) && !liveSessions().some((session) => session.id === id)
     const sessions = createMemo(() => {
-      // Don't flash the previous opening's archives before its fresh live page.
+      // Legacy archives join the initial live snapshot.
       const merged = new Map((firstPageReady() ? archives() : []).map((item) => [item.transcript.info.id, item.transcript.info]))
       for (const session of liveSessions()) merged.set(session.id, session)
       return [...merged.values()]
@@ -61,15 +65,19 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
     const [liveVersion, setLiveVersion] = createSignal(0)
     const [attentionChecks, setAttentionChecks] = createSignal(new Map<string, "checking" | "ready" | "unavailable">())
     const [attentionErrors, setAttentionErrors] = createSignal(new Map<string, string>())
+    const [requestSnapshots, setRequestSnapshots] = createSignal(new Map<string, ReturnType<typeof requestsAPI.read>>())
     const attentionSnapshots = createMemo(() => {
       liveVersion()
       return new Map<string, { state: Attention | undefined; running: boolean }>(liveSessions().map((session) => {
         const check = attentionChecks().get(session.id) ?? "checking"
         if (check !== "ready") return [session.id, { state: check as Attention, running: false }]
         try {
-          const current = requestsAPI.read(session)
+          const current = requestSnapshots().get(session.id)
+          if (!current) return [session.id, { state: "unavailable" as const, running: false }]
+          const status = context.data.session.status(session.id)
+          if (status !== "idle" && status !== "running") return [session.id, { state: "unavailable" as const, running: false }]
           return [session.id, { state: current.permissions.length ? "permission" as const : current.forms.length ? "question" as const
-            : attentionErrors().has(`location:${locationKey(session)}`) ? "unavailable" as const : undefined, running: current.running }]
+            : attentionErrors().has(`location:${locationKey(session)}`) ? "unavailable" as const : undefined, running: status === "running" }]
         } catch {
           return [session.id, { state: "unavailable" as const, running: false }]
         }
@@ -83,12 +91,12 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
     const [search, setSearch] = createSignal("")
     const [tick, setTick] = createSignal(0)
     const [reviewVersion, setReviewVersion] = createSignal(0)
-    const [preview, setPreview] = createSignal<{ sessionID: string; permissions: PermissionRequest[]; forms: FormInfo[] }>()
+    const [inboxPreview, setInboxPreview] = createSignal<{ sessionID: string; permissions: PermissionRequest[]; forms: FormInfo[] }>()
     const [inboxSessions, setInboxSessions] = createSignal<SessionInfo[]>([])
     const [inboxErrors, setInboxErrors] = createSignal<string[]>([])
     const answeredRequests = new Set<string>()
-    const [previewLoading, setPreviewLoading] = createSignal(false)
-    const [previewError, setPreviewError] = createSignal<string>()
+    const [inboxLoading, setPreviewLoading] = createSignal(false)
+    const [inboxError, setPreviewError] = createSignal<string>()
     const [replying, setReplying] = createSignal(false)
     const [replyChoice, setReplyChoice] = createSignal<"once" | "always" | "reject">()
     const queriedLocations = new Set<string>()
@@ -150,6 +158,7 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
     const selectedSession = createMemo(() => sessions().find((session) => session.id === selectedValue()))
     const [contextSyncing, setContextSyncing] = createSignal(false)
     const [contextVersion, setContextVersion] = createSignal(0)
+    const [contextChecks, setContextChecks] = createSignal(new Map<string, "ready" | "unavailable">())
     const selectedMessages = createMemo(() => {
       const sessionID = selectedSession()?.id
       return sessionID ? isArchived(sessionID) ? archived(sessionID)?.transcript.messages : context.data.session.message.list(sessionID) : undefined
@@ -165,11 +174,34 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
       return live > 0 ? live : session.cost
     })
     const selectedUsage = createMemo(() => contextUsage(selectedMessages(), selectedModels(), selectedSession()?.revert?.messageID))
-    const selectedStats = createMemo(() => contextStats(selectedSession(), selectedUsage(), selectedCost(), contextSyncing()))
+    const selectedStats = createMemo(() => contextChecks().get(selectedSession()?.id ?? "") === "unavailable"
+      ? { left: "Context unavailable · Ctrl+R to retry", right: "" }
+      : contextStats(selectedSession(), selectedUsage(), selectedCost(), contextSyncing()))
     const [rowPercents, setRowPercents] = createSignal(new Map<string, string>())
     const rowFetching = new Set<string>()
+    const contextRequests = new Map<string, number>()
     const isInbox = () => selectedValue() === NEW_SESSION_VALUE
-    const visiblePreview = createMemo(() => preview()?.sessionID === selectedValue() ? preview() : undefined)
+    const previewIDs = createMemo(() => {
+      const session = selectedSession()
+      return session && !isArchived(session.id) ? [session.id, ...descendantIDs(sessions(), session.id)] : []
+    })
+    const previewLoading = () => isInbox() ? inboxLoading() : previewIDs().some((id) => !attentionChecks().has(id) || attentionChecks().get(id) === "checking")
+    const previewError = () => isInbox() ? inboxError() : previewIDs().map((id) => attentionErrors().get(id)).find(Boolean)
+    const visiblePreview = createMemo(() => {
+      liveVersion()
+      reviewVersion()
+      if (isInbox()) return inboxPreview()
+      const session = selectedSession()
+      if (!session || isArchived(session.id)) return undefined
+      const related = [session.id, ...descendantIDs(sessions(), session.id)]
+      if (related.some((id) => attentionChecks().get(id) !== "ready")) return undefined
+      try {
+        const requests = related.map((id) => requestSnapshots().get(id)!)
+        return { sessionID: session.id,
+          permissions: requests.flatMap((item) => item.permissions).filter((item) => !answeredRequests.has(requestKey(item))),
+          forms: requests.flatMap((item) => item.forms) }
+      } catch { return undefined }
+    })
     const permission = createMemo(() => visiblePreview()?.permissions[0])
     const inboxRequest = createMemo(() => isInbox() ? permission() ?? visiblePreview()?.forms[0] : undefined)
     const inboxOwner = createMemo(() => inboxSessions().find((session) => session.id === inboxRequest()?.sessionID))
@@ -183,88 +215,66 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
       }
     })
     createEffect(() => {
-      if (!attached()) return
-      const loaded = sessions()
-      const targets = rows()
-        // The selected-preview effect below already synchronizes this session.
-        .filter(({ state, session }) => session.id !== selectedValue() && (state === "running" || state === "permission" || state === "question"))
-        .map(({ session }) => session)
-        .filter((session) => !isArchived(session.id) && !rowPercents().has(session.id) && !rowFetching.has(session.id))
-        .slice(0, 8)
+      contextVersion()
+      const targets = liveSessions()
+        .filter((session) => !contextChecks().has(session.id) && !rowFetching.has(session.id))
+        .slice(0, Math.max(0, 4 - rowFetching.size))
       for (const session of targets) {
-        const generation = opening
+        const version = contextRequests.get(session.id) ?? 0
         rowFetching.add(session.id)
         reads.start(Effect.all([
           operation({ operation: "Sync row context messages", sessionID: session.id }, () => context.data.session.message.sync(session.id)),
           operation({ operation: "Sync row models", directory: session.location.directory }, () => context.data.location.model.sync(session.location)),
         ], { concurrency: "unbounded" }).pipe(
           Effect.tap(() => Effect.sync(() => {
-            if (disposed || generation !== opening) return
-            const fresh = loaded.find((item) => item.id === session.id) ?? session
+            if (disposed) return
+            const fresh = liveSessions().find((item) => item.id === session.id) ?? session
             const messages = context.data.session.message.list(session.id)
             const models = context.data.location.model.list(fresh.location)
             const usage = contextUsage(messages, models, fresh.revert?.messageID)
             if (usage?.percent !== undefined) setRowPercents((current) => new Map(current).set(session.id, `${usage.percent}%`))
+            if ((contextRequests.get(session.id) ?? 0) === version) setContextChecks((current) => new Map(current).set(session.id, "ready"))
           })),
-          Effect.ensuring(Effect.sync(() => { if (generation === opening) rowFetching.delete(session.id) })),
+          Effect.catch((error) => Effect.sync(() => {
+            console.error(`[claude.sessions] ${error.message}`, error)
+            if ((contextRequests.get(session.id) ?? 0) === version) setContextChecks((current) => new Map(current).set(session.id, "unavailable"))
+          })),
+          Effect.ensuring(Effect.sync(() => {
+            rowFetching.delete(session.id)
+            if (!disposed) setContextVersion((version) => version + 1)
+          })),
         ))
       }
     })
     createEffect(() => {
-      if (!attached()) return
       const session = selectedSession()
-      contextVersion()
-      let cancelled = false
-      onCleanup(() => { cancelled = true })
-      if (!session || isArchived(session.id)) { setContextSyncing(false); return }
-      setContextSyncing(true)
-      const job = reads.start(Effect.all([
-        operation({ operation: "Sync context messages", sessionID: session.id }, () => context.data.session.message.sync(session.id)),
-        operation({ operation: "Sync models", directory: session.location.directory }, () => context.data.location.model.sync(session.location)),
-      ], { concurrency: "unbounded" }).pipe(
-        Effect.ensuring(Effect.sync(() => { if (!cancelled) setContextSyncing(false) })),
-      ))
-      onCleanup(job.cancel)
+      setContextSyncing(!!session && !isArchived(session.id) && !contextChecks().has(session.id))
     })
     createEffect(() => {
-      if (!attached()) return
-      const sessionID = isInbox() ? NEW_SESSION_VALUE : selectedSession()?.id
+      inboxLocations()
       reviewVersion()
       let cancelled = false
       onCleanup(() => { cancelled = true })
-      setPreview((current) => current?.sessionID === sessionID ? current : undefined)
       setPreviewError(undefined)
-      setPreviewLoading(!!sessionID && !isArchived(sessionID))
-      if (!sessionID || isArchived(sessionID)) return
-      if (sessionID === NEW_SESSION_VALUE) {
-        inboxLocations()
+      setPreviewLoading(true)
         const job = reads.start(loadInbox(context.client, untrack(liveSessions)).pipe(Effect.tap((inbox) => Effect.sync(() => {
           if (cancelled) return
           setInboxSessions(inbox.sessions)
           setInboxErrors(inbox.errors)
-          setPreview((current) => ({
-            sessionID,
-            permissions: pendingOrder(current?.sessionID === sessionID ? current.permissions : [], inbox.permissions.filter((request) => !answeredRequests.has(requestKey(request)))),
-            forms: pendingOrder(current?.sessionID === sessionID ? current.forms : [], inbox.forms),
+          setInboxPreview((current) => ({
+            sessionID: NEW_SESSION_VALUE,
+            permissions: pendingOrder(current?.permissions ?? [], inbox.permissions.filter((request) => !answeredRequests.has(requestKey(request)))),
+            forms: pendingOrder(current?.forms ?? [], inbox.forms),
           }))
-        })), Effect.ensuring(Effect.sync(() => { if (!cancelled) setPreviewLoading(false) }))),
-        (message) => { if (!cancelled) setPreviewError(message) })
+        })), Effect.ensuring(Effect.sync(() => { if (!cancelled) { setPreviewLoading(false); setInboxReady(true) } }))),
+        (message) => { if (!cancelled) { setInboxPreview(undefined); setPreviewError(message) } })
         onCleanup(job.cancel)
-        return
-      }
-      const related = [sessionID, ...descendantIDs(sessions(), sessionID)]
-      const job = reads.start(Effect.gen(function* () {
-        const lookups = yield* Effect.all(related.map((id) => operation({ operation: "Sync preview requests", sessionID: id }, async () => {
-          const session = sessions().find((item) => item.id === id)!
-          await requestsAPI.sync(session)
-          return requestsAPI.read(session)
-        })), { concurrency: 4 })
-        const permissions = lookups.flatMap((requests) => requests.permissions)
-        const forms = lookups.flatMap((requests) => requests.forms)
-        if (!cancelled) setPreview({ sessionID, permissions, forms })
-      }).pipe(Effect.ensuring(Effect.sync(() => { if (!cancelled) setPreviewLoading(false) }))),
-      (message) => { if (!cancelled) setPreviewError(message) })
-      onCleanup(job.cancel)
+    })
+    createEffect(() => {
+      if (ready() || !firstPageReady() || !archivesReady() || !activeReady() || !inboxReady() || inboxLoading() || discovering()) return
+      if (liveSessions().some((session) => !contextChecks().has(session.id)
+        || !attentionChecks().has(session.id) || attentionChecks().get(session.id) === "checking")) return
+      setReady(true)
     })
 
     function replyToPermission(reply: "once" | "always" | "reject") {
@@ -310,6 +320,11 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
             for (const member of stopped) next.set(member.id, "ready")
             return next
           })
+          setRequestSnapshots((current) => {
+            const next = new Map(current)
+            for (const member of stopped) next.set(member.id, requestsAPI.read(member))
+            return next
+          })
         } else if (isArchived(session.id)) {
           const restored = yield* operation({ operation: "Restore archived session", sessionID: session.id },
             () => restoreSession(context.client, archiveStore, archived(session.id)!))
@@ -336,21 +351,23 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
     }
 
     function applyAttentionLookup(location: SessionInfo["location"], key: string) {
-      if (!attached() || disposed) return
+      if (disposed) return
+      setDiscovering((count) => count + 1)
       reads.start(Effect.gen(function* () {
         const requests = yield* operation({ operation: "Discover attention owners", directory: location.directory },
           (signal) => requestsAPI.discover(location, signal))
         for (const id of new Set([...requests.permissions, ...requests.forms].map((request) => request.sessionID))) {
-          if (!liveSessions().some((session) => session.id === id)) void refreshSessionRow(id)
+          if (!liveSessions().some((session) => session.id === id)) yield* operation({ operation: "Load attention owner", sessionID: id },
+            async () => { await refreshSessionRow(id) })
         }
         setAttentionErrors((current) => { const next = new Map(current); next.delete(`location:${key}`); return next })
-      }), (message) => {
+      }).pipe(Effect.ensuring(Effect.sync(() => setDiscovering((count) => count - 1)))), (message) => {
         queriedLocations.delete(key)
         setAttentionErrors((current) => new Map(current).set(`location:${key}`, message))
       })
     }
     function refreshAttention(loaded: SessionInfo[], force = false) {
-      if (!attached() || disposed) return
+      if (disposed) return
       const order = new Map(rows().map((row, index) => [row.session.id, index]))
       const targets = loaded.filter((session) => !isArchived(session.id) && (force || !queriedSessions.has(session.id)))
         .sort((a, b) => (order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity))
@@ -367,16 +384,20 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
         }
         return next
       })
-      const generation = opening
-      let completed: Array<{ id: string; error?: string }> = []
+      let completed: Array<{ id: string; error?: string; snapshot?: ReturnType<typeof requestsAPI.read> }> = []
       let publishTimer: ReturnType<typeof setTimeout> | undefined
       const publish = () => {
         clearTimeout(publishTimer)
         publishTimer = undefined
         const fresh = completed.filter((result) => attentionRequests.get(result.id) === versions.get(result.id))
         completed = []
-        if (generation !== opening || !attached() || !fresh.length) return
+        if (disposed || !fresh.length) return
         batch(() => {
+          setRequestSnapshots((current) => {
+            const next = new Map(current)
+            for (const result of fresh) if (result.snapshot) next.set(result.id, result.snapshot)
+            return next
+          })
           setAttentionChecks((current) => {
             const next = new Map(current)
             for (const result of fresh) next.set(result.id, result.error ? "unavailable" : "ready")
@@ -393,8 +414,8 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
         })
       }
       if (targets.length) reads.start(Effect.all(targets.map((session) => operation({ operation: "Refresh attention status", sessionID: session.id },
-        () => requestsAPI.sync(session)).pipe(
-        Effect.map(() => ({ id: session.id, error: undefined as string | undefined })),
+        async () => { await requestsAPI.sync(session); return requestsAPI.read(session) }).pipe(
+        Effect.map((snapshot) => ({ id: session.id, snapshot, error: undefined as string | undefined })),
         Effect.catch((error) => Effect.sync(() => {
           console.error(`[claude.sessions] ${error.message}`, error)
           if (attentionRequests.get(session.id) === versions.get(session.id)) queriedSessions.delete(session.id)
@@ -416,13 +437,13 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
       }
     }
     function refreshLocationForSession(sessionID: string) {
-      if (!attached() || disposed) return
+      if (disposed) return
       const session = sessions().find((item) => item.id === sessionID)
       if (!session) { void refreshSessionRow(sessionID); return }
       refreshAttention([session], true)
     }
     function refreshSessionRow(sessionID: string) {
-      if (!attached() || disposed) return
+      if (disposed) return
       return reads.start(Effect.gen(function* () {
         let id: string | undefined = sessionID
         const seen = new Set<string>()
@@ -436,25 +457,27 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
           id = fresh.parentID && !sessions().some((item) => item.id === fresh.parentID) ? fresh.parentID : undefined
         }
         setLiveVersion((version) => version + 1)
+        refreshAttention(liveSessions().filter((session) => seen.has(session.id)), true)
         refreshAttention(liveSessions())
       })).done
     }
     function refreshActiveSessions() {
-      if (!attached() || disposed) return
-      reads.start(Effect.gen(function* () {
+      if (disposed) return
+      return reads.start(Effect.gen(function* () {
         const active = yield* operation({ operation: "Load active sessions" }, (signal) => context.client.session.active({ signal }))
-        for (const id of Object.keys(active)) void refreshSessionRow(id)
-      }))
+        yield* Effect.all(Object.keys(active).map((id) => operation({ operation: "Load active session", sessionID: id },
+          async () => { await refreshSessionRow(id) })), { concurrency: 4 })
+      }).pipe(Effect.ensuring(Effect.sync(() => setActiveReady(true)))))
     }
     function refreshContextForSession(sessionID: string) {
-      if (!attached() || disposed) return
-      if (selectedSession()?.id !== sessionID) return
+      if (disposed) return
+      contextRequests.set(sessionID, (contextRequests.get(sessionID) ?? 0) + 1)
       context.data.session.message.invalidate(sessionID)
+      setContextChecks((current) => { const next = new Map(current); next.delete(sessionID); return next })
       setContextVersion((version) => version + 1)
     }
     function loadMore(initial = false) {
-      if (disposed || !attached() || loading() || (!initial && !cursor())) return
-      const generation = opening
+      if (disposed || loading() || (!initial && !cursor())) return
       setLoading(true)
       setFailure(undefined)
       return reads.start(Effect.gen(function* () {
@@ -468,12 +491,14 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
         setCursor(result.cursor.next ?? undefined)
         refreshAttention(loaded)
       }).pipe(Effect.ensuring(Effect.sync(() => {
-        if (generation !== opening) return
+        if (disposed) return
         batch(() => { setLoading(false); if (initial) setFirstPageReady(true) })
       }))), setFailure).done
     }
     function refresh() {
-      if (disposed || !attached()) return
+      if (disposed) return
+      if (failure()) void loadMore(true)
+      setContextChecks(new Map())
       refreshAttention(liveSessions(), true)
       setReviewVersion((version) => version + 1)
     }
@@ -484,6 +509,7 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
       started = true
       const unsubscribes = [
         context.data.on("server.connected", () => {
+          void loadMore(true)
           refreshActiveSessions()
           refreshAttention(sessions(), true)
           setReviewVersion((version) => version + 1)
@@ -491,6 +517,16 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
         context.data.listen(({ details }) => {
           if (["permission.asked", "permission.replied", "form.created", "form.replied", "form.cancelled"].includes(details.type)) {
             setReviewVersion((version) => version + 1)
+          }
+          switch (details.type) {
+            case "session.moved":
+            case "session.agent.selected":
+            case "session.model.selected":
+            case "session.revert.staged":
+            case "session.revert.cleared":
+            case "session.revert.committed":
+              void refreshSessionRow(details.data.sessionID)
+              refreshContextForSession(details.data.sessionID)
           }
         }),
         context.data.on("permission.asked", (event) => refreshLocationForSession(event.data.sessionID)),
@@ -536,44 +572,16 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
       if (attachments++ === 0) {
         opening++
         openingTimes.clear()
-        queriedSessions.clear()
-        attentionRequests.clear()
-        queriedLocations.clear()
-        rowFetching.clear()
         const route = context.ui.router.current()
         const id = returnSessionID ?? (route.type === "session" ? route.sessionID : undefined)
-        const current = id ? context.data.session.get(id) : undefined
         batch(() => {
-          setFirstPageReady(false)
           setCurrentSessionID(id)
           setSelectedValue(id ?? NEW_SESSION_VALUE)
           setSearch("")
-          // Only in-progress mutation owners survive the previous working set.
-          const pending = liveSessions().filter((session) => changingLifecycle()?.has(session.id) && session.id !== current?.id)
-          setSessions(current ? [current, ...pending] : pending)
-          setAttentionChecks(new Map())
-          setAttentionErrors(new Map())
-          setRowPercents(new Map())
-          setCursor(undefined)
-          setLoading(false)
-          setFailure(undefined)
-          setPreview(undefined)
-          setInboxErrors([])
+          setTick((value) => value + 1)
           setAttached(true)
         })
-        start()
-        reads.start(operation({ operation: "Load session archives" }, () => archiveStore.list()).pipe(
-          Effect.map((items) => { setArchives(items); setArchivesReady(true) }),
-        ), showFailure)
-        if (id && !current) {
-          reads.start(Effect.gen(function* () {
-            const session = yield* operation({ operation: "Load current session", sessionID: id },
-              (signal) => context.client.session.get({ sessionID: id }, { signal }))
-            setSessions((loaded) => [session, ...loaded.filter((item) => item.id !== session.id)])
-          }))
-        }
-        void loadMore(true)
-        refreshActiveSessions()
+        if (id && !liveSessions().some((session) => session.id === id)) void refreshSessionRow(id)
       }
       let detached = false
       return () => {
@@ -582,16 +590,29 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
         if (--attachments === 0) {
           opening++
           setAttached(false)
-          reads.dispose()
-          reads = createRunner()
         }
       }
     }
 
+    // Start immediately, before a picker has ever been mounted.
+    start()
+    reads.start(operation({ operation: "Load session archives" }, () => archiveStore.list()).pipe(
+      Effect.tap((items) => Effect.sync(() => setArchives(items))),
+      Effect.ensuring(Effect.sync(() => setArchivesReady(true))),
+    ), showFailure)
+    void loadMore(true)
+    refreshActiveSessions()
+    createEffect(() => {
+      const route = context.ui.router.current()
+      const id = route.type === "session" ? route.sessionID : undefined
+      setCurrentSessionID(id)
+      if (id && !untrack(liveSessions).some((session) => session.id === id)) void refreshSessionRow(id)
+    })
+
     return {
       state: {
         sessions, options, selectedValue, selectedIndex, selectedSession, selectedMessages, selectedStats,
-        search, loading, failure, attention, attentionErrors, changingLifecycle, rowPercents,
+        search, loading, ready, failure, attention, attentionErrors, changingLifecycle, rowPercents,
         visiblePreview, permission, inboxRequest, inboxOwner, inboxErrors, isInbox,
         previewLoading, previewError, replying, replyChoice, isArchived,
         isDeleted: (id: string) => deletedIDs.has(id),

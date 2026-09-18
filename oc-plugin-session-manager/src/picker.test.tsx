@@ -93,7 +93,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
     },
     keymap: { layer: (fn: any) => commands.push(...fn().commands) },
     data: {
-      session: { status: (id: string) => running || activeChildren.has(id) ? "running" : "idle", message: { list: () => [], sync: empty }, cost: () => 0 },
+      session: { status: (id: string) => running || activeChildren.has(id) ? "running" : "idle", message: { list: () => [], sync: empty, invalidate() {} }, cost: () => 0 },
       location: { model: { list: () => [], sync: empty } },
       on: (type: string, handler: (event: any) => void) => { handlers.set(type, handler); return () => handlers.delete(type) },
       listen: () => () => {},

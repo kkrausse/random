@@ -25,7 +25,7 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Shell cleanup lists each family's locations, matches `shell.metadata.sessionID`, and calls `shell.remove`. OpenCode handles termination; the plugin does not implement signal escalation. This covers tracked owned shells, not arbitrary untracked processes.
 - Status indicators use a single-cell far-left gutter: `!` for permissions, `?` for questions, and a yellow Braille spinner for running sessions. There is no selection sidebar, so status changes do not shift session titles or consume extra horizontal space.
 - Indicators use the active theme's semantic status colors.
-- Status begins as **Checking status…** until verified. Missing runtime capabilities, failed refreshes, and malformed cache results show **Status unavailable** (`×`), rather than Ready/Inactive. Press `Ctrl+R` to retry status and preview reads without closing the picker.
+- The controller warms session statuses and previews in the background when the plugin loads. Opening during initial warm-up shows one **Loading sessions…** state, then the prepared list. Missing runtime capabilities, failed refreshes, and malformed cache results show **Status unavailable** (`×`), rather than Ready/Inactive. Press `Ctrl+R` to retry status and preview reads without closing the picker.
 - Within Active / Inactive, rows use recent activity captured when the picker opens. Live badges and timestamps update without reordering on assistant output or attention changes; archive/restore can still move a family between sections. The API exposes `time.updated`, not last-user-input time, so this is stable activity ordering rather than exact user-input ordering.
 - Each session occupies one line with its title, status, and lifecycle button. The selected session's location, agent, and last-interaction time appear in the preview.
 - The preview has a pinned **Archive / Restore** button. On phones, a compact touch footer adds **Open / New** and **Close**.
@@ -33,7 +33,7 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Below 70 columns, rows prioritize the title and short time; status icons remain, while text status and context usage move to the preview. The selected title wraps to two lines and section headers tighten. During approvals, model/usage details give way to the request.
 - The current session is selected initially; from Home, `New session` is selected.
 - While **New session** is selected, the preview acts as a cross-session inbox: **Allow / Deny / Always** handles the first pending permission and advances without moving selection. It queries locations known from loaded, current, and discovered active/attention sessions, independently of the text filter. Requests can include unloaded children at those locations; their owners are fetched directly. This is a **known-location inbox**, not a complete global history scan. Permissions come first; pending questions are shown afterward with **Open** to answer in their session. **New** / `Enter` still starts a new session.
-- Unavailable inbox locations are counted inline and logged; reachable locations remain actionable. Failed locations contribute no stale approval controls and are retried on the next request event or reopening.
+- Unavailable inbox locations are counted inline and logged; reachable locations remain actionable. Failed locations contribute no stale approval controls and are retried on request events, reconnect, or `Ctrl+R`.
 - Use `Up`/`Down` to select, `Right` or `Enter` to open, and `Left` or `Escape` to close.
 - Press `N` from the picker to start a new session.
 - Click a row or use the arrow keys to preview it below the list before opening it. Hovering does not change selection, so you can move the mouse to the taller preview and scroll long commands without switching requests.
@@ -41,8 +41,8 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Subagents appear beneath their parent in the same section with a small indent, with further nesting for descendants. Children whose parent is unloaded remain independently selectable until it loads. Parent previews still aggregate descendant requests for approval.
 - Pending questions show their title and field details; open the session to answer them. Approval shortcuts do not answer or dismiss questions.
 - Preview loading/errors disable permission actions, replies cannot overlap, and held-key repeat events are ignored. Errors appear as toasts and requests refresh after replying.
-- Opening requests one page of up to 100 recent sessions. Current and discovered active/attention sessions can also appear outside that page. Older pages load when keyboard or pointer selection approaches the end of the list; wheel scrolling alone does not request another page.
-- Opening shows rows as soon as the first page arrives. Per-session status checks run top-down in displayed order, four at a time, prioritizing Active before Inactive; each badge fills in as its check finishes. Local archive/age markers determine sections while status is checking or unavailable; verified running/input status can still move a family to Active. Closing cancels reads, and reopening starts a fresh first page.
+- Plugin startup requests one page of up to 100 recent sessions. Current and discovered active/attention sessions can also appear outside that page. Older pages load when keyboard or pointer selection approaches the end of the list; wheel scrolling alone does not request another page. Loaded pages survive closing and reopening.
+- The plugin-lifetime controller maintains session metadata, statuses, the known-location inbox, and usage previews while the picker is closed. Status and context synchronization each run with four concurrent jobs. Opening and selecting a loaded row read the prepared state without starting fresh requests. Events keep it current; reconnect reconciles the recent page, active sessions, and attention. Closing only detaches the view; plugin unload cancels background reads.
 - The picker resizes with the terminal, including phone keyboard/rotation changes. Narrow or short terminals use a compact header and a smaller scrollable approval preview.
 - Tap/click a row to preview, double-tap or press `→`/`Enter` to enter it. Approval previews show the action and request count above a scrollable request, with a pinned **Allow / Deny / Always** bar below. **Allow** approves once. Equal-width cells are fully clickable, with three-line tap targets on phones when height permits; short keyboard-open layouts use one line. The chosen action shows **Sending…** in place and all approval cells disable during reply/refresh. Refresh retains the current request layout until the next result arrives.
 - In `bun-web-terminal`, use its **Keyboard** button to explicitly show/hide the phone keyboard. Taps select TUI controls without opening it, and swipes scroll without clicking.
@@ -141,7 +141,7 @@ ${XDG_DATA_HOME:-~/.local/share}/opencode/claude-sessions/archives/<sessionID>.j
 Each versioned JSON bundle contains `archivedAt`, cleanup `familyIDs`, and the
 parent's raw `{ info, messages }` export (`sanitize: false`). Files are written
 with mode `0600`, synced, atomically renamed, and read back before deletion.
-Back up this directory to preserve archived history. The picker reads it when opened;
+Back up this directory to preserve archived history. The controller reads it at plugin startup;
 OpenCode's normal session search does not include these files.
 
 The deprecated export/delete flow uses the connected client's APIs:
@@ -179,10 +179,10 @@ archive first. The plugin explains this ordering when the parent is missing.
 
 The plugin owns the session controller and its reactive state. Picker views
 consume that state and dispatch commands; focus, keybindings, layout, and scroll
-handling stay in the view. Closing a picker detaches its reads and view bindings,
-while in-progress lifecycle actions remain owned by the controller so reopening
-observes the same operation. This uses Solid and the existing Effect runner,
-without a separate caching or scheduling framework.
+handling stay in the view. Closing a picker detaches its view bindings, while
+background reads, event subscriptions, and in-progress lifecycle actions remain
+owned by the controller. Reopening observes the prepared data and the same
+operations. This uses Solid and the existing Effect runner.
 
 All asynchronous picker work runs through Effect: paging, preview/context loads,
 attention refreshes, permission replies, interrupts, and lifecycle storage.
@@ -199,8 +199,8 @@ background refresh failures and unexpected defects, are logged with the
 failures retain the previous data. Archive and restore failures include the
 selected session ID and the underlying API/filesystem error.
 
-Closing the picker interrupts its read jobs; switching selection cancels obsolete
-preview/context jobs. Read HTTP calls receive cancellation signals. Once started,
+Plugin unload interrupts background read jobs; switching selection reads cached
+previews. Read HTTP calls receive cancellation signals. Once started,
 the cleanup/restore transaction continues independently of picker dismissal so
 closing the dialog does not strand it between export and deletion. Host cache and
 storage methods also have no cancellation API. Lifecycle completion and failures
@@ -221,7 +221,8 @@ bun run verify:soft-archive
 Badges and session previews use the documented TUI APIs:
 `data.session.permission.{list,sync,invalidate}`, `data.session.form.{list,sync,invalidate}`,
 and `data.session.status`. Host caches are the source of pending-request state;
-the plugin tracks refresh health, not a second event-maintained request inventory.
+the controller publishes completed request snapshots so cache invalidation does
+not briefly clear badges or approval previews during background refreshes.
 Events trigger synchronization; reconnects reconcile missed events. Overlapping
 refreshes are serialized and rechecked when an event arrives mid-flight.
 
