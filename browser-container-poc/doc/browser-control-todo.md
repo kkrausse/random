@@ -1,5 +1,13 @@
 # Browser-control checks
 
+- [ ] 2026-09-17 UTC, browser-control 0.7.0 (CLI/relay build
+  `2026-09-05T19:03:42.828Z`), irs-tools local integration on port 5193:
+  `browser-control execute 'return {url:page.url(),title:await page.title()}'`
+  failed with `Browser Control extension is not connected`. Expected a fresh
+  session page; no page/session was acquired. `doctor` confirmed a reachable,
+  matching relay, disconnected extension and zero active targets. Requested that
+  the user reconnect the extension; no relay restart or browser state reset.
+
 - [x] 2026-09-17 UTC, browser-control 0.7.0, session `brisk-comet-900`,
   `http://127.0.0.1:19437/`: clicking New chat then immediately filling/clicking
   Send raced asynchronous chat creation. Waiting for the expected assistant
