@@ -96,7 +96,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
       session: { status: (id: string) => running || activeChildren.has(id) ? "running" : "idle", message: { list: () => [], sync: empty, invalidate() {} }, cost: () => 0 },
       location: { model: { list: () => [], sync: empty } },
       on: (type: string, handler: (event: any) => void) => { handlers.set(type, handler); return () => handlers.delete(type) },
-      listen: () => () => {},
+      listen: (handler: (event: any) => void) => { handlers.set("*", handler); return () => handlers.delete("*") },
     },
     client: {
       session: {
@@ -192,12 +192,12 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
     await setup.renderOnce()
     assert.match(setup.captureCharFrame(), /1 sub-agent running/)
     activeChildren.add("child")
-    handlers.get("session.status")!({ data: { sessionID: "child" } })
+    handlers.get("*")!({ details: { type: "session.status", data: { sessionID: "child" } } })
     await new Promise((resolve) => setTimeout(resolve, 20))
     await setup.renderOnce()
     assert.match(setup.captureCharFrame(), /2 sub-agents running/)
     activeChildren.delete("child")
-    handlers.get("session.idle")!({ data: { sessionID: "child" } })
+    handlers.get("*")!({ details: { type: "session.idle", data: { sessionID: "child" } } })
     await new Promise((resolve) => setTimeout(resolve, 20))
     await setup.renderOnce()
     assert.match(setup.captureCharFrame(), /1 sub-agent running/)
@@ -231,7 +231,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
     assert.doesNotMatch(setup.captureCharFrame(), /sub-agents? running/)
     setLifecycle("inactive", "s0", false)
     // The root is still available without an import.
-    handlers.get("session.created")!({ data: { sessionID: "s0" } })
+    handlers.get("*")!({ details: { type: "session.created", data: { sessionID: "s0" } } })
     await new Promise((resolve) => setTimeout(resolve, 20))
     await setup.renderOnce()
     const row = setup.renderer.root.findDescendantById("claude-session-row-3")!
@@ -337,7 +337,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
     commands.find((c) => c.bind === "down").run()
     await commands.find((c) => c.bind === "r").run()
     sessions[0]!.title = "A long mobile session title that wraps across two lines"
-    handlers.get("session.created")!({ data: { sessionID: "s0" } })
+    handlers.get("*")!({ details: { type: "session.created", data: { sessionID: "s0" } } })
     for (let i = 0; i < 50; i++) commands.find((c) => c.bind === "up").run()
     commands.find((c) => c.bind === "down").run()
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -423,7 +423,7 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
     const overrides = { ...lifecycle.inactive }
     delete overrides.s20
     setLifecycle("inactive", reconcile(overrides))
-    handlers.get("session.created")!({ data: { sessionID: "s20" } })
+    handlers.get("*")!({ details: { type: "session.created", data: { sessionID: "s20" } } })
     const beforeImputation = interruptCalls
     await new Promise((resolve) => setTimeout(resolve, 20))
     await setup.renderOnce()
