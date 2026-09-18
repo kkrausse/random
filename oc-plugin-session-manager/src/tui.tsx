@@ -352,10 +352,10 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
               const updating = () => changingLifecycle()?.has(option().value) ?? false
               const iconColor = () => {
                 if (updating()) return "#ef4444"
-                if (option().state === "permission") return props.context.theme.text.status.permission
-                if (option().state === "question") return props.context.theme.text.status.question
-                if (option().state === "unavailable") return props.context.theme.text.feedback.error.default
-                if (option().state === "running") return SELECTED
+                if (option().statusState === "permission") return props.context.theme.text.status.permission
+                if (option().statusState === "question") return props.context.theme.text.status.question
+                if (option().statusState === "unavailable") return props.context.theme.text.feedback.error.default
+                if (option().statusState === "running") return SELECTED
                 return descriptionColor()
               }
               return (
@@ -395,7 +395,7 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
                       if (updating()) return (
                         <spinner id={`claude-session-spinner-${option().value}`} frames={SPINNER_FRAMES} interval={80} color="#ef4444" />
                       )
-                      const state = option().state
+                      const state = option().statusState
                       const icon = state === "running" ? "spinner"
                         : state === "permission" ? "!"
                          : state === "question" ? "?"

@@ -83,7 +83,7 @@ function fixture() {
   }
   const controller = createSessionController(context, { list: empty, save: async () => {}, remove: async () => {} })
   return {
-    controller, context, session, lifecycle, lifecycleGate, replyGate, handlers,
+    controller, context, session, lifecycle, setLifecycle, lifecycleGate, replyGate, handlers,
     counts: () => ({ markerWrites, replies, subscriptions, unsubscriptions }),
     replySignal: () => replySignal,
   }
@@ -159,6 +159,46 @@ test("permission reply survives view disposal and cannot be sent twice on reopen
 })
 
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve))
+
+test("status fills top-down with active rows first and archived rows keep their section while checking or unavailable", async () => {
+  const f = fixture()
+  const active = Array.from({ length: 5 }, (_, index) => ({ ...f.session, id: `active-${index}`, time: { updated: Date.now() - index } }))
+  const archived = { ...f.session, id: "archived", time: { updated: Date.now() + 1000 } }
+  const gates = new Map([...active, archived].map((session) => [session.id, deferred()]))
+  const started: string[] = []
+  f.setLifecycle("inactive", archived.id, true)
+  f.context.ui.router.current = () => ({ type: "home" })
+  f.context.client.session.list = async () => ({ data: [archived, ...active], cursor: {} })
+  f.context.client.permission.request.list = async () => ({ data: [] })
+  f.context.data.session.permission.list = () => []
+  f.context.data.session.permission.sync = async (id: string) => {
+    if (!started.includes(id)) started.push(id)
+    await gates.get(id)?.promise
+    if (id === archived.id) throw new Error("row status unavailable")
+  }
+  const close = mount(f.controller)
+  try {
+    await until(() => started.length === 4 && !f.controller.state.loading())
+    assert.deepEqual(started, active.slice(0, 4).map((session) => session.id))
+    const row = (id: string) => f.controller.state.options().find((row) => row.value === id)!
+    const order = f.controller.state.options().map((row) => row.value)
+    assert.equal(row(archived.id).state, "inactive")
+    assert.equal(row(archived.id).statusState, "checking")
+    gates.get(active[0]!.id)!.resolve()
+    await until(() => row(active[0]!.id).statusState === "idle")
+    assert.equal(row(active[1]!.id).statusState, "checking", "slow rows do not hold back completed badges")
+    await until(() => started.length === 5)
+    assert.equal(started[4], active[4]!.id)
+    for (const gate of gates.values()) gate.resolve()
+    await until(() => row(archived.id).statusState === "unavailable")
+    assert.equal(row(archived.id).state, "inactive", "failed status does not move an archived row")
+    assert.deepEqual(f.controller.state.options().map((row) => row.value), order)
+  } finally {
+    for (const gate of gates.values()) gate.resolve()
+    close()
+    f.controller.dispose()
+  }
+})
 
 test("closing stops read activity; reopening ignores a late response from the old opening", async () => {
   const f = fixture()
