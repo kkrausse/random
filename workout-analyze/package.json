@@ -16,12 +16,19 @@
     "garmin:login": "scripts/garmin/run auth login",
     "garmin:sync": "bun run scripts/garmin/sync.ts",
     "preview": "bun --bun vite preview",
+    "mobile:dev": "bun --bun vite --config mobile/vite.config.ts --host 0.0.0.0 --port 3001",
+    "mobile:build": "bun run scripts/mobile/build.ts",
+    "mobile:build:v2": "bun run scripts/mobile/build.ts --engine=v2",
+    "mobile:typecheck": "tsc -p mobile/tsconfig.json --noEmit",
+    "mobile:test": "bun test mobile scripts/mobile",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@base-ui/react": "^1.8.0",
     "@duckdb/node-api": "^1.5.5-r.4",
     "@garmin/fitsdk": "^21.213.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-router": "latest",
     "@tanstack/react-start": "latest",
     "@tanstack/react-table": "^8.21.3",
@@ -29,7 +36,8 @@
     "fflate": "^0.8.3",
     "lucide-react": "^1.33.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
     "@tanstack/router-cli": "^1.132.0",
