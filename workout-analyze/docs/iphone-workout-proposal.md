@@ -8,7 +8,7 @@ Turn Workout Ledger into an iPhone workout recorder, starting with outdoor cycli
 
 The defining experience is **live laps and familiar segments**: while riding, see current speed, time, distance, heart rate, and how the current lap or segment compares with previous efforts. Recording and previously downloaded comparisons work offline.
 
-**Start and ride:** no loop, segment, direction, or reference selection is required. Native matching uses location and a sequence of movement observations to recognize known routes automatically. Home also provides access to previous workouts and segment/loop analysis, bringing the existing archive-browsing experience onto the phone.
+**Start and ride:** no loop, segment, direction, or reference selection is required. The native-hosted TypeScript engine uses location and a sequence of movement observations to recognize known routes automatically. Home also provides access to previous workouts and segment/loop analysis, bringing the existing archive-browsing experience onto the phone.
 
 ### Terminology and relationship to existing analysis
 
@@ -52,6 +52,7 @@ workout-analyze/
   ios/                       Swift app target, WKWebView, native services
   mobile/                    static React entry, screens, bridge client
   src/shared/                portable contracts, formatting, geometry
+  src/engine/                portable TypeScript live metrics/matching engine
   src/...                    existing archive app and analysis pipeline
   docs/                      this proposal and wireframes
 ```
@@ -63,22 +64,47 @@ Use Bun + TypeScript for web development; shadcn/ui with Base UI, Tailwind, and 
 ```text
 Bundled React UI in WKWebView
          ⇅ versioned commands / snapshots / events
-Swift bridge dispatcher
+Swift bridge dispatcher + web-build loader
          ⇅
 Native workout coordinator
   ├─ Core Location: timestamped location, speed, altitude, accuracy
   ├─ Core Bluetooth: standard BLE heart-rate monitor
-  ├─ metrics + streaming route/lap matcher
+  ├─ headless JavaScriptCore: compiled TypeScript metrics + route/lap matcher
   └─ SQLite: samples, state transitions, laps, route packs, summaries
 
 Desktop archive ⇄ versioned files ⇄ native import/export
 ```
 
-**Native is the source of truth.** It owns the session state machine, clocks, sensor collection, derived metrics, automatic lap/segment decisions, and durable writes. JavaScript renders snapshots and sends user commands. WKWebView timers and JavaScript execution are not dependable background services.
+**Native owns durable recording; TypeScript owns changeable workout logic.** Swift owns sensor collection, recording lifecycle, clocks, durable raw observations, and the host that applies/persists derived outputs. Shared TypeScript computes metrics, route recognition, lap boundaries, and comparisons; React owns screens, maps, presentation, and interaction. WKWebView timers and execution are not dependable background services, so the analysis engine must not depend on the visible page staying alive.
 
-The live matcher therefore runs in Swift too. Reuse existing detection concepts and exported geometries, not an assumption that the TypeScript batch detector can run continuously in a backgrounded WebView. Shared fixture files will verify agreement between archive export and native matching.
+Proposal: bundle the portable TypeScript engine as plain JavaScript and host it in JavaScriptCore, separately from WKWebView. Native sensor callbacks feed ordered batches into deterministic engine functions and persist outputs/checkpoints. The same engine runs against replay fixtures in Bun and in the browser simulator. No DOM, Node/Bun APIs, network access, or independent background timers inside the engine. JavaScriptCore is not a background-execution entitlement: processing occurs within the native recorder's permitted location/Bluetooth execution windows. Prove this on a physical phone in the first spike before treating this design as settled.
 
-Bundle assets into the app and serve them through a restricted local WKURLSchemeHandler with a defined app origin. Validate asset routing/module loading in the shell spike. No development server is required on a ride. External links open outside the privileged WebView; native commands are accepted only from the bundled main frame. The packaged UI and bridge ship together.
+Ship a bundled fallback build and serve installed builds through a restricted local WKURLSchemeHandler with a defined app origin. A build contains static UI assets plus the headless engine artifact. Validate asset routing/module loading in the shell spike. Native accepts bridge commands only from the selected app main frame: the installed local build, or the explicitly configured development origin. External navigation opens outside that privileged WebView. Builds can change independently of the installed native shell, within the host's advertised capabilities.
+
+### Fast iteration: install the shell once, reload app code
+
+This is a core requirement. Most UI, metrics, and matching changes should not require Xcode or reinstalling the iPhone app.
+
+**Settings**, reachable from Home and Paused, exposes:
+
+- Native shell version, bridge/engine API versions, active web-build ID, and current source.
+- Development-server URL (for example `http://<Mac-LAN-IP>:3001`) and **Connect / Reload from server**.
+- **Download & use latest build** from a configured HTTP(S) build endpoint for an offline-capable install.
+- **Reload current UI**, **Use previous build**, and **Use bundled build**.
+- Existing units, sensors, comparison preference, and library/import settings.
+
+Two complementary workflows:
+
+1. **Live development:** run a dedicated mobile Vite server with Bun, listening on the LAN. Connect the phone once; Vite HMR updates React/CSS, and Reload handles full page changes. The phone and Mac need network reachability; phone `localhost` is not the Mac. Configure the native development build for local-network access, the needed local HTTP transport exceptions, and HMR WebSocket connectivity. Reload reattaches to the current native recording instead of starting a new workout. A dev-server page is for connected iteration, not an offline ride install.
+2. **Installed web build:** publish a static build artifact and manifest, download it natively, validate it, and atomically switch the active-build pointer. Serve it from device storage afterward; the server is no longer needed. Updates include the compiled engine artifact, so analysis changes are updateable too. A failed/incomplete download leaves the existing build active.
+
+Manifest: build ID, artifact hashes, entry paths, bridge/engine API compatibility ranges, required capabilities, and engine checkpoint schema version. Validate paths, size bounds, completeness, and compatibility before activation. Hashes detect corruption; authenticated HTTPS (or verified signatures) establishes provenance for installed builds. Plain HTTP to the explicitly selected LAN server is a development workflow, not arbitrary privileged browsing.
+
+**Session consistency:** pin an engine build/configuration for the whole workout, including pauses. A paused workout is still active: downloaded engine updates wait until it finishes. UI-only reload/HMR may reconnect during a session if compatible with the pinned engine; display its actual version. Installing a coupled UI+engine release waits until idle unless the manifest explicitly supports the current engine. Development engine edits require publishing/reloading the engine artifact for the next session; React HMR alone does not update JavaScriptCore. Native raw recording continues across UI reloads; an engine failure is marked and recoverable from recorded observations, not silently treated as successful analysis.
+
+Keep bundled and last-known-good builds. If boot or handshake fails, native offers rollback independent of the broken page. Provide a small native recovery screen/action for editing the dev URL, retrying, or restoring the bundled build when the server or Settings UI cannot load. No update operation deletes workouts. Storage migrations remain native and backward-compatible with supported web versions; arbitrary downloaded code does not directly modify SQLite schemas.
+
+Rebuild/reinstall is still necessary for new native frameworks, permissions/entitlements, unsupported bridge primitives, native storage migrations, and host bug fixes. The first milestone must demonstrate **change TypeScript → reload/download on phone → changed behavior**, with no reinstall, including an engine change between workouts. Distribution beyond the personal/development shell needs a separate decision about permitted update delivery for that distribution channel.
 
 ### iOS services
 
@@ -87,6 +113,7 @@ Bundle assets into the app and serve them through a restricted local WKURLScheme
 - **Core Bluetooth:** central role, Heart Rate service `0x180D`, measurement `0x2A37`; parse flags and 8/16-bit values. Remember the selected peripheral, reconnect, and expose connection/staleness state. Enable `bluetooth-central` background mode as needed and evaluate state restoration on device.
 - **Elevation:** start with Core Location altitude plus vertical accuracy. Filter noise before accumulating ascent. Optional relative barometer input through Core Motion is a later improvement, not an absolute altitude replacement.
 - **Storage:** native SQLite with migrations; serialize writes and session mutations. Samples and the corresponding durable sequence/checkpoint commit atomically in small batches. Acknowledge start/pause/finish only after their transitions persist.
+- **Engine host:** JavaScriptCore with a serial execution context, explicit input/output schema, deterministic checkpoints, and bounded processing batches. Raw observations commit independently of successful engine processing; replay resumes from the last committed engine checkpoint using stable output IDs. No second independently authoritative engine in the UI.
 
 Screen lock/backgrounding must not stop an active native recorder. Force-quit, OS termination, and reboot cannot be promised uninterrupted recording: preserve committed data, detect the interruption on reopening, mark a gap, and offer recovery. A crashed/reloaded WebView simply reconnects to the native session.
 
@@ -119,12 +146,16 @@ interface NativeEvent {
 | `sensors.scan/connect/disconnect` | Discover and select a heart-rate monitor; bounded foreground scan. |
 | `routes.list/detail`, `reference.preference` | Browse segment/loop analysis and optionally change the saved comparison preference. Recognition requires no selection command. |
 | `archive.list/detail`, `transfer.import/export` | Paginated local history and native file/share flows. |
+| `observations.subscribe/read`, `engine.status` | Rich timestamped sensor streams, cursor-based raw history, quality/source metadata, and active engine/version/checkpoint status. |
+| `appBuild.status/download/activate/rollback`, `devSource.configure`, `ui.reload` | Native-owned build management and development source switching, with session/compatibility rules above. |
 
 Replies carry the request ID and either a typed result or a stable error code (`permissionDenied`, `invalidState`, `sensorUnavailable`, `storageFailure`, `unsupportedVersion`). A retry must not create a second workout or repeat a state transition; retain mutation outcomes across bridge reconnections. Derived lap events have stable IDs so reconnecting cannot duplicate a displayed lap.
 
 Events include `session.updated`, `metrics.updated`, `lap.completed`, `segment.updated`, `sensor.updated`, and `recording.issue`. Throttle display metrics to about once per second, coalesce superseded updates, and send transitions promptly. Persist raw data independently of event delivery.
 
 On attach/resume: establish delivery, fetch an atomic snapshot with sequence, discard older queued events, then apply newer events. Detect a sequence gap and resnapshot; do not replay an unbounded ride into JavaScript. Paginate historical samples separately. Clock-based animation between snapshots is visual only.
+
+**Bias toward data-rich primitives:** expose all useful available sensor fields (timestamps, coordinates, speed/course, altitude, horizontal/vertical/speed/course accuracy where supported, HR measurement flags/contact status, and sensor connection metadata), with units, nullability, availability, and source identified. Do not reduce the API to today's display metrics. Preserve observations natively at delivered resolution and allow bounded raw reads/subscriptions for new web features. Display throttling must not discard the underlying recording. Use batching, cursors, backpressure, and resync rather than unbounded per-sample bridge traffic. Add fields/capabilities compatibly; a new UI can use new combinations of existing data without changing Swift.
 
 ## 5. Recording and metrics
 
@@ -216,6 +247,7 @@ The detailed screens form a **wireflow**: arrows run directly from actual button
 | Live / Segment | Map highlighting the segment and rider; segment name, progress, ahead/behind delta with named baseline, current/reference time at this point; global stats and controls. |
 | Paused | Frozen totals; prominent Resume; Finish & save; optional discard behind an explicit secondary confirmation. |
 | Saved | Summary, route thumbnail, laps/segments, local-save state, Export, Done. |
+| Settings | Reachable from Home and Paused; preferences/sensors/library plus server URL, reload/download controls, installed-build status, and rollback. Back returns to the originating screen. |
 
 Sensor connection is a sheet reachable from Home or the status strip: scan, device list, selected device, live HR, connection state, disconnect. Library/settings holds archive import and optional reference defaults; browsing a route does not select it for the next ride. Recovery after interruption shows saved duration, last recording time, the known gap, and Resume or Finish saved workout.
 
@@ -250,13 +282,13 @@ These are future bounded handoff units, not work being delegated now. Each imple
 
 | Slice | Deliverable | Acceptance gate / dependency |
 | --- | --- | --- |
-| 1. Contracts + shell spike | Static mobile entry, WKWebView host, versioned bridge, simulator adapter, map-renderer/provider spike. | Bundled app launches offline on a real phone; round trip and WebView reload recovery work; map overlays render and missing tiles degrade gracefully. Freeze contracts before dependent slices. |
+| 1. Contracts + shell spike | Static mobile entry, WKWebView/JavaScriptCore hosts, versioned rich-data bridge, simulator adapter, Settings, dev-server and installed-build loading, map spike. | Change UI and engine code on a real phone without reinstalling; HMR/reload reconnects, downloaded build works offline, incompatible/broken build falls back. Verify native-driven headless engine execution while locked; map overlays survive missing tiles. Freeze contracts before dependent slices. |
 | 2. Native recorder | Core Location, storage, clocks, state machine, metrics, interruption recovery. | Real outdoor ride with screen lock, backgrounding, pauses, and relaunch; committed samples and correct totals survive. Depends on 1. |
 | 3. Mobile screens | Home, workout/analysis list and detail pages, Live/Laps/Segment/Paused/Saved, fixture-driven first. | Start pinned at bottom; no route setup; history drilldowns and return-to-ride work. Readable on a mounted phone; all transitions/errors represented. Can proceed against slice 1's simulator while 2 is built. |
 | 3a. Live and analysis maps | Basemap/route/location layers, adaptive camera, fit/follow/manual states, expanded map. | Short-loop and long-segment fixtures keep rider visible without excessive zoom-out; gestures remain respected; route detail initially fits its route; offline/GPS-loss states work. Depends on 1 and 3 contracts; can precede real matcher with fixtures. |
 | 4. BLE heart rate | Scan/pair/reconnect, native measurements and status events. | Real standard HR strap tested in foreground/background and after disconnect. Depends on 1–2 contracts. |
 | 5. Route packs + archive import | Export reference timelines and browsable archive snapshots; file transfer; phone workout importer. | Offline recognition data and history/detail views; phone→archive round trip without duplicate activities or unit loss. Contract work can overlap 2–4. |
-| 6. Live loop matcher | Automatic nearby-route recognition, Swift gate/progress matcher, successive lap identification tied to the detected loop. | Start with no route input; replay/device tests cover stationary start, overlapping candidates, delayed recognition, jitter, mid-loop start, reverse travel, departure/re-entry, pauses, and missing fixes. Depends on 2 and 5. |
+| 6. Live loop matcher | Portable TypeScript nearby-route recognition and gate/progress matcher hosted in JavaScriptCore; successive lap identification tied to the detected loop. | Identical replay fixtures run in Bun and native host. Start with no route input; device tests cover stationary start, overlapping candidates, delayed recognition, jitter, mid-loop start, reverse travel, departure/re-entry, pauses, and missing fixes. Depends on 2 and 5. |
 | 7. Segment comparison | Candidate ranking, stable selection, progress delta. | Known-route replay agrees with expected crossings/reference times; forks and gaps suppress misleading deltas. Depends on 5–6 geometry foundations. |
 | 8. Integrated ride validation | Full ride, export, analysis, recovery, battery observations. | Signed install works without development server; all previous gates pass together. |
 
