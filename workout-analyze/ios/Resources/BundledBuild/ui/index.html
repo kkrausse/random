@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Workout Analyze Diagnostics</title>
+  <style>
+    :root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#07111f;color:#ecf4ff}body{margin:0;padding:max(24px,env(safe-area-inset-top)) 18px max(28px,env(safe-area-inset-bottom))}main{max-width:720px;margin:auto}h1{font-size:28px;margin:12px 0 4px}.sub{color:#9fb0c8;margin:0 0 24px}.card{background:#101e30;border:1px solid #263951;border-radius:16px;padding:16px;margin:12px 0}.row{display:grid;grid-template-columns:1fr auto;gap:6px;margin:10px 0}.reason{grid-column:1/-1;color:#aebdd1;font-size:14px}.ok{color:#62d69c}.waiting{color:#ffd166}.unavailable{color:#aebdd1}.error{color:#ff7b86}button,input{font:inherit;border-radius:11px;padding:12px;margin:4px 2px}button{border:0;background:#3b82f6;color:white;font-weight:650}button.secondary{background:#263951}input{box-sizing:border-box;width:100%;background:#07111f;color:white;border:1px solid #49617e}pre{white-space:pre-wrap;word-break:break-word;color:#aebdd1;font-size:12px}.banner{background:#3b2f12;border:1px solid #7c6323;border-radius:12px;padding:12px}.hidden{display:none}
+  </style>
+</head>
+<body><main>
+  <h1>Native diagnostics</h1><p class="sub">Phase 1 shell · no recorder or live sensor probes</p>
+  <div id="error" class="banner hidden"></div>
+  <section class="card"><h2>Health</h2><div id="rows">Connecting to native host…</div><button id="refresh">Refresh</button><button id="checks">Run isolated checks</button><button id="export" class="secondary">Export</button></section>
+  <section class="card"><h2>Build & source</h2><div id="build"></div><label for="dev">Development origin</label><input id="dev" placeholder="http://Mac-LAN-IP:3001"><button id="connect">Save & reload</button><button id="bundled" class="secondary">Use bundled</button><button id="reload" class="secondary">Reload</button></section>
+  <section class="card"><h2>Check results</h2><pre id="results">Not run. Fixture checks do not prove live GPS, BLE, or background delivery.</pre></section>
+</main><script>
+(() => {
+  let counter=0, pending=new Map();
+  const error=document.querySelector('#error');
+  const showError=x=>{error.textContent=x;error.classList.remove('hidden')};
+  window.WorkoutAnalyzeNative={
+    receiveReply(reply){const p=pending.get(reply.requestId);if(!p)return;pending.delete(reply.requestId);reply.ok?p.resolve(reply.result):p.reject(new Error(`${reply.error.code}: ${reply.error.message}`))},
+    receiveEvent(event){if(event.type==='diagnostics.updated')renderRows(event.payload);if(event.type==='appBuild.updated')renderBuild(event.payload)}
+  };
+  function command(method,params={}){return new Promise((resolve,reject)=>{const requestId=`bundled-${Date.now()}-${++counter}`;pending.set(requestId,{resolve,reject});window.webkit.messageHandlers.workoutAnalyze.postMessage({protocolVersion:1,requestId,method,params})})}
+  function renderRows(snapshot){document.querySelector('#rows').innerHTML=snapshot.rows.map(r=>`<div class="row"><strong>${escape(r.label)}</strong><span class="${r.status}">${r.status.toUpperCase()}</span><span class="reason">${escape(r.reason)}</span></div>`).join('')}
+  function renderBuild(value){document.querySelector('#build').innerHTML=`<p><strong>${escape(value.active.buildId)}</strong> · engine ${escape(value.active.engineBuildId)}</p>${value.lastFailure?`<p class="error">${escape(value.lastFailure)}</p>`:''}`}
+  function escape(value){const node=document.createElement('span');node.textContent=String(value);return node.innerHTML}
+  async function refresh(){try{renderRows(await command('diagnostics.snapshot'));renderBuild(await command('appBuild.status'))}catch(e){showError(e.message)}}
+  document.querySelector('#refresh').onclick=refresh;
+  document.querySelector('#checks').onclick=async()=>{try{const x=await command('diagnostics.runChecks',{checks:null});document.querySelector('#results').textContent=JSON.stringify(x,null,2);await refresh()}catch(e){showError(e.message)}};
+  document.querySelector('#export').onclick=()=>command('diagnostics.export',{includeWorkoutObservations:false}).catch(e=>showError(e.message));
+  document.querySelector('#connect').onclick=async()=>{try{await command('devSource.configure',{url:document.querySelector('#dev').value});await command('ui.reload')}catch(e){showError(e.message)}};
+  document.querySelector('#bundled').onclick=async()=>{try{await command('appBuild.rollback',{target:'bundled'});await command('ui.reload')}catch(e){showError(e.message)}};
+  document.querySelector('#reload').onclick=()=>command('ui.reload').catch(e=>showError(e.message));
+  command('bridge.hello',{clientName:'bundled-recovery-web',clientVersion:'0.1.0',supportedProtocolVersions:[1]}).then(refresh).catch(e=>showError(e.message));
+})();
+  </script></body>
+</html>
