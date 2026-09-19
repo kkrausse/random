@@ -1,8 +1,8 @@
 # iPhone phase-1 shell contract
 
-Status: frozen phase-1 contract. Protocol, engine API, and checkpoint schema are all version `1`.
+Status: frozen phase-1 base plus additive sensor-diagnostics contract. Protocol, engine API, and checkpoint schema remain version `1`.
 
-This is deliberately a shell contract, not a recorder contract. Location, Bluetooth HR, and workout recording are advertised as unavailable. Merely opening the UI, reading status, or running diagnostics must not prompt for permission, start sensors, create a workout, or mutate an existing workout.
+This is deliberately a shell contract, not a recorder contract. It includes explicit, reusable native location and Bluetooth heart-rate primitives so Diagnostics can prove real sensor delivery on a phone. Their bounded in-memory observations are not a workout and are not durable recording. Workout recording remains advertised as unavailable. Merely opening the UI, reading any status/snapshot, or running isolated checks must not prompt for permission, start sensors, create a workout, or mutate an existing workout.
 
 ## Entry points and transport
 
@@ -48,7 +48,7 @@ Events use the atomic snapshot sequence domain:
 {"protocolVersion":1,"sessionId":null,"sequence":8,"type":"appBuild.updated","payload":{"active":{"buildId":"bundled-1","source":"bundled","engineBuildId":"phase1-engine-v1"},"previous":null,"bundled":{"buildId":"bundled-1","source":"bundled","engineBuildId":"phase1-engine-v1"},"downloaded":[],"pendingActivationBuildId":null,"lastFailure":null}}
 ```
 
-Phase 1 emits only `session.updated`, `diagnostics.updated`, and `appBuild.updated`. After hello, fetch `session.snapshot`; discard events through its authoritative sequence and apply only newer events. A gap requires another snapshot.
+Events are `session.updated`, `diagnostics.updated`, `appBuild.updated`, `permissions.updated`, `location.updated`, and `heartRate.updated`. New clients fetch `bridge.snapshot`, atomically install its `sequence` and all payloads, discard queued events through that sequence, and apply only newer events. A gap requires another `bridge.snapshot`. Legacy clients may use `session.snapshot`; its `durableSequence` is the same authoritative event sequence even though phase 1 has no durable workout observations. Every emitted event increments one native-owned sequence that is monotonic for the process lifetime, including coalesced sensor status events. Sensor observation cursors are separate stream-local domains and are never used as event sequences.
 
 ## Closed method table
 
@@ -56,10 +56,20 @@ The exact params and results are defined by `CommandParams` and `CommandResults`
 
 | Method | Params | Result / rule |
 | --- | --- | --- |
-| `bridge.hello` | `clientName`, `clientVersion`, `supportedProtocolVersions:[1]` | Versions, advertised capabilities, and explicit unavailable sensor/recorder capabilities. |
+| `bridge.hello` | `clientName`, `clientVersion`, `supportedProtocolVersions:[1]` | Versions, implemented method capabilities, and explicit unavailable sensor/recorder capabilities. |
 | `bridge.ping` | `nonce` | Same nonce and native receive/send UTC timestamps. |
 | `session.snapshot` | `{}` | Authoritative shell session stub. Phase 1 has `recorderAvailability:"unavailable"`. |
-| `permissions.status` | `{}` | Location/Bluetooth status only; `promptsAutomatically:false`. No prompt command exists in phase 1. |
+| `bridge.snapshot` | `{}` | Atomic event sequence plus session, permissions, location, HR, diagnostics, and app-build snapshots. |
+| `permissions.status` | `{}` | Location/Bluetooth status only; always `promptsAutomatically:false`. |
+| `permissions.request` | `permission:"locationWhenInUse"|"bluetooth"` | The only permission-prompt entry point; must follow an explicit user action. Returns both current permission rows. |
+| `location.status` | `{}` | Current probe lifecycle, counters, latest accepted observation, cursor bounds, and background state. No prompt/start. |
+| `location.start` | accuracy, distance filter, background mode, maximum duration | Starts one bounded, non-workout Core Location probe after permission exists. |
+| `location.stop` | `probeId` | Idempotently stops that probe and location delivery. A stale different ID is `invalidState`. |
+| `location.read` | `probeId`, `afterCursor`, `limit` | Reads up to 200 retained observations; reports cursor loss and pagination. |
+| `heartRate.status` | `{}` | Bluetooth/scan/connection state, bounded devices, counters, latest measurement, and cursor bounds. No prompt/scan. |
+| `heartRate.scan` / `heartRate.stopScan` | duration 1–30 seconds / `{}` | Starts or explicitly stops a bounded foreground scan for Heart Rate service `180D`. |
+| `heartRate.connect` / `heartRate.disconnect` | `deviceId` / `connectionId` | Connects and subscribes to `2A37`, or explicitly tears down that connection. |
+| `heartRate.read` | `connectionId`, `afterCursor`, `limit` | Reads up to 200 retained parsed measurements, optionally used for charts/replay diagnostics. |
 | `diagnostics.snapshot` | `{}` | Typed status rows and event sequence. Read-only. |
 | `diagnostics.runChecks` | `checks:null` for all, or a subset | Four isolated check results and `workoutStateUnchanged:true`. |
 | `diagnostics.export` | `includeWorkoutObservations` | Presents native share UI and returns export ID. Default UI sends `false`. |
@@ -72,21 +82,51 @@ The exact params and results are defined by `CommandParams` and `CommandResults`
 
 `appBuild.download` is HTTPS-only. Redirects must also remain HTTPS. Production shells should additionally require a configured trusted endpoint or signature. `devSource.configure` does not grant arbitrary pages bridge privileges: native changes its selected origin first, then loads that exact origin.
 
-### Hello and unavailable features
+### Hello and capability availability
 
 ```json
 {"protocolVersion":1,"requestId":"hello-1","method":"bridge.hello","params":{"clientName":"mobile-web","clientVersion":"0.1.0","supportedProtocolVersions":[1]}}
 ```
 
 ```json
-{"protocolVersion":1,"requestId":"hello-1","ok":true,"result":{"shellVersion":"0.1.0","protocolVersion":1,"engineApiVersion":1,"checkpointSchemaVersion":1,"capabilities":["bridge.ping","session.snapshot","permissions.status","diagnostics.snapshot","diagnostics.runChecks","diagnostics.export","appBuild.status","appBuild.download","appBuild.activate","appBuild.rollback","devSource.configure","ui.reload"],"unavailableCapabilities":[{"capability":"workout.recorder","reason":"Phase 1 has no production recorder"},{"capability":"sensors.location","reason":"Phase 1 does not start location services"},{"capability":"sensors.bluetoothHeartRate","reason":"Phase 1 does not scan or connect"}]}}
+{"protocolVersion":1,"requestId":"hello-1","ok":true,"result":{"shellVersion":"0.1.0","protocolVersion":1,"engineApiVersion":1,"checkpointSchemaVersion":1,"capabilities":["bridge.ping","session.snapshot","permissions.status","diagnostics.snapshot","diagnostics.runChecks","diagnostics.export","appBuild.status","appBuild.download","appBuild.activate","appBuild.rollback","devSource.configure","ui.reload","permissions.request","bridge.snapshot","location.status","location.start","location.stop","location.read","heartRate.status","heartRate.scan","heartRate.stopScan","heartRate.connect","heartRate.disconnect","heartRate.read"],"unavailableCapabilities":[{"capability":"workout.recorder","reason":"Phase 1 has no production recorder"}]}}
 ```
+
+The original twelve shell capabilities remain mandatory. Sensor method bundles are additive and all-or-none per sensor. An older shell remains valid by omitting the new methods and listing `sensors.location` and/or `sensors.bluetoothHeartRate` in `unavailableCapabilities`. A shell implementing a sensor bundle omits its unavailable entry. `workout.recorder` is always unavailable in phase 1. Implementing probes must not be described as implementing recording.
 
 ## Status and diagnostics
 
 Every status row has `id`, `label`, `status` (`ok|waiting|unavailable|error`), a nonempty human-actionable `reason`, `observedAt` (UTC or `null`), `freshness` (`fresh|stale|never`), and subsystem-specific `details`. `ok` is not valid for a stale observation. `unavailable` is expected for unimplemented recorder/sensors and is distinct from an operational error.
 
 `permissions.status` never requests permission. `notDetermined` is normally `waiting` or `unavailable`, not an error. “No HR monitor selected” is unavailable/unconfigured, not recorder failure.
+
+`permissions.request` is invoked only from an explicit Diagnostics button. For location it requests When In Use authorization; the shell does not automatically escalate to Always. For Bluetooth it initializes the native Bluetooth authorization path but does not scan or connect. Start/scan commands never prompt implicitly: they return `permissionDenied` or `sensorUnavailable` with actionable status when prerequisites are missing. A denial remains inspectable and opening/reloading Diagnostics never re-prompts.
+
+## Live sensor probe semantics
+
+### Location
+
+`location.start` accepts `desiredAccuracy` (`best|nearestTenMeters|hundredMeters`), `distanceFilterM` (0–1000), `backgroundMode` (`foregroundOnly|continueWhenBackgrounded`), and `maxDurationSeconds` (10–1800). Only one probe exists. Repeating a completed request ID returns its original result; another start while active returns `invalidState`. The result supplies a generated `probeId`, start/expiry timestamps, actual background state, lifecycle, counts, cursors, and latest observation.
+
+The native host stops the probe on explicit `location.stop`, expiry, service/authorization loss, or shell termination. `foregroundOnly` stops delivery when the app backgrounds. `continueWhenBackgrounded` requests native background delivery only when the target is configured and iOS permits it; `backgroundDeliveryActive` reports reality rather than echoing the request. The probe is volatile and capped at 2,048 accepted observations. It does not claim crash/relaunch continuity. UI reload may reconnect to a still-running native probe using `bridge.snapshot` and the returned `probeId`. Leaving Diagnostics should explicitly stop it; expiry is the safety net.
+
+Each `LocationObservation` has a stream cursor, Core Location source and receipt UTC timestamps, coordinates, horizontal accuracy, and nullable altitude/vertical accuracy, speed/speed accuracy, course/course accuracy, floor, and iOS source-information flags. Invalid negative-accuracy fixes are counted but not exposed as valid observations. Status distinguishes received, accepted, rejected, and retained counts and gives the last rejection reason. Values use degrees, metres, metres/second, and UTC strings exactly as named; unavailable/invalid optional sensor values are `null`, never fabricated zeroes.
+
+`location.read` uses exclusive `afterCursor`; `null` starts at the oldest retained item. `nextCursor` is the last returned cursor (or the supplied cursor when no item is returned), `hasMore` means another page is retained, and `droppedBeforeCursor` says the requested history predates `oldestAvailableCursor`. Cursors increase within a probe and are not reused.
+
+### Bluetooth heart rate
+
+`heartRate.scan` is an explicit 1–30 second foreground scan filtered to service `180D`; discovered devices are deduplicated by Core Bluetooth identifier and capped at 32 most recently seen entries. Scan automatically stops at `scanEndsAt`, on backgrounding, or on explicit `heartRate.stopScan`. Scanning must not silently continue after the UI says it stopped. Device IDs are opaque identifiers, names may be null, RSSI is dBm, and advertised service UUIDs are normalized strings.
+
+`heartRate.connect` stops scanning, connects the selected device, discovers `180D`/`2A37`, and enables notifications. Its generated `connectionId` scopes reads and disconnects so stale UI cannot tear down a newer connection. `heartRate.disconnect` disables notifications/cancels the peripheral connection and is idempotent for that connection; a different stale ID is `invalidState`. The status reports native lifecycle, connected device, packet/parse-error/reconnect counts, and whether `bluetooth-central` background mode is configured. When configured, an explicit connection may receive/reconnect in background as iOS permits until disconnect, service loss, or shell termination; no cadence or uninterrupted delivery is promised. When not configured, status must say so rather than claim background support.
+
+`HeartRateMeasurement` exposes receipt UTC time, BPM, wire format (`uint8|uint16`), contact state derived from flags (`unsupported|notDetected|detected`), optional cumulative energy expended in kJ, RR intervals converted from 1/1024 seconds to seconds, and raw flags. Arrays are bounded to 32 RR intervals and buffers to 2,048 measurements. Cursor paging matches location and is scoped to `connectionId`. Malformed/truncated `2A37` packets increment `parseErrorCount` and do not create a measurement.
+
+### Events, rates, and privacy
+
+Events carry coalesced status snapshots, not every raw sample. Send lifecycle/error transitions promptly; throttle `location.updated` to at most 1 Hz and `heartRate.updated` to at most 4 Hz. Raw accepted values remain available through bounded reads regardless of event coalescing. `permissions.updated` is sent for native authorization/power changes. Every event payload is validated and is at most the bridge message bound.
+
+Probe buffers are in memory, separate from diagnostic logs/workout storage, and cleared when their probe/connection is superseded or the process ends. Normal diagnostics export includes statuses, counters, timestamps, and errors but no coordinates, device identifiers, names, BPM, or RR values. `includeWorkoutObservations` does not opt into probe data because these are not workout observations; a future explicit sensor-evidence export would require separate consent and contract.
 
 `diagnostics.runChecks` has exactly these IDs:
 

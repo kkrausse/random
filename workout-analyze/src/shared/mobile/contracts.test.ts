@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { PHASE1_CAPABILITIES } from './contracts'
+import { PHASE1_BASE_CAPABILITIES, PHASE1_CAPABILITIES } from './contracts'
 import { parseBuildManifest, parseCommand, parseNativeEvent, parseReply } from './validation'
 
 const hash = 'a'.repeat(64)
@@ -39,10 +39,10 @@ describe('mobile wire validation', () => {
     expect(() => parseReply('permissions.status', { protocolVersion: 1, requestId: '1', ok: true, result: { promptsAutomatically: false } })).toThrow()
   })
 
-  test('requires the complete, well-formed phase-1 capability advertisement', () => {
+  test('accepts legacy and implemented-sensor capability advertisements', () => {
     const result = {
       shellVersion: '0.1.0', protocolVersion: 1, engineApiVersion: 1, checkpointSchemaVersion: 1,
-      capabilities: PHASE1_CAPABILITIES,
+      capabilities: PHASE1_BASE_CAPABILITIES,
       unavailableCapabilities: [
         { capability: 'workout.recorder', reason: 'Not implemented' },
         { capability: 'sensors.location', reason: 'Not implemented' },
@@ -51,7 +51,9 @@ describe('mobile wire validation', () => {
     }
     const reply = { protocolVersion: 1, requestId: '1', ok: true, result }
     expect(parseReply('bridge.hello', reply).ok).toBe(true)
-    expect(() => parseReply('bridge.hello', { ...reply, result: { ...result, capabilities: PHASE1_CAPABILITIES.slice(1) } })).toThrow()
+    expect(parseReply('bridge.hello', { ...reply, result: { ...result, capabilities: PHASE1_CAPABILITIES, unavailableCapabilities: result.unavailableCapabilities.slice(0, 1) } }).ok).toBe(true)
+    expect(() => parseReply('bridge.hello', { ...reply, result: { ...result, capabilities: PHASE1_BASE_CAPABILITIES.slice(1) } })).toThrow()
+    expect(() => parseReply('bridge.hello', { ...reply, result: { ...result, capabilities: [...PHASE1_BASE_CAPABILITIES, 'location.status'] } })).toThrow()
     expect(() => parseReply('bridge.hello', { ...reply, result: { ...result, unavailableCapabilities: [{ capability: 'workout.recorder', reason: '' }, ...result.unavailableCapabilities.slice(0, 2)] } })).toThrow()
   })
 
