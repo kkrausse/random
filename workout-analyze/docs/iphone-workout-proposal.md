@@ -92,6 +92,7 @@ This is a core requirement. Most UI, metrics, and matching changes should not re
 - **Download & use latest build** from a configured HTTP(S) build endpoint for an offline-capable install.
 - **Reload current UI**, **Use previous build**, and **Use bundled build**.
 - Existing units, sensors, comparison preference, and library/import settings.
+- **Diagnostics:** on-device native/API health, recent failures, checks, and export; no Mac connection required.
 
 Two complementary workflows:
 
@@ -105,6 +106,30 @@ Manifest: build ID, artifact hashes, entry paths, bridge/engine API compatibilit
 Keep bundled and last-known-good builds. If boot or handshake fails, native offers rollback independent of the broken page. Provide a small native recovery screen/action for editing the dev URL, retrying, or restoring the bundled build when the server or Settings UI cannot load. No update operation deletes workouts. Storage migrations remain native and backward-compatible with supported web versions; arbitrary downloaded code does not directly modify SQLite schemas.
 
 Rebuild/reinstall is still necessary for new native frameworks, permissions/entitlements, unsupported bridge primitives, native storage migrations, and host bug fixes. The first milestone must demonstrate **change TypeScript → reload/download on phone → changed behavior**, with no reinstall, including an engine change between workouts. Distribution beyond the personal/development shell needs a separate decision about permitted update delivery for that distribution channel.
+
+### On-device diagnostics
+
+Settings → Diagnostics answers “is the shell working, and where did data stop?” independently of Xcode. Keep the initial implementation small: a native health snapshot, bounded event log, explicit checks, and a shareable diagnostic bundle. The web screen displays native observations rather than inferring health from whether its own UI is updating.
+
+| Area | Useful status |
+| --- | --- |
+| Shell / web build | Native version, active UI and pinned engine build, bridge/API versions, source URL/origin, last update/rollback failure. |
+| Bridge | Last successful round trip, measured latency, negotiated capabilities, event sequence, resync count, validation/version errors. |
+| Location | Authorization and precise-location status, service availability, last fix age, horizontal/vertical accuracy, received/accepted counts, rejection reasons. |
+| Bluetooth HR | Bluetooth authorization/power, selected peripheral connection state, last measurement age, received count, reconnect attempts. “No monitor selected” is optional/unconfigured, not a failed recorder. |
+| Recorder / storage | Session state, last durable write time/sequence, pending observation count, available storage, last storage error. |
+| Analysis engine | Engine build/API/checkpoint version, last processed sequence, backlog relative to persisted input, processing duration, exceptions, last checkpoint. “No recognized route” is a valid analysis result, not an engine failure. |
+| Lifecycle | Timestamped foreground/background/lock-related lifecycle observations where available, delivery/write gaps, UI reconnects, and interruption/recovery events. |
+
+Use `OK / Waiting / Unavailable / Error` with a reason and last-observed timestamp; never just a green dot based on an old successful reading. Update only while the screen is visible at a modest rate. Opening Diagnostics must not start a workout, request permissions, pair a device, or change the existing recording.
+
+**Run checks** performs a bridge ping, capability/version validation, an isolated storage write/read/delete in a diagnostic namespace, and a deterministic engine fixture in a separate engine instance. Report pass/fail/not-run individually. Fixture data must never enter real workout observations or mutate the active engine checkpoint. Sensor rows inspect real service/stream state; a passing synthetic check does not establish that GPS or BLE is delivering data. Explicit sensor probes can be added later if useful. No fake “background recording passed” check: verify that through an actual screen-lock ride and inspect its delivery/write timeline afterward.
+
+**Export diagnostics** invokes the native share sheet with versions, capability/permission state, build/update history, counters, error details, and a bounded structured log. Keep rotating logs across relaunch, with subsystem, timestamp, session correlation, and sequence fields. Default export excludes raw coordinates, full workout/HR samples, credentials, and URL secrets; an explicit “include workout observations” option can attach the relevant recording when reproducing route/matching bugs. Avoid logging every sensor sample; durable observations already provide replay data.
+
+Expose basic native health and diagnostic export from the native recovery screen too, so a broken web build or bridge cannot hide the evidence needed to fix it. Connected-device Xcode logs/debugging supplement this view for crashes and native investigations; everyday checks and report sharing work on the phone alone.
+
+Acceptance: after UI reload, confirm the same recording ID and advancing native durable sequence; show actionable permission-denied, Bluetooth-off, stale-fix, engine-failure, and write-failure states using fixtures/test hooks; export a report without a Mac; demonstrate that checks leave the workout unchanged. Include basic diagnostics in the shell spike and extend each status row alongside its corresponding service.
 
 ### iOS services
 
@@ -148,6 +173,7 @@ interface NativeEvent {
 | `archive.list/detail`, `transfer.import/export` | Paginated local history and native file/share flows. |
 | `observations.subscribe/read`, `engine.status` | Rich timestamped sensor streams, cursor-based raw history, quality/source metadata, and active engine/version/checkpoint status. |
 | `appBuild.status/download/activate/rollback`, `devSource.configure`, `ui.reload` | Native-owned build management and development source switching, with session/compatibility rules above. |
+| `diagnostics.snapshot/runChecks/export` | Native health/counters, isolated checks, and shareable bounded diagnostic report; also accessible through native recovery if the web UI fails. |
 
 Replies carry the request ID and either a typed result or a stable error code (`permissionDenied`, `invalidState`, `sensorUnavailable`, `storageFailure`, `unsupportedVersion`). A retry must not create a second workout or repeat a state transition; retain mutation outcomes across bridge reconnections. Derived lap events have stable IDs so reconnecting cannot duplicate a displayed lap.
 
@@ -248,6 +274,7 @@ The detailed screens form a **wireflow**: arrows run directly from actual button
 | Paused | Frozen totals; prominent Resume; Finish & save; optional discard behind an explicit secondary confirmation. |
 | Saved | Summary, route thumbnail, laps/segments, local-save state, Export, Done. |
 | Settings | Reachable from Home and Paused; preferences/sensors/library plus server URL, reload/download controls, installed-build status, and rollback. Back returns to the originating screen. |
+| Diagnostics | Settings drilldown with native/API status, freshness and errors, Run checks, and Export diagnostics; useful without a connected Mac. |
 
 Sensor connection is a sheet reachable from Home or the status strip: scan, device list, selected device, live HR, connection state, disconnect. Library/settings holds archive import and optional reference defaults; browsing a route does not select it for the next ride. Recovery after interruption shows saved duration, last recording time, the known gap, and Resume or Finish saved workout.
 
