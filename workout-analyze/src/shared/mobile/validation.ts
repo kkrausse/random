@@ -89,7 +89,7 @@ export const parseNativeEvent = (value: unknown): NativeEvent => {
   return object as unknown as NativeEvent
 }
 
-const isSafeRelativePath = (path: string) => path.length <= 240 && !path.startsWith('/') && !path.includes('\\') && path.split('/').every((part) => part !== '' && part !== '.' && part !== '..')
+const isSafeRelativePath = (path: string) => path.length <= 240 && !path.startsWith('/') && !/[\\%?#\u0000-\u001f\u007f]/.test(path) && path.split('/').every((part) => part !== '' && part !== '.' && part !== '..')
 const isAllowedDownloadUrl = (raw: string) => { try { return new URL(raw).protocol === 'https:' } catch { return false } }
 const isAllowedDevUrl = (raw: string) => { try { const url = new URL(raw); return (url.protocol === 'http:' || url.protocol === 'https:') && url.username === '' && url.password === '' && url.pathname === '/' && url.search === '' && url.hash === '' } catch { return false } }
 
