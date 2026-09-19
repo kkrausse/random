@@ -120,7 +120,7 @@ The JSON manifest is `BuildManifest`. Example (hashes abbreviated here only; rea
 }
 ```
 
-Validation happens before activation: 1–1024 files; each is 1 byte through 32 MiB; total is at most 64 MiB; unique relative `/`-separated paths only; no empty, `.`, `..`, absolute, or backslash components; exact SHA-256 and declared size; both entry files present with matching roles; no undeclared extracted files; API ranges/capabilities compatible. Download into a fresh staging directory, reject links and non-regular files, verify while streaming with bounded bytes, then atomically rename. Never extract over an active build. Keep bundled and previous known-good builds. A workout (once implemented) pins its engine and blocks activation until idle.
+Validation happens before activation: 1–1024 files; each is 1 byte through 32 MiB; total is at most 64 MiB; unique relative `/`-separated paths only; no empty, `.`, `..`, absolute, or backslash components, URL delimiters/percent escapes (`?`, `#`, `%`), or control characters; exact SHA-256 and declared size; both entry files present with matching roles; no undeclared extracted files; API ranges/capabilities compatible. Download into a fresh staging directory, reject links and non-regular files, verify while streaming with bounded bytes, then atomically rename. Never extract over an active build. Keep bundled and previous known-good builds. A workout (once implemented) pins its engine and blocks activation until idle.
 
 ## Headless engine artifact API
 

@@ -58,6 +58,9 @@ describe('mobile wire validation', () => {
   test('validates safe, bounded, complete manifests', () => {
     expect(parseBuildManifest(manifest).buildId).toBe('phone-2026.09.19')
     expect(() => parseBuildManifest({ ...manifest, files: [{ ...manifest.files[0], path: '../index.html' }, manifest.files[1]] })).toThrow()
+    for (const path of ['ui/app.js?debug', 'ui/app.js#fragment', 'ui/%2e%2e/app.js', 'ui/app\u0000.js']) {
+      expect(() => parseBuildManifest({ ...manifest, uiEntryPath: path, files: [{ ...manifest.files[0], path }, manifest.files[1]] })).toThrow()
+    }
     expect(() => parseBuildManifest({ ...manifest, files: [{ ...manifest.files[0], sizeBytes: 33 * 1024 * 1024 }, manifest.files[1]] })).toThrow()
     expect(() => parseBuildManifest({ ...manifest, engineEntryPath: 'missing.js' })).toThrow()
     expect(() => parseBuildManifest({ ...manifest, requiredCapabilities: ['workout.start'] })).toThrow()
