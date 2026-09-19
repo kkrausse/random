@@ -38,7 +38,8 @@ export class WorkspaceController {
   get workspace() { return this.snapshot.workspace; }
   get runtime() { return this.snapshot.runtime; }
   private publish(patch: Partial<WorkspaceSnapshot>) { this.snapshot = { ...this.snapshot, ...patch }; for (const listener of this.listeners) listener(); }
-  log = (line: string) => { this.diagnostics.record("activity", { message: line }); this.publish({ logs: [...this.snapshot.logs, `${new Date().toLocaleTimeString()} ${safeText(line)}`].slice(-160) }); };
+  private appendLog(line: string) { this.publish({ logs: [...this.snapshot.logs, `${new Date().toLocaleTimeString()} ${safeText(line)}`].slice(-2000) }); }
+  log = (line: string) => { this.diagnostics.record("activity", { message: line }); this.appendLog(line); };
   status = (status: string) => { this.publish({ status }); this.log(status); };
   reportError = (error: unknown) => { this.publish({ error: message(error) }); this.log(message(error)); };
   notifyPersistence = () => this.publish({ persistence: this.workspace?.persistence.status ?? "closed" });
@@ -99,9 +100,23 @@ export class WorkspaceController {
   private async drain(stream: AsyncIterable<Uint8Array>, label: string) {
     const diagnostics = this.diagnostics;
     let totalBytes = 0;
-    try { for await (const bytes of stream) { if (!totalBytes) diagnostics.record("guest.first-output", { label, bytes: bytes.length }); totalBytes += bytes.length; } }
+    const decoder = new TextDecoder();
+    let pending = "";
+    const output = (text: string, flush = false) => {
+      pending += text;
+      let end: number;
+      while ((end = pending.indexOf("\n")) >= 0) {
+        this.appendLog(`[${label}] ${pending.slice(0, end).replace(/\r$/, "")}`);
+        pending = pending.slice(end + 1);
+      }
+      if (pending.length >= 5000 || (flush && pending)) {
+        this.appendLog(`[${label}] ${pending}`);
+        pending = "";
+      }
+    };
+    try { for await (const bytes of stream) { if (!totalBytes) diagnostics.record("guest.first-output", { label, bytes: bytes.length }); totalBytes += bytes.length; output(decoder.decode(bytes, { stream: true })); } }
     catch (error) { this.log(`[${label}] ${message(error)}`); }
-    finally { this.log(`[${label}] drained ${totalBytes} bytes (raw output omitted from diagnostics)`); }
+    finally { output(decoder.decode(), true); this.log(`[${label}] drained ${totalBytes} bytes (raw output omitted from diagnostics)`); }
   }
   async launch(name: string, options: NodeLaunchOptions, port: number, connect: (endpoint: Endpoint) => Promise<Connection>, lifecycle?: ServiceLifecycle) {
     const diagnostics = this.diagnostics;
