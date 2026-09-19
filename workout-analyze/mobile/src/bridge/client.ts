@@ -130,22 +130,22 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
     if (event.sequence <= state.lastSequence) return
     if (event.sequence !== state.lastSequence + 1) {
       bufferedEvents.push(event)
-      void resync()
+      void resync(true)
       return
     }
     commitEvent(event)
   }
 
-  const resync = () => {
+  const resync = (countAsGap = false) => {
     if (resyncing) return resyncing
     resyncing = (async () => {
       try {
         if (state.capabilities.includes('bridge.snapshot')) {
           const snapshot = await request('bridge.snapshot', {})
-          publish({ snapshot, session: snapshot.session, lastSequence: snapshot.sequence, resyncCount: state.resyncCount + 1 })
+          publish({ snapshot, session: snapshot.session, lastSequence: snapshot.sequence, resyncCount: state.resyncCount + (countAsGap ? 1 : 0) })
         } else {
           const snapshot = await request('session.snapshot', {})
-          publish({ session: snapshot, lastSequence: snapshot.durableSequence, resyncCount: state.resyncCount + 1 })
+          publish({ session: snapshot, lastSequence: snapshot.durableSequence, resyncCount: state.resyncCount + (countAsGap ? 1 : 0) })
         }
         const queued = bufferedEvents.sort((a, b) => a.sequence - b.sequence)
         bufferedEvents = []
@@ -220,7 +220,7 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
   }
 
   return {
-    connect, request, getState: () => state,
+    connect, request, refreshSnapshot: () => resync(false), getState: () => state,
     subscribe(listener: (value: BridgeState) => void) { listeners.add(listener); listener(state); return () => { listeners.delete(listener) } },
     subscribeEvents(listener: (event: NativeEvent) => void) { eventListeners.add(listener); return () => { eventListeners.delete(listener) } },
     dispose() {

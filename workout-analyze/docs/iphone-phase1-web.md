@@ -32,6 +32,8 @@ mobile/dist/
 
 The page installs `window.WorkoutAnalyzeNative` before `bridge.hello`, strictly validates typed replies and events using `src/shared/mobile`, times out unanswered requests, then uses `bridge.snapshot` when advertised to atomically install native sequence/session/permission/sensor/diagnostic/build state. Events at or below that sequence are discarded; a gap triggers a fresh atomic snapshot before queued events are applied. Legacy shells fall back to `session.snapshot`. Reload reconnects rather than creating state.
 
+`mobile/src/store.ts` is the single Zustand application store and reactive projection of that validated native state. The bridge client remains the sequence/transport authority. The store owns one bridge subscription, one visible-only refresh loop, request lifecycle/errors, sensor/build/diagnostic actions, and leave-page probe cleanup; components use selector subscriptions and keep only unsaved form text locally.
+
 ## Harness behavior
 
 - **Diagnostics:** native status, reason, freshness/observation age, visible-only modest refresh, isolated check results, and native export excluding workout observations.
@@ -39,11 +41,11 @@ The page installs `window.WorkoutAnalyzeNative` before `bridge.hello`, strictly 
 - **Capability-driven UI:** controls appear only when native advertises each complete sensor API bundle. An older shell is shown as unavailable rather than being called or implied to work. Leaving Diagnostics stops an active location probe and scan.
 - **Hardware-state gating:** location start remains disabled until native reports location available with usable authorization. Bluetooth scan/connect remain disabled until native reports the sensor available, authorization allowed, and power on. A discovered peripheral explicitly marked non-connectable cannot be connected.
 - **Build & source utilities:** active/bundled/previous build IDs, development source configuration, HTTPS manifest download followed by explicit activation, rollback, and native UI reload.
-- **Browser simulator:** explicit fixture-data banner; optional `?fault=timeout`, `?fault=bridge-error`, or `?fault=engine-failure`. It is useful for rendering and error-state development only.
+- **Browser simulator:** opt in with `?simulator=1`; it has an explicit fixture-data banner. Fault links `?fault=timeout`, `?fault=bridge-error`, and `?fault=engine-failure` also explicitly select it. It is useful for rendering and error-state development only.
 - **Unavailable features:** workout recording remains honestly unavailable. Sensor probes validate native APIs but never create or modify a workout. There is no fake Start action.
 
 Permission prompts and location/BLE start/stop/connect operations are always user-initiated; opening Diagnostics remains read-only. A background probe is diagnostic evidence only, not a claim that workout recording works.
 
 Navigating away from Diagnostics explicitly stops an active location probe and BLE scan. Merely hiding/backgrounding the web view does not issue web cleanup commands: native owns the contract behavior there—foreground-only location and scanning stop, while an explicitly requested background location probe or connected HR monitor may continue only when native reports/configures that support. Returning visible refreshes passive status.
 
-The simulator is selected only for ordinary `http:`/`https:` browser pages. A bundled/custom-scheme page with a missing message handler fails closed as **Native bridge unavailable**; it never substitutes fixture sensor evidence. A handler that exists but times out or returns invalid data likewise remains a visible native bridge error.
+The simulator is selected only by an explicit simulator/fault query. Any page without that opt-in and without a message handler—including an HTTP development source loaded inside the phone shell—fails closed as **Native bridge unavailable**; it never substitutes fixture sensor evidence. A handler that exists but times out or returns invalid data likewise remains a visible native bridge error.
