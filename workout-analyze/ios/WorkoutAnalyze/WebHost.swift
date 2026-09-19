@@ -30,7 +30,9 @@ final class WebHost: NSObject, ObservableObject, WKScriptMessageHandler, WKNavig
     func loadSelectedSource() {
         receivedHello = false
         handshakeTask?.cancel()
-        webView.load(URLRequest(url: builds.activeUIURL(), cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30))
+        let url = builds.activeUIURL()
+        dispatcher.log.append(subsystem: "source", message: "Loading selected UI source", metadata: ["url": url.absoluteString])
+        webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30))
         handshakeTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(8))
             guard !Task.isCancelled, let self, !self.receivedHello else { return }
@@ -46,6 +48,7 @@ final class WebHost: NSObject, ObservableObject, WKScriptMessageHandler, WKNavig
             let reply = await dispatcher.dispatch(message.body)
             if let object = message.body as? [String: Any], object["method"] as? String == "bridge.hello", reply["ok"] as? Bool == true {
                 receivedHello = true; handshakeTask?.cancel()
+                dispatcher.log.append(subsystem: "bridge", message: "Development UI bridge handshake completed", metadata: ["source": builds.sourceDescription])
             }
             await sendReply(reply)
         }
@@ -92,6 +95,15 @@ final class WebHost: NSObject, ObservableObject, WKScriptMessageHandler, WKNavig
         if allowed { return .allow }
         if ["http", "https"].contains(url.scheme?.lowercased() ?? "") { await UIApplication.shared.open(url) }
         return .cancel
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        dispatcher.log.append(subsystem: "source", message: "Selected UI source finished navigation", metadata: ["url": webView.url?.absoluteString ?? "unknown"])
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        let nsError = error as NSError
+        dispatcher.log.append(subsystem: "source", message: "Selected UI source navigation failed", metadata: ["reason": error.localizedDescription, "domain": nsError.domain, "code": String(nsError.code)])
     }
 }
 
