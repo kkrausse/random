@@ -23,7 +23,9 @@
           var item = batch.observations[i]
           if (!item || !Number.isSafeInteger(item.sequence) || item.sequence !== nextSequence + 1 || !finiteNumber(item.value)) throw new TypeError('observations must be finite and contiguous')
           nextSequence = item.sequence
-          nextTotal += item.value
+          var candidateTotal = nextTotal + item.value
+          if (!finiteNumber(candidateTotal)) throw new TypeError('observations must produce a finite total')
+          nextTotal = candidateTotal
         }
         lastSequence = nextSequence
         total = nextTotal

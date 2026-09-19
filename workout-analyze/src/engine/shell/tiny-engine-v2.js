@@ -10,7 +10,7 @@
     var lastSequence = 0
     var total = 0
     if (checkpoint !== null) {
-      if (!checkpoint || checkpoint.schemaVersion !== 1 || checkpoint.engineBuildId !== BUILD_ID || checkpoint.algorithmId !== ALGORITHM_ID || !Number.isSafeInteger(checkpoint.lastSequence) || checkpoint.lastSequence < 0 || !finiteNumber(checkpoint.total)) throw new TypeError('incompatible checkpoint')
+      if (!checkpoint || checkpoint.schemaVersion !== 1 || checkpoint.engineBuildId !== BUILD_ID || checkpoint.algorithmId !== ALGORITHM_ID || !Number.isSafeInteger(checkpoint.lastSequence) || checkpoint.lastSequence < 0 || !finiteNumber(checkpoint.total) || !finiteNumber(checkpoint.total * SCALE)) throw new TypeError('incompatible checkpoint')
       lastSequence = checkpoint.lastSequence
       total = checkpoint.total
     }
@@ -23,7 +23,9 @@
           var item = batch.observations[i]
           if (!item || !Number.isSafeInteger(item.sequence) || item.sequence !== nextSequence + 1 || !finiteNumber(item.value)) throw new TypeError('observations must be finite and contiguous')
           nextSequence = item.sequence
-          nextTotal += item.value
+          var candidateTotal = nextTotal + item.value
+          if (!finiteNumber(candidateTotal) || !finiteNumber(candidateTotal * SCALE)) throw new TypeError('observations must produce a finite display value')
+          nextTotal = candidateTotal
         }
         lastSequence = nextSequence
         total = nextTotal

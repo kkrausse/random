@@ -27,4 +27,23 @@ describe('JavaScriptCore tiny engine artifact', () => {
     expect(v2.create(null).processBatch({ observations: ENGINE_CHANGE_FIXTURE.observations }).displayValue).toBe(ENGINE_CHANGE_FIXTURE.v2.displayValue)
     expect(() => v2.create(v1.create(null).checkpoint())).toThrow('incompatible checkpoint')
   })
+
+  test('rejects non-JSON numeric output without mutating its checkpoint', async () => {
+    const v1 = await load('./tiny-engine-v1.js')
+    const engine = v1.create({
+      schemaVersion: 1, engineBuildId: 'phase1-engine-v1', algorithmId: 'phase1-sum-v1',
+      lastSequence: 0, total: Number.MAX_VALUE,
+    })
+    const before = engine.checkpoint()
+    expect(() => engine.processBatch({ observations: [{ sequence: 1, value: Number.MAX_VALUE }] })).toThrow('finite total')
+    expect(engine.checkpoint()).toEqual(before)
+
+    const v2 = await load('./tiny-engine-v2.js')
+    const scaled = v2.create({
+      schemaVersion: 1, engineBuildId: 'phase1-engine-v2', algorithmId: 'phase1-double-v2',
+      lastSequence: 0, total: Number.MAX_VALUE / 2,
+    })
+    expect(() => scaled.processBatch({ observations: [{ sequence: 1, value: Number.MAX_VALUE / 2 }] })).toThrow('finite display value')
+    expect(scaled.checkpoint().lastSequence).toBe(0)
+  })
 })
