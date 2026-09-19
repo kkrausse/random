@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
+import { PHASE1_CAPABILITIES } from './contracts'
 import { parseBuildManifest, parseCommand, parseNativeEvent, parseReply } from './validation'
 
 const hash = 'a'.repeat(64)
@@ -38,11 +39,28 @@ describe('mobile wire validation', () => {
     expect(() => parseReply('permissions.status', { protocolVersion: 1, requestId: '1', ok: true, result: { promptsAutomatically: false } })).toThrow()
   })
 
+  test('requires the complete, well-formed phase-1 capability advertisement', () => {
+    const result = {
+      shellVersion: '0.1.0', protocolVersion: 1, engineApiVersion: 1, checkpointSchemaVersion: 1,
+      capabilities: PHASE1_CAPABILITIES,
+      unavailableCapabilities: [
+        { capability: 'workout.recorder', reason: 'Not implemented' },
+        { capability: 'sensors.location', reason: 'Not implemented' },
+        { capability: 'sensors.bluetoothHeartRate', reason: 'Not implemented' },
+      ],
+    }
+    const reply = { protocolVersion: 1, requestId: '1', ok: true, result }
+    expect(parseReply('bridge.hello', reply).ok).toBe(true)
+    expect(() => parseReply('bridge.hello', { ...reply, result: { ...result, capabilities: PHASE1_CAPABILITIES.slice(1) } })).toThrow()
+    expect(() => parseReply('bridge.hello', { ...reply, result: { ...result, unavailableCapabilities: [{ capability: 'workout.recorder', reason: '' }, ...result.unavailableCapabilities.slice(0, 2)] } })).toThrow()
+  })
+
   test('validates safe, bounded, complete manifests', () => {
     expect(parseBuildManifest(manifest).buildId).toBe('phone-2026.09.19')
     expect(() => parseBuildManifest({ ...manifest, files: [{ ...manifest.files[0], path: '../index.html' }, manifest.files[1]] })).toThrow()
     expect(() => parseBuildManifest({ ...manifest, files: [{ ...manifest.files[0], sizeBytes: 33 * 1024 * 1024 }, manifest.files[1]] })).toThrow()
     expect(() => parseBuildManifest({ ...manifest, engineEntryPath: 'missing.js' })).toThrow()
     expect(() => parseBuildManifest({ ...manifest, requiredCapabilities: ['workout.start'] })).toThrow()
+    expect(() => parseBuildManifest({ ...manifest, bridgeProtocol: { min: 1, max: 1, ignored: true } })).toThrow()
   })
 })
