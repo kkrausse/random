@@ -30,12 +30,13 @@ mobile/dist/
 
 `manifest.json` declares every payload file (but not itself), byte size, SHA-256 hash, roles, compatibility, and entry paths. UI asset references are relative for the restricted custom WK scheme. V1 is the bundled default. Building with `--engine=v2` creates an artifact that reports `phase1-engine-v2` and proves native-hosted engine behavior can change without reinstalling the shell.
 
-The page installs `window.WorkoutAnalyzeNative` before `bridge.hello`, strictly validates typed replies and events using `src/shared/mobile`, times out unanswered requests, then obtains an authoritative session snapshot. Events at or below that sequence are discarded; a gap triggers a fresh snapshot before queued events are applied. Reload reconnects rather than creating state.
+The page installs `window.WorkoutAnalyzeNative` before `bridge.hello`, strictly validates typed replies and events using `src/shared/mobile`, times out unanswered requests, then uses `bridge.snapshot` when advertised to atomically install native sequence/session/permission/sensor/diagnostic/build state. Events at or below that sequence are discarded; a gap triggers a fresh atomic snapshot before queued events are applied. Legacy shells fall back to `session.snapshot`. Reload reconnects rather than creating state.
 
 ## Harness behavior
 
 - **Diagnostics:** native status, reason, freshness/observation age, visible-only modest refresh, isolated check results, and native export excluding workout observations.
 - **Explicit sensor probes:** passive location/Bluetooth status on entry; clearly labelled user actions for permission requests, bounded foreground/background location probes, retained rich location reads, bounded BLE HR scanning, connect/disconnect, and retained rich measurement reads. Raw evidence includes accuracy/source/simulation metadata and HR flags/contact/timestamps.
+- **Capability-driven UI:** controls appear only when native advertises each complete sensor API bundle. An older shell is shown as unavailable rather than being called or implied to work. Leaving Diagnostics stops an active location probe and scan.
 - **Build & source utilities:** active/bundled/previous build IDs, development source configuration, HTTPS manifest download followed by explicit activation, rollback, and native UI reload.
 - **Browser simulator:** explicit fixture-data banner; optional `?fault=timeout`, `?fault=bridge-error`, or `?fault=engine-failure`. It is useful for rendering and error-state development only.
 - **Unavailable features:** workout recording remains honestly unavailable. Sensor probes validate native APIs but never create or modify a workout. There is no fake Start action.
