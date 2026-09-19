@@ -1,0 +1,181 @@
+import {
+  MOBILE_BRIDGE_HANDLER,
+  MOBILE_NATIVE_RECEIVER,
+  MOBILE_PROTOCOL_VERSION,
+  parseNativeEvent,
+  parseReply,
+  type Command,
+  type CommandParams,
+  type CommandResults,
+  type MobileMethod,
+  type NativeEvent,
+  type Reply,
+  type SessionSnapshot,
+} from '../../../src/shared/mobile'
+
+export interface BridgeTransport {
+  readonly kind: 'native' | 'simulator'
+  readonly label: string
+  post(command: Command): void
+}
+
+export interface BridgeState {
+  readonly phase: 'connecting' | 'ready' | 'error'
+  readonly transport: BridgeTransport['kind']
+  readonly transportLabel: string
+  readonly lastSequence: number | null
+  readonly resyncCount: number
+  readonly session: SessionSnapshot | null
+  readonly error: string | null
+}
+
+export class BridgeRequestError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+    readonly retryable: boolean,
+  ) {
+    super(message)
+    this.name = 'BridgeRequestError'
+  }
+}
+
+type Pending = {
+  readonly method: MobileMethod
+  readonly resolve: (value: unknown) => void
+  readonly reject: (reason: unknown) => void
+  readonly timeout: ReturnType<typeof setTimeout>
+}
+
+declare global {
+  interface Window {
+    WorkoutAnalyzeNative?: {
+      receiveReply(value: unknown): void
+      receiveEvent(value: unknown): void
+    }
+    webkit?: { messageHandlers?: Record<string, { postMessage(value: unknown): void } | undefined> }
+  }
+}
+
+export const nativeTransport = (): BridgeTransport | null => {
+  const handler = window.webkit?.messageHandlers?.[MOBILE_BRIDGE_HANDLER]
+  if (!handler) return null
+  return { kind: 'native', label: 'Native iPhone shell', post: (command) => handler.postMessage(command) }
+}
+
+export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000) => {
+  let counter = 0
+  let resyncing: Promise<void> | null = null
+  let bufferedEvents: NativeEvent[] = []
+  const pending = new Map<string, Pending>()
+  const listeners = new Set<(state: BridgeState) => void>()
+  const eventListeners = new Set<(event: NativeEvent) => void>()
+  let state: BridgeState = {
+    phase: 'connecting', transport: transport.kind, transportLabel: transport.label,
+    lastSequence: null, resyncCount: 0, session: null, error: null,
+  }
+
+  const publish = (next: Partial<BridgeState>) => {
+    state = { ...state, ...next }
+    listeners.forEach((listener) => listener(state))
+  }
+
+  const request = <M extends MobileMethod>(method: M, params: CommandParams[M]): Promise<CommandResults[M]> => {
+    counter += 1
+    const requestId = `web-${Date.now().toString(36)}-${counter}`
+    const command = { protocolVersion: MOBILE_PROTOCOL_VERSION, requestId, method, params } as Command<M>
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        pending.delete(requestId)
+        reject(new BridgeRequestError(`${method} timed out`, 'timeout', true))
+      }, timeoutMs)
+      pending.set(requestId, { method, resolve: (value) => resolve(value as CommandResults[M]), reject, timeout })
+      try { transport.post(command as Command) } catch (error) {
+        clearTimeout(timeout)
+        pending.delete(requestId)
+        reject(error)
+      }
+    })
+  }
+
+  const applyEvent = (event: NativeEvent) => {
+    if (state.lastSequence === null) { bufferedEvents.push(event); return }
+    if (event.sequence <= state.lastSequence) return
+    if (event.sequence !== state.lastSequence + 1) {
+      bufferedEvents.push(event)
+      void resync()
+      return
+    }
+    publish({ lastSequence: event.sequence, session: event.type === 'session.updated' ? event.payload as SessionSnapshot : state.session })
+    eventListeners.forEach((listener) => listener(event))
+  }
+
+  const resync = () => {
+    if (resyncing) return resyncing
+    resyncing = (async () => {
+      try {
+        const snapshot = await request('session.snapshot', {})
+        publish({ session: snapshot, lastSequence: snapshot.durableSequence, resyncCount: state.resyncCount + 1 })
+        const queued = bufferedEvents.sort((a, b) => a.sequence - b.sequence)
+        bufferedEvents = []
+        queued.forEach(applyEvent)
+      } catch (error) {
+        publish({ phase: 'error', error: error instanceof Error ? error.message : 'Snapshot resync failed' })
+      } finally { resyncing = null }
+    })()
+    return resyncing
+  }
+
+  window[MOBILE_NATIVE_RECEIVER] = {
+    receiveReply(value) {
+      let envelope: Reply
+      try {
+        const requestId = typeof value === 'object' && value !== null && 'requestId' in value ? String(value.requestId) : ''
+        const item = pending.get(requestId)
+        if (!item) return
+        envelope = parseReply(item.method, value)
+        clearTimeout(item.timeout)
+        pending.delete(requestId)
+        if (envelope.ok) item.resolve(envelope.result)
+        else item.reject(new BridgeRequestError(envelope.error.message, envelope.error.code, envelope.error.retryable))
+      } catch (error) {
+        const requestId = typeof value === 'object' && value !== null && 'requestId' in value ? String(value.requestId) : ''
+        const item = pending.get(requestId)
+        if (item) { clearTimeout(item.timeout); pending.delete(requestId); item.reject(error) }
+      }
+    },
+    receiveEvent(value) {
+      try { applyEvent(parseNativeEvent(value)) } catch (error) {
+        publish({ phase: 'error', error: error instanceof Error ? error.message : 'Invalid native event' })
+      }
+    },
+  }
+
+  const connect = async () => {
+    publish({ phase: 'connecting', error: null })
+    try {
+      await request('bridge.hello', { clientName: 'mobile-web', clientVersion: '0.1.0', supportedProtocolVersions: [1] })
+      const snapshot = await request('session.snapshot', {})
+      publish({ phase: 'ready', session: snapshot, lastSequence: snapshot.durableSequence, error: null })
+      const queued = bufferedEvents.sort((a, b) => a.sequence - b.sequence)
+      bufferedEvents = []
+      queued.forEach(applyEvent)
+    } catch (error) {
+      publish({ phase: 'error', error: error instanceof Error ? error.message : 'Bridge connection failed' })
+      throw error
+    }
+  }
+
+  return {
+    connect, request, getState: () => state,
+    subscribe(listener: (value: BridgeState) => void) { listeners.add(listener); listener(state); return () => { listeners.delete(listener) } },
+    subscribeEvents(listener: (event: NativeEvent) => void) { eventListeners.add(listener); return () => { eventListeners.delete(listener) } },
+    dispose() {
+      pending.forEach((item) => { clearTimeout(item.timeout); item.reject(new Error('Bridge disposed')) })
+      pending.clear(); listeners.clear(); eventListeners.clear()
+      if (window[MOBILE_NATIVE_RECEIVER]) delete window[MOBILE_NATIVE_RECEIVER]
+    },
+  }
+}
+
+export type BridgeClient = ReturnType<typeof createBridgeClient>

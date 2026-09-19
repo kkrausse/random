@@ -1,0 +1,7 @@
+{
+  "extends": "../tsconfig.json",
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "../scripts/mobile/**/*.ts"],
+  "compilerOptions": {
+    "types": ["vite/client", "bun"]
+  }
+}
