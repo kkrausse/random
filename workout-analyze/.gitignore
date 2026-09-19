@@ -19,3 +19,4 @@ data/analysis-experiments/
 data/raw/garmin/manifest.json
 data/raw/garmin/activities/*
 !data/raw/garmin/activities/.gitkeep
+*.excs

@@ -2,6 +2,10 @@
 
 Local-first Garmin activity archive, DuckDB pipeline, and TanStack Start browser.
 
+## iPhone app proposal
+
+See [the technical proposal](docs/iphone-workout-proposal.md) for the native WebKit recorder, GPS/Bluetooth bridge, live laps, and segment comparisons. [Excalidraw wireframes](docs/iphone-workout-wireframes.excalidraw) sketch the proposed screens; this is a design proposal, not an implemented iOS app.
+
 ## Run
 
 ```bash
