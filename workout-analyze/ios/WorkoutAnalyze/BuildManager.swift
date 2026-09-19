@@ -136,11 +136,15 @@ final class BuildManager: ObservableObject {
             guard let url = ContractValidation.developmentURL(raw) else { throw ShellError.invalidRequest("Development URL must be an HTTP(S) origin without credentials, path, query, or fragment") }
             developmentURL = url
             defaults.set(url.absoluteString, forKey: "developmentURL")
+            defaults.set("development", forKey: "workoutAnalyze.sourceSelection")
+            log.configureDevelopmentUpload(origin: url)
             log.append(subsystem: "source", message: "Development origin selected", metadata: ["origin": url.absoluteString])
             return ["source": ["kind": "development", "url": url.absoluteString], "reloadRequired": true]
         }
         developmentURL = nil
         defaults.removeObject(forKey: "developmentURL")
+        defaults.set("bundled", forKey: "workoutAnalyze.sourceSelection")
+        log.configureDevelopmentUpload(origin: nil)
         try activateSummary(Self.bundledSummary)
         log.append(subsystem: "source", message: "Bundled source selected")
         return ["source": ["kind": "bundled"], "reloadRequired": true]
@@ -215,6 +219,7 @@ final class BuildManager: ObservableObject {
         if target != active { previous = active; active = target }
         developmentURL = nil
         defaults.removeObject(forKey: "developmentURL")
+        log.configureDevelopmentUpload(origin: nil)
         pendingActivationBuildId = nil
         lastFailure = nil
         persistPointers()
@@ -229,7 +234,20 @@ final class BuildManager: ObservableObject {
 
     private func restorePointers() {
         lastFailure = defaults.string(forKey: "buildLastFailure")
-        if let raw = defaults.string(forKey: "developmentURL") { developmentURL = ContractValidation.developmentURL(raw) }
+        if let raw = defaults.string(forKey: "developmentURL") {
+            developmentURL = ContractValidation.developmentURL(raw)
+        }
+#if DEBUG
+        if developmentURL == nil,
+           defaults.string(forKey: "workoutAnalyze.sourceSelection") == nil,
+           let url = ContractValidation.developmentURL("http://100.86.29.19:4317") {
+            developmentURL = url
+            defaults.set(url.absoluteString, forKey: "developmentURL")
+            defaults.set("development", forKey: "workoutAnalyze.sourceSelection")
+            log.append(subsystem: "source", message: "Debug development origin defaulted", metadata: ["origin": url.absoluteString])
+        }
+#endif
+        log.configureDevelopmentUpload(origin: developmentURL)
         if let data = defaults.data(forKey: "activeBuild"), let summary = try? JSONDecoder().decode(BuildSummary.self, from: data), manifest(for: summary) != nil { active = summary }
         if let data = defaults.data(forKey: "previousBuild"), let summary = try? JSONDecoder().decode(BuildSummary.self, from: data), manifest(for: summary) != nil { previous = summary }
     }
