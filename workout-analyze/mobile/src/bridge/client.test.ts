@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { PHASE1_CAPABILITIES, type Command } from '../../../src/shared/mobile'
+import { PHASE1_BASE_CAPABILITIES, type Command } from '../../../src/shared/mobile'
 import { createBridgeClient, type BridgeTransport } from './client'
 import { createSimulatorTransport } from './simulator'
 
 const session = (sequence: number) => ({ sessionId: null, state: 'idle', revision: 0, durableSequence: sequence, recorderAvailability: 'unavailable', recorderUnavailableReason: 'Phase 1 shell only.', pinnedEngine: null, capturedAt: '2026-09-19T12:00:00Z' })
-const hello = { shellVersion: 'test', protocolVersion: 1, engineApiVersion: 1, checkpointSchemaVersion: 1, capabilities: PHASE1_CAPABILITIES, unavailableCapabilities: [
-  { capability: 'workout.recorder', reason: 'Unavailable' },
+const hello = { shellVersion: 'test', protocolVersion: 1, engineApiVersion: 1, checkpointSchemaVersion: 1, capabilities: PHASE1_BASE_CAPABILITIES, unavailableCapabilities: [
+  { capability: 'workout.recorder', reason: 'Unavailable' }, { capability: 'sensors.location', reason: 'Unavailable' }, { capability: 'sensors.bluetoothHeartRate', reason: 'Unavailable' },
 ] }
 
 const browser = globalThis as unknown as { window: Window }
@@ -63,6 +63,9 @@ describe('bridge client', () => {
     clients.push(client)
     await client.connect()
     expect(transport.label).toContain('simulator')
+    expect(client.getState().lastSequence).not.toBeNull()
+    expect(client.getState().snapshot?.sequence).toBe(client.getState().lastSequence!)
+    expect(client.getState().capabilities).toContain('bridge.snapshot')
     const permission = await client.request('permissions.request', { permission: 'locationWhenInUse' })
     expect(permission.location.details.authorization).toBe('whenInUse')
     const location = await client.request('location.start', { desiredAccuracy: 'best', distanceFilterM: 0, backgroundMode: 'foregroundOnly', maxDurationSeconds: 60 })

@@ -7,6 +7,7 @@ import {
   type Command,
   type CommandParams,
   type CommandResults,
+  type Capability,
   type MobileMethod,
   type NativeEvent,
   type Reply,
@@ -26,6 +27,8 @@ export interface BridgeState {
   readonly lastSequence: number | null
   readonly resyncCount: number
   readonly session: SessionSnapshot | null
+  readonly capabilities: readonly Capability[]
+  readonly snapshot: CommandResults['bridge.snapshot'] | null
   readonly error: string | null
 }
 
@@ -73,6 +76,7 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
   let state: BridgeState = {
     phase: 'connecting', transport: transport.kind, transportLabel: transport.label,
     lastSequence: null, resyncCount: 0, session: null, error: null,
+    capabilities: [], snapshot: null,
   }
 
   const publish = (next: Partial<BridgeState>) => {
@@ -106,7 +110,17 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
       void resync()
       return
     }
-    publish({ lastSequence: event.sequence, session: event.type === 'session.updated' ? event.payload as SessionSnapshot : state.session })
+    const snapshot = state.snapshot ? {
+      ...state.snapshot,
+      sequence: event.sequence,
+      ...(event.type === 'session.updated' ? { session: event.payload as CommandResults['bridge.snapshot']['session'] } : {}),
+      ...(event.type === 'permissions.updated' ? { permissions: event.payload as CommandResults['bridge.snapshot']['permissions'] } : {}),
+      ...(event.type === 'location.updated' ? { location: event.payload as CommandResults['bridge.snapshot']['location'] } : {}),
+      ...(event.type === 'heartRate.updated' ? { heartRate: event.payload as CommandResults['bridge.snapshot']['heartRate'] } : {}),
+      ...(event.type === 'diagnostics.updated' ? { diagnostics: event.payload as CommandResults['bridge.snapshot']['diagnostics'] } : {}),
+      ...(event.type === 'appBuild.updated' ? { appBuild: event.payload as CommandResults['bridge.snapshot']['appBuild'] } : {}),
+    } : null
+    publish({ lastSequence: event.sequence, snapshot, session: event.type === 'session.updated' ? event.payload as SessionSnapshot : state.session })
     eventListeners.forEach((listener) => listener(event))
   }
 
@@ -114,8 +128,13 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
     if (resyncing) return resyncing
     resyncing = (async () => {
       try {
-        const snapshot = await request('session.snapshot', {})
-        publish({ session: snapshot, lastSequence: snapshot.durableSequence, resyncCount: state.resyncCount + 1 })
+        if (state.capabilities.includes('bridge.snapshot')) {
+          const snapshot = await request('bridge.snapshot', {})
+          publish({ snapshot, session: snapshot.session, lastSequence: snapshot.sequence, resyncCount: state.resyncCount + 1 })
+        } else {
+          const snapshot = await request('session.snapshot', {})
+          publish({ session: snapshot, lastSequence: snapshot.durableSequence, resyncCount: state.resyncCount + 1 })
+        }
         const queued = bufferedEvents.sort((a, b) => a.sequence - b.sequence)
         bufferedEvents = []
         queued.forEach(applyEvent)
@@ -154,9 +173,15 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
   const connect = async () => {
     publish({ phase: 'connecting', error: null })
     try {
-      await request('bridge.hello', { clientName: 'mobile-web', clientVersion: '0.1.0', supportedProtocolVersions: [1] })
-      const snapshot = await request('session.snapshot', {})
-      publish({ phase: 'ready', session: snapshot, lastSequence: snapshot.durableSequence, error: null })
+      const hello = await request('bridge.hello', { clientName: 'mobile-web', clientVersion: '0.1.0', supportedProtocolVersions: [1] })
+      publish({ capabilities: hello.capabilities })
+      if (hello.capabilities.includes('bridge.snapshot')) {
+        const snapshot = await request('bridge.snapshot', {})
+        publish({ phase: 'ready', snapshot, session: snapshot.session, lastSequence: snapshot.sequence, error: null })
+      } else {
+        const snapshot = await request('session.snapshot', {})
+        publish({ phase: 'ready', session: snapshot, lastSequence: snapshot.durableSequence, error: null })
+      }
       const queued = bufferedEvents.sort((a, b) => a.sequence - b.sequence)
       bufferedEvents = []
       queued.forEach(applyEvent)
