@@ -29,11 +29,6 @@ test("New session drains a stable cross-location inbox without selecting its own
   const empty = async () => []
   const context: any = {
     storage: { store: () => [{ inactive: {} }, async () => {}] },
-    theme: {
-      text: { default: "#ffffff", subdued: "#888888", status: { permission: "#ffffff", question: "#ffffff", running: "#ffffff" }, feedback: { error: { default: "#ffffff" } } },
-      hue: { accent: { 400: "#ffffff" }, yellow: { 400: "#ffff00" } },
-      contextual: { overlay: { background: { default: "#000000", surface: { offset: "#444444" } }, scrollbar: { default: "#888888" } } },
-    },
     ui: {
       router: { current: () => ({ type: "home" }), navigate: (value: any) => { destination = value } },
       dialog: { clear() {}, prompt: async () => "no matching rows" },
