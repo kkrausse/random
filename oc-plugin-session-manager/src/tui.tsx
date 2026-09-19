@@ -111,19 +111,19 @@ function UsageBreakdown(props: { context: Plugin.Context; sessionID: string }) {
 
   const row = (label: string, value: () => number) => (
     <box flexDirection="row" justifyContent="space-between">
-      <text fg={props.context.theme.text.subdued}>{label}</text>
-      <text fg={props.context.theme.text.default}>{formatCompactTokens(value())}</text>
+      <text>{label}</text>
+      <text>{formatCompactTokens(value())}</text>
     </box>
   )
 
   return (
     <box paddingTop={1}>
-      <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>Token breakdown</text>
+      <text attributes={TextAttributes.BOLD}>Token breakdown</text>
       {usage() ? (
         <box>
           <box flexDirection="row" justifyContent="space-between">
-            <text fg={props.context.theme.text.subdued}>Current context</text>
-            <text fg={props.context.theme.text.default}>
+            <text>Current context</text>
+            <text>
               {formatCompactTokens(usage()!.tokens)}{usage()!.limit ? ` / ${formatCompactTokens(usage()!.limit!)}` : ""}
             </text>
           </box>
@@ -133,18 +133,18 @@ function UsageBreakdown(props: { context: Plugin.Context; sessionID: string }) {
           {row("Output", () => usage()!.breakdown.output)}
           {row("Reasoning", () => usage()!.breakdown.reasoning)}
         </box>
-      ) : <text fg={props.context.theme.text.subdued}>No usage yet</text>}
+      ) : <text>No usage yet</text>}
       <box paddingTop={1}>
         <box flexDirection="row" justifyContent="space-between">
-          <text fg={props.context.theme.text.subdued}>Session processed</text>
-          <text fg={props.context.theme.text.default}>{formatCompactTokens(session() ? processedTokens([session()!]) : 0)}</text>
+          <text>Session processed</text>
+          <text>{formatCompactTokens(session() ? processedTokens([session()!]) : 0)}</text>
         </box>
         <box flexDirection="row" justifyContent="space-between">
-          <text fg={props.context.theme.text.subdued}>{estimate().estimated ? estimate().zenEquivalent ? "Zen equivalent" : "Estimated cost" : "Calculated cost"}</text>
-          <text fg={props.context.theme.text.default}>{estimate().estimated ? "≈ " : ""}{formatCost(estimate().cost)}</text>
+          <text>{estimate().estimated ? estimate().zenEquivalent ? "Zen equivalent" : "Estimated cost" : "Calculated cost"}</text>
+          <text>{estimate().estimated ? "≈ " : ""}{formatCost(estimate().cost)}</text>
         </box>
         {estimate().unpriced > 0
-          ? <text fg={props.context.theme.text.subdued}>{estimate().unpriced} unpriced response{estimate().unpriced === 1 ? "" : "s"}</text>
+          ? <text>{estimate().unpriced} unpriced response{estimate().unpriced === 1 ? "" : "s"}</text>
           : null}
       </box>
     </box>
@@ -313,16 +313,15 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
       top={offsetHostInsets() ? -1 : 0}
       minHeight={0}
       overflow="hidden"
-      backgroundColor={props.context.theme.contextual.overlay.background.default}
     >
       {failure() ? (
         <box paddingLeft={0} paddingRight={0}>
-          <text fg={props.context.theme.text.feedback.error.default}>{failure()}</text>
+          <text fg="#ef4444">{failure()}</text>
         </box>
       ) : null}
-      <Show when={ready()} fallback={<text fg={props.context.theme.text.subdued}>Loading sessions…</text>}>
+      <Show when={ready()} fallback={<text>Loading sessions…</text>}>
       {attentionErrors().size || [...attention().values()].includes("unavailable") ? (
-        <text fg={props.context.theme.text.feedback.error.default}>Status unavailable · Ctrl+R to retry</text>
+        <text fg="#ef4444">Status unavailable · Ctrl+R to retry</text>
       ) : null}
         <scrollbox
           id="claude-session-list"
@@ -338,24 +337,22 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
         >
           <Index each={options()}>
             {(option, index) => {
-              // Hardcoded: the active theme maps its yellow ramp to grey, so
-              // theme hues can't provide a bright selection color.
+              // Fixed semantic accents keep the picker independent of the
+              // host theme token schema, which may change across releases.
               const SELECTED = "#fde047"
               const active = () => selectedIndex() === index
-              const titleColor = () => active()
-                ? SELECTED
-                : option().state === "inactive" ? props.context.theme.text.subdued : props.context.theme.text.default
-               const heading = () => {
-                 const label = groupLabel(option().state)
-                 return label !== groupLabel(options()[index - 1]?.state ?? "new") ? label : undefined
-               }
-              const descriptionColor = () => active() ? props.context.theme.text.default : props.context.theme.text.subdued
+              const titleColor = () => active() ? SELECTED : undefined
+              const heading = () => {
+                const label = groupLabel(option().state)
+                return label !== groupLabel(options()[index - 1]?.state ?? "new") ? label : undefined
+              }
+              const descriptionColor = () => active() ? SELECTED : undefined
               const updating = () => changingLifecycle()?.has(option().value) ?? false
               const iconColor = () => {
                 if (updating()) return "#ef4444"
-                if (option().statusState === "permission") return props.context.theme.text.status.permission
-                if (option().statusState === "question") return props.context.theme.text.status.question
-                if (option().statusState === "unavailable") return props.context.theme.text.feedback.error.default
+                if (option().statusState === "permission") return "#f59e0b"
+                if (option().statusState === "question") return "#38bdf8"
+                if (option().statusState === "unavailable") return "#ef4444"
                 if (option().statusState === "running") return SELECTED
                 return descriptionColor()
               }
@@ -363,8 +360,8 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
                 <>
                 {heading() ? (
                   <box height={mobile() ? 2 : 3} flexShrink={0} paddingLeft={0} paddingRight={0}
-                    border={["top"]} borderColor={props.context.theme.hue.accent[400]}>
-                    <text fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>{heading()}</text>
+                    border={["top"]}>
+                    <text attributes={TextAttributes.BOLD}>{heading()}</text>
                   </box>
                 ) : null}
                 <box
@@ -374,11 +371,6 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
                   flexDirection="row"
                   paddingLeft={0}
                   paddingRight={0}
-                  backgroundColor={
-                    active()
-                      ? props.context.theme.contextual.overlay.background.surface.offset
-                      : props.context.theme.contextual.overlay.background.default
-                  }
                   onMouseDown={(event) => {
                     if (event.button !== 0) return
                     event.stopPropagation()
@@ -460,40 +452,40 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
           </Index>
         </scrollbox>
       <box id="claude-session-preview" height={previewHeight()} flexShrink={0} flexDirection="column" paddingLeft={0} paddingRight={0}
-        border={["top"]} borderColor={permission() ? props.context.theme.text.status.permission : props.context.theme.contextual.overlay.scrollbar.default}>
+        border={["top"]} borderColor={permission() ? "#f59e0b" : undefined}>
         <box flexGrow={1} minHeight={0} overflow="hidden" flexDirection="column">
         {(mobile() && selectedSession()) || inboxRequest() ? (
-          <text id="claude-session-preview-title" maxHeight={2} flexShrink={0} fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
+          <text id="claude-session-preview-title" maxHeight={2} flexShrink={0} attributes={TextAttributes.BOLD}>
             {inboxRequest() ? inboxOwner()?.title || inboxRequest()!.sessionID : options()[selectedIndex()]?.title}
           </text>
         ) : null}
         {!(mobile() && permission() && dimensions().height < 20) ? (
-          <text height={1} flexShrink={0} wrapMode="none" fg={props.context.theme.text.subdued}>{inboxRequest()
+          <text height={1} flexShrink={0} wrapMode="none">{inboxRequest()
             ? `Known-location inbox${inboxOwner() ? ` · ${shortenLocation(props.context.ui.format.path(inboxOwner()!.location.directory))}` : ""}`
             : options()[selectedIndex()]?.description}</text>
         ) : null}
         {!inboxRequest() && (!mobile() || !permission()) ? (
         <box height={1} flexShrink={0} flexDirection="row" justifyContent="space-between">
-           <text wrapMode="none" flexShrink={1} fg={props.context.theme.text.default} attributes={TextAttributes.BOLD}>
+           <text wrapMode="none" flexShrink={1} attributes={TextAttributes.BOLD}>
             {selectedStats().left}
           </text>
-          <text flexShrink={0} fg={props.context.theme.text.subdued} attributes={TextAttributes.BOLD}>
+          <text flexShrink={0} attributes={TextAttributes.BOLD}>
             {selectedStats().right}
           </text>
         </box>
         ) : null}
         {selectedSession() && !inboxRequest() && (!mobile() || !permission()) ? (
-          <text id="claude-session-token-breakdown" height={1} flexShrink={0} wrapMode="none" fg={props.context.theme.text.subdued}>
+          <text id="claude-session-token-breakdown" height={1} flexShrink={0} wrapMode="none">
             {sessionTokenBreakdown(selectedSession()!, mobile())}
           </text>
         ) : null}
         {permission() ? (
           <>
-            <text height={1} flexShrink={0} wrapMode="none" fg={props.context.theme.text.status.permission} attributes={TextAttributes.BOLD}>
+            <text height={1} flexShrink={0} wrapMode="none" fg="#f59e0b" attributes={TextAttributes.BOLD}>
               {previewError() ? `Preview unavailable: ${previewError()}` : `${permission()!.action} · 1/${visiblePreview()!.permissions.length}${isInbox() && visiblePreview()!.forms.length ? ` · ?${visiblePreview()!.forms.length}` : ""}${isInbox() && inboxErrors().length ? ` · ${inboxErrors().length} unavailable` : ""}`}
             </text>
             <scrollbox id="claude-session-request" ref={previewScroll} flexGrow={1} minHeight={0} scrollY scrollX={false}>
-              <text fg={props.context.theme.text.default}>
+              <text>
                 {[permission()!.message, ...permission()!.resources,
                   permission()!.metadata ? JSON.stringify(permission()!.metadata, null, 2) : undefined].filter(Boolean).join("\n")}
               </text>
@@ -509,18 +501,13 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
                   return (
                     <box id={`claude-session-${action().id}`} flexGrow={1} flexBasis={0} minWidth={0}
                       height={approvalButtonHeight()} justifyContent="center" alignItems="center"
-                      backgroundColor={action().reply === "once" && !disabled()
-                        ? props.context.theme.hue.accent[400]
-                        : props.context.theme.contextual.overlay.background.surface.offset}
                       onMouseDown={(event) => {
                         if (event.button !== 0) return
                         event.stopPropagation()
                         event.preventDefault()
                         if (!disabled()) void replyToPermission(action().reply)
                       }}>
-                      <text wrapMode="none" fg={action().reply === "once" && !disabled()
-                        ? props.context.theme.contextual.overlay.background.default
-                        : action().reply === "always" || disabled() ? props.context.theme.text.subdued : props.context.theme.text.default}
+                      <text wrapMode="none" fg={action().reply === "once" && !disabled() ? "#fde047" : undefined}
                         attributes={action().reply === "once" ? TextAttributes.BOLD : undefined}>
                         {replying() && replyChoice() === action().reply ? "Sending…" : action().label}
                       </text>
@@ -532,19 +519,19 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
           </>
         ) : (
           <>
-            <text wrapMode="none" fg={props.context.theme.text.subdued}>
+            <text wrapMode="none">
               {selectedSession() && isArchived(selectedSession()!.id)
                 ? `Archived · ${selectedMessages()?.length ?? 0} messages`
                 : previewLoading() ? "Checking for approval requests…" : previewError() ? `Preview unavailable: ${previewError()}` : visiblePreview()?.forms.length ? `Question · ${visiblePreview()!.forms[0]!.title}` : isInbox() && inboxErrors().length ? `${inboxErrors().length} location${inboxErrors().length === 1 ? "" : "s"} unavailable` : options()[selectedIndex()]?.state === "inactive" ? (options()[selectedIndex()] as { inactiveByAge?: boolean })?.inactiveByAge ? "Inactive by age · no cleanup performed" : "Soft archived · history retained" : selectedSession() ? (options()[selectedIndex()] as { status?: string })?.status ?? "" : "Known-location inbox"}
             </text>
             {isInbox() && visiblePreview()?.forms.length ? (
               <scrollbox flexGrow={1} minHeight={0} scrollY scrollX={false}>
-                <text fg={props.context.theme.text.default}>{visiblePreview()!.forms[0]!.fields.map((field) => field.title ?? field.key).join("\n")}</text>
+                <text>{visiblePreview()!.forms[0]!.fields.map((field) => field.title ?? field.key).join("\n")}</text>
               </scrollbox>
             ) : null}
             {selectedSession() && isArchived(selectedSession()!.id) ? (
               <scrollbox flexGrow={1} minHeight={0} scrollY scrollX={false}>
-                <text fg={props.context.theme.text.default}>{(selectedMessages() ?? []).flatMap((message) =>
+                <text>{(selectedMessages() ?? []).flatMap((message) =>
                   message.type === "user" ? [`User: ${message.text}`]
                     : message.type === "assistant" ? message.content.filter((part) => part.type === "text").map((part) => `Assistant: ${part.text}`) : [],
                 ).join("\n\n")}</text>
@@ -555,7 +542,7 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
         </box>
         <box height={1} flexShrink={0} flexDirection="row" gap={mobile() ? 1 : 0}>
           {inboxRequest() ? (
-            <text id="claude-session-inbox-open" fg={props.context.theme.text.default} onMouseDown={(event) => {
+            <text id="claude-session-inbox-open" onMouseDown={(event) => {
               if (event.button !== 0) return
               event.stopPropagation()
               event.preventDefault()
@@ -563,7 +550,7 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
             }}>{mobile() ? "[Open]" : "[Open request] "}</text>
           ) : null}
           {mobile() && (!selectedSession() || !isArchived(selectedSession()!.id)) ? (
-            <text id="claude-session-open" fg={props.context.theme.text.default} onMouseDown={(event) => {
+            <text id="claude-session-open" onMouseDown={(event) => {
               if (event.button !== 0) return
               event.stopPropagation()
               event.preventDefault()
@@ -571,7 +558,7 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
             }}>{selectedSession() ? "[Open]" : "[New]"}</text>
           ) : null}
           {selectedSession() ? (
-            <text id="claude-session-preview-lifecycle" wrapMode="none" fg={props.context.theme.text.default}
+            <text id="claude-session-preview-lifecycle" wrapMode="none"
               onMouseDown={(event) => {
                 if (event.button !== 0) return
                 event.stopPropagation()
@@ -582,18 +569,18 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
             </text>
           ) : null}
           {mobile() ? (
-            <text id="claude-session-close" fg={props.context.theme.text.subdued} onMouseDown={(event) => {
+            <text id="claude-session-close" onMouseDown={(event) => {
               if (event.button !== 0) return
               event.stopPropagation()
               event.preventDefault()
               close()
             }}>[Close]</text>
-          ) : <text fg={props.context.theme.text.subdued}>{search() ? ` · / filter: ${search()}` : " · / search"}</text>}
+          ) : <text>{search() ? ` · / filter: ${search()}` : " · / search"}</text>}
         </box>
       </box>
       {loading() ? (
         <box paddingLeft={0} paddingRight={0}>
-          <text fg={props.context.theme.text.subdued}>
+          <text>
             {sessions().length === 0 ? "Loading sessions…" : "Loading more…"}
           </text>
         </box>
