@@ -89,27 +89,29 @@ const Diagnostics = ({ client, bridge, onUtilities }: { client: BridgeClient; br
   const [notice, setNotice] = useState<string | null>(null)
   const refresh = useCallback(() => client.request('diagnostics.snapshot', {}).then(setSnapshot).catch((error: unknown) => setNotice(error instanceof Error ? error.message : 'Refresh failed')), [client])
   useEffect(() => {
+    if (bridge.phase !== 'ready') return
     void refresh()
     const onVisibility = () => { if (document.visibilityState === 'visible') void refresh() }
     document.addEventListener('visibilitychange', onVisibility)
     const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void refresh() }, 10_000)
     return () => { document.removeEventListener('visibilitychange', onVisibility); window.clearInterval(timer) }
-  }, [refresh])
+  }, [bridge.phase, refresh])
   const run = async () => { setBusy(true); setNotice(null); try { const result = await client.request('diagnostics.runChecks', { checks: null }); setChecks(result.results); setNotice(result.workoutStateUnchanged ? 'Checks finished. Workout state was unchanged.' : null) } catch (error) { setNotice(error instanceof Error ? error.message : 'Checks failed') } finally { setBusy(false) } }
   const exportReport = async () => { setBusy(true); try { const result = await client.request('diagnostics.export', { includeWorkoutObservations: false }); setNotice(result.presented ? `Native share sheet opened · ${result.exportId}` : 'Native export was prepared but not presented.') } catch (error) { setNotice(error instanceof Error ? error.message : 'Export failed') } finally { setBusy(false) } }
   return <main className="app-shell diagnostics-screen">
     <TopBar title="Diagnostics" action={<button className="icon-button" onClick={onUtilities} aria-label="Build and source utilities"><SettingsIcon /></button>} />
     <section className="page-heading"><Pill tone={bridge.transport === 'simulator' ? 'warning' : 'good'}>{bridge.transportLabel}</Pill><h1>Native health</h1><p>Read-only observations. This page never starts sensors, prompts for permission, or mutates a workout.</p><Button className="utility-link" onClick={onUtilities}><SettingsIcon /> Build & source utilities</Button></section>
     <section className="summary-strip"><div><strong>{snapshot?.rows.filter((item) => item.status === 'ok').length ?? '—'}</strong><span>OK</span></div><div><strong>{snapshot?.rows.filter((item) => item.status === 'waiting').length ?? '—'}</strong><span>WAITING</span></div><div><strong>{snapshot?.rows.filter((item) => ['error', 'unavailable'].includes(item.status)).length ?? '—'}</strong><span>ATTENTION</span></div></section>
-    <SensorHarness client={client} capabilities={bridge.capabilities} initialSnapshot={bridge.snapshot} evidence={bridge.transport === 'native' ? 'Real native device data' : 'Simulated fixture evidence'} />
+    {bridge.error && <p className="notice notice-error" role="alert">Native bridge: {bridge.error}</p>}
+    <SensorHarness client={client} ready={bridge.phase === 'ready'} capabilities={bridge.capabilities} initialSnapshot={bridge.snapshot} evidence={bridge.transport === 'simulator' ? 'Simulated fixture evidence' : bridge.phase === 'ready' ? 'Real native device data' : 'Native bridge not verified'} />
     <section className="diagnostic-list">{snapshot?.rows.map((item) => <article key={item.id} className={`diagnostic-row status-${item.status}`}><StatusIcon status={item.status} /><div><div className="row-title"><strong>{item.label}</strong><Pill tone={item.status}>{item.status}</Pill></div><p>{item.reason}</p><small>{item.freshness} · {age(item.observedAt)}</small></div></article>) ?? <p>Reading native snapshot…</p>}</section>
     {checks.length > 0 && <section className="checks"><p className="eyebrow">LAST CHECK RUN</p>{checks.map((check) => <div key={check.id}><CheckCircle2 /><span><strong>{check.id}</strong><small>{check.reason}</small></span><Pill tone={check.outcome === 'pass' ? 'good' : 'error'}>{check.outcome}</Pill></div>)}</section>}
-    <div className="sticky-actions"><Button variant="primary" onClick={run} disabled={busy}><ShieldCheck /> Run isolated checks</Button><Button onClick={exportReport} disabled={busy}><Share2 /> Export diagnostics</Button><small>Export excludes workout observations by default.</small></div>
+    <div className="sticky-actions"><Button variant="primary" onClick={run} disabled={busy || bridge.phase !== 'ready'}><ShieldCheck /> Run isolated checks</Button><Button onClick={exportReport} disabled={busy || bridge.phase !== 'ready'}><Share2 /> Export diagnostics</Button><small>Export excludes workout observations by default.</small></div>
     {notice && <p className="notice" role="status">{notice}</p>}
   </main>
 }
 
-const SensorHarness = ({ client, capabilities, initialSnapshot, evidence }: { client: BridgeClient; capabilities: readonly Capability[]; initialSnapshot: CommandResults['bridge.snapshot'] | null; evidence: string }) => {
+const SensorHarness = ({ client, ready, capabilities, initialSnapshot, evidence }: { client: BridgeClient; ready: boolean; capabilities: readonly Capability[]; initialSnapshot: CommandResults['bridge.snapshot'] | null; evidence: string }) => {
   const [permissions, setPermissions] = useState<PermissionStatus | null>(null)
   const [location, setLocation] = useState<LocationProbeStatus | null>(null)
   const [heartRate, setHeartRate] = useState<HeartRateStatus | null>(null)
@@ -123,11 +125,12 @@ const SensorHarness = ({ client, capabilities, initialSnapshot, evidence }: { cl
   const heartRateSupported = ['heartRate.status', 'heartRate.scan', 'heartRate.stopScan', 'heartRate.connect', 'heartRate.disconnect', 'heartRate.read'].every((capability) => capabilities.includes(capability as Capability))
   const permissionRequestsSupported = capabilities.includes('permissions.request')
   const refresh = useCallback(async () => {
+    if (!ready) return
     const nextPermissions = await client.request('permissions.status', {})
     setPermissions(nextPermissions)
     if (locationSupported) setLocation(await client.request('location.status', {}))
     if (heartRateSupported) setHeartRate(await client.request('heartRate.status', {}))
-  }, [client, heartRateSupported, locationSupported])
+  }, [client, heartRateSupported, locationSupported, ready])
   useEffect(() => {
     if (!initialSnapshot) return
     setPermissions(initialSnapshot.permissions); setLocation(initialSnapshot.location); setHeartRate(initialSnapshot.heartRate)
@@ -161,6 +164,9 @@ const SensorHarness = ({ client, capabilities, initialSnapshot, evidence }: { cl
   const readHeartRate = () => heartRate?.connectionId ? act('hr-read', async () => { const page = await client.request('heartRate.read', { connectionId: heartRate.connectionId!, afterCursor: null, limit: 50 }); setMeasurements(page.items); setNotice(`Read ${page.items.length} retained heart-rate measurements${page.droppedBeforeCursor ? '; older data was dropped' : ''}.`) }) : Promise.resolve()
   const latestLocation = locations.at(-1) ?? location?.latestObservation
   const latestHeartRate = measurements.at(-1) ?? heartRate?.latestMeasurement
+  const locationAuthorized = permissions?.location.details.authorization === 'whenInUse' || permissions?.location.details.authorization === 'always'
+  const canStartLocation = location?.availability === 'available' && locationAuthorized && (location.state === 'inactive' || location.state === 'error')
+  const bluetoothReady = heartRate?.availability === 'available' && permissions?.bluetooth.details.authorization === 'allowed' && permissions.bluetooth.details.power === 'poweredOn'
   return <section className="sensor-harness">
     <div className="harness-heading"><div><p className="eyebrow">EXPLICIT DEVICE PROBES</p><h2>Sensor API harness</h2></div><Pill tone={evidence.startsWith('Real') ? 'good' : 'warning'}>{evidence}</Pill></div>
     <p className="harness-warning">Status reads are passive. Buttons labelled Request, Start, Scan, Connect, Stop, or Disconnect intentionally change native sensor state.</p>
@@ -168,14 +174,14 @@ const SensorHarness = ({ client, capabilities, initialSnapshot, evidence }: { cl
       <div className="probe-title"><MapPin /><div><strong>Core Location</strong><small>{locationSupported ? location?.reason ?? 'Reading status…' : 'This native shell did not advertise the location probe API.'}</small></div><Pill tone={location?.state === 'active' ? 'good' : 'neutral'}>{locationSupported ? location?.state ?? 'loading' : 'unavailable'}</Pill></div>
       <dl className="evidence-grid"><div><dt>Permission</dt><dd>{permissions?.location.details.authorization ?? '—'}</dd></div><div><dt>Lifecycle</dt><dd>{location?.appLifecycle ?? '—'}</dd></div><div><dt>Received / accepted</dt><dd>{location ? `${location.receivedCount} / ${location.acceptedCount}` : '—'}</dd></div><div><dt>Rejected</dt><dd>{location?.rejectedCount ?? '—'}{location?.lastRejectionReason ? ` · ${location.lastRejectionReason}` : ''}</dd></div><div><dt>Background delivery</dt><dd>{location?.backgroundDeliveryActive ? 'active' : 'not active'}</dd></div></dl>
       {latestLocation && <div className="raw-evidence"><strong>Latest #{latestLocation.cursor}</strong><code>{latestLocation.latitudeDegrees.toFixed(6)}, {latestLocation.longitudeDegrees.toFixed(6)}</code><small>±{latestLocation.horizontalAccuracyM.toFixed(1)} m · speed {latestLocation.speedMps?.toFixed(2) ?? '—'} m/s · source {latestLocation.source} · simulated {String(latestLocation.isSimulatedBySoftware)}</small><small>{latestLocation.sourceTimestamp}</small></div>}
-      {locationSupported && <div className="probe-actions">{permissionRequestsSupported && <Button onClick={() => void requestPermission('locationWhenInUse')} disabled={busy !== null}>Request location permission</Button>}{location?.state === 'active' ? <Button variant="danger" onClick={() => void stopLocation()} disabled={busy !== null}>Stop location</Button> : <><Button variant="primary" onClick={() => void startLocation('foregroundOnly')} disabled={busy !== null}>Start 2 min foreground</Button><Button onClick={() => void startLocation('continueWhenBackgrounded')} disabled={busy !== null}>Start 2 min background test</Button></>}<Button onClick={() => void readLocations()} disabled={busy !== null || !location?.probeId}>Read retained locations</Button></div>}
+      {locationSupported && <div className="probe-actions">{permissionRequestsSupported && <Button onClick={() => void requestPermission('locationWhenInUse')} disabled={busy !== null}>Request location permission</Button>}{location?.state === 'active' ? <Button variant="danger" onClick={() => void stopLocation()} disabled={busy !== null}>Stop location</Button> : <><Button variant="primary" onClick={() => void startLocation('foregroundOnly')} disabled={busy !== null || !canStartLocation}>Start 2 min foreground</Button><Button onClick={() => void startLocation('continueWhenBackgrounded')} disabled={busy !== null || !canStartLocation}>Start 2 min background test</Button></>}<Button onClick={() => void readLocations()} disabled={busy !== null || !location?.probeId}>Read retained locations</Button></div>}
     </article>
     <article className="probe-card">
       <div className="probe-title"><HeartPulse /><div><strong>Bluetooth heart rate</strong><small>{heartRateSupported ? heartRate?.reason ?? 'Reading status…' : 'This native shell did not advertise the heart-rate probe API.'}</small></div><Pill tone={heartRate?.state === 'connected' ? 'good' : 'neutral'}>{heartRateSupported ? heartRate?.state ?? 'loading' : 'unavailable'}</Pill></div>
       <dl className="evidence-grid"><div><dt>Permission / power</dt><dd>{permissions ? `${permissions.bluetooth.details.authorization} / ${permissions.bluetooth.details.power}` : '—'}</dd></div><div><dt>Lifecycle</dt><dd>{heartRate?.appLifecycle ?? '—'}</dd></div><div><dt>Devices</dt><dd>{heartRate?.devices.length ?? '—'}</dd></div><div><dt>Received / parse errors</dt><dd>{heartRate ? `${heartRate.receivedCount} / ${heartRate.parseErrorCount}` : '—'}</dd></div><div><dt>Reconnects</dt><dd>{heartRate?.reconnectCount ?? '—'}</dd></div></dl>
       {latestHeartRate && <div className="raw-evidence"><strong>Latest #{latestHeartRate.cursor}</strong><code>{latestHeartRate.bpm} bpm</code><small>contact {latestHeartRate.sensorContact} · {latestHeartRate.valueFormat} · flags 0x{latestHeartRate.rawFlags.toString(16).padStart(2, '0')}</small><small>{latestHeartRate.receivedAt}</small></div>}
-      {heartRate?.devices.map((device) => <div className="device-row" key={device.deviceId}><div><strong>{device.name ?? 'Unnamed HR monitor'}</strong><small>{device.deviceId} · RSSI {device.rssi ?? '—'} · seen {age(device.lastSeenAt)}</small></div><Button onClick={() => void connect(device.deviceId)} disabled={busy !== null || heartRate.state === 'connected'}>Connect</Button></div>)}
-      {heartRateSupported && <div className="probe-actions">{permissionRequestsSupported && <Button onClick={() => void requestPermission('bluetooth')} disabled={busy !== null}>Request Bluetooth permission</Button>}{heartRate?.state === 'scanning' ? <Button variant="danger" onClick={() => void stopScan()} disabled={busy !== null}>Stop scan</Button> : <Button variant="primary" onClick={() => void scan()} disabled={busy !== null || heartRate?.state === 'connected'}>Scan 10 seconds</Button>}<Button variant="danger" onClick={() => void disconnect()} disabled={busy !== null || !heartRate?.connectionId}>Disconnect</Button><Button onClick={() => void readHeartRate()} disabled={busy !== null || !heartRate?.connectionId}>Read retained HR</Button></div>}
+      {heartRate?.devices.map((device) => <div className="device-row" key={device.deviceId}><div><strong>{device.name ?? 'Unnamed HR monitor'}</strong><small>{device.deviceId} · RSSI {device.rssi ?? '—'} · seen {age(device.lastSeenAt)}</small></div><Button onClick={() => void connect(device.deviceId)} disabled={busy !== null || !bluetoothReady || device.isConnectable === false || heartRate.state === 'connected'}>Connect</Button></div>)}
+      {heartRateSupported && <div className="probe-actions">{permissionRequestsSupported && <Button onClick={() => void requestPermission('bluetooth')} disabled={busy !== null}>Request Bluetooth permission</Button>}{heartRate?.state === 'scanning' ? <Button variant="danger" onClick={() => void stopScan()} disabled={busy !== null}>Stop scan</Button> : <Button variant="primary" onClick={() => void scan()} disabled={busy !== null || !bluetoothReady || heartRate?.state === 'connected'}>Scan 10 seconds</Button>}<Button variant="danger" onClick={() => void disconnect()} disabled={busy !== null || !heartRate?.connectionId}>Disconnect</Button><Button onClick={() => void readHeartRate()} disabled={busy !== null || !heartRate?.connectionId}>Read retained HR</Button></div>}
     </article>
     {notice && <p className="notice" role="status">{notice}</p>}
   </section>
