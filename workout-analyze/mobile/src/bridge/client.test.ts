@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { PHASE1_BASE_CAPABILITIES, type Command } from '../../../src/shared/mobile'
-import { createBridgeClient, type BridgeTransport } from './client'
+import { createBridgeClient, unavailableNativeTransport, type BridgeTransport } from './client'
 import { createSimulatorTransport } from './simulator'
 
 const session = (sequence: number) => ({ sessionId: null, state: 'idle', revision: 0, durableSequence: sequence, recorderAvailability: 'unavailable', recorderUnavailableReason: 'Phase 1 shell only.', pinnedEngine: null, capturedAt: '2026-09-19T12:00:00Z' })
@@ -40,6 +40,23 @@ describe('bridge client', () => {
     browser.window.WorkoutAnalyzeNative?.receiveEvent({ protocolVersion: 1, sessionId: null, sequence: 5, type: 'session.updated', payload: session(5) })
     await new Promise((resolve) => setTimeout(resolve, 5))
     expect(client.getState()).toMatchObject({ lastSequence: 5, resyncCount: 1 })
+  })
+
+  test('buffers events that race an in-flight resnapshot without regressing or stranding them', async () => {
+    browser.window = { setTimeout } as unknown as Window
+    const client = createBridgeClient(createSimulatorTransport(), 200)
+    clients.push(client)
+    await client.connect()
+    browser.window.WorkoutAnalyzeNative?.receiveEvent({ protocolVersion: 1, sessionId: null, sequence: 6, type: 'session.updated', payload: session(6) })
+    browser.window.WorkoutAnalyzeNative?.receiveEvent({ protocolVersion: 1, sessionId: null, sequence: 5, type: 'session.updated', payload: session(5) })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(client.getState()).toMatchObject({ lastSequence: 6, session: { durableSequence: 6 }, resyncCount: 1 })
+  })
+
+  test('fails closed instead of supplying simulator data when a native page has no bridge', () => {
+    const transport = unavailableNativeTransport()
+    expect(transport).toMatchObject({ kind: 'native', label: 'Native bridge unavailable' })
+    expect(() => transport.post({ protocolVersion: 1, requestId: 'web-1', method: 'bridge.ping', params: { nonce: 'n-1' } })).toThrow('not installed')
   })
 
   test('rejects malformed method results instead of trusting native input', async () => {

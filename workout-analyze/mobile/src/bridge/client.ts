@@ -66,9 +66,16 @@ export const nativeTransport = (): BridgeTransport | null => {
   return { kind: 'native', label: 'Native iPhone shell', post: (command) => handler.postMessage(command) }
 }
 
+export const unavailableNativeTransport = (): BridgeTransport => ({
+  kind: 'native',
+  label: 'Native bridge unavailable',
+  post() { throw new BridgeRequestError('The native iPhone bridge is not installed', 'bridgeUnavailable', true) },
+})
+
 export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000) => {
   let counter = 0
   let resyncing: Promise<void> | null = null
+  let connecting: Promise<void> | null = null
   let bufferedEvents: NativeEvent[] = []
   const pending = new Map<string, Pending>()
   const listeners = new Set<(state: BridgeState) => void>()
@@ -102,14 +109,7 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
     })
   }
 
-  const applyEvent = (event: NativeEvent) => {
-    if (state.lastSequence === null) { bufferedEvents.push(event); return }
-    if (event.sequence <= state.lastSequence) return
-    if (event.sequence !== state.lastSequence + 1) {
-      bufferedEvents.push(event)
-      void resync()
-      return
-    }
+  const commitEvent = (event: NativeEvent) => {
     const snapshot = state.snapshot ? {
       ...state.snapshot,
       sequence: event.sequence,
@@ -122,6 +122,18 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
     } : null
     publish({ lastSequence: event.sequence, snapshot, session: event.type === 'session.updated' ? event.payload as SessionSnapshot : state.session })
     eventListeners.forEach((listener) => listener(event))
+  }
+
+  const applyEvent = (event: NativeEvent) => {
+    if (resyncing) { bufferedEvents.push(event); return }
+    if (state.lastSequence === null) { bufferedEvents.push(event); return }
+    if (event.sequence <= state.lastSequence) return
+    if (event.sequence !== state.lastSequence + 1) {
+      bufferedEvents.push(event)
+      void resync()
+      return
+    }
+    commitEvent(event)
   }
 
   const resync = () => {
@@ -137,10 +149,19 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
         }
         const queued = bufferedEvents.sort((a, b) => a.sequence - b.sequence)
         bufferedEvents = []
-        queued.forEach(applyEvent)
+        for (const event of queued) {
+          if (event.sequence <= state.lastSequence!) continue
+          if (event.sequence === state.lastSequence! + 1) commitEvent(event)
+          else bufferedEvents.push(event)
+        }
       } catch (error) {
         publish({ phase: 'error', error: error instanceof Error ? error.message : 'Snapshot resync failed' })
-      } finally { resyncing = null }
+      } finally {
+        resyncing = null
+        const arrivedDuringInstall = bufferedEvents.sort((a, b) => a.sequence - b.sequence)
+        bufferedEvents = []
+        arrivedDuringInstall.forEach(applyEvent)
+      }
     })()
     return resyncing
   }
@@ -170,7 +191,7 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
     },
   }
 
-  const connect = async () => {
+  const establishConnection = async () => {
     publish({ phase: 'connecting', error: null })
     try {
       const hello = await request('bridge.hello', { clientName: 'mobile-web', clientVersion: '0.1.0', supportedProtocolVersions: [1] })
@@ -189,6 +210,13 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
       publish({ phase: 'error', error: error instanceof Error ? error.message : 'Bridge connection failed' })
       throw error
     }
+  }
+
+  const connect = () => {
+    if (state.phase === 'ready') return Promise.resolve()
+    if (connecting) return connecting
+    connecting = establishConnection().finally(() => { connecting = null })
+    return connecting
   }
 
   return {
