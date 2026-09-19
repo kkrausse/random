@@ -8,6 +8,7 @@ import { groupLabel } from "./session-groups"
 import type { ArchiveStore } from "./archive"
 import { createSessionController, NEW_SESSION_VALUE, type SessionController } from "./session-controller"
 import { contextUsage, formatCompactTokens, formatCost, shortenLocation } from "./session-display"
+import { sessionManagerPalette } from "./palette"
 
 const LOAD_MORE_THRESHOLD = 10
 
@@ -87,6 +88,7 @@ export function estimateUsageCost(
 }
 
 function UsageBreakdown(props: { context: Plugin.Context; sessionID: string }) {
+  const colors = sessionManagerPalette(props.context.theme)
   const session = createMemo(() => props.context.data.session.get(props.sessionID))
   const messages = createMemo(() => props.context.data.session.message.list(props.sessionID))
   const models = createMemo(() => props.context.data.location.model.list(session()?.location) ?? [])
@@ -111,19 +113,19 @@ function UsageBreakdown(props: { context: Plugin.Context; sessionID: string }) {
 
   const row = (label: string, value: () => number) => (
     <box flexDirection="row" justifyContent="space-between">
-      <text>{label}</text>
-      <text>{formatCompactTokens(value())}</text>
+      <text fg={colors.muted}>{label}</text>
+      <text fg={colors.text}>{formatCompactTokens(value())}</text>
     </box>
   )
 
   return (
     <box paddingTop={1}>
-      <text attributes={TextAttributes.BOLD}>Token breakdown</text>
+      <text fg={colors.text} attributes={TextAttributes.BOLD}>Token breakdown</text>
       {usage() ? (
         <box>
           <box flexDirection="row" justifyContent="space-between">
-            <text>Current context</text>
-            <text>
+            <text fg={colors.muted}>Current context</text>
+            <text fg={colors.text}>
               {formatCompactTokens(usage()!.tokens)}{usage()!.limit ? ` / ${formatCompactTokens(usage()!.limit!)}` : ""}
             </text>
           </box>
@@ -133,18 +135,18 @@ function UsageBreakdown(props: { context: Plugin.Context; sessionID: string }) {
           {row("Output", () => usage()!.breakdown.output)}
           {row("Reasoning", () => usage()!.breakdown.reasoning)}
         </box>
-      ) : <text>No usage yet</text>}
+      ) : <text fg={colors.muted}>No usage yet</text>}
       <box paddingTop={1}>
         <box flexDirection="row" justifyContent="space-between">
-          <text>Session processed</text>
-          <text>{formatCompactTokens(session() ? processedTokens([session()!]) : 0)}</text>
+          <text fg={colors.muted}>Session processed</text>
+          <text fg={colors.text}>{formatCompactTokens(session() ? processedTokens([session()!]) : 0)}</text>
         </box>
         <box flexDirection="row" justifyContent="space-between">
-          <text>{estimate().estimated ? estimate().zenEquivalent ? "Zen equivalent" : "Estimated cost" : "Calculated cost"}</text>
-          <text>{estimate().estimated ? "≈ " : ""}{formatCost(estimate().cost)}</text>
+          <text fg={colors.muted}>{estimate().estimated ? estimate().zenEquivalent ? "Zen equivalent" : "Estimated cost" : "Calculated cost"}</text>
+          <text fg={colors.text}>{estimate().estimated ? "≈ " : ""}{formatCost(estimate().cost)}</text>
         </box>
         {estimate().unpriced > 0
-          ? <text>{estimate().unpriced} unpriced response{estimate().unpriced === 1 ? "" : "s"}</text>
+          ? <text fg={colors.muted}>{estimate().unpriced} unpriced response{estimate().unpriced === 1 ? "" : "s"}</text>
           : null}
       </box>
     </box>
@@ -153,6 +155,7 @@ function UsageBreakdown(props: { context: Plugin.Context; sessionID: string }) {
 
 export function SessionPicker(props: { context: Plugin.Context; controller?: SessionController; archiveStore?: ArchiveStore; returnSessionID?: string; hostDialogInsets?: boolean }) {
   const dimensions = useTerminalDimensions()
+  const colors = sessionManagerPalette(props.context.theme)
   // The dialog tracks the terminal, including phone keyboard/rotation changes.
   const mobile = () => dimensions().width < 70
   const offsetHostInsets = () => mobile() && props.hostDialogInsets !== false
@@ -313,15 +316,16 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
       top={offsetHostInsets() ? -1 : 0}
       minHeight={0}
       overflow="hidden"
+      backgroundColor={colors.surface}
     >
       {failure() ? (
         <box paddingLeft={0} paddingRight={0}>
-          <text fg="#ef4444">{failure()}</text>
+          <text fg={colors.error}>{failure()}</text>
         </box>
       ) : null}
-      <Show when={ready()} fallback={<text>Loading sessions…</text>}>
+      <Show when={ready()} fallback={<text fg={colors.muted}>Loading sessions…</text>}>
       {attentionErrors().size || [...attention().values()].includes("unavailable") ? (
-        <text fg="#ef4444">Status unavailable · Ctrl+R to retry</text>
+        <text fg={colors.error}>Status unavailable · Ctrl+R to retry</text>
       ) : null}
         <scrollbox
           id="claude-session-list"
@@ -337,31 +341,28 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
         >
           <Index each={options()}>
             {(option, index) => {
-              // Fixed semantic accents keep the picker independent of the
-              // host theme token schema, which may change across releases.
-              const SELECTED = "#fde047"
               const active = () => selectedIndex() === index
-              const titleColor = () => active() ? SELECTED : undefined
+              const titleColor = () => active() ? colors.selected : option().state === "inactive" ? colors.muted : colors.text
               const heading = () => {
                 const label = groupLabel(option().state)
                 return label !== groupLabel(options()[index - 1]?.state ?? "new") ? label : undefined
               }
-              const descriptionColor = () => active() ? SELECTED : undefined
+              const descriptionColor = () => active() ? colors.text : colors.muted
               const updating = () => changingLifecycle()?.has(option().value) ?? false
               const iconColor = () => {
-                if (updating()) return "#ef4444"
-                if (option().statusState === "permission") return "#f59e0b"
-                if (option().statusState === "question") return "#38bdf8"
-                if (option().statusState === "unavailable") return "#ef4444"
-                if (option().statusState === "running") return SELECTED
+                if (updating()) return colors.error
+                if (option().statusState === "permission") return colors.permission
+                if (option().statusState === "question") return colors.question
+                if (option().statusState === "unavailable") return colors.error
+                if (option().statusState === "running") return colors.selected
                 return descriptionColor()
               }
               return (
                 <>
                 {heading() ? (
                   <box height={mobile() ? 2 : 3} flexShrink={0} paddingLeft={0} paddingRight={0}
-                    border={["top"]}>
-                    <text attributes={TextAttributes.BOLD}>{heading()}</text>
+                    border={["top"]} borderColor={colors.border}>
+                    <text fg={colors.text} attributes={TextAttributes.BOLD}>{heading()}</text>
                   </box>
                 ) : null}
                 <box
@@ -371,6 +372,7 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
                   flexDirection="row"
                   paddingLeft={0}
                   paddingRight={0}
+                  backgroundColor={active() ? colors.surfaceRaised : colors.surface}
                   onMouseDown={(event) => {
                     if (event.button !== 0) return
                     event.stopPropagation()
@@ -386,7 +388,7 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
                   >
                     {(() => {
                       if (updating()) return (
-                        <spinner id={`claude-session-spinner-${option().value}`} frames={SPINNER_FRAMES} interval={80} color="#ef4444" />
+                        <spinner id={`claude-session-spinner-${option().value}`} frames={SPINNER_FRAMES} interval={80} color={colors.error} />
                       )
                       const state = option().statusState
                       const icon = state === "running" ? "spinner"
@@ -397,7 +399,7 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
                         : state === "new" ? "+" : active() ? "❯" : ""
                       if (!icon) return null
                       if (icon === "❯") return (
-                        <text fg={SELECTED} attributes={TextAttributes.BOLD}>{icon}</text>
+                        <text fg={colors.selected} attributes={TextAttributes.BOLD}>{icon}</text>
                       )
                       return (
                         icon === "spinner" ? (
@@ -452,40 +454,40 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
           </Index>
         </scrollbox>
       <box id="claude-session-preview" height={previewHeight()} flexShrink={0} flexDirection="column" paddingLeft={0} paddingRight={0}
-        border={["top"]} borderColor={permission() ? "#f59e0b" : undefined}>
+        border={["top"]} borderColor={permission() ? colors.permission : colors.border}>
         <box flexGrow={1} minHeight={0} overflow="hidden" flexDirection="column">
         {(mobile() && selectedSession()) || inboxRequest() ? (
-          <text id="claude-session-preview-title" maxHeight={2} flexShrink={0} attributes={TextAttributes.BOLD}>
+          <text id="claude-session-preview-title" maxHeight={2} flexShrink={0} fg={colors.text} attributes={TextAttributes.BOLD}>
             {inboxRequest() ? inboxOwner()?.title || inboxRequest()!.sessionID : options()[selectedIndex()]?.title}
           </text>
         ) : null}
         {!(mobile() && permission() && dimensions().height < 20) ? (
-          <text height={1} flexShrink={0} wrapMode="none">{inboxRequest()
+          <text height={1} flexShrink={0} wrapMode="none" fg={colors.muted}>{inboxRequest()
             ? `Known-location inbox${inboxOwner() ? ` · ${shortenLocation(props.context.ui.format.path(inboxOwner()!.location.directory))}` : ""}`
             : options()[selectedIndex()]?.description}</text>
         ) : null}
         {!inboxRequest() && (!mobile() || !permission()) ? (
         <box height={1} flexShrink={0} flexDirection="row" justifyContent="space-between">
-           <text wrapMode="none" flexShrink={1} attributes={TextAttributes.BOLD}>
+           <text wrapMode="none" flexShrink={1} fg={colors.text} attributes={TextAttributes.BOLD}>
             {selectedStats().left}
           </text>
-          <text flexShrink={0} attributes={TextAttributes.BOLD}>
+          <text flexShrink={0} fg={colors.muted} attributes={TextAttributes.BOLD}>
             {selectedStats().right}
           </text>
         </box>
         ) : null}
         {selectedSession() && !inboxRequest() && (!mobile() || !permission()) ? (
-          <text id="claude-session-token-breakdown" height={1} flexShrink={0} wrapMode="none">
+          <text id="claude-session-token-breakdown" height={1} flexShrink={0} wrapMode="none" fg={colors.muted}>
             {sessionTokenBreakdown(selectedSession()!, mobile())}
           </text>
         ) : null}
         {permission() ? (
           <>
-            <text height={1} flexShrink={0} wrapMode="none" fg="#f59e0b" attributes={TextAttributes.BOLD}>
+            <text height={1} flexShrink={0} wrapMode="none" fg={colors.permission} attributes={TextAttributes.BOLD}>
               {previewError() ? `Preview unavailable: ${previewError()}` : `${permission()!.action} · 1/${visiblePreview()!.permissions.length}${isInbox() && visiblePreview()!.forms.length ? ` · ?${visiblePreview()!.forms.length}` : ""}${isInbox() && inboxErrors().length ? ` · ${inboxErrors().length} unavailable` : ""}`}
             </text>
             <scrollbox id="claude-session-request" ref={previewScroll} flexGrow={1} minHeight={0} scrollY scrollX={false}>
-              <text>
+              <text fg={colors.text}>
                 {[permission()!.message, ...permission()!.resources,
                   permission()!.metadata ? JSON.stringify(permission()!.metadata, null, 2) : undefined].filter(Boolean).join("\n")}
               </text>
@@ -501,13 +503,14 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
                   return (
                     <box id={`claude-session-${action().id}`} flexGrow={1} flexBasis={0} minWidth={0}
                       height={approvalButtonHeight()} justifyContent="center" alignItems="center"
+                      backgroundColor={action().reply === "once" && !disabled() ? colors.selected : colors.surfaceRaised}
                       onMouseDown={(event) => {
                         if (event.button !== 0) return
                         event.stopPropagation()
                         event.preventDefault()
                         if (!disabled()) void replyToPermission(action().reply)
                       }}>
-                      <text wrapMode="none" fg={action().reply === "once" && !disabled() ? "#fde047" : undefined}
+                      <text wrapMode="none" fg={action().reply === "once" && !disabled() ? colors.selectedText : disabled() ? colors.muted : colors.text}
                         attributes={action().reply === "once" ? TextAttributes.BOLD : undefined}>
                         {replying() && replyChoice() === action().reply ? "Sending…" : action().label}
                       </text>
@@ -519,19 +522,19 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
           </>
         ) : (
           <>
-            <text wrapMode="none">
+            <text wrapMode="none" fg={colors.muted}>
               {selectedSession() && isArchived(selectedSession()!.id)
                 ? `Archived · ${selectedMessages()?.length ?? 0} messages`
                 : previewLoading() ? "Checking for approval requests…" : previewError() ? `Preview unavailable: ${previewError()}` : visiblePreview()?.forms.length ? `Question · ${visiblePreview()!.forms[0]!.title}` : isInbox() && inboxErrors().length ? `${inboxErrors().length} location${inboxErrors().length === 1 ? "" : "s"} unavailable` : options()[selectedIndex()]?.state === "inactive" ? (options()[selectedIndex()] as { inactiveByAge?: boolean })?.inactiveByAge ? "Inactive by age · no cleanup performed" : "Soft archived · history retained" : selectedSession() ? (options()[selectedIndex()] as { status?: string })?.status ?? "" : "Known-location inbox"}
             </text>
             {isInbox() && visiblePreview()?.forms.length ? (
               <scrollbox flexGrow={1} minHeight={0} scrollY scrollX={false}>
-                <text>{visiblePreview()!.forms[0]!.fields.map((field) => field.title ?? field.key).join("\n")}</text>
+                <text fg={colors.text}>{visiblePreview()!.forms[0]!.fields.map((field) => field.title ?? field.key).join("\n")}</text>
               </scrollbox>
             ) : null}
             {selectedSession() && isArchived(selectedSession()!.id) ? (
               <scrollbox flexGrow={1} minHeight={0} scrollY scrollX={false}>
-                <text>{(selectedMessages() ?? []).flatMap((message) =>
+                <text fg={colors.text}>{(selectedMessages() ?? []).flatMap((message) =>
                   message.type === "user" ? [`User: ${message.text}`]
                     : message.type === "assistant" ? message.content.filter((part) => part.type === "text").map((part) => `Assistant: ${part.text}`) : [],
                 ).join("\n\n")}</text>
@@ -542,7 +545,7 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
         </box>
         <box height={1} flexShrink={0} flexDirection="row" gap={mobile() ? 1 : 0}>
           {inboxRequest() ? (
-            <text id="claude-session-inbox-open" onMouseDown={(event) => {
+            <text id="claude-session-inbox-open" fg={colors.text} onMouseDown={(event) => {
               if (event.button !== 0) return
               event.stopPropagation()
               event.preventDefault()
@@ -550,7 +553,7 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
             }}>{mobile() ? "[Open]" : "[Open request] "}</text>
           ) : null}
           {mobile() && (!selectedSession() || !isArchived(selectedSession()!.id)) ? (
-            <text id="claude-session-open" onMouseDown={(event) => {
+            <text id="claude-session-open" fg={colors.text} onMouseDown={(event) => {
               if (event.button !== 0) return
               event.stopPropagation()
               event.preventDefault()
@@ -558,7 +561,7 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
             }}>{selectedSession() ? "[Open]" : "[New]"}</text>
           ) : null}
           {selectedSession() ? (
-            <text id="claude-session-preview-lifecycle" wrapMode="none"
+            <text id="claude-session-preview-lifecycle" wrapMode="none" fg={colors.text}
               onMouseDown={(event) => {
                 if (event.button !== 0) return
                 event.stopPropagation()
@@ -569,18 +572,18 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
             </text>
           ) : null}
           {mobile() ? (
-            <text id="claude-session-close" onMouseDown={(event) => {
+            <text id="claude-session-close" fg={colors.muted} onMouseDown={(event) => {
               if (event.button !== 0) return
               event.stopPropagation()
               event.preventDefault()
               close()
             }}>[Close]</text>
-          ) : <text>{search() ? ` · / filter: ${search()}` : " · / search"}</text>}
+          ) : <text fg={colors.muted}>{search() ? ` · / filter: ${search()}` : " · / search"}</text>}
         </box>
       </box>
       {loading() ? (
         <box paddingLeft={0} paddingRight={0}>
-          <text>
+          <text fg={colors.muted}>
             {sessions().length === 0 ? "Loading sessions…" : "Loading more…"}
           </text>
         </box>
