@@ -2,6 +2,8 @@
 
 Status: the physical-phone workout is safely recovered locally. Do not commit the capture files; they contain private GPS and sensor data.
 
+> Update (2026-09-20): the separate-JavaScriptCore direction below is superseded. The implemented architecture has one JavaScript runtime (WKWebView/browser): native eventually appends and pages opaque journal rows, while the TypeScript decoder, projector, recording engine, checkpoint consumer, and replay controller run in that single runtime. See `docs/iphone-recording-contract.md#deterministic-journal-consumption-and-replay`.
+
 ## Recovered capture
 
 Physical device: `Kevin Krausse`, UDID `00008140-000A31A03E80801C`, bundle ID `com.kkrausse.workoutanalyze`.

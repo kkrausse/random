@@ -4,6 +4,7 @@ import { defineConfig } from 'vite'
 import { mobileBuildDeliveryPlugin } from '../scripts/mobile/build-delivery.ts'
 import { devDiagnosticsPlugin } from '../scripts/mobile/dev-logs.ts'
 import { devRunnerPlugin } from '../scripts/mobile/dev-runner/plugin.ts'
+import { localReplayPlugin } from '../scripts/mobile/local-replay.ts'
 
 const tailscaleHost = 'kevins-macbook-pro-2.tail7e28fb.ts.net'
 const tailscaleHttpsPort = 8443
@@ -12,7 +13,7 @@ const tailscaleOrigin = `https://${tailscaleHost}:${tailscaleHttpsPort}`
 export default defineConfig({
   root: import.meta.dirname,
   base: './',
-  plugins: [tailwindcss(), react(), devDiagnosticsPlugin(), devRunnerPlugin(), mobileBuildDeliveryPlugin({ distDirectory: `${import.meta.dirname}/dist` })],
+  plugins: [tailwindcss(), react(), devDiagnosticsPlugin(), devRunnerPlugin(), localReplayPlugin(), mobileBuildDeliveryPlugin({ distDirectory: `${import.meta.dirname}/dist` })],
   define: { __WORKOUT_TAILSCALE_ORIGIN__: JSON.stringify(tailscaleOrigin) },
   server: {
     strictPort: true,

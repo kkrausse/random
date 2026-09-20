@@ -21,6 +21,7 @@
     "mobile:build:v2": "bun run scripts/mobile/build.ts --engine=v2",
     "mobile:typecheck": "tsc -p mobile/tsconfig.json --noEmit",
     "mobile:test": "bun test mobile scripts/mobile",
+    "mobile:replay:check": "bun run scripts/mobile/check-local-replay.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },

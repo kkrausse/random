@@ -19,6 +19,7 @@ if (import.meta.env.DEV) {
   })
 }
 const stopStore = store.getState().start()
+if (import.meta.env.DEV && params.get('replay') === 'local') void store.getState().loadLocalReplay()
 window.addEventListener('pagehide', () => { stopStore(); client.dispose() }, { once: true })
 
 const root = document.getElementById('root')

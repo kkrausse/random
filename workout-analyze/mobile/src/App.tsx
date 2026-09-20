@@ -1,4 +1,4 @@
-import { Activity, ArrowLeft, Bike, CheckCircle2, ChevronRight, CircleAlert, Download, Gauge, HeartPulse, MapPin, Pause, Play, RefreshCw, RotateCcw, Settings as SettingsIcon, Share2, ShieldCheck, Wifi } from 'lucide-react'
+import { Activity, ArrowLeft, Bike, CheckCircle2, ChevronRight, CircleAlert, Download, Gauge, HeartPulse, MapPin, Pause, Play, RefreshCw, RotateCcw, Settings as SettingsIcon, Share2, ShieldCheck, Wifi, FastForward } from 'lucide-react'
 import { useState } from 'react'
 import { useStore } from 'zustand'
 import type { AvailableSessionSnapshot, Capability, RecorderLocationObservation, StatusRow } from '../../src/shared/mobile'
@@ -31,7 +31,7 @@ export const App = ({ store }: { store: MobileStore }) => {
   const screen = useStore(store, (state) => state.screen)
   const screens: Record<Screen, React.ReactNode> = {
     home: <Home store={store} />, live: <Live store={store} />, paused: <Paused store={store} />, recovery: <Recovery store={store} />,
-    saved: <Saved store={store} />, history: <History store={store} />, savedDetail: <SavedDetail store={store} />, heartRate: <HeartRate store={store} />, settings: <Settings store={store} />, diagnostics: <Diagnostics store={store} />,
+    saved: <Saved store={store} />, history: <History store={store} />, savedDetail: <SavedDetail store={store} />, heartRate: <HeartRate store={store} />, settings: <Settings store={store} />, diagnostics: <Diagnostics store={store} />, replay: <Replay store={store} />,
   }
   return screens[screen]
 }
@@ -48,6 +48,7 @@ const Home = ({ store }: { store: MobileStore }) => {
   const requestPermission = useStore(store, (state) => state.requestPermission)
   const setScreen = useStore(store, (state) => state.setScreen)
   const savedWorkouts = useStore(store, (state) => state.savedWorkouts)
+  const loadReplay = useStore(store, (state) => state.loadLocalReplay)
   const locationAuth = permissions?.location.details.authorization
   const needsPermission = locationAuth === 'notDetermined'
   const denied = locationAuth === 'denied' || locationAuth === 'restricted'
@@ -61,12 +62,31 @@ const Home = ({ store }: { store: MobileStore }) => {
     {notice && <p className="notice notice-error" role="alert">{notice}</p>}
     {bridge.capabilities.includes('archive.list') && <button className="recent-workout" onClick={() => setScreen('history')}><Activity /><span><strong>Saved workouts</strong><small>{savedWorkouts.length ? `${savedWorkouts.length} available on this device` : 'No completed rides yet'}</small></span><ChevronRight /></button>}
     <UtilityButtons store={store} />
+    {import.meta.env.DEV && <Button className="full replay-entry" onClick={() => void loadReplay()}><FastForward /> Load immutable local replay</Button>}
     <div className="home-bottom">
       {active ? <Button variant="primary" disabled={busy} onClick={() => setScreen(session!.state === 'recording' ? 'live' : session!.state === 'paused' ? 'paused' : 'recovery')}><Bike /> Return to ride</Button>
         : needsPermission ? <Button variant="primary" disabled={busy || !recorderSupported} onClick={() => void requestPermission('locationWhenInUse')}><MapPin /> Allow location to start</Button>
           : <Button variant="primary" disabled={busy || !recorderSupported || denied} onClick={() => void startWorkout('waitForReliableLocation')}><Bike /> Start ride</Button>}
       <p><ShieldCheck /> Starts immediately and waits for reliable GPS. Native recording continues if this UI reloads.</p>
     </div>
+  </main>
+}
+
+const Replay = ({ store }: { store: MobileStore }) => {
+  const replay = useStore(store, (state) => state.replay)
+  const session = useStore(store, (state) => state.session)
+  const trail = useStore(store, (state) => state.trail)
+  const play = useStore(store, (state) => state.playReplay)
+  const pause = useStore(store, (state) => state.pauseReplay)
+  const speedAction = useStore(store, (state) => state.setReplaySpeed)
+  const seek = useStore(store, (state) => state.seekReplay)
+  const close = useStore(store, (state) => state.closeReplay)
+  const metrics = isAvailableSession(session) ? session.metrics : null
+  return <main className="app-shell ride-screen replay-screen"><TopBar title="Ride replay" back={close} />
+    <section className="replay-banner"><FastForward /><div><strong>IMMUTABLE LOCAL REPLAY</strong><small>Isolated namespace · cannot export or mutate the source workout</small></div></section>
+    {replay.error && <p className="notice notice-error">{replay.error}</p>}
+    {metrics ? <><section className="durability-grid"><div><span>JOURNAL CURSOR</span><strong>{replay.checkpoint?.throughJournalSequence.toLocaleString() ?? '—'} / {replay.metadata?.lastJournalSequence.toLocaleString() ?? '—'}</strong><small>Raw sequence domain</small></div><div><span>PROJECTED INPUT</span><strong>{replay.checkpoint?.projector.observationSequence.toLocaleString() ?? '—'}</strong><small>Normalized sequence domain</small></div><div><span>UNKNOWN EVENTS</span><strong>{replay.checkpoint?.projector.unknownEventCount ?? 0}</strong><small>Preserved and skipped safely</small></div><div><span>MALFORMED EVENTS</span><strong>{replay.checkpoint?.projector.malformedEventCount ?? 0}</strong><small>Preserved and reported</small></div></section><RideMap trail={trail} quality={metrics.locationQuality} showTiles={false} /><section className="speed-hero"><span>REPLAY SPEED</span><strong>{speed(metrics.currentSpeedMps)}</strong><small>km/h</small></section><section className="ride-metrics"><Metric label="Active" value={duration(metrics.activeDurationMs)} /><Metric label="Distance" value={distance(metrics.distanceM)} /><Metric label="Avg speed" value={metrics.averageSpeedMps === null ? '—' : `${speed(metrics.averageSpeedMps)} km/h`} /><Metric label="Heart rate" value={metrics.heartRateBpm === null ? '—' : `${metrics.heartRateBpm} bpm`} /><Metric label="Ascent · est." value={`${Math.round(metrics.elevationGainM)} m`} /><Metric label="Elapsed" value={duration(metrics.elapsedDurationMs)} /></section></> : <p className="notice">Loading the first replay checkpoint…</p>}
+    <section className="replay-controls"><input aria-label="Replay position" type="range" min="0" max={replay.durationMs || 1} value={replay.positionMs} onChange={(event) => void seek(Number(event.target.value))} /><div><Button onClick={replay.status === 'playing' ? pause : play} disabled={replay.status === 'loading' || replay.status === 'error'}>{replay.status === 'playing' ? <><Pause /> Pause</> : <><Play /> Play</>}</Button><label>Speed<select value={replay.speed} onChange={(event) => speedAction(Number(event.target.value))}>{[0.5, 1, 2, 4, 8, 16].map((value) => <option key={value} value={value}>{value}×</option>)}</select></label><span>{duration(replay.positionMs)} / {duration(replay.durationMs)}</span></div></section>
   </main>
 }
 
@@ -89,7 +109,7 @@ const SavedDetail = ({ store }: { store: MobileStore }) => {
   return <main className="app-shell saved-screen"><TopBar title="Saved ride" back={() => setScreen('history')} /><section className="saved-heading"><CheckCircle2 /><p>DURABLE NATIVE RECORD</p><h1>{distance(detail.summary.metrics.distanceM)}</h1><span>{duration(detail.summary.durationMs)} · {detail.summary.observationCount.toLocaleString()} normalized recorder events</span></section><RideMap trail={trail} quality={detail.summary.metrics.locationQuality} /><p className="saved-id">Session {detail.summary.sessionId}<br />Engine {detail.pinnedEngine.buildId}</p>{detail.summary.hasFatalIssue && <p className="notice notice-error">This workout contains a fatal recording issue. Export remains available for diagnosis.</p>}<div className="export-actions"><Button disabled={pending(requests, 'archive-export')} onClick={() => void exportSaved(detail.summary.sessionId, 'gpx')}><Share2 /> Export GPX</Button><Button disabled={pending(requests, 'archive-export')} onClick={() => void exportSaved(detail.summary.sessionId, 'workoutBundleV1')}><Download /> Export complete raw bundle</Button></div>{notice && <p className="notice">{notice}</p>}</main>
 }
 
-const RideMap = ({ trail, quality }: { trail: readonly RecorderLocationObservation[]; quality: AvailableSessionSnapshot['metrics']['locationQuality'] }) => {
+const RideMap = ({ trail, quality, showTiles = true }: { trail: readonly RecorderLocationObservation[]; quality: AvailableSessionSnapshot['metrics']['locationQuality']; showTiles?: boolean }) => {
   const points = trail.map((item) => ({ lat: item.latitudeDegrees, lon: item.longitudeDegrees }))
   const last = points.at(-1)
   const zoom = 15
@@ -99,10 +119,10 @@ const RideMap = ({ trail, quality }: { trail: readonly RecorderLocationObservati
   const tiles = center ? [-1, 0, 1].flatMap((dy) => [-1, 0, 1].map((dx) => ({ x: Math.floor(center.x / 256) + dx, y: Math.floor(center.y / 256) + dy }))) : []
   const path = center ? points.map((point) => { const value = project(point); return `${value.x - center.x + 160},${value.y - center.y + 110}` }).join(' ') : ''
   return <div className="ride-map" aria-label="Live geographic map and recorded trail">
-    {center && tiles.map((tile) => <img key={`${tile.x}-${tile.y}`} src={`https://tile.openstreetmap.org/${zoom}/${tile.x}/${tile.y}.png`} alt="" style={{ left: tile.x * 256 - center.x + 160, top: tile.y * 256 - center.y + 110 }} />)}
+    {center && showTiles && tiles.map((tile) => <img key={`${tile.x}-${tile.y}`} src={`https://tile.openstreetmap.org/${zoom}/${tile.x}/${tile.y}.png`} alt="" style={{ left: tile.x * 256 - center.x + 160, top: tile.y * 256 - center.y + 110 }} />)}
     <svg viewBox="0 0 320 220" preserveAspectRatio="none" aria-hidden="true">{path && <><polyline className="trail-shadow" points={path} /><polyline className="trail-line" points={path} /></>} {last && <><circle className="rider-ring" cx="160" cy="110" r="13" /><circle className="rider" cx="160" cy="110" r="6" /></>}</svg>
     {!last && <div className="map-empty"><MapPin /><strong>Waiting for reliable GPS</strong><span>The ride is already saved and timing.</span></div>}
-    <Pill tone={quality === 'good' ? 'good' : 'warning'}>{quality} GPS</Pill><small className="attribution">© OpenStreetMap contributors</small>
+    <Pill tone={quality === 'good' ? 'good' : 'warning'}>{quality} GPS</Pill>{showTiles && <small className="attribution">© OpenStreetMap contributors</small>}
   </div>
 }
 
