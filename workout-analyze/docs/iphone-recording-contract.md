@@ -15,7 +15,7 @@ The existing location probe and BLE APIs remain compatible. A recorder reuses th
 
 ## Capability and command rules
 
-The nine `RECORDING_CAPABILITIES` are advertised as one group or not at all. Legacy shells continue to advertise phase-1 capabilities and `workout.recorder` as unavailable. `bridge.hello` remains protocol version 1.
+The nine `RECORDING_CAPABILITIES` are advertised as one group or not at all. The additive `ARCHIVE_CAPABILITIES` (`archive.list`, `archive.detail`) are a separate all-or-none group: their absence must not make `workout.recorder` unavailable. Legacy and currently installed shells remain valid without archive support. `bridge.hello` remains protocol version 1.
 
 Lifecycle requests are:
 
@@ -44,11 +44,11 @@ On launch, an unfinished session whose recorder process did not survive becomes 
 SQLite has one serialized writer. The conceptual commit order is:
 
 1. Begin immediate transaction and verify request ID/session/revision.
-2. Insert normalized raw observations with contiguous session `sequence` values. Preserve full delivered sensor fields.
+2. Insert every raw delivery/event with contiguous session `sequence` values in receipt order. Preserve duplicate deliveries and full available sensor fields.
 3. Insert any lifecycle transition and update session revision/state.
 4. Commit raw input and session mutation. This makes input durable independently of engine success.
-5. On the serial JavaScriptCore queue, read after the checkpoint sequence in batches of at most 1,000 and call `processBatch`.
-6. In a second transaction, upsert derived summary and checkpoint together, guarded by pinned engine build and prior checkpoint sequence. Derived writes use stable `(sessionId, algorithmId, lastSequence)` identity.
+5. On the serial JavaScriptCore queue, project derivation-relevant raw rows to the engine's typed inputs, assign a separate contiguous engine-input sequence, and call `processBatch` in batches of at most 1,000. The native checkpoint stores both the last consumed raw sequence and engine checkpoint.
+6. In a second transaction, upsert derived summary and checkpoint together, guarded by pinned engine build and both prior sequences. Derived writes use stable `(sessionId, algorithmId, lastRawSequence, lastEngineInputSequence)` identity.
 
 If step 5/6 fails, recording continues, diagnostics expose backlog/failure, and replay resumes from the last checkpoint. Never advance a checkpoint without its summary. Do not emit a durable sequence until its transaction commits. WAL + foreign keys + busy timeout are expected; low-storage/write errors become a persistent fatal `recording.issue` and the UI must stop claiming data is saved.
 
@@ -58,17 +58,25 @@ For recording v1, `WorkoutAnalyzeRecordingEngine.describe()` is exactly `{ apiVe
 
 ## Observation and reconnect API
 
-Recorder rows use a session-local contiguous `sequence`; location and HR remain independently timestamped. Native normalizes batched Core Location fixes into measurement-time order and deduplicates provider duplicates before assigning sequence. Raw rejection is not deletion: production storage retains delivered fields; engine acceptance affects only derived values.
+Recorder rows use a session-local contiguous raw `sequence` assigned in callback receipt order. It is the stable observation identity together with `sessionId`; it is not the engine-input sequence. Location and HR source clocks remain independent. For every row, `sourceTimestamp` is measurement/event time, `receivedAt` is host receipt time where supplied, and `monotonicTimestampMs` is receipt time in the process/clock domain identified by optional `provenance.monotonicClockId`. Never compare monotonic values across different clock IDs or after relaunch. Batched Core Location fixes keep callback array order. Native must not sort or deduplicate before durable insertion: equal coordinates/timestamps and repeated BLE notifications remain separate raw rows. Validation/reordering/deduplication may occur only in the derivation projection and never modifies raw storage.
+
+New shells attach optional `provenance` to raw rows: origin `liveNative`, stable provider/peripheral `sourceId` where available, monotonic clock-domain ID, and null lineage. Old rows/frames without it remain valid. Replay uses `recordingReplay` plus immutable `{savedWorkoutId, sessionId, sequence}` lineage; fixtures use `syntheticFixture` with null lineage. Transport/client identity is not sensor-source identity.
+
+Location rows preserve all available `CLLocation` fields already named by the wire type, plus optional iOS 15+ `ellipsoidalAltitudeM`; unavailable values are null, not invented. Parsed HR rows preserve exact Heart Rate Measurement bytes in optional `rawCharacteristicBase64` (mandatory for newly captured notifications). An unparseable notification is a `heartRatePacket` row with bytes and parse error, not a dropped sample. `heartRateConnection` rows capture connect/disconnect/reconnect/failure boundaries. `hostLifecycle` captures available UIKit and protected-data callbacks; protected-data unavailability can correlate a lock but is not promised as a universal screen-lock detector. Start/pause/resume/finish/interruption remain transition/gap rows. No additional sensor permissions or unrelated device collection is implied.
 
 ```ts
 observations.subscribe   { sessionId, afterSequence: number | null, maxBatchSize: 1..200 }
 observations.read        { sessionId, afterSequence: number | null, limit: 1..200 }
 observations.unsubscribe { subscriptionId }
+archive.list             { afterCursor: string | null, limit: 1..100 }
+archive.detail           { savedWorkoutId, afterSequence: number | null, limit: 1..200 }
 ```
 
 There is one web subscription, owned by the central Zustand store/bridge client—not components. Event envelope `sequence` is the bounded bridge delivery sequence; observation `sequence` is durable session order. `observations.appended` pages are capped at the negotiated batch size and may be coalesced. Native retains at most 256 unacknowledged event envelopes per attached page; overflow drops old delivery events, not SQLite rows.
 
 Reconnect algorithm: subscribe, fetch the atomic bridge/session snapshot, discard event envelopes at or below its event sequence, then apply newer contiguous envelopes. Any envelope gap triggers a new snapshot. For raw history, compare the page's `latestDurableSequence` to the session snapshot and page with `observations.read`; `droppedBeforeSequence` means the requested cursor predates retained/export-readable history and requires a full bounded reload, never an unbounded push. UI metric events may be coalesced to 1 Hz; transitions/issues are immediate.
+
+`archive.list` is newest-finished-first. Its opaque cursor includes a list snapshot boundary and final `(finishedAt, savedWorkoutId)` key, so rides completed after page one do not cause duplicates or omissions in that traversal. `archive.detail` returns immutable metadata plus one lossless raw page; `afterSequence` is exclusive, pages are contiguous, and finished workouts have `oldestAvailableSequence = 1`, `droppedBeforeSequence = false`, and `observationCount = latestSequence`. Continue with returned `nextSequence`. Detail exposes pinned format/unit and derivation provenance. Use the summary `sessionId` with existing `workout.export`; archive discovery neither changes export nor the active-session snapshot.
 
 ## Metrics v1
 
@@ -88,7 +96,11 @@ Golden tests cover distance, poor accuracy, stale delivery, pause/resume, stale 
 
 Finish commits locally before returning. `workout.export` supports lossless `workoutBundleV1` and convenience `gpx`; export failure never deletes or modifies the workout. Both invoke the native share sheet and return `{ exportId, presented, format }`.
 
-The lossless ZIP bundle contains UTF-8 JSON files and SHA-256 checksums in a manifest: session metadata, pinned engine/config, transitions, all raw location/HR/gap observations, final metrics, engine checkpoint/algorithm IDs, and issues. Format version is 1; units are SI and timestamps ISO-8601 UTC. GPX includes accepted geographic points plus elevation/time and optional HR extension, but is explicitly not re-imported as lossless source. Coordinates are included only in workout export, not default diagnostics export.
+The lossless ZIP bundle contains UTF-8 JSON files and SHA-256 checksums in a manifest: session metadata, pinned engine/config and versions, all raw location/HR packet/HR connection/host lifecycle/transition/gap rows in raw sequence order, final metrics, derivation input sequence bounds, engine checkpoint/algorithm IDs, provenance, and issues. Exact BLE characteristic bytes survive base64 round-trip. Format version is 1; units are SI and timestamps ISO-8601 UTC. Derived summaries are never substituted for raw input. GPX includes accepted geographic points plus elevation/time and optional HR extension, but is explicitly not re-imported as lossless source. Coordinates are included only in workout export, not default diagnostics export.
+
+## Future deterministic replay boundary (contract only)
+
+One typed recording source adapter supplies the same production domain inputs/actions from live native capture, immutable saved-recording replay, or synthetic fixtures. It has an injected clock; the bridge transport stays separate. Native SQLite is authoritative only for live capture, Zustand is only a reactive projection, and replay uses an isolated namespace that cannot mutate/export-as-live a real workout. A replay adapter must retain original lineage while assigning its own runtime delivery ordering, and feed the same store/processing pathways rather than create a parallel metrics engine. Explicit replay clock, pause/seek/speed controls and replay UI are later work. Fixtures and bug reproduction must never mutate the source recording. Session/raw sequence plus timestamps and issue durable sequence are sufficient to map a report to a ride moment; no generic UI interaction logger or user marker is required now.
 
 ## Implementation handoffs and gates
 
