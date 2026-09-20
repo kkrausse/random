@@ -116,32 +116,39 @@ final class RecordingService: ObservableObject {
         guard let session = try? currentSessionRow(), let state = session["state"] as? String,
               ["recording", "paused"].contains(state), let sessionId = session["id"] as? String else { return }
         var observation = source
+        let rawEventId = observation.removeValue(forKey: "_rawEventId") as? String
         observation.removeValue(forKey: "cursor")
         observation["kind"] = "location"; observation["sessionId"] = sessionId
         observation["monotonicTimestampMs"] = monotonicMilliseconds()
         let key = "location:\(source["sourceTimestamp"] ?? ""):\(source["latitudeDegrees"] ?? ""):\(source["longitudeDegrees"] ?? "")"
-        ingest(observation, sessionId: sessionId, dedupeKey: key)
+        ingest(observation, sessionId: sessionId, dedupeKey: key, rawEventId: rawEventId)
     }
 
-    func ingestRawDelivery(kind: String, payload: [String: Any]) {
+    @discardableResult
+    func appendJournalEvent(kind: String, provenance: String, payload: [String: Any]) -> String? {
         guard let session = try? currentSessionRow(), let id = session["id"] as? String,
-              let state = session["state"] as? String, ["recording", "paused"].contains(state) else { return }
+              let state = session["state"] as? String, ["recording", "paused"].contains(state) else { return nil }
         do {
-            var stored = payload
-            stored["monotonicTimestampMs"] = monotonicMilliseconds()
+            let eventId = "event-\(UUID().uuidString)"
+            let receivedAt = payload["receivedAt"] as? String ?? ISOTime.now()
+            let sourceTimestamp = payload["sourceTimestamp"] as? String
+            let monotonic = monotonicMilliseconds()
             try execute("BEGIN IMMEDIATE")
-            try run("INSERT INTO raw_deliveries(session_id,kind,received_at,json) VALUES(?,?,?,?)", [.text(id), .text(kind), .text(ISOTime.now()), .text(canonicalJSON(stored))])
+            try insertJournalEvent(eventId: eventId, sessionId: id, kind: kind, sourceTimestamp: sourceTimestamp, receivedAt: receivedAt, monotonic: monotonic, provenance: provenance, payload: payload)
             try execute("COMMIT")
+            return eventId
         } catch {
             try? execute("ROLLBACK")
             storageFailure = error.localizedDescription
             emitIssue(code: "storageFailure", severity: "fatal", message: error.localizedDescription, sequence: (try? observationSequence(id)) ?? 0)
+            return nil
         }
     }
 
     func ingestHostEvent(type: String, payload: [String: Any]) {
         guard let session = try? currentSessionRow(), let id = session["id"] as? String else { return }
         do {
+            _ = appendJournalEvent(kind: "host.\(type)", provenance: "WorkoutAnalyze.native", payload: payload)
             try run("INSERT INTO host_events(session_id,type,source_timestamp,json) VALUES(?,?,?,?)", [.text(id), .text(type), .text(payload["sourceTimestamp"] as? String ?? ISOTime.now()), .text(canonicalJSON(payload))])
         } catch { storageFailure = error.localizedDescription }
     }
@@ -150,12 +157,13 @@ final class RecordingService: ObservableObject {
         guard let session = try? currentSessionRow(), let state = session["state"] as? String,
               ["recording", "paused"].contains(state), let sessionId = session["id"] as? String else { return }
         var observation = source
+        let rawEventId = observation.removeValue(forKey: "_rawEventId") as? String
         observation.removeValue(forKey: "cursor")
         observation["kind"] = "heartRate"; observation["sessionId"] = sessionId
         observation["sourceTimestamp"] = source["receivedAt"]
         observation["monotonicTimestampMs"] = monotonicMilliseconds()
         let key = "heartRate:\(source["connectionId"] ?? ""):\(source["receivedAt"] ?? ""):\(source["rawFlags"] ?? "")"
-        ingest(observation, sessionId: sessionId, dedupeKey: key)
+        ingest(observation, sessionId: sessionId, dedupeKey: key, rawEventId: rawEventId)
     }
 
     func export(sessionId: String, format: String) throws -> (id: String, url: URL) {
@@ -215,6 +223,7 @@ final class RecordingService: ObservableObject {
             .text(description.engineBuildId), .int(description.apiVersion), .int(description.checkpointSchemaVersion), .text(description.algorithmId), .int(0), .text(canonicalJSON(metrics)), .text(pinnedArtifact.url.path), .text(pinnedArtifact.sha256), .int(0), .null, .null
         ])
         let transition = transitionObservation(sessionId: id, sequence: sequence, from: "idle", to: "recording", at: now, cause: "user", monotonic: monotonicMilliseconds())
+        try insertJournalEvent(eventId: "event-\(UUID().uuidString)", sessionId: id, kind: "lifecycle.start", sourceTimestamp: now, receivedAt: now, monotonic: monotonicMilliseconds(), provenance: "bridge.workout.start", payload: ["expectedRevision": params["expectedRevision"]!, "sport": "cycling", "startPolicy": params["startPolicy"]!])
         try insertObservation(sessionId: id, sequence: sequence, kind: "transition", timestamp: now, dedupeKey: "transition:start", object: transition)
         try run("INSERT INTO host_events(session_id,type,source_timestamp,json) VALUES(?,?,?,?)", [.text(id), .text("recordingStarted"), .text(now), .text(canonicalJSON([
             "sourceTimestamp": now, "shellVersion": "0.1.0", "selectedUiSource": builds.sourceDescription,
@@ -235,6 +244,7 @@ final class RecordingService: ObservableObject {
         else { guard ["recording", "paused"].contains(state) else { throw RecorderFailure(code: "invalidState", message: "Cannot finish workout from \(state)") } }
         let now = ISOTime.now(); let sequence = (row["observation_sequence"] as! Int) + 1
         let observation = transitionObservation(sessionId: id, sequence: sequence, from: state, to: target, at: now, cause: cause, monotonic: monotonicMilliseconds())
+        try insertJournalEvent(eventId: "event-\(UUID().uuidString)", sessionId: id, kind: "lifecycle.\(target)", sourceTimestamp: now, receivedAt: now, monotonic: monotonicMilliseconds(), provenance: "bridge.workout.\(cause == "recovery" ? "recover" : target)", payload: ["from": state, "to": target, "revision": revision + 1, "cause": cause])
         try insertObservation(sessionId: id, sequence: sequence, kind: "transition", timestamp: now, dedupeKey: "transition:\(revision + 1)", object: observation)
         try run("UPDATE sessions SET state=?,revision=?,last_transition_at=?,observation_sequence=?,finished_at=?,recovery_required=0,recovery_reason=NULL WHERE id=?", [
             .text(target), .int(revision + 1), .text(now), .int(sequence), target == "finished" ? .text(now) : .null, .text(id)
@@ -242,13 +252,13 @@ final class RecordingService: ObservableObject {
         return snapshot(try sessionRow(id: id)!)
     }
 
-    private func ingest(_ object: [String: Any], sessionId: String, dedupeKey: String) {
+    private func ingest(_ object: [String: Any], sessionId: String, dedupeKey: String, rawEventId: String?) {
         do {
             try execute("BEGIN IMMEDIATE")
             if try scalarInt("SELECT COUNT(*) FROM observations WHERE session_id=? AND dedupe_key=?", [.text(sessionId), .text(dedupeKey)]) > 0 { try execute("COMMIT"); return }
             let sequence = try observationSequence(sessionId) + 1
             var value = object; value["sequence"] = sequence
-            try insertObservation(sessionId: sessionId, sequence: sequence, kind: value["kind"] as! String, timestamp: value["sourceTimestamp"] as! String, dedupeKey: dedupeKey, object: value)
+            try insertObservation(sessionId: sessionId, sequence: sequence, kind: value["kind"] as! String, timestamp: value["sourceTimestamp"] as! String, dedupeKey: dedupeKey, rawEventId: rawEventId, object: value)
             try run("UPDATE sessions SET observation_sequence=? WHERE id=?", [.int(sequence), .text(sessionId)])
             try execute("COMMIT")
             processEngineBacklog()
@@ -297,9 +307,11 @@ final class RecordingService: ObservableObject {
         sequence += 1
         let gap: [String: Any] = ["kind": "gap", "sessionId": id, "sequence": sequence, "sourceTimestamp": now,
             "monotonicTimestampMs": NSNull(), "startedAt": started, "endedAt": now, "reason": "processRestart"]
+        try insertJournalEvent(eventId: "event-\(UUID().uuidString)", sessionId: id, kind: "lifecycle.gap", sourceTimestamp: now, receivedAt: now, monotonic: nil, provenance: "native.launchRecovery", payload: ["startedAt": started, "endedAt": now, "reason": "processRestart"])
         try insertObservation(sessionId: id, sequence: sequence, kind: "gap", timestamp: now, dedupeKey: "gap:\(row["revision"]!)", object: gap)
         sequence += 1
         let transition = transitionObservation(sessionId: id, sequence: sequence, from: oldState, to: "interrupted", at: now, cause: "systemInterruption", monotonic: nil)
+        try insertJournalEvent(eventId: "event-\(UUID().uuidString)", sessionId: id, kind: "lifecycle.interrupted", sourceTimestamp: now, receivedAt: now, monotonic: nil, provenance: "native.launchRecovery", payload: ["from": oldState, "to": "interrupted", "cause": "systemInterruption"])
         try insertObservation(sessionId: id, sequence: sequence, kind: "transition", timestamp: now, dedupeKey: "transition:interrupted:\(row["revision"]!)", object: transition)
         try run("UPDATE sessions SET state='interrupted',revision=revision+1,last_transition_at=?,observation_sequence=?,recovery_required=1,interruption_started_at=?,recovery_reason='Recorder process restarted' WHERE id=?", [.text(now), .int(sequence), .text(started), .text(id)])
         try execute("COMMIT")
@@ -379,17 +391,30 @@ final class RecordingService: ObservableObject {
           engine_artifact_path TEXT NOT NULL,engine_artifact_sha256 TEXT NOT NULL,
           recovery_required INTEGER NOT NULL DEFAULT 0,interruption_started_at TEXT,recovery_reason TEXT);
         CREATE UNIQUE INDEX IF NOT EXISTS one_unfinished_session ON sessions((1)) WHERE state!='finished';
-        CREATE TABLE IF NOT EXISTS observations(session_id TEXT NOT NULL,sequence INTEGER NOT NULL,kind TEXT NOT NULL,source_timestamp TEXT NOT NULL,dedupe_key TEXT NOT NULL,json TEXT NOT NULL,
+        CREATE TABLE IF NOT EXISTS observations(session_id TEXT NOT NULL,sequence INTEGER NOT NULL,kind TEXT NOT NULL,source_timestamp TEXT NOT NULL,dedupe_key TEXT NOT NULL,raw_event_id TEXT,json TEXT NOT NULL,
           PRIMARY KEY(session_id,sequence),UNIQUE(session_id,dedupe_key),FOREIGN KEY(session_id) REFERENCES sessions(id));
         CREATE TABLE IF NOT EXISTS outcomes(request_id TEXT PRIMARY KEY,method TEXT NOT NULL,params_json TEXT NOT NULL,reply_json TEXT NOT NULL,created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS raw_deliveries(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,kind TEXT NOT NULL,received_at TEXT NOT NULL,json TEXT NOT NULL,FOREIGN KEY(session_id) REFERENCES sessions(id));
         CREATE TABLE IF NOT EXISTS host_events(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,type TEXT NOT NULL,source_timestamp TEXT NOT NULL,json TEXT NOT NULL,FOREIGN KEY(session_id) REFERENCES sessions(id));
         CREATE TABLE IF NOT EXISTS issues(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,issue_id TEXT NOT NULL UNIQUE,severity TEXT NOT NULL,code TEXT NOT NULL,observed_at TEXT NOT NULL,durable_sequence INTEGER NOT NULL,message TEXT NOT NULL,FOREIGN KEY(session_id) REFERENCES sessions(id));
+        CREATE TABLE IF NOT EXISTS journal_events(event_id TEXT PRIMARY KEY,session_id TEXT NOT NULL,journal_sequence INTEGER NOT NULL,kind TEXT NOT NULL,source_timestamp TEXT,received_at TEXT NOT NULL,monotonic_timestamp_ms REAL,clock_domain TEXT NOT NULL,raw_encoding TEXT NOT NULL,provenance TEXT NOT NULL,payload TEXT NOT NULL,
+          UNIQUE(session_id,journal_sequence),FOREIGN KEY(session_id) REFERENCES sessions(id));
         """)
+        try? execute("ALTER TABLE observations ADD COLUMN raw_event_id TEXT")
+        try? execute("ALTER TABLE sessions ADD COLUMN engine_artifact_path TEXT NOT NULL DEFAULT ''")
+        try? execute("ALTER TABLE sessions ADD COLUMN engine_artifact_sha256 TEXT NOT NULL DEFAULT ''")
     }
 
-    private func insertObservation(sessionId: String, sequence: Int, kind: String, timestamp: String, dedupeKey: String, object: [String: Any]) throws {
-        try run("INSERT INTO observations(session_id,sequence,kind,source_timestamp,dedupe_key,json) VALUES(?,?,?,?,?,?)", [.text(sessionId), .int(sequence), .text(kind), .text(timestamp), .text(dedupeKey), .text(canonicalJSON(object))])
+    private func insertObservation(sessionId: String, sequence: Int, kind: String, timestamp: String, dedupeKey: String, rawEventId: String? = nil, object: [String: Any]) throws {
+        try run("INSERT INTO observations(session_id,sequence,kind,source_timestamp,dedupe_key,raw_event_id,json) VALUES(?,?,?,?,?,?,?)", [.text(sessionId), .int(sequence), .text(kind), .text(timestamp), .text(dedupeKey), rawEventId.map(Bind.text) ?? .null, .text(canonicalJSON(object))])
+    }
+
+    private func insertJournalEvent(eventId: String, sessionId: String, kind: String, sourceTimestamp: String?, receivedAt: String, monotonic: Double?, provenance: String, payload: [String: Any]) throws {
+        let sequence = try scalarInt("SELECT COALESCE(MAX(journal_sequence),0)+1 FROM journal_events WHERE session_id=?", [.text(sessionId)])
+        try run("INSERT INTO journal_events(event_id,session_id,journal_sequence,kind,source_timestamp,received_at,monotonic_timestamp_ms,clock_domain,raw_encoding,provenance,payload) VALUES(?,?,?,?,?,?,?,?,?,?,?)", [
+            .text(eventId), .text(sessionId), .int(sequence), .text(kind), sourceTimestamp.map(Bind.text) ?? .null, .text(receivedAt), monotonic.map(Bind.double) ?? .null,
+            .text("processUptimeMilliseconds"), .text("utf8-json-with-base64-binary-v1"), .text(provenance), .text(canonicalJSON(payload))
+        ])
     }
 
     private func currentSessionRow() throws -> [String: Any]? { try query("SELECT * FROM sessions WHERE state!='finished' ORDER BY started_at DESC LIMIT 1").first }
@@ -476,13 +501,13 @@ final class RecordingService: ObservableObject {
         let sessionData = try JSONSerialization.data(withJSONObject: snapshot(session), options: [.prettyPrinted, .sortedKeys])
         let observationsData = try JSONSerialization.data(withJSONObject: observations, options: [.prettyPrinted, .sortedKeys])
         let metrics = try JSONSerialization.data(withJSONObject: decodeObject(session["metrics_json"] as? String) ?? defaultMetrics(), options: [.prettyPrinted, .sortedKeys])
-        let raw = try query("SELECT id,kind,received_at,json FROM raw_deliveries WHERE session_id=? ORDER BY id", [.text(session["id"] as! String)])
+        let journal = try query("SELECT event_id,journal_sequence,kind,source_timestamp,received_at,monotonic_timestamp_ms,clock_domain,raw_encoding,provenance,payload FROM journal_events WHERE session_id=? ORDER BY journal_sequence", [.text(session["id"] as! String)])
         let host = try query("SELECT id,type,source_timestamp,json FROM host_events WHERE session_id=? ORDER BY id", [.text(session["id"] as! String)])
         let issues = try query("SELECT issue_id,severity,code,observed_at,durable_sequence,message FROM issues WHERE session_id=? ORDER BY id", [.text(session["id"] as! String)])
-        let rawData = try JSONSerialization.data(withJSONObject: raw.map { ["deliveryId": $0["id"]!, "kind": $0["kind"]!, "receivedAt": $0["received_at"]!, "payload": decodeObject($0["json"] as? String) ?? [:]] }, options: [.prettyPrinted, .sortedKeys])
+        let journalData = try JSONSerialization.data(withJSONObject: journal.map { ["eventId": $0["event_id"]!, "sessionId": session["id"]!, "sequence": $0["journal_sequence"]!, "kind": $0["kind"]!, "sourceTimestamp": $0["source_timestamp"] ?? NSNull(), "receivedAt": $0["received_at"]!, "monotonicTimestampMs": $0["monotonic_timestamp_ms"] ?? NSNull(), "clockDomain": $0["clock_domain"]!, "rawEncoding": $0["raw_encoding"]!, "provenance": $0["provenance"]!, "payload": decodeObject($0["payload"] as? String) ?? [:]] }, options: [.prettyPrinted, .sortedKeys])
         let hostData = try JSONSerialization.data(withJSONObject: host.map { ["eventId": $0["id"]!, "type": $0["type"]!, "sourceTimestamp": $0["source_timestamp"]!, "payload": decodeObject($0["json"] as? String) ?? [:]] }, options: [.prettyPrinted, .sortedKeys])
         let issueData = try JSONSerialization.data(withJSONObject: issues, options: [.prettyPrinted, .sortedKeys])
-        var files = ["session.json": sessionData, "observations.json": observationsData, "raw-deliveries.json": rawData, "host-events.json": hostData, "issues.json": issueData, "metrics.json": metrics]
+        var files = ["session.json": sessionData, "observations.json": observationsData, "journal-events.json": journalData, "host-events.json": hostData, "issues.json": issueData, "metrics.json": metrics]
         let listed = files.keys.sorted().map { name in ["path": name, "sha256": SHA256.hash(data: files[name]!).map { String(format: "%02x", $0) }.joined()] }
         files["manifest.json"] = try JSONSerialization.data(withJSONObject: ["formatVersion": 1, "kind": "workoutBundleV1", "sessionId": session["id"]!, "engineBuildId": session["engine_build_id"]!, "engineArtifactSha256": session["engine_artifact_sha256"]!, "algorithmId": session["algorithm_id"]!, "files": listed], options: [.prettyPrinted, .sortedKeys])
         return files

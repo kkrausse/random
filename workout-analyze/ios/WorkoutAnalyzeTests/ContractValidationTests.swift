@@ -144,8 +144,9 @@ final class ContractValidationTests: XCTestCase {
         let started = first["result"] as! [String: Any]
         let sessionId = started["sessionId"] as! String
 
-        recorder!.ingestRawDelivery(kind: "coreLocation", payload: ["sourceTimestamp": "2026-09-20T00:00:01Z", "receivedAt": "2026-09-20T00:00:30Z", "horizontalAccuracyM": 250.0, "latitudeDegrees": 1.0, "longitudeDegrees": 2.0])
-        recorder!.ingestRawDelivery(kind: "heartRateCharacteristic", payload: ["receivedAt": "2026-09-20T00:00:02Z", "rawCharacteristicBase64": Data([1, 2, 3]).base64EncodedString(), "rawFlags": 31])
+        let locationEvent = recorder!.appendJournalEvent(kind: "locationDelivery", provenance: "fixture", payload: ["sourceTimestamp": "2026-09-20T00:00:01Z", "receivedAt": "2026-09-20T00:00:30Z", "horizontalAccuracyM": 250.0, "latitudeDegrees": 1.0, "longitudeDegrees": 2.0])
+        let heartRateEvent = recorder!.appendJournalEvent(kind: "heartRateCharacteristicDelivery", provenance: "fixture", payload: ["receivedAt": "2026-09-20T00:00:02Z", "rawCharacteristicBase64": Data([1, 2, 3]).base64EncodedString(), "rawFlags": 31])
+        XCTAssertNotNil(locationEvent); XCTAssertNotNil(heartRateEvent)
         recorder!.ingestLocation(["cursor": 1, "source": "coreLocation", "sourceTimestamp": "2026-09-20T00:00:01Z", "receivedAt": "2026-09-20T00:00:30Z", "latitudeDegrees": 1.0, "longitudeDegrees": 2.0, "horizontalAccuracyM": 250.0, "altitudeM": NSNull(), "verticalAccuracyM": NSNull(), "speedMps": NSNull(), "speedAccuracyMps": NSNull(), "courseDegrees": NSNull(), "courseAccuracyDegrees": NSNull(), "floorLevel": NSNull(), "isSimulatedBySoftware": false, "isProducedByAccessory": false])
         recorder!.ingestHeartRate(["cursor": 1, "connectionId": "hr-fixture", "deviceId": "device-fixture", "receivedAt": "2026-09-20T00:00:02Z", "bpm": 147, "valueFormat": "uint8", "sensorContact": "detected", "energyExpendedKJ": 12, "rrIntervalsSeconds": [0.8], "rawFlags": 31])
         let observations = try recorder!.readObservations(sessionId: sessionId, after: nil, limit: 20)["items"] as! [[String: Any]]
@@ -164,7 +165,7 @@ final class ContractValidationTests: XCTestCase {
         XCTAssertEqual(((finish["result"] as? [String: Any])?["session"] as? [String: Any])?["state"] as? String, "finished")
         let exported = try reopened.export(sessionId: sessionId, format: "workoutBundleV1")
         let archive = try Data(contentsOf: exported.url)
-        XCTAssertNotNil(archive.range(of: Data("raw-deliveries.json".utf8)))
+        XCTAssertNotNil(archive.range(of: Data("journal-events.json".utf8)))
         XCTAssertNotNil(archive.range(of: Data("AQID".utf8)))
         reopened.shutdownForTesting()
     }

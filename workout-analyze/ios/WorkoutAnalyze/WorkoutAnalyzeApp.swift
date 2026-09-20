@@ -33,8 +33,8 @@ final class AppHostModel: ObservableObject {
         sensors.emitEvent = { [weak dispatcher] type, payload in dispatcher?.emitEvent?(type, payload) }
         sensors.recordLocation = { [weak recording] observation in recording?.ingestLocation(observation) }
         sensors.recordHeartRate = { [weak recording] observation in recording?.ingestHeartRate(observation) }
-        sensors.recordRawLocation = { [weak recording] delivery in recording?.ingestRawDelivery(kind: "coreLocation", payload: delivery) }
-        sensors.recordRawHeartRate = { [weak recording] delivery in recording?.ingestRawDelivery(kind: "heartRateCharacteristic", payload: delivery) }
+        sensors.recordRawLocation = { [weak recording] delivery in recording?.appendJournalEvent(kind: "locationDelivery", provenance: "CoreLocation.CLLocationManagerDelegate", payload: delivery) }
+        sensors.recordRawHeartRate = { [weak recording] delivery in recording?.appendJournalEvent(kind: "heartRateCharacteristicDelivery", provenance: "CoreBluetooth.CBPeripheralDelegate.2A37", payload: delivery) }
         sensors.recordHostEvent = { [weak recording] type, payload in recording?.ingestHostEvent(type: type, payload: payload) }
         recording.emitEvent = { [weak dispatcher] type, payload in dispatcher?.emitEvent?(type, payload) }
         dispatcher.presentShare = { url in

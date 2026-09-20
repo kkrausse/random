@@ -8,8 +8,8 @@ final class SensorService: NSObject, @MainActor CLLocationManagerDelegate, @Main
     var emitEvent: ((String, [String: Any]) -> Void)?
     var recordLocation: (([String: Any]) -> Void)?
     var recordHeartRate: (([String: Any]) -> Void)?
-    var recordRawLocation: (([String: Any]) -> Void)?
-    var recordRawHeartRate: (([String: Any]) -> Void)?
+    var recordRawLocation: (([String: Any]) -> String?)?
+    var recordRawHeartRate: (([String: Any]) -> String?)?
     var recordHostEvent: ((String, [String: Any]) -> Void)?
     private let log: DiagnosticLog
 
@@ -186,7 +186,7 @@ final class SensorService: NSObject, @MainActor CLLocationManagerDelegate, @Main
     func locationManager(_ manager: CLLocationManager, didUpdateLocations updates: [CLLocation]) {
         guard locationState == "active" || recordingLocationActive else { return }
         for location in updates.sorted(by: { $0.timestamp < $1.timestamp }) {
-            recordRawLocation?([
+            let rawEventId = recordRawLocation?([
                 "sourceTimestamp": ISO8601DateFormatter().string(from: location.timestamp), "receivedAt": ISOTime.now(),
                 "latitudeDegrees": location.coordinate.latitude, "longitudeDegrees": location.coordinate.longitude,
                 "horizontalAccuracyM": location.horizontalAccuracy, "altitudeM": location.altitude, "verticalAccuracyM": location.verticalAccuracy,
@@ -199,6 +199,7 @@ final class SensorService: NSObject, @MainActor CLLocationManagerDelegate, @Main
             if locationState == "active" { locationReceived += 1 }
             guard location.horizontalAccuracy >= 0,
                   (-90...90).contains(location.coordinate.latitude), (-180...180).contains(location.coordinate.longitude) else {
+                recordHostEvent?("locationNormalizationSkipped", ["rawEventId": rawEventId ?? NSNull(), "reason": "Invalid coordinates or negative horizontal accuracy", "sourceTimestamp": ISOTime.now()])
                 if locationState == "active" { locationRejected += 1; locationLastRejection = "Core Location supplied invalid coordinates or negative horizontal accuracy" }
                 continue
             }
@@ -218,6 +219,7 @@ final class SensorService: NSObject, @MainActor CLLocationManagerDelegate, @Main
                 "isSimulatedBySoftware": location.sourceInformation?.isSimulatedBySoftware ?? NSNull(),
                 "isProducedByAccessory": location.sourceInformation?.isProducedByAccessory ?? NSNull()
             ]
+            observation["_rawEventId"] = rawEventId ?? NSNull()
             if recordingLocationActive { recordLocation?(observation) }
             if locationState == "active" {
                 observation["cursor"] = locationCursor
@@ -381,18 +383,20 @@ final class SensorService: NSObject, @MainActor CLLocationManagerDelegate, @Main
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard characteristic.uuid == CBUUID(string: "2A37") else { return }
         let receivedAt = ISOTime.now()
-        recordRawHeartRate?([
+        let rawEventId = recordRawHeartRate?([
             "receivedAt": receivedAt, "deviceId": peripheral.identifier.uuidString, "connectionId": connectionId ?? NSNull(),
             "characteristicUuid": characteristic.uuid.uuidString, "rawCharacteristicBase64": characteristic.value?.base64EncodedString() ?? NSNull(),
             "deliveryError": error?.localizedDescription ?? NSNull(), "peripheralState": peripheral.state.rawValue
         ])
         heartRateReceived += 1
         guard error == nil, let data = characteristic.value, let parsed = parseHeartRate(data) else {
+            recordHostEvent?("heartRateDecodeFailure", ["rawEventId": rawEventId ?? NSNull(), "reason": error?.localizedDescription ?? "Malformed or truncated 2A37 packet", "sourceTimestamp": receivedAt])
             parseErrors += 1; heartRateLastError = error?.localizedDescription ?? "Malformed or truncated 2A37 packet"; coalesceHeartRateEvent(); return
         }
         heartRateCursor += 1
         var measurement = parsed
         measurement["cursor"] = heartRateCursor; measurement["connectionId"] = connectionId!; measurement["deviceId"] = peripheral.identifier.uuidString; measurement["receivedAt"] = receivedAt
+        measurement["_rawEventId"] = rawEventId ?? NSNull()
         measurements.append(measurement)
         if measurements.count > 2048 { measurements.removeFirst(measurements.count - 2048) }
         heartRateReason = "Received \(measurements.count) retained heart-rate measurement\(measurements.count == 1 ? "" : "s")"
