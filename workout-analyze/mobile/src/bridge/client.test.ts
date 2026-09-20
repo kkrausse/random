@@ -61,9 +61,16 @@ describe('bridge client', () => {
 
   test('rejects malformed method results instead of trusting native input', async () => {
     browser.window = {} as Window
-    const client = createBridgeClient(transportWith((command) => respond(command, { nonce: 42 })), 100)
+    const reports: unknown[] = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = ((_: string, init?: RequestInit) => { reports.push(JSON.parse(String(init?.body))); return Promise.resolve(new Response('{}')) }) as typeof fetch
+    const client = createBridgeClient(transportWith((command) => respond(command, command.method === 'session.snapshot' ? session(2) : { nonce: 42 })), 100)
     clients.push(client)
-    await expect(client.request('bridge.ping', { nonce: 'n-1' })).rejects.toThrow('invalid bridge.ping result')
+    try {
+      await expect(client.request('bridge.ping', { nonce: 'n-1' })).rejects.toThrow('invalid bridge.ping result')
+      expect(reports).toEqual([expect.objectContaining({ events: [expect.objectContaining({ message: 'invalid bridge.ping result', metadata: { method: 'bridge.ping' } })] })])
+      expect(JSON.stringify(reports)).not.toContain('nonce')
+    } finally { globalThis.fetch = originalFetch }
   })
 
   test('resnapshots after a malformed event and reports only redacted failure metadata', async () => {
