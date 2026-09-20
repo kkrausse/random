@@ -107,6 +107,16 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
     void fetch('/__workout/diagnostics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ formatVersion: 1, uploadId: event.id, events: [event] }) }).catch(() => undefined)
   }
 
+  const reportInvalidReply = (method: MobileMethod, error: unknown) => {
+    const detail = error instanceof Error ? error.message : `Invalid ${method} result`
+    const signature = `${method}:${detail}`
+    const now = Date.now()
+    if (now - (lastInvalidEventReportAt.get(signature) ?? 0) < 10_000) return
+    lastInvalidEventReportAt.set(signature, now)
+    const event = { id: `web-native-reply-${now}-${counter}`, timestamp: new Date(now).toISOString(), subsystem: 'web-bridge', level: 'error', message: detail, metadata: { method } }
+    void fetch('/__workout/diagnostics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ formatVersion: 1, uploadId: event.id, events: [event] }) }).catch(() => undefined)
+  }
+
   const request = <M extends MobileMethod>(method: M, params: CommandParams[M]): Promise<CommandResults[M]> => {
     counter += 1
     const requestId = `web-${Date.now().toString(36)}-${counter}`
@@ -202,6 +212,7 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
         const item = pending.get(requestId)
         if (item) {
           clearTimeout(item.timeout); pending.delete(requestId); item.reject(error)
+          reportInvalidReply(item.method, error)
           if (item.method !== 'bridge.snapshot' && item.method !== 'session.snapshot' && consecutiveResyncFailures < 3) void resync(false)
         }
       }
