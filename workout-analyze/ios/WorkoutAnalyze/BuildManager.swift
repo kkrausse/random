@@ -298,6 +298,13 @@ final class BuildManager: ObservableObject {
             developmentURL = ContractValidation.developmentURL(raw)
         }
 #if DEBUG
+        if let raw = ProcessInfo.processInfo.environment["WORKOUT_ANALYZE_DEVELOPMENT_URL_OVERRIDE"],
+           let url = ContractValidation.developmentURL(raw) {
+            developmentURL = url
+            defaults.set(url.absoluteString, forKey: "developmentURL")
+            defaults.set("development", forKey: "workoutAnalyze.sourceSelection")
+            log.append(subsystem: "source", message: "Development origin explicitly overridden for this launch", metadata: ["origin": url.absoluteString])
+        }
         if developmentURL == nil,
            defaults.string(forKey: "workoutAnalyze.sourceSelection") == nil,
            let url = ContractValidation.developmentURL("http://100.86.29.19:4317") {

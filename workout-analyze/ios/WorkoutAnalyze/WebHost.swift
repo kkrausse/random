@@ -21,10 +21,12 @@ final class WebHost: NSObject, ObservableObject, WKScriptMessageHandler, WKNavig
         configuration.websiteDataStore = .default()
         configuration.setURLSchemeHandler(LocalSchemeHandler(builds: builds), forURLScheme: "workout-analyze")
         let controller = WKUserContentController()
+        controller.addUserScript(WKUserScript(source: Self.earlyErrorReporter, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         configuration.userContentController = controller
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
         controller.add(self, name: "workoutAnalyze")
+        controller.add(self, name: "workoutAnalyzeDiagnostics")
         webView.navigationDelegate = self
         webView.allowsBackForwardNavigationGestures = false
         dispatcher.reloadUI = { [weak self] in self?.loadSelectedSource() }
@@ -42,7 +44,14 @@ final class WebHost: NSObject, ObservableObject, WKScriptMessageHandler, WKNavig
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == "workoutAnalyze", message.frameInfo.isMainFrame, isSelectedOrigin(message.frameInfo.securityOrigin) else { return }
+        guard message.frameInfo.isMainFrame, isSelectedOrigin(message.frameInfo.securityOrigin) else { return }
+        if message.name == "workoutAnalyzeDiagnostics" {
+            guard let body = message.body as? [String: Any], let kind = body["kind"] as? String,
+                  let detail = body["detail"] as? String else { return }
+            dispatcher.log.append(subsystem: "web-runtime", message: "Early web \(kind)", metadata: ["detail": String(detail.prefix(1024))])
+            return
+        }
+        guard message.name == "workoutAnalyze" else { return }
         Task {
             let reply = await dispatcher.dispatch(message.body)
             if let object = message.body as? [String: Any], object["method"] as? String == "bridge.hello", reply["ok"] as? Bool == true {
@@ -171,6 +180,16 @@ final class WebHost: NSObject, ObservableObject, WKScriptMessageHandler, WKNavig
         builds.handshakeFailed(reason: reason)
         if wasInstalled { loadSelectedSource() }
     }
+
+    private static let earlyErrorReporter = #"""
+    (() => {
+      const report = (kind, detail) => {
+        try { window.webkit.messageHandlers.workoutAnalyzeDiagnostics.postMessage({ kind, detail: String(detail || 'unknown') }); } catch (_) {}
+      };
+      window.addEventListener('error', event => report('error', `${event.message || 'Script error'} @ ${event.filename || 'unknown'}:${event.lineno || 0}:${event.colno || 0}`));
+      window.addEventListener('unhandledrejection', event => report('unhandled rejection', event.reason instanceof Error ? event.reason.message : String(event.reason)));
+    })();
+    """#
 }
 
 struct HostedWebView: UIViewRepresentable {
