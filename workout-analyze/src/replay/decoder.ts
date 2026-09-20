@@ -20,6 +20,7 @@ const replayProvenance = (event: RawWorkoutEvent): ObservationProvenance => ({
 const issue = (event: RawWorkoutEvent, code: 'unknownEvent' | 'malformedPayload', message: string): RawProjection => ({
   observation: null, engineInput: null,
   issue: { journalSequence: event.journalSequence, eventId: event.eventId, kind: event.kind, code, message },
+  dedupeKey: null,
 })
 
 const bytesFromBase64 = (value: unknown): Uint8Array | null => {
@@ -58,7 +59,7 @@ const decodeHeartRate = (event: RawWorkoutEvent, payload: Record<string, unknown
     bpm, valueFormat, sensorContact, energyExpendedKJ, rrIntervalsSeconds, rawFlags: flags,
     rawCharacteristicBase64: payload.rawCharacteristicBase64 as string, provenance: replayProvenance(event),
   }
-  return { observation, engineInput: { kind: 'heartRate', sourceTimestamp, monotonicTimestampMs: event.monotonicTimestampMs, bpm }, issue: null }
+  return { observation, engineInput: { kind: 'heartRate', sourceTimestamp, monotonicTimestampMs: event.monotonicTimestampMs, bpm }, issue: null, dedupeKey: `heartRate:${payload.connectionId}:${payload.receivedAt}:${flags}` }
 }
 
 const decodeLocation = (event: RawWorkoutEvent, payload: Record<string, unknown>): RawProjection => {
@@ -74,7 +75,7 @@ const decodeLocation = (event: RawWorkoutEvent, payload: Record<string, unknown>
     isSimulatedBySoftware: payload.isSimulatedBySoftware as boolean | null, isProducedByAccessory: payload.isProducedByAccessory as boolean | null,
     ...('ellipsoidalAltitudeM' in payload && nullableFinite(payload.ellipsoidalAltitudeM) ? { ellipsoidalAltitudeM: payload.ellipsoidalAltitudeM } : {}), provenance: replayProvenance(event),
   }
-  return { observation, engineInput: { kind: 'location', sourceTimestamp, receivedAt: observation.receivedAt, monotonicTimestampMs: event.monotonicTimestampMs, latitudeDegrees: observation.latitudeDegrees, longitudeDegrees: observation.longitudeDegrees, horizontalAccuracyM: observation.horizontalAccuracyM, altitudeM: observation.altitudeM, verticalAccuracyM: observation.verticalAccuracyM, speedMps: observation.speedMps, speedAccuracyMps: observation.speedAccuracyMps }, issue: null }
+  return { observation, engineInput: { kind: 'location', sourceTimestamp, receivedAt: observation.receivedAt, monotonicTimestampMs: event.monotonicTimestampMs, latitudeDegrees: observation.latitudeDegrees, longitudeDegrees: observation.longitudeDegrees, horizontalAccuracyM: observation.horizontalAccuracyM, altitudeM: observation.altitudeM, verticalAccuracyM: observation.verticalAccuracyM, speedMps: observation.speedMps, speedAccuracyMps: observation.speedAccuracyMps }, issue: null, dedupeKey: `location:${sourceTimestamp}:${observation.latitudeDegrees}:${observation.longitudeDegrees}` }
 }
 
 const decodeTransition = (event: RawWorkoutEvent, payload: Record<string, unknown>): RawProjection => {
@@ -83,7 +84,7 @@ const decodeTransition = (event: RawWorkoutEvent, payload: Record<string, unknow
   const to = event.kind === 'lifecycle.start' ? 'recording' : payload.to
   if (!iso(sourceTimestamp) || !state(from) || !state(to)) return issue(event, 'malformedPayload', 'Lifecycle event has invalid state or timestamp.')
   const observation: Omit<RecorderTransitionObservation, 'sequence'> = { kind: 'transition', sessionId: event.sessionId, transitionId: event.eventId, from, to, sourceTimestamp, monotonicTimestampMs: event.monotonicTimestampMs, cause: payload.cause === 'recovery' || payload.cause === 'systemInterruption' ? payload.cause : 'user', receivedAt: event.receivedAt, provenance: replayProvenance(event) }
-  return { observation, engineInput: { kind: 'transition', sourceTimestamp, monotonicTimestampMs: event.monotonicTimestampMs, from, to }, issue: null }
+  return { observation, engineInput: { kind: 'transition', sourceTimestamp, monotonicTimestampMs: event.monotonicTimestampMs, from, to }, issue: null, dedupeKey: null }
 }
 
 export const decodeRawWorkoutEvent: RawEventDecoder = (event) => {
