@@ -6,8 +6,11 @@ final class WebHost: NSObject, ObservableObject, WKScriptMessageHandler, WKNavig
     let webView: WKWebView
     private let builds: BuildManager
     private let dispatcher: BridgeDispatcher
+    private var navigationTask: Task<Void, Never>?
     private var handshakeTask: Task<Void, Never>?
-    private var receivedHello = false
+    private var handshake = StartupHandshakeTracker()
+    private weak var selectedNavigation: WKNavigation?
+    private var selectedNavigationGeneration: Int?
     private var eventDeliveryTask: Task<Void, Never>?
 
     init(builds: BuildManager, dispatcher: BridgeDispatcher) {
@@ -28,18 +31,11 @@ final class WebHost: NSObject, ObservableObject, WKScriptMessageHandler, WKNavig
     }
 
     func loadSelectedSource() {
-        receivedHello = false
-        handshakeTask?.cancel()
         let url = builds.activeUIURL()
         dispatcher.log.append(subsystem: "source", message: "Loading selected UI source", metadata: ["url": url.absoluteString])
-        webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30))
-        handshakeTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(8))
-            guard !Task.isCancelled, let self, !self.receivedHello else { return }
-            let wasInstalled = self.builds.developmentURL == nil && self.builds.active.source == "installed"
-            self.builds.handshakeFailed(reason: "bridge.hello was not received within 8 seconds")
-            if wasInstalled { self.loadSelectedSource() }
-        }
+        let generation = beginNavigation()
+        selectedNavigationGeneration = generation
+        selectedNavigation = webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30))
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -47,8 +43,17 @@ final class WebHost: NSObject, ObservableObject, WKScriptMessageHandler, WKNavig
         Task {
             let reply = await dispatcher.dispatch(message.body)
             if let object = message.body as? [String: Any], object["method"] as? String == "bridge.hello", reply["ok"] as? Bool == true {
-                receivedHello = true; handshakeTask?.cancel()
-                dispatcher.log.append(subsystem: "bridge", message: "Development UI bridge handshake completed", metadata: ["source": builds.sourceDescription])
+                let outcome = handshake.hello(generation: selectedNavigationGeneration)
+                if outcome != .ignored {
+                    navigationTask?.cancel()
+                    handshakeTask?.cancel()
+                    builds.handshakeSucceeded()
+                    dispatcher.log.append(subsystem: "bridge", message: "UI bridge handshake completed", metadata: [
+                        "generation": String(handshake.generation),
+                        "recoveredAfterDeadline": String(outcome == .recovered),
+                        "source": builds.sourceDescription
+                    ])
+                }
             }
             await sendReply(reply)
         }
@@ -97,13 +102,63 @@ final class WebHost: NSObject, ObservableObject, WKScriptMessageHandler, WKNavig
         return .cancel
     }
 
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        guard navigation !== selectedNavigation else { return }
+        selectedNavigationGeneration = beginNavigation()
+        selectedNavigation = navigation
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        guard navigation === selectedNavigation, let generation = selectedNavigationGeneration else { return }
+        handshake.navigationCommitted(generation: generation)
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard navigation === selectedNavigation, let generation = selectedNavigationGeneration else { return }
+        navigationTask?.cancel()
+        if handshake.navigationFinished(generation: generation) { startHandshakeDeadline(generation: generation) }
         dispatcher.log.append(subsystem: "source", message: "Selected UI source finished navigation", metadata: ["url": webView.url?.absoluteString ?? "unknown"])
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        guard navigation === selectedNavigation, let generation = selectedNavigationGeneration else { return }
+        navigationTask?.cancel()
         let nsError = error as NSError
         dispatcher.log.append(subsystem: "source", message: "Selected UI source navigation failed", metadata: ["reason": error.localizedDescription, "domain": nsError.domain, "code": String(nsError.code)])
+        failNavigation(generation: generation, reason: "navigation failed: \(error.localizedDescription)")
+    }
+
+    private func beginNavigation() -> Int {
+        navigationTask?.cancel()
+        handshakeTask?.cancel()
+        let generation = handshake.beginNavigation()
+        navigationTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(30))
+            guard !Task.isCancelled, let self else { return }
+            self.failNavigation(generation: generation, reason: "navigation did not finish within 30 seconds")
+        }
+        return generation
+    }
+
+    private func startHandshakeDeadline(generation: Int) {
+        handshakeTask?.cancel()
+        handshakeTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled, let self, self.handshake.handshakeTimedOut(generation: generation) else { return }
+            self.handleFailure(reason: "bridge.hello was not received within 8 seconds after navigation", generation: generation)
+        }
+    }
+
+    private func failNavigation(generation: Int, reason: String) {
+        guard handshake.navigationTimedOut(generation: generation) else { return }
+        handleFailure(reason: reason, generation: generation)
+    }
+
+    private func handleFailure(reason: String, generation: Int) {
+        guard generation == handshake.generation else { return }
+        let wasInstalled = builds.developmentURL == nil && builds.active.source == "installed"
+        builds.handshakeFailed(reason: reason)
+        if wasInstalled { loadSelectedSource() }
     }
 }
 
