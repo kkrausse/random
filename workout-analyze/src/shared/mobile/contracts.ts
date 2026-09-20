@@ -39,6 +39,7 @@ export type Capability =
   | 'observations.read'
   | 'archive.list'
   | 'archive.detail'
+  | 'journal.read'
 
 export const PHASE1_BASE_CAPABILITIES: ReadonlyArray<Capability> = [
   'bridge.ping', 'session.snapshot', 'permissions.status',
@@ -64,8 +65,10 @@ export const RECORDING_CAPABILITIES: ReadonlyArray<Capability> = [
 
 /** Saved-workout discovery is independently advertised so older recorder hosts remain available. */
 export const ARCHIVE_CAPABILITIES: ReadonlyArray<Capability> = ['archive.list', 'archive.detail']
+/** Canonical raw-event access is independent of recorder mutation and archive discovery. */
+export const JOURNAL_CAPABILITIES: ReadonlyArray<Capability> = ['journal.read']
 
-export const MOBILE_CAPABILITIES: ReadonlyArray<Capability> = [...PHASE1_CAPABILITIES, ...RECORDING_CAPABILITIES, ...ARCHIVE_CAPABILITIES]
+export const MOBILE_CAPABILITIES: ReadonlyArray<Capability> = [...PHASE1_CAPABILITIES, ...RECORDING_CAPABILITIES, ...ARCHIVE_CAPABILITIES, ...JOURNAL_CAPABILITIES]
 
 export type MobileMethod = 'bridge.hello' | Capability
 export type StatusKind = 'ok' | 'waiting' | 'unavailable' | 'error'
@@ -118,6 +121,7 @@ export interface CommandParams {
   readonly 'observations.read': { readonly sessionId: string; readonly afterSequence: number | null; readonly limit: number }
   readonly 'archive.list': { readonly afterCursor: string | null; readonly limit: number }
   readonly 'archive.detail': { readonly savedWorkoutId: string; readonly afterSequence: number | null; readonly limit: number }
+  readonly 'journal.read': { readonly sessionId: string; readonly afterJournalSequence: number | null; readonly limit: number }
 }
 
 export interface SessionMutationParams { readonly sessionId: string; readonly expectedRevision: number }
@@ -268,6 +272,33 @@ export interface ObservationProvenance {
   readonly monotonicClockId: string | null
   /** Present only for replay, pointing back to the immutable captured row. */
   readonly lineage: { readonly savedWorkoutId: string; readonly sessionId: string; readonly sequence: number } | null
+  /** Canonical journal input used to produce this normalized observation, when applicable. */
+  readonly rawEvent?: { readonly eventId: string; readonly journalSequence: number }
+}
+
+/** The append-only, pre-decode recording source of truth. Payload is deliberately opaque. */
+export interface RawWorkoutEvent {
+  readonly formatVersion: 1
+  readonly eventId: string
+  readonly sessionId: string
+  readonly journalSequence: number
+  readonly kind: string
+  readonly sourceTimestamp: string | null
+  readonly receivedAt: string
+  readonly monotonicTimestampMs: number | null
+  readonly provenance: ObservationProvenance
+  readonly batch: { readonly batchId: string; readonly index: number; readonly size: number } | null
+  readonly payload: { readonly encoding: 'json'; readonly value: unknown } | { readonly encoding: 'base64'; readonly value: string }
+}
+
+export interface RawWorkoutEventPage {
+  readonly afterJournalSequence: number | null
+  readonly items: readonly RawWorkoutEvent[]
+  readonly nextJournalSequence: number | null
+  readonly oldestAvailableJournalSequence: number | null
+  readonly latestJournalSequence: number
+  readonly hasMore: boolean
+  readonly droppedBeforeJournalSequence: false
 }
 
 export type RecorderObservation = RecorderLocationObservation | RecorderHeartRateObservation | RecorderHeartRatePacketObservation | RecorderHeartRateConnectionObservation | RecorderHostLifecycleObservation | RecorderTransitionObservation | RecorderGapObservation
@@ -364,6 +395,8 @@ export interface SavedWorkoutSummary {
   readonly latestSequence: number
   readonly metrics: WorkoutMetrics
   readonly hasFatalIssue: boolean
+  readonly rawEventCount?: number
+  readonly lastJournalSequence?: number
 }
 
 export interface ArchiveListPage {
@@ -499,6 +532,7 @@ export interface CommandResults {
   readonly 'observations.read': ObservationPage
   readonly 'archive.list': ArchiveListPage
   readonly 'archive.detail': SavedWorkoutDetail
+  readonly 'journal.read': RawWorkoutEventPage
 }
 
 export type BridgeErrorCode = 'invalidRequest' | 'unsupportedVersion' | 'unsupportedMethod' | 'invalidState' | 'revisionConflict' | 'permissionDenied' | 'sensorUnavailable' | 'storageFailure' | 'incompatibleBuild' | 'downloadFailure' | 'internalError'
