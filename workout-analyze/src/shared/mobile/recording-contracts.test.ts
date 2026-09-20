@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { PHASE1_CAPABILITIES, RECORDING_CAPABILITIES } from './contracts'
+import { ARCHIVE_CAPABILITIES, PHASE1_CAPABILITIES, RECORDING_CAPABILITIES } from './contracts'
 import { parseCommand, parseNativeEvent, parseReply } from './validation'
 
 const now = '2026-09-19T12:00:00.000Z'
@@ -22,6 +22,8 @@ describe('production recording wire contract', () => {
     const result = { shellVersion: '0.2.0', protocolVersion: 1, engineApiVersion: 1, checkpointSchemaVersion: 1, capabilities: [...PHASE1_CAPABILITIES, ...RECORDING_CAPABILITIES], unavailableCapabilities: [], }
     expect(parseReply('bridge.hello', envelope(result)).ok).toBe(true)
     expect(() => parseReply('bridge.hello', envelope({ ...result, capabilities: result.capabilities.slice(0, -1), unavailableCapabilities: [{ capability: 'workout.recorder', reason: 'Incomplete' }] }))).toThrow()
+    expect(parseReply('bridge.hello', envelope({ ...result, capabilities: [...result.capabilities, ...ARCHIVE_CAPABILITIES] })).ok).toBe(true)
+    expect(() => parseReply('bridge.hello', envelope({ ...result, capabilities: [...result.capabilities, ARCHIVE_CAPABILITIES[0]] }))).toThrow()
   })
 
   test('validates bounded durable observation pages and reconnect events', () => {
@@ -29,5 +31,29 @@ describe('production recording wire contract', () => {
     expect(parseNativeEvent({ protocolVersion: 1, sessionId: 'ride-1', sequence: 20, type: 'observations.appended', payload: page }).sequence).toBe(20)
     expect(() => parseReply('observations.read', envelope({ ...page, items: [{ ...location, horizontalAccuracyM: -1 }] }))).toThrow()
     expect(() => parseCommand({ protocolVersion: 1, requestId: 'read-1', method: 'observations.read', params: { sessionId: 'ride-1', afterSequence: 0, limit: 201 } })).toThrow()
+  })
+
+  test('preserves duplicate deliveries, raw bytes, provenance, and host lifecycle in durable order', () => {
+    const provenance = { origin: 'liveNative', sourceId: 'core-location', monotonicClockId: 'process-42', lineage: null }
+    const duplicate = { ...location, sequence: 9, provenance, ellipsoidalAltitudeM: 24 }
+    const heartRate = { kind: 'heartRate', sessionId: 'ride-1', sequence: 10, connectionId: 'hr-1', deviceId: 'sensor-1', sourceTimestamp: now, receivedAt: now, monotonicTimestampMs: 1_001, bpm: 140, valueFormat: 'uint8', sensorContact: 'unsupported', energyExpendedKJ: null, rrIntervalsSeconds: [], rawFlags: 0, rawCharacteristicBase64: 'AIw=' }
+    const lifecycle = { kind: 'hostLifecycle', sessionId: 'ride-1', sequence: 11, sourceTimestamp: now, receivedAt: now, monotonicTimestampMs: 1_002, event: 'didEnterBackground', applicationState: 'background', protectedDataAvailable: true }
+    const rawPage = { items: [location, duplicate, heartRate, lifecycle], nextSequence: 11, oldestAvailableSequence: 1, latestDurableSequence: 11, hasMore: false, droppedBeforeSequence: false }
+    expect(parseReply('observations.read', envelope(rawPage)).ok).toBe(true)
+    expect(() => parseReply('observations.read', envelope({ ...rawPage, items: [location, { ...duplicate, sequence: 10 }, heartRate, lifecycle] }))).toThrow()
+    expect(() => parseReply('observations.read', envelope({ ...rawPage, items: [location, duplicate, { ...heartRate, rawCharacteristicBase64: 'not base64' }, lifecycle] }))).toThrow()
+  })
+
+  test('validates snapshot-stable archive discovery and lossless bounded detail pages', () => {
+    const finishedSession = { ...session, state: 'finished', finishedAt: now }
+    const summary = { savedWorkoutId: 'saved-1', sessionId: 'ride-1', sport: 'cycling', startedAt: now, finishedAt: now, durationMs: 12_000, observationCount: 8, latestSequence: 8, metrics, hasFatalIssue: false }
+    const list = { afterCursor: null, items: [summary], nextCursor: null, hasMore: false, snapshotAt: now }
+    expect(parseCommand({ protocolVersion: 1, requestId: 'list-1', method: 'archive.list', params: { afterCursor: null, limit: 50 } }).method).toBe('archive.list')
+    expect(parseReply('archive.list', envelope(list)).ok).toBe(true)
+    const detail = { summary, pinnedEngine: finishedSession.pinnedEngine, recordingFormatVersion: 1, units: 'SI', derivation: { algorithmId: 'ride-metrics-v1', engineBuildId: 'recording-engine-v1', configId: 'recording-v1', firstInputSequence: 1, lastInputSequence: 8 }, issues: [], observations: { ...page, afterSequence: 7 } }
+    expect(parseCommand({ protocolVersion: 1, requestId: 'detail-1', method: 'archive.detail', params: { savedWorkoutId: 'saved-1', afterSequence: 7, limit: 100 } }).method).toBe('archive.detail')
+    expect(parseReply('archive.detail', envelope(detail)).ok).toBe(true)
+    expect(() => parseReply('archive.detail', envelope({ ...detail, observations: { ...detail.observations, afterSequence: 6 } }))).toThrow()
+    expect(() => parseReply('archive.detail', envelope({ ...detail, summary: { ...summary, latestSequence: 9 } }))).toThrow()
   })
 })

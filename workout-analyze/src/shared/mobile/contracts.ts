@@ -37,6 +37,8 @@ export type Capability =
   | 'observations.subscribe'
   | 'observations.unsubscribe'
   | 'observations.read'
+  | 'archive.list'
+  | 'archive.detail'
 
 export const PHASE1_BASE_CAPABILITIES: ReadonlyArray<Capability> = [
   'bridge.ping', 'session.snapshot', 'permissions.status',
@@ -60,7 +62,10 @@ export const RECORDING_CAPABILITIES: ReadonlyArray<Capability> = [
   'observations.unsubscribe', 'observations.read',
 ]
 
-export const MOBILE_CAPABILITIES: ReadonlyArray<Capability> = [...PHASE1_CAPABILITIES, ...RECORDING_CAPABILITIES]
+/** Saved-workout discovery is independently advertised so older recorder hosts remain available. */
+export const ARCHIVE_CAPABILITIES: ReadonlyArray<Capability> = ['archive.list', 'archive.detail']
+
+export const MOBILE_CAPABILITIES: ReadonlyArray<Capability> = [...PHASE1_CAPABILITIES, ...RECORDING_CAPABILITIES, ...ARCHIVE_CAPABILITIES]
 
 export type MobileMethod = 'bridge.hello' | Capability
 export type StatusKind = 'ok' | 'waiting' | 'unavailable' | 'error'
@@ -111,6 +116,8 @@ export interface CommandParams {
   readonly 'observations.subscribe': { readonly sessionId: string; readonly afterSequence: number | null; readonly maxBatchSize: number }
   readonly 'observations.unsubscribe': { readonly subscriptionId: string }
   readonly 'observations.read': { readonly sessionId: string; readonly afterSequence: number | null; readonly limit: number }
+  readonly 'archive.list': { readonly afterCursor: string | null; readonly limit: number }
+  readonly 'archive.detail': { readonly savedWorkoutId: string; readonly afterSequence: number | null; readonly limit: number }
 }
 
 export interface SessionMutationParams { readonly sessionId: string; readonly expectedRevision: number }
@@ -172,6 +179,7 @@ export interface RecorderLocationObservation extends Omit<LocationObservation, '
   readonly sessionId: string
   readonly sequence: number
   readonly monotonicTimestampMs: number | null
+  readonly provenance?: ObservationProvenance
 }
 
 export interface RecorderHeartRateObservation extends Omit<HeartRateMeasurement, 'cursor'> {
@@ -180,6 +188,49 @@ export interface RecorderHeartRateObservation extends Omit<HeartRateMeasurement,
   readonly sequence: number
   readonly sourceTimestamp: string
   readonly monotonicTimestampMs: number | null
+  readonly provenance?: ObservationProvenance
+}
+
+/** A delivered characteristic that could not be normalized as a Heart Rate Measurement. */
+export interface RecorderHeartRatePacketObservation {
+  readonly kind: 'heartRatePacket'
+  readonly sessionId: string
+  readonly sequence: number
+  readonly connectionId: string
+  readonly deviceId: string
+  readonly sourceTimestamp: string
+  readonly receivedAt: string
+  readonly monotonicTimestampMs: number | null
+  readonly rawCharacteristicBase64: string
+  readonly parseError: string
+  readonly provenance?: ObservationProvenance
+}
+
+export interface RecorderHeartRateConnectionObservation {
+  readonly kind: 'heartRateConnection'
+  readonly sessionId: string
+  readonly sequence: number
+  readonly connectionId: string | null
+  readonly deviceId: string | null
+  readonly sourceTimestamp: string
+  readonly receivedAt: string
+  readonly monotonicTimestampMs: number | null
+  readonly event: 'connecting' | 'connected' | 'disconnected' | 'reconnecting' | 'failed'
+  readonly reason: string
+  readonly provenance?: ObservationProvenance
+}
+
+export interface RecorderHostLifecycleObservation {
+  readonly kind: 'hostLifecycle'
+  readonly sessionId: string
+  readonly sequence: number
+  readonly sourceTimestamp: string
+  readonly receivedAt: string
+  readonly monotonicTimestampMs: number | null
+  readonly event: 'didBecomeActive' | 'willResignActive' | 'didEnterBackground' | 'willEnterForeground' | 'protectedDataWillBecomeUnavailable' | 'protectedDataDidBecomeAvailable'
+  readonly applicationState: 'active' | 'inactive' | 'background' | 'unknown'
+  readonly protectedDataAvailable: boolean
+  readonly provenance?: ObservationProvenance
 }
 
 export interface RecorderTransitionObservation {
@@ -192,6 +243,8 @@ export interface RecorderTransitionObservation {
   readonly sourceTimestamp: string
   readonly monotonicTimestampMs: number | null
   readonly cause: 'user' | 'recovery' | 'systemInterruption'
+  readonly receivedAt?: string
+  readonly provenance?: ObservationProvenance
 }
 
 export interface RecorderGapObservation {
@@ -203,9 +256,21 @@ export interface RecorderGapObservation {
   readonly startedAt: string
   readonly endedAt: string
   readonly reason: 'processRestart' | 'osTermination' | 'reboot' | 'sensorDeliveryGap' | 'unknown'
+  readonly receivedAt?: string
+  readonly provenance?: ObservationProvenance
 }
 
-export type RecorderObservation = RecorderLocationObservation | RecorderHeartRateObservation | RecorderTransitionObservation | RecorderGapObservation
+export interface ObservationProvenance {
+  readonly origin: 'liveNative' | 'recordingReplay' | 'syntheticFixture'
+  /** Stable provider/peripheral identifier where one exists; null is explicit absence. */
+  readonly sourceId: string | null
+  /** Identifies the process/clock domain for monotonicTimestampMs; null when unavailable. */
+  readonly monotonicClockId: string | null
+  /** Present only for replay, pointing back to the immutable captured row. */
+  readonly lineage: { readonly savedWorkoutId: string; readonly sessionId: string; readonly sequence: number } | null
+}
+
+export type RecorderObservation = RecorderLocationObservation | RecorderHeartRateObservation | RecorderHeartRatePacketObservation | RecorderHeartRateConnectionObservation | RecorderHostLifecycleObservation | RecorderTransitionObservation | RecorderGapObservation
 
 export interface ObservationPage {
   readonly items: readonly RecorderObservation[]
@@ -239,6 +304,8 @@ export interface LocationObservation {
   readonly floorLevel: number | null
   readonly isSimulatedBySoftware: boolean | null
   readonly isProducedByAccessory: boolean | null
+  /** iOS 15+ CLLocation. Omitted by older shells; null means unavailable on a captured fix. */
+  readonly ellipsoidalAltitudeM?: number | null
 }
 
 export interface LocationProbeStatus {
@@ -282,6 +349,51 @@ export interface HeartRateMeasurement {
   readonly energyExpendedKJ: number | null
   readonly rrIntervalsSeconds: readonly number[]
   readonly rawFlags: number
+  /** Exact bytes delivered for the BLE Heart Rate Measurement characteristic. */
+  readonly rawCharacteristicBase64?: string
+}
+
+export interface SavedWorkoutSummary {
+  readonly savedWorkoutId: string
+  readonly sessionId: string
+  readonly sport: 'cycling'
+  readonly startedAt: string
+  readonly finishedAt: string
+  readonly durationMs: number
+  readonly observationCount: number
+  readonly latestSequence: number
+  readonly metrics: WorkoutMetrics
+  readonly hasFatalIssue: boolean
+}
+
+export interface ArchiveListPage {
+  /** Echoes the requested cursor; null starts a snapshot-stable newest-first traversal. */
+  readonly afterCursor: string | null
+  readonly items: readonly SavedWorkoutSummary[]
+  readonly nextCursor: string | null
+  readonly hasMore: boolean
+  readonly snapshotAt: string
+}
+
+export interface ArchiveObservationPage extends ObservationPage {
+  /** Echoes the exclusive raw sequence cursor used for this page. */
+  readonly afterSequence: number | null
+}
+
+export interface SavedWorkoutDetail {
+  readonly summary: SavedWorkoutSummary
+  readonly pinnedEngine: { readonly buildId: string; readonly apiVersion: 1; readonly checkpointSchemaVersion: 1 }
+  readonly recordingFormatVersion: 1
+  readonly units: 'SI'
+  readonly derivation: {
+    readonly algorithmId: string
+    readonly engineBuildId: string
+    readonly configId: string
+    readonly firstInputSequence: number | null
+    readonly lastInputSequence: number
+  }
+  readonly issues: readonly RecordingIssue[]
+  readonly observations: ArchiveObservationPage
 }
 
 export interface HeartRateStatus {
@@ -386,6 +498,8 @@ export interface CommandResults {
   readonly 'observations.subscribe': { readonly subscriptionId: string; readonly afterSequence: number; readonly latestDurableSequence: number }
   readonly 'observations.unsubscribe': { readonly removed: true }
   readonly 'observations.read': ObservationPage
+  readonly 'archive.list': ArchiveListPage
+  readonly 'archive.detail': SavedWorkoutDetail
 }
 
 export type BridgeErrorCode = 'invalidRequest' | 'unsupportedVersion' | 'unsupportedMethod' | 'invalidState' | 'revisionConflict' | 'permissionDenied' | 'sensorUnavailable' | 'storageFailure' | 'incompatibleBuild' | 'downloadFailure' | 'internalError'
