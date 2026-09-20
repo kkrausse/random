@@ -7,8 +7,11 @@ import {
   type RecordingIssue, type SavedWorkoutDetail, type SavedWorkoutSummary, type SessionSnapshot,
 } from '../../src/shared/mobile'
 import type { BridgeClient, BridgeState } from './bridge/client'
+import { createReplayController, type ReplayController } from '../../src/replay/controller'
+import { createBrowserLocalRecordingSource } from '../../src/replay/source'
+import type { ReplaySnapshot } from '../../src/replay/types'
 
-export type Screen = 'home' | 'live' | 'paused' | 'recovery' | 'saved' | 'history' | 'savedDetail' | 'heartRate' | 'settings' | 'diagnostics'
+export type Screen = 'home' | 'live' | 'paused' | 'recovery' | 'saved' | 'history' | 'savedDetail' | 'heartRate' | 'settings' | 'diagnostics' | 'replay'
 export type RequestState = { readonly status: 'pending' | 'success' | 'error'; readonly error: string | null }
 type NoticeArea = 'recording' | 'diagnostics' | 'sensors' | 'settings'
 export interface UiSourceState {
@@ -78,6 +81,7 @@ export interface MobileState {
   readonly developmentSourceDirty: boolean
   readonly configuredDevelopmentSourceUrl: string | null | undefined
   readonly uiSource: UiSourceState | null
+  readonly replay: ReplaySnapshot
   start(): () => void
   refresh(): Promise<void>
   setScreen(screen: Screen): void
@@ -107,6 +111,12 @@ export interface MobileState {
   configureDevelopmentSource(url: string): Promise<void>
   installBuild(manifestUrl: string): Promise<void>
   rollback(target: 'previous' | 'bundled'): Promise<void>
+  loadLocalReplay(): Promise<void>
+  playReplay(): void
+  pauseReplay(): void
+  setReplaySpeed(speed: number): void
+  seekReplay(positionMs: number): Promise<void>
+  closeReplay(): void
 }
 
 const message = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback
@@ -120,6 +130,8 @@ export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> =
   let stopBridgeSubscription: (() => void) | null = null
   let stopEventSubscription: (() => void) | null = null
   let timer: ReturnType<typeof setInterval> | null = null
+  let replayController: ReplayController | null = null
+  const initialReplay: ReplaySnapshot = { status: 'idle', metadata: null, checkpoint: null, observations: [], issues: [], metrics: null, positionMs: 0, durationMs: 0, speed: 1, error: null }
 
   const store = createStore<MobileState>((set, get) => {
     const setNotice = (area: NoticeArea, value: string | null) => set((state) => ({ notices: { ...state.notices, [area]: value } }))
@@ -192,7 +204,7 @@ export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> =
       }
     }
     const installSession = (session: SessionSnapshot, navigate = true) => {
-      set((state) => ({ session, ...(navigate && !['settings', 'diagnostics', 'heartRate'].includes(state.screen) ? { screen: screenForSession(session) } : {}) }))
+      set((state) => ({ session, ...(navigate && !['settings', 'diagnostics', 'heartRate', 'replay'].includes(state.screen) ? { screen: screenForSession(session) } : {}) }))
       void attachObservations(session)
     }
     const projectBridge = (bridge: BridgeState) => {
@@ -206,7 +218,7 @@ export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> =
           bridge, recorderSupported, session: snapshot.session, permissions: snapshot.permissions, builds: snapshot.appBuild,
           diagnostics: snapshot.diagnostics, location: snapshot.location, heartRate: snapshot.heartRate, uiSource, configuredDevelopmentSourceUrl,
           ...(!state.developmentSourceDirty && configuredDevelopmentSourceUrl ? { developmentSourceDraft: configuredDevelopmentSourceUrl } : {}),
-          ...(!['settings', 'diagnostics', 'heartRate', 'history', 'savedDetail'].includes(state.screen) && !(snapshot.session.state === 'finished' && state.screen === 'home') ? { screen: screenForSession(snapshot.session) } : {}),
+          ...(!['settings', 'diagnostics', 'heartRate', 'history', 'savedDetail', 'replay'].includes(state.screen) && !(snapshot.session.state === 'finished' && state.screen === 'home') ? { screen: screenForSession(snapshot.session) } : {}),
         }
       })
       if (snapshot) void attachObservations(snapshot.session)
@@ -242,7 +254,7 @@ export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> =
       permissions: null, builds: null, diagnostics: null, checks: [], location: null, heartRate: null, locations: [], measurements: [],
       trail: [], observationCursor: null, rawJournalSequence: null, recordingIssues: [], savedWorkoutId: null, requests: {},
       savedWorkouts: [], savedWorkoutDetail: null, notices: { recording: null, diagnostics: null, sensors: null, settings: null }, developmentSourceDraft: '', developmentSourceDirty: false,
-      configuredDevelopmentSourceUrl: undefined, uiSource: null,
+      configuredDevelopmentSourceUrl: undefined, uiSource: null, replay: initialReplay,
       start() {
         if (started) return () => undefined
         started = true
@@ -258,7 +270,7 @@ export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> =
           if (nativeSubscriptionId) void client.request('observations.unsubscribe', { subscriptionId: nativeSubscriptionId }).catch(() => undefined)
           stopActiveProbes(); stopBridgeSubscription?.(); stopEventSubscription?.(); stopBridgeSubscription = null; stopEventSubscription = null
           document.removeEventListener('visibilitychange', onVisibility)
-          if (timer) clearInterval(timer); timer = null
+          if (timer) clearInterval(timer); timer = null; replayController?.dispose(); replayController = null
         }
       },
       async refresh() {
@@ -309,6 +321,35 @@ export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> =
       configureDevelopmentSource(url) { return run('dev-source', 'settings', async () => { const result = await client.request('devSource.configure', { url }); const configuredDevelopmentSourceUrl = result.source.kind === 'development' ? result.source.url : null; set({ configuredDevelopmentSourceUrl, developmentSourceDraft: configuredDevelopmentSourceUrl ?? '', developmentSourceDirty: false }); await client.request('ui.reload', {}) }) },
       installBuild(manifestUrl) { return run('install-build', 'settings', async () => { const result = await client.request('appBuild.download', { manifestUrl }); await client.request('appBuild.activate', { buildId: result.build.buildId }); await client.request('ui.reload', {}) }) },
       rollback(target) { return run(`rollback-${target}`, 'settings', async () => { await client.request('appBuild.rollback', { target }); await client.request('ui.reload', {}) }) },
+      async loadLocalReplay() {
+        if (!import.meta.env.DEV) return
+        replayController?.dispose()
+        const namespace = `replay:${Date.now()}`
+        replayController = createReplayController({ source: createBrowserLocalRecordingSource(), namespace, onChange: (replay) => {
+          const metadata = replay.metadata
+          const metrics = replay.metrics
+          const observations = replay.observations
+          set((current) => {
+            const bySequence = replay.positionMs < current.replay.positionMs || replay.status === 'loading' && replay.positionMs === 0 ? new Map<number, RecorderObservation>() : new Map(current.trail.map((item) => [item.sequence, item] as const))
+            observations.forEach((item) => bySequence.set(item.sequence, item))
+            const trail = boundedTrail([...bySequence.values()].sort((a, b) => a.sequence - b.sequence))
+            const session: AvailableSessionSnapshot | null = metadata && metrics ? {
+              recorderAvailability: 'available', recorderUnavailableReason: '', sessionId: `${namespace}:${metadata.sessionId}`, state: replay.checkpoint?.engine.state ?? 'idle', revision: 0,
+              durableSequence: replay.checkpoint?.throughJournalSequence ?? 0, capturedAt: new Date(Date.parse(metadata.startedAt) + replay.positionMs).toISOString(),
+              pinnedEngine: { buildId: replay.checkpoint?.engine.engineBuildId ?? 'recording-engine-v1', apiVersion: 1, checkpointSchemaVersion: 1 }, sport: 'cycling', startedAt: metadata.startedAt,
+              finishedAt: replay.status === 'finished' ? metadata.finishedAt : null, lastTransitionAt: null, observationSequence: replay.checkpoint?.projector.observationSequence ?? 0,
+              recovery: { required: false, interruptionStartedAt: null, reason: null }, metrics: { ...metrics, heartRateQuality: metrics.heartRateQuality },
+            } : null
+            return { replay, screen: 'replay', trail, session: session ?? current.session, rawJournalSequence: replay.checkpoint?.throughJournalSequence ?? null, observationCursor: replay.checkpoint?.projector.observationSequence ?? null }
+          })
+        } })
+        await replayController.load()
+      },
+      playReplay() { replayController?.play() },
+      pauseReplay() { replayController?.pause() },
+      setReplaySpeed(speed) { replayController?.setSpeed(speed) },
+      seekReplay(positionMs) { return replayController?.seek(positionMs) ?? Promise.resolve() },
+      closeReplay() { replayController?.dispose(); replayController = null; set({ replay: initialReplay, trail: [], session: client.getState().session, rawJournalSequence: null, observationCursor: null, screen: 'home' }) },
     }
   })
   return store

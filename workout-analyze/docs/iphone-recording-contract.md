@@ -7,8 +7,8 @@ Canonical TypeScript entry points:
 - Wire types and closed method/capability unions: `src/shared/mobile/contracts.ts`
 - Untrusted JSON validation: `src/shared/mobile/validation.ts`
 - Portable metrics engine: `src/engine/recording/index.ts`
-- JavaScriptCore artifact/global: `src/engine/recording/recording-engine-v1.js` / `globalThis.WorkoutAnalyzeRecordingEngine`
-- Installed composed artifact: `mobile/dist/engine/tiny-engine.js` (both recording and phase-1 diagnostic globals)
+- Raw decoder/projector and cursor consumer: `src/replay/decoder.ts` / `src/replay/consumer.ts`
+- Recording source and replay controller: `src/replay/source.ts` / `src/replay/controller.ts`
 - Golden replay data: `src/engine/recording/fixtures.ts`
 
 The existing location probe and BLE APIs remain compatible. A recorder reuses the selected BLE connection but never treats a missing/disconnected monitor as a recording failure.
@@ -17,7 +17,7 @@ The existing location probe and BLE APIs remain compatible. A recorder reuses th
 
 The nine `RECORDING_CAPABILITIES` are advertised as one group or not at all. The additive `ARCHIVE_CAPABILITIES` (`archive.list`, `archive.detail`) are a separate all-or-none group. `JOURNAL_CAPABILITIES` contains independent `journal.read`. Absence of either additive group must not make `workout.recorder` unavailable. Legacy and currently installed shells remain valid without them. `bridge.hello` remains protocol version 1.
 
-These are TypeScript domain contracts at the composed app boundary, not a requirement for a matching Swift business-command switch or duplicate Swift validator per method. A headless TypeScript dispatcher may implement workout/archive behavior over broad native sensor, append/read storage, background-host, and JavaScriptCore primitives. `bridge.hello` advertises a domain capability only when the composed dispatcher supports it end to end, regardless of which side owns the implementation. Swift remains authoritative for durable live bytes and OS callbacks; it should not decode/filter them before journal append.
+These are TypeScript domain contracts at the composed app boundary, not a requirement for a matching Swift business-command switch or duplicate Swift validator per method. There is one JavaScript runtime: the visible WKWebView/browser runtime. TypeScript implements decode, projection, metrics, checkpoints, and replay there over broad native append/read primitives. `bridge.hello` advertises a domain capability only when the composed dispatcher supports it end to end. Swift remains authoritative for durable live bytes and OS callbacks; it must not decode/filter them before journal append. No JavaScriptCore or second headless engine is part of this model.
 
 Lifecycle requests are:
 
@@ -50,11 +50,11 @@ SQLite has one serialized writer. The conceptual commit order is:
 3. Insert any lifecycle mutation's raw event and update session revision/state.
 4. Commit journal input and lifecycle mutation. This is the capture durability boundary; a Stop/Finish reply waits until pending source callbacks are serialized and this commit succeeds.
 5. Only after that commit, decode/project journal rows into optional normalized `RecorderObservation` rows and engine inputs. Decode rejection records a processing failure but never updates/deletes the journal event. Assign normalized observation and engine-input sequences independently.
-6. On the serial JavaScriptCore queue, call `processBatch` in batches of at most 1,000. The native checkpoint stores last consumed journal sequence, normalized projection position, and engine checkpoint. Upsert derived summary/checkpoint in a later transaction guarded by all prior positions and pinned build.
+6. In the foreground WKWebView runtime, call `processBatch` in batches of at most 1,000. Commit a replay/consumer checkpoint containing source/session/namespace identity, last consumed journal sequence, independent normalized and engine-input positions, and the engine checkpoint. Persist the checkpoint only after projection and engine work complete. A redelivered uncommitted batch is safe because sequence domains are idempotent.
 
 If decode/engine work fails, recording continues, diagnostics expose backlog/failure, and projection resumes from its checkpoint. Never advance a projection/checkpoint without its matching result. Do not emit a journal sequence until its transaction commits. WAL + foreign keys + busy timeout are expected; low-storage/write errors become a persistent fatal `recording.issue` and the UI must stop claiming data is saved.
 
-Pin `engineBuildId`, API version, checkpoint schema, and algorithm ID at Start through Finish, including pauses/recovery. Installed engine updates apply only to the next workout. Development React HMR never changes the headless engine. To test an engine edit, build/publish the artifact, end the active session, activate that build, then start a new workout. Keep the bundled artifact and reject incompatible checkpoints rather than silently resetting one.
+Pin `engineBuildId`, API version, checkpoint schema, and algorithm ID at Start through Finish, including pauses/recovery. Reject incompatible checkpoints rather than silently resetting one. The engine and consumer execute in the same WKWebView runtime; development replay uses the same imported metrics engine as live journal consumption.
 
 For recording v1, `WorkoutAnalyzeRecordingEngine.describe()` is exactly `{ apiVersion: 1, checkpointSchemaVersion: 1, engineBuildId: 'recording-engine-v1', algorithmId: 'ride-metrics-v1', maxBatchSize: 1000 }`. Native pins that recording descriptor on the workout; it must not substitute the installed package manifest ID. Restoring an active checkpoint deliberately discards its process-local monotonic origin and uses persisted UTC until a new active interval starts.
 
@@ -105,9 +105,21 @@ Finish commits locally before returning. `workout.export` supports lossless `wor
 
 The lossless ZIP bundle contains the complete versioned raw journal in `journalSequence` order plus checksummed session metadata, pinned engine/config and versions, normalized projections, final metrics, derivation input bounds/checkpoints, and issues. It includes rejected, duplicate, malformed, and unknown events; exact bytes survive base64 round-trip. Format version is 1; normalized units are SI and timestamps ISO-8601 UTC, while opaque payloads are not rewritten. Derived summaries are never substituted for journal input. GPX is convenience-only and not a lossless/re-import source.
 
-## Future deterministic replay boundary (contract only)
+## Deterministic journal consumption and replay
 
-One typed recording source adapter supplies the same production domain inputs/actions from live native capture, immutable saved-recording replay, or synthetic fixtures. It has an injected clock; the bridge transport stays separate. Native SQLite is authoritative only for live capture, Zustand is only a reactive projection, and replay uses an isolated namespace that cannot mutate/export-as-live a real workout. A replay adapter must retain original lineage while assigning its own runtime delivery ordering, and feed the same store/processing pathways rather than create a parallel metrics engine. Explicit replay clock, pause/seek/speed controls and replay UI are later work. Fixtures and bug reproduction must never mutate the source recording. Session/raw sequence plus timestamps and issue durable sequence are sufficient to map a report to a ride moment; no generic UI interaction logger or user marker is required now.
+`RecordingSource` supplies bounded immutable raw pages from either the development bundle adapter or a future adapter over native `journal.read`. Both feed `createJournalConsumer`: it validates source/session identity and strict raw continuity, decodes zero-or-more normalized observations and engine inputs, runs the existing recording engine, then commits one checkpoint. Unknown kinds and malformed known payloads become bounded projection issues and still advance the raw cursor; the opaque source event is never rewritten. Journal, normalized observation, and engine-input sequences remain distinct.
+
+Replay has an injected clock and load/play/pause/speed/seek controls. Seek deterministically rebuilds from the immutable beginning (a future optimization may select a compatible earlier checkpoint). The Zustand store owns the controller and projects its output into the same session metrics and trail used by the mobile ride UI. Replay uses an isolated namespace, is visibly labeled, exposes no live mutation or export action, and retains lineage back to each immutable source journal row.
+
+### Local development replay
+
+Place exactly one ignored workout bundle ZIP in `data/local-replays/`, or set `WORKOUT_LOCAL_REPLAY_ZIP` to its absolute path. Then run:
+
+```sh
+bun run mobile:dev
+```
+
+Open `http://localhost:4317/?replay=local` (or use **Load immutable local replay** on the development home screen). The Vite-only plugin validates the bundle's session and full continuity once, then serves pages capped at 200 events. The routes do not exist in production builds and never return an entire workout in one response. For an aggregate, coordinate-free decoder check, run `bun run mobile:replay:check`.
 
 ## Implementation handoffs and gates
 
