@@ -5,6 +5,7 @@ final class BridgeDispatcher {
     let builds: BuildManager
     let diagnostics: DiagnosticsService
     let sensors: SensorService
+    let recording: RecordingService
     let log: DiagnosticLog
     var presentShare: ((URL) -> Bool)?
     var reloadUI: (() -> Void)?
@@ -12,8 +13,8 @@ final class BridgeDispatcher {
 
     private var mutationCache: [String: (method: String, reply: [String: Any])] = [:]
 
-    init(builds: BuildManager, diagnostics: DiagnosticsService, sensors: SensorService, log: DiagnosticLog) {
-        self.builds = builds; self.diagnostics = diagnostics; self.sensors = sensors; self.log = log
+    init(builds: BuildManager, diagnostics: DiagnosticsService, sensors: SensorService, recording: RecordingService, log: DiagnosticLog) {
+        self.builds = builds; self.diagnostics = diagnostics; self.sensors = sensors; self.recording = recording; self.log = log
     }
 
     func dispatch(_ body: Any) async -> [String: Any] {
@@ -21,6 +22,12 @@ final class BridgeDispatcher {
         do {
             let command = try ContractValidation.validateCommand(body)
             requestId = command.requestId
+            if ["workout.start", "workout.pause", "workout.resume", "workout.finish", "workout.recover"].contains(command.method) {
+                let reply = recording.handleMutation(requestId: requestId, method: command.method, params: command.params)
+                if reply["ok"] as? Bool == true { synchronizeRecordingSensors(reply: reply) }
+                diagnostics.noteBridgeRoundTrip()
+                return reply
+            }
             if let cached = mutationCache[requestId] {
                 guard cached.method == command.method else { throw ShellError.invalidRequest("Request ID was already used for another method") }
                 return cached.reply
@@ -37,7 +44,7 @@ final class BridgeDispatcher {
             let shell = error as? ShellError ?? ShellError.internalFailure(error.localizedDescription)
             log.append(subsystem: "bridge", message: "Command rejected", metadata: ["requestId": requestId, "reason": shell.localizedDescription])
             return ["protocolVersion": 1, "requestId": requestId, "ok": false,
-                    "error": ["code": shell.bridgeCode, "message": shell.localizedDescription, "retryable": shell.bridgeCode == "downloadFailure" || shell.bridgeCode == "storageFailure"]]
+                    "error": ["code": shell.bridgeCode, "message": shell.localizedDescription, "retryable": shell.bridgeCode == "downloadFailure" || shell.bridgeCode == "storageFailure", "details": [:]]]
         }
     }
 
@@ -46,9 +53,9 @@ final class BridgeDispatcher {
         case "bridge.hello":
             return [
                 "shellVersion": "0.1.0", "protocolVersion": 1, "engineApiVersion": 1, "checkpointSchemaVersion": 1,
-                "capabilities": phase1Capabilities + sensorCapabilities,
-                "unavailableCapabilities": [
-                    ["capability": "workout.recorder", "reason": "Phase 1 has no production recorder"]
+                "capabilities": phase1Capabilities + sensorCapabilities + (recording.available ? recordingCapabilities : []),
+                "unavailableCapabilities": recording.available ? [] : [
+                    ["capability": "workout.recorder", "reason": "Recording engine or durable storage is unavailable"]
                 ]
             ]
         case "bridge.ping":
@@ -85,7 +92,19 @@ final class BridgeDispatcher {
         case "heartRate.read":
             return try sensors.readHeartRate(id: params["connectionId"] as! String,
                                              after: params["afterCursor"] is NSNull ? nil : (params["afterCursor"] as! NSNumber).intValue,
-                                             limit: (params["limit"] as! NSNumber).intValue)
+                                              limit: (params["limit"] as! NSNumber).intValue)
+        case "workout.export":
+            let export = try recording.export(sessionId: params["sessionId"] as! String, format: params["format"] as! String)
+            return ["exportId": export.id, "presented": presentShare?(export.url) ?? false, "format": params["format"]!]
+        case "observations.subscribe":
+            return try recording.subscribe(sessionId: params["sessionId"] as! String,
+                after: params["afterSequence"] is NSNull ? nil : (params["afterSequence"] as! NSNumber).intValue,
+                limit: (params["maxBatchSize"] as! NSNumber).intValue)
+        case "observations.unsubscribe": return try recording.unsubscribe(params["subscriptionId"] as! String)
+        case "observations.read":
+            return try recording.readObservations(sessionId: params["sessionId"] as! String,
+                after: params["afterSequence"] is NSNull ? nil : (params["afterSequence"] as! NSNumber).intValue,
+                limit: (params["limit"] as! NSNumber).intValue)
         case "diagnostics.snapshot": return diagnostics.snapshot()
         case "diagnostics.runChecks":
             let requested = params["checks"] is NSNull ? nil : params["checks"] as? [String]
@@ -121,5 +140,17 @@ final class BridgeDispatcher {
 
     private func isMutation(_ method: String) -> Bool {
         ["permissions.request", "location.start", "location.stop", "heartRate.scan", "heartRate.stopScan", "heartRate.connect", "heartRate.disconnect", "diagnostics.runChecks", "diagnostics.export", "appBuild.download", "appBuild.activate", "appBuild.rollback", "devSource.configure", "ui.reload"].contains(method)
+    }
+
+    private func synchronizeRecordingSensors(reply: [String: Any]) {
+        guard let result = reply["result"] as? [String: Any] else { return }
+        let session = result["session"] as? [String: Any] ?? result
+        switch session["state"] as? String {
+        case "recording", "paused":
+            do { try sensors.startRecordingLocation() }
+            catch { log.append(subsystem: "recording", message: "Workout persisted but continuous location could not start", metadata: ["reason": error.localizedDescription]) }
+        case "finished": sensors.stopRecordingLocation()
+        default: break
+        }
     }
 }

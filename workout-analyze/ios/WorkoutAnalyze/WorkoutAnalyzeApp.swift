@@ -16,6 +16,7 @@ final class AppHostModel: ObservableObject {
     let builds: BuildManager
     let sensors: SensorService
     let diagnostics: DiagnosticsService
+    let recording: RecordingService
     let dispatcher: BridgeDispatcher
     let web: WebHost
 
@@ -23,16 +24,25 @@ final class AppHostModel: ObservableObject {
         let log = DiagnosticLog()
         let builds = BuildManager(log: log)
         let sensors = SensorService(log: log)
+        let recording = RecordingService(builds: builds, log: log)
         let diagnostics = DiagnosticsService(log: log, builds: builds, sensors: sensors)
-        let dispatcher = BridgeDispatcher(builds: builds, diagnostics: diagnostics, sensors: sensors, log: log)
-        self.log = log; self.builds = builds; self.sensors = sensors; self.diagnostics = diagnostics; self.dispatcher = dispatcher
+        diagnostics.recording = recording
+        let dispatcher = BridgeDispatcher(builds: builds, diagnostics: diagnostics, sensors: sensors, recording: recording, log: log)
+        self.log = log; self.builds = builds; self.sensors = sensors; self.diagnostics = diagnostics; self.recording = recording; self.dispatcher = dispatcher
         web = WebHost(builds: builds, dispatcher: dispatcher)
         sensors.emitEvent = { [weak dispatcher] type, payload in dispatcher?.emitEvent?(type, payload) }
+        sensors.recordLocation = { [weak recording] observation in recording?.ingestLocation(observation) }
+        sensors.recordHeartRate = { [weak recording] observation in recording?.ingestHeartRate(observation) }
+        sensors.recordRawLocation = { [weak recording] delivery in recording?.ingestRawDelivery(kind: "coreLocation", payload: delivery) }
+        sensors.recordRawHeartRate = { [weak recording] delivery in recording?.ingestRawDelivery(kind: "heartRateCharacteristic", payload: delivery) }
+        sensors.recordHostEvent = { [weak recording] type, payload in recording?.ingestHostEvent(type: type, payload: payload) }
+        recording.emitEvent = { [weak dispatcher] type, payload in dispatcher?.emitEvent?(type, payload) }
         dispatcher.presentShare = { url in
             guard let controller = UIApplication.shared.topViewController else { return false }
             controller.present(UIActivityViewController(activityItems: [url], applicationActivities: nil), animated: true)
             return true
         }
+        recording.presentShare = dispatcher.presentShare
         log.append(subsystem: "lifecycle", message: "Native host launched")
     }
 }

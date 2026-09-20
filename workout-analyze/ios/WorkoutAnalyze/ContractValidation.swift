@@ -3,7 +3,7 @@ import Foundation
 enum ContractValidation {
     static let identifier = try! NSRegularExpression(pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
     static let hash = try! NSRegularExpression(pattern: "^[a-f0-9]{64}$")
-    static let methods = Set(["bridge.hello"] + phase1Capabilities + sensorCapabilities)
+    static let methods = Set(["bridge.hello"] + phase1Capabilities + sensorCapabilities + recordingCapabilities)
     static let checks = Set(["bridgePing", "capabilityCompatibility", "diagnosticStorage", "engineFixture"])
 
     static func matches(_ value: String, regex: NSRegularExpression) -> Bool {
@@ -59,7 +59,7 @@ enum ContractValidation {
               ISO8601DateFormatter().date(from: manifest.createdAt) != nil,
               manifest.bridgeProtocol == VersionRange(min: 1, max: 1),
               manifest.engineApi == VersionRange(min: 1, max: 1), manifest.checkpointSchemaVersion == 1,
-              Set(manifest.requiredCapabilities).isSubset(of: Set(phase1Capabilities + sensorCapabilities)),
+               Set(manifest.requiredCapabilities).isSubset(of: Set(phase1Capabilities + sensorCapabilities + recordingCapabilities)),
               (1...1024).contains(manifest.files.count) else {
             throw ShellError.incompatibleBuild("Manifest identity or API is incompatible")
         }
@@ -123,6 +123,28 @@ enum ContractValidation {
         case "heartRate.connect": return exactKeys(params, ["deviceId"]) && (params["deviceId"] as? String).map { matches($0, regex: identifier) } == true
         case "heartRate.disconnect": return exactKeys(params, ["connectionId"]) && (params["connectionId"] as? String).map { matches($0, regex: identifier) } == true
         case "heartRate.read": return validCursorParams(params, identity: "connectionId")
+        case "workout.start":
+            return exactKeys(params, ["expectedRevision", "sport", "startPolicy"])
+                && integer(params["expectedRevision"], min: 0, max: Int.max)
+                && params["sport"] as? String == "cycling"
+                && ["immediate", "waitForReliableLocation"].contains(params["startPolicy"] as? String)
+        case "workout.pause", "workout.resume", "workout.finish": return validSessionMutation(params)
+        case "workout.recover":
+            return exactKeys(params, ["sessionId", "expectedRevision", "action"])
+                && validIdentifier(params["sessionId"]) && integer(params["expectedRevision"], min: 0, max: Int.max)
+                && ["resume", "finish"].contains(params["action"] as? String)
+        case "workout.export":
+            return exactKeys(params, ["sessionId", "format"]) && validIdentifier(params["sessionId"])
+                && ["workoutBundleV1", "gpx"].contains(params["format"] as? String)
+        case "observations.subscribe":
+            return exactKeys(params, ["sessionId", "afterSequence", "maxBatchSize"])
+                && validIdentifier(params["sessionId"]) && nullableSequence(params["afterSequence"])
+                && integer(params["maxBatchSize"], min: 1, max: 200)
+        case "observations.unsubscribe": return exactKeys(params, ["subscriptionId"]) && validIdentifier(params["subscriptionId"])
+        case "observations.read":
+            return exactKeys(params, ["sessionId", "afterSequence", "limit"])
+                && validIdentifier(params["sessionId"]) && nullableSequence(params["afterSequence"])
+                && integer(params["limit"], min: 1, max: 200)
         case "diagnostics.runChecks":
             guard exactKeys(params, ["checks"]) else { return false }
             if params["checks"] is NSNull { return true }
@@ -151,5 +173,23 @@ enum ContractValidation {
         if params["afterCursor"] is NSNull { return true }
         guard let number = params["afterCursor"] as? NSNumber else { return false }
         return number.doubleValue == Double(number.intValue) && number.intValue >= 0
+    }
+
+    private static func validIdentifier(_ value: Any?) -> Bool {
+        (value as? String).map { matches($0, regex: identifier) } == true
+    }
+
+    private static func integer(_ value: Any?, min: Int, max: Int) -> Bool {
+        guard let number = value as? NSNumber else { return false }
+        return number.doubleValue == Double(number.intValue) && (min...max).contains(number.intValue)
+    }
+
+    private static func nullableSequence(_ value: Any?) -> Bool {
+        value is NSNull || integer(value, min: 0, max: Int.max)
+    }
+
+    private static func validSessionMutation(_ params: [String: Any]) -> Bool {
+        exactKeys(params, ["sessionId", "expectedRevision"]) && validIdentifier(params["sessionId"])
+            && integer(params["expectedRevision"], min: 0, max: Int.max)
     }
 }

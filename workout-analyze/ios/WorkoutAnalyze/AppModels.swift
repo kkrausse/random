@@ -17,6 +17,10 @@ let sensorCapabilities = [
     "heartRate.status", "heartRate.scan", "heartRate.stopScan",
     "heartRate.connect", "heartRate.disconnect", "heartRate.read"
 ]
+let recordingCapabilities = [
+    "workout.start", "workout.pause", "workout.resume", "workout.finish", "workout.recover",
+    "workout.export", "observations.subscribe", "observations.unsubscribe", "observations.read"
+]
 
 struct BuildFile: Codable, Equatable {
     let path: String

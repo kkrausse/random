@@ -126,4 +126,50 @@ final class ContractValidationTests: XCTestCase {
         XCTAssertEqual((status["configured"] as? [String: String])?["url"], configured.absoluteString)
         XCTAssertEqual(status["loadedUrl"] as? String, configured.absoluteString)
     }
+
+    @MainActor
+    func testRecorderPersistsIdempotentLifecycleRawDeliveriesAndRecovery() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let database = directory.appendingPathComponent("recording.sqlite")
+        let builds = BuildManager(log: DiagnosticLog())
+        var recorder: RecordingService? = RecordingService(builds: builds, log: DiagnosticLog(), databaseURL: database)
+        XCTAssertTrue(recorder!.available)
+
+        let startParams: [String: Any] = ["expectedRevision": 0, "sport": "cycling", "startPolicy": "immediate"]
+        let first = recorder!.handleMutation(requestId: "start-fixture", method: "workout.start", params: startParams)
+        let duplicate = recorder!.handleMutation(requestId: "start-fixture", method: "workout.start", params: startParams)
+        XCTAssertEqual(canonical(first), canonical(duplicate))
+        let started = first["result"] as! [String: Any]
+        let sessionId = started["sessionId"] as! String
+
+        recorder!.ingestRawDelivery(kind: "coreLocation", payload: ["sourceTimestamp": "2026-09-20T00:00:01Z", "receivedAt": "2026-09-20T00:00:30Z", "horizontalAccuracyM": 250.0, "latitudeDegrees": 1.0, "longitudeDegrees": 2.0])
+        recorder!.ingestRawDelivery(kind: "heartRateCharacteristic", payload: ["receivedAt": "2026-09-20T00:00:02Z", "rawCharacteristicBase64": Data([1, 2, 3]).base64EncodedString(), "rawFlags": 31])
+        recorder!.ingestLocation(["cursor": 1, "source": "coreLocation", "sourceTimestamp": "2026-09-20T00:00:01Z", "receivedAt": "2026-09-20T00:00:30Z", "latitudeDegrees": 1.0, "longitudeDegrees": 2.0, "horizontalAccuracyM": 250.0, "altitudeM": NSNull(), "verticalAccuracyM": NSNull(), "speedMps": NSNull(), "speedAccuracyMps": NSNull(), "courseDegrees": NSNull(), "courseAccuracyDegrees": NSNull(), "floorLevel": NSNull(), "isSimulatedBySoftware": false, "isProducedByAccessory": false])
+        recorder!.ingestHeartRate(["cursor": 1, "connectionId": "hr-fixture", "deviceId": "device-fixture", "receivedAt": "2026-09-20T00:00:02Z", "bpm": 147, "valueFormat": "uint8", "sensorContact": "detected", "energyExpendedKJ": 12, "rrIntervalsSeconds": [0.8], "rawFlags": 31])
+        let observations = try recorder!.readObservations(sessionId: sessionId, after: nil, limit: 20)["items"] as! [[String: Any]]
+        XCTAssertTrue(observations.contains { $0["kind"] as? String == "location" && $0["horizontalAccuracyM"] as? Double == 250 })
+        XCTAssertTrue(observations.contains { $0["kind"] as? String == "heartRate" && $0["rawFlags"] as? Int == 31 })
+        let pause = recorder!.handleMutation(requestId: "pause-fixture", method: "workout.pause", params: ["sessionId": sessionId, "expectedRevision": 1])
+        XCTAssertEqual((pause["result"] as? [String: Any])?["revision"] as? Int, 2)
+        recorder!.shutdownForTesting(); recorder = nil
+
+        let reopened = RecordingService(builds: builds, log: DiagnosticLog(), databaseURL: database)
+        let recovered = reopened.sessionSnapshot()
+        XCTAssertEqual(recovered["state"] as? String, "interrupted")
+        XCTAssertEqual(recovered["revision"] as? Int, 3)
+        XCTAssertEqual((recovered["recovery"] as? [String: Any])?["required"] as? Bool, true)
+        let finish = reopened.handleMutation(requestId: "recover-finish", method: "workout.recover", params: ["sessionId": sessionId, "expectedRevision": 3, "action": "finish"])
+        XCTAssertEqual(((finish["result"] as? [String: Any])?["session"] as? [String: Any])?["state"] as? String, "finished")
+        let exported = try reopened.export(sessionId: sessionId, format: "workoutBundleV1")
+        let archive = try Data(contentsOf: exported.url)
+        XCTAssertNotNil(archive.range(of: Data("raw-deliveries.json".utf8)))
+        XCTAssertNotNil(archive.range(of: Data("AQID".utf8)))
+        reopened.shutdownForTesting()
+    }
+
+    private func canonical(_ value: Any) -> String {
+        String(decoding: try! JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]), as: UTF8.self)
+    }
 }

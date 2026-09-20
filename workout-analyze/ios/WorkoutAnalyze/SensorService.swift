@@ -6,6 +6,11 @@ import UIKit
 @MainActor
 final class SensorService: NSObject, @MainActor CLLocationManagerDelegate, @MainActor CBCentralManagerDelegate, @MainActor CBPeripheralDelegate {
     var emitEvent: ((String, [String: Any]) -> Void)?
+    var recordLocation: (([String: Any]) -> Void)?
+    var recordHeartRate: (([String: Any]) -> Void)?
+    var recordRawLocation: (([String: Any]) -> Void)?
+    var recordRawHeartRate: (([String: Any]) -> Void)?
+    var recordHostEvent: ((String, [String: Any]) -> Void)?
     private let log: DiagnosticLog
 
     private lazy var locationManager: CLLocationManager = {
@@ -32,6 +37,7 @@ final class SensorService: NSObject, @MainActor CLLocationManagerDelegate, @Main
     private var locationExpiryTask: Task<Void, Never>?
     private var locationEventTask: Task<Void, Never>?
     private var lastLocationEvent = Date.distantPast
+    private var recordingLocationActive = false
 
     private var central: CBCentralManager?
     private var bluetoothPower = "unknown"
@@ -81,6 +87,7 @@ final class SensorService: NSObject, @MainActor CLLocationManagerDelegate, @Main
     }
 
     func requestPermission(_ permission: String) {
+        recordHostEvent?("permissionRequest", ["permission": permission, "sourceTimestamp": ISOTime.now()])
         if permission == "locationWhenInUse" {
             locationManager.requestWhenInUseAuthorization()
             log.append(subsystem: "permission", message: "User-triggered location permission request")
@@ -145,22 +152,59 @@ final class SensorService: NSObject, @MainActor CLLocationManagerDelegate, @Main
         return page(items: locations, after: after, limit: limit)
     }
 
+    func startRecordingLocation() throws {
+        guard CLLocationManager.locationServicesEnabled() else { throw ShellError.sensorUnavailable("Location services are disabled") }
+        guard ["whenInUse", "always"].contains(locationAuthorization()) else { throw ShellError.permissionDenied("Location permission must be granted before recording") }
+        recordingLocationActive = true
+        locationManager.activityType = .fitness
+        locationManager.desiredAccuracy = kCLLocationAccuracyBest
+        locationManager.distanceFilter = 2
+        locationManager.pausesLocationUpdatesAutomatically = false
+        locationManager.allowsBackgroundLocationUpdates = true
+        locationManager.showsBackgroundLocationIndicator = true
+        locationManager.startUpdatingLocation()
+        log.append(subsystem: "recording", message: "Continuous workout location delivery started")
+    }
+
+    func stopRecordingLocation() {
+        recordingLocationActive = false
+        if locationState != "active" { locationManager.stopUpdatingLocation() }
+        locationManager.allowsBackgroundLocationUpdates = locationBackgroundActive
+        locationManager.showsBackgroundLocationIndicator = locationBackgroundActive
+        log.append(subsystem: "recording", message: "Continuous workout location delivery stopped")
+    }
+
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        recordHostEvent?("locationAuthorization", ["authorization": locationAuthorization(), "precise": locationPrecision(), "sourceTimestamp": ISOTime.now()])
         emitEvent?("permissions.updated", [:])
-        if ["denied", "restricted"].contains(locationAuthorization()), locationState == "active" { stopLocationInternally(reason: "Location authorization was lost") }
+        if ["denied", "restricted"].contains(locationAuthorization()) {
+            if locationState == "active" { stopLocationInternally(reason: "Location authorization was lost") }
+            if recordingLocationActive { recordingLocationActive = false; manager.stopUpdatingLocation() }
+        }
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations updates: [CLLocation]) {
-        guard locationState == "active" else { return }
-        for location in updates {
-            locationReceived += 1
+        guard locationState == "active" || recordingLocationActive else { return }
+        for location in updates.sorted(by: { $0.timestamp < $1.timestamp }) {
+            recordRawLocation?([
+                "sourceTimestamp": ISO8601DateFormatter().string(from: location.timestamp), "receivedAt": ISOTime.now(),
+                "latitudeDegrees": location.coordinate.latitude, "longitudeDegrees": location.coordinate.longitude,
+                "horizontalAccuracyM": location.horizontalAccuracy, "altitudeM": location.altitude, "verticalAccuracyM": location.verticalAccuracy,
+                "speedMps": location.speed, "speedAccuracyMps": location.speedAccuracy, "courseDegrees": location.course,
+                "courseAccuracyDegrees": location.courseAccuracy, "floorLevel": location.floor?.level ?? NSNull(),
+                "isSimulatedBySoftware": location.sourceInformation?.isSimulatedBySoftware ?? NSNull(),
+                "isProducedByAccessory": location.sourceInformation?.isProducedByAccessory ?? NSNull(),
+                "callbackBatchCount": updates.count, "authorization": locationAuthorization()
+            ])
+            if locationState == "active" { locationReceived += 1 }
             guard location.horizontalAccuracy >= 0,
                   (-90...90).contains(location.coordinate.latitude), (-180...180).contains(location.coordinate.longitude) else {
-                locationRejected += 1; locationLastRejection = "Core Location supplied invalid coordinates or negative horizontal accuracy"; continue
+                if locationState == "active" { locationRejected += 1; locationLastRejection = "Core Location supplied invalid coordinates or negative horizontal accuracy" }
+                continue
             }
-            locationCursor += 1; locationAccepted += 1
-            let observation: [String: Any] = [
-                "cursor": locationCursor, "source": "coreLocation",
+            if locationState == "active" { locationCursor += 1; locationAccepted += 1 }
+            var observation: [String: Any] = [
+                "cursor": max(1, locationCursor), "source": "coreLocation",
                 "sourceTimestamp": ISO8601DateFormatter().string(from: location.timestamp), "receivedAt": ISOTime.now(),
                 "latitudeDegrees": location.coordinate.latitude, "longitudeDegrees": location.coordinate.longitude,
                 "horizontalAccuracyM": location.horizontalAccuracy,
@@ -174,17 +218,23 @@ final class SensorService: NSObject, @MainActor CLLocationManagerDelegate, @Main
                 "isSimulatedBySoftware": location.sourceInformation?.isSimulatedBySoftware ?? NSNull(),
                 "isProducedByAccessory": location.sourceInformation?.isProducedByAccessory ?? NSNull()
             ]
-            locations.append(observation)
-            if locations.count > 2048 { locations.removeFirst(locations.count - 2048) }
-            locationReason = "Core Location delivered \(locationAccepted) accepted observation\(locationAccepted == 1 ? "" : "s")"
+            if recordingLocationActive { recordLocation?(observation) }
+            if locationState == "active" {
+                observation["cursor"] = locationCursor
+                locations.append(observation)
+                if locations.count > 2048 { locations.removeFirst(locations.count - 2048) }
+                locationReason = "Core Location delivered \(locationAccepted) accepted observation\(locationAccepted == 1 ? "" : "s")"
+            }
         }
-        coalesceLocationEvent()
+        if locationState == "active" { coalesceLocationEvent() }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        recordHostEvent?("locationError", ["message": error.localizedDescription, "sourceTimestamp": ISOTime.now()])
         locationLastError = String(error.localizedDescription.prefix(2048))
         locationState = "error"; locationReason = "Core Location failed: \(locationLastError!)"
-        manager.stopUpdatingLocation(); locationBackgroundActive = false
+        if !recordingLocationActive { manager.stopUpdatingLocation() }
+        locationBackgroundActive = false
         emitEvent?("location.updated", locationStatus())
     }
 
@@ -263,6 +313,7 @@ final class SensorService: NSObject, @MainActor CLLocationManagerDelegate, @Main
         case .unsupported: bluetoothPower = "unsupported"
         default: bluetoothPower = "unknown"
         }
+        recordHostEvent?("bluetoothState", ["power": bluetoothPower, "authorization": bluetoothAuthorization(), "sourceTimestamp": ISOTime.now()])
         emitEvent?("permissions.updated", [:]); emitEvent?("heartRate.updated", heartRateStatus())
     }
 
@@ -301,6 +352,7 @@ final class SensorService: NSObject, @MainActor CLLocationManagerDelegate, @Main
     }
 
     private func handleDisconnect(central: CBCentralManager, peripheral: CBPeripheral, error: Error?) {
+        recordHostEvent?("heartRateDisconnected", ["deviceId": peripheral.identifier.uuidString, "error": error?.localizedDescription ?? NSNull(), "sourceTimestamp": ISOTime.now()])
         if explicitDisconnect { finishDisconnect(reason: "Heart-rate connection stopped explicitly"); return }
         guard connectionId != nil, reconnectCount < 3, central.state == .poweredOn else {
             heartRateState = "error"; heartRateLastError = error?.localizedDescription ?? "Device disconnected"; heartRateReason = "Heart-rate device disconnected"
@@ -328,16 +380,23 @@ final class SensorService: NSObject, @MainActor CLLocationManagerDelegate, @Main
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard characteristic.uuid == CBUUID(string: "2A37") else { return }
+        let receivedAt = ISOTime.now()
+        recordRawHeartRate?([
+            "receivedAt": receivedAt, "deviceId": peripheral.identifier.uuidString, "connectionId": connectionId ?? NSNull(),
+            "characteristicUuid": characteristic.uuid.uuidString, "rawCharacteristicBase64": characteristic.value?.base64EncodedString() ?? NSNull(),
+            "deliveryError": error?.localizedDescription ?? NSNull(), "peripheralState": peripheral.state.rawValue
+        ])
         heartRateReceived += 1
         guard error == nil, let data = characteristic.value, let parsed = parseHeartRate(data) else {
             parseErrors += 1; heartRateLastError = error?.localizedDescription ?? "Malformed or truncated 2A37 packet"; coalesceHeartRateEvent(); return
         }
         heartRateCursor += 1
         var measurement = parsed
-        measurement["cursor"] = heartRateCursor; measurement["connectionId"] = connectionId!; measurement["deviceId"] = peripheral.identifier.uuidString; measurement["receivedAt"] = ISOTime.now()
+        measurement["cursor"] = heartRateCursor; measurement["connectionId"] = connectionId!; measurement["deviceId"] = peripheral.identifier.uuidString; measurement["receivedAt"] = receivedAt
         measurements.append(measurement)
         if measurements.count > 2048 { measurements.removeFirst(measurements.count - 2048) }
         heartRateReason = "Received \(measurements.count) retained heart-rate measurement\(measurements.count == 1 ? "" : "s")"
+        recordHeartRate?(measurement)
         coalesceHeartRateEvent()
     }
 
@@ -378,8 +437,9 @@ final class SensorService: NSObject, @MainActor CLLocationManagerDelegate, @Main
     }
 
     private func stopLocationInternally(reason: String) {
-        locationState = "stopping"; locationManager.stopUpdatingLocation(); locationManager.allowsBackgroundLocationUpdates = false
+        locationState = "stopping"; if !recordingLocationActive { locationManager.stopUpdatingLocation() }; locationManager.allowsBackgroundLocationUpdates = recordingLocationActive
         locationManager.showsBackgroundLocationIndicator = false
+        locationManager.showsBackgroundLocationIndicator = recordingLocationActive
         locationBackgroundActive = false; locationExpiryTask?.cancel(); locationState = "inactive"; locationReason = reason
         emitEvent?("location.updated", locationStatus())
     }
@@ -427,6 +487,7 @@ final class SensorService: NSObject, @MainActor CLLocationManagerDelegate, @Main
     }
 
     @objc private func lifecycleChanged() {
+        recordHostEvent?("appLifecycle", ["state": appLifecycle(), "sourceTimestamp": ISOTime.now()])
         if appLifecycle() == "background" {
             stopScanInternal(reason: "Heart-rate scan stopped when the app backgrounded")
             if locationBackgroundMode == "foregroundOnly", locationState == "active" { stopLocationInternally(reason: "Foreground-only location probe stopped when the app backgrounded") }
