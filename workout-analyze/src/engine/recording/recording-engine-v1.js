@@ -4,9 +4,13 @@
   var RECORDING_CHECKPOINT_SCHEMA_VERSION = 1;
   var RECORDING_ENGINE_MAX_BATCH_SIZE = 1000;
 
+  // src/engine/mobile-artifact.ts
+  var RECORDING_ENGINE_BUILD_ID = "recording-engine-v1";
+  var RECORDING_ENGINE_ALGORITHM_ID = "ride-metrics-v1";
+
   // src/engine/recording/index.ts
-  var ENGINE_BUILD_ID = "recording-engine-v1";
-  var ALGORITHM_ID = "ride-metrics-v1";
+  var ENGINE_BUILD_ID = RECORDING_ENGINE_BUILD_ID;
+  var ALGORITHM_ID = RECORDING_ENGINE_ALGORITHM_ID;
   var MAX_HORIZONTAL_ACCURACY_M = 50;
   var MAX_LOCATION_AGE_MS = 15000;
   var MAX_LOCATION_GAP_MS = 30000;
@@ -30,7 +34,8 @@
     const dLat = (b.latitudeDegrees - a.latitudeDegrees) * radians;
     const dLon = (b.longitudeDegrees - a.longitudeDegrees) * radians;
     const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-    return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+    const bounded = Math.min(1, Math.max(0, h));
+    return 6371000 * 2 * Math.atan2(Math.sqrt(bounded), Math.sqrt(1 - bounded));
   };
   var initial = () => ({
     schemaVersion: 1,
@@ -105,12 +110,14 @@
     const reportedSpeed = observation.speedMps !== null && observation.speedMps >= 0 && (observation.speedAccuracyMps === null || observation.speedAccuracyMps <= MAX_SPEED_ACCURACY_MPS) ? observation.speedMps : null;
     const fallbackSpeed = validSegment && deltaMs !== null ? segmentM / (deltaMs / 1000) : null;
     const altitudeUsable = observation.altitudeM !== null && observation.verticalAccuracyM !== null && observation.verticalAccuracyM <= MAX_VERTICAL_ACCURACY_M;
-    const altitudeGain = validSegment && altitudeUsable && state.anchor?.altitudeM !== null && state.anchor?.altitudeM !== undefined && observation.altitudeM - state.anchor.altitudeM > ELEVATION_DEADBAND_M ? observation.altitudeM - state.anchor.altitudeM : 0;
+    const altitudeDelta = validSegment && altitudeUsable && state.anchor?.altitudeM !== null && state.anchor?.altitudeM !== undefined ? observation.altitudeM - state.anchor.altitudeM : null;
+    const altitudeGain = altitudeDelta !== null && altitudeDelta > ELEVATION_DEADBAND_M ? altitudeDelta : 0;
+    const altitudeAnchor = !altitudeUsable ? null : altitudeDelta !== null && altitudeDelta > 0 && altitudeDelta <= ELEVATION_DEADBAND_M ? state.anchor.altitudeM : observation.altitudeM;
     return {
       ...state,
       distanceM: state.distanceM + (validSegment ? segmentM : 0),
       elevationGainM: state.elevationGainM + altitudeGain,
-      anchor: { latitudeDegrees: observation.latitudeDegrees, longitudeDegrees: observation.longitudeDegrees, wallMs: measured, altitudeM: altitudeUsable ? observation.altitudeM : null },
+      anchor: { latitudeDegrees: observation.latitudeDegrees, longitudeDegrees: observation.longitudeDegrees, wallMs: measured, altitudeM: altitudeAnchor },
       lastLocationWallMs: measured,
       poorLocationWallMs: null,
       currentSpeedMps: reportedSpeed ?? fallbackSpeed,
@@ -142,19 +149,21 @@
     create: (checkpoint) => {
       if (checkpoint !== null && (checkpoint.schemaVersion !== 1 || checkpoint.engineBuildId !== ENGINE_BUILD_ID || checkpoint.algorithmId !== ALGORITHM_ID))
         throw new TypeError("Incompatible recording checkpoint");
-      let state = checkpoint ?? initial();
+      let state = checkpoint === null ? initial() : { ...checkpoint, activeStartedMonotonicMs: null };
       return {
         processBatch: ({ observations, evaluatedAt }) => {
           if (observations.length > RECORDING_ENGINE_MAX_BATCH_SIZE)
             throw new RangeError("Recording engine batch too large");
           let processedCount = 0;
+          let nextState = state;
           for (const observation of observations) {
-            const before = state.lastSequence;
-            state = apply(state, observation);
-            if (state.lastSequence !== before)
+            const before = nextState.lastSequence;
+            nextState = apply(nextState, observation);
+            if (nextState.lastSequence !== before)
               processedCount += 1;
           }
-          state = { ...state, lastEvaluationWallMs: wallMs(evaluatedAt.wallTimestamp) };
+          nextState = { ...nextState, lastEvaluationWallMs: wallMs(evaluatedAt.wallTimestamp) };
+          state = nextState;
           return { processedCount, lastSequence: state.lastSequence, metrics: metrics(state, evaluatedAt), checkpoint: state };
         },
         checkpoint: () => state

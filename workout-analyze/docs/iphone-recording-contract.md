@@ -8,6 +8,7 @@ Canonical TypeScript entry points:
 - Untrusted JSON validation: `src/shared/mobile/validation.ts`
 - Portable metrics engine: `src/engine/recording/index.ts`
 - JavaScriptCore artifact/global: `src/engine/recording/recording-engine-v1.js` / `globalThis.WorkoutAnalyzeRecordingEngine`
+- Installed composed artifact: `mobile/dist/engine/tiny-engine.js` (both recording and phase-1 diagnostic globals)
 - Golden replay data: `src/engine/recording/fixtures.ts`
 
 The existing location probe and BLE APIs remain compatible. A recorder reuses the selected BLE connection but never treats a missing/disconnected monitor as a recording failure.
@@ -53,6 +54,8 @@ If step 5/6 fails, recording continues, diagnostics expose backlog/failure, and 
 
 Pin `engineBuildId`, API version, checkpoint schema, and algorithm ID at Start through Finish, including pauses/recovery. Installed engine updates apply only to the next workout. Development React HMR never changes the headless engine. To test an engine edit, build/publish the artifact, end the active session, activate that build, then start a new workout. Keep the bundled artifact and reject incompatible checkpoints rather than silently resetting one.
 
+For recording v1, `WorkoutAnalyzeRecordingEngine.describe()` is exactly `{ apiVersion: 1, checkpointSchemaVersion: 1, engineBuildId: 'recording-engine-v1', algorithmId: 'ride-metrics-v1', maxBatchSize: 1000 }`. Native pins that recording descriptor on the workout; it must not substitute the installed package manifest ID. Restoring an active checkpoint deliberately discards its process-local monotonic origin and uses persisted UTC until a new active interval starts.
+
 ## Observation and reconnect API
 
 Recorder rows use a session-local contiguous `sequence`; location and HR remain independently timestamped. Native normalizes batched Core Location fixes into measurement-time order and deduplicates provider duplicates before assigning sequence. Raw rejection is not deletion: production storage retains delivered fields; engine acceptance affects only derived values.
@@ -77,6 +80,7 @@ The engine is deterministic, has no DOM/Node/Bun/network/timers, and receives an
 - Accept altitude only with non-null vertical accuracy ≤10 m. Add positive changes only when they exceed a 3 m deadband. Ascent is estimated.
 - HR becomes stale after 10 s. Raw 8/16-bit BLE fields remain in storage/wire observations; metrics expose BPM and observation time.
 - Average speed is accepted distance / active duration. Pause and interruption stop active duration and distance.
+- A `processBatch` failure is atomic in memory: no observation from that batch advances the checkpoint. Gradual positive altitude changes accumulate against the elevation deadband baseline; valid descent resets that baseline.
 
 Golden tests cover distance, poor accuracy, stale delivery, pause/resume, stale speed/HR, interruption gaps, replay idempotence, and sequence gaps. The checked-in plain-JS artifact is executed in tests and compared with the TypeScript implementation.
 

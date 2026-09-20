@@ -30,4 +30,9 @@ export const RECORDING_GOLDEN_FIXTURES = {
     evaluatedAt: { wallTimestamp: at(100), monotonicTimestampMs: null },
     expected: { activeDurationMs: 10_000, elapsedDurationMs: 100_000 },
   },
+  gradualAscent: {
+    observations: [transition(1, 0, 'idle', 'recording'), location(2, 1, 0, { altitudeM: 10 }), location(3, 2, 0.0001, { altitudeM: 12 }), location(4, 3, 0.0002, { altitudeM: 14 })],
+    evaluatedAt: { wallTimestamp: at(3), monotonicTimestampMs: 3_000 },
+    expected: { elevationGainM: 4 },
+  },
 } as const
