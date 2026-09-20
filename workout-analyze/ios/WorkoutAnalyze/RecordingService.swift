@@ -12,6 +12,13 @@ final class RecordingService: ObservableObject {
     private var subscription: (id: String, sessionId: String, after: Int, limit: Int)?
     private(set) var engineFailure: String?
     private(set) var storageFailure: String?
+    private(set) var storageFailureDetails: [String: Any]?
+    private var lastJournalSequence = 0
+    private var lastJournalWriteAt: String?
+    private var journalQueuedCount = 0
+    private var rawLocationReceivedCount = 0
+    private var rawHeartRateReceivedCount = 0
+    private var lastHealthEmissionUptime = -Double.infinity
     var emitEvent: ((String, [String: Any]) -> Void)?
     var presentShare: ((URL) -> Bool)?
 
@@ -22,16 +29,16 @@ final class RecordingService: ObservableObject {
             let support = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: support.path)
             let url = databaseURL ?? support.appendingPathComponent("recording-v1.sqlite")
-            guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else {
-                throw ShellError.storage("Could not open recording database")
+            let openResult = sqlite3_open_v2(url.path, &database, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil)
+            guard openResult == SQLITE_OK else {
+                throw sqliteFailure(operation: "database.open", resultCode: openResult)
             }
             try execute("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA synchronous=FULL;")
             try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: url.path)
             try migrate()
             try recoverInterruptedSession()
         } catch {
-            storageFailure = error.localizedDescription
-            log.append(subsystem: "recording", message: "Recording storage initialization failed", metadata: ["reason": error.localizedDescription])
+            recordStorageFailure(error, operation: "database.initialize", sessionId: nil, durableSequence: 0)
         }
     }
 
@@ -44,6 +51,10 @@ final class RecordingService: ObservableObject {
 
     func shutdownForTesting() {
         if let database { sqlite3_close(database); self.database = nil }
+    }
+
+    func setQueryOnlyForTesting(_ enabled: Bool) throws {
+        try execute("PRAGMA query_only=\(enabled ? "ON" : "OFF")")
     }
 
     func sessionSnapshot() -> [String: Any] {
@@ -67,6 +78,7 @@ final class RecordingService: ObservableObject {
                 let reply: [String: Any] = ["protocolVersion": 1, "requestId": requestId, "ok": true, "result": result]
                 try storeOutcome(requestId: requestId, method: method, params: canonical, reply: reply)
                 try execute("COMMIT")
+                logLifecycleCommit(method: method, result: result)
                 processEngineBacklog()
                 emitEvent?("session.updated", sessionSnapshot())
                 return reply
@@ -74,14 +86,17 @@ final class RecordingService: ObservableObject {
                 let reply = errorReply(requestId: requestId, code: failure.code, message: failure.message, details: failure.details)
                 try storeOutcome(requestId: requestId, method: method, params: canonical, reply: reply)
                 try execute("COMMIT")
+                logLifecycleFailure(method: method, sessionId: params["sessionId"] as? String, error: failure)
                 return reply
             } catch {
                 try? execute("ROLLBACK")
                 throw error
             }
         } catch {
-            storageFailure = error.localizedDescription
-            return errorReply(requestId: requestId, code: "storageFailure", message: error.localizedDescription, retryable: true)
+            let session = ((try? currentOrLatestSessionRow()) ?? nil)?["id"] as? String
+            let details = recordStorageFailure(error, operation: "mutation.\(method)", sessionId: session, durableSequence: session.flatMap { try? observationSequence($0) } ?? 0)
+            logLifecycleFailure(method: method, sessionId: session, error: error)
+            return errorReply(requestId: requestId, code: "storageFailure", message: error.localizedDescription, retryable: true, details: details)
         }
     }
 
@@ -174,6 +189,10 @@ final class RecordingService: ObservableObject {
         guard let session = try? currentSessionRow(), let id = session["id"] as? String,
               let state = session["state"] as? String, ["recording", "paused"].contains(state) else { return nil }
         do {
+            if kind == "locationDelivery" { rawLocationReceivedCount += 1 }
+            if kind == "heartRateCharacteristicDelivery" { rawHeartRateReceivedCount += 1 }
+            journalQueuedCount += 1
+            defer { journalQueuedCount = max(0, journalQueuedCount - 1) }
             let eventId = "event-\(UUID().uuidString)"
             let receivedAt = payload["receivedAt"] as? String ?? ISOTime.now()
             let sourceTimestamp = payload["sourceTimestamp"] as? String
@@ -184,7 +203,7 @@ final class RecordingService: ObservableObject {
             return eventId
         } catch {
             try? execute("ROLLBACK")
-            storageFailure = error.localizedDescription
+            _ = recordStorageFailure(error, operation: "journal.append.\(kind)", sessionId: id, durableSequence: (try? observationSequence(id)) ?? 0)
             emitIssue(code: "storageFailure", severity: "fatal", message: error.localizedDescription, sequence: (try? observationSequence(id)) ?? 0)
             return nil
         }
@@ -195,7 +214,9 @@ final class RecordingService: ObservableObject {
         do {
             _ = appendJournalEvent(kind: "host.\(type)", provenance: "WorkoutAnalyze.native", payload: payload)
             try run("INSERT INTO host_events(session_id,type,source_timestamp,json) VALUES(?,?,?,?)", [.text(id), .text(type), .text(payload["sourceTimestamp"] as? String ?? ISOTime.now()), .text(canonicalJSON(payload))])
-        } catch { storageFailure = error.localizedDescription }
+        } catch {
+            _ = recordStorageFailure(error, operation: "hostEvent.append.\(type)", sessionId: id, durableSequence: (try? observationSequence(id)) ?? 0)
+        }
     }
 
     func ingestHeartRate(_ source: [String: Any]) {
@@ -235,8 +256,35 @@ final class RecordingService: ObservableObject {
             let checkpoint = (try? scalarInt("SELECT checkpoint_sequence FROM sessions WHERE id=?", [.text(id)])) ?? 0
             backlog = max(0, latest - checkpoint)
         } else { backlog = 0 }
+        let sessionId = snapshot["sessionId"] as? String
+        let journalSequence = sessionId.flatMap { try? scalarInt("SELECT COALESCE(MAX(journal_sequence),0) FROM journal_events WHERE session_id=?", [.text($0)]) } ?? lastJournalSequence
+        let checkpoint = sessionId.flatMap { try? scalarInt("SELECT checkpoint_sequence FROM sessions WHERE id=?", [.text($0)]) } ?? 0
         return ["available": available, "database": storageFailure == nil ? "ready" : "failed", "engineBacklog": backlog,
-                "engineFailure": engineFailure ?? NSNull(), "storageFailure": storageFailure ?? NSNull(), "session": snapshot]
+                "engineFailure": engineFailure ?? NSNull(), "storageFailure": storageFailure ?? NSNull(),
+                "storageFailureDetails": storageFailureDetails ?? NSNull(), "session": snapshot,
+                "journal": ["latestDurableSequence": journalSequence, "lastSuccessfulWriteAt": (lastJournalWriteAt as Any?) ?? NSNull(), "queuedCount": journalQueuedCount,
+                            "rawLocationReceivedCount": rawLocationReceivedCount, "rawHeartRateReceivedCount": rawHeartRateReceivedCount],
+                "normalization": ["durableSequence": snapshot["durableSequence"] ?? 0, "engineCheckpointSequence": checkpoint, "backlogCount": backlog]]
+    }
+
+    func recordHealth(sensor: [String: Any], force: Bool = false) {
+        let uptime = ProcessInfo.processInfo.systemUptime
+        guard force || uptime - lastHealthEmissionUptime >= 12 else { return }
+        let session = sessionSnapshot()
+        guard let sessionId = session["sessionId"] as? String, ["recording", "paused"].contains(session["state"] as? String ?? "") else { return }
+        lastHealthEmissionUptime = uptime
+        let details = diagnostics()
+        let journal = details["journal"] as? [String: Any] ?? [:]
+        let normalization = details["normalization"] as? [String: Any] ?? [:]
+        var metadata = stringMetadata(sensor)
+        for (key, value) in stringMetadata(journal) { metadata["journal.\(key)"] = value }
+        for (key, value) in stringMetadata(normalization) { metadata["normalization.\(key)"] = value }
+        metadata["event"] = "recording.health"
+        metadata["sessionId"] = sessionId
+        metadata["state"] = session["state"] as? String ?? "unknown"
+        metadata["storageFailure"] = storageFailure ?? ""
+        metadata["engineFailure"] = engineFailure ?? ""
+        log.append(subsystem: "recording.telemetry", message: "Recording health", sessionId: sessionId, sequence: session["durableSequence"] as? Int, metadata: metadata)
     }
 
     private func mutate(method: String, params: [String: Any]) throws -> [String: Any] {
@@ -310,7 +358,7 @@ final class RecordingService: ObservableObject {
             notifyObservation(sessionId: sessionId, sequence: sequence)
         } catch {
             try? execute("ROLLBACK")
-            storageFailure = error.localizedDescription
+            _ = recordStorageFailure(error, operation: "observation.append.\(object["kind"] as? String ?? "unknown")", sessionId: sessionId, durableSequence: (try? observationSequence(sessionId)) ?? 0)
             emitIssue(code: "storageFailure", severity: "fatal", message: error.localizedDescription, sequence: (try? observationSequence(sessionId)) ?? 0)
         }
     }
@@ -426,6 +474,67 @@ final class RecordingService: ObservableObject {
          "error": ["code": code, "message": message, "retryable": retryable, "details": details ?? [:]]]
     }
 
+    @discardableResult
+    private func recordStorageFailure(_ error: Error, operation contextOperation: String, sessionId: String?, durableSequence: Int) -> [String: Any] {
+        let storage = error as? RecordingStorageError
+        let nsError = error as NSError
+        let details: [String: Any] = [
+            "domain": storage?.domain ?? nsError.domain,
+            "code": Int(storage?.code ?? Int32(nsError.code)),
+            "extendedCode": Int(storage?.extendedCode ?? Int32(nsError.code)),
+            "message": String((storage?.message ?? error.localizedDescription).prefix(2048)),
+            "operation": storage?.operation ?? contextOperation,
+            "contextOperation": contextOperation,
+            "sessionId": sessionId ?? NSNull(),
+            "durableSequence": durableSequence,
+            "journalDurableSequence": lastJournalSequence,
+            "lastSuccessfulJournalWriteAt": lastJournalWriteAt ?? NSNull(),
+            "journalQueuedCount": journalQueuedCount,
+            "observedAt": ISOTime.now()
+        ]
+        storageFailure = details["message"] as? String
+        storageFailureDetails = details
+        log.append(subsystem: "recording.storage", message: "Recording storage failure", sessionId: sessionId, sequence: durableSequence, metadata: stringMetadata(details))
+        return details
+    }
+
+    private func logLifecycleCommit(method: String, result: [String: Any]) {
+        let session = result["session"] as? [String: Any] ?? result
+        guard let sessionId = session["sessionId"] as? String else { return }
+        let state = session["state"] as? String ?? "unknown"
+        let event: String
+        switch method {
+        case "workout.start": event = "recording.started"
+        case "workout.pause": event = "recording.paused"
+        case "workout.resume": event = "recording.resumed"
+        case "workout.finish": event = "recording.finished"
+        case "workout.recover": event = state == "finished" ? "recording.finished" : "recording.recovered"
+        default: event = "recording.lifecycle"
+        }
+        let metadata = ["event": event, "operation": method, "state": state, "commit": "success", "sessionId": sessionId]
+        if event == "recording.finished" {
+            log.append(subsystem: "recording.telemetry", message: "Recording stopped committed", sessionId: sessionId, sequence: session["durableSequence"] as? Int, metadata: ["event": "recording.stopped", "operation": method, "state": state, "commit": "success", "sessionId": sessionId])
+        }
+        log.append(subsystem: "recording.telemetry", message: "\(event) committed", sessionId: sessionId, sequence: session["durableSequence"] as? Int, metadata: metadata)
+    }
+
+    private func logLifecycleFailure(method: String, sessionId: String?, error: Error) {
+        log.append(subsystem: "recording.telemetry", message: "Recording lifecycle commit failed", sessionId: sessionId, metadata: [
+            "event": "recording.lifecycle.failure", "operation": method, "sessionId": sessionId ?? "none", "commit": "failure", "reason": error.localizedDescription
+        ])
+    }
+
+    private func stringMetadata(_ values: [String: Any]) -> [String: String] {
+        var result: [String: String] = [:]
+        for (key, value) in values {
+            if value is NSNull { result[key] = "null" }
+            else if let string = value as? String { result[key] = string }
+            else if let number = value as? NSNumber { result[key] = number.stringValue }
+            else if let boolean = value as? Bool { result[key] = String(boolean) }
+        }
+        return result
+    }
+
     private func migrate() throws {
         try execute("""
         CREATE TABLE IF NOT EXISTS sessions(
@@ -466,6 +575,8 @@ final class RecordingService: ObservableObject {
             .text(eventId), .text(sessionId), .int(sequence), .text(kind), sourceTimestamp.map(Bind.text) ?? .null, .text(receivedAt), monotonic.map(Bind.double) ?? .null,
             .text("processUptimeMilliseconds"), .text("json"), .text(provenance), .text(canonicalJSON(payload)), batchId.map(Bind.text) ?? .null, batchIndex.map(Bind.int) ?? .null, batchSize.map(Bind.int) ?? .null
         ])
+        lastJournalSequence = sequence
+        lastJournalWriteAt = ISOTime.now()
     }
 
     private func currentSessionRow() throws -> [String: Any]? { try query("SELECT * FROM sessions WHERE state!='finished' ORDER BY started_at DESC LIMIT 1").first }
@@ -528,19 +639,22 @@ final class RecordingService: ObservableObject {
     private enum Bind { case text(String), int(Int), double(Double), null }
     private func execute(_ sql: String) throws {
         var error: UnsafeMutablePointer<CChar>?
-        guard sqlite3_exec(database, sql, nil, nil, &error) == SQLITE_OK else {
-            let message = error.map { String(cString: $0) } ?? "SQLite error"; sqlite3_free(error); throw ShellError.storage(message)
+        let result = sqlite3_exec(database, sql, nil, nil, &error)
+        guard result == SQLITE_OK else {
+            let message = error.map { String(cString: $0) }; sqlite3_free(error)
+            throw sqliteFailure(operation: "sqlite.exec.\(sqlOperation(sql))", resultCode: result, message: message)
         }
     }
     private func run(_ sql: String, _ binds: [Bind] = []) throws {
-        var statement: OpaquePointer?; guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw sqliteError() }
+        var statement: OpaquePointer?; let prepared = sqlite3_prepare_v2(database, sql, -1, &statement, nil); guard prepared == SQLITE_OK else { throw sqliteFailure(operation: "sqlite.prepare.\(sqlOperation(sql))", resultCode: prepared) }
         defer { sqlite3_finalize(statement) }; bind(binds, to: statement)
-        guard sqlite3_step(statement) == SQLITE_DONE else { throw sqliteError() }
+        let stepped = sqlite3_step(statement); guard stepped == SQLITE_DONE else { throw sqliteFailure(operation: "sqlite.step.\(sqlOperation(sql))", resultCode: stepped) }
     }
     private func query(_ sql: String, _ binds: [Bind] = []) throws -> [[String: Any]] {
-        var statement: OpaquePointer?; guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { throw sqliteError() }
+        var statement: OpaquePointer?; let prepared = sqlite3_prepare_v2(database, sql, -1, &statement, nil); guard prepared == SQLITE_OK else { throw sqliteFailure(operation: "sqlite.prepare.\(sqlOperation(sql))", resultCode: prepared) }
         defer { sqlite3_finalize(statement) }; bind(binds, to: statement); var rows: [[String: Any]] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        var result = sqlite3_step(statement)
+        while result == SQLITE_ROW {
             var row: [String: Any] = [:]
             for index in 0..<sqlite3_column_count(statement) {
                 let name = String(cString: sqlite3_column_name(statement, index))
@@ -552,7 +666,9 @@ final class RecordingService: ObservableObject {
                 }
             }
             rows.append(row)
+            result = sqlite3_step(statement)
         }
+        guard result == SQLITE_DONE else { throw sqliteFailure(operation: "sqlite.step.\(sqlOperation(sql))", resultCode: result) }
         return rows
     }
     private func scalarInt(_ sql: String, _ binds: [Bind] = []) throws -> Int { try query(sql, binds).first?.values.first as? Int ?? 0 }
@@ -564,7 +680,16 @@ final class RecordingService: ObservableObject {
         case .null: sqlite3_bind_null(statement, index)
         } }
     }
-    private func sqliteError() -> Error { ShellError.storage(database.map { String(cString: sqlite3_errmsg($0)) } ?? "SQLite unavailable") }
+    private func sqliteFailure(operation: String, resultCode: Int32? = nil, message: String? = nil) -> RecordingStorageError {
+        let code = resultCode ?? database.map(sqlite3_errcode) ?? SQLITE_MISUSE
+        let extended = database.map(sqlite3_extended_errcode) ?? code
+        let detail = message ?? database.map { String(cString: sqlite3_errmsg($0)) } ?? "SQLite unavailable"
+        return RecordingStorageError(operation: operation, code: code, extendedCode: extended, message: detail)
+    }
+
+    private func sqlOperation(_ sql: String) -> String {
+        sql.trimmingCharacters(in: .whitespacesAndNewlines).split(whereSeparator: { $0.isWhitespace || $0 == ";" }).first.map(String.init)?.uppercased() ?? "UNKNOWN"
+    }
 
     private func canonicalJSON(_ object: Any) -> String {
         let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
@@ -612,10 +737,21 @@ final class RecordingService: ObservableObject {
     }
 }
 
-private struct RecorderFailure: Error, @unchecked Sendable {
+private struct RecordingStorageError: Error, LocalizedError, @unchecked Sendable {
+    let operation: String
+    let code: Int32
+    let extendedCode: Int32
+    let message: String
+    let domain = "SQLite"
+
+    var errorDescription: String? { "SQLite \(operation) failed (\(code)/\(extendedCode)): \(message)" }
+}
+
+private struct RecorderFailure: Error, LocalizedError, @unchecked Sendable {
     let code: String
     let message: String
     var details: [String: Any] = [:]
+    var errorDescription: String? { message }
 }
 
 private enum StoredZip {

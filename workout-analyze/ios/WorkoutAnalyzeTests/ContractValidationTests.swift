@@ -55,6 +55,17 @@ final class ContractValidationTests: XCTestCase {
         XCTAssertNil(SensorService.parseHeartRatePacket(Data([0x01, 0x2C])))
     }
 
+    func testPrivateRawLineageNeverEntersPublicSensorValues() {
+        let parsed = SensorService.parseHeartRatePacket(Data([0x00, 147]))!
+        let heartRate = SensorService.recordingLinkedCopies(publicValue: parsed, rawEventId: "event-hr-1")
+        XCTAssertNil(heartRate.publicValue["_rawEventId"])
+        XCTAssertEqual(heartRate.recorderValue["_rawEventId"] as? String, "event-hr-1")
+
+        let location = SensorService.recordingLinkedCopies(publicValue: ["cursor": 1, "horizontalAccuracyM": 5.0], rawEventId: "event-gps-1")
+        XCTAssertNil(location.publicValue["_rawEventId"])
+        XCTAssertEqual(location.recorderValue["_rawEventId"] as? String, "event-gps-1")
+    }
+
     func testBundledManifestAndHashes() throws {
         let resources = Bundle(for: Self.self).resourceURL!.appendingPathComponent("BundledBuild")
         let data = try Data(contentsOf: resources.appendingPathComponent("manifest.json"))
@@ -191,6 +202,35 @@ final class ContractValidationTests: XCTestCase {
         XCTAssertNotNil(archive.range(of: Data("AQID".utf8)))
         XCTAssertNotNil(archive.range(of: Data("journalSequence".utf8)), "Bundle journal must use the frozen RawWorkoutEvent field name")
         reopened.shutdownForTesting()
+    }
+
+    @MainActor
+    func testRawJournalStorageFailureRetainsSQLiteCauseAndOperation() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let log = DiagnosticLog()
+        let recorder = RecordingService(builds: BuildManager(log: log), log: log, databaseURL: directory.appendingPathComponent("recording.sqlite"))
+        let start = recorder.handleMutation(requestId: "storage-failure-start", method: "workout.start", params: ["expectedRevision": 0, "sport": "cycling", "startPolicy": "immediate"])
+        let sessionId = (start["result"] as! [String: Any])["sessionId"] as! String
+
+        try recorder.setQueryOnlyForTesting(true)
+        let rawEvent = recorder.appendJournalEvent(kind: "locationDelivery", provenance: "storage-failure-fixture", payload: ["receivedAt": "2026-09-20T00:00:00Z", "sourceTimestamp": "2026-09-20T00:00:00Z"])
+
+        XCTAssertNil(rawEvent, "A failed raw append must not claim a durable event ID")
+        let failure = recorder.storageFailureDetails
+        XCTAssertEqual(failure?["domain"] as? String, "SQLite")
+        XCTAssertNotEqual(failure?["code"] as? Int, 0)
+        XCTAssertTrue((failure?["operation"] as? String)?.contains("sqlite.") == true)
+        XCTAssertEqual(failure?["contextOperation"] as? String, "journal.append.locationDelivery")
+        XCTAssertEqual(failure?["sessionId"] as? String, sessionId)
+        XCTAssertNotNil(failure?["message"] as? String)
+        let failureEntry = log.entries.last { $0.subsystem == "recording.storage" }
+        XCTAssertEqual(failureEntry?.metadata["sessionId"], sessionId)
+        XCTAssertEqual(failureEntry?.metadata["contextOperation"], "journal.append.locationDelivery")
+        XCTAssertNotEqual(failureEntry?.message, "Recording storage failed")
+        try recorder.setQueryOnlyForTesting(false)
+        recorder.shutdownForTesting()
     }
 
     private func canonical(_ value: Any) -> String {

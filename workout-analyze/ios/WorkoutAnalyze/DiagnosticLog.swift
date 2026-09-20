@@ -19,6 +19,13 @@ private struct UploadEvent: Codable {
     let metadata: [String: String]?
 }
 
+private struct UploadState: Codable {
+    var events: [UploadEvent]
+    var lastSuccessAt: String?
+    var lastFailureAt: String?
+    var lastFailure: String?
+}
+
 private struct UploadEnvelope: Codable {
     let formatVersion: Int
     let uploadId: String
@@ -35,18 +42,29 @@ final class DiagnosticLog {
     private static let systemLog = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.kkrausse.workoutanalyze", category: "native-diagnostics")
     private(set) var entries: [LogEntry] = []
     private let url: URL
+    private let uploadStateURL: URL
     private let maximumEntries = 250
     private let maximumFileBytes = 512 * 1024
     private var uploadURL: URL?
     private var uploadQueue: [UploadEvent] = []
     private var uploadTask: Task<Void, Never>?
     private var uploadBackoffSeconds = 1
+    private var lastUploadSuccessAt: String?
+    private var lastUploadFailureAt: String?
+    private var lastUploadFailure: String?
 
     init() {
         let support = try! FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         url = support.appendingPathComponent("diagnostic-log.json")
+        uploadStateURL = support.appendingPathComponent("diagnostic-upload-queue.json")
         if let data = try? Data(contentsOf: url), let decoded = try? JSONDecoder().decode([LogEntry].self, from: data) {
             entries = Array(decoded.suffix(maximumEntries))
+        }
+        if let data = try? Data(contentsOf: uploadStateURL), let state = try? JSONDecoder().decode(UploadState.self, from: data) {
+            uploadQueue = Array(state.events.suffix(256))
+            lastUploadSuccessAt = state.lastSuccessAt
+            lastUploadFailureAt = state.lastFailureAt
+            lastUploadFailure = state.lastFailure
         }
     }
 
@@ -65,17 +83,24 @@ final class DiagnosticLog {
         uploadTask = nil
         uploadURL = origin?.appendingPathComponent("__workout/diagnostics")
         uploadBackoffSeconds = 1
-        guard uploadURL != nil else { uploadQueue.removeAll(); return }
-        uploadQueue = entries.suffix(32).map {
-            UploadEvent(id: UUID().uuidString, timestamp: $0.timestamp, subsystem: $0.subsystem, level: Self.level(for: $0.message), message: $0.message, metadata: $0.metadata.isEmpty ? nil : $0.metadata)
-        }
+        guard uploadURL != nil else { return }
         scheduleUpload(after: .seconds(1))
     }
 
+    func uploadStatus() -> [String: Any] {
+        [
+            "destination": uploadURL?.absoluteString ?? NSNull(),
+            "queuedCount": uploadQueue.count,
+            "lastSuccessAt": lastUploadSuccessAt ?? NSNull(),
+            "lastFailureAt": lastUploadFailureAt ?? NSNull(),
+            "lastFailure": lastUploadFailure ?? NSNull()
+        ]
+    }
+
     private func enqueueUpload(timestamp: String, subsystem: String, message: String, metadata: [String: String]) {
-        guard uploadURL != nil else { return }
         uploadQueue.append(UploadEvent(id: UUID().uuidString, timestamp: timestamp, subsystem: String(subsystem.prefix(64)), level: Self.level(for: message), message: message, metadata: metadata.isEmpty ? nil : metadata))
         uploadQueue = Array(uploadQueue.suffix(256))
+        persistUploadState()
         scheduleUpload(after: .seconds(1))
     }
 
@@ -111,9 +136,15 @@ final class DiagnosticLog {
                   reply.accepted, reply.uploadId == uploadId else { throw URLError(.badServerResponse) }
             uploadQueue.removeFirst(min(count, uploadQueue.count))
             uploadBackoffSeconds = 1
+            lastUploadSuccessAt = ISOTime.now()
+            lastUploadFailureAt = nil
+            lastUploadFailure = nil
         } catch {
             uploadBackoffSeconds = min(uploadBackoffSeconds * 2, 30)
+            lastUploadFailureAt = ISOTime.now()
+            lastUploadFailure = Self.redact(error.localizedDescription)
         }
+        persistUploadState()
         scheduleUpload(after: .seconds(uploadQueue.isEmpty ? 1 : uploadBackoffSeconds))
     }
 
@@ -133,6 +164,12 @@ final class DiagnosticLog {
             }
             entries.removeFirst()
         }
+    }
+
+    private func persistUploadState() {
+        let state = UploadState(events: uploadQueue, lastSuccessAt: lastUploadSuccessAt, lastFailureAt: lastUploadFailureAt, lastFailure: lastUploadFailure)
+        guard let data = try? JSONEncoder().encode(state) else { return }
+        try? data.write(to: uploadStateURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 
     static func redact(_ value: String) -> String {

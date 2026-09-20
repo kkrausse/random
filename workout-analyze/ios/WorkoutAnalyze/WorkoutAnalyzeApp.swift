@@ -36,6 +36,7 @@ final class AppHostModel: ObservableObject {
         sensors.recordRawLocation = { [weak recording] delivery in recording?.appendJournalEvent(kind: "locationDelivery", provenance: "CoreLocation.CLLocationManagerDelegate", payload: delivery) }
         sensors.recordRawHeartRate = { [weak recording] delivery in recording?.appendJournalEvent(kind: "heartRateCharacteristicDelivery", provenance: "CoreBluetooth.CBPeripheralDelegate.2A37", payload: delivery) }
         sensors.recordHostEvent = { [weak recording] type, payload in recording?.ingestHostEvent(type: type, payload: payload) }
+        sensors.recordHealth = { [weak recording] health, force in recording?.recordHealth(sensor: health, force: force) }
         recording.emitEvent = { [weak dispatcher] type, payload in dispatcher?.emitEvent?(type, payload) }
         dispatcher.presentShare = { url in
             guard let controller = UIApplication.shared.topViewController else { return false }
