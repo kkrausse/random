@@ -12,6 +12,12 @@ const simulatorRequested = params.get('simulator') === '1' || params.has('fault'
 const transport = native ?? (simulatorRequested ? createSimulatorTransport(params.get('fault')) : unavailableNativeTransport())
 const client = createBridgeClient(transport)
 const store = createMobileStore(client)
+if (import.meta.env.DEV) {
+  const kind = native ? 'native' : simulatorRequested ? 'simulator' : 'unavailable'
+  void import('./dev/runner').then(({ installDevRunner }) => installDevRunner({ client, store, kind })).catch((error) => {
+    console.warn('Optional iPhone development runner did not start', error instanceof Error ? error.message : error)
+  })
+}
 const stopStore = store.getState().start()
 window.addEventListener('pagehide', () => { stopStore(); client.dispose() }, { once: true })
 
