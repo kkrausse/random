@@ -40,6 +40,8 @@ final class ContractValidationTests: XCTestCase {
         XCTAssertThrowsError(try ContractValidation.validateCommand(tooLong))
         let read: [String: Any] = ["protocolVersion": 1, "requestId": "sensor-2", "method": "heartRate.read", "params": ["connectionId": "hr-1", "afterCursor": NSNull(), "limit": 200]]
         XCTAssertNoThrow(try ContractValidation.validateCommand(read))
+        let journal: [String: Any] = ["protocolVersion": 1, "requestId": "journal-1", "method": "journal.read", "params": ["sessionId": "ride-1", "afterJournalSequence": NSNull(), "limit": 200]]
+        XCTAssertNoThrow(try ContractValidation.validateCommand(journal))
     }
 
     func testHeartRatePacketParsing() {
@@ -147,6 +149,18 @@ final class ContractValidationTests: XCTestCase {
         let locationEvent = recorder!.appendJournalEvent(kind: "locationDelivery", provenance: "fixture", payload: ["sourceTimestamp": "2026-09-20T00:00:01Z", "receivedAt": "2026-09-20T00:00:30Z", "horizontalAccuracyM": 250.0, "latitudeDegrees": 1.0, "longitudeDegrees": 2.0])
         let heartRateEvent = recorder!.appendJournalEvent(kind: "heartRateCharacteristicDelivery", provenance: "fixture", payload: ["receivedAt": "2026-09-20T00:00:02Z", "rawCharacteristicBase64": Data([1, 2, 3]).base64EncodedString(), "rawFlags": 31])
         XCTAssertNotNil(locationEvent); XCTAssertNotNil(heartRateEvent)
+        _ = recorder!.appendJournalEvent(kind: "locationDelivery", provenance: "fixture", payload: ["sourceTimestamp": "2026-09-20T00:00:00Z", "receivedAt": "2026-09-20T00:00:31Z", "callbackBatchId": "batch-1", "callbackBatchIndex": 1, "callbackBatchCount": 2])
+        let rawBeforeDecode = try recorder!.readJournal(sessionId: sessionId, after: nil, limit: 20)
+        let rawItems = rawBeforeDecode["items"] as! [[String: Any]]
+        XCTAssertEqual(rawItems.map { $0["journalSequence"] as! Int }, Array(1...rawItems.count), "Raw delivery order must not be source-time sorted")
+        XCTAssertEqual(((rawItems.last?["batch"] as? [String: Any])?["index"] as? Int), 1)
+        let reorderedLocation = rawItems.first { item in
+            (((item["payload"] as? [String: Any])?["value"] as? [String: Any])?["sourceTimestamp"] as? String) == "2026-09-20T00:00:00Z"
+        }
+        XCTAssertEqual(reorderedLocation?["journalSequence"] as? Int, rawItems.count)
+        XCTAssertNil(SensorService.parseHeartRatePacket(Data([0x01, 0x2C])))
+        let bytes = rawItems.compactMap { (($0["payload"] as? [String: Any])?["value"] as? [String: Any])?["rawCharacteristicBase64"] as? String }.first
+        XCTAssertEqual(bytes, "AQID", "Malformed/decode-independent bytes must remain exact")
         recorder!.ingestLocation(["cursor": 1, "source": "coreLocation", "sourceTimestamp": "2026-09-20T00:00:01Z", "receivedAt": "2026-09-20T00:00:30Z", "latitudeDegrees": 1.0, "longitudeDegrees": 2.0, "horizontalAccuracyM": 250.0, "altitudeM": NSNull(), "verticalAccuracyM": NSNull(), "speedMps": NSNull(), "speedAccuracyMps": NSNull(), "courseDegrees": NSNull(), "courseAccuracyDegrees": NSNull(), "floorLevel": NSNull(), "isSimulatedBySoftware": false, "isProducedByAccessory": false])
         recorder!.ingestHeartRate(["cursor": 1, "connectionId": "hr-fixture", "deviceId": "device-fixture", "receivedAt": "2026-09-20T00:00:02Z", "bpm": 147, "valueFormat": "uint8", "sensorContact": "detected", "energyExpendedKJ": 12, "rrIntervalsSeconds": [0.8], "rawFlags": 31])
         let observations = try recorder!.readObservations(sessionId: sessionId, after: nil, limit: 20)["items"] as! [[String: Any]]
@@ -163,10 +177,19 @@ final class ContractValidationTests: XCTestCase {
         XCTAssertEqual((recovered["recovery"] as? [String: Any])?["required"] as? Bool, true)
         let finish = reopened.handleMutation(requestId: "recover-finish", method: "workout.recover", params: ["sessionId": sessionId, "expectedRevision": 3, "action": "finish"])
         XCTAssertEqual(((finish["result"] as? [String: Any])?["session"] as? [String: Any])?["state"] as? String, "finished")
+        let archivePage = try reopened.listArchive(after: nil, limit: 10)
+        let summaries = archivePage["items"] as! [[String: Any]]
+        XCTAssertEqual(summaries.first?["sessionId"] as? String, sessionId)
+        let reopenedJournal = try reopened.readJournal(sessionId: sessionId, after: nil, limit: 200)
+        XCTAssertEqual(summaries.first?["rawEventCount"] as? Int, reopenedJournal["latestJournalSequence"] as? Int)
+        let detail = try reopened.archiveDetail(savedWorkoutId: sessionId, after: nil, limit: 200)
+        XCTAssertEqual((detail["recordingFormatVersion"] as? Int), 1)
+        XCTAssertEqual(((detail["summary"] as? [String: Any])?["sessionId"] as? String), sessionId)
         let exported = try reopened.export(sessionId: sessionId, format: "workoutBundleV1")
         let archive = try Data(contentsOf: exported.url)
         XCTAssertNotNil(archive.range(of: Data("journal-events.json".utf8)))
         XCTAssertNotNil(archive.range(of: Data("AQID".utf8)))
+        XCTAssertNotNil(archive.range(of: Data("journalSequence".utf8)), "Bundle journal must use the frozen RawWorkoutEvent field name")
         reopened.shutdownForTesting()
     }
 

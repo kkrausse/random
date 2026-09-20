@@ -157,8 +157,8 @@ final class SensorService: NSObject, @MainActor CLLocationManagerDelegate, @Main
         guard ["whenInUse", "always"].contains(locationAuthorization()) else { throw ShellError.permissionDenied("Location permission must be granted before recording") }
         recordingLocationActive = true
         locationManager.activityType = .fitness
-        locationManager.desiredAccuracy = kCLLocationAccuracyBest
-        locationManager.distanceFilter = 2
+        locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+        locationManager.distanceFilter = kCLDistanceFilterNone
         locationManager.pausesLocationUpdatesAutomatically = false
         locationManager.allowsBackgroundLocationUpdates = true
         locationManager.showsBackgroundLocationIndicator = true
@@ -185,7 +185,8 @@ final class SensorService: NSObject, @MainActor CLLocationManagerDelegate, @Main
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations updates: [CLLocation]) {
         guard locationState == "active" || recordingLocationActive else { return }
-        for location in updates.sorted(by: { $0.timestamp < $1.timestamp }) {
+        let batchId = "location-batch-\(UUID().uuidString)"
+        let captured = updates.enumerated().map { index, location -> (CLLocation, String?, Int) in
             let rawEventId = recordRawLocation?([
                 "sourceTimestamp": ISO8601DateFormatter().string(from: location.timestamp), "receivedAt": ISOTime.now(),
                 "latitudeDegrees": location.coordinate.latitude, "longitudeDegrees": location.coordinate.longitude,
@@ -194,8 +195,11 @@ final class SensorService: NSObject, @MainActor CLLocationManagerDelegate, @Main
                 "courseAccuracyDegrees": location.courseAccuracy, "floorLevel": location.floor?.level ?? NSNull(),
                 "isSimulatedBySoftware": location.sourceInformation?.isSimulatedBySoftware ?? NSNull(),
                 "isProducedByAccessory": location.sourceInformation?.isProducedByAccessory ?? NSNull(),
-                "callbackBatchCount": updates.count, "authorization": locationAuthorization()
+                "callbackBatchId": batchId, "callbackBatchIndex": index, "callbackBatchCount": updates.count, "authorization": locationAuthorization()
             ])
+            return (location, rawEventId, index)
+        }
+        for (location, rawEventId, _) in captured.sorted(by: { $0.0.timestamp < $1.0.timestamp }) {
             if locationState == "active" { locationReceived += 1 }
             guard location.horizontalAccuracy >= 0,
                   (-90...90).contains(location.coordinate.latitude), (-180...180).contains(location.coordinate.longitude) else {
