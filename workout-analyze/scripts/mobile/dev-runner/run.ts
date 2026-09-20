@@ -9,10 +9,12 @@ if ((!file && !inline) || (file && inline)) throw new Error('Provide exactly one
 const code = file ? await Bun.file(file).text() : inline!
 const timeoutMs = Number(option('--timeout') ?? 8_000)
 const targetClientId = option('--client')
+const targetKind = option('--kind') ?? 'native'
+if (!['native', 'simulator', 'unavailable'].includes(targetKind)) throw new Error('--kind must be native, simulator, or unavailable')
 
 const createdResponse = await fetch(`${server}/__workout/run`, {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ code, timeoutMs, ...(targetClientId ? { targetClientId } : {}) }),
+  body: JSON.stringify({ code, timeoutMs, targetKind, ...(targetClientId ? { targetClientId } : {}) }),
 })
 if (!createdResponse.ok) throw new Error(`Runner rejected job (${createdResponse.status}): ${await createdResponse.text()}`)
 const created = await createdResponse.json() as { id: string }
