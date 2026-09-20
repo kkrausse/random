@@ -70,6 +70,12 @@ final class BuildManager: ObservableObject {
     @Published private(set) var pendingActivationBuildId: String?
     @Published private(set) var lastFailure: String?
     @Published private(set) var developmentURL: URL?
+    @Published private(set) var uiLoadState = "notLoaded"
+    @Published private(set) var uiLoadTargetURL: URL?
+    @Published private(set) var loadedUIURL: URL?
+    @Published private(set) var currentLoadFailure: String?
+    @Published private(set) var lastFailureHistory: String?
+    private var uiLoadGeneration = 0
 
     private let defaults = UserDefaults.standard
     private let fileManager = FileManager.default
@@ -85,6 +91,12 @@ final class BuildManager: ObservableObject {
     }
 
     var sourceDescription: String { developmentURL?.absoluteString ?? "Installed build: \(active.buildId)" }
+
+    var configuredSourceDescription: String {
+        developmentURL.map { "Development: \($0.absoluteString)" } ?? "Build: \(active.buildId) (\(active.source))"
+    }
+
+    var loadedSourceDescription: String { loadedUIURL?.absoluteString ?? "None in this process" }
 
     func bundledRoot() -> URL {
         Bundle.main.resourceURL!.appendingPathComponent("BundledBuild", isDirectory: true)
@@ -129,6 +141,51 @@ final class BuildManager: ObservableObject {
             "pendingActivationBuildId": pendingActivationBuildId ?? NSNull(),
             "lastFailure": lastFailure ?? NSNull()
         ]
+    }
+
+    func sourceStatusDictionary() -> [String: Any] {
+        [
+            "configured": developmentURL.map { ["kind": "development", "url": $0.absoluteString] }
+                ?? ["kind": active.source, "buildId": active.buildId],
+            "targetUrl": uiLoadTargetURL?.absoluteString ?? NSNull(),
+            "loadedUrl": loadedUIURL?.absoluteString ?? NSNull(),
+            "loadState": uiLoadState,
+            "currentFailure": currentLoadFailure ?? NSNull(),
+            "lastFailureHistory": lastFailureHistory ?? NSNull(),
+            "generation": uiLoadGeneration
+        ]
+    }
+
+    func noteUILoadStarted(url: URL, generation: Int) {
+        uiLoadGeneration = generation
+        uiLoadTargetURL = url
+        uiLoadState = "navigating"
+        currentLoadFailure = nil
+        lastFailure = nil
+        defaults.removeObject(forKey: "buildLastFailure")
+    }
+
+    func noteUINavigationFinished(url: URL, generation: Int) {
+        guard generation == uiLoadGeneration else { return }
+        uiLoadTargetURL = url
+        uiLoadState = "awaitingHello"
+    }
+
+    func noteUIHandshakeSucceeded(url: URL, generation: Int) {
+        guard generation == uiLoadGeneration else { return }
+        uiLoadTargetURL = url
+        loadedUIURL = url
+        uiLoadState = "ready"
+        currentLoadFailure = nil
+        lastFailure = nil
+        defaults.removeObject(forKey: "buildLastFailure")
+    }
+
+    func noteUILoadFailed(url: URL, generation: Int, reason: String) {
+        guard generation == uiLoadGeneration else { return }
+        uiLoadTargetURL = url
+        uiLoadState = "failed"
+        currentLoadFailure = String(reason.prefix(2048))
     }
 
     func configureDevelopmentSource(_ raw: String?) throws -> [String: Any] {
@@ -214,12 +271,6 @@ final class BuildManager: ObservableObject {
         recordFailure("Build \(failed.buildId) handshake failed; restored \(active.buildId): \(reason)")
     }
 
-    func handshakeSucceeded() {
-        guard lastFailure != nil else { return }
-        lastFailure = nil
-        defaults.removeObject(forKey: "buildLastFailure")
-    }
-
     private func activateSummary(_ target: BuildSummary) throws {
         guard manifest(for: target) != nil else { throw ShellError.incompatibleBuild("Build files are missing or invalid") }
         if target != active { previous = active; active = target }
@@ -234,12 +285,15 @@ final class BuildManager: ObservableObject {
 
     private func recordFailure(_ message: String) {
         lastFailure = String(message.prefix(2048))
+        lastFailureHistory = lastFailure
         defaults.set(lastFailure, forKey: "buildLastFailure")
+        defaults.set(lastFailureHistory, forKey: "buildLastFailureHistory")
         log.append(subsystem: "build", message: "Build operation failed", metadata: ["reason": lastFailure ?? "unknown"])
     }
 
     private func restorePointers() {
         lastFailure = defaults.string(forKey: "buildLastFailure")
+        lastFailureHistory = defaults.string(forKey: "buildLastFailureHistory") ?? lastFailure
         if let raw = defaults.string(forKey: "developmentURL") {
             developmentURL = ContractValidation.developmentURL(raw)
         }

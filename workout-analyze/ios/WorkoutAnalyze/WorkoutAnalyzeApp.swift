@@ -65,16 +65,21 @@ struct RecoveryView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Emergency web source") {
+                Section("Authoritative web source") {
                     TextField("http://Mac-LAN-IP:3001", text: $developmentURL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Button("Use development origin") { configureDevelopment() }
-                    Button("Restore bundled build") { restoreBundled() }
+                    Button("Use development origin now") { configureDevelopment() }
+                    Button("Use bundled build now") { restoreBundled() }
                     Button("Retry current source") { dismiss(); model.web.loadSelectedSource() }
                 }
                 Section("Native health") {
                     LabeledContent("Shell", value: "0.1.0 / protocol 1")
-                    LabeledContent("Build", value: model.builds.active.buildId)
-                    LabeledContent("Source", value: model.builds.sourceDescription)
+                    LabeledContent("Engine build", value: model.builds.active.buildId)
+                    LabeledContent("Configured", value: model.builds.configuredSourceDescription)
+                    LabeledContent("Load state", value: model.builds.uiLoadState)
+                    LabeledContent("Target", value: model.builds.uiLoadTargetURL?.absoluteString ?? "None")
+                    LabeledContent("Loaded", value: model.builds.loadedSourceDescription)
+                    if let failure = model.builds.currentLoadFailure { Text(failure).foregroundStyle(.red) }
+                    if let history = model.builds.lastFailureHistory { LabeledContent("Previous failure", value: history) }
                     Text("Workout recording is unavailable. Sensor status is passive; only explicit web diagnostics actions may request permission, start GPS, scan, or connect.")
                     Button("Export diagnostics") { export() }
                 }
@@ -87,12 +92,22 @@ struct RecoveryView: View {
     }
 
     private func configureDevelopment() {
-        do { _ = try model.builds.configureDevelopmentSource(developmentURL); message = "Development origin saved. Retry to load it." }
+        do {
+            _ = try model.builds.configureDevelopmentSource(developmentURL)
+            message = "Development origin saved and loading."
+            dismiss()
+            model.web.loadSelectedSource()
+        }
         catch { message = error.localizedDescription }
     }
 
     private func restoreBundled() {
-        do { _ = try model.builds.rollback(target: "bundled"); message = "Bundled build restored. Retry to load it." }
+        do {
+            _ = try model.builds.configureDevelopmentSource(nil)
+            message = "Bundled source selected and loading."
+            dismiss()
+            model.web.loadSelectedSource()
+        }
         catch { message = error.localizedDescription }
     }
 

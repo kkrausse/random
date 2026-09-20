@@ -102,4 +102,28 @@ final class ContractValidationTests: XCTestCase {
         XCTAssertEqual(tracker.hello(generation: generation), .ignored)
         XCTAssertEqual(tracker.hello(generation: replacement), .completed)
     }
+
+    @MainActor
+    func testNativeSourceLifecycleDistinguishesConfiguredTargetAndLoaded() throws {
+        let builds = BuildManager(log: DiagnosticLog())
+        defer { _ = try? builds.configureDevelopmentSource(nil) }
+        let configured = URL(string: "http://100.86.29.19:4317/")!
+        _ = try builds.configureDevelopmentSource(configured.absoluteString)
+
+        builds.noteUILoadStarted(url: configured, generation: 4)
+        XCTAssertEqual(builds.uiLoadState, "navigating")
+        XCTAssertNil(builds.loadedUIURL)
+        builds.noteUINavigationFinished(url: configured, generation: 4)
+        XCTAssertEqual(builds.uiLoadState, "awaitingHello")
+        builds.noteUIHandshakeSucceeded(url: configured, generation: 3)
+        XCTAssertEqual(builds.uiLoadState, "awaitingHello", "A stale generation must not become loaded")
+        builds.noteUIHandshakeSucceeded(url: configured, generation: 4)
+        XCTAssertEqual(builds.uiLoadState, "ready")
+        XCTAssertEqual(builds.loadedUIURL, configured)
+        XCTAssertNil(builds.currentLoadFailure)
+
+        let status = builds.sourceStatusDictionary()
+        XCTAssertEqual((status["configured"] as? [String: String])?["url"], configured.absoluteString)
+        XCTAssertEqual(status["loadedUrl"] as? String, configured.absoluteString)
+    }
 }

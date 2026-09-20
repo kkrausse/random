@@ -11,6 +11,7 @@ final class WebHost: NSObject, ObservableObject, WKScriptMessageHandler, WKNavig
     private var handshake = StartupHandshakeTracker()
     private weak var selectedNavigation: WKNavigation?
     private var selectedNavigationGeneration: Int?
+    private var selectedURL: URL?
     private var eventDeliveryTask: Task<Void, Never>?
 
     init(builds: BuildManager, dispatcher: BridgeDispatcher) {
@@ -35,6 +36,8 @@ final class WebHost: NSObject, ObservableObject, WKScriptMessageHandler, WKNavig
         dispatcher.log.append(subsystem: "source", message: "Loading selected UI source", metadata: ["url": url.absoluteString])
         let generation = beginNavigation()
         selectedNavigationGeneration = generation
+        selectedURL = url
+        builds.noteUILoadStarted(url: url, generation: generation)
         selectedNavigation = webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30))
     }
 
@@ -47,7 +50,7 @@ final class WebHost: NSObject, ObservableObject, WKScriptMessageHandler, WKNavig
                 if outcome != .ignored {
                     navigationTask?.cancel()
                     handshakeTask?.cancel()
-                    builds.handshakeSucceeded()
+                    if let selectedURL { builds.noteUIHandshakeSucceeded(url: selectedURL, generation: handshake.generation) }
                     dispatcher.log.append(subsystem: "bridge", message: "UI bridge handshake completed", metadata: [
                         "generation": String(handshake.generation),
                         "recoveredAfterDeadline": String(outcome == .recovered),
@@ -104,7 +107,11 @@ final class WebHost: NSObject, ObservableObject, WKScriptMessageHandler, WKNavig
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         guard navigation !== selectedNavigation else { return }
-        selectedNavigationGeneration = beginNavigation()
+        let generation = beginNavigation()
+        let url = webView.url ?? builds.activeUIURL()
+        selectedNavigationGeneration = generation
+        selectedURL = url
+        builds.noteUILoadStarted(url: url, generation: generation)
         selectedNavigation = navigation
     }
 
@@ -116,7 +123,10 @@ final class WebHost: NSObject, ObservableObject, WKScriptMessageHandler, WKNavig
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard navigation === selectedNavigation, let generation = selectedNavigationGeneration else { return }
         navigationTask?.cancel()
-        if handshake.navigationFinished(generation: generation) { startHandshakeDeadline(generation: generation) }
+        if handshake.navigationFinished(generation: generation) {
+            if let selectedURL { builds.noteUINavigationFinished(url: selectedURL, generation: generation) }
+            startHandshakeDeadline(generation: generation)
+        }
         dispatcher.log.append(subsystem: "source", message: "Selected UI source finished navigation", metadata: ["url": webView.url?.absoluteString ?? "unknown"])
     }
 
@@ -156,6 +166,7 @@ final class WebHost: NSObject, ObservableObject, WKScriptMessageHandler, WKNavig
 
     private func handleFailure(reason: String, generation: Int) {
         guard generation == handshake.generation else { return }
+        if let selectedURL { builds.noteUILoadFailed(url: selectedURL, generation: generation, reason: reason) }
         let wasInstalled = builds.developmentURL == nil && builds.active.source == "installed"
         builds.handshakeFailed(reason: reason)
         if wasInstalled { loadSelectedSource() }

@@ -55,7 +55,7 @@ final class DiagnosticsService: ObservableObject {
         let heartRate = sensors.heartRateStatus()
         let rows: [[String: Any]] = [
             row(id: "shell", label: "Native shell", status: "ok", reason: "Native host is running protocol 1", observedAt: now, freshness: "fresh", details: ["shellVersion": "0.1.0", "protocolVersion": 1]),
-            row(id: "webBuild", label: "Web build", status: builds.lastFailure == nil ? "ok" : "waiting", reason: builds.lastFailure ?? "Active build pointer is valid", observedAt: now, freshness: "fresh", details: builds.statusDictionary()),
+            row(id: "webBuild", label: "Web UI source", status: builds.uiLoadState == "ready" ? "ok" : (builds.uiLoadState == "failed" ? "error" : "waiting"), reason: builds.currentLoadFailure ?? "UI lifecycle state: \(builds.uiLoadState)", observedAt: now, freshness: "fresh", details: ["appBuild": builds.statusDictionary(), "uiSource": builds.sourceStatusDictionary()]),
             row(id: "bridge", label: "Bridge", status: lastBridgeRoundTrip == nil ? "waiting" : "ok", reason: lastBridgeRoundTrip == nil ? "No successful round trip in this process" : "Main-frame bridge validated a round trip", observedAt: lastBridgeRoundTrip, freshness: lastBridgeRoundTrip == nil ? "never" : "fresh", details: ["lastRoundTrip": lastBridgeRoundTrip ?? NSNull(), "eventSequence": eventSequence]),
             permissions["location"] as! [String: Any],
             permissions["bluetooth"] as! [String: Any],
