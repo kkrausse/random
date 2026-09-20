@@ -66,18 +66,18 @@ final class DiagnosticsService: ObservableObject {
             row(id: "storage", label: "Native storage", status: volume == nil ? "waiting" : "ok", reason: volume == nil ? "Available capacity could not be read" : "Application support storage is accessible", observedAt: now, freshness: "fresh", details: ["availableBytes": volume ?? NSNull()]),
             row(id: "engine", label: "Analysis engine", status: engineStatus, reason: engineReason, observedAt: now, freshness: "fresh", details: engineDetails)
         ] + recordingRows(now: now)
-        return ["capturedAt": now, "rows": rows, "eventSequence": eventSequence]
+        return ["capturedAt": now, "rows": rows, "eventSequence": eventSequence, "telemetryDelivery": log.uploadStatus()]
     }
 
     private func recordingRows(now: String) -> [[String: Any]] {
         guard let recording else { return [] }
         let details = recording.diagnostics()
         let available = details["available"] as? Bool == true
-        let storageReady = details["storage"] as? String == "ready"
+        let storageReady = details["database"] as? String == "ready"
         let backlog = details["engineBacklog"] as? Int ?? 0
         return [
             row(id: "recording", label: "Workout recorder", status: available ? "ok" : "error", reason: available ? "Serialized durable recorder is available" : "Recorder engine or storage is unavailable", observedAt: now, freshness: "fresh", details: details),
-            row(id: "recordingStorage", label: "Recording storage", status: storageReady ? "ok" : "error", reason: storageReady ? "SQLite WAL storage is writable" : (details["storageFailure"] as? String ?? "Storage failed"), observedAt: now, freshness: "fresh", details: ["wal": true, "foreignKeys": true]),
+            row(id: "recordingStorage", label: "Recording storage", status: storageReady ? "ok" : "error", reason: storageReady ? "SQLite WAL storage is writable" : (details["storageFailure"] as? String ?? "Storage failed"), observedAt: now, freshness: "fresh", details: ["wal": true, "foreignKeys": true, "failure": details["storageFailureDetails"] ?? NSNull(), "journal": details["journal"] ?? [:]]),
             row(id: "recordingEngine", label: "Recording metrics engine", status: details["engineFailure"] is NSNull ? (backlog == 0 ? "ok" : "waiting") : "error", reason: details["engineFailure"] as? String ?? (backlog == 0 ? "Checkpoint is current" : "Engine replay backlog: \(backlog)"), observedAt: now, freshness: "fresh", details: ["backlog": backlog, "buildId": "recording-engine-v1", "algorithmId": "ride-metrics-v1"])
         ]
     }
