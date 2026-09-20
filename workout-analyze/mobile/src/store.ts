@@ -213,7 +213,6 @@ export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> =
     }
     const onEvent = (event: NativeEvent) => {
       if (event.type === 'session.updated') installSession(event.payload as SessionSnapshot)
-      if (event.type === 'metrics.updated') set((state) => isAvailableSession(state.session) ? { session: { ...state.session, metrics: event.payload } as AvailableSessionSnapshot } : {})
       if (event.type === 'observations.appended') {
         const page = event.payload as import('../../src/shared/mobile').ObservationPage
         const eventSessionId = observationEventSessionId(event)
