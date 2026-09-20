@@ -53,7 +53,7 @@ final class BridgeDispatcher {
         case "bridge.hello":
             return [
                 "shellVersion": "0.1.0", "protocolVersion": 1, "engineApiVersion": 1, "checkpointSchemaVersion": 1,
-                "capabilities": phase1Capabilities + sensorCapabilities + (recording.available ? recordingCapabilities : []),
+                "capabilities": phase1Capabilities + sensorCapabilities + (recording.available ? recordingCapabilities + archiveCapabilities + journalCapabilities : []),
                 "unavailableCapabilities": recording.available ? [] : [
                     ["capability": "workout.recorder", "reason": "Recording engine or durable storage is unavailable"]
                 ]
@@ -104,6 +104,20 @@ final class BridgeDispatcher {
         case "observations.read":
             return try recording.readObservations(sessionId: params["sessionId"] as! String,
                 after: params["afterSequence"] is NSNull ? nil : (params["afterSequence"] as! NSNumber).intValue,
+                limit: (params["limit"] as! NSNumber).intValue)
+        case "archive.list":
+            return try recording.listArchive(
+                after: params["afterCursor"] is NSNull ? nil : params["afterCursor"] as? String,
+                limit: (params["limit"] as! NSNumber).intValue)
+        case "archive.detail":
+            return try recording.archiveDetail(
+                savedWorkoutId: params["savedWorkoutId"] as! String,
+                after: params["afterSequence"] is NSNull ? nil : (params["afterSequence"] as! NSNumber).intValue,
+                limit: (params["limit"] as! NSNumber).intValue)
+        case "journal.read":
+            return try recording.readJournal(
+                sessionId: params["sessionId"] as! String,
+                after: params["afterJournalSequence"] is NSNull ? nil : (params["afterJournalSequence"] as! NSNumber).intValue,
                 limit: (params["limit"] as! NSNumber).intValue)
         case "diagnostics.snapshot": return diagnostics.snapshot()
         case "diagnostics.runChecks":

@@ -3,7 +3,7 @@ import Foundation
 enum ContractValidation {
     static let identifier = try! NSRegularExpression(pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
     static let hash = try! NSRegularExpression(pattern: "^[a-f0-9]{64}$")
-    static let methods = Set(["bridge.hello"] + phase1Capabilities + sensorCapabilities + recordingCapabilities)
+    static let methods = Set(["bridge.hello"] + phase1Capabilities + sensorCapabilities + recordingCapabilities + archiveCapabilities + journalCapabilities)
     static let checks = Set(["bridgePing", "capabilityCompatibility", "diagnosticStorage", "engineFixture"])
 
     static func matches(_ value: String, regex: NSRegularExpression) -> Bool {
@@ -144,6 +144,18 @@ enum ContractValidation {
         case "observations.read":
             return exactKeys(params, ["sessionId", "afterSequence", "limit"])
                 && validIdentifier(params["sessionId"]) && nullableSequence(params["afterSequence"])
+                && integer(params["limit"], min: 1, max: 200)
+        case "archive.list":
+            return exactKeys(params, ["afterCursor", "limit"])
+                && (params["afterCursor"] is NSNull || (params["afterCursor"] as? String).map { !$0.isEmpty && $0.count <= 512 } == true)
+                && integer(params["limit"], min: 1, max: 100)
+        case "archive.detail":
+            return exactKeys(params, ["savedWorkoutId", "afterSequence", "limit"])
+                && validIdentifier(params["savedWorkoutId"]) && nullableSequence(params["afterSequence"])
+                && integer(params["limit"], min: 1, max: 200)
+        case "journal.read":
+            return exactKeys(params, ["sessionId", "afterJournalSequence", "limit"])
+                && validIdentifier(params["sessionId"]) && nullableSequence(params["afterJournalSequence"])
                 && integer(params["limit"], min: 1, max: 200)
         case "diagnostics.runChecks":
             guard exactKeys(params, ["checks"]) else { return false }

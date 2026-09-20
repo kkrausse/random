@@ -20,11 +20,13 @@ final class RecordingService: ObservableObject {
         self.log = log
         do {
             let support = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: support.path)
             let url = databaseURL ?? support.appendingPathComponent("recording-v1.sqlite")
             guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else {
                 throw ShellError.storage("Could not open recording database")
             }
             try execute("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA synchronous=FULL;")
+            try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: url.path)
             try migrate()
             try recoverInterruptedSession()
         } catch {
@@ -109,6 +111,49 @@ final class RecordingService: ObservableObject {
             "items": items, "nextSequence": (selected.last?["sequence"] as? Int) ?? NSNull(),
             "oldestAvailableSequence": oldest == 0 ? NSNull() : oldest, "latestDurableSequence": latest,
             "hasMore": rows.count > limit, "droppedBeforeSequence": oldest > 0 && oldest > requested + 1
+        ]
+    }
+
+    func readJournal(sessionId: String, after: Int?, limit: Int) throws -> [String: Any] {
+        guard try sessionExists(sessionId) else { throw ShellError.invalidState("Unknown workout session") }
+        let requested = after ?? 0
+        let rows = try query("SELECT * FROM journal_events WHERE session_id=? AND journal_sequence>? ORDER BY journal_sequence LIMIT ?", [.text(sessionId), .int(requested), .int(limit + 1)])
+        let selected = Array(rows.prefix(limit))
+        let latest = try scalarInt("SELECT COALESCE(MAX(journal_sequence),0) FROM journal_events WHERE session_id=?", [.text(sessionId)])
+        return [
+            "afterJournalSequence": after ?? NSNull(), "items": selected.map { journalObject($0, sessionId: sessionId) },
+            "nextJournalSequence": selected.last?["journal_sequence"] ?? NSNull(),
+            "oldestAvailableJournalSequence": latest == 0 ? NSNull() : 1, "latestJournalSequence": latest,
+            "hasMore": rows.count > limit, "droppedBeforeJournalSequence": false
+        ]
+    }
+
+    func listArchive(after: String?, limit: Int) throws -> [String: Any] {
+        let cursor = try after.map(decodeArchiveCursor)
+        let snapshotAt = cursor?.snapshotAt ?? ISOTime.now()
+        var sql = "SELECT * FROM sessions WHERE state='finished' AND finished_at<=?"
+        var binds: [Bind] = [.text(snapshotAt)]
+        if let cursor {
+            sql += " AND (finished_at<? OR (finished_at=? AND id<?))"
+            binds += [.text(cursor.finishedAt), .text(cursor.finishedAt), .text(cursor.id)]
+        }
+        sql += " ORDER BY finished_at DESC,id DESC LIMIT ?"; binds.append(.int(limit + 1))
+        let rows = try query(sql, binds); let selected = Array(rows.prefix(limit))
+        let next = rows.count > limit ? selected.last.map { encodeArchiveCursor(snapshotAt: snapshotAt, row: $0) } : nil
+        return ["afterCursor": after ?? NSNull(), "items": try selected.map(savedSummary), "nextCursor": next ?? NSNull(), "hasMore": next != nil, "snapshotAt": snapshotAt]
+    }
+
+    func archiveDetail(savedWorkoutId: String, after: Int?, limit: Int) throws -> [String: Any] {
+        guard let row = try sessionRow(id: savedWorkoutId), row["state"] as? String == "finished" else { throw ShellError.invalidState("Unknown saved workout") }
+        var observations = try readObservations(sessionId: savedWorkoutId, after: after, limit: limit)
+        observations["afterSequence"] = after ?? NSNull()
+        let latest = row["observation_sequence"] as! Int
+        return [
+            "summary": try savedSummary(row),
+            "pinnedEngine": ["buildId": row["engine_build_id"]!, "apiVersion": row["engine_api"]!, "checkpointSchemaVersion": row["checkpoint_schema"]!],
+            "recordingFormatVersion": 1, "units": "SI",
+            "derivation": ["algorithmId": row["algorithm_id"]!, "engineBuildId": row["engine_build_id"]!, "configId": "default-v1", "firstInputSequence": latest == 0 ? NSNull() : 1, "lastInputSequence": row["checkpoint_sequence"]!],
+            "observations": observations
         ]
     }
 
@@ -403,6 +448,9 @@ final class RecordingService: ObservableObject {
         try? execute("ALTER TABLE observations ADD COLUMN raw_event_id TEXT")
         try? execute("ALTER TABLE sessions ADD COLUMN engine_artifact_path TEXT NOT NULL DEFAULT ''")
         try? execute("ALTER TABLE sessions ADD COLUMN engine_artifact_sha256 TEXT NOT NULL DEFAULT ''")
+        try? execute("ALTER TABLE journal_events ADD COLUMN batch_id TEXT")
+        try? execute("ALTER TABLE journal_events ADD COLUMN batch_index INTEGER")
+        try? execute("ALTER TABLE journal_events ADD COLUMN batch_size INTEGER")
     }
 
     private func insertObservation(sessionId: String, sequence: Int, kind: String, timestamp: String, dedupeKey: String, rawEventId: String? = nil, object: [String: Any]) throws {
@@ -411,9 +459,12 @@ final class RecordingService: ObservableObject {
 
     private func insertJournalEvent(eventId: String, sessionId: String, kind: String, sourceTimestamp: String?, receivedAt: String, monotonic: Double?, provenance: String, payload: [String: Any]) throws {
         let sequence = try scalarInt("SELECT COALESCE(MAX(journal_sequence),0)+1 FROM journal_events WHERE session_id=?", [.text(sessionId)])
-        try run("INSERT INTO journal_events(event_id,session_id,journal_sequence,kind,source_timestamp,received_at,monotonic_timestamp_ms,clock_domain,raw_encoding,provenance,payload) VALUES(?,?,?,?,?,?,?,?,?,?,?)", [
+        let batchId = payload["callbackBatchId"] as? String
+        let batchIndex = (payload["callbackBatchIndex"] as? NSNumber)?.intValue
+        let batchSize = (payload["callbackBatchCount"] as? NSNumber)?.intValue
+        try run("INSERT INTO journal_events(event_id,session_id,journal_sequence,kind,source_timestamp,received_at,monotonic_timestamp_ms,clock_domain,raw_encoding,provenance,payload,batch_id,batch_index,batch_size) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
             .text(eventId), .text(sessionId), .int(sequence), .text(kind), sourceTimestamp.map(Bind.text) ?? .null, .text(receivedAt), monotonic.map(Bind.double) ?? .null,
-            .text("processUptimeMilliseconds"), .text("utf8-json-with-base64-binary-v1"), .text(provenance), .text(canonicalJSON(payload))
+            .text("processUptimeMilliseconds"), .text("json"), .text(provenance), .text(canonicalJSON(payload)), batchId.map(Bind.text) ?? .null, batchIndex.map(Bind.int) ?? .null, batchSize.map(Bind.int) ?? .null
         ])
     }
 
@@ -423,6 +474,45 @@ final class RecordingService: ObservableObject {
     private func sessionExists(_ id: String) throws -> Bool { try scalarInt("SELECT COUNT(*) FROM sessions WHERE id=?", [.text(id)]) > 0 }
     private func observationSequence(_ id: String) throws -> Int { try scalarInt("SELECT observation_sequence FROM sessions WHERE id=?", [.text(id)]) }
     private func allObservationObjects(_ id: String) throws -> [[String: Any]] { try query("SELECT json FROM observations WHERE session_id=? ORDER BY sequence", [.text(id)]).compactMap { decodeObject($0["json"] as? String) } }
+
+    private func journalObject(_ row: [String: Any], sessionId: String) -> [String: Any] {
+        let payload = decodeObject(row["payload"] as? String) ?? [:]
+        let batch: Any
+        if let id = row["batch_id"] as? String, let index = row["batch_index"] as? Int, let size = row["batch_size"] as? Int {
+            batch = ["batchId": id, "index": index, "size": size]
+        } else { batch = NSNull() }
+        let sourceId: Any = payload["deviceId"] as? String ?? NSNull()
+        return [
+            "formatVersion": 1, "eventId": row["event_id"]!, "sessionId": sessionId, "journalSequence": row["journal_sequence"]!,
+            "kind": row["kind"]!, "sourceTimestamp": row["source_timestamp"] ?? NSNull(), "receivedAt": row["received_at"]!,
+            "monotonicTimestampMs": row["monotonic_timestamp_ms"] ?? NSNull(),
+            "provenance": ["origin": "liveNative", "sourceId": sourceId, "monotonicClockId": row["clock_domain"] ?? NSNull(), "lineage": NSNull()],
+            "batch": batch, "payload": ["encoding": "json", "value": payload]
+        ]
+    }
+
+    private func savedSummary(_ row: [String: Any]) throws -> [String: Any] {
+        let id = row["id"] as! String; let started = row["started_at"] as! String; let finished = row["finished_at"] as! String
+        let count = row["observation_sequence"] as! Int
+        let rawCount = try scalarInt("SELECT COUNT(*) FROM journal_events WHERE session_id=?", [.text(id)])
+        let fatal = try scalarInt("SELECT COUNT(*) FROM issues WHERE session_id=? AND severity='fatal'", [.text(id)]) > 0
+        let duration = max(0, Int(((ISO8601DateFormatter().date(from: finished)?.timeIntervalSince(ISO8601DateFormatter().date(from: started) ?? Date())) ?? 0) * 1000))
+        return ["savedWorkoutId": id, "sessionId": id, "sport": row["sport"]!, "startedAt": started, "finishedAt": finished, "durationMs": duration,
+                "observationCount": count, "latestSequence": count, "metrics": decodeObject(row["metrics_json"] as? String) ?? defaultMetrics(), "hasFatalIssue": fatal,
+                "rawEventCount": rawCount, "lastJournalSequence": rawCount]
+    }
+
+    private func encodeArchiveCursor(snapshotAt: String, row: [String: Any]) -> String {
+        Data(canonicalJSON(["snapshotAt": snapshotAt, "finishedAt": row["finished_at"]!, "id": row["id"]!]).utf8).base64EncodedString()
+    }
+
+    private func decodeArchiveCursor(_ value: String) throws -> (snapshotAt: String, finishedAt: String, id: String) {
+        guard let data = Data(base64Encoded: value), let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let snapshotAt = object["snapshotAt"] as? String, let finishedAt = object["finishedAt"] as? String, let id = object["id"] as? String else {
+            throw ShellError.invalidRequest("Invalid archive cursor")
+        }
+        return (snapshotAt, finishedAt, id)
+    }
 
     private func storedOutcome(requestId: String) throws -> (method: String, params: String, reply: [String: Any])? {
         guard let row = try query("SELECT method,params_json,reply_json FROM outcomes WHERE request_id=?", [.text(requestId)]).first,
@@ -501,10 +591,10 @@ final class RecordingService: ObservableObject {
         let sessionData = try JSONSerialization.data(withJSONObject: snapshot(session), options: [.prettyPrinted, .sortedKeys])
         let observationsData = try JSONSerialization.data(withJSONObject: observations, options: [.prettyPrinted, .sortedKeys])
         let metrics = try JSONSerialization.data(withJSONObject: decodeObject(session["metrics_json"] as? String) ?? defaultMetrics(), options: [.prettyPrinted, .sortedKeys])
-        let journal = try query("SELECT event_id,journal_sequence,kind,source_timestamp,received_at,monotonic_timestamp_ms,clock_domain,raw_encoding,provenance,payload FROM journal_events WHERE session_id=? ORDER BY journal_sequence", [.text(session["id"] as! String)])
+        let journal = try query("SELECT * FROM journal_events WHERE session_id=? ORDER BY journal_sequence", [.text(session["id"] as! String)])
         let host = try query("SELECT id,type,source_timestamp,json FROM host_events WHERE session_id=? ORDER BY id", [.text(session["id"] as! String)])
         let issues = try query("SELECT issue_id,severity,code,observed_at,durable_sequence,message FROM issues WHERE session_id=? ORDER BY id", [.text(session["id"] as! String)])
-        let journalData = try JSONSerialization.data(withJSONObject: journal.map { ["eventId": $0["event_id"]!, "sessionId": session["id"]!, "sequence": $0["journal_sequence"]!, "kind": $0["kind"]!, "sourceTimestamp": $0["source_timestamp"] ?? NSNull(), "receivedAt": $0["received_at"]!, "monotonicTimestampMs": $0["monotonic_timestamp_ms"] ?? NSNull(), "clockDomain": $0["clock_domain"]!, "rawEncoding": $0["raw_encoding"]!, "provenance": $0["provenance"]!, "payload": decodeObject($0["payload"] as? String) ?? [:]] }, options: [.prettyPrinted, .sortedKeys])
+        let journalData = try JSONSerialization.data(withJSONObject: journal.map { journalObject($0, sessionId: session["id"] as! String) }, options: [.prettyPrinted, .sortedKeys])
         let hostData = try JSONSerialization.data(withJSONObject: host.map { ["eventId": $0["id"]!, "type": $0["type"]!, "sourceTimestamp": $0["source_timestamp"]!, "payload": decodeObject($0["json"] as? String) ?? [:]] }, options: [.prettyPrinted, .sortedKeys])
         let issueData = try JSONSerialization.data(withJSONObject: issues, options: [.prettyPrinted, .sortedKeys])
         var files = ["session.json": sessionData, "observations.json": observationsData, "journal-events.json": journalData, "host-events.json": hostData, "issues.json": issueData, "metrics.json": metrics]

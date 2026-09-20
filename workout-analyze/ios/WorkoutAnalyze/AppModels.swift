@@ -21,6 +21,8 @@ let recordingCapabilities = [
     "workout.start", "workout.pause", "workout.resume", "workout.finish", "workout.recover",
     "workout.export", "observations.subscribe", "observations.unsubscribe", "observations.read"
 ]
+let archiveCapabilities = ["archive.list", "archive.detail"]
+let journalCapabilities = ["journal.read"]
 
 struct BuildFile: Codable, Equatable {
     let path: String
