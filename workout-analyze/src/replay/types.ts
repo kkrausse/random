@@ -31,6 +31,9 @@ export interface ProjectorCheckpoint {
   readonly engineInputSequence: number
   readonly unknownEventCount: number
   readonly malformedEventCount: number
+  readonly duplicateEventCount: number
+  /** Exact legacy projection identities already emitted; required for deterministic restore. */
+  readonly emittedDedupeKeys: readonly string[]
 }
 
 export interface ReplayCheckpoint {
@@ -78,6 +81,7 @@ export type RawProjection = {
   readonly observation: Omit<RecorderObservation, 'sequence'> | null
   readonly engineInput: WithoutSequence<import('../engine/recording').RecordingEngineObservation> | null
   readonly issue: ProjectionIssue | null
+  readonly dedupeKey: string | null
 }
 
 export type RawEventDecoder = (event: RawWorkoutEvent) => RawProjection

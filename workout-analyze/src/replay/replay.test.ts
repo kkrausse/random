@@ -19,7 +19,7 @@ const events = [
   raw(3, 'heartRateCharacteristicDelivery', { connectionId: 'connection-1', deviceId: 'device-1', receivedAt: '2026-01-01T00:00:02.000Z', rawCharacteristicBase64: 'Bow=' }, 2_000),
   raw(4, 'lifecycle.finished', { from: 'recording', to: 'finished', cause: 'user' }, 3_000),
 ]
-const page = (items: readonly RawWorkoutEvent[], after: number | null = null) => ({ afterJournalSequence: after, items, nextJournalSequence: items.at(-1)?.journalSequence ?? null, oldestAvailableJournalSequence: 1, latestJournalSequence: 4, hasMore: (items.at(-1)?.journalSequence ?? 0) < 4, droppedBeforeJournalSequence: false as const })
+const page = (items: readonly RawWorkoutEvent[], after: number | null = null, latestJournalSequence = 4) => ({ afterJournalSequence: after, items, nextJournalSequence: items.at(-1)?.journalSequence ?? null, oldestAvailableJournalSequence: 1, latestJournalSequence, hasMore: (items.at(-1)?.journalSequence ?? 0) < latestJournalSequence, droppedBeforeJournalSequence: false as const })
 
 describe('raw workout decoder and journal consumer', () => {
   test('decodes location and exact BLE bytes into separate normalized and engine inputs', () => {
@@ -72,6 +72,37 @@ describe('raw workout decoder and journal consumer', () => {
     const retried = await consumer.consume(page(events.slice(0, 2)))
     expect(retried.checkpoint.throughJournalSequence).toBe(2)
     expect(retried.checkpoint.engine.lastSequence).toBe(2)
+  })
+
+  test('suppresses legacy projection duplicates across pages and checkpoint restoration', async () => {
+    const duplicateEvents = [
+      ...events.slice(0, 3),
+      { ...events[1]!, eventId: 'event-4', journalSequence: 4 },
+      { ...events[2]!, eventId: 'event-5', journalSequence: 5 },
+      { ...events[3]!, eventId: 'event-6', journalSequence: 6 },
+    ]
+    const duplicateMetadata = { ...metadata, lastJournalSequence: 6, eventCount: 6 }
+    const first = createJournalConsumer({ metadata: duplicateMetadata, namespace: 'dedupe-test' })
+    const head = await first.consume(page(duplicateEvents.slice(0, 3), null, 6))
+    const restored = createJournalConsumer({ metadata: duplicateMetadata, namespace: 'dedupe-test', checkpoint: head.checkpoint })
+    const tail = await restored.consume(page(duplicateEvents.slice(3), 3, 6))
+    expect(tail.observations.map((item) => item.kind)).toEqual(['transition'])
+    expect(tail.checkpoint.throughJournalSequence).toBe(6)
+    expect(tail.checkpoint.projector).toMatchObject({ observationSequence: 4, engineInputSequence: 4, duplicateEventCount: 2 })
+    expect(tail.checkpoint.projector.emittedDedupeKeys).toHaveLength(2)
+  })
+
+  test('produces identical engine results regardless of journal page boundaries', async () => {
+    const skewed = [events[0]!, events[1]!, { ...events[3]!, eventId: 'event-3-finish', journalSequence: 3, monotonicTimestampMs: 3_514 }]
+    const skewedMetadata = { ...metadata, lastJournalSequence: 3, eventCount: 3 }
+    const whole = createJournalConsumer({ metadata: skewedMetadata, namespace: 'whole' })
+    const wholeResult = await whole.consume(page(skewed, null, 3))
+    const paged = createJournalConsumer({ metadata: skewedMetadata, namespace: 'paged' })
+    await paged.consume(page(skewed.slice(0, 1), null, 3))
+    const pagedResult = await paged.consume(page(skewed.slice(1), 1, 3))
+    expect(pagedResult.metrics).toEqual(wholeResult.metrics)
+    expect(pagedResult.checkpoint.engine).toEqual(wholeResult.checkpoint.engine)
+    expect(pagedResult.metrics.activeDurationMs).toBe(3_000)
   })
 })
 
