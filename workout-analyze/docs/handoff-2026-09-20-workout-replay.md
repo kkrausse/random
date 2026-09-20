@@ -62,7 +62,7 @@ Observed behavior:
 2. Safari correctly reports “Native bridge unavailable” and registers with the dev runner as kind `unavailable`.
 3. In the native shell, Native Recovery shows the HTTPS development URL but remains `loading`/`waiting`; “Use development origin now” does not reach `bridge.hello`.
 4. Therefore network, DNS, TLS, Vite, and the JavaScript bundle are good. The failure is specific to WKWebView/native bridge startup or native origin acceptance.
-5. The runner consequently reports no client of kind `native`, so read-only scripts cannot currently call `archive.list` or `journal.read`.
+5. The runner consequently reports no client of kind `native`, so read-only scripts cannot currently call `archive.list` or `journal.read`. The runner itself still executes in the loaded page's JavaScript runtime: Safari registers as kind `unavailable` and can be explicitly targeted for page/runtime inspection. Native bridge health is required only for `bridge.request(...)`, not for runner execution.
 
 The installed app was not changed after recovery. A speculative `WebHost` fallback was deliberately not retained.
 

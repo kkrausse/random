@@ -6,6 +6,19 @@ Local-first Garmin activity archive, DuckDB pipeline, and TanStack Start browser
 
 See [the technical proposal](docs/iphone-workout-proposal.md) for the native WebKit recorder, GPS/Bluetooth bridge, live laps, and segment comparisons. [Excalidraw wireframes](docs/iphone-workout-wireframes.excalidraw) sketch the proposed screens; this is a design proposal, not an implemented iOS app.
 
+## Debug the mobile web runtime
+
+The development build includes a [physical-iPhone development runner](docs/iphone-dev-runner.md). Use it whenever you need to inspect or execute code in the actual foregrounded WKWebView JavaScript runtime. The page polls the dev server, receives a snippet, and evaluates it as an async function in TypeScript's browser environment; Swift does not execute runner jobs.
+
+```sh
+bun run mobile:dev
+bun scripts/mobile/dev-runner/run.ts \
+  --server https://kevins-macbook-pro-2.tail7e28fb.ts.net:8443 \
+  --code 'return inspect.appState()'
+```
+
+The runner starts in Vite development mode even when the native bridge is unavailable. Such a page appears as client kind `unavailable` rather than `native`; pass `--kind unavailable` (and optionally `--client <id>`) to execute page-runtime diagnostics there. Native operations exposed through `bridge.request(...)` naturally require a functioning native bridge. Prefer `app.actions` for real UI workflows, `inspect` for read-only state, and `bridge.request` only for lower-level protocol diagnostics. The runner is intentionally absent from production bundles.
+
 ## Run
 
 ```bash

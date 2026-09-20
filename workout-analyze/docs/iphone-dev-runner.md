@@ -1,26 +1,28 @@
 # Physical iPhone development runner
 
-This development-only runner sends a small JavaScript snippet from the Mac dev server to the **foregrounded real WKWebView app** and returns its value, captured console output, error, duration, and phone metadata. It is not a desktop simulator and does not provide a fake bridge.
+This development-only runner sends a small JavaScript snippet from the Mac dev server to the **foregrounded real WKWebView app** and returns its value, captured console output, error, duration, and phone metadata. The dev-server message handling and async-function evaluation both run in the page's TypeScript/browser runtime; Swift does not receive or execute runner jobs. It is not a desktop simulator and does not provide a fake bridge.
 
 The runner exists only in Vite serve mode. `import.meta.env.DEV` guards its dynamic web import, and the server plugin uses `apply: 'serve'`, so packaged builds have neither an eval entry point nor runner endpoints.
 
 ## Run a script
 
-Keep the Workout Analyze app open and foregrounded on the physical iPhone, using the development source `http://100.86.29.19:4317`. Then run from the repository root:
+Keep the Workout Analyze app open and foregrounded on the physical iPhone, using the supported HTTPS development source. Then run from the repository root:
 
 ```sh
 bun scripts/mobile/dev-runner/run.ts \
-  --server http://100.86.29.19:4317 \
+  --server https://kevins-macbook-pro-2.tail7e28fb.ts.net:8443 \
   --code 'return await bridge.request("heartRate.status", {})'
 ```
 
 Or execute a file:
 
 ```sh
-bun scripts/mobile/dev-runner/run.ts --server http://100.86.29.19:4317 --file /absolute/path/to/check.js --timeout 12000
+bun scripts/mobile/dev-runner/run.ts --server https://kevins-macbook-pro-2.tail7e28fb.ts.net:8443 --file /absolute/path/to/check.js --timeout 12000
 ```
 
-Jobs target a native client by default. `GET /__workout/run` lists recently seen clients and jobs; pass `--client <client-id>` to pin a job to one phone page. If no job is claimed, foreground the app rather than switching to a simulator.
+Jobs target a native client by default. `GET /__workout/run` lists recently seen clients and jobs; pass `--kind native|simulator|unavailable` to select the client kind and `--client <client-id>` to pin a job to one phone page. If no job is claimed, foreground the app rather than switching to a simulator.
+
+The runner is independent of native bridge health. A development page without a working native message handler still registers as kind `unavailable`, and can execute page-runtime inspection code with `--kind unavailable`. Only calls that cross `bridge.request(...)` require the native bridge. This distinction is useful for debugging startup, rendering, Zustand state, configuration, and bridge discovery itself.
 
 ## Script API
 
