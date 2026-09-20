@@ -65,7 +65,7 @@ describe('mobile wire validation', () => {
     }
     expect(() => parseBuildManifest({ ...manifest, files: [{ ...manifest.files[0], sizeBytes: 33 * 1024 * 1024 }, manifest.files[1]] })).toThrow()
     expect(() => parseBuildManifest({ ...manifest, engineEntryPath: 'missing.js' })).toThrow()
-    expect(() => parseBuildManifest({ ...manifest, requiredCapabilities: ['workout.start'] })).toThrow()
+    expect(() => parseBuildManifest({ ...manifest, requiredCapabilities: ['workout.teleport'] })).toThrow()
     expect(() => parseBuildManifest({ ...manifest, bridgeProtocol: { min: 1, max: 1, ignored: true } })).toThrow()
   })
 })
