@@ -214,6 +214,12 @@ final class BuildManager: ObservableObject {
         recordFailure("Build \(failed.buildId) handshake failed; restored \(active.buildId): \(reason)")
     }
 
+    func handshakeSucceeded() {
+        guard lastFailure != nil else { return }
+        lastFailure = nil
+        defaults.removeObject(forKey: "buildLastFailure")
+    }
+
     private func activateSummary(_ target: BuildSummary) throws {
         guard manifest(for: target) != nil else { throw ShellError.incompatibleBuild("Build files are missing or invalid") }
         if target != active { previous = active; active = target }

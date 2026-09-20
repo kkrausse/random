@@ -74,4 +74,32 @@ final class ContractValidationTests: XCTestCase {
         var unknown = base; unknown["surprise"] = true
         XCTAssertThrowsError(try ContractValidation.validateManifest(data: JSONSerialization.data(withJSONObject: unknown)))
     }
+
+    func testHandshakeDeadlinesAreScopedToNavigationGeneration() {
+        var tracker = StartupHandshakeTracker()
+        let stale = tracker.beginNavigation()
+        tracker.navigationCommitted(generation: stale)
+        let current = tracker.beginNavigation()
+
+        XCTAssertEqual(tracker.hello(generation: stale), .ignored)
+        XCTAssertFalse(tracker.navigationTimedOut(generation: stale))
+        tracker.navigationCommitted(generation: current)
+        XCTAssertTrue(tracker.navigationFinished(generation: current))
+        XCTAssertEqual(tracker.hello(generation: current), .completed)
+        XCTAssertFalse(tracker.handshakeTimedOut(generation: current))
+    }
+
+    func testLateHelloRecoversOnlyCurrentFailedGeneration() {
+        var tracker = StartupHandshakeTracker()
+        let generation = tracker.beginNavigation()
+        tracker.navigationCommitted(generation: generation)
+        XCTAssertTrue(tracker.navigationFinished(generation: generation))
+        XCTAssertTrue(tracker.handshakeTimedOut(generation: generation))
+        XCTAssertEqual(tracker.hello(generation: generation), .recovered)
+
+        let replacement = tracker.beginNavigation()
+        tracker.navigationCommitted(generation: replacement)
+        XCTAssertEqual(tracker.hello(generation: generation), .ignored)
+        XCTAssertEqual(tracker.hello(generation: replacement), .completed)
+    }
 }
