@@ -12,6 +12,7 @@ import {
   type NativeEvent,
   type Reply,
   type SessionSnapshot,
+  type WorkoutMetrics,
 } from '../../../src/shared/mobile'
 
 export interface BridgeTransport {
@@ -136,17 +137,24 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
   }
 
   const commitEvent = (event: NativeEvent) => {
+    const projectSession = (session: SessionSnapshot) => event.type === 'session.updated'
+      ? event.payload as SessionSnapshot
+      : event.type === 'metrics.updated' && session.recorderAvailability === 'available' && (!event.sessionId || event.sessionId === session.sessionId)
+        ? { ...session, metrics: event.payload as WorkoutMetrics }
+        : session
+    const currentSession = state.session ?? state.snapshot?.session
+    const session = currentSession ? projectSession(currentSession) : event.type === 'session.updated' ? event.payload as SessionSnapshot : null
     const snapshot = state.snapshot ? {
       ...state.snapshot,
       sequence: event.sequence,
-      ...(event.type === 'session.updated' ? { session: event.payload as CommandResults['bridge.snapshot']['session'] } : {}),
+      session: projectSession(state.snapshot.session),
       ...(event.type === 'permissions.updated' ? { permissions: event.payload as CommandResults['bridge.snapshot']['permissions'] } : {}),
       ...(event.type === 'location.updated' ? { location: event.payload as CommandResults['bridge.snapshot']['location'] } : {}),
       ...(event.type === 'heartRate.updated' ? { heartRate: event.payload as CommandResults['bridge.snapshot']['heartRate'] } : {}),
       ...(event.type === 'diagnostics.updated' ? { diagnostics: event.payload as CommandResults['bridge.snapshot']['diagnostics'] } : {}),
       ...(event.type === 'appBuild.updated' ? { appBuild: event.payload as CommandResults['bridge.snapshot']['appBuild'] } : {}),
     } : null
-    publish({ lastSequence: event.sequence, snapshot, session: event.type === 'session.updated' ? event.payload as SessionSnapshot : state.session })
+    publish({ lastSequence: event.sequence, snapshot, session })
     eventListeners.forEach((listener) => listener(event))
   }
 

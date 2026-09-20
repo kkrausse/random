@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { PHASE1_BASE_CAPABILITIES, type Command } from '../../../src/shared/mobile'
+import { PHASE1_BASE_CAPABILITIES, type Command, type WorkoutMetrics } from '../../../src/shared/mobile'
 import { createBridgeClient, unavailableNativeTransport, type BridgeTransport } from './client'
 import { createSimulatorTransport } from './simulator'
 
@@ -7,7 +7,12 @@ const session = (sequence: number) => ({ sessionId: null, state: 'idle', revisio
 const hello = { shellVersion: 'test', protocolVersion: 1, engineApiVersion: 1, checkpointSchemaVersion: 1, capabilities: PHASE1_BASE_CAPABILITIES, unavailableCapabilities: [
   { capability: 'workout.recorder', reason: 'Unavailable' }, { capability: 'sensors.location', reason: 'Unavailable' }, { capability: 'sensors.bluetoothHeartRate', reason: 'Unavailable' },
 ] }
-
+const metrics = (activeDurationMs: number, currentSpeedMps: number | null): WorkoutMetrics => ({
+  activeDurationMs, elapsedDurationMs: activeDurationMs, distanceM: activeDurationMs / 1_000,
+  averageSpeedMps: currentSpeedMps, currentSpeedMps, currentSpeedObservedAt: currentSpeedMps === null ? null : '2026-09-19T12:00:01Z',
+  altitudeM: null, elevationGainM: 0, heartRateBpm: null, heartRateObservedAt: null,
+  locationQuality: currentSpeedMps === null ? 'stale' : 'good', heartRateQuality: 'unconfigured',
+})
 const browser = globalThis as unknown as { window: Window }
 const clients: Array<ReturnType<typeof createBridgeClient>> = []
 afterEach(() => { clients.splice(0).forEach((client) => client.dispose()) })
@@ -51,6 +56,26 @@ describe('bridge client', () => {
     browser.window.WorkoutAnalyzeNative?.receiveEvent({ protocolVersion: 1, sessionId: null, sequence: 5, type: 'session.updated', payload: session(5) })
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(client.getState()).toMatchObject({ lastSequence: 6, session: { durableSequence: 6 }, resyncCount: 1 })
+  })
+
+  test('projects metrics events into the atomic session before publishing and retains them across unrelated events', async () => {
+    browser.window = { setTimeout } as unknown as Window
+    const liveMetrics = metrics(2_000, 7)
+    const client = createBridgeClient(createSimulatorTransport(), 100)
+    clients.push(client)
+    await client.connect()
+    await client.request('workout.start', { expectedRevision: 0, sport: 'cycling', startPolicy: 'immediate' })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const sequence = client.getState().lastSequence!
+    const diagnostics = client.getState().snapshot!.diagnostics
+    const observed: Array<{ sequence: number | null; speed: number | null }> = []
+    client.subscribe((state) => observed.push({ sequence: state.lastSequence, speed: state.session?.recorderAvailability === 'available' ? state.session.metrics.currentSpeedMps : null }))
+
+    browser.window.WorkoutAnalyzeNative?.receiveEvent({ protocolVersion: 1, sessionId: 'sim-ride-1', sequence: sequence + 1, type: 'metrics.updated', payload: liveMetrics })
+    browser.window.WorkoutAnalyzeNative?.receiveEvent({ protocolVersion: 1, sessionId: 'sim-ride-1', sequence: sequence + 2, type: 'diagnostics.updated', payload: diagnostics })
+
+    expect(observed.slice(-2)).toEqual([{ sequence: sequence + 1, speed: 7 }, { sequence: sequence + 2, speed: 7 }])
+    expect(client.getState().snapshot?.session).toMatchObject({ metrics: liveMetrics })
   })
 
   test('fails closed instead of supplying simulator data when a native page has no bridge', () => {
