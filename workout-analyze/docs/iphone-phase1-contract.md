@@ -148,7 +148,7 @@ The JSON manifest is `BuildManifest`. Example (hashes abbreviated here only; rea
   "createdAt": "2026-09-19T12:00:00Z",
   "uiEntryPath": "ui/index.html",
   "engineEntryPath": "engine/tiny-engine.js",
-  "engineBuildId": "phase1-engine-v2",
+  "engineBuildId": "phase1-engine-v2.recording-engine-v1",
   "bridgeProtocol": {"min": 1, "max": 1},
   "engineApi": {"min": 1, "max": 1},
   "checkpointSchemaVersion": 1,
@@ -164,7 +164,7 @@ Validation happens before activation: 1–1024 files; each is 1 byte through 32 
 
 ## Headless engine artifact API
 
-Evaluate one plain script (`tiny-engine-v1.js` or fixture release `tiny-engine-v2.js`) in a dedicated JavaScriptCore context. It installs exactly:
+Evaluate one plain script in a dedicated JavaScriptCore context. The standalone phase-1 sources (`tiny-engine-v1.js` or fixture release `tiny-engine-v2.js`) install:
 
 ```js
 globalThis.WorkoutAnalyzeEngine.describe()
@@ -174,3 +174,5 @@ globalThis.WorkoutAnalyzeEngine.create(checkpointOrNull)
 `describe()` returns API/checkpoint versions, build/algorithm IDs, and max batch size. `create()` returns `processBatch({observations})` and `checkpoint()`. Inputs are JSON values, batches are at most 1,000 observations, and sequences must be contiguous. There are no DOM, Node/Bun, network, filesystem, timer, random, or clock dependencies. A checkpoint is accepted only by its exact engine build and algorithm, preventing accidental cross-build resume.
 
 The frozen fixture sends values `2` and `3` at sequences `1` and `2`. V1 (`phase1-sum-v1`) yields display value `5`; V2 (`phase1-double-v2`) yields `10` with the same API. This is intentionally tiny—not workout analysis—but proves download/activation and changed native-hosted engine behavior between idle sessions without reinstalling the shell.
+
+`scripts/mobile/build.ts` packages that diagnostic source and recording v1 into the manifest's single `engineEntryPath`. Evaluating the installed script therefore exposes both `WorkoutAnalyzeEngine` and `WorkoutAnalyzeRecordingEngine`; native may use the same selected file in isolated diagnostic and recorder contexts. The manifest and diagnostic descriptor use the coupled package identity `phase1-engine-v1.recording-engine-v1` or `phase1-engine-v2.recording-engine-v1`, so replacing the recording release cannot silently retain an old package ID. The recording descriptor remains independently pinned as `recording-engine-v1` / `ride-metrics-v1`; recorder checkpoint compatibility is checked against that descriptor, not against the coupled manifest ID. Existing phase-1 bridge parsing and the v1/v2 diagnostic values are unchanged.

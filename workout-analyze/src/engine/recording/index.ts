@@ -3,11 +3,12 @@ import {
   type EngineEvaluationClock, type EngineLocationObservation, type RecordingCheckpoint,
   type RecordingEngineArtifact, type RecordingEngineObservation, type RecordingMetrics,
 } from './types'
+import { RECORDING_ENGINE_ALGORITHM_ID, RECORDING_ENGINE_BUILD_ID } from '../mobile-artifact'
 
 export * from './types'
 
-const ENGINE_BUILD_ID = 'recording-engine-v1'
-const ALGORITHM_ID = 'ride-metrics-v1'
+const ENGINE_BUILD_ID = RECORDING_ENGINE_BUILD_ID
+const ALGORITHM_ID = RECORDING_ENGINE_ALGORITHM_ID
 const MAX_HORIZONTAL_ACCURACY_M = 50
 const MAX_LOCATION_AGE_MS = 15_000
 const MAX_LOCATION_GAP_MS = 30_000
@@ -31,7 +32,8 @@ const distance = (a: { latitudeDegrees: number; longitudeDegrees: number }, b: {
   const dLat = (b.latitudeDegrees - a.latitudeDegrees) * radians
   const dLon = (b.longitudeDegrees - a.longitudeDegrees) * radians
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2
-  return 6_371_000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h))
+  const bounded = Math.min(1, Math.max(0, h))
+  return 6_371_000 * 2 * Math.atan2(Math.sqrt(bounded), Math.sqrt(1 - bounded))
 }
 
 const initial = (): RecordingCheckpoint => ({
@@ -89,10 +91,12 @@ const applyLocation = (state: RecordingCheckpoint, observation: EngineLocationOb
   const reportedSpeed = observation.speedMps !== null && observation.speedMps >= 0 && (observation.speedAccuracyMps === null || observation.speedAccuracyMps <= MAX_SPEED_ACCURACY_MPS) ? observation.speedMps : null
   const fallbackSpeed = validSegment && deltaMs !== null ? segmentM / (deltaMs / 1_000) : null
   const altitudeUsable = observation.altitudeM !== null && observation.verticalAccuracyM !== null && observation.verticalAccuracyM <= MAX_VERTICAL_ACCURACY_M
-  const altitudeGain = validSegment && altitudeUsable && state.anchor?.altitudeM !== null && state.anchor?.altitudeM !== undefined && observation.altitudeM! - state.anchor.altitudeM > ELEVATION_DEADBAND_M ? observation.altitudeM! - state.anchor.altitudeM : 0
+  const altitudeDelta = validSegment && altitudeUsable && state.anchor?.altitudeM !== null && state.anchor?.altitudeM !== undefined ? observation.altitudeM! - state.anchor.altitudeM : null
+  const altitudeGain = altitudeDelta !== null && altitudeDelta > ELEVATION_DEADBAND_M ? altitudeDelta : 0
+  const altitudeAnchor = !altitudeUsable ? null : altitudeDelta !== null && altitudeDelta > 0 && altitudeDelta <= ELEVATION_DEADBAND_M ? state.anchor!.altitudeM : observation.altitudeM
   return {
     ...state, distanceM: state.distanceM + (validSegment ? segmentM : 0), elevationGainM: state.elevationGainM + altitudeGain,
-    anchor: { latitudeDegrees: observation.latitudeDegrees, longitudeDegrees: observation.longitudeDegrees, wallMs: measured, altitudeM: altitudeUsable ? observation.altitudeM : null },
+    anchor: { latitudeDegrees: observation.latitudeDegrees, longitudeDegrees: observation.longitudeDegrees, wallMs: measured, altitudeM: altitudeAnchor },
     lastLocationWallMs: measured, poorLocationWallMs: null, currentSpeedMps: reportedSpeed ?? fallbackSpeed,
     currentSpeedWallMs: reportedSpeed !== null || fallbackSpeed !== null ? measured : null, altitudeM: altitudeUsable ? observation.altitudeM : null,
   }
@@ -117,13 +121,17 @@ export const createRecordingEngineArtifact = (): RecordingEngineArtifact => ({
   describe: () => ({ apiVersion: RECORDING_ENGINE_API_VERSION, checkpointSchemaVersion: RECORDING_CHECKPOINT_SCHEMA_VERSION, engineBuildId: ENGINE_BUILD_ID, algorithmId: ALGORITHM_ID, maxBatchSize: RECORDING_ENGINE_MAX_BATCH_SIZE }),
   create: (checkpoint) => {
     if (checkpoint !== null && (checkpoint.schemaVersion !== 1 || checkpoint.engineBuildId !== ENGINE_BUILD_ID || checkpoint.algorithmId !== ALGORITHM_ID)) throw new TypeError('Incompatible recording checkpoint')
-    let state = checkpoint ?? initial()
+    // A restored checkpoint may come from another process, whose monotonic clock
+    // has a different origin. UTC is the durable cross-process fallback.
+    let state = checkpoint === null ? initial() : { ...checkpoint, activeStartedMonotonicMs: null }
     return {
       processBatch: ({ observations, evaluatedAt }) => {
         if (observations.length > RECORDING_ENGINE_MAX_BATCH_SIZE) throw new RangeError('Recording engine batch too large')
         let processedCount = 0
-        for (const observation of observations) { const before = state.lastSequence; state = apply(state, observation); if (state.lastSequence !== before) processedCount += 1 }
-        state = { ...state, lastEvaluationWallMs: wallMs(evaluatedAt.wallTimestamp) }
+        let nextState = state
+        for (const observation of observations) { const before = nextState.lastSequence; nextState = apply(nextState, observation); if (nextState.lastSequence !== before) processedCount += 1 }
+        nextState = { ...nextState, lastEvaluationWallMs: wallMs(evaluatedAt.wallTimestamp) }
+        state = nextState
         return { processedCount, lastSequence: state.lastSequence, metrics: metrics(state, evaluatedAt), checkpoint: state }
       },
       checkpoint: () => state,
