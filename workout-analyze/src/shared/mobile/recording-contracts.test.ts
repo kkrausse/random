@@ -50,7 +50,7 @@ describe('production recording wire contract', () => {
     const list = { afterCursor: null, items: [summary], nextCursor: null, hasMore: false, snapshotAt: now }
     expect(parseCommand({ protocolVersion: 1, requestId: 'list-1', method: 'archive.list', params: { afterCursor: null, limit: 50 } }).method).toBe('archive.list')
     expect(parseReply('archive.list', envelope(list)).ok).toBe(true)
-    const detail = { summary, pinnedEngine: finishedSession.pinnedEngine, recordingFormatVersion: 1, units: 'SI', derivation: { algorithmId: 'ride-metrics-v1', engineBuildId: 'recording-engine-v1', configId: 'recording-v1', firstInputSequence: 1, lastInputSequence: 8 }, issues: [], observations: { ...page, afterSequence: 7 } }
+    const detail = { summary, pinnedEngine: finishedSession.pinnedEngine, recordingFormatVersion: 1, units: 'SI', derivation: { algorithmId: 'ride-metrics-v1', engineBuildId: 'recording-engine-v1', configId: 'recording-v1', firstInputSequence: 1, lastInputSequence: 8 }, observations: { ...page, afterSequence: 7 } }
     expect(parseCommand({ protocolVersion: 1, requestId: 'detail-1', method: 'archive.detail', params: { savedWorkoutId: 'saved-1', afterSequence: 7, limit: 100 } }).method).toBe('archive.detail')
     expect(parseReply('archive.detail', envelope(detail)).ok).toBe(true)
     expect(() => parseReply('archive.detail', envelope({ ...detail, observations: { ...detail.observations, afterSequence: 6 } }))).toThrow()
