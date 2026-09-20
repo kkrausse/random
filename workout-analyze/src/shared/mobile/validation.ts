@@ -90,6 +90,24 @@ const sessionSnapshot = (value: unknown) => {
 }
 const diagnosticsSnapshot = (value: unknown) => record(value) && exactKeys(value, ['capturedAt', 'rows', 'eventSequence']) && iso(value.capturedAt) && Array.isArray(value.rows) && value.rows.every(statusRow) && Number.isSafeInteger(value.eventSequence) && (value.eventSequence as number) >= 0
 
+const bridgeSnapshotValidationPath = (value: unknown): string | null => {
+  if (!record(value)) return '$'
+  const keys = ['sequence', 'session', 'permissions', 'location', 'heartRate', 'diagnostics', 'appBuild'] as const
+  const missing = keys.find((key) => !(key in value))
+  if (missing) return `$.${missing}`
+  const unexpected = Object.keys(value).find((key) => !keys.includes(key as typeof keys[number]))
+  if (unexpected) return `$.${unexpected}`
+  if (!safeInteger(value.sequence)) return '$.sequence'
+  if (!sessionSnapshot(value.session)) return '$.session'
+  if (!permissionStatus(value.permissions)) return '$.permissions'
+  if (!locationStatus(value.location)) return '$.location'
+  if (!heartRateStatus(value.heartRate)) return '$.heartRate'
+  if (!diagnosticsSnapshot(value.diagnostics)) return '$.diagnostics'
+  if ((value.diagnostics as Record<string, unknown>).eventSequence !== value.sequence) return '$.diagnostics.eventSequence'
+  if (!appBuildStatus(value.appBuild)) return '$.appBuild'
+  return null
+}
+
 const permissionStatus = (value: unknown): value is PermissionStatus => record(value) && exactKeys(value, ['location', 'bluetooth', 'promptsAutomatically']) && statusRow(value.location) && ['notDetermined', 'denied', 'restricted', 'whenInUse', 'always'].includes(value.location.details.authorization as string) && (value.location.details.precise === null || typeof value.location.details.precise === 'boolean') && statusRow(value.bluetooth) && ['notDetermined', 'denied', 'restricted', 'allowed'].includes(value.bluetooth.details.authorization as string) && ['unknown', 'unsupported', 'unauthorized', 'poweredOff', 'poweredOn'].includes(value.bluetooth.details.power as string) && value.promptsAutomatically === false
 
 const locationObservation = (value: unknown): value is LocationObservation => record(value) && requiredAndOptionalKeys(value, ['cursor', 'source', 'sourceTimestamp', 'receivedAt', 'latitudeDegrees', 'longitudeDegrees', 'horizontalAccuracyM', 'altitudeM', 'verticalAccuracyM', 'speedMps', 'speedAccuracyMps', 'courseDegrees', 'courseAccuracyDegrees', 'floorLevel', 'isSimulatedBySoftware', 'isProducedByAccessory'], ['ellipsoidalAltitudeM']) && safeInteger(value.cursor, 1) && value.source === 'coreLocation' && iso(value.sourceTimestamp) && iso(value.receivedAt) && finite(value.latitudeDegrees, -90, 90) && finite(value.longitudeDegrees, -180, 180) && finite(value.horizontalAccuracyM, 0) && (value.altitudeM === null || finite(value.altitudeM)) && (value.verticalAccuracyM === null || finite(value.verticalAccuracyM, 0)) && (value.speedMps === null || finite(value.speedMps, 0)) && (value.speedAccuracyMps === null || finite(value.speedAccuracyMps, 0)) && (value.courseDegrees === null || finite(value.courseDegrees, 0, 360)) && (value.courseAccuracyDegrees === null || finite(value.courseAccuracyDegrees, 0)) && (value.floorLevel === null || safeInteger(value.floorLevel, -1_000, 10_000)) && (value.isSimulatedBySoftware === null || typeof value.isSimulatedBySoftware === 'boolean') && (value.isProducedByAccessory === null || typeof value.isProducedByAccessory === 'boolean') && (!('ellipsoidalAltitudeM' in value) || value.ellipsoidalAltitudeM === null || finite(value.ellipsoidalAltitudeM))
@@ -198,7 +216,7 @@ const validSuccessResult = (method: MobileMethod, value: unknown): boolean => {
     case 'session.snapshot': return sessionSnapshot(value)
     case 'permissions.status':
     case 'permissions.request': return permissionStatus(value)
-    case 'bridge.snapshot': return exactKeys(value, ['sequence', 'session', 'permissions', 'location', 'heartRate', 'diagnostics', 'appBuild']) && safeInteger(value.sequence) && sessionSnapshot(value.session) && (value.session as Record<string, unknown>).durableSequence === value.sequence && permissionStatus(value.permissions) && locationStatus(value.location) && heartRateStatus(value.heartRate) && diagnosticsSnapshot(value.diagnostics) && (value.diagnostics as Record<string, unknown>).eventSequence === value.sequence && appBuildStatus(value.appBuild)
+    case 'bridge.snapshot': return bridgeSnapshotValidationPath(value) === null
     case 'location.status':
     case 'location.start':
     case 'location.stop': return locationStatus(value)
@@ -235,6 +253,10 @@ const validSuccessResult = (method: MobileMethod, value: unknown): boolean => {
 
 export const parseReply = <M extends MobileMethod>(method: M, value: unknown): Reply<M> => {
   const reply = parseReplyEnvelope(value)
+  if (reply.ok && method === 'bridge.snapshot') {
+    const path = bridgeSnapshotValidationPath(reply.result)
+    if (path) fail(`invalid bridge.snapshot result at ${path}`)
+  }
   if (reply.ok && !validSuccessResult(method, reply.result)) fail(`invalid ${method} result`)
   return reply as Reply<M>
 }
