@@ -392,7 +392,6 @@ export interface SavedWorkoutDetail {
     readonly firstInputSequence: number | null
     readonly lastInputSequence: number
   }
-  readonly issues: readonly RecordingIssue[]
   readonly observations: ArchiveObservationPage
 }
 
