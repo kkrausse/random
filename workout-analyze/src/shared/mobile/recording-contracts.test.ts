@@ -34,6 +34,11 @@ describe('production recording wire contract', () => {
     expect(() => parseCommand({ protocolVersion: 1, requestId: 'read-1', method: 'observations.read', params: { sessionId: 'ride-1', afterSequence: 0, limit: 201 } })).toThrow()
   })
 
+  test('reports the recording event type and exact invalid metrics field without payload values', () => {
+    expect(() => parseNativeEvent({ protocolVersion: 1, sessionId: null, sequence: 21, type: 'metrics.updated', payload: { ...metrics, activeDurationMs: 13_000 } }))
+      .toThrow('invalid native event payload: type=metrics.updated path=$.payload.activeDurationMs>elapsedDurationMs')
+  })
+
   test('preserves duplicate deliveries, raw bytes, provenance, and host lifecycle in durable order', () => {
     const provenance = { origin: 'liveNative', sourceId: 'core-location', monotonicClockId: 'process-42', lineage: null }
     const duplicate = { ...location, sequence: 9, provenance, ellipsoidalAltitudeM: 24 }

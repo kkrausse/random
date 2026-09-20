@@ -77,6 +77,7 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
   let resyncing: Promise<void> | null = null
   let connecting: Promise<void> | null = null
   let bufferedEvents: NativeEvent[] = []
+  let consecutiveResyncFailures = 0
   const pending = new Map<string, Pending>()
   const listeners = new Set<(state: BridgeState) => void>()
   const eventListeners = new Set<(event: NativeEvent) => void>()
@@ -89,6 +90,15 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
   const publish = (next: Partial<BridgeState>) => {
     state = { ...state, ...next }
     listeners.forEach((listener) => listener(state))
+  }
+
+  const reportInvalidEvent = (value: unknown, error: unknown) => {
+    const candidate = typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
+    const eventType = typeof candidate.type === 'string' ? candidate.type : 'unknown'
+    const sequence = Number.isSafeInteger(candidate.sequence) ? candidate.sequence as number : null
+    const detail = error instanceof Error ? error.message : 'Invalid native event'
+    const event = { id: `web-native-event-${Date.now()}-${counter}`, timestamp: new Date().toISOString(), subsystem: 'web-bridge', level: 'error', message: detail, metadata: { eventType, sequence } }
+    void fetch('/__workout/diagnostics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ formatVersion: 1, uploadId: event.id, events: [event] }) }).catch(() => undefined)
   }
 
   const request = <M extends MobileMethod>(method: M, params: CommandParams[M]): Promise<CommandResults[M]> => {
@@ -142,11 +152,12 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
       try {
         if (state.capabilities.includes('bridge.snapshot')) {
           const snapshot = await request('bridge.snapshot', {})
-          publish({ snapshot, session: snapshot.session, lastSequence: snapshot.sequence, resyncCount: state.resyncCount + (countAsGap ? 1 : 0) })
+          publish({ phase: 'ready', error: null, snapshot, session: snapshot.session, lastSequence: snapshot.sequence, resyncCount: state.resyncCount + (countAsGap ? 1 : 0) })
         } else {
           const snapshot = await request('session.snapshot', {})
-          publish({ session: snapshot, lastSequence: snapshot.durableSequence, resyncCount: state.resyncCount + (countAsGap ? 1 : 0) })
+          publish({ phase: 'ready', error: null, session: snapshot, lastSequence: snapshot.durableSequence, resyncCount: state.resyncCount + (countAsGap ? 1 : 0) })
         }
+        consecutiveResyncFailures = 0
         const queued = bufferedEvents.sort((a, b) => a.sequence - b.sequence)
         bufferedEvents = []
         for (const event of queued) {
@@ -155,12 +166,14 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
           else bufferedEvents.push(event)
         }
       } catch (error) {
+        consecutiveResyncFailures += 1
         publish({ phase: 'error', error: error instanceof Error ? error.message : 'Snapshot resync failed' })
       } finally {
         resyncing = null
         const arrivedDuringInstall = bufferedEvents.sort((a, b) => a.sequence - b.sequence)
         bufferedEvents = []
-        arrivedDuringInstall.forEach(applyEvent)
+        if (consecutiveResyncFailures < 3) arrivedDuringInstall.forEach(applyEvent)
+        else bufferedEvents = arrivedDuringInstall.slice(-200)
       }
     })()
     return resyncing
@@ -186,7 +199,10 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
     },
     receiveEvent(value) {
       try { applyEvent(parseNativeEvent(value)) } catch (error) {
-        publish({ phase: 'error', error: error instanceof Error ? error.message : 'Invalid native event' })
+        const detail = error instanceof Error ? error.message : 'Invalid native event'
+        publish({ phase: 'error', error: detail })
+        reportInvalidEvent(value, error)
+        if (consecutiveResyncFailures < 3) void resync(true)
       }
     },
   }
