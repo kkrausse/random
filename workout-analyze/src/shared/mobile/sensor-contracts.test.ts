@@ -121,4 +121,12 @@ describe('phase-1 sensor bridge contract', () => {
     expect(() => parseReply('bridge.snapshot', envelope({ ...nativeRecorderPayload, diagnostics: { ...nativeRecorderPayload.diagnostics, eventSequence: 15 } }))).toThrow('$.diagnostics.eventSequence')
     expect(() => parseReply('bridge.snapshot', envelope({ ...nativeRecorderPayload, location: { ...nativeRecorderPayload.location, receivedCount: -1 } }))).toThrow('$.location')
   })
+
+  test('validates the optional native telemetry delivery diagnostics extension exactly', () => {
+    const telemetryDelivery = { destination: 'https://phone.example/__workout/diagnostics', queuedCount: 0, lastSuccessAt: now, lastFailureAt: null, lastFailure: null }
+    expect(parseReply('diagnostics.snapshot', envelope({ ...atomicSnapshot.diagnostics, telemetryDelivery })).ok).toBe(true)
+    expect(parseReply('bridge.snapshot', envelope({ ...atomicSnapshot, diagnostics: { ...atomicSnapshot.diagnostics, telemetryDelivery } })).ok).toBe(true)
+    expect(() => parseReply('diagnostics.snapshot', envelope({ ...atomicSnapshot.diagnostics, telemetryDelivery: { ...telemetryDelivery, queuedCount: -1 } }))).toThrow()
+    expect(() => parseReply('diagnostics.snapshot', envelope({ ...atomicSnapshot.diagnostics, telemetryDelivery: { ...telemetryDelivery, rawPayload: true } }))).toThrow()
+  })
 })

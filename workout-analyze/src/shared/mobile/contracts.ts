@@ -469,6 +469,14 @@ export interface DiagnosticSnapshot {
   readonly capturedAt: string
   readonly rows: readonly StatusRow[]
   readonly eventSequence: number
+  /** Native telemetry uploader health. Omitted by shells predating telemetry delivery. */
+  readonly telemetryDelivery?: {
+    readonly destination: string
+    readonly queuedCount: number
+    readonly lastSuccessAt: string | null
+    readonly lastFailureAt: string | null
+    readonly lastFailure: string | null
+  }
 }
 
 export type DiagnosticCheckId = 'bridgePing' | 'capabilityCompatibility' | 'diagnosticStorage' | 'engineFixture'

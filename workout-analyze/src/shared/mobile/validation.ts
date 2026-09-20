@@ -125,7 +125,8 @@ const sessionSnapshotValidationPath = (value: unknown): string | null => {
   }
   return sessionSnapshot(value) ? null : '$.payload'
 }
-const diagnosticsSnapshot = (value: unknown) => record(value) && exactKeys(value, ['capturedAt', 'rows', 'eventSequence']) && iso(value.capturedAt) && Array.isArray(value.rows) && value.rows.every(statusRow) && Number.isSafeInteger(value.eventSequence) && (value.eventSequence as number) >= 0
+const telemetryDelivery = (value: unknown) => record(value) && exactKeys(value, ['destination', 'queuedCount', 'lastSuccessAt', 'lastFailureAt', 'lastFailure']) && text(value.destination, 2_048) && safeInteger(value.queuedCount) && nullableIso(value.lastSuccessAt) && nullableIso(value.lastFailureAt) && nullableText(value.lastFailure, 2_048)
+const diagnosticsSnapshot = (value: unknown) => record(value) && requiredAndOptionalKeys(value, ['capturedAt', 'rows', 'eventSequence'], ['telemetryDelivery']) && iso(value.capturedAt) && Array.isArray(value.rows) && value.rows.every(statusRow) && Number.isSafeInteger(value.eventSequence) && (value.eventSequence as number) >= 0 && (!('telemetryDelivery' in value) || telemetryDelivery(value.telemetryDelivery))
 
 const bridgeSnapshotValidationPath = (value: unknown): string | null => {
   if (!record(value)) return '$'
