@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { ARCHIVE_CAPABILITIES, PHASE1_CAPABILITIES, RECORDING_CAPABILITIES } from './contracts'
+import { ARCHIVE_CAPABILITIES, JOURNAL_CAPABILITIES, PHASE1_CAPABILITIES, RECORDING_CAPABILITIES } from './contracts'
 import { parseCommand, parseNativeEvent, parseReply } from './validation'
 
 const now = '2026-09-19T12:00:00.000Z'
@@ -24,6 +24,7 @@ describe('production recording wire contract', () => {
     expect(() => parseReply('bridge.hello', envelope({ ...result, capabilities: result.capabilities.slice(0, -1), unavailableCapabilities: [{ capability: 'workout.recorder', reason: 'Incomplete' }] }))).toThrow()
     expect(parseReply('bridge.hello', envelope({ ...result, capabilities: [...result.capabilities, ...ARCHIVE_CAPABILITIES] })).ok).toBe(true)
     expect(() => parseReply('bridge.hello', envelope({ ...result, capabilities: [...result.capabilities, ARCHIVE_CAPABILITIES[0]] }))).toThrow()
+    expect(parseReply('bridge.hello', envelope({ ...result, capabilities: [...result.capabilities, ...JOURNAL_CAPABILITIES] })).ok).toBe(true)
   })
 
   test('validates bounded durable observation pages and reconnect events', () => {
@@ -55,5 +56,18 @@ describe('production recording wire contract', () => {
     expect(parseReply('archive.detail', envelope(detail)).ok).toBe(true)
     expect(() => parseReply('archive.detail', envelope({ ...detail, observations: { ...detail.observations, afterSequence: 6 } }))).toThrow()
     expect(() => parseReply('archive.detail', envelope({ ...detail, summary: { ...summary, latestSequence: 9 } }))).toThrow()
+  })
+
+  test('round-trips unknown pre-decode journal payloads without interpreting them', () => {
+    const provenance = { origin: 'liveNative', sourceId: 'peripheral-1/2A37', monotonicClockId: 'process-42', lineage: null }
+    const unknownPayload = { futureFrameworkField: { nested: [1, true, 'unchanged'] }, rejectedByDecoder: true }
+    const first = { formatVersion: 1, eventId: 'event-1', sessionId: 'ride-1', journalSequence: 1, kind: 'vendor.futurePacket', sourceTimestamp: null, receivedAt: now, monotonicTimestampMs: 500, provenance, batch: { batchId: 'callback-1', index: 0, size: 2 }, payload: { encoding: 'json', value: unknownPayload } }
+    const second = { ...first, eventId: 'event-2', journalSequence: 2, batch: { batchId: 'callback-1', index: 1, size: 2 }, payload: { encoding: 'base64', value: 'AP+A' } }
+    const rawPage = { afterJournalSequence: null, items: [first, second], nextJournalSequence: 2, oldestAvailableJournalSequence: 1, latestJournalSequence: 2, hasMore: false, droppedBeforeJournalSequence: false }
+    expect(parseCommand({ protocolVersion: 1, requestId: 'journal-1', method: 'journal.read', params: { sessionId: 'ride-1', afterJournalSequence: null, limit: 200 } }).method).toBe('journal.read')
+    const reply = parseReply('journal.read', envelope(rawPage))
+    expect(reply.ok && reply.result.items[0]!.payload).toEqual({ encoding: 'json', value: unknownPayload })
+    expect(() => parseReply('journal.read', envelope({ ...rawPage, items: [first, { ...second, journalSequence: 3 }] }))).toThrow()
+    expect(() => parseReply('journal.read', envelope({ ...rawPage, items: [first, { ...second, payload: { encoding: 'base64', value: 'decoded first' } }] }))).toThrow()
   })
 })
