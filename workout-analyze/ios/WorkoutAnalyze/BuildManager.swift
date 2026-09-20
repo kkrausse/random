@@ -63,9 +63,9 @@ final class BoundedHTTPSDownload: NSObject, URLSessionDataDelegate, URLSessionTa
 
 @MainActor
 final class BuildManager: ObservableObject {
-    static let bundledSummary = BuildSummary(buildId: "bundled-1", source: "bundled", engineBuildId: "phase1-engine-v1")
+    private(set) var bundledSummary: BuildSummary
 
-    @Published private(set) var active: BuildSummary = bundledSummary
+    @Published private(set) var active: BuildSummary
     @Published private(set) var previous: BuildSummary?
     @Published private(set) var pendingActivationBuildId: String?
     @Published private(set) var lastFailure: String?
@@ -84,6 +84,13 @@ final class BuildManager: ObservableObject {
 
     init(log: DiagnosticLog) {
         self.log = log
+        let bundledManifestURL = Bundle.main.resourceURL!.appendingPathComponent("BundledBuild/manifest.json")
+        if let data = try? Data(contentsOf: bundledManifestURL), let manifest = try? ContractValidation.validateManifest(data: data) {
+            bundledSummary = BuildSummary(buildId: manifest.buildId, source: "bundled", engineBuildId: manifest.engineBuildId)
+        } else {
+            bundledSummary = BuildSummary(buildId: "bundled-1", source: "bundled", engineBuildId: "phase1-engine-v1")
+        }
+        active = bundledSummary
         let support = try! fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         installedRoot = support.appendingPathComponent("InstalledBuilds", isDirectory: true)
         try? fileManager.createDirectory(at: installedRoot, withIntermediateDirectories: true)
@@ -117,6 +124,11 @@ final class BuildManager: ObservableObject {
         return root(for: active).appendingPathComponent(entry)
     }
 
+    func recordingEngineURL() -> URL {
+        if active.engineBuildId.contains(".recording-engine-v1") { return activeEngineURL() }
+        return Bundle.main.resourceURL!.appendingPathComponent("RecordingEngine/recording-engine-v1.js")
+    }
+
     func manifest(for summary: BuildSummary) -> BuildManifest? {
         let url = root(for: summary).appendingPathComponent("manifest.json")
         guard let data = try? Data(contentsOf: url) else { return nil }
@@ -136,7 +148,7 @@ final class BuildManager: ObservableObject {
         [
             "active": active.dictionary,
             "previous": previous?.dictionary ?? NSNull(),
-            "bundled": Self.bundledSummary.dictionary,
+            "bundled": bundledSummary.dictionary,
             "downloaded": downloaded().map(\.dictionary),
             "pendingActivationBuildId": pendingActivationBuildId ?? NSNull(),
             "lastFailure": lastFailure ?? NSNull()
@@ -202,7 +214,7 @@ final class BuildManager: ObservableObject {
         defaults.removeObject(forKey: "developmentURL")
         defaults.set("bundled", forKey: "workoutAnalyze.sourceSelection")
         log.configureDevelopmentUpload(origin: nil)
-        try activateSummary(Self.bundledSummary)
+        try activateSummary(bundledSummary)
         log.append(subsystem: "source", message: "Bundled source selected")
         return ["source": ["kind": "bundled"], "reloadRequired": true]
     }
@@ -212,7 +224,7 @@ final class BuildManager: ObservableObject {
         do {
             let manifestData = try await BoundedHTTPSDownload.fetch(manifestURL, limit: 1024 * 1024)
             let manifest = try ContractValidation.validateManifest(data: manifestData)
-            guard manifest.buildId != Self.bundledSummary.buildId else { throw ShellError.incompatibleBuild("Build ID is reserved") }
+            guard manifest.buildId != bundledSummary.buildId else { throw ShellError.incompatibleBuild("Build ID is reserved") }
             let staging = installedRoot.appendingPathComponent(".staging-\(UUID().uuidString)", isDirectory: true)
             try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
             defer { try? fileManager.removeItem(at: staging) }
@@ -254,7 +266,7 @@ final class BuildManager: ObservableObject {
 
     func rollback(target: String) throws -> BuildSummary {
         let selected: BuildSummary
-        if target == "bundled" { selected = Self.bundledSummary }
+        if target == "bundled" { selected = bundledSummary }
         else if let previous { selected = previous }
         else { throw ShellError.invalidState("No previous build is available") }
         try activateSummary(selected)
@@ -265,7 +277,7 @@ final class BuildManager: ObservableObject {
         guard developmentURL == nil else { recordFailure("Development UI handshake failed: \(reason)"); return }
         guard active.source == "installed" else { recordFailure("Bundled UI handshake failed: \(reason)"); return }
         let failed = active
-        active = previous ?? Self.bundledSummary
+        active = previous ?? bundledSummary
         previous = failed
         persistPointers()
         recordFailure("Build \(failed.buildId) handshake failed; restored \(active.buildId): \(reason)")

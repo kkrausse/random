@@ -14,8 +14,8 @@
   <key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>
   <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
   <key>NSLocalNetworkUsageDescription</key><string>Connect to an explicitly configured development server on your local network.</string>
-  <key>NSLocationWhenInUseUsageDescription</key><string>Run an explicit, time-bounded location diagnostic to verify real GPS delivery.</string>
-  <key>NSBluetoothAlwaysUsageDescription</key><string>Run explicit heart-rate monitor diagnostics when you choose scan or connect.</string>
+  <key>NSLocationWhenInUseUsageDescription</key><string>Record your cycling route and motion while a workout you start is active, including while the screen is locked.</string>
+  <key>NSBluetoothAlwaysUsageDescription</key><string>Connect to the heart-rate monitor you select and record its measurements during workouts.</string>
   <key>UIBackgroundModes</key><array><string>location</string><string>bluetooth-central</string></array>
   <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/></dict>
 </dict></plist>

@@ -93,7 +93,7 @@ final class WebHost: NSObject, ObservableObject, WKScriptMessageHandler, WKNavig
         if type == "diagnostics.updated" { authoritativePayload = dispatcher.diagnostics.snapshot() }
         if type == "session.updated" { authoritativePayload = dispatcher.diagnostics.sessionSnapshot() }
         if type == "permissions.updated" { authoritativePayload = dispatcher.diagnostics.permissionStatus() }
-        let event: [String: Any] = ["protocolVersion": 1, "sessionId": NSNull(), "sequence": sequence, "type": type, "payload": authoritativePayload]
+        let event: [String: Any] = ["protocolVersion": 1, "sessionId": authoritativePayload["sessionId"] as? String ?? NSNull(), "sequence": sequence, "type": type, "payload": authoritativePayload]
         let prior = eventDeliveryTask
         eventDeliveryTask = Task { [weak self] in
             _ = await prior?.value
