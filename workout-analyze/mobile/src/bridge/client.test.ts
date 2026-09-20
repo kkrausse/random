@@ -85,6 +85,27 @@ describe('bridge client', () => {
     } finally { globalThis.fetch = originalFetch }
   })
 
+  test('bounds repeated malformed-event telemetry and resnapshots', async () => {
+    browser.window = {} as Window
+    const reports: unknown[] = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = ((_: string, init?: RequestInit) => { reports.push(JSON.parse(String(init?.body))); return Promise.resolve(new Response('{}')) }) as typeof fetch
+    let snapshotRequests = 0
+    const client = createBridgeClient(transportWith((command) => {
+      if (command.method !== 'bridge.hello') snapshotRequests += 1
+      respond(command, command.method === 'bridge.hello' ? hello : session(10))
+    }), 100)
+    clients.push(client)
+    try {
+      await client.connect()
+      snapshotRequests = 0
+      for (let sequence = 11; sequence <= 30; sequence += 1) browser.window.WorkoutAnalyzeNative?.receiveEvent({ protocolVersion: 1, sessionId: null, sequence, type: 'heartRate.updated', payload: { bad: true } })
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      expect(reports).toHaveLength(1)
+      expect(snapshotRequests).toBe(1)
+    } finally { globalThis.fetch = originalFetch }
+  })
+
   test('times out unanswered requests', async () => {
     browser.window = {} as Window
     const client = createBridgeClient(transportWith(() => undefined), 5)

@@ -86,21 +86,15 @@ describe('phase-1 sensor bridge contract', () => {
     expect(() => parseReply('heartRate.status', envelope({ ...heartRateStatus, devices: Array(33).fill(device) }))).toThrow()
   })
 
-  test('accepts the native unnamed-device status through scan, connect, disconnect, and snapshot', () => {
-    const unnamed = { ...device, name: '' }
-    const scan = { ...heartRateStatus, state: 'scanning', scanEndsAt: now, devices: [unnamed], connectionId: null, connectedDevice: null, receivedCount: 0, reconnectCount: 0, retainedCount: 0, oldestCursor: null, latestCursor: null, latestMeasurement: null }
-    const connecting = { ...scan, state: 'connecting', scanEndsAt: null, connectionId: 'hr-1', connectedDevice: unnamed }
-    const disconnected = { ...connecting, state: 'inactive', connectedDevice: null }
-    expect(parseReply('heartRate.scan', envelope(scan)).ok).toBe(true)
-    expect(parseReply('heartRate.connect', envelope(connecting)).ok).toBe(true)
-    expect(parseReply('heartRate.disconnect', envelope(disconnected)).ok).toBe(true)
-    expect(parseReply('bridge.snapshot', envelope({ ...atomicSnapshot, heartRate: disconnected })).ok).toBe(true)
-    expect(parseNativeEvent({ protocolVersion: 1, sessionId: null, sequence: 13, type: 'heartRate.updated', payload: disconnected }).sequence).toBe(13)
-  })
-
-  test('reports the exact heart-rate result path without including device data', () => {
-    expect(() => parseReply('heartRate.scan', envelope({ ...heartRateStatus, devices: [{ ...device, name: 'x'.repeat(129) }] })))
-      .toThrow('invalid heartRate.scan result at $.devices[0].name')
+  test('rejects the native recorder-only key from every public heart-rate projection with an exact path', () => {
+    const leakedMeasurement = { ...measurement, _rawEventId: 'private-recorder-link' }
+    const leaked = { ...heartRateStatus, latestMeasurement: leakedMeasurement }
+    expect(() => parseReply('heartRate.scan', envelope(leaked))).toThrow('invalid heartRate.scan result at $.latestMeasurement._rawEventId')
+    expect(() => parseReply('heartRate.connect', envelope(leaked))).toThrow('invalid heartRate.connect result at $.latestMeasurement._rawEventId')
+    expect(() => parseReply('heartRate.disconnect', envelope(leaked))).toThrow('invalid heartRate.disconnect result at $.latestMeasurement._rawEventId')
+    expect(() => parseReply('heartRate.read', envelope({ items: [leakedMeasurement], nextCursor: 3, oldestAvailableCursor: 1, hasMore: false, droppedBeforeCursor: false }))).toThrow('invalid heartRate.read result at $.items[0]._rawEventId')
+    expect(() => parseReply('bridge.snapshot', envelope({ ...atomicSnapshot, heartRate: leaked }))).toThrow('invalid bridge.snapshot result at $.heartRate.latestMeasurement._rawEventId')
+    expect(() => parseNativeEvent({ protocolVersion: 1, sessionId: null, sequence: 13, type: 'heartRate.updated', payload: leaked })).toThrow('invalid native event payload: type=heartRate.updated path=$.payload.latestMeasurement._rawEventId')
   })
 
   test('accepts coalesced sensor events but rejects malformed payloads', () => {
