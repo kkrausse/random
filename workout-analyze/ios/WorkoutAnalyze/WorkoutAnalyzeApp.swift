@@ -44,6 +44,9 @@ struct RootView: View {
     var body: some View {
         HostedWebView(host: model.web)
             .ignoresSafeArea(.container, edges: .bottom)
+            .overlay {
+                SourceFailureView(builds: model.builds) { recoveryPresented = true }
+            }
             .overlay(alignment: .topTrailing) {
                 Button { recoveryPresented = true } label: {
                     Image(systemName: "wrench.and.screwdriver").padding(12).background(.ultraThinMaterial, in: Circle())
@@ -53,6 +56,30 @@ struct RootView: View {
             }
             .sheet(isPresented: $recoveryPresented) { RecoveryView(model: model) }
             .task { model.web.loadSelectedSource() }
+    }
+}
+
+struct SourceFailureView: View {
+    @ObservedObject var builds: BuildManager
+    let openRecovery: () -> Void
+
+    var body: some View {
+        if builds.uiLoadState == "failed" {
+            VStack(spacing: 14) {
+                Image(systemName: "wifi.exclamationmark").font(.largeTitle)
+                Text("Web source unavailable").font(.headline)
+                Text(builds.uiLoadTargetURL?.absoluteString ?? builds.configuredSourceDescription)
+                    .font(.caption).multilineTextAlignment(.center).textSelection(.enabled)
+                if let failure = builds.currentLoadFailure {
+                    Text(failure).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                }
+                Button("Open Native Recovery", action: openRecovery).buttonStyle(.borderedProminent)
+            }
+            .padding(24)
+            .frame(maxWidth: 360)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+            .padding()
+        }
     }
 }
 
