@@ -8,7 +8,7 @@ https://kevins-macbook-pro-2.tail7e28fb.ts.net:8443/__workout/build/manifest.jso
 
 It is available only while the Mac is online, Tailscale is connected on both devices, and the mobile Vite development server is running on port 4317. Tailscale Serve terminates trusted HTTPS on port 8443 and proxies the whole Vite server, including HMR WebSockets, diagnostics, and installed-build delivery. Port 443 and its existing root handler remain untouched.
 
-The Settings development-source field defaults to the same HTTPS origin. If a newer native contract reports `active.sourceUrl`, the field adopts it once unless the user has already edited the field; polling never overwrites unsaved input. Direct `http://100.86.29.19:4317/` access remains available as a network fallback, although HMR is configured for the preferred WSS endpoint.
+Settings offers the same HTTPS origin as an explicit draft action. It does not infer the native source from `window.location`, build identity, or bridge health, and does not switch sources until **Connect** is pressed. Configured, target, loaded, load-state, current-failure, and historical-failure values are projected through the Zustand store from the validated native `webBuild` diagnostics row. Polling initializes the draft from a configured development URL only while the draft is clean. Direct `http://100.86.29.19:4317/` access remains available as the current development source; the Vite client uses that page's own HMR origin rather than redirecting it.
 
 ## Publish a build
 

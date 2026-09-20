@@ -1,15 +1,11 @@
 import { ArrowLeft, CheckCircle2, ChevronRight, CircleAlert, Download, Gauge, HeartPulse, MapPin, RefreshCw, RotateCcw, Settings as SettingsIcon, Share2, ShieldCheck, Wifi } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useStore } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
 import type { Capability, StatusRow } from '../../src/shared/mobile'
 import type { MobileStore } from './store'
 import { Button } from './components/Button'
-
-declare const __WORKOUT_TAILSCALE_ORIGIN__: string
-const defaultDevelopmentUrl = `${__WORKOUT_TAILSCALE_ORIGIN__}/`
-const defaultManifestUrl = `${__WORKOUT_TAILSCALE_ORIGIN__}/__workout/build/manifest.json`
-const loadedDevelopmentUrl = ['http:', 'https:'].includes(window.location.protocol) ? `${window.location.origin}/` : defaultDevelopmentUrl
+import { defaultManifestUrl, recommendedDevelopmentUrl } from './config'
 
 const age = (value: string | null) => {
   if (!value) return 'Never observed'
@@ -31,27 +27,24 @@ const Settings = ({ store }: { store: MobileStore }) => {
   const builds = useStore(store, (state) => state.builds)
   const requests = useStore(store, (state) => state.requests)
   const notice = useStore(store, (state) => state.notices.settings)
+  const devUrl = useStore(store, (state) => state.developmentSourceDraft)
+  const configuredDevUrl = useStore(store, (state) => state.configuredDevelopmentSourceUrl)
+  const uiSource = useStore(store, (state) => state.uiSource)
   const setScreen = useStore(store, (state) => state.setScreen)
+  const setDevUrl = useStore(store, (state) => state.setDevelopmentSourceDraft)
   const reload = useStore(store, (state) => state.reload)
   const configureSource = useStore(store, (state) => state.configureDevelopmentSource)
   const installBuild = useStore(store, (state) => state.installBuild)
   const rollback = useStore(store, (state) => state.rollback)
-  const activeSourceUrl = (builds?.active as { readonly sourceUrl?: unknown } | undefined)?.sourceUrl
-  const devUrlEdited = useRef(false)
-  const adoptedActiveSource = useRef(false)
-  const [devUrl, setDevUrl] = useState(loadedDevelopmentUrl)
   const [manifestUrl, setManifestUrl] = useState(defaultManifestUrl)
-  useEffect(() => {
-    if (devUrlEdited.current || adoptedActiveSource.current || typeof activeSourceUrl !== 'string') return
-    adoptedActiveSource.current = true
-    setDevUrl(activeSourceUrl)
-  }, [activeSourceUrl])
   const busy = pending(requests)
+  const configuredSource = uiSource?.configured.kind === 'development' ? uiSource.configured.url : uiSource ? `${uiSource.configured.kind} build ${uiSource.configured.buildId}` : 'Waiting for native source state…'
+  const loadedSource = uiSource?.loadedUrl ?? (uiSource ? 'None in this process' : 'Waiting for native source state…')
   return <main className="app-shell">
     <TopBar title="Settings" back={() => setScreen('diagnostics')} />
     <section className="page-heading"><p className="eyebrow">SHELL & DELIVERY</p><h1>App source</h1><p>Switch web code without reinstalling the native shell. Engine changes take effect for the next session.</p></section>
-    <section className="card build-card"><div className="card-title"><Wifi /><div><span>Current source</span><strong>{builds?.active.source ?? 'Loading…'}</strong></div><Pill tone="good">{bridge.phase}</Pill></div><dl><div><dt>Web build</dt><dd>{builds?.active.buildId ?? '—'}</dd></div><div><dt>Engine</dt><dd>{builds?.active.engineBuildId ?? '—'}</dd></div><div><dt>Protocol</dt><dd>v1</dd></div></dl>{builds?.lastFailure && <p className="error-note">{builds.lastFailure}</p>}</section>
-    <section className="form-section"><label htmlFor="dev-url">Development server URL</label><div className="input-row"><input id="dev-url" value={devUrl} onChange={(event) => { devUrlEdited.current = true; setDevUrl(event.target.value) }} inputMode="url" autoCapitalize="none" /><Button disabled={busy} onClick={() => void configureSource(devUrl)}><Wifi /> Connect</Button></div><small>HTTP is accepted only for the explicitly selected development host.</small></section>
+    <section className="card build-card"><div className="card-title"><Wifi /><div><span>Configured source</span><strong>{configuredSource}</strong></div><Pill tone={uiSource?.loadState === 'failed' ? 'error' : 'good'}>{uiSource?.loadState ?? bridge.phase}</Pill></div><dl><div><dt>Current target</dt><dd>{uiSource?.targetUrl ?? '—'}</dd></div><div><dt>Loaded source</dt><dd>{loadedSource}</dd></div><div><dt>Build source</dt><dd>{builds ? `${builds.active.source} · ${builds.active.buildId}` : '—'}</dd></div><div><dt>Engine</dt><dd>{builds?.active.engineBuildId ?? '—'}</dd></div></dl>{uiSource?.currentFailure && <p className="error-note">Current load failed: {uiSource.currentFailure}</p>}{!uiSource?.currentFailure && uiSource?.lastFailureHistory && <p className="error-note">Previous load failure: {uiSource.lastFailureHistory}</p>}{builds?.lastFailure && <p className="error-note">Build operation: {builds.lastFailure}</p>}</section>
+    <section className="form-section"><label htmlFor="dev-url">Development server URL</label><div className="input-row"><input id="dev-url" value={devUrl} placeholder={recommendedDevelopmentUrl} onChange={(event) => setDevUrl(event.target.value)} inputMode="url" autoCapitalize="none" /><Button disabled={busy || devUrl.length === 0} onClick={() => void configureSource(devUrl)}><Wifi /> Connect</Button></div>{configuredDevUrl === null && <Button disabled={busy || devUrl === recommendedDevelopmentUrl} onClick={() => setDevUrl(recommendedDevelopmentUrl)}>Use private tailnet HTTPS</Button>}<small>Changing this draft does not switch sources. Connect explicitly to apply it.</small></section>
     <section className="form-section"><label htmlFor="manifest-url">HTTPS build manifest</label><input id="manifest-url" value={manifestUrl} onChange={(event) => setManifestUrl(event.target.value)} inputMode="url" autoCapitalize="none" /><Button className="full" disabled={busy} onClick={() => void installBuild(manifestUrl)}><Download /> Download, activate & reload</Button></section>
     <section className="action-list">
       <button onClick={() => void reload()} disabled={busy}><RefreshCw /><span><strong>Reload current UI</strong><small>Reconnects to native session state</small></span><ChevronRight /></button>

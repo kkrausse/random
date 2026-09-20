@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { PHASE1_BASE_CAPABILITIES, type AppBuildStatus, type CommandResults, type MobileMethod, type PermissionStatus } from '../../src/shared/mobile'
 import { createBridgeClient, type BridgeClient, type BridgeState } from './bridge/client'
 import { createSimulatorTransport } from './bridge/simulator'
-import { createMobileStore } from './store'
+import { createMobileStore, sourceStateFromDiagnostics } from './store'
 
 const browser = globalThis as unknown as { window: Window; document: Document }
 const cleanups: Array<() => void> = []
@@ -18,6 +18,14 @@ const installDomStubs = () => {
 }
 
 describe('mobile store', () => {
+  test('projects the authoritative native UI source details without conflating history and current failure', () => {
+    const source = sourceStateFromDiagnostics({ capturedAt: '2026-09-20T00:00:00Z', eventSequence: 1, rows: [{
+      id: 'webBuild', label: 'Web build', status: 'ok', reason: 'ready', observedAt: '2026-09-20T00:00:00Z', freshness: 'fresh',
+      details: { uiSource: { configured: { kind: 'development', url: 'http://100.86.29.19:4317/' }, targetUrl: 'http://100.86.29.19:4317/', loadedUrl: 'http://100.86.29.19:4317/', loadState: 'ready', currentFailure: null, lastFailureHistory: 'old failure', generation: 7 } },
+    }] })
+    expect(source).toEqual({ configured: { kind: 'development', url: 'http://100.86.29.19:4317/' }, targetUrl: 'http://100.86.29.19:4317/', loadedUrl: 'http://100.86.29.19:4317/', loadState: 'ready', currentFailure: null, lastFailureHistory: 'old failure', generation: 7 })
+  })
+
   test('projects atomic snapshots and owns sensor actions and cleanup', async () => {
     installDomStubs()
     const client = createBridgeClient(createSimulatorTransport(), 250)
@@ -49,6 +57,18 @@ describe('mobile store', () => {
     browser.window.WorkoutAnalyzeNative?.receiveEvent({ protocolVersion: 1, sessionId: null, sequence: 5, type: 'appBuild.updated', payload: builds })
     expect(store.getState().builds?.active.buildId).toBe('event-build')
     expect(store.getState().bridge.lastSequence).toBe(5)
+  })
+
+  test('keeps the source draft user-owned and only records a validated configure result', async () => {
+    installDomStubs()
+    const client = createBridgeClient(createSimulatorTransport(), 250)
+    const store = createMobileStore(client)
+    cleanups.push(() => client.dispose())
+    expect(store.getState()).toMatchObject({ developmentSourceDraft: '', developmentSourceDirty: false, configuredDevelopmentSourceUrl: undefined })
+    store.getState().setDevelopmentSourceDraft('http://100.86.29.19:4317/')
+    expect(store.getState()).toMatchObject({ developmentSourceDraft: 'http://100.86.29.19:4317/', developmentSourceDirty: true })
+    await store.getState().configureDevelopmentSource('http://100.86.29.19:4317/')
+    expect(store.getState()).toMatchObject({ developmentSourceDraft: 'http://100.86.29.19:4317/', developmentSourceDirty: false, configuredDevelopmentSourceUrl: 'http://100.86.29.19:4317/' })
   })
 
   test('ignores slower legacy poll results after a newer refresh completes', async () => {
