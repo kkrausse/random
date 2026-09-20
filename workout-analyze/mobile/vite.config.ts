@@ -16,7 +16,6 @@ export default defineConfig({
   server: {
     strictPort: true,
     allowedHosts: [tailscaleHost],
-    hmr: { protocol: 'wss', host: tailscaleHost, clientPort: tailscaleHttpsPort },
     watch: { ignored: ['**/mobile/dist/**'] },
   },
   build: {

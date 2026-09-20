@@ -1,18 +1,25 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import { App } from './App'
-import { createBridgeClient, nativeTransport, unavailableNativeTransport } from './bridge/client'
-import { createSimulatorTransport } from './bridge/simulator'
-import { createMobileStore } from './store'
-import './styles.css'
+const root = document.getElementById('root')
+const describe = (reason: unknown) => reason instanceof Error ? reason.message : typeof reason === 'string' ? reason : 'Unknown JavaScript startup failure'
 
-const params = new URLSearchParams(window.location.search)
-const native = nativeTransport()
-const simulatorRequested = params.get('simulator') === '1' || params.has('fault')
-const transport = native ?? (simulatorRequested ? createSimulatorTransport(params.get('fault')) : unavailableNativeTransport())
-const client = createBridgeClient(transport)
-const store = createMobileStore(client)
-const stopStore = store.getState().start()
-window.addEventListener('pagehide', () => { stopStore(); client.dispose() }, { once: true })
+const report = (reason: unknown) => {
+  const message = describe(reason)
+  if (root) {
+    root.innerHTML = ''
+    const panel = document.createElement('main')
+    panel.setAttribute('role', 'alert')
+    panel.style.cssText = 'font:16px system-ui;padding:24px;color:#7f1d1d;background:#fef2f2;min-height:100vh;box-sizing:border-box'
+    const heading = document.createElement('h1')
+    heading.textContent = 'Workout UI failed to start'
+    const detail = document.createElement('pre')
+    detail.style.whiteSpace = 'pre-wrap'
+    detail.textContent = message
+    panel.append(heading, detail)
+    root.append(panel)
+  }
+  const event = { id: `web-startup-${Date.now()}`, timestamp: new Date().toISOString(), subsystem: 'web-startup', level: 'error', message }
+  void fetch('/__workout/diagnostics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ formatVersion: 1, uploadId: event.id, events: [event] }) }).catch(() => undefined)
+}
 
-createRoot(document.getElementById('root')!).render(<StrictMode><App store={store} /></StrictMode>)
+window.addEventListener('error', (event) => report(event.error ?? event.message))
+window.addEventListener('unhandledrejection', (event) => report(event.reason))
+void import('./start').catch(report)
