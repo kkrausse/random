@@ -194,7 +194,10 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
       } catch (error) {
         const requestId = typeof value === 'object' && value !== null && 'requestId' in value ? String(value.requestId) : ''
         const item = pending.get(requestId)
-        if (item) { clearTimeout(item.timeout); pending.delete(requestId); item.reject(error) }
+        if (item) {
+          clearTimeout(item.timeout); pending.delete(requestId); item.reject(error)
+          if (item.method !== 'bridge.snapshot' && item.method !== 'session.snapshot' && consecutiveResyncFailures < 3) void resync(false)
+        }
       }
     },
     receiveEvent(value) {

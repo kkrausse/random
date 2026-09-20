@@ -216,10 +216,11 @@ export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> =
       if (event.type === 'metrics.updated') set((state) => isAvailableSession(state.session) ? { session: { ...state.session, metrics: event.payload } as AvailableSessionSnapshot } : {})
       if (event.type === 'observations.appended') {
         const page = event.payload as import('../../src/shared/mobile').ObservationPage
-        if (observationEventSessionId(event) === subscribedSessionId) {
+        const eventSessionId = observationEventSessionId(event)
+        if (eventSessionId === subscribedSessionId) {
           const expected = (get().observationCursor ?? 0) + 1
           const first = page.items[0]?.sequence
-          if (first !== undefined && first > expected) void readObservationHistory(event.sessionId!, observationGeneration, get().observationCursor)
+          if (first !== undefined && first > expected) void readObservationHistory(eventSessionId, observationGeneration, get().observationCursor)
           else mergeObservations(page.items, page.latestDurableSequence)
         }
       }
