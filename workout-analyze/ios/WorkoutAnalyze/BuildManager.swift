@@ -319,7 +319,7 @@ final class BuildManager: ObservableObject {
         }
         if developmentURL == nil,
            defaults.string(forKey: "workoutAnalyze.sourceSelection") == nil,
-           let url = ContractValidation.developmentURL("http://100.86.29.19:4317") {
+           let url = ContractValidation.developmentURL("https://kevins-macbook-pro-2.tail7e28fb.ts.net:8443/") {
             developmentURL = url
             defaults.set(url.absoluteString, forKey: "developmentURL")
             defaults.set("development", forKey: "workoutAnalyze.sourceSelection")
