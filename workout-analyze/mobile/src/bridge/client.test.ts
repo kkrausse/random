@@ -66,6 +66,25 @@ describe('bridge client', () => {
     await expect(client.request('bridge.ping', { nonce: 'n-1' })).rejects.toThrow('invalid bridge.ping result')
   })
 
+  test('resnapshots after a malformed event and reports only redacted failure metadata', async () => {
+    browser.window = {} as Window
+    const reports: unknown[] = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = ((_: string, init?: RequestInit) => { reports.push(JSON.parse(String(init?.body))); return Promise.resolve(new Response('{}')) }) as typeof fetch
+    let snapshotSequence = 3
+    const client = createBridgeClient(transportWith((command) => respond(command, command.method === 'bridge.hello' ? hello : session(snapshotSequence))), 100)
+    clients.push(client)
+    try {
+      await client.connect()
+      snapshotSequence = 4
+      browser.window.WorkoutAnalyzeNative?.receiveEvent({ protocolVersion: 1, sessionId: null, sequence: 4, type: 'metrics.updated', payload: { privateSensorValue: 42 } })
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      expect(client.getState()).toMatchObject({ phase: 'ready', error: null, lastSequence: 4, resyncCount: 1 })
+      expect(reports).toEqual([expect.objectContaining({ events: [expect.objectContaining({ metadata: { eventType: 'metrics.updated', sequence: 4 } })] })])
+      expect(JSON.stringify(reports)).not.toContain('privateSensorValue')
+    } finally { globalThis.fetch = originalFetch }
+  })
+
   test('times out unanswered requests', async () => {
     browser.window = {} as Window
     const client = createBridgeClient(transportWith(() => undefined), 5)

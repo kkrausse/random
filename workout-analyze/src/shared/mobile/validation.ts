@@ -82,11 +82,48 @@ const statusRow = (value: unknown): value is StatusRow => record(value) && exact
 const summary = (value: unknown) => record(value) && exactKeys(value, ['buildId', 'source', 'engineBuildId']) && typeof value.buildId === 'string' && idPattern.test(value.buildId) && (value.source === 'bundled' || value.source === 'installed') && typeof value.engineBuildId === 'string' && idPattern.test(value.engineBuildId)
 const appBuildStatus = (value: unknown) => record(value) && exactKeys(value, ['active', 'previous', 'bundled', 'downloaded', 'pendingActivationBuildId', 'lastFailure']) && summary(value.active) && (value.previous === null || summary(value.previous)) && summary(value.bundled) && Array.isArray(value.downloaded) && value.downloaded.every(summary) && (value.pendingActivationBuildId === null || (typeof value.pendingActivationBuildId === 'string' && idPattern.test(value.pendingActivationBuildId))) && (value.lastFailure === null || text(value.lastFailure))
 const workoutMetrics = (value: unknown): value is WorkoutMetrics => record(value) && exactKeys(value, ['activeDurationMs', 'elapsedDurationMs', 'distanceM', 'averageSpeedMps', 'currentSpeedMps', 'currentSpeedObservedAt', 'altitudeM', 'elevationGainM', 'heartRateBpm', 'heartRateObservedAt', 'locationQuality', 'heartRateQuality']) && safeInteger(value.activeDurationMs) && safeInteger(value.elapsedDurationMs) && (value.activeDurationMs as number) <= (value.elapsedDurationMs as number) && finite(value.distanceM, 0) && (value.averageSpeedMps === null || finite(value.averageSpeedMps, 0)) && (value.currentSpeedMps === null || finite(value.currentSpeedMps, 0)) && nullableIso(value.currentSpeedObservedAt) && (value.altitudeM === null || finite(value.altitudeM)) && finite(value.elevationGainM, 0) && (value.heartRateBpm === null || safeInteger(value.heartRateBpm, 0, 65_535)) && nullableIso(value.heartRateObservedAt) && ['waiting', 'good', 'poor', 'stale'].includes(value.locationQuality as string) && ['unconfigured', 'connecting', 'live', 'stale', 'disconnected'].includes(value.heartRateQuality as string)
+const workoutMetricsValidationPath = (value: unknown): string | null => {
+  if (!record(value)) return '$.payload'
+  const keys = ['activeDurationMs', 'elapsedDurationMs', 'distanceM', 'averageSpeedMps', 'currentSpeedMps', 'currentSpeedObservedAt', 'altitudeM', 'elevationGainM', 'heartRateBpm', 'heartRateObservedAt', 'locationQuality', 'heartRateQuality'] as const
+  const missing = keys.find((key) => !(key in value))
+  if (missing) return `$.payload.${missing}`
+  const unexpected = Object.keys(value).find((key) => !keys.includes(key as typeof keys[number]))
+  if (unexpected) return `$.payload.${unexpected}`
+  if (!safeInteger(value.activeDurationMs)) return '$.payload.activeDurationMs'
+  if (!safeInteger(value.elapsedDurationMs)) return '$.payload.elapsedDurationMs'
+  if ((value.activeDurationMs as number) > (value.elapsedDurationMs as number)) return '$.payload.activeDurationMs>elapsedDurationMs'
+  if (!finite(value.distanceM, 0)) return '$.payload.distanceM'
+  if (!(value.averageSpeedMps === null || finite(value.averageSpeedMps, 0))) return '$.payload.averageSpeedMps'
+  if (!(value.currentSpeedMps === null || finite(value.currentSpeedMps, 0))) return '$.payload.currentSpeedMps'
+  if (!nullableIso(value.currentSpeedObservedAt)) return '$.payload.currentSpeedObservedAt'
+  if (!(value.altitudeM === null || finite(value.altitudeM))) return '$.payload.altitudeM'
+  if (!finite(value.elevationGainM, 0)) return '$.payload.elevationGainM'
+  if (!(value.heartRateBpm === null || safeInteger(value.heartRateBpm, 0, 65_535))) return '$.payload.heartRateBpm'
+  if (!nullableIso(value.heartRateObservedAt)) return '$.payload.heartRateObservedAt'
+  if (!['waiting', 'good', 'poor', 'stale'].includes(value.locationQuality as string)) return '$.payload.locationQuality'
+  if (!['unconfigured', 'connecting', 'live', 'stale', 'disconnected'].includes(value.heartRateQuality as string)) return '$.payload.heartRateQuality'
+  return null
+}
 const pinnedEngine = (value: unknown) => record(value) && exactKeys(value, ['buildId', 'apiVersion', 'checkpointSchemaVersion']) && text(value.buildId, 128) && value.apiVersion === 1 && value.checkpointSchemaVersion === 1
 const sessionSnapshot = (value: unknown) => {
   if (!record(value) || !['idle', 'recording', 'paused', 'finished', 'interrupted'].includes(value.state as string) || !safeInteger(value.revision) || !safeInteger(value.durableSequence) || !iso(value.capturedAt)) return false
   if (value.recorderAvailability === 'unavailable') return exactKeys(value, ['sessionId', 'state', 'revision', 'durableSequence', 'recorderAvailability', 'recorderUnavailableReason', 'pinnedEngine', 'capturedAt']) && (value.sessionId === null || text(value.sessionId, 128)) && text(value.recorderUnavailableReason) && value.pinnedEngine === null
   return value.recorderAvailability === 'available' && exactKeys(value, ['sessionId', 'state', 'revision', 'durableSequence', 'recorderAvailability', 'recorderUnavailableReason', 'pinnedEngine', 'capturedAt', 'sport', 'startedAt', 'finishedAt', 'lastTransitionAt', 'observationSequence', 'recovery', 'metrics']) && (value.sessionId === null || text(value.sessionId, 128)) && value.recorderUnavailableReason === '' && (value.pinnedEngine === null || pinnedEngine(value.pinnedEngine)) && (value.sport === 'cycling' || value.sport === null) && nullableIso(value.startedAt) && nullableIso(value.finishedAt) && nullableIso(value.lastTransitionAt) && safeInteger(value.observationSequence) && (value.sessionId === null) === (value.sport === null && value.startedAt === null && value.lastTransitionAt === null && value.pinnedEngine === null) && record(value.recovery) && exactKeys(value.recovery, ['required', 'interruptionStartedAt', 'reason']) && typeof value.recovery.required === 'boolean' && nullableIso(value.recovery.interruptionStartedAt) && nullableText(value.recovery.reason) && workoutMetrics(value.metrics)
+}
+const sessionSnapshotValidationPath = (value: unknown): string | null => {
+  if (!record(value)) return '$.payload'
+  for (const key of ['sessionId', 'state', 'revision', 'durableSequence', 'recorderAvailability', 'recorderUnavailableReason', 'pinnedEngine', 'capturedAt']) if (!(key in value)) return `$.payload.${key}`
+  if (!['idle', 'recording', 'paused', 'finished', 'interrupted'].includes(value.state as string)) return '$.payload.state'
+  if (!safeInteger(value.revision)) return '$.payload.revision'
+  if (!safeInteger(value.durableSequence)) return '$.payload.durableSequence'
+  if (!iso(value.capturedAt)) return '$.payload.capturedAt'
+  if (value.recorderAvailability !== 'available' && value.recorderAvailability !== 'unavailable') return '$.payload.recorderAvailability'
+  if (value.recorderAvailability === 'available') {
+    for (const key of ['sport', 'startedAt', 'finishedAt', 'lastTransitionAt', 'observationSequence', 'recovery', 'metrics']) if (!(key in value)) return `$.payload.${key}`
+    const metricsPath = workoutMetricsValidationPath(value.metrics)
+    if (metricsPath) return metricsPath.replace('$.payload', '$.payload.metrics')
+  }
+  return sessionSnapshot(value) ? null : '$.payload'
 }
 const diagnosticsSnapshot = (value: unknown) => record(value) && exactKeys(value, ['capturedAt', 'rows', 'eventSequence']) && iso(value.capturedAt) && Array.isArray(value.rows) && value.rows.every(statusRow) && Number.isSafeInteger(value.eventSequence) && (value.eventSequence as number) >= 0
 
@@ -142,6 +179,21 @@ const observationPage = (value: unknown) => {
 }
 
 const recordingIssue = (value: unknown) => record(value) && exactKeys(value, ['issueId', 'severity', 'code', 'message', 'observedAt', 'durableSequence']) && text(value.issueId, 128) && ['warning', 'fatal'].includes(value.severity as string) && ['poorLocation', 'locationStale', 'storageFailure', 'engineFailure', 'interrupted'].includes(value.code as string) && text(value.message) && iso(value.observedAt) && safeInteger(value.durableSequence)
+
+const nativeEventPayloadValidationPath = (type: unknown, payload: unknown): string | null => {
+  if (type === 'session.updated') return sessionSnapshotValidationPath(payload)
+  if (type === 'metrics.updated') return workoutMetricsValidationPath(payload)
+  if (type === 'diagnostics.updated' && record(payload) && Array.isArray(payload.rows)) {
+    const invalid = payload.rows.findIndex((item) => !statusRow(item))
+    if (invalid >= 0) return `$.payload.rows[${invalid}]${record(payload.rows[invalid]) && typeof payload.rows[invalid].id === 'string' ? `.id=${payload.rows[invalid].id}` : ''}`
+  }
+  if (type === 'observations.appended' && record(payload) && Array.isArray(payload.items)) {
+    const invalid = payload.items.findIndex((item) => !recorderObservation(item))
+    if (invalid >= 0) return `$.payload.items[${invalid}]${record(payload.items[invalid]) && typeof payload.items[invalid].kind === 'string' ? `.kind=${payload.items[invalid].kind}` : ''}`
+  }
+  const valid = (type === 'session.updated' && sessionSnapshot(payload)) || (type === 'diagnostics.updated' && diagnosticsSnapshot(payload)) || (type === 'appBuild.updated' && appBuildStatus(payload)) || (type === 'permissions.updated' && permissionStatus(payload)) || (type === 'location.updated' && locationStatus(payload)) || (type === 'heartRate.updated' && heartRateStatus(payload)) || (type === 'metrics.updated' && workoutMetrics(payload)) || (type === 'observations.appended' && observationPage(payload)) || (type === 'recording.issue' && recordingIssue(payload))
+  return valid ? null : '$.payload'
+}
 
 const savedWorkoutSummary = (value: unknown) => record(value) && requiredAndOptionalKeys(value, ['savedWorkoutId', 'sessionId', 'sport', 'startedAt', 'finishedAt', 'durationMs', 'observationCount', 'latestSequence', 'metrics', 'hasFatalIssue'], ['rawEventCount', 'lastJournalSequence']) && typeof value.savedWorkoutId === 'string' && idPattern.test(value.savedWorkoutId) && typeof value.sessionId === 'string' && idPattern.test(value.sessionId) && value.sport === 'cycling' && iso(value.startedAt) && iso(value.finishedAt) && Date.parse(value.finishedAt as string) >= Date.parse(value.startedAt as string) && safeInteger(value.durationMs) && safeInteger(value.observationCount) && safeInteger(value.latestSequence) && value.observationCount === value.latestSequence && workoutMetrics(value.metrics) && typeof value.hasFatalIssue === 'boolean' && (('rawEventCount' in value) === ('lastJournalSequence' in value)) && (!('rawEventCount' in value) || safeInteger(value.rawEventCount) && safeInteger(value.lastJournalSequence) && value.rawEventCount === value.lastJournalSequence)
 
@@ -264,7 +316,8 @@ export const parseReply = <M extends MobileMethod>(method: M, value: unknown): R
 export const parseNativeEvent = (value: unknown): NativeEvent => {
   const object = record(value) ? value : fail('invalid native event envelope')
   if (encodedJsonBytes(object) > MOBILE_MAX_MESSAGE_BYTES || !exactKeys(object, ['protocolVersion', 'sessionId', 'sequence', 'type', 'payload']) || object.protocolVersion !== 1 || !(object.sessionId === null || text(object.sessionId, 128)) || !Number.isSafeInteger(object.sequence) || (object.sequence as number) < 0 || !['session.updated', 'diagnostics.updated', 'appBuild.updated', 'permissions.updated', 'location.updated', 'heartRate.updated', 'metrics.updated', 'observations.appended', 'recording.issue'].includes(object.type as string) || !record(object.payload)) fail('invalid native event envelope')
-  if ((object.type === 'session.updated' && !sessionSnapshot(object.payload)) || (object.type === 'diagnostics.updated' && !diagnosticsSnapshot(object.payload)) || (object.type === 'appBuild.updated' && !appBuildStatus(object.payload)) || (object.type === 'permissions.updated' && !permissionStatus(object.payload)) || (object.type === 'location.updated' && !locationStatus(object.payload)) || (object.type === 'heartRate.updated' && !heartRateStatus(object.payload)) || (object.type === 'metrics.updated' && !workoutMetrics(object.payload)) || (object.type === 'observations.appended' && !observationPage(object.payload)) || (object.type === 'recording.issue' && !recordingIssue(object.payload))) fail('invalid native event payload')
+  const path = nativeEventPayloadValidationPath(object.type, object.payload)
+  if (path) fail(`invalid native event payload: type=${object.type} path=${path}`)
   return object as unknown as NativeEvent
 }
 

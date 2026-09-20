@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { PHASE1_BASE_CAPABILITIES, type AppBuildStatus, type CommandResults, type MobileMethod, type PermissionStatus } from '../../src/shared/mobile'
 import { createBridgeClient, type BridgeClient, type BridgeState } from './bridge/client'
 import { createSimulatorTransport } from './bridge/simulator'
-import { createMobileStore, sourceStateFromDiagnostics } from './store'
+import { createMobileStore, observationEventSessionId, sourceStateFromDiagnostics } from './store'
 
 const browser = globalThis as unknown as { window: Window; document: Document }
 const cleanups: Array<() => void> = []
@@ -18,6 +18,12 @@ const installDomStubs = () => {
 }
 
 describe('mobile store', () => {
+  test('recovers the recording session identity from native observation pages', () => {
+    const item = { kind: 'location' as const, sessionId: 'ride-1', sequence: 2, source: 'coreLocation' as const, sourceTimestamp: '2026-09-20T00:00:00Z', receivedAt: '2026-09-20T00:00:00Z', monotonicTimestampMs: 1, latitudeDegrees: 1, longitudeDegrees: 2, horizontalAccuracyM: 5, altitudeM: null, verticalAccuracyM: null, speedMps: null, speedAccuracyMps: null, courseDegrees: null, courseAccuracyDegrees: null, floorLevel: null, isSimulatedBySoftware: false, isProducedByAccessory: false }
+    const event = { protocolVersion: 1 as const, sessionId: null, sequence: 8, type: 'observations.appended' as const, payload: { items: [item], nextSequence: 2, oldestAvailableSequence: 1, latestDurableSequence: 2, hasMore: false, droppedBeforeSequence: false } }
+    expect(observationEventSessionId(event)).toBe('ride-1')
+  })
+
   test('projects the authoritative native UI source details without conflating history and current failure', () => {
     const source = sourceStateFromDiagnostics({ capturedAt: '2026-09-20T00:00:00Z', eventSequence: 1, rows: [{
       id: 'webBuild', label: 'Web build', status: 'ok', reason: 'ready', observedAt: '2026-09-20T00:00:00Z', freshness: 'fresh',
