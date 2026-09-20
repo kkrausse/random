@@ -28,6 +28,15 @@ export type Capability =
   | 'appBuild.rollback'
   | 'devSource.configure'
   | 'ui.reload'
+  | 'workout.start'
+  | 'workout.pause'
+  | 'workout.resume'
+  | 'workout.finish'
+  | 'workout.recover'
+  | 'workout.export'
+  | 'observations.subscribe'
+  | 'observations.unsubscribe'
+  | 'observations.read'
 
 export const PHASE1_BASE_CAPABILITIES: ReadonlyArray<Capability> = [
   'bridge.ping', 'session.snapshot', 'permissions.status',
@@ -44,6 +53,14 @@ export const PHASE1_SENSOR_CAPABILITIES: ReadonlyArray<Capability> = [
 ]
 
 export const PHASE1_CAPABILITIES: ReadonlyArray<Capability> = [...PHASE1_BASE_CAPABILITIES, ...PHASE1_SENSOR_CAPABILITIES]
+
+export const RECORDING_CAPABILITIES: ReadonlyArray<Capability> = [
+  'workout.start', 'workout.pause', 'workout.resume', 'workout.finish',
+  'workout.recover', 'workout.export', 'observations.subscribe',
+  'observations.unsubscribe', 'observations.read',
+]
+
+export const MOBILE_CAPABILITIES: ReadonlyArray<Capability> = [...PHASE1_CAPABILITIES, ...RECORDING_CAPABILITIES]
 
 export type MobileMethod = 'bridge.hello' | Capability
 export type StatusKind = 'ok' | 'waiting' | 'unavailable' | 'error'
@@ -85,7 +102,18 @@ export interface CommandParams {
   readonly 'appBuild.rollback': { readonly target: 'previous' | 'bundled' }
   readonly 'devSource.configure': { readonly url: string | null }
   readonly 'ui.reload': Record<string, never>
+  readonly 'workout.start': { readonly expectedRevision: number; readonly sport: 'cycling'; readonly startPolicy: 'immediate' | 'waitForReliableLocation' }
+  readonly 'workout.pause': SessionMutationParams
+  readonly 'workout.resume': SessionMutationParams
+  readonly 'workout.finish': SessionMutationParams
+  readonly 'workout.recover': SessionMutationParams & { readonly action: 'resume' | 'finish' }
+  readonly 'workout.export': { readonly sessionId: string; readonly format: 'workoutBundleV1' | 'gpx' }
+  readonly 'observations.subscribe': { readonly sessionId: string; readonly afterSequence: number | null; readonly maxBatchSize: number }
+  readonly 'observations.unsubscribe': { readonly subscriptionId: string }
+  readonly 'observations.read': { readonly sessionId: string; readonly afterSequence: number | null; readonly limit: number }
 }
+
+export interface SessionMutationParams { readonly sessionId: string; readonly expectedRevision: number }
 
 export interface Command<M extends MobileMethod = MobileMethod> {
   readonly protocolVersion: 1
@@ -95,15 +123,97 @@ export interface Command<M extends MobileMethod = MobileMethod> {
 }
 
 export type SessionState = 'idle' | 'recording' | 'paused' | 'finished' | 'interrupted'
-export interface SessionSnapshot {
+interface SessionSnapshotBase {
   readonly sessionId: string | null
   readonly state: SessionState
   readonly revision: number
   readonly durableSequence: number
+  readonly capturedAt: string
+}
+
+export interface UnavailableSessionSnapshot extends SessionSnapshotBase {
   readonly recorderAvailability: 'unavailable'
   readonly recorderUnavailableReason: string
+  readonly pinnedEngine: null
+}
+
+export interface AvailableSessionSnapshot extends SessionSnapshotBase {
+  readonly recorderAvailability: 'available'
+  readonly recorderUnavailableReason: ''
   readonly pinnedEngine: { readonly buildId: string; readonly apiVersion: 1; readonly checkpointSchemaVersion: 1 } | null
-  readonly capturedAt: string
+  readonly sport: 'cycling' | null
+  readonly startedAt: string | null
+  readonly finishedAt: string | null
+  readonly lastTransitionAt: string | null
+  readonly observationSequence: number
+  readonly recovery: { readonly required: boolean; readonly interruptionStartedAt: string | null; readonly reason: string | null }
+  readonly metrics: WorkoutMetrics
+}
+
+export type SessionSnapshot = UnavailableSessionSnapshot | AvailableSessionSnapshot
+
+export interface WorkoutMetrics {
+  readonly activeDurationMs: number
+  readonly elapsedDurationMs: number
+  readonly distanceM: number
+  readonly averageSpeedMps: number | null
+  readonly currentSpeedMps: number | null
+  readonly currentSpeedObservedAt: string | null
+  readonly altitudeM: number | null
+  readonly elevationGainM: number
+  readonly heartRateBpm: number | null
+  readonly heartRateObservedAt: string | null
+  readonly locationQuality: 'waiting' | 'good' | 'poor' | 'stale'
+  readonly heartRateQuality: 'unconfigured' | 'connecting' | 'live' | 'stale' | 'disconnected'
+}
+
+export interface RecorderLocationObservation extends Omit<LocationObservation, 'cursor'> {
+  readonly kind: 'location'
+  readonly sessionId: string
+  readonly sequence: number
+  readonly monotonicTimestampMs: number | null
+}
+
+export interface RecorderHeartRateObservation extends Omit<HeartRateMeasurement, 'cursor'> {
+  readonly kind: 'heartRate'
+  readonly sessionId: string
+  readonly sequence: number
+  readonly sourceTimestamp: string
+  readonly monotonicTimestampMs: number | null
+}
+
+export interface RecorderTransitionObservation {
+  readonly kind: 'transition'
+  readonly sessionId: string
+  readonly sequence: number
+  readonly transitionId: string
+  readonly from: SessionState
+  readonly to: SessionState
+  readonly sourceTimestamp: string
+  readonly monotonicTimestampMs: number | null
+  readonly cause: 'user' | 'recovery' | 'systemInterruption'
+}
+
+export interface RecorderGapObservation {
+  readonly kind: 'gap'
+  readonly sessionId: string
+  readonly sequence: number
+  readonly sourceTimestamp: string
+  readonly monotonicTimestampMs: number | null
+  readonly startedAt: string
+  readonly endedAt: string
+  readonly reason: 'processRestart' | 'osTermination' | 'reboot' | 'sensorDeliveryGap' | 'unknown'
+}
+
+export type RecorderObservation = RecorderLocationObservation | RecorderHeartRateObservation | RecorderTransitionObservation | RecorderGapObservation
+
+export interface ObservationPage {
+  readonly items: readonly RecorderObservation[]
+  readonly nextSequence: number | null
+  readonly oldestAvailableSequence: number | null
+  readonly latestDurableSequence: number
+  readonly hasMore: boolean
+  readonly droppedBeforeSequence: boolean
 }
 
 export interface PermissionStatus {
@@ -267,9 +377,18 @@ export interface CommandResults {
   readonly 'appBuild.rollback': { readonly active: BuildSummary; readonly reloadRequired: true }
   readonly 'devSource.configure': { readonly source: { readonly kind: 'bundled' } | { readonly kind: 'development'; readonly url: string }; readonly reloadRequired: true }
   readonly 'ui.reload': { readonly accepted: true }
+  readonly 'workout.start': SessionSnapshot
+  readonly 'workout.pause': SessionSnapshot
+  readonly 'workout.resume': SessionSnapshot
+  readonly 'workout.finish': { readonly session: SessionSnapshot; readonly savedWorkoutId: string }
+  readonly 'workout.recover': SessionSnapshot | { readonly session: SessionSnapshot; readonly savedWorkoutId: string }
+  readonly 'workout.export': { readonly exportId: string; readonly presented: boolean; readonly format: 'workoutBundleV1' | 'gpx' }
+  readonly 'observations.subscribe': { readonly subscriptionId: string; readonly afterSequence: number; readonly latestDurableSequence: number }
+  readonly 'observations.unsubscribe': { readonly removed: true }
+  readonly 'observations.read': ObservationPage
 }
 
-export type BridgeErrorCode = 'invalidRequest' | 'unsupportedVersion' | 'unsupportedMethod' | 'invalidState' | 'permissionDenied' | 'sensorUnavailable' | 'storageFailure' | 'incompatibleBuild' | 'downloadFailure' | 'internalError'
+export type BridgeErrorCode = 'invalidRequest' | 'unsupportedVersion' | 'unsupportedMethod' | 'invalidState' | 'revisionConflict' | 'permissionDenied' | 'sensorUnavailable' | 'storageFailure' | 'incompatibleBuild' | 'downloadFailure' | 'internalError'
 export interface BridgeError { readonly code: BridgeErrorCode; readonly message: string; readonly retryable: boolean; readonly details?: Readonly<Record<string, unknown>> }
 export type Reply<M extends MobileMethod = MobileMethod> =
   | { readonly protocolVersion: 1; readonly requestId: string; readonly ok: true; readonly result: CommandResults[M] }
@@ -279,8 +398,17 @@ export interface NativeEvent {
   readonly protocolVersion: 1
   readonly sessionId: string | null
   readonly sequence: number
-  readonly type: 'session.updated' | 'diagnostics.updated' | 'appBuild.updated' | 'permissions.updated' | 'location.updated' | 'heartRate.updated'
-  readonly payload: SessionSnapshot | DiagnosticSnapshot | AppBuildStatus | PermissionStatus | LocationProbeStatus | HeartRateStatus
+  readonly type: 'session.updated' | 'diagnostics.updated' | 'appBuild.updated' | 'permissions.updated' | 'location.updated' | 'heartRate.updated' | 'metrics.updated' | 'observations.appended' | 'recording.issue'
+  readonly payload: SessionSnapshot | DiagnosticSnapshot | AppBuildStatus | PermissionStatus | LocationProbeStatus | HeartRateStatus | WorkoutMetrics | ObservationPage | RecordingIssue
+}
+
+export interface RecordingIssue {
+  readonly issueId: string
+  readonly severity: 'warning' | 'fatal'
+  readonly code: 'poorLocation' | 'locationStale' | 'storageFailure' | 'engineFailure' | 'interrupted'
+  readonly message: string
+  readonly observedAt: string
+  readonly durableSequence: number
 }
 
 export interface BuildManifest {
