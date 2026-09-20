@@ -18,7 +18,6 @@ const exactKeys = (value: Record<string, unknown>, keys: readonly string[]) => O
 const requiredAndOptionalKeys = (value: Record<string, unknown>, required: readonly string[], optional: readonly string[]) => required.every((key) => key in value) && exactKeys(value, [...required, ...optional])
 const empty = (value: unknown) => record(value) && Object.keys(value).length === 0
 const text = (value: unknown, max = 2048) => typeof value === 'string' && value.length > 0 && value.length <= max
-const boundedString = (value: unknown, max: number) => typeof value === 'string' && value.length <= max
 const finite = (value: unknown, min = -Number.MAX_VALUE, max = Number.MAX_VALUE) => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
 const safeInteger = (value: unknown, min = 0, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value) && (value as number) >= min && (value as number) <= max
 const nullableIso = (value: unknown) => value === null || iso(value)
@@ -139,7 +138,8 @@ const bridgeSnapshotValidationPath = (value: unknown): string | null => {
   if (!sessionSnapshot(value.session)) return '$.session'
   if (!permissionStatus(value.permissions)) return '$.permissions'
   if (!locationStatus(value.location)) return '$.location'
-  if (!heartRateStatus(value.heartRate)) return '$.heartRate'
+  const heartRatePath = heartRateStatusValidationPath(value.heartRate, '$.heartRate')
+  if (heartRatePath) return heartRatePath
   if (!diagnosticsSnapshot(value.diagnostics)) return '$.diagnostics'
   if ((value.diagnostics as Record<string, unknown>).eventSequence !== value.sequence) return '$.diagnostics.eventSequence'
   if (!appBuildStatus(value.appBuild)) return '$.appBuild'
@@ -152,7 +152,7 @@ const locationObservation = (value: unknown): value is LocationObservation => re
 
 const locationStatus = (value: unknown): value is LocationProbeStatus => record(value) && exactKeys(value, ['availability', 'state', 'reason', 'probeId', 'startedAt', 'expiresAt', 'backgroundMode', 'backgroundDeliveryActive', 'appLifecycle', 'receivedCount', 'acceptedCount', 'rejectedCount', 'lastRejectionReason', 'retainedCount', 'oldestCursor', 'latestCursor', 'latestObservation', 'lastError']) && ['available', 'unavailable'].includes(value.availability as string) && ['inactive', 'starting', 'active', 'stopping', 'error'].includes(value.state as string) && text(value.reason) && (value.probeId === null || (typeof value.probeId === 'string' && idPattern.test(value.probeId))) && nullableIso(value.startedAt) && nullableIso(value.expiresAt) && (value.backgroundMode === null || value.backgroundMode === 'foregroundOnly' || value.backgroundMode === 'continueWhenBackgrounded') && typeof value.backgroundDeliveryActive === 'boolean' && ['active', 'inactive', 'background'].includes(value.appLifecycle as string) && safeInteger(value.receivedCount) && safeInteger(value.acceptedCount) && safeInteger(value.rejectedCount) && (value.acceptedCount as number) + (value.rejectedCount as number) <= (value.receivedCount as number) && nullableText(value.lastRejectionReason) && safeInteger(value.retainedCount, 0, 2_048) && (value.retainedCount as number) <= (value.acceptedCount as number) && (value.oldestCursor === null || safeInteger(value.oldestCursor, 1)) && (value.latestCursor === null || safeInteger(value.latestCursor, 1)) && ((value.retainedCount === 0) === (value.oldestCursor === null && value.latestCursor === null)) && (value.latestObservation === null || locationObservation(value.latestObservation) && value.latestObservation.cursor === value.latestCursor) && nullableText(value.lastError)
 
-const heartRateDevice = (value: unknown): value is HeartRateDevice => record(value) && exactKeys(value, ['deviceId', 'name', 'rssi', 'lastSeenAt', 'isConnectable', 'advertisedServiceUuids']) && typeof value.deviceId === 'string' && idPattern.test(value.deviceId) && (value.name === null || boundedString(value.name, 128)) && (value.rssi === null || safeInteger(value.rssi, -127, 20)) && iso(value.lastSeenAt) && (value.isConnectable === null || typeof value.isConnectable === 'boolean') && Array.isArray(value.advertisedServiceUuids) && value.advertisedServiceUuids.length <= 16 && value.advertisedServiceUuids.every((item) => text(item, 64))
+const heartRateDevice = (value: unknown): value is HeartRateDevice => record(value) && exactKeys(value, ['deviceId', 'name', 'rssi', 'lastSeenAt', 'isConnectable', 'advertisedServiceUuids']) && typeof value.deviceId === 'string' && idPattern.test(value.deviceId) && (value.name === null || text(value.name, 128)) && (value.rssi === null || safeInteger(value.rssi, -127, 20)) && iso(value.lastSeenAt) && (value.isConnectable === null || typeof value.isConnectable === 'boolean') && Array.isArray(value.advertisedServiceUuids) && value.advertisedServiceUuids.length <= 16 && value.advertisedServiceUuids.every((item) => text(item, 64))
 
 const heartRateMeasurement = (value: unknown): value is HeartRateMeasurement => record(value) && requiredAndOptionalKeys(value, ['cursor', 'connectionId', 'deviceId', 'receivedAt', 'bpm', 'valueFormat', 'sensorContact', 'energyExpendedKJ', 'rrIntervalsSeconds', 'rawFlags'], ['rawCharacteristicBase64']) && safeInteger(value.cursor, 1) && typeof value.connectionId === 'string' && idPattern.test(value.connectionId) && typeof value.deviceId === 'string' && idPattern.test(value.deviceId) && iso(value.receivedAt) && safeInteger(value.bpm, 0, 65_535) && (value.valueFormat === 'uint8' || value.valueFormat === 'uint16') && ['unsupported', 'notDetected', 'detected'].includes(value.sensorContact as string) && (value.energyExpendedKJ === null || safeInteger(value.energyExpendedKJ, 0, 65_535)) && Array.isArray(value.rrIntervalsSeconds) && value.rrIntervalsSeconds.length <= 32 && value.rrIntervalsSeconds.every((item) => finite(item, 0, 60)) && safeInteger(value.rawFlags, 0, 255) && (!('rawCharacteristicBase64' in value) || base64Bytes(value.rawCharacteristicBase64))
 
@@ -169,14 +169,24 @@ const heartRateStatusValidationPath = (value: unknown, root = '$'): string | nul
   if (!Array.isArray(value.devices) || value.devices.length > 32) return `${root}.devices`
   const invalidDevice = value.devices.findIndex((device) => !heartRateDevice(device))
   if (invalidDevice >= 0) {
-    const device = value.devices[invalidDevice]
-    if (record(device) && !(device.name === null || boundedString(device.name, 128))) return `${root}.devices[${invalidDevice}].name`
     return `${root}.devices[${invalidDevice}]`
   }
+  if (value.latestMeasurement !== null && !heartRateMeasurement(value.latestMeasurement)) return heartRateMeasurementValidationPath(value.latestMeasurement, `${root}.latestMeasurement`)
   for (const key of ['availability', 'state', 'reason', 'scanEndsAt', 'connectionId', 'connectedDevice', 'backgroundModeConfigured', 'appLifecycle', 'receivedCount', 'parseErrorCount', 'reconnectCount', 'retainedCount', 'oldestCursor', 'latestCursor', 'latestMeasurement', 'lastError'] as const) {
     const candidate = { ...value, [key]: key === 'availability' ? 'available' : key === 'state' ? 'inactive' : key === 'reason' ? 'valid' : key === 'scanEndsAt' || key === 'connectionId' || key === 'connectedDevice' || key === 'oldestCursor' || key === 'latestCursor' || key === 'latestMeasurement' || key === 'lastError' ? null : key === 'backgroundModeConfigured' ? true : key === 'appLifecycle' ? 'active' : 0 }
     if (heartRateStatus(candidate)) return `${root}.${key}`
   }
+  return root
+}
+
+const heartRateMeasurementValidationPath = (value: unknown, root: string): string => {
+  if (!record(value)) return root
+  const required = ['cursor', 'connectionId', 'deviceId', 'receivedAt', 'bpm', 'valueFormat', 'sensorContact', 'energyExpendedKJ', 'rrIntervalsSeconds', 'rawFlags'] as const
+  const optional = ['rawCharacteristicBase64'] as const
+  const missing = required.find((key) => !(key in value))
+  if (missing) return `${root}.${missing}`
+  const unexpected = Object.keys(value).find((key) => ![...required, ...optional].includes(key as typeof required[number] | typeof optional[number]))
+  if (unexpected) return `${root}.${unexpected}`
   return root
 }
 
@@ -206,6 +216,7 @@ const recordingIssue = (value: unknown) => record(value) && exactKeys(value, ['i
 const nativeEventPayloadValidationPath = (type: unknown, payload: unknown): string | null => {
   if (type === 'session.updated') return sessionSnapshotValidationPath(payload)
   if (type === 'metrics.updated') return workoutMetricsValidationPath(payload)
+  if (type === 'heartRate.updated') return heartRateStatusValidationPath(payload, '$.payload')
   if (type === 'diagnostics.updated' && record(payload) && Array.isArray(payload.rows)) {
     const invalid = payload.rows.findIndex((item) => !statusRow(item))
     if (invalid >= 0) return `$.payload.rows[${invalid}]${record(payload.rows[invalid]) && typeof payload.rows[invalid].id === 'string' ? `.id=${payload.rows[invalid].id}` : ''}`
@@ -266,6 +277,14 @@ const cursorPage = (value: unknown, itemValidator: (item: unknown) => boolean) =
   return cursors.every((cursor, index) => index === 0 || cursor > cursors[index - 1]!) && (cursors.length === 0 || value.nextCursor === cursors.at(-1))
 }
 
+const heartRatePageValidationPath = (value: unknown): string | null => {
+  if (record(value) && Array.isArray(value.items)) {
+    const invalid = value.items.findIndex((item) => !heartRateMeasurement(item))
+    if (invalid >= 0) return heartRateMeasurementValidationPath(value.items[invalid], `$.items[${invalid}]`)
+  }
+  return cursorPage(value, heartRateMeasurement) ? null : '$'
+}
+
 const validSuccessResult = (method: MobileMethod, value: unknown): boolean => {
   if (!record(value)) return false
   switch (method) {
@@ -301,7 +320,7 @@ const validSuccessResult = (method: MobileMethod, value: unknown): boolean => {
     case 'heartRate.stopScan':
     case 'heartRate.connect':
     case 'heartRate.disconnect': return heartRateStatus(value)
-    case 'heartRate.read': return cursorPage(value, heartRateMeasurement)
+    case 'heartRate.read': return heartRatePageValidationPath(value) === null
     case 'diagnostics.snapshot': return diagnosticsSnapshot(value)
     case 'diagnostics.runChecks': return exactKeys(value, ['results', 'workoutStateUnchanged']) && value.workoutStateUnchanged === true && Array.isArray(value.results) && value.results.every((item) => record(item) && exactKeys(item, ['id', 'outcome', 'reason', 'startedAt', 'finishedAt', 'namespace']) && checkIds.has(item.id as DiagnosticCheckId) && ['pass', 'fail', 'notRun'].includes(item.outcome as string) && text(item.reason) && (item.startedAt === null || iso(item.startedAt)) && (item.finishedAt === null || iso(item.finishedAt)) && ['diagnostics', 'engine-fixture'].includes(item.namespace as string))
     case 'diagnostics.export': return exactKeys(value, ['presented', 'exportId']) && typeof value.presented === 'boolean' && text(value.exportId, 128)
@@ -335,6 +354,10 @@ export const parseReply = <M extends MobileMethod>(method: M, value: unknown): R
   if (reply.ok && ['heartRate.status', 'heartRate.scan', 'heartRate.stopScan', 'heartRate.connect', 'heartRate.disconnect'].includes(method)) {
     const path = heartRateStatusValidationPath(reply.result)
     if (path) fail(`invalid ${method} result at ${path}`)
+  }
+  if (reply.ok && method === 'heartRate.read') {
+    const path = heartRatePageValidationPath(reply.result)
+    if (path) fail(`invalid heartRate.read result at ${path}`)
   }
   if (reply.ok && !validSuccessResult(method, reply.result)) fail(`invalid ${method} result`)
   return reply as Reply<M>

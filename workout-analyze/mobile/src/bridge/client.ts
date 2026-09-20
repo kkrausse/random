@@ -78,6 +78,8 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
   let connecting: Promise<void> | null = null
   let bufferedEvents: NativeEvent[] = []
   let consecutiveResyncFailures = 0
+  let lastMalformedEventResyncAt = 0
+  const lastInvalidEventReportAt = new Map<string, number>()
   const pending = new Map<string, Pending>()
   const listeners = new Set<(state: BridgeState) => void>()
   const eventListeners = new Set<(event: NativeEvent) => void>()
@@ -97,6 +99,10 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
     const eventType = typeof candidate.type === 'string' ? candidate.type : 'unknown'
     const sequence = Number.isSafeInteger(candidate.sequence) ? candidate.sequence as number : null
     const detail = error instanceof Error ? error.message : 'Invalid native event'
+    const signature = `${eventType}:${detail}`
+    const now = Date.now()
+    if (now - (lastInvalidEventReportAt.get(signature) ?? 0) < 10_000) return
+    lastInvalidEventReportAt.set(signature, now)
     const event = { id: `web-native-event-${Date.now()}-${counter}`, timestamp: new Date().toISOString(), subsystem: 'web-bridge', level: 'error', message: detail, metadata: { eventType, sequence } }
     void fetch('/__workout/diagnostics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ formatVersion: 1, uploadId: event.id, events: [event] }) }).catch(() => undefined)
   }
@@ -205,7 +211,11 @@ export const createBridgeClient = (transport: BridgeTransport, timeoutMs = 8_000
         const detail = error instanceof Error ? error.message : 'Invalid native event'
         publish({ phase: 'error', error: detail })
         reportInvalidEvent(value, error)
-        if (consecutiveResyncFailures < 3) void resync(true)
+        const now = Date.now()
+        if (consecutiveResyncFailures < 3 && now - lastMalformedEventResyncAt >= 5_000) {
+          lastMalformedEventResyncAt = now
+          void resync(true)
+        }
       }
     },
   }
