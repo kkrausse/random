@@ -92,9 +92,22 @@ describe('phase-1 sensor bridge contract', () => {
     expect(() => parseNativeEvent({ protocolVersion: 1, sessionId: null, sequence: 11, type: 'heartRate.updated', payload: locationStatus })).toThrow()
   })
 
-  test('requires one authoritative sequence across an atomic bridge snapshot', () => {
+  test('keeps the bridge event cursor separate from the recorder durable cursor', () => {
     expect(parseReply('bridge.snapshot', envelope(atomicSnapshot)).ok).toBe(true)
-    expect(() => parseReply('bridge.snapshot', envelope({ ...atomicSnapshot, session: { ...atomicSnapshot.session, durableSequence: 11 } }))).toThrow()
-    expect(() => parseReply('bridge.snapshot', envelope({ ...atomicSnapshot, diagnostics: { ...atomicSnapshot.diagnostics, eventSequence: 13 } }))).toThrow()
+    const nativeRecorderPayload = {
+      ...atomicSnapshot,
+      sequence: 16,
+      session: {
+        sessionId: null, state: 'idle', revision: 0, durableSequence: 0,
+        recorderAvailability: 'available', recorderUnavailableReason: '', pinnedEngine: null, capturedAt: now,
+        sport: null, startedAt: null, finishedAt: null, lastTransitionAt: null, observationSequence: 0,
+        recovery: { required: false, interruptionStartedAt: null, reason: null },
+        metrics: { activeDurationMs: 0, elapsedDurationMs: 0, distanceM: 0, averageSpeedMps: null, currentSpeedMps: null, currentSpeedObservedAt: null, altitudeM: null, elevationGainM: 0, heartRateBpm: null, heartRateObservedAt: null, locationQuality: 'waiting', heartRateQuality: 'unconfigured' },
+      },
+      diagnostics: { ...atomicSnapshot.diagnostics, eventSequence: 16 },
+    }
+    expect(parseReply('bridge.snapshot', envelope(nativeRecorderPayload)).ok).toBe(true)
+    expect(() => parseReply('bridge.snapshot', envelope({ ...nativeRecorderPayload, diagnostics: { ...nativeRecorderPayload.diagnostics, eventSequence: 15 } }))).toThrow('$.diagnostics.eventSequence')
+    expect(() => parseReply('bridge.snapshot', envelope({ ...nativeRecorderPayload, location: { ...nativeRecorderPayload.location, receivedCount: -1 } }))).toThrow('$.location')
   })
 })
