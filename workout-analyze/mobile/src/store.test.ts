@@ -59,6 +59,42 @@ describe('mobile store', () => {
     expect(store.getState().bridge.lastSequence).toBe(5)
   })
 
+  test('runs the raw recorder lifecycle, attaches one bounded trail projection, and saves', async () => {
+    installDomStubs()
+    const client = createBridgeClient(createSimulatorTransport(), 500)
+    const store = createMobileStore(client)
+    cleanups.push(store.getState().start(), () => client.dispose())
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(store.getState()).toMatchObject({ recorderSupported: true, screen: 'home', session: { state: 'idle' } })
+
+    await store.getState().requestPermission('locationWhenInUse')
+    await store.getState().startWorkout('waitForReliableLocation')
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(store.getState()).toMatchObject({ screen: 'live', session: { sessionId: 'sim-ride-1', state: 'recording', observationSequence: 6 }, observationCursor: 6, rawJournalSequence: 6 })
+    expect(store.getState().trail.map((item) => item.sequence)).toEqual([1, 2, 3, 4, 5, 6])
+
+    await store.getState().pauseWorkout()
+    expect(store.getState().screen).toBe('paused')
+    await store.getState().resumeWorkout()
+    expect(store.getState().screen).toBe('live')
+    await store.getState().finishWorkout()
+    expect(store.getState()).toMatchObject({ screen: 'saved', savedWorkoutId: 'sim-saved-ride-1', session: { state: 'finished' } })
+    await store.getState().loadSavedWorkouts()
+    expect(store.getState().savedWorkouts[0]).toMatchObject({ savedWorkoutId: 'sim-saved-ride-1', observationCount: 6 })
+    await store.getState().openSavedWorkout('sim-saved-ride-1')
+    expect(store.getState()).toMatchObject({ screen: 'savedDetail', savedWorkoutDetail: { recordingFormatVersion: 1, units: 'SI', observations: { latestDurableSequence: 6 } } })
+  })
+
+  test('gates recording on legacy shells while leaving utilities available', async () => {
+    installDomStubs()
+    const client = createBridgeClient(createSimulatorTransport('legacy-shell'), 500)
+    const store = createMobileStore(client)
+    cleanups.push(store.getState().start(), () => client.dispose())
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(store.getState()).toMatchObject({ recorderSupported: false, screen: 'home', session: { recorderAvailability: 'unavailable' } })
+    expect(store.getState().bridge.capabilities).not.toContain('workout.start')
+  })
+
   test('keeps the source draft user-owned and only records a validated configure result', async () => {
     installDomStubs()
     const client = createBridgeClient(createSimulatorTransport(), 250)
