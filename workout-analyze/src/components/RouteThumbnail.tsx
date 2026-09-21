@@ -2,30 +2,12 @@ import { Link } from '@tanstack/react-router'
 
 import type { RoutePoint } from '../domain/activity'
 import type { RouteType } from '../domain/analysis'
+import { createRouteMap, projectGeographicPoint } from '../shared/route-map'
 
 const WIDTH = 132
 const HEIGHT = 64
 const PADDING = 7
-const TILE_SIZE = 256
-const MAX_LATITUDE = 85.051129
 const coordinate = (value: number) => Number(value.toFixed(3))
-
-interface MapTile {
-  readonly href: string
-  readonly x: number
-  readonly y: number
-}
-
-interface RouteMap {
-  readonly path: string
-  readonly tiles: ReadonlyArray<MapTile>
-  readonly points: ReadonlyArray<{ readonly x: number, readonly y: number }>
-  readonly start: { readonly x: number, readonly y: number }
-  readonly end: { readonly x: number, readonly y: number }
-  readonly worldSize: number
-  readonly originX: number
-  readonly originY: number
-}
 
 export interface RouteOverlay {
   readonly id: string
@@ -48,68 +30,8 @@ export interface OverlayPosition {
 
 const distance = (meters: number) => meters >= 1000 ? `${(meters / 1000).toFixed(2)} km` : `${Math.round(meters)} m`
 
-const project = (point: RoutePoint) => {
-  const latitude = Math.max(-MAX_LATITUDE, Math.min(MAX_LATITUDE, point.lat))
-  const sin = Math.sin((latitude * Math.PI) / 180)
-  return {
-    x: (point.lon + 180) / 360,
-    y: 0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI),
-  }
-}
-
-function routeMap(points: ReadonlyArray<RoutePoint>, width = WIDTH, height = HEIGHT): RouteMap | null {
-  if (points.length < 2) return null
-
-  const projected = points.map(project)
-  const minX = Math.min(...projected.map((point) => point.x))
-  const maxX = Math.max(...projected.map((point) => point.x))
-  const minY = Math.min(...projected.map((point) => point.y))
-  const maxY = Math.max(...projected.map((point) => point.y))
-  const availableWidth = width - PADDING * 2
-  const availableHeight = height - PADDING * 2
-  const fitScale = Math.min(
-    availableWidth / Math.max((maxX - minX) * TILE_SIZE, 0.000001),
-    availableHeight / Math.max((maxY - minY) * TILE_SIZE, 0.000001),
-  )
-  const zoom = Math.max(1, Math.min(18, Math.floor(Math.log2(fitScale))))
-  const worldSize = TILE_SIZE * 2 ** zoom
-  const centerX = ((minX + maxX) / 2) * worldSize
-  const centerY = ((minY + maxY) / 2) * worldSize
-  const originX = centerX - width / 2
-  const originY = centerY - height / 2
-  const tileCount = 2 ** zoom
-  const tiles: MapTile[] = []
-
-  for (let tileY = Math.floor(originY / TILE_SIZE); tileY <= Math.floor((originY + height) / TILE_SIZE); tileY += 1) {
-    if (tileY < 0 || tileY >= tileCount) continue
-    for (let tileX = Math.floor(originX / TILE_SIZE); tileX <= Math.floor((originX + width) / TILE_SIZE); tileX += 1) {
-      const wrappedX = ((tileX % tileCount) + tileCount) % tileCount
-      tiles.push({
-        href: `https://tile.openstreetmap.org/${zoom}/${wrappedX}/${tileY}.png`,
-        x: coordinate(tileX * TILE_SIZE - originX),
-        y: coordinate(tileY * TILE_SIZE - originY),
-      })
-    }
-  }
-
-  const screenPoints = projected.map((point) => ({
-    x: coordinate(point.x * worldSize - originX),
-    y: coordinate(point.y * worldSize - originY),
-  }))
-  return {
-    path: screenPoints.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' '),
-    tiles,
-    points: screenPoints,
-    start: screenPoints[0]!,
-    end: screenPoints.at(-1)!,
-    worldSize,
-    originX,
-    originY,
-  }
-}
-
 export function routePath(points: ReadonlyArray<RoutePoint>): string | null {
-  return routeMap(points)?.path ?? null
+  return createRouteMap(points, WIDTH, HEIGHT, PADDING)?.path ?? null
 }
 
 export function RouteThumbnail({ points, linkAttribution = true, selectedIndex, viewWidth = WIDTH, viewHeight = HEIGHT, overlays = [], activeOverlayId, onOverlayChange, onOverlaySelect }: {
@@ -123,11 +45,11 @@ export function RouteThumbnail({ points, linkAttribution = true, selectedIndex, 
   onOverlayChange?: (id: string | null, position?: OverlayPosition) => void
   onOverlaySelect?: (routeId: string) => void
 }) {
-  const map = routeMap(points, viewWidth, viewHeight)
+  const map = createRouteMap(points, viewWidth, viewHeight, PADDING)
   const selected = selectedIndex === undefined ? null : map?.points[selectedIndex]
   const renderedOverlays = map ? overlays.flatMap((overlay) => {
     if (overlay.points.length < 2) return []
-    const overlayPoints = overlay.points.map(project).map((point) => ({
+    const overlayPoints = overlay.points.map(projectGeographicPoint).map((point) => ({
       x: coordinate(point.x * map.worldSize - map.originX),
       y: coordinate(point.y * map.worldSize - map.originY),
     }))
@@ -149,7 +71,7 @@ export function RouteThumbnail({ points, linkAttribution = true, selectedIndex, 
       <svg viewBox={`0 0 ${viewWidth} ${viewHeight}`} aria-hidden={overlays.length === 0 ? 'true' : undefined}>
         <rect className="route-background" width={viewWidth} height={viewHeight} rx="3" />
         {map?.tiles.map((tile) => (
-          <image key={tile.href} href={tile.href} x={tile.x} y={tile.y} width={TILE_SIZE} height={TILE_SIZE} />
+          <image key={tile.href} href={tile.href} x={tile.x} y={tile.y} width={256} height={256} />
         ))}
         {map ? <path className="route-main-path" d={map.path} /> : <line x1="54" y1="32" x2="78" y2="32" />}
         {renderedOverlays.map((overlay) => <g key={overlay.id} className={overlay.id === activeOverlayId ? 'route-overlay is-active' : 'route-overlay'}>
