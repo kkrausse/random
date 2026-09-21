@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { PHASE1_BASE_CAPABILITIES, type AppBuildStatus, type CommandResults, type MobileMethod, type PermissionStatus } from '../../src/shared/mobile'
 import { createBridgeClient, type BridgeClient, type BridgeState } from './bridge/client'
 import { createSimulatorTransport } from './bridge/simulator'
-import { createMobileStore, observationEventSessionId, sourceStateFromDiagnostics } from './store'
+import { createMobileStore, loadSavedWorkoutDetail, observationEventSessionId, sourceStateFromDiagnostics } from './store'
 import { recommendedDevelopmentUrl } from './config'
 
 const browser = globalThis as unknown as { window: Window; document: Document }
@@ -19,6 +19,24 @@ const installDomStubs = () => {
 }
 
 describe('mobile store', () => {
+  test('loads every archive detail page before presenting a saved route', async () => {
+    const calls: Array<number | null> = []
+    const items = Array.from({ length: 450 }, (_, index) => ({ kind: 'transition', sequence: index + 1 }))
+    const summary = { savedWorkoutId: 'saved-long', sessionId: 'ride-long', sport: 'cycling', startedAt: '2026-09-20T00:00:00Z', finishedAt: '2026-09-20T01:00:00Z', durationMs: 3_600_000, observationCount: 450, latestSequence: 450, metrics: {}, hasFatalIssue: false }
+    const client = { request: (async (_method: string, params: { afterSequence: number | null; limit: number }) => {
+      calls.push(params.afterSequence)
+      const pageItems = items.filter((item) => item.sequence > (params.afterSequence ?? 0)).slice(0, params.limit)
+      const nextSequence = pageItems.at(-1)?.sequence ?? params.afterSequence
+      return { summary, pinnedEngine: { buildId: 'engine', apiVersion: 1, checkpointSchemaVersion: 1 }, recordingFormatVersion: 1, units: 'SI', derivation: { algorithmId: 'engine', engineBuildId: 'engine', configId: 'default', firstInputSequence: 1, lastInputSequence: 450 }, observations: { afterSequence: params.afterSequence, items: pageItems, nextSequence, oldestAvailableSequence: 1, latestDurableSequence: 450, hasMore: (nextSequence ?? 0) < 450, droppedBeforeSequence: false } }
+    }) as BridgeClient['request'] }
+
+    const detail = await loadSavedWorkoutDetail(client, 'saved-long')
+
+    expect(calls).toEqual([null, 200, 400])
+    expect(detail.observations.items).toHaveLength(450)
+    expect(detail.observations.items.at(-1)?.sequence).toBe(450)
+  })
+
   test('recovers the recording session identity from native observation pages', () => {
     const item = { kind: 'location' as const, sessionId: 'ride-1', sequence: 2, source: 'coreLocation' as const, sourceTimestamp: '2026-09-20T00:00:00Z', receivedAt: '2026-09-20T00:00:00Z', monotonicTimestampMs: 1, latitudeDegrees: 1, longitudeDegrees: 2, horizontalAccuracyM: 5, altitudeM: null, verticalAccuracyM: null, speedMps: null, speedAccuracyMps: null, courseDegrees: null, courseAccuracyDegrees: null, floorLevel: null, isSimulatedBySoftware: false, isProducedByAccessory: false }
     const event = { protocolVersion: 1 as const, sessionId: null, sequence: 8, type: 'observations.appended' as const, payload: { items: [item], nextSequence: 2, oldestAvailableSequence: 1, latestDurableSequence: 2, hasMore: false, droppedBeforeSequence: false } }

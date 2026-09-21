@@ -123,6 +123,20 @@ export interface MobileState {
 
 const message = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback
 
+export const loadSavedWorkoutDetail = async (client: Pick<BridgeClient, 'request'>, savedWorkoutId: string): Promise<SavedWorkoutDetail> => {
+  const first = await client.request('archive.detail', { savedWorkoutId, afterSequence: null, limit: 200 })
+  const items = [...first.observations.items]
+  let page = first.observations
+  while (page.hasMore) {
+    if (page.nextSequence === null || page.nextSequence === page.afterSequence) throw new Error('Saved workout observations did not advance their cursor')
+    const next = await client.request('archive.detail', { savedWorkoutId, afterSequence: page.nextSequence, limit: 200 })
+    if (next.summary.savedWorkoutId !== first.summary.savedWorkoutId || next.summary.latestSequence !== first.summary.latestSequence) throw new Error('Saved workout changed while its route was loading')
+    items.push(...next.observations.items)
+    page = next.observations
+  }
+  return { ...first, observations: { ...page, afterSequence: null, items } }
+}
+
 export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> => {
   let started = false
   let pollGeneration = 0
@@ -151,29 +165,27 @@ export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> =
         await client.refreshSnapshot().catch(() => undefined)
       }
     }
-    const mergeObservations = (items: readonly RecorderObservation[], latest: number) => set((state) => {
+    const mergeObservations = (items: readonly RecorderObservation[], consumedThrough: number | null) => set((state) => {
       const bySequence = new Map<number, RecorderObservation>()
       state.trail.forEach((item) => bySequence.set(item.sequence, item))
       items.forEach((item) => bySequence.set(item.sequence, item))
-      return { trail: boundedTrail([...bySequence.values()].sort((a, b) => a.sequence - b.sequence)), observationCursor: Math.max(state.observationCursor ?? 0, latest) }
+      return { trail: boundedTrail([...bySequence.values()].sort((a, b) => a.sequence - b.sequence)), observationCursor: Math.max(state.observationCursor ?? 0, consumedThrough ?? 0) }
     })
     const readObservationHistory = async (sessionId: string, generation: number, afterSequence: number | null = null) => {
       let cursor = afterSequence
-      let pages = 0
       do {
         const page = await client.request('observations.read', { sessionId, afterSequence: cursor, limit: 200 })
         if (generation !== observationGeneration || subscribedSessionId !== sessionId) return
         if (page.droppedBeforeSequence && cursor !== null) {
           set({ trail: [], observationCursor: null })
           cursor = null
-          pages += 1
           continue
         }
-        mergeObservations(page.items, page.latestDurableSequence)
+        if (page.hasMore && (page.nextSequence === null || page.nextSequence === cursor)) throw new Error('Observation history did not advance its cursor')
+        mergeObservations(page.items, page.nextSequence)
         cursor = page.nextSequence
-        pages += 1
         if (!page.hasMore) return
-      } while (pages < 20)
+      } while (true)
     }
     const attachObservations = async (session: SessionSnapshot | null) => {
       if (!isAvailableSession(session) || !session.sessionId || session.state === 'idle' || !get().recorderSupported) return
@@ -234,7 +246,7 @@ export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> =
           const expected = (get().observationCursor ?? 0) + 1
           const first = page.items[0]?.sequence
           if (first !== undefined && first > expected) void readObservationHistory(eventSessionId, observationGeneration, get().observationCursor)
-          else mergeObservations(page.items, page.latestDurableSequence)
+          else mergeObservations(page.items, page.nextSequence)
         }
       }
       if (event.type === 'recording.issue') set((state) => ({ recordingIssues: [...state.recordingIssues.filter((item) => item.issueId !== (event.payload as RecordingIssue).issueId), event.payload as RecordingIssue].slice(-8) }))
@@ -307,7 +319,9 @@ export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> =
       recoverWorkout(action) { return run(`workout-recover-${action}`, 'recording', async () => { const session = currentAvailableSession(); const result = await client.request('workout.recover', { sessionId: session.sessionId!, expectedRevision: session.revision, action }); if ('session' in result) { set({ savedWorkoutId: result.savedWorkoutId }); installSession(result.session) } else installSession(result) }) },
       exportWorkout(format) { return run(`workout-export-${format}`, 'recording', async () => { const session = currentAvailableSession(); const result = await client.request('workout.export', { sessionId: session.sessionId!, format }); setNotice('recording', result.presented ? `${format === 'gpx' ? 'GPX' : 'Lossless workout bundle'} share sheet opened.` : 'Export was prepared but the share sheet was not presented.') }) },
       loadSavedWorkouts() { return run('archive-list', 'recording', async () => { if (!get().bridge.capabilities.includes('archive.list')) return; const page = await client.request('archive.list', { afterCursor: null, limit: 50 }); set({ savedWorkouts: page.items }) }) },
-      openSavedWorkout(savedWorkoutId) { return run('archive-detail', 'recording', async () => { const detail = await client.request('archive.detail', { savedWorkoutId, afterSequence: null, limit: 200 }); set({ savedWorkoutDetail: detail, screen: 'savedDetail' }) }) },
+      openSavedWorkout(savedWorkoutId) { return run('archive-detail', 'recording', async () => {
+        set({ savedWorkoutDetail: await loadSavedWorkoutDetail(client, savedWorkoutId), screen: 'savedDetail' })
+      }) },
       exportSavedWorkout(sessionId, format) { return run(`archive-export-${format}`, 'recording', async () => { const result = await client.request('workout.export', { sessionId, format }); setNotice('recording', result.presented ? `${format === 'gpx' ? 'GPX' : 'Lossless raw bundle'} share sheet opened.` : 'Export prepared but share sheet was not presented.') }) },
       requestPermission(permission) { return run(`permission-${permission}`, 'sensors', async () => { await client.request('permissions.request', { permission }); await synchronize() }) },
       startLocation(backgroundMode) { return run(`location-${backgroundMode}`, 'sensors', async () => { await client.request('location.start', { desiredAccuracy: 'best', distanceFilterM: 0, backgroundMode, maxDurationSeconds: 120 }); await synchronize() }) },
