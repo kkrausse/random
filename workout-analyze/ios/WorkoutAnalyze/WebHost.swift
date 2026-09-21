@@ -1,6 +1,42 @@
 import SwiftUI
 import WebKit
 
+struct WebMessageOrigin {
+    let scheme: String
+    let host: String
+    let port: Int
+}
+
+enum WebMessageAdmission: Equatable {
+    case exactOrigin
+    case currentPageFallback
+    case rejected
+}
+
+enum WebMessageOriginPolicy {
+    static func admission(
+        origin: WebMessageOrigin,
+        currentPageURL: URL?,
+        selectedURL: URL,
+        isMainFrame: Bool,
+        handlerName: String,
+        allowsCurrentPageFallback: Bool
+    ) -> WebMessageAdmission {
+        guard isMainFrame, ["workoutAnalyze", "workoutAnalyzeDiagnostics"].contains(handlerName) else { return .rejected }
+        if matches(origin: origin, selectedURL: selectedURL) { return .exactOrigin }
+        guard allowsCurrentPageFallback, let currentPageURL, ContractValidation.sameOrigin(currentPageURL, selectedURL) else { return .rejected }
+        return .currentPageFallback
+    }
+
+    private static func matches(origin: WebMessageOrigin, selectedURL: URL) -> Bool {
+        let expectedPort = selectedURL.port ?? (selectedURL.scheme?.lowercased() == "https" ? 443 : 80)
+        let actualPort = origin.port == 0 ? (origin.scheme.lowercased() == "https" ? 443 : 80) : origin.port
+        return origin.scheme.caseInsensitiveCompare(selectedURL.scheme ?? "") == .orderedSame
+            && origin.host.caseInsensitiveCompare(selectedURL.host ?? "") == .orderedSame
+            && actualPort == expectedPort
+    }
+}
+
 @MainActor
 final class WebHost: NSObject, ObservableObject, WKScriptMessageHandler, WKNavigationDelegate {
     let webView: WKWebView
@@ -44,7 +80,24 @@ final class WebHost: NSObject, ObservableObject, WKScriptMessageHandler, WKNavig
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.frameInfo.isMainFrame, isSelectedOrigin(message.frameInfo.securityOrigin) else { return }
+        let securityOrigin = message.frameInfo.securityOrigin
+        let origin = WebMessageOrigin(scheme: securityOrigin.protocol, host: securityOrigin.host, port: securityOrigin.port)
+        let expectedURL = builds.developmentURL ?? URL(string: "workout-analyze://app")!
+        let admission = WebMessageOriginPolicy.admission(
+            origin: origin,
+            currentPageURL: webView.url,
+            selectedURL: expectedURL,
+            isMainFrame: message.frameInfo.isMainFrame,
+            handlerName: message.name,
+            allowsCurrentPageFallback: builds.developmentURL != nil
+        )
+        guard admission != .rejected else {
+            logMessageAdmission(message: message, origin: origin, expectedURL: expectedURL, admission: admission)
+            return
+        }
+        if admission == .currentPageFallback {
+            logMessageAdmission(message: message, origin: origin, expectedURL: expectedURL, admission: admission)
+        }
         if message.name == "workoutAnalyzeDiagnostics" {
             guard let body = message.body as? [String: Any], let kind = body["kind"] as? String,
                   let detail = body["detail"] as? String else { return }
@@ -71,14 +124,18 @@ final class WebHost: NSObject, ObservableObject, WKScriptMessageHandler, WKNavig
         }
     }
 
-    private func isSelectedOrigin(_ origin: WKSecurityOrigin) -> Bool {
-        if let development = builds.developmentURL {
-            let portMatches = development.port.map { origin.port == $0 }
-                ?? (origin.port == 0 || origin.port == (development.scheme == "https" ? 443 : 80))
-            return origin.protocol.lowercased() == development.scheme?.lowercased()
-                && origin.host.lowercased() == development.host?.lowercased() && portMatches
-        }
-        return origin.protocol == "workout-analyze" && origin.host == "app"
+    private func logMessageAdmission(message: WKScriptMessage, origin: WebMessageOrigin, expectedURL: URL, admission: WebMessageAdmission) {
+        dispatcher.log.append(
+            subsystem: "bridge.security",
+            message: admission == .rejected ? "Rejected web message origin" : "Accepted web message using current-page origin fallback",
+            metadata: [
+                "handler": message.name,
+                "isMainFrame": String(message.frameInfo.isMainFrame),
+                "securityOrigin": "\(origin.scheme)://\(origin.host):\(origin.port)",
+                "currentPageURL": webView.url?.absoluteString ?? "unknown",
+                "expectedOrigin": expectedURL.absoluteString
+            ]
+        )
     }
 
     private func sendReply(_ reply: [String: Any]) async {
