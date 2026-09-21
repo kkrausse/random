@@ -4,7 +4,7 @@ Local-first Garmin activity archive, DuckDB pipeline, and TanStack Start browser
 
 ## Architecture north star
 
-Target the same React / TypeScript application in the browser and iPhone WKWebView, backed by a shared host contract implemented by local Bun on Mac and native Swift on iPhone. The phone should independently record, recover, browse, and analyze local workouts without a required server or sync. Preserve the durable event journal and resumable consumers; database placement remains undecided. See [architecture goals and open decisions](docs/architecture-north-star.md).
+Target the same React / TypeScript application in the browser and iPhone WKWebView, backed by a shared host contract implemented by local Bun on Mac and native Swift on iPhone. The phone should independently record, recover, browse, and analyze local workouts without a required server or sync. The working direction is a durable host journal, foreground shared TypeScript consumers, and native DuckDB behind a primitive host interface. See [architecture goals and open decisions](docs/architecture-north-star.md).
 
 ## iPhone app proposal
 
