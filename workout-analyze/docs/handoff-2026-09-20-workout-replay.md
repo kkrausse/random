@@ -1,8 +1,8 @@
 # Workout capture recovery and replay handoff
 
-Status: the physical-phone workout is safely recovered locally. Do not commit the capture files; they contain private GPS and sensor data.
+Status: the physical-phone workout is safely recovered locally, the browser replay pipeline is implemented and matches the recovered checkpoint, and the physical-phone HTTPS bridge/dev runner is verified. Do not commit the capture files; they contain private GPS and sensor data.
 
-> Update (2026-09-20): the separate-JavaScriptCore direction below is superseded. The implemented architecture has one JavaScript runtime (WKWebView/browser): native eventually appends and pages opaque journal rows, while the TypeScript decoder, projector, recording engine, checkpoint consumer, and replay controller run in that single runtime. See `docs/iphone-recording-contract.md#deterministic-journal-consumption-and-replay`.
+> Correction (2026-09-20): the browser replay architecture runs its decoder, projector, engine, checkpoint consumer, and replay controller in the WKWebView/browser runtime. This is not a completed migration of every native engine path to one JavaScript runtime: `ios/WorkoutAnalyze/RecordingEngineHost.swift` still imports JavaScriptCore and creates a `JSContext`. Do not undertake that architecture migration as part of replay or bridge follow-up. See `docs/iphone-recording-contract.md#deterministic-journal-consumption-and-replay` for the implemented replay path.
 
 ## Recovered capture
 
@@ -42,13 +42,21 @@ ZIP SHA-256:
 
 Both `data/phone-recovery-*` and `data/local-replays` are ignored by git.
 
+Before the native bridge update, another complete Application Support copy was taken at:
+
+```text
+/Users/kkrausse/Documents/repos/kkrausse/random/workout-analyze/data/phone-recovery-2026-09-20/pre-native-bridge-update-2026-09-20T1920/application-support/
+```
+
+It contains `recording-v1.sqlite`, `recording-v1.sqlite-wal`, `recording-v1.sqlite-shm`, diagnostics, and the pinned engine. The app was installed as an update without uninstalling. A post-install copy and a live `archive.list` both confirmed that all three finished sessions remained intact.
+
 ## Verified recording behavior
 
 Uploaded telemetry independently recorded a successful `workout.finish` commit at `2026-09-20T01:51:04Z`, with no storage failure, no engine failure, no queued journal writes, and no processing backlog. The database+WAL agrees.
 
-The database also contains two earlier short finished test workouts. The app UI nevertheless displayed “No saved workouts.” This is an archive presentation/query-flow defect or stale web projection, not lost recording data. Directly invoke `archive.list` through the physical-device runner once HTTPS bridge startup works, then compare its reply with the three `sessions` rows in SQLite. The History screen currently hides archive request errors and renders an empty state, so add visible failure/retry handling and reload archive data when entering History.
+The database also contains two earlier short finished test workouts. The app UI nevertheless displayed “No saved workouts.” This was confirmed as an archive presentation/query-flow defect or stale web projection, not lost recording data: physical-device `archive.list` returned all three sessions. The newest result reported 5,113 observations and 5,240 raw events for `ride-F97D601D-65D7-4C5C-9438-1C8D4B3FDB69`. History presentation and refresh/error behavior still need product-level verification and improvement.
 
-## HTTPS development connection failure
+## HTTPS development connection resolution
 
 Supported origin:
 
@@ -58,27 +66,38 @@ https://kevins-macbook-pro-2.tail7e28fb.ts.net:8443/
 
 Tailscale Serve is healthy and proxies that origin to `http://127.0.0.1:4317`. HTTPS is required for the supported remote development/download path and Web Crypto usage. The requirement and Serve configuration are documented in `docs/iphone-build-delivery.md`.
 
-Observed behavior:
+Historical behavior (resolved; do not use this as a current diagnosis):
 
 1. The URL loads the Workout UI in iPhone Safari.
 2. Safari correctly reports “Native bridge unavailable” and registers with the dev runner as kind `unavailable`.
 3. In the native shell, Native Recovery shows the HTTPS development URL but remains `loading`/`waiting`; “Use development origin now” does not reach `bridge.hello`.
-4. Therefore network, DNS, TLS, Vite, and the JavaScript bundle are good. The failure is specific to WKWebView/native bridge startup or native origin acceptance.
-5. The runner consequently reports no client of kind `native`, so read-only scripts cannot currently call `archive.list` or `journal.read`. The runner itself still executes in the loaded page's JavaScript runtime: Safari registers as kind `unavailable` and can be explicitly targeted for page/runtime inspection. Native bridge health is required only for `bridge.request(...)`, not for runner execution.
+4. It was initially suspected that `WKSecurityOrigin` was being rejected silently.
+5. The runner consequently reported no client of kind `native`.
 
-The installed app was not changed after recovery. A speculative `WebHost` fallback was deliberately not retained.
+The physical-device investigation found that origin rejection was not the actual failure. The phone was first still configured for the bundled source. After selecting the documented HTTPS source, `/src/start.tsx` returned HTTP 500 because the Vite process had started before the React dependencies were installed and retained stale dependency resolution. The page's startup reporter recorded `Importing a module script failed.`, so application JavaScript never reached `bridge.hello`. Restarting `bun run mobile:dev` changed `/src/start.tsx` to HTTP 200 and resolved startup.
 
-## Next-session plan
+`WebHost` now emits payload-free diagnostics for rejected messages and has a tested fallback that is permitted only for a registered handler on the main frame when the current page URL is same-origin with the configured development URL. On the successful physical-device run, no fallback diagnostic was emitted: WebKit's security origin matched the configured `:8443` origin exactly.
+
+Verified physical-device runner evidence:
+
+- Native client source: `https://kevins-macbook-pro-2.tail7e28fb.ts.net:8443/`
+- `bridge.hello`: protocol 1, shell `0.1.0`, all advertised capabilities available
+- `archive.list`: three finished sessions, including 5,240 raw events / 5,113 observations for the recovered ride
+- Direct JavaScript evaluation: `[1,2,3].map(x => x * 7)` returned `[7,14,21]`
+- Runtime identity: `location.href` was the HTTPS development URL and `typeof window.webkit` was `"object"`
+- Validated bridge state: phase `ready`, transport label `Native iPhone shell`
+
+## Replay implementation status
+
+The recovered bundle now runs through the shared TypeScript raw-event decoder, projector, recording engine, checkpoint consumer, and replay controller. The development-only local source serves bounded immutable pages, validates session identity and strict sequence continuity, and is excluded from production. The controller supports load, play, pause, speed, and seek with an injected replay clock and isolated namespace. The recovered ride reaches raw sequence 5,240 and restores parity with the 5,113 checkpoint. See `docs/iphone-recording-contract.md` and `bun run mobile:replay:check`.
+
+## Remaining work
 
 1. Keep the private captures untouched and ignored. Work against a copy when transforming/replaying.
-2. Add explicit diagnostics when `WebHost.userContentController` rejects a script message. Log the actual `WKSecurityOrigin` protocol/host/port, current main-page URL, expected origin, and message handler name without logging command payloads.
-3. Add a narrowly scoped, tested origin helper. If `WKSecurityOrigin` differs unexpectedly on Tailscale HTTPS port 8443, permit fallback only when all are true: main frame, current `WKWebView.url` is same-origin with the configured development URL, and the message arrives through the registered handler. Do not broadly relax origin checks.
-4. Build/test the native shell, then install it as an update without uninstalling the app. Before installation, take another complete app-container copy. Confirm the database+WAL still has all three sessions afterward.
-5. Launch the app on the HTTPS origin and confirm a runner client of kind `native` appears at `GET /__workout/run`.
-6. Run read-only `archive.list` and paged `journal.read` against the latest session. Add a development-only server ingestion endpoint/CLI that streams bounded pages directly into an ignored local capture directory, validates sequence continuity and session identity, and writes atomically. Avoid returning the entire workout through the runner's bounded result payload.
-7. Make remote capture retrieval a first-class developer action: select newest finished workout (or explicit session), stream raw pages, include metadata/checksums, report progress, and never mutate/export-as-live the source workout.
-8. Build a browser-only `RecordingSource` adapter over the recovered bundle. Feed raw events through the same decoder/projector/store path as native input, with an injected replay clock and isolated namespace. Start with load/play/pause/speed/seek; do not create a parallel metrics implementation.
-9. Improve History loading: refresh on entry, expose request errors, provide Retry, and distinguish “archive returned zero rows” from “archive read failed/not loaded.”
+2. Improve and verify History loading: refresh on entry, expose archive failures, provide Retry, and distinguish “archive returned zero rows” from “archive read failed/not loaded.”
+3. Add a development-only capture retrieval endpoint/CLI that streams bounded native `journal.read` pages into an ignored local directory, validates session identity and strict continuity, and writes atomically. Avoid returning an entire workout through the runner's bounded result payload.
+4. Make remote capture retrieval a first-class developer action: select the newest finished workout or an explicit session, include metadata and checksums, report progress, and never mutate or export-as-live the source workout.
+5. Connect `createJournalReadRecordingSource` to a native-backed replay flow when needed. The source adapter exists, but the current completed UI replay uses the immutable development bundle adapter.
 
 ## Useful commands
 
