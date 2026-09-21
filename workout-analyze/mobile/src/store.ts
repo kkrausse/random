@@ -10,6 +10,7 @@ import type { BridgeClient, BridgeState } from './bridge/client'
 import { createReplayController, type ReplayController } from '../../src/replay/controller'
 import { createBrowserLocalRecordingSource } from '../../src/replay/source'
 import type { ReplaySnapshot } from '../../src/replay/types'
+import { recommendedDevelopmentUrl } from './config'
 
 export type Screen = 'home' | 'live' | 'paused' | 'recovery' | 'saved' | 'history' | 'savedDetail' | 'heartRate' | 'settings' | 'diagnostics' | 'replay'
 export type RequestState = { readonly status: 'pending' | 'success' | 'error'; readonly error: string | null }
@@ -84,6 +85,7 @@ export interface MobileState {
   readonly replay: ReplaySnapshot
   start(): () => void
   refresh(): Promise<void>
+  reconnectBridge(): Promise<void>
   setScreen(screen: Screen): void
   returnFromUtility(): void
   setDevelopmentSourceDraft(url: string): void
@@ -253,7 +255,7 @@ export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> =
       screen: 'home', returnScreen: 'home', bridge: client.getState(), session: client.getState().session, recorderSupported: false,
       permissions: null, builds: null, diagnostics: null, checks: [], location: null, heartRate: null, locations: [], measurements: [],
       trail: [], observationCursor: null, rawJournalSequence: null, recordingIssues: [], savedWorkoutId: null, requests: {},
-      savedWorkouts: [], savedWorkoutDetail: null, notices: { recording: null, diagnostics: null, sensors: null, settings: null }, developmentSourceDraft: '', developmentSourceDirty: false,
+      savedWorkouts: [], savedWorkoutDetail: null, notices: { recording: null, diagnostics: null, sensors: null, settings: null }, developmentSourceDraft: recommendedDevelopmentUrl, developmentSourceDirty: false,
       configuredDevelopmentSourceUrl: undefined, uiSource: null, replay: initialReplay,
       start() {
         if (started) return () => undefined
@@ -289,6 +291,7 @@ export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> =
           }
         } catch (error) { if (generation === pollGeneration) setNotice('diagnostics', message(error, 'Refresh failed')) }
       },
+      reconnectBridge() { return run('bridge-connect', 'settings', async () => { await client.connect(); await get().refresh() }) },
       setScreen(screen) {
         const previous = get().screen
         if (screen !== 'diagnostics' && (previous === 'diagnostics' || get().location?.probeId)) stopActiveProbes()

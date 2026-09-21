@@ -3,6 +3,7 @@ import { PHASE1_BASE_CAPABILITIES, type AppBuildStatus, type CommandResults, typ
 import { createBridgeClient, type BridgeClient, type BridgeState } from './bridge/client'
 import { createSimulatorTransport } from './bridge/simulator'
 import { createMobileStore, observationEventSessionId, sourceStateFromDiagnostics } from './store'
+import { recommendedDevelopmentUrl } from './config'
 
 const browser = globalThis as unknown as { window: Window; document: Document }
 const cleanups: Array<() => void> = []
@@ -106,11 +107,35 @@ describe('mobile store', () => {
     const client = createBridgeClient(createSimulatorTransport(), 250)
     const store = createMobileStore(client)
     cleanups.push(() => client.dispose())
-    expect(store.getState()).toMatchObject({ developmentSourceDraft: '', developmentSourceDirty: false, configuredDevelopmentSourceUrl: undefined })
+    expect(store.getState()).toMatchObject({ developmentSourceDraft: recommendedDevelopmentUrl, developmentSourceDirty: false, configuredDevelopmentSourceUrl: undefined })
     store.getState().setDevelopmentSourceDraft('http://100.86.29.19:4317/')
     expect(store.getState()).toMatchObject({ developmentSourceDraft: 'http://100.86.29.19:4317/', developmentSourceDirty: true })
     await store.getState().configureDevelopmentSource('http://100.86.29.19:4317/')
     expect(store.getState()).toMatchObject({ developmentSourceDraft: 'http://100.86.29.19:4317/', developmentSourceDirty: false, configuredDevelopmentSourceUrl: 'http://100.86.29.19:4317/' })
+  })
+
+  test('retries a failed bridge connection through the centralized store action', async () => {
+    installDomStubs()
+    let attempts = 0
+    let bridge: BridgeState = { phase: 'error', transport: 'native', transportLabel: 'Native iPhone shell', lastSequence: null, resyncCount: 0, session: null, capabilities: [], snapshot: null, error: 'bridge.hello timed out' }
+    const listeners = new Set<(state: BridgeState) => void>()
+    const client = {
+      request: (() => Promise.reject(new Error('unexpected request'))) as BridgeClient['request'],
+      async connect() { attempts += 1; bridge = { ...bridge, phase: 'ready', error: null }; listeners.forEach((listener) => listener(bridge)) },
+      async refreshSnapshot() {},
+      getState: () => bridge,
+      subscribe(listener: (state: BridgeState) => void) { listeners.add(listener); listener(bridge); return () => listeners.delete(listener) },
+      subscribeEvents: () => () => {}, dispose() {},
+    } as BridgeClient
+    const store = createMobileStore(client)
+    cleanups.push(store.getState().start())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(attempts).toBe(1)
+    bridge = { ...bridge, phase: 'error', error: 'connection lost' }
+    listeners.forEach((listener) => listener(bridge))
+    await store.getState().reconnectBridge()
+    expect(attempts).toBe(2)
+    expect(store.getState()).toMatchObject({ bridge: { phase: 'ready', error: null }, requests: { 'bridge-connect': { status: 'success', error: null } } })
   })
 
   test('ignores slower legacy poll results after a newer refresh completes', async () => {

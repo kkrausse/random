@@ -205,20 +205,42 @@ const HeartRate = ({ store }: { store: MobileStore }) => {
 }
 
 const Settings = ({ store }: { store: MobileStore }) => {
+  const bridge = useStore(store, (state) => state.bridge)
   const builds = useStore(store, (state) => state.builds)
   const requests = useStore(store, (state) => state.requests)
   const devUrl = useStore(store, (state) => state.developmentSourceDraft)
   const uiSource = useStore(store, (state) => state.uiSource)
   const back = useStore(store, (state) => state.returnFromUtility)
   const setDevUrl = useStore(store, (state) => state.setDevelopmentSourceDraft)
+  const reconnectBridge = useStore(store, (state) => state.reconnectBridge)
   const reload = useStore(store, (state) => state.reload)
   const configure = useStore(store, (state) => state.configureDevelopmentSource)
   const install = useStore(store, (state) => state.installBuild)
   const rollback = useStore(store, (state) => state.rollback)
   const [manifest, setManifest] = useState(defaultManifestUrl)
-  const busy = pending(requests)
-  return <main className="app-shell"><TopBar title="App source" back={back} /><section className="page-heading"><Wifi className="heading-icon" /><h1>Web delivery</h1><p>Reloading the UI reconnects to the same native workout and does not reset recording.</p></section><section className="card build-card"><div className="card-title"><Wifi /><div><span>Native-authoritative source</span><strong>{uiSource?.configured.kind === 'development' ? uiSource.configured.url : uiSource ? `${uiSource.configured.kind} · ${uiSource.configured.buildId}` : 'Waiting…'}</strong></div><Pill tone={uiSource?.loadState === 'failed' ? 'error' : 'good'}>{uiSource?.loadState ?? 'loading'}</Pill></div><dl><div><dt>Loaded</dt><dd>{uiSource?.loadedUrl ?? '—'}</dd></div><div><dt>UI build</dt><dd>{builds?.active.buildId ?? '—'}</dd></div><div><dt>Engine</dt><dd>{builds?.active.engineBuildId ?? '—'}</dd></div></dl></section>
-    <section className="form-section"><label htmlFor="dev-url">Development server URL</label><div className="input-row"><input id="dev-url" value={devUrl} placeholder={recommendedDevelopmentUrl} onChange={(event) => setDevUrl(event.target.value)} /><Button disabled={busy || !devUrl} onClick={() => void configure(devUrl)}>Connect</Button></div></section><section className="form-section"><label htmlFor="manifest-url">Build manifest</label><input id="manifest-url" value={manifest} onChange={(event) => setManifest(event.target.value)} /><Button className="full" disabled={busy} onClick={() => void install(manifest)}><Download /> Install build</Button></section><section className="action-list"><button onClick={() => void reload()} disabled={busy}><RefreshCw /><span><strong>Reload current UI</strong><small>Native recorder keeps running</small></span><ChevronRight /></button><button onClick={() => void rollback('previous')} disabled={busy || !builds?.previous}><RotateCcw /><span><strong>Use previous build</strong><small>{builds?.previous?.buildId ?? 'Unavailable'}</small></span><ChevronRight /></button><button onClick={() => void rollback('bundled')} disabled={busy}><ShieldCheck /><span><strong>Use bundled build</strong><small>Known-good fallback</small></span><ChevronRight /></button></section>
+  const notice = useStore(store, (state) => state.notices.settings)
+  const bridgeReady = bridge.phase === 'ready'
+  const sourceCommandsAvailable = bridge.capabilities.includes('devSource.configure') && bridge.capabilities.includes('ui.reload')
+  const canConfigure = bridgeReady && sourceCommandsAvailable
+  const bridgeMissing = bridge.transportLabel === 'Native bridge unavailable'
+  const sourceBusy = pending(requests, 'dev-source') || pending(requests, 'bridge-connect')
+  const buildBusy = pending(requests, 'install-build') || pending(requests, 'rollback-') || pending(requests, 'ui-reload')
+  const sourceLabel = uiSource?.configured.kind === 'development' ? uiSource.configured.url : uiSource ? `${uiSource.configured.kind} · ${uiSource.configured.buildId}` : bridge.phase === 'connecting' ? 'Contacting native shell…' : bridge.phase === 'error' ? 'Native source unavailable' : 'Source details unavailable'
+  const sourceState = uiSource?.loadState ?? bridge.phase
+  const sourceTone = bridge.phase === 'error' || uiSource?.loadState === 'failed' ? 'error' : bridge.phase === 'connecting' || !uiSource ? 'warning' : 'good'
+  const unavailableDetail = bridge.phase === 'error'
+    ? bridgeMissing
+      ? 'This page is not inside the installed iPhone app, so it cannot read or change the native-authoritative source. Open Web delivery in the Workout Analyze app.'
+      : `${bridge.error ?? 'The native bridge did not answer.'} The native shell is present but did not complete its handshake.`
+    : bridgeReady && !uiSource
+      ? 'The bridge connected, but native source details have not loaded. Retry before changing delivery settings.'
+      : bridgeReady && !sourceCommandsAvailable
+        ? 'This installed shell does not support development-source changes. Update the native app to enable Connect.'
+      : null
+  return <main className="app-shell"><TopBar title="App source" back={back} /><section className="page-heading"><Wifi className="heading-icon" /><h1>Web delivery</h1><p>Reloading the UI reconnects to the same native workout and does not reset recording.</p></section><section className="card build-card"><div className="card-title"><Wifi /><div><span>Native-authoritative source</span><strong>{sourceLabel}</strong></div><Pill tone={sourceTone}>{sourceState}</Pill></div><dl><div><dt>Loaded</dt><dd>{uiSource?.loadedUrl ?? '—'}</dd></div><div><dt>UI build</dt><dd>{builds?.active.buildId ?? '—'}</dd></div><div><dt>Engine</dt><dd>{builds?.active.engineBuildId ?? '—'}</dd></div></dl></section>
+    {unavailableDetail && <section className="delivery-status" role="status"><p className={bridge.phase === 'error' ? 'notice notice-error' : 'notice'}>{unavailableDetail}</p>{!bridgeMissing && (bridge.phase === 'error' || sourceCommandsAvailable) && <Button onClick={() => void reconnectBridge()} disabled={sourceBusy}><RefreshCw /> {sourceBusy ? 'Retrying…' : 'Retry native connection'}</Button>}</section>}
+    <section className="form-section"><label htmlFor="dev-url">Development server URL</label><div className="input-row"><input id="dev-url" value={devUrl} placeholder={recommendedDevelopmentUrl} onChange={(event) => setDevUrl(event.target.value)} /><Button disabled={!canConfigure || sourceBusy || !devUrl.trim()} onClick={() => void configure(devUrl.trim())}>{sourceBusy ? 'Connecting…' : 'Connect'}</Button></div>{!bridgeReady && <small className="field-help">Connect becomes available after the native bridge answers. You can edit the URL while waiting.</small>}</section><section className="form-section"><label htmlFor="manifest-url">Build manifest</label><input id="manifest-url" value={manifest} onChange={(event) => setManifest(event.target.value)} /><Button className="full" disabled={!bridgeReady || buildBusy || !bridge.capabilities.includes('appBuild.download') || !bridge.capabilities.includes('appBuild.activate') || !manifest.trim()} onClick={() => void install(manifest.trim())}><Download /> Install build</Button></section><section className="action-list"><button onClick={() => void reload()} disabled={!bridgeReady || buildBusy || !bridge.capabilities.includes('ui.reload')}><RefreshCw /><span><strong>Reload current UI</strong><small>Native recorder keeps running</small></span><ChevronRight /></button><button onClick={() => void rollback('previous')} disabled={!bridgeReady || buildBusy || !bridge.capabilities.includes('appBuild.rollback') || !builds?.previous}><RotateCcw /><span><strong>Use previous build</strong><small>{builds?.previous?.buildId ?? 'Unavailable'}</small></span><ChevronRight /></button><button onClick={() => void rollback('bundled')} disabled={!bridgeReady || buildBusy || !bridge.capabilities.includes('appBuild.rollback')}><ShieldCheck /><span><strong>Use bundled build</strong><small>Known-good fallback</small></span><ChevronRight /></button></section>
+    {notice && <p className="notice notice-error" role="alert">{notice}</p>}
   </main>
 }
 
