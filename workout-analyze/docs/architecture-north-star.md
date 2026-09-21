@@ -1,6 +1,6 @@
 # Architecture north star
 
-Status: design direction agreed in discussion on 2026-09-21; not a description of completed implementation. Storage selection and execution placement remain open. This document takes precedence over earlier proposals where they assume desktop-only analysis or a required companion computer.
+Status: design direction agreed in discussion on 2026-09-21; not a description of completed implementation. Foreground consumer execution is the current direction; storage selection and database placement remain open. This document takes precedence over earlier proposals where they assume desktop-only analysis or a required companion computer.
 
 ## Same application, interchangeable local hosts
 
@@ -35,6 +35,34 @@ The Bun host is not a required sync destination or phone backend. Importing hist
 
 SQLite remains a reasonable journal implementation. A raw append-only file is an option, but would require framing, partial-write recovery, and durable checkpoint design. There is no decision to replace the existing journal. DuckDB may serve derived analysis without becoming the recording source of truth; Parquet may be useful for archives or transfer, but neither is a prerequisite.
 
+## Execution decision: capture continuously, process on reopening
+
+The native host must continue capturing and durably journaling events during an active recording while the UI is suspended. UI suspension or a lagging consumer must never intentionally skip, coalesce away, or discard original capture events. Actual sensor delivery and platform interruptions still need explicit diagnostics; this requirement is not a claim that an OS always delivers every physical observation.
+
+For now, shared TypeScript consumers run in the foreground web application and resume from durable checkpoints when it reopens. Metrics, lap/segment recognition, and analysis may catch up from the journal. No separate background TypeScript runtime is required. Background processing may be revisited later if a concrete feature needs it; do not complicate the current design to provide it speculatively.
+
+Catch-up should use ordered batches and preserve the state needed for deterministic processing across batch boundaries. It must remain resumable if the UI closes again. Fast catch-up is a performance goal to measure with recorded rides, not an assumed guarantee; distinguish current recording catch-up from expensive archive-wide analysis.
+
+## Next design focus: where shared analysis executes
+
+Downloaded Garmin history and app-recorded journals should converge through source adapters on the same logical workout/sample model. This is expected normalization work; the main architectural question is where analysis over that model executes.
+
+Proposed shape for discussion, not a selected storage implementation:
+
+```text
+Retained Garmin originals -> Garmin source adapter --\
+                                                     -> Canonical workouts/samples -> Analytics
+Retained capture journal -> Journal consumer --------/
+```
+
+Keep originals replayable and retain source identity, import/processing version, and progress. Garmin originals need not be rewritten as synthetic sensor events; source-specific adapters should converge on a common normalized model. Define units, timestamps, missing measurements, pause semantics, and duplicate-import handling at that boundary. Cross-source duplicate workouts need an explicit identity/reconciliation policy rather than silently merging on timestamp.
+
+The working proposal is shared TypeScript normalization and analysis in the foreground browser/WKWebView, with bulk access to durable local inputs and outputs. Database execution may still live behind the Swift/Bun host contract or in the shared web runtime. Choosing foreground consumers does not itself choose database placement. A unified database means a common logical archive per installation, not a central server or a requirement to store original journals and derived analytics in one physical database.
+
+Currently `src/scripts/build-analysis.ts` is a thin Bun entry point. `src/services/AnalysisDatabase.ts` reads native DuckDB, invokes the TypeScript detector, and persists results. `src/services/SegmentDetector.ts` contains the matching algorithm, with a Node crypto dependency and a database-owned input type that need disentangling for web execution.
+
+Recommended direction for discussion: make the analysis engine a portable TypeScript module run by the shared web application, preferably in a Web Worker to keep the UI responsive. A worker is part of the web runtime, not a separately hosted background execution service, and must not be relied on during iOS suspension. Keep the Bun CLI as an optional caller of the same engine. Separate database input/output from computation; host-side native SQL remains compatible with web-side TypeScript analysis. Before moving the existing whole-archive detector, evaluate its memory footprint and restart behavior on iPhone; journal checkpointing does not automatically make that detector incremental or resumable.
+
 ## Decisions deliberately left open
 
 Do not select or migrate storage on the strength of this document. Evaluate placement symmetrically across the two hosts:
@@ -44,11 +72,11 @@ Do not select or migrate storage on the strength of this document. Evaluate plac
 | Analysis database behind the host contract | Native engine in Swift host | Native engine in Bun host |
 | Analysis database in shared web runtime | DuckDB-Wasm in WKWebView | DuckDB-Wasm in browser |
 
-A browser-versus-iPhone split is not the intended architectural boundary. Both options still need persistence, recovery, version compatibility, and lifecycle verification. Shared TypeScript consumers introduce a separate execution question: native database bindings alone do not provide a runtime for shared TypeScript processing.
+A browser-versus-iPhone split is not the intended architectural boundary. Both options still need persistence, recovery, version compatibility, and lifecycle verification. Foreground TypeScript consumers can call host-side database operations; native database bindings do not require moving those consumers into Swift or adding a background runtime.
 
 Before choosing, establish:
 
-1. Which processing must continue during a locked-screen ride, and which can catch up when the app opens? Durable capture must survive UI suspension; live metrics, recognition, and archive analysis may have different deadlines.
+1. How do Garmin originals and recorded journals converge on a canonical model, and what batching and persistence contract supports foreground normalization and analysis on both platforms?
 2. Who owns durable writes, consumer checkpoints, and projection rebuilds? Define recovery behavior before optimizing database access.
 3. What host operations and capability signals let the same application exercise recording, replay, history, and analysis in both environments? Keep transport details out of application logic.
 4. What evidence demonstrates parity? Use the existing recorded ride to check import/replay, persistent history, deterministic processing, restart recovery, and eventually analysis results across hosts.
