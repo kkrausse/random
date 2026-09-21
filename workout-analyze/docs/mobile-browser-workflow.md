@@ -1,5 +1,7 @@
 # Local mobile browser workflow
 
+Target architecture: the browser and iPhone WKWebView run substantially the same application, with local Bun substituting for the Swift host behind a shared contract. The simulator and replay modes below are current stepping stones toward persistent, integrated workflows. See [the architecture north star](architecture-north-star.md) for goals and unresolved decisions.
+
 Run from `/Users/kkrausse/Documents/repos/kkrausse/random/workout-analyze`:
 
 ```sh

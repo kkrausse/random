@@ -2,6 +2,8 @@
 
 Status: draft for discussion; no application implementation yet.
 
+This is the original proposal; its implementation-status statement above is historical. The [architecture north star](architecture-north-star.md) supersedes its desktop-only analysis and companion-computer assumptions: target a shared browser/WKWebView application, interchangeable Bun/Swift hosts, and standalone iPhone recording and analysis. Storage and consumer execution placement remain open.
+
 ## 1. Product idea
 
 Turn Workout Ledger into an iPhone workout recorder, starting with outdoor cycling. The interface runs in a bundled WebKit view, with a small purpose-built Swift bridge to native recording, location, and Bluetooth. No Capacitor dependency.
