@@ -1,6 +1,6 @@
 # Architecture north star
 
-Status: design direction agreed in discussion on 2026-09-21; not a description of completed implementation. Foreground consumer execution is the current direction; storage selection and database placement remain open. This document takes precedence over earlier proposals where they assume desktop-only analysis or a required companion computer.
+Status: design direction agreed in discussion on 2026-09-21; not a description of completed implementation. Foreground consumers and host-side native DuckDB are the current working direction, pending integration verification. This document takes precedence over earlier proposals where they assume desktop-only analysis or a required companion computer.
 
 ## Same application, interchangeable local hosts
 
@@ -57,29 +57,40 @@ Retained capture journal -> Journal consumer --------/
 
 Keep originals replayable and retain source identity, import/processing version, and progress. Garmin originals need not be rewritten as synthetic sensor events; source-specific adapters should converge on a common normalized model. Define units, timestamps, missing measurements, pause semantics, and duplicate-import handling at that boundary. Cross-source duplicate workouts need an explicit identity/reconciliation policy rather than silently merging on timestamp.
 
-The working proposal is shared TypeScript normalization and analysis in the foreground browser/WKWebView, with bulk access to durable local inputs and outputs. Database execution may still live behind the Swift/Bun host contract or in the shared web runtime. Choosing foreground consumers does not itself choose database placement. A unified database means a common logical archive per installation, not a central server or a requirement to store original journals and derived analytics in one physical database.
+The working direction is shared TypeScript normalization and analysis in the foreground browser/WKWebView, with bulk access to durable local inputs and outputs, and native DuckDB behind the Swift/Bun host contract. A unified database means a common logical archive per installation, not a central server or a requirement to store original journals and derived analytics in one physical database.
 
 Currently `src/scripts/build-analysis.ts` is a thin Bun entry point. `src/services/AnalysisDatabase.ts` reads native DuckDB, invokes the TypeScript detector, and persists results. `src/services/SegmentDetector.ts` contains the matching algorithm, with a Node crypto dependency and a database-owned input type that need disentangling for web execution.
 
 Recommended direction for discussion: make the analysis engine a portable TypeScript module run by the shared web application, preferably in a Web Worker to keep the UI responsive. A worker is part of the web runtime, not a separately hosted background execution service, and must not be relied on during iOS suspension. Keep the Bun CLI as an optional caller of the same engine. Separate database input/output from computation; host-side native SQL remains compatible with web-side TypeScript analysis. Before moving the existing whole-archive detector, evaluate its memory footprint and restart behavior on iPhone; journal checkpointing does not automatically make that detector incremental or resumable.
 
-## Decisions deliberately left open
+## Working storage and rebuild model
 
-Do not select or migrate storage on the strength of this document. Evaluate placement symmetrically across the two hosts:
+```text
+Host: retained raw journal / imported originals
+  -> shared web TypeScript consumer (preferably worker): normalize
+  -> host: native DuckDB canonical workouts and samples
+  -> shared analysis engine: DuckDB SQL + TypeScript computation
+  -> host: native DuckDB derived routes, traversals, and other results
+```
 
-| Option | iPhone | Mac browser development |
-| --- | --- | --- |
-| Analysis database behind the host contract | Native engine in Swift host | Native engine in Bun host |
-| Analysis database in shared web runtime | DuckDB-Wasm in WKWebView | DuckDB-Wasm in browser |
+Keep the host interface primitive: ordered journal reads, generic parameterized DuckDB execution/querying, transactions, and bulk data transfer. Shared TypeScript owns normalization, schema/migrations, analysis SQL, and algorithms. Do not require new Swift domain methods for new analysis queries. Native DuckDB serves both Swift and Bun hosts; SQLite may continue to serve the separate capture journal.
 
-A browser-versus-iPhone split is not the intended architectural boundary. Both options still need persistence, recovery, version compatibility, and lifecycle verification. Foreground TypeScript consumers can call host-side database operations; native database bindings do not require moving those consumers into Swift or adding a background runtime.
+The existing recorded ride has roughly 5,000–6,000 journal events, making batched host-to-web normalization and web-to-host insertion a reasonable starting point to measure. Do not design around one bridge request per event or assume whole-archive datasets have the same cost as one ride.
 
-Before choosing, establish:
+- **Normal ingestion:** consume new source data into canonical tables. Commit projection rows and the corresponding consumer checkpoint together in DuckDB where possible. Retain raw journal data independently for replay.
+- **Normalization changes:** rebuild affected normalized workouts from retained originals with a new processing version, then invalidate dependent analysis. This is a data backfill, distinct from a schema migration; unrelated originals do not need to be reacquired.
+- **Segment analysis:** accept a full rebuild over a defined normalized input revision when workouts or analysis logic change. Incremental route discovery is not a current requirement. This rebuild reads canonical data, not raw journals, unless normalization also changed.
+- **Safe result replacement:** compute replacement results before publishing them. Replace all related derived tables in one transaction, or stage a new result generation and atomically publish it. Do not expose an empty/partial analysis between deletion and reinsertion. Preserve the previous successful results if a run is interrupted, and record their input revision/configuration so staleness is visible.
+- **Replay/seek:** proposed default is isolated replay state rather than rolling back the canonical archive when the playback cursor moves backward. Explicit projection rebuilds replace persisted derived state; ordinary playback need not do so.
 
-1. How do Garmin originals and recorded journals converge on a canonical model, and what batching and persistence contract supports foreground normalization and analysis on both platforms?
-2. Who owns durable writes, consumer checkpoints, and projection rebuilds? Define recovery behavior before optimizing database access.
-3. What host operations and capability signals let the same application exercise recording, replay, history, and analysis in both environments? Keep transport details out of application logic.
-4. What evidence demonstrates parity? Use the existing recorded ride to check import/replay, persistent history, deterministic processing, restart recovery, and eventually analysis results across hosts.
+## Remaining integration questions
+
+This is a design direction, not authorization for an immediate storage migration. DuckDB-Wasm remains an alternative if native integration proves unsuitable, rather than the current default. Verify:
+
+1. Bulk transfer, value encoding, connection/session ownership, and transaction isolation across the host bridge.
+2. Durable checkpoints and any state needed to resume normalization across batches or UI suspension.
+3. Phone memory/runtime for full analysis, and consistent input revisions while ingestion or backfills occur.
+4. Import/replay, persistent history, deterministic processing, restart recovery, and analysis parity using the existing recorded ride on both hosts.
 
 The current segment detector performs its geometric matching in TypeScript. Changing the database alone will not accelerate those loops; evaluate SQL preprocessing and query performance separately from matching performance.
 
