@@ -1,7 +1,7 @@
 import type { MobileState, MobileStore } from '../store'
 
 export const actionKeys = [
-  'refresh', 'setScreen', 'returnFromUtility', 'setDevelopmentSourceDraft',
+  'refresh', 'reconnectBridge', 'setScreen', 'returnFromUtility', 'setDevelopmentSourceDraft',
   'startWorkout', 'pauseWorkout', 'resumeWorkout', 'finishWorkout', 'recoverWorkout', 'exportWorkout',
   'loadSavedWorkouts', 'openSavedWorkout', 'exportSavedWorkout', 'requestPermission',
   'startLocation', 'stopLocation', 'readLocations', 'scanHeartRate', 'stopHeartRateScan',
