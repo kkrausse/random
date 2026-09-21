@@ -58,13 +58,6 @@ struct RootView: View {
             .overlay {
                 SourceFailureView(builds: model.builds) { recoveryPresented = true }
             }
-            .overlay(alignment: .topTrailing) {
-                Button { recoveryPresented = true } label: {
-                    Image(systemName: "wrench.and.screwdriver").padding(12).background(.ultraThinMaterial, in: Circle())
-                }
-                .accessibilityLabel("Open native recovery")
-                .padding()
-            }
             .sheet(isPresented: $recoveryPresented) { RecoveryView(model: model) }
             .task { model.web.loadSelectedSource() }
     }
