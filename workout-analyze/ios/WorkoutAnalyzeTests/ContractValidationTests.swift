@@ -23,6 +23,25 @@ final class ContractValidationTests: XCTestCase {
         XCTAssertFalse(ContractValidation.sameOrigin(URL(string: "https://other.test/")!, URL(string: "https://example.test/")!))
     }
 
+    func testWebMessageOriginPolicyRequiresExactSelectedOriginOrCurrentMainPage() {
+        let selected = URL(string: "https://dev.example.test:8443/")!
+        let exact = WebMessageOrigin(scheme: "https", host: "dev.example.test", port: 8443)
+        XCTAssertEqual(WebMessageOriginPolicy.admission(origin: exact, currentPageURL: selected, selectedURL: selected, isMainFrame: true, handlerName: "workoutAnalyze", allowsCurrentPageFallback: true), .exactOrigin)
+
+        let webKitNormalized = WebMessageOrigin(scheme: "https", host: "dev.example.test", port: 443)
+        XCTAssertEqual(WebMessageOriginPolicy.admission(origin: webKitNormalized, currentPageURL: URL(string: "https://dev.example.test:8443/settings")!, selectedURL: selected, isMainFrame: true, handlerName: "workoutAnalyze", allowsCurrentPageFallback: true), .currentPageFallback)
+        XCTAssertEqual(WebMessageOriginPolicy.admission(origin: webKitNormalized, currentPageURL: URL(string: "https://other.example.test:8443/")!, selectedURL: selected, isMainFrame: true, handlerName: "workoutAnalyze", allowsCurrentPageFallback: true), .rejected)
+        XCTAssertEqual(WebMessageOriginPolicy.admission(origin: webKitNormalized, currentPageURL: selected, selectedURL: selected, isMainFrame: false, handlerName: "workoutAnalyze", allowsCurrentPageFallback: true), .rejected)
+        XCTAssertEqual(WebMessageOriginPolicy.admission(origin: webKitNormalized, currentPageURL: selected, selectedURL: selected, isMainFrame: true, handlerName: "unregistered", allowsCurrentPageFallback: true), .rejected)
+        XCTAssertEqual(WebMessageOriginPolicy.admission(origin: webKitNormalized, currentPageURL: selected, selectedURL: selected, isMainFrame: true, handlerName: "workoutAnalyze", allowsCurrentPageFallback: false), .rejected)
+    }
+
+    func testWebMessageOriginPolicyNormalizesDefaultPorts() {
+        let selected = URL(string: "https://dev.example.test/")!
+        let defaultPort = WebMessageOrigin(scheme: "HTTPS", host: "DEV.EXAMPLE.TEST", port: 0)
+        XCTAssertEqual(WebMessageOriginPolicy.admission(origin: defaultPort, currentPageURL: nil, selectedURL: selected, isMainFrame: true, handlerName: "workoutAnalyzeDiagnostics", allowsCurrentPageFallback: false), .exactOrigin)
+    }
+
     func testCommandRejectsUnknownKeysAndSubsets() throws {
         let valid: [String: Any] = ["protocolVersion": 1, "requestId": "web-1", "method": "diagnostics.runChecks", "params": ["checks": ["bridgePing", "engineFixture"]]]
         XCTAssertNoThrow(try ContractValidation.validateCommand(valid))
