@@ -11,9 +11,9 @@ type SessionRow = {
 }
 
 const defaultSource = resolve(import.meta.dirname, '../../data/phone-recovery-2026-09-20/application-support/recording-v1.sqlite')
-const sourcePath = () => resolve(process.env.WORKOUT_RECOVERED_ARCHIVE ?? defaultSource)
+export const recoveredArchiveSourcePath = () => resolve(process.env.WORKOUT_RECOVERED_ARCHIVE ?? defaultSource)
 
-const snapshotDatabase = (source: string) => {
+export const snapshotRecoveredArchive = (source = recoveredArchiveSourcePath()) => {
   if (!existsSync(source)) throw new Error(`Recovered iPhone archive not found at ${source}`)
   const directory = mkdtempSync(join(tmpdir(), 'workout-recovered-archive-'))
   const destination = join(directory, 'recording-v1.sqlite')
@@ -36,12 +36,12 @@ const summary = (database: Database, row: SessionRow): SavedWorkoutSummary => {
   }
 }
 
-const list = (database: Database): ArchiveListPage => {
+export const listRecoveredWorkouts = (database: Database): ArchiveListPage => {
   const rows = database.query("SELECT * FROM sessions WHERE state='finished' ORDER BY finished_at DESC,id DESC").all() as SessionRow[]
   return { afterCursor: null, items: rows.map((row) => summary(database, row)), nextCursor: null, hasMore: false, snapshotAt: new Date().toISOString() }
 }
 
-const detail = (database: Database, savedWorkoutId: string, afterSequence: number | null, limit: number): SavedWorkoutDetail => {
+export const readRecoveredWorkoutPage = (database: Database, savedWorkoutId: string, afterSequence: number | null, limit: number): SavedWorkoutDetail => {
   const row = database.query("SELECT * FROM sessions WHERE id=? AND state='finished'").get(savedWorkoutId) as SessionRow | null
   if (!row) throw new Error('Recovered workout was not found')
   const observationRows = database.query('SELECT sequence,json FROM observations WHERE session_id=? AND sequence>? ORDER BY sequence LIMIT ?').all(savedWorkoutId, afterSequence ?? 0, limit + 1) as Array<{ sequence: number; json: string }>
@@ -58,8 +58,8 @@ const detail = (database: Database, savedWorkoutId: string, afterSequence: numbe
 }
 
 export const recoveredArchivePlugin = (): Plugin => {
-  let snapshot: ReturnType<typeof snapshotDatabase> | null = null
-  const archive = () => snapshot ??= snapshotDatabase(sourcePath())
+  let snapshot: ReturnType<typeof snapshotRecoveredArchive> | null = null
+  const archive = () => snapshot ??= snapshotRecoveredArchive(recoveredArchiveSourcePath())
   return {
     name: 'workout-recovered-iphone-archive', apply: 'serve',
     configureServer(server) {
@@ -70,15 +70,15 @@ export const recoveredArchivePlugin = (): Plugin => {
           const url = new URL(request.url ?? '/', 'http://localhost')
           if (request.method !== 'GET') throw new Error('Recovered archive is read-only')
           if (url.pathname === '/status') {
-            const page = list(archive().database)
-            response.end(JSON.stringify({ available: true, source: basename(sourcePath()), workouts: page.items.length }))
-          } else if (url.pathname === '/list') response.end(JSON.stringify(list(archive().database)))
+            const page = listRecoveredWorkouts(archive().database)
+            response.end(JSON.stringify({ available: true, source: basename(recoveredArchiveSourcePath()), workouts: page.items.length }))
+          } else if (url.pathname === '/list') response.end(JSON.stringify(listRecoveredWorkouts(archive().database)))
           else if (url.pathname === '/detail') {
             const afterText = url.searchParams.get('after')
             const after = afterText === null ? null : Number(afterText)
             const limit = Number(url.searchParams.get('limit') ?? 200)
             if (!(after === null || Number.isSafeInteger(after) && after >= 0) || !Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw new Error('Invalid archive detail cursor or limit')
-            response.end(JSON.stringify(detail(archive().database, url.searchParams.get('id') ?? '', after, limit)))
+            response.end(JSON.stringify(readRecoveredWorkoutPage(archive().database, url.searchParams.get('id') ?? '', after, limit)))
           }
           else { response.statusCode = 404; response.end(JSON.stringify({ error: 'Unknown recovered archive operation' })) }
         } catch (error) {

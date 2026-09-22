@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { mkdir, rename, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { DuckDBInstance, DuckDBTimestampTZValue } from '@duckdb/node-api'
@@ -54,7 +55,30 @@ export const rebuildDatabase = (activities: ReadonlyArray<NormalizedActivity>) =
             cadence DOUBLE,
             power_w DOUBLE
           );
+          CREATE TABLE normalization_sources (
+            activity_id VARCHAR PRIMARY KEY, source VARCHAR NOT NULL, source_activity_id VARCHAR NOT NULL,
+            input_kind VARCHAR NOT NULL, normalization_version VARCHAR NOT NULL, source_version VARCHAR NOT NULL,
+            observation_count BIGINT NOT NULL, sample_count BIGINT NOT NULL, normalized_at TIMESTAMPTZ NOT NULL
+          );
         `)
+
+        // FIT rebuilds replace Garmin-derived rows but retain independently sourced
+        // projections. Raw source archives remain untouched and replayable.
+        if (existsSync(destination)) {
+          const escaped = destination.replaceAll("'", "''")
+          await connection.run(`ATTACH '${escaped}' AS previous (READ_ONLY)`)
+          try {
+            await connection.run(`
+              INSERT INTO activities SELECT * FROM previous.activities WHERE source <> 'garmin';
+              INSERT INTO activity_samples SELECT samples.* FROM previous.activity_samples samples
+                JOIN previous.activities activities ON activities.id = samples.activity_id WHERE activities.source <> 'garmin';
+            `)
+            const provenance = await connection.runAndReadAll("SELECT count(*) count FROM information_schema.tables WHERE table_catalog='previous' AND table_name='normalization_sources'")
+            if (Number(provenance.getRowObjectsJS()[0]?.count ?? 0) > 0) await connection.run('INSERT INTO normalization_sources SELECT * FROM previous.normalization_sources')
+          } finally {
+            await connection.run('DETACH previous')
+          }
+        }
 
         const activityAppender = await connection.createAppender('activities')
         for (const activity of activities) {
