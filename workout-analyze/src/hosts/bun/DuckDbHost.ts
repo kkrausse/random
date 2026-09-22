@@ -55,6 +55,11 @@ const connectionHost = (connection: DuckDBConnection, inTransaction = false): Da
   },
 })
 
+/**
+ * Opens one connection scoped exclusively to run. Callers must issue
+ * operations sequentially; this adapter does not serialize concurrent calls
+ * or protect a transaction from unrelated work on the same connection.
+ */
 export const withBunDuckDbHost = async <A>(path: string, run: (host: DatabaseHost) => Promise<A>): Promise<A> => {
   const instance = await DuckDBInstance.create(path)
   const connection = await instance.connect()
