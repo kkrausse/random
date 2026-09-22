@@ -46,3 +46,18 @@ curl --fail --silent --show-error \
 ```
 
 After publishing a new build, its generated `buildId` must be new. The native shell intentionally refuses to overwrite an already-installed build with the same ID.
+
+## Native DuckDB verification
+
+No phone connection is required to compile or run the simulator tests. The project resolves the pinned `duckdb-swift` 1.1.3 dependency through Swift Package Manager. Before installing, build the current web artifact so the app bundle contains the native-database adapter:
+
+```sh
+bun run mobile:build
+xcodebuild -project ios/WorkoutAnalyze.xcodeproj -scheme WorkoutAnalyze \
+  -sdk iphonesimulator -configuration Debug -arch arm64 \
+  CODE_SIGNING_ALLOWED=NO build
+```
+
+For a physical-device check, connect and trust the iPhone, enable Developer Mode, select the existing WorkoutAnalyze signing team in Xcode, and run the `WorkoutAnalyze` scheme. Do not change signing credentials for simulator verification. In the app, finish or use an existing saved ride, open **Segments & loops**, and tap **Import & rebuild analysis**. The saved recorder archive remains in SQLite; normalized workouts and analysis are written to the separate native DuckDB file.
+
+Mac-to-iPhone archive bundle transfer is not present in this build. Do not copy a Mac `.duckdb` file over the phone database: a future importer must merge versioned stable workout IDs while preserving the phone journal and local analysis generations.

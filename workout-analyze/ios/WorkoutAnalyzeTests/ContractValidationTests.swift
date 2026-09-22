@@ -63,6 +63,19 @@ final class ContractValidationTests: XCTestCase {
         XCTAssertNoThrow(try ContractValidation.validateCommand(journal))
     }
 
+    func testDatabaseCommandBoundsAndIdentifiers() {
+        let query: [String: Any] = ["protocolVersion": 1, "requestId": "db-1", "method": "database.query", "params": ["sql": "SELECT ?", "parameters": [["$databaseBigInt": "9007199254740992"]], "transactionId": NSNull()]]
+        XCTAssertNoThrow(try ContractValidation.validateCommand(query))
+        let bulk: [String: Any] = ["protocolVersion": 1, "requestId": "db-2", "method": "database.bulkInsert", "params": ["table": "activity_samples", "columns": ["activity_id", "lat"], "rows": [["ride-1", 1.5]], "transactionId": "dbtx-1"]]
+        XCTAssertNoThrow(try ContractValidation.validateCommand(bulk))
+        var injection = bulk
+        injection["params"] = ["table": "activity_samples; DROP TABLE activities", "columns": ["activity_id", "lat"], "rows": [["ride-1", 1.5]], "transactionId": "dbtx-1"]
+        XCTAssertThrowsError(try ContractValidation.validateCommand(injection))
+        var wrongWidth = bulk
+        wrongWidth["params"] = ["table": "activity_samples", "columns": ["activity_id", "lat"], "rows": [["ride-1"]], "transactionId": "dbtx-1"]
+        XCTAssertThrowsError(try ContractValidation.validateCommand(wrongWidth))
+    }
+
     func testHeartRatePacketParsing() {
         let uint8 = SensorService.parseHeartRatePacket(Data([0x00, 72]))
         XCTAssertEqual(uint8?["bpm"] as? Int, 72)

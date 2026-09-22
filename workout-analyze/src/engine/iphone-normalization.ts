@@ -85,6 +85,14 @@ export const normalizeIphoneWorkout = (detail: SavedWorkoutDetail): IphoneNormal
 }
 
 export const ensureIphoneNormalizationSchema = (database: DatabaseHost) => database.execute(`
+  CREATE TABLE IF NOT EXISTS activities (
+    id VARCHAR PRIMARY KEY, source VARCHAR NOT NULL, source_activity_id VARCHAR NOT NULL, sport VARCHAR NOT NULL,
+    started_at TIMESTAMPTZ NOT NULL, duration_seconds DOUBLE, distance_m DOUBLE, ascent_m DOUBLE, avg_hr_bpm DOUBLE, max_hr_bpm DOUBLE
+  );
+  CREATE TABLE IF NOT EXISTS activity_samples (
+    activity_id VARCHAR NOT NULL, timestamp TIMESTAMPTZ, lat DOUBLE, lon DOUBLE, distance_m DOUBLE,
+    altitude_m DOUBLE, speed_mps DOUBLE, heart_rate_bpm DOUBLE, cadence DOUBLE, power_w DOUBLE
+  );
   CREATE TABLE IF NOT EXISTS normalization_sources (
     activity_id VARCHAR PRIMARY KEY, source VARCHAR NOT NULL, source_activity_id VARCHAR NOT NULL,
     input_kind VARCHAR NOT NULL, normalization_version VARCHAR NOT NULL, source_version VARCHAR NOT NULL,

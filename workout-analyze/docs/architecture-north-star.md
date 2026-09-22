@@ -1,6 +1,6 @@
 # Architecture north star
 
-Status: design direction agreed in discussion on 2026-09-21. The in-process analysis slice, local-browser database transport, and saved-observation iPhone normalization consumer described below are implemented. Swift-native DuckDB remains pending. This document takes precedence over earlier proposals where they assume desktop-only analysis or a required companion computer.
+Status: design direction agreed in discussion on 2026-09-21. The in-process analysis slice, local-browser database transport, saved-observation iPhone normalization consumer, and Swift-native DuckDB host described below are implemented. This document takes precedence over earlier proposals where they assume desktop-only analysis or a required companion computer.
 
 ## Same application, interchangeable local hosts
 
@@ -87,7 +87,7 @@ The existing recorded ride has roughly 5,000–6,000 journal events, making batc
 
 The existing Bun CLI now runs route analysis through a portable TypeScript engine and a small execution-facing host interface for parameterized SQL, queries, transactions, and bulk insertion. Shared code owns normalized-input queries, analysis table schemas, the detector, and atomic result replacement; the Bun adapter owns only native DuckDB connection/value details. Detector IDs use a portable synchronous SHA-256 implementation and retain their previous values.
 
-The local mobile browser now adapts this interface to same-origin Bun HTTP requests. It encodes bigint values, retains a server-side connection per transaction session, and supports query, execute, bulk insert, commit, and rollback. Shared TypeScript uses it for workout/route queries and invokes the portable rebuild engine in the web runtime; the endpoint does not contain detector/domain methods. This development transport is not yet the frozen native wire contract, does not serialize concurrent operations within one transaction, and is intentionally available only from the Vite development server. The Swift DuckDB adapter remains unimplemented.
+The local mobile browser adapts this interface to same-origin Bun HTTP requests. The installed app adapts it to a native WKWebView bridge backed by the official `duckdb-swift` 1.1.3 package and a durable Application Support database. Both support query, execute, bulk insert, and connection-owned transactions; the native transport additionally pages large query results and chunks bulk commands below the bridge limit. Big integers and timestamps retain explicit wire encodings. Shared TypeScript owns schema creation, saved-observation normalization, workout/route queries, and the portable rebuild engine; Swift contains no detector/domain SQL. Native transactions are actor-serialized, expire if abandoned, and roll back when the app leaves the active scene.
 
 ## Remaining integration questions
 
@@ -102,4 +102,6 @@ The current segment detector performs its geometric matching in TypeScript. Chan
 
 ## Current gap
 
-The [browser workflow](mobile-browser-workflow.md) now normalizes the three real recovered iPhone workouts from their durable saved observations into the local DuckDB archive before rebuilding analysis. `normalization_sources` records the input kind, processing version, source version, and counts; stable `iphone:<session-id>` identities and transactional replacement make repeat ingestion idempotent. The zero-journal legacy ride deliberately falls back to its authoritative saved observations. FIT data rebuilds retain non-Garmin normalized rows. The remaining parity gap is the installed phone host: it retains native recording/history, but does not yet implement native DuckDB or expose workout-library/segment analysis capabilities. Live route recognition is also not implemented.
+The [browser workflow](mobile-browser-workflow.md) normalizes the three real recovered iPhone workouts from durable saved observations before rebuilding analysis. The same shared workflow now runs against native DuckDB on an installed phone: `archive.list/detail` supplies native saved observations, stable `iphone:<session-id>` identities make repeated imports idempotent, and replacement plus analysis publication use native connection-owned transactions. Fresh phone databases create the canonical workout/sample schema from shared TypeScript.
+
+Physical-device runtime/performance verification is still required. Versioned Mac-to-iPhone normalized archive bundle import/export is not implemented; it must merge stable workout IDs transactionally without replacing the phone recorder journal or blindly overwriting distinct analysis generations. Live route recognition is also not implemented.

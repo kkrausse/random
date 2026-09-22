@@ -40,6 +40,13 @@ export type Capability =
   | 'archive.list'
   | 'archive.detail'
   | 'journal.read'
+  | 'database.execute'
+  | 'database.query'
+  | 'database.queryNext'
+  | 'database.bulkInsert'
+  | 'database.begin'
+  | 'database.commit'
+  | 'database.rollback'
 
 export const PHASE1_BASE_CAPABILITIES: ReadonlyArray<Capability> = [
   'bridge.ping', 'session.snapshot', 'permissions.status',
@@ -67,8 +74,13 @@ export const RECORDING_CAPABILITIES: ReadonlyArray<Capability> = [
 export const ARCHIVE_CAPABILITIES: ReadonlyArray<Capability> = ['archive.list', 'archive.detail']
 /** Canonical raw-event access is independent of recorder mutation and archive discovery. */
 export const JOURNAL_CAPABILITIES: ReadonlyArray<Capability> = ['journal.read']
+/** Primitive native DuckDB transport; schema and domain SQL remain web-owned. */
+export const DATABASE_CAPABILITIES: ReadonlyArray<Capability> = [
+  'database.execute', 'database.query', 'database.queryNext', 'database.bulkInsert',
+  'database.begin', 'database.commit', 'database.rollback',
+]
 
-export const MOBILE_CAPABILITIES: ReadonlyArray<Capability> = [...PHASE1_CAPABILITIES, ...RECORDING_CAPABILITIES, ...ARCHIVE_CAPABILITIES, ...JOURNAL_CAPABILITIES]
+export const MOBILE_CAPABILITIES: ReadonlyArray<Capability> = [...PHASE1_CAPABILITIES, ...RECORDING_CAPABILITIES, ...ARCHIVE_CAPABILITIES, ...JOURNAL_CAPABILITIES, ...DATABASE_CAPABILITIES]
 
 export type MobileMethod = 'bridge.hello' | Capability
 export type StatusKind = 'ok' | 'waiting' | 'unavailable' | 'error'
@@ -122,7 +134,17 @@ export interface CommandParams {
   readonly 'archive.list': { readonly afterCursor: string | null; readonly limit: number }
   readonly 'archive.detail': { readonly savedWorkoutId: string; readonly afterSequence: number | null; readonly limit: number }
   readonly 'journal.read': { readonly sessionId: string; readonly afterJournalSequence: number | null; readonly limit: number }
+  readonly 'database.execute': DatabaseStatementParams
+  readonly 'database.query': DatabaseStatementParams
+  readonly 'database.queryNext': { readonly resultId: string }
+  readonly 'database.bulkInsert': { readonly table: string; readonly columns: readonly string[]; readonly rows: readonly unknown[][]; readonly transactionId: string | null }
+  readonly 'database.begin': Record<string, never>
+  readonly 'database.commit': { readonly transactionId: string }
+  readonly 'database.rollback': { readonly transactionId: string }
 }
+
+export interface DatabaseStatementParams { readonly sql: string; readonly parameters: readonly unknown[]; readonly transactionId: string | null }
+export interface DatabaseQueryPage { readonly rows: ReadonlyArray<Record<string, unknown>>; readonly resultId: string | null; readonly hasMore: boolean }
 
 export interface SessionMutationParams { readonly sessionId: string; readonly expectedRevision: number }
 
@@ -462,7 +484,7 @@ export interface HelloResult {
   readonly engineApiVersion: 1
   readonly checkpointSchemaVersion: 1
   readonly capabilities: readonly Capability[]
-  readonly unavailableCapabilities: ReadonlyArray<{ readonly capability: 'workout.recorder' | 'sensors.location' | 'sensors.bluetoothHeartRate'; readonly reason: string }>
+  readonly unavailableCapabilities: ReadonlyArray<{ readonly capability: 'workout.recorder' | 'sensors.location' | 'sensors.bluetoothHeartRate' | 'database.duckdb'; readonly reason: string }>
 }
 
 export interface DiagnosticSnapshot {
@@ -541,6 +563,13 @@ export interface CommandResults {
   readonly 'archive.list': ArchiveListPage
   readonly 'archive.detail': SavedWorkoutDetail
   readonly 'journal.read': RawWorkoutEventPage
+  readonly 'database.execute': { readonly completed: true }
+  readonly 'database.query': DatabaseQueryPage
+  readonly 'database.queryNext': DatabaseQueryPage
+  readonly 'database.bulkInsert': { readonly inserted: number }
+  readonly 'database.begin': { readonly transactionId: string }
+  readonly 'database.commit': { readonly committed: true }
+  readonly 'database.rollback': { readonly rolledBack: true }
 }
 
 export type BridgeErrorCode = 'invalidRequest' | 'unsupportedVersion' | 'unsupportedMethod' | 'invalidState' | 'revisionConflict' | 'permissionDenied' | 'sensorUnavailable' | 'storageFailure' | 'incompatibleBuild' | 'downloadFailure' | 'internalError'

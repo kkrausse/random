@@ -25,6 +25,9 @@
 		A10000000000000000000111 /* RecordingEngineHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000212; };
 		A10000000000000000000112 /* RecordingEngine in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000213; };
 		A10000000000000000000113 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = A10000000000000000000214; };
+		A10000000000000000000114 /* DuckDBService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000215; };
+		A10000000000000000000115 /* DuckDB in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000B02; };
+		A10000000000000000000116 /* DuckDBServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000216; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -52,28 +55,30 @@
 		A10000000000000000000212 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingEngineHost.swift; sourceTree = "<group>"; };
 		A10000000000000000000213 = {isa = PBXFileReference; lastKnownFileType = folder; path = RecordingEngine; sourceTree = "<group>"; };
 		A10000000000000000000214 = {isa = PBXFileReference; lastKnownFileType = sourcecode.text-based-dylib-definition; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
+		A10000000000000000000215 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuckDBService.swift; sourceTree = "<group>"; };
+		A10000000000000000000216 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuckDBServiceTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		A10000000000000000000301 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000113); runOnlyForDeploymentPostprocessing = 0; };
+		A10000000000000000000301 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000113, A10000000000000000000115); runOnlyForDeploymentPostprocessing = 0; };
 		A10000000000000000000302 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		A10000000000000000000701 = {isa = PBXGroup; children = (A10000000000000000000702, A10000000000000000000703, A10000000000000000000704, A10000000000000000000705, A10000000000000000000214); sourceTree = "<group>"; };
-		A10000000000000000000702 = {isa = PBXGroup; children = (A10000000000000000000201, A10000000000000000000202, A10000000000000000000203, A10000000000000000000204, A10000000000000000000205, A10000000000000000000206, A10000000000000000000207, A10000000000000000000208, A10000000000000000000209, A1000000000000000000020A, A1000000000000000000020F, A10000000000000000000210, A10000000000000000000211, A10000000000000000000212); path = WorkoutAnalyze; sourceTree = "<group>"; };
+		A10000000000000000000702 = {isa = PBXGroup; children = (A10000000000000000000201, A10000000000000000000202, A10000000000000000000203, A10000000000000000000204, A10000000000000000000205, A10000000000000000000206, A10000000000000000000207, A10000000000000000000208, A10000000000000000000209, A1000000000000000000020A, A1000000000000000000020F, A10000000000000000000210, A10000000000000000000211, A10000000000000000000212, A10000000000000000000215); path = WorkoutAnalyze; sourceTree = "<group>"; };
 		A10000000000000000000703 = {isa = PBXGroup; children = (A1000000000000000000020B, A10000000000000000000213); path = Resources; sourceTree = "<group>"; };
-		A10000000000000000000704 = {isa = PBXGroup; children = (A1000000000000000000020C); path = WorkoutAnalyzeTests; sourceTree = "<group>"; };
+		A10000000000000000000704 = {isa = PBXGroup; children = (A1000000000000000000020C, A10000000000000000000216); path = WorkoutAnalyzeTests; sourceTree = "<group>"; };
 		A10000000000000000000705 = {isa = PBXGroup; children = (A1000000000000000000020D, A1000000000000000000020E); name = Products; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A10000000000000000000501 = {isa = PBXNativeTarget; buildConfigurationList = A10000000000000000000802; buildPhases = (A10000000000000000000311, A10000000000000000000301, A10000000000000000000312, A10000000000000000000314); buildRules = (); dependencies = (); name = WorkoutAnalyze; productName = WorkoutAnalyze; productReference = A1000000000000000000020D; productType = "com.apple.product-type.application"; };
+		A10000000000000000000501 = {isa = PBXNativeTarget; buildConfigurationList = A10000000000000000000802; buildPhases = (A10000000000000000000311, A10000000000000000000301, A10000000000000000000312, A10000000000000000000314); buildRules = (); dependencies = (); name = WorkoutAnalyze; packageProductDependencies = (A10000000000000000000B02); productName = WorkoutAnalyze; productReference = A1000000000000000000020D; productType = "com.apple.product-type.application"; };
 		A10000000000000000000502 = {isa = PBXNativeTarget; buildConfigurationList = A10000000000000000000803; buildPhases = (A10000000000000000000313, A10000000000000000000302, A10000000000000000000315); buildRules = (); dependencies = (A10000000000000000000402); name = WorkoutAnalyzeTests; productName = WorkoutAnalyzeTests; productReference = A1000000000000000000020E; productType = "com.apple.product-type.bundle.unit-test"; };
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		A10000000000000000000601 = {isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = YES; LastSwiftUpdateCheck = 2700; LastUpgradeCheck = 2700; TargetAttributes = {A10000000000000000000501 = {CreatedOnToolsVersion = 27.0; DevelopmentTeam = 5XY88U4278; }; A10000000000000000000502 = {CreatedOnToolsVersion = 27.0; }; }; }; buildConfigurationList = A10000000000000000000801; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = A10000000000000000000701; productRefGroup = A10000000000000000000705; projectDirPath = ""; projectRoot = ""; targets = (A10000000000000000000501, A10000000000000000000502); };
+		A10000000000000000000601 = {isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = YES; LastSwiftUpdateCheck = 2700; LastUpgradeCheck = 2700; TargetAttributes = {A10000000000000000000501 = {CreatedOnToolsVersion = 27.0; DevelopmentTeam = 5XY88U4278; }; A10000000000000000000502 = {CreatedOnToolsVersion = 27.0; }; }; }; buildConfigurationList = A10000000000000000000801; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = A10000000000000000000701; packageReferences = (A10000000000000000000B01); productRefGroup = A10000000000000000000705; projectDirPath = ""; projectRoot = ""; targets = (A10000000000000000000501, A10000000000000000000502); };
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
@@ -86,8 +91,8 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		A10000000000000000000311 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000101, A10000000000000000000102, A10000000000000000000103, A10000000000000000000104, A10000000000000000000105, A10000000000000000000106, A10000000000000000000107, A10000000000000000000108, A10000000000000000000109, A1000000000000000000010A, A1000000000000000000010E, A1000000000000000000010F, A10000000000000000000110, A10000000000000000000111); runOnlyForDeploymentPostprocessing = 0; };
-		A10000000000000000000313 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A1000000000000000000010C); runOnlyForDeploymentPostprocessing = 0; };
+		A10000000000000000000311 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000101, A10000000000000000000102, A10000000000000000000103, A10000000000000000000104, A10000000000000000000105, A10000000000000000000106, A10000000000000000000107, A10000000000000000000108, A10000000000000000000109, A1000000000000000000010A, A1000000000000000000010E, A1000000000000000000010F, A10000000000000000000110, A10000000000000000000111, A10000000000000000000114); runOnlyForDeploymentPostprocessing = 0; };
+		A10000000000000000000313 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A1000000000000000000010C, A10000000000000000000116); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -108,6 +113,14 @@
 		A10000000000000000000802 = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000903, A10000000000000000000904); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 		A10000000000000000000803 = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000905, A10000000000000000000906); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A10000000000000000000B01 /* XCRemoteSwiftPackageReference "duckdb-swift" */ = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/duckdb/duckdb-swift"; requirement = {kind = exactVersion; version = 1.1.3; }; };
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A10000000000000000000B02 /* DuckDB */ = {isa = XCSwiftPackageProductDependency; package = A10000000000000000000B01 /* XCRemoteSwiftPackageReference "duckdb-swift" */; productName = DuckDB; };
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A10000000000000000000601;
 }

@@ -10,6 +10,7 @@ const methods = new Set<MobileMethod>(['bridge.hello', ...MOBILE_CAPABILITIES])
 const capabilities = new Set<Capability>(MOBILE_CAPABILITIES)
 const checkIds = new Set<DiagnosticCheckId>(['bridgePing', 'capabilityCompatibility', 'diagnosticStorage', 'engineFixture'])
 const idPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
+const databaseIdentifier = /^[A-Za-z_][A-Za-z0-9_]*$/
 const hashPattern = /^[a-f0-9]{64}$/
 const errorCodes = new Set(['invalidRequest', 'unsupportedVersion', 'unsupportedMethod', 'invalidState', 'revisionConflict', 'permissionDenied', 'sensorUnavailable', 'storageFailure', 'incompatibleBuild', 'downloadFailure', 'internalError'])
 const iso = (value: unknown) => typeof value === 'string' && !Number.isNaN(Date.parse(value))
@@ -58,6 +59,12 @@ const validateParams = (method: MobileMethod, params: unknown): boolean => {
     case 'archive.list': return exactKeys(params, ['afterCursor', 'limit']) && (params.afterCursor === null || text(params.afterCursor, 512)) && safeInteger(params.limit, 1, 100)
     case 'archive.detail': return exactKeys(params, ['savedWorkoutId', 'afterSequence', 'limit']) && typeof params.savedWorkoutId === 'string' && idPattern.test(params.savedWorkoutId) && (params.afterSequence === null || safeInteger(params.afterSequence)) && safeInteger(params.limit, 1, 200)
     case 'journal.read': return exactKeys(params, ['sessionId', 'afterJournalSequence', 'limit']) && typeof params.sessionId === 'string' && idPattern.test(params.sessionId) && (params.afterJournalSequence === null || safeInteger(params.afterJournalSequence)) && safeInteger(params.limit, 1, 200)
+    case 'database.execute':
+    case 'database.query': return exactKeys(params, ['sql', 'parameters', 'transactionId']) && text(params.sql, 128 * 1024) && Array.isArray(params.parameters) && params.parameters.length <= 4096 && (params.transactionId === null || typeof params.transactionId === 'string' && idPattern.test(params.transactionId))
+    case 'database.queryNext': return exactKeys(params, ['resultId']) && typeof params.resultId === 'string' && idPattern.test(params.resultId)
+    case 'database.bulkInsert': return exactKeys(params, ['table', 'columns', 'rows', 'transactionId']) && typeof params.table === 'string' && databaseIdentifier.test(params.table) && Array.isArray(params.columns) && params.columns.length > 0 && params.columns.length <= 128 && params.columns.every((value) => typeof value === 'string' && databaseIdentifier.test(value)) && Array.isArray(params.rows) && params.rows.length <= 2_000 && params.rows.every((row) => Array.isArray(row) && row.length === (params.columns as unknown[]).length) && (params.transactionId === null || typeof params.transactionId === 'string' && idPattern.test(params.transactionId))
+    case 'database.commit':
+    case 'database.rollback': return exactKeys(params, ['transactionId']) && typeof params.transactionId === 'string' && idPattern.test(params.transactionId)
     default: return empty(params)
   }
 }
@@ -272,6 +279,9 @@ const rawWorkoutEventPage = (value: unknown) => {
 
 export const parseRawWorkoutEventPage = (value: unknown): import('./contracts').RawWorkoutEventPage => rawWorkoutEventPage(value) ? value as import('./contracts').RawWorkoutEventPage : fail('invalid raw workout event page')
 
+const databaseWireValue = (value: unknown): boolean => value === null || typeof value === 'string' || typeof value === 'boolean' || finite(value) || record(value) && ((exactKeys(value, ['$databaseBigInt']) && typeof value.$databaseBigInt === 'string' && /^-?\d+$/.test(value.$databaseBigInt)) || (exactKeys(value, ['$databaseBlob']) && typeof value.$databaseBlob === 'string' && base64Bytes(value.$databaseBlob, 16 * 1024 * 1024)))
+const databaseQueryPage = (value: Record<string, unknown>) => exactKeys(value, ['rows', 'resultId', 'hasMore']) && Array.isArray(value.rows) && value.rows.every((row) => record(row) && Object.values(row).every(databaseWireValue)) && (value.resultId === null || typeof value.resultId === 'string' && idPattern.test(value.resultId)) && typeof value.hasMore === 'boolean' && value.hasMore === (value.resultId !== null)
+
 const savedWorkoutDetail = (value: unknown) => record(value) && exactKeys(value, ['summary', 'pinnedEngine', 'recordingFormatVersion', 'units', 'derivation', 'observations']) && savedWorkoutSummary(value.summary) && pinnedEngine(value.pinnedEngine) && value.recordingFormatVersion === 1 && value.units === 'SI' && record(value.derivation) && exactKeys(value.derivation, ['algorithmId', 'engineBuildId', 'configId', 'firstInputSequence', 'lastInputSequence']) && text(value.derivation.algorithmId, 128) && text(value.derivation.engineBuildId, 128) && text(value.derivation.configId, 128) && (value.derivation.firstInputSequence === null || safeInteger(value.derivation.firstInputSequence, 1)) && safeInteger(value.derivation.lastInputSequence) && (value.derivation.firstInputSequence === null ? value.derivation.lastInputSequence === 0 : (value.derivation.firstInputSequence as number) <= (value.derivation.lastInputSequence as number)) && archiveObservationPage(value.observations) && (value.summary as Record<string, unknown>).latestSequence === (value.observations as Record<string, unknown>).latestDurableSequence && (value.summary as Record<string, unknown>).observationCount === (value.observations as Record<string, unknown>).latestDurableSequence
 
 const cursorPage = (value: unknown, itemValidator: (item: unknown) => boolean) => {
@@ -292,7 +302,7 @@ const validSuccessResult = (method: MobileMethod, value: unknown): boolean => {
   if (!record(value)) return false
   switch (method) {
     case 'bridge.hello': {
-      const unavailable = ['workout.recorder', 'sensors.location', 'sensors.bluetoothHeartRate']
+      const unavailable = ['workout.recorder', 'sensors.location', 'sensors.bluetoothHeartRate', 'database.duckdb']
       const advertised = Array.isArray(value.capabilities) ? value.capabilities : []
       if (!exactKeys(value, ['shellVersion', 'protocolVersion', 'engineApiVersion', 'checkpointSchemaVersion', 'capabilities', 'unavailableCapabilities']) || !text(value.shellVersion, 64) || value.protocolVersion !== 1 || value.engineApiVersion !== 1 || value.checkpointSchemaVersion !== 1 || !Array.isArray(value.capabilities) || new Set(advertised).size !== advertised.length || !advertised.every((item) => capabilities.has(item as Capability)) || !PHASE1_BASE_CAPABILITIES.every((item) => advertised.includes(item)) || !Array.isArray(value.unavailableCapabilities) || !value.unavailableCapabilities.every((item) => record(item) && exactKeys(item, ['capability', 'reason']) && unavailable.includes(item.capability as string) && text(item.reason))) return false
       const unavailableSet = new Set(value.unavailableCapabilities.map((item) => (item as Record<string, unknown>).capability))
@@ -345,6 +355,13 @@ const validSuccessResult = (method: MobileMethod, value: unknown): boolean => {
     case 'archive.list': return archiveListPage(value)
     case 'archive.detail': return savedWorkoutDetail(value)
     case 'journal.read': return rawWorkoutEventPage(value)
+    case 'database.execute': return exactKeys(value, ['completed']) && value.completed === true
+    case 'database.query':
+    case 'database.queryNext': return databaseQueryPage(value)
+    case 'database.bulkInsert': return exactKeys(value, ['inserted']) && safeInteger(value.inserted)
+    case 'database.begin': return exactKeys(value, ['transactionId']) && typeof value.transactionId === 'string' && idPattern.test(value.transactionId)
+    case 'database.commit': return exactKeys(value, ['committed']) && value.committed === true
+    case 'database.rollback': return exactKeys(value, ['rolledBack']) && value.rolledBack === true
   }
 }
 
