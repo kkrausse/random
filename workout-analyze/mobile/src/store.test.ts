@@ -55,6 +55,7 @@ describe('mobile store', () => {
       const times = ['2026-09-21T10:00:00.000Z', '2026-09-21T10:00:02.000Z', '2026-09-21T10:01:00.000Z', '2026-09-21T10:01:03.000Z', '2026-09-21T10:02:00.000Z', '2026-09-21T10:02:04.000Z']
       const store = createMobileStore(client, archive, database, { detectRoutes: detect, now: () => new Date(times.shift()!) })
 
+      await store.getState().loadSavedWorkouts()
       await store.getState().importSavedIphoneWorkouts()
       expect({ archiveLists, archiveDetails, detections }).toEqual({ archiveLists: 1, archiveDetails: 0, detections: 0 })
 

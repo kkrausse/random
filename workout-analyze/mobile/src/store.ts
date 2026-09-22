@@ -461,7 +461,9 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
           }) },
          importSavedIphoneWorkouts() { return run('iphone-import', 'recording', async () => {
            if (!database) throw new Error('Saved workout import requires a local database host')
-           if (get().archiveLoadState === 'loading' || get().archiveLoadState === 'unavailable') await get().loadSavedWorkouts()
+           if (get().archiveLoadState === 'loading') throw new Error('Saved workouts are still loading; try the import again when the archive is ready')
+           if (get().archiveLoadState === 'unavailable' || get().archiveLoadState === 'error') await get().loadSavedWorkouts()
+           if (get().archiveLoadState === 'unavailable' || get().archiveLoadState === 'error') throw new Error('Saved iPhone workouts are unavailable')
            const workouts = get().savedWorkouts
            const load = (id: string) => localArchive ? localArchive.detail(id) : loadSavedWorkoutDetail(client, id)
            const iphoneIngestion = await ingestIphoneWorkouts(database, workouts, load)
