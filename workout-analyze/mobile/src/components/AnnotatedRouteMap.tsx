@@ -27,8 +27,8 @@ export const AnnotatedRouteMap = ({ points, annotations = [], selectedId, onSele
   })).sort((left, right) => Number(left.id === selectedId) - Number(right.id === selectedId))
 
   return <MapViewport className="annotated-map map-bleed" label={label} overlay={<small className="attribution">© OpenStreetMap contributors</small>}>
-    {map.tiles.map((tile) => <img key={`${tile.href}-${tile.x}-${tile.y}`} src={tile.href} alt="" style={{ left: tile.x, top: tile.y }} />)}
     <svg viewBox="0 0 320 210" preserveAspectRatio="none">
+      {map.tiles.map((tile) => <image key={`${tile.href}-${tile.x}-${tile.y}`} href={tile.href} x={tile.x} y={tile.y} width="256" height="256" aria-hidden="true" />)}
       <path className="annotated-base-shadow" d={map.path} />
       <path className="annotated-base" d={map.path} />
       {projected.map((item) => <g key={item.id} className={item.id === selectedId ? 'map-annotation is-selected' : 'map-annotation'}>
