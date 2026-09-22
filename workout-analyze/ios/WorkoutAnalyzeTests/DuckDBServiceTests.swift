@@ -2,6 +2,21 @@ import XCTest
 @testable import WorkoutAnalyze
 
 final class DuckDBServiceTests: XCTestCase {
+    func testParameterlessExecuteSupportsSchemaBatches() async throws {
+        let service = try DuckDBService()
+        try await service.executeBridge(sql: """
+            CREATE TABLE activities(id VARCHAR PRIMARY KEY);
+            CREATE TABLE activity_samples(activity_id VARCHAR NOT NULL);
+            CREATE TABLE normalization_sources(activity_id VARCHAR PRIMARY KEY);
+            """, parametersJSON: json([]), transactionId: nil)
+
+        let page = try object(await service.queryBridge(
+            sql: "SELECT table_name FROM information_schema.tables WHERE table_name IN ('activities', 'activity_samples', 'normalization_sources') ORDER BY table_name",
+            parametersJSON: json([]), transactionId: nil))
+        let names = try XCTUnwrap(page["rows"] as? [[String: Any]]).compactMap { $0["table_name"] as? String }
+        XCTAssertEqual(names, ["activities", "activity_samples", "normalization_sources"])
+    }
+
     func testBindingsBulkPagingAndTimestampRoundTrip() async throws {
         let service = try DuckDBService()
         try await service.executeBridge(sql: "CREATE TABLE samples(id BIGINT, observed_at TIMESTAMPTZ, active BOOLEAN)", parametersJSON: json([]), transactionId: nil)
