@@ -16,14 +16,31 @@ import type { DatabaseHost } from '../../src/engine/database'
 import type { Activity, WorkoutDetail } from '../../src/domain/activity'
 import type { DetectedRoute, RouteDetail, WorkoutRouteMatch } from '../../src/domain/analysis'
 import { getArchiveActivity, getArchiveAnalysisSettings, getArchiveRoute, listArchiveActivities, listArchiveRoutes, listArchiveWorkoutMatches, type ArchiveAnalysisSettings } from '../../src/engine/catalog'
-import { rebuildRouteAnalysis } from '../../src/engine/analysis'
+import { rebuildRouteAnalysis, type RouteAnalysisProgress, type RouteDetector } from '../../src/engine/analysis'
 import { ingestIphoneWorkouts, iphoneActivityId, type IphoneIngestionSummary } from '../../src/engine/iphone-normalization'
 import { exportPortableArchive, importPortableArchive, PORTABLE_ARCHIVE_EXTENSION, type ArchiveImportSummary, type ArchiveProgress } from '../../src/engine/portable-archive'
 import { importParquetArchive, type ParquetArchiveProgress } from '../../src/engine/parquet-archive'
 import { downloadArchive, downloadParquetArchive, pickNativeArchive } from './archive/transfer'
+import { runAnalysisWorker } from './analysis/runner'
 
 export type Screen = 'home' | 'live' | 'paused' | 'recovery' | 'saved' | 'history' | 'savedDetail' | 'library' | 'libraryDetail' | 'routes' | 'routeDetail' | 'heartRate' | 'settings' | 'diagnostics' | 'replay'
 export type RequestState = { readonly status: 'pending' | 'success' | 'error'; readonly error: string | null }
+export interface AnalysisStatus {
+  readonly state: 'idle' | 'running' | 'completed' | 'error'
+  readonly phase: 'idle' | 'load-inputs' | 'prepare-paths' | 'find-candidates' | 'match-candidates' | 'build-results' | 'publish-results' | 'completed' | 'error'
+  readonly startedAt: string | null
+  readonly finishedAt: string | null
+  readonly durationMs: number | null
+  readonly activities: number | null
+  readonly samples: number | null
+  readonly completed: number | null
+  readonly total: number | null
+  readonly candidates: number | null
+  readonly qualified: number | null
+  readonly routes: number | null
+  readonly traversals: number | null
+  readonly error: string | null
+}
 type NoticeArea = 'recording' | 'diagnostics' | 'sensors' | 'settings'
 export interface UiSourceState {
   readonly configured: { readonly kind: 'development'; readonly url: string } | { readonly kind: 'bundled' | 'installed'; readonly buildId: string }
@@ -98,6 +115,7 @@ export interface MobileState {
   readonly routeDetail: RouteDetail | null
   readonly analysisSettings: ArchiveAnalysisSettings | null
   readonly iphoneIngestion: IphoneIngestionSummary | null
+  readonly analysisStatus: AnalysisStatus
   readonly archiveTransferProgress: ArchiveProgress | ParquetArchiveProgress | null
   readonly archiveImport: ArchiveImportSummary | null
   readonly requests: Readonly<Record<string, RequestState>>
@@ -130,6 +148,7 @@ export interface MobileState {
   loadRoutes(): Promise<void>
   openRoute(routeId: string): Promise<void>
   rebuildAnalysis(): Promise<void>
+  importSavedIphoneWorkouts(): Promise<void>
   exportCanonicalArchive(): Promise<void>
   importCanonicalArchive(): Promise<void>
   importCanonicalArchiveFromMac(): Promise<void>
@@ -172,7 +191,7 @@ export const loadSavedWorkoutDetail = async (client: Pick<BridgeClient, 'request
   return { ...first, observations: { ...page, afterSequence: null, items } }
 }
 
-export const createMobileStore = (client: BridgeClient, localArchive?: SavedArchiveClient, database?: DatabaseHost): StoreApi<MobileState> => {
+export const createMobileStore = (client: BridgeClient, localArchive?: SavedArchiveClient, database?: DatabaseHost, options: { readonly detectRoutes?: RouteDetector; readonly now?: () => Date } = {}): StoreApi<MobileState> => {
   let started = false
   let pollGeneration = 0
   let observationGeneration = 0
@@ -182,6 +201,8 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
   let stopEventSubscription: (() => void) | null = null
   let timer: ReturnType<typeof setInterval> | null = null
   let replayController: ReplayController | null = null
+  const now = options.now ?? (() => new Date())
+  const idleAnalysisStatus: AnalysisStatus = { state: 'idle', phase: 'idle', startedAt: null, finishedAt: null, durationMs: null, activities: null, samples: null, completed: null, total: null, candidates: null, qualified: null, routes: null, traversals: null, error: null }
   const initialReplay: ReplaySnapshot = { status: 'idle', metadata: null, checkpoint: null, observations: [], issues: [], metrics: null, positionMs: 0, durationMs: 0, speed: 1, error: null }
 
   const store = createStore<MobileState>((set, get) => {
@@ -314,7 +335,7 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
       permissions: null, builds: null, diagnostics: null, checks: [], location: null, heartRate: null, locations: [], measurements: [],
       trail: [], observationCursor: null, rawJournalSequence: null, recordingIssues: [], savedWorkoutId: null, requests: {},
        savedWorkouts: [], savedWorkoutDetail: null, savedWorkoutNormalizedDetail: null, savedWorkoutMatches: [], archiveSourceLabel: localArchive?.label ?? null, archiveLoadState: localArchive ? 'loading' : 'unavailable',
-         analysisHostAvailable: Boolean(database), libraryWorkouts: [], libraryWorkoutDetail: null, libraryWorkoutMatches: [], routes: [], routeDetail: null, analysisSettings: null, iphoneIngestion: null, archiveTransferProgress: null, archiveImport: null,
+         analysisHostAvailable: Boolean(database), libraryWorkouts: [], libraryWorkoutDetail: null, libraryWorkoutMatches: [], routes: [], routeDetail: null, analysisSettings: null, iphoneIngestion: null, analysisStatus: idleAnalysisStatus, archiveTransferProgress: null, archiveImport: null,
         notices: { recording: null, diagnostics: null, sensors: null, settings: null }, developmentSourceDraft: recommendedDevelopmentUrl, developmentSourceDirty: false,
        macArchiveSourceDraft: recommendedDevelopmentUrl, macArchiveSourceDirty: false,
       configuredDevelopmentSourceUrl: undefined, uiSource: null, replay: initialReplay,
@@ -406,16 +427,48 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
          if (!routeDetail) throw new Error('Detected route was not found')
          set({ routeDetail, screen: 'routeDetail' })
        }) },
-         rebuildAnalysis() { return run('analysis-rebuild', 'recording', async () => {
-          if (!database) throw new Error('Analysis rebuild requires a local database host')
-          if (get().archiveLoadState === 'loading' || get().archiveLoadState === 'unavailable' && get().bridge.capabilities.includes('archive.list')) await get().loadSavedWorkouts()
-          const workouts = get().savedWorkouts
-          const load = (id: string) => localArchive ? localArchive.detail(id) : loadSavedWorkoutDetail(client, id)
-          const iphoneIngestion = await ingestIphoneWorkouts(database, workouts, load)
-          const config = get().analysisSettings?.config ?? {}
-          await rebuildRouteAnalysis(database, config)
-          set({ iphoneIngestion })
-          await Promise.all([get().loadRoutes(), get().loadLibrary()])
+          rebuildAnalysis() { return run('analysis-rebuild', 'recording', async () => {
+           if (!database) throw new Error('Analysis rebuild requires a local database host')
+           const startedAt = now()
+           set({ analysisStatus: { ...idleAnalysisStatus, state: 'running', phase: 'load-inputs', startedAt: startedAt.toISOString() } })
+           const config = get().analysisSettings?.config ?? {}
+           const updateProgress = (progress: RouteAnalysisProgress) => set((state) => {
+             if (state.analysisStatus.state !== 'running') return {}
+             const detection = progress.detection
+             const phase: AnalysisStatus['phase'] = detection?.phase ?? (progress.phase === 'detect-routes' ? 'prepare-paths' : progress.phase)
+             return { analysisStatus: {
+               ...state.analysisStatus,
+               phase,
+               activities: progress.activities ?? state.analysisStatus.activities,
+               samples: progress.samples ?? state.analysisStatus.samples,
+               completed: detection?.completed ?? null,
+               total: detection?.total ?? null,
+               candidates: detection && 'candidates' in detection ? detection.candidates : state.analysisStatus.candidates,
+               qualified: detection && 'qualified' in detection ? detection.qualified : state.analysisStatus.qualified,
+               routes: detection && 'routes' in detection ? detection.routes : state.analysisStatus.routes,
+             } }
+           })
+           try {
+             const result = await rebuildRouteAnalysis(database, config, { detect: options.detectRoutes ?? runAnalysisWorker, onProgress: updateProgress })
+             const finishedAt = now()
+             set({ analysisStatus: { ...get().analysisStatus, state: 'completed', phase: 'completed', finishedAt: finishedAt.toISOString(), durationMs: finishedAt.getTime() - startedAt.getTime(), activities: result.activities, routes: result.routes, traversals: result.traversals, completed: null, total: null, error: null } })
+             await get().loadRoutes()
+           } catch (error) {
+             const finishedAt = now()
+             set({ analysisStatus: { ...get().analysisStatus, state: 'error', phase: 'error', finishedAt: finishedAt.toISOString(), durationMs: finishedAt.getTime() - startedAt.getTime(), error: message(error, 'Analysis rebuild failed') } })
+             throw error
+           }
+          }) },
+         importSavedIphoneWorkouts() { return run('iphone-import', 'recording', async () => {
+           if (!database) throw new Error('Saved workout import requires a local database host')
+           if (get().archiveLoadState === 'loading' || get().archiveLoadState === 'unavailable') await get().loadSavedWorkouts()
+           const workouts = get().savedWorkouts
+           const load = (id: string) => localArchive ? localArchive.detail(id) : loadSavedWorkoutDetail(client, id)
+           const iphoneIngestion = await ingestIphoneWorkouts(database, workouts, load)
+           if (iphoneIngestion.imported > 0) await database.transaction((transaction) => transaction.execute('DROP TABLE IF EXISTS route_coverages; DROP TABLE IF EXISTS route_traversals; DROP TABLE IF EXISTS detected_routes; DROP TABLE IF EXISTS analysis_settings;'))
+           set({ iphoneIngestion })
+           await Promise.all([get().loadLibrary(), get().loadRoutes()])
+           setNotice('recording', `${iphoneIngestion.imported} saved iPhone ${iphoneIngestion.imported === 1 ? 'workout' : 'workouts'} imported; ${iphoneIngestion.unchanged} unchanged.${iphoneIngestion.imported ? ' Segment analysis now needs a rebuild.' : ''}`)
          }) },
         exportCanonicalArchive() { return run('archive-transfer-export', 'recording', async () => {
           if (!database) throw new Error('Archive export requires a local database host')

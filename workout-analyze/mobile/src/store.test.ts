@@ -7,6 +7,8 @@ import { recommendedDevelopmentUrl } from './config'
 import { withBunDuckDbHost } from '../../src/hosts/bun/DuckDbHost'
 import { ensureIphoneNormalizationSchema } from '../../src/engine/iphone-normalization'
 import type { DatabaseHost, DatabaseValue } from '../../src/engine/database'
+import type { SavedArchiveClient } from './archive/client'
+import type { RouteDetector } from '../../src/engine/analysis'
 import { createParquetExport } from '../../scripts/mobile/local-database'
 import { DuckDBInstance } from '@duckdb/node-api'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
@@ -28,6 +30,49 @@ const installDomStubs = () => {
 }
 
 describe('mobile store', () => {
+  test('keeps saved-workout import separate from analysis and reports a clean analysis retry lifecycle', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'mobile-analysis-actions-'))
+    cleanups.push(() => rmSync(directory, { recursive: true, force: true }))
+    await withBunDuckDbHost(join(directory, 'analysis.duckdb'), async (database) => {
+      await ensureIphoneNormalizationSchema(database)
+      await database.bulkInsert('activities', ['id', 'source', 'source_activity_id', 'sport', 'started_at', 'duration_seconds', 'distance_m', 'ascent_m', 'avg_hr_bpm', 'max_hr_bpm'], [['garmin:existing', 'garmin', 'existing', 'cycling', { type: 'timestamp', value: '2026-09-20T10:00:00.000Z' }, 60, 100, 2, null, null]])
+      let archiveLists = 0
+      let archiveDetails = 0
+      const archive: SavedArchiveClient = {
+        label: 'Test archive',
+        async list() { archiveLists += 1; return { afterCursor: null, items: [], nextCursor: null, hasMore: false, snapshotAt: '2026-09-21T00:00:00.000Z' } },
+        async detail() { archiveDetails += 1; throw new Error('No saved workout should be loaded') },
+      }
+      let detections = 0
+      const detect: RouteDetector = async (_activities, _config, progress) => {
+        detections += 1
+        progress?.({ phase: 'prepare-paths', completed: 1, total: 1 })
+        if (detections === 2) throw new Error('detector test failure')
+        return { routes: [], traversals: [], coverages: [] }
+      }
+      const bridge: BridgeState = { phase: 'ready', transport: 'native', transportLabel: 'Test', lastSequence: 0, resyncCount: 0, session: null, capabilities: [], snapshot: null, error: null }
+      const client = { request: (() => Promise.reject(new Error('Unexpected bridge request'))) as BridgeClient['request'], connect: async () => {}, refreshSnapshot: async () => {}, getState: () => bridge, subscribe: () => () => {}, subscribeEvents: () => () => {}, dispose() {} } as BridgeClient
+      const times = ['2026-09-21T10:00:00.000Z', '2026-09-21T10:00:02.000Z', '2026-09-21T10:01:00.000Z', '2026-09-21T10:01:03.000Z', '2026-09-21T10:02:00.000Z', '2026-09-21T10:02:04.000Z']
+      const store = createMobileStore(client, archive, database, { detectRoutes: detect, now: () => new Date(times.shift()!) })
+
+      await store.getState().importSavedIphoneWorkouts()
+      expect({ archiveLists, archiveDetails, detections }).toEqual({ archiveLists: 1, archiveDetails: 0, detections: 0 })
+
+      await store.getState().rebuildAnalysis()
+      const publishedAt = store.getState().analysisSettings?.analyzedAt ?? String((await database.query('SELECT analyzed_at::VARCHAR analyzed_at FROM analysis_settings'))[0]?.analyzed_at)
+      expect(store.getState().analysisStatus).toMatchObject({ state: 'completed', phase: 'completed', activities: 1, routes: 0, traversals: 0, durationMs: 2_000 })
+      expect({ archiveLists, archiveDetails }).toEqual({ archiveLists: 1, archiveDetails: 0 })
+
+      await store.getState().rebuildAnalysis()
+      expect(store.getState().analysisStatus).toMatchObject({ state: 'error', phase: 'error', durationMs: 3_000, error: 'detector test failure' })
+      expect(String((await database.query('SELECT analyzed_at::VARCHAR analyzed_at FROM analysis_settings'))[0]?.analyzed_at)).toBe(publishedAt)
+
+      await store.getState().rebuildAnalysis()
+      expect(store.getState().analysisStatus).toMatchObject({ state: 'completed', phase: 'completed', durationMs: 4_000, error: null })
+      expect(detections).toBe(3)
+    })
+  })
+
   test('downloads Mac Parquet through native handles without transporting sample rows', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'mobile-mac-import-'))
     cleanups.push(() => rmSync(directory, { recursive: true, force: true }))

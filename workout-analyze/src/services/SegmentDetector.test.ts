@@ -58,6 +58,21 @@ const circle = (phase: number, radius = 0.0012) => Array.from({ length: 33 }, (_
 })
 
 describe('segment detection', () => {
+  test('reports genuine phase work counts without changing detector output', () => {
+    const activities = [routeActivity('1', eastbound(37)), routeActivity('2', eastbound(37.00001)), routeActivity('3', eastbound(36.99999))]
+    const progress: Array<{ phase: string; completed: number; total: number }> = []
+    const withProgress = detectRoutes(activities, {}, (value) => progress.push(value))
+    const withoutProgress = detectRoutes(activities)
+
+    expect(withProgress).toEqual(withoutProgress)
+    expect([...new Set(progress.map((value) => value.phase))]).toEqual(['prepare-paths', 'find-candidates', 'match-candidates', 'build-results'])
+    for (const phase of ['prepare-paths', 'find-candidates', 'match-candidates', 'build-results']) {
+      const events = progress.filter((value) => value.phase === phase)
+      expect(events[0]?.completed).toBe(0)
+      expect(events.at(-1)?.completed).toBe(events.at(-1)?.total)
+    }
+  })
+
   test('finds a same-direction route repeated across three workouts', () => {
     const activities = [activity('1', 0), activity('2', 0.00001), activity('3', -0.00001)]
     const result = detectRoutes(activities)

@@ -45,7 +45,7 @@ Replay remains an isolated timeline tool. The default local-host history now rea
 
 Phone-size Chromium emulation does not reproduce WebKit, native GPS/BLE, locked-screen recording, SQLite durability, native share sheets, or build installation.
 
-Segment/loop list and detail browsing, annotated normalized-workout maps, effort selection, and workout navigation are available through the default local Bun host. **Import & rebuild analysis** first imports new or changed recovered iPhone workouts from durable saved observations, then rebuilds route analysis over the unified archive. Repeating it is idempotent. Saved iPhone history opens the corresponding normalized `iphone:<session-id>` workout and displays matched overlays automatically when matches exist. The originals remain unchanged. Live segment recognition and native Swift DuckDB are not implemented.
+Segment/loop list and detail browsing, annotated normalized-workout maps, effort selection, and workout navigation are available through the default local Bun host. Import and analysis are separate. **Workout library → Import saved iPhone workouts** normalizes new or changed durable saved observations without running route detection. **Segments & loops → Run/Rebuild segment analysis** reads only the existing normalized archive and atomically replaces derived routes after detection succeeds. Repeating either operation is idempotent. During analysis the screen reports real phase/count updates from the worker rather than estimated percentages. Saved iPhone history opens the corresponding normalized `iphone:<session-id>` workout and displays matched overlays automatically when matches exist. The originals remain unchanged. Live segment recognition is not implemented.
 
 ## Verification on 2026-09-22
 

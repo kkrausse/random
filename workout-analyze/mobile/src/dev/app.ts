@@ -4,7 +4,7 @@ export const actionKeys = [
   'refresh', 'reconnectBridge', 'setScreen', 'returnFromUtility', 'setDevelopmentSourceDraft', 'setMacArchiveSourceDraft',
   'startWorkout', 'pauseWorkout', 'resumeWorkout', 'finishWorkout', 'recoverWorkout', 'exportWorkout',
   'loadSavedWorkouts', 'openSavedWorkout', 'exportSavedWorkout', 'requestPermission',
-  'loadLibrary', 'openLibraryWorkout', 'importCanonicalArchiveFromMac', 'loadRoutes', 'openRoute', 'rebuildAnalysis',
+  'loadLibrary', 'openLibraryWorkout', 'importSavedIphoneWorkouts', 'importCanonicalArchiveFromMac', 'loadRoutes', 'openRoute', 'rebuildAnalysis',
   'startLocation', 'stopLocation', 'readLocations', 'scanHeartRate', 'stopHeartRateScan',
   'connectHeartRate', 'disconnectHeartRate', 'readHeartRate', 'runChecks', 'exportDiagnostics',
   'reload', 'configureDevelopmentSource', 'installBuild', 'rollback',
