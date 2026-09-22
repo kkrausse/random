@@ -6,7 +6,9 @@ import { createMobileStore, loadSavedWorkoutDetail, observationEventSessionId, s
 import { recommendedDevelopmentUrl } from './config'
 import { withBunDuckDbHost } from '../../src/hosts/bun/DuckDbHost'
 import { ensureIphoneNormalizationSchema } from '../../src/engine/iphone-normalization'
-import { exportPortableArchive } from '../../src/engine/portable-archive'
+import type { DatabaseHost, DatabaseValue } from '../../src/engine/database'
+import { createParquetExport } from '../../scripts/mobile/local-database'
+import { DuckDBInstance } from '@duckdb/node-api'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -26,19 +28,36 @@ const installDomStubs = () => {
 }
 
 describe('mobile store', () => {
-  test('downloads a Mac archive and feeds it through the canonical merge unchanged', async () => {
+  test('downloads Mac Parquet through native handles without transporting sample rows', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'mobile-mac-import-'))
     cleanups.push(() => rmSync(directory, { recursive: true, force: true }))
-    const bytes = await withBunDuckDbHost(join(directory, 'source.duckdb'), async (database) => {
+    await withBunDuckDbHost(join(directory, 'source.duckdb'), async (database) => {
       await ensureIphoneNormalizationSchema(database)
       await database.bulkInsert('activities', ['id', 'source', 'source_activity_id', 'sport', 'started_at', 'duration_seconds', 'distance_m', 'ascent_m', 'avg_hr_bpm', 'max_hr_bpm'], [['garmin:mac-1', 'garmin', 'mac-1', 'cycling', { type: 'timestamp', value: '2026-09-20T10:00:00.000Z' }, 60, 100, 2, null, null]])
-      return exportPortableArchive(database)
     })
-    globalThis.fetch = (async () => new Response(new Blob([bytes as BlobPart]), { headers: { 'content-length': String(bytes.byteLength) } })) as unknown as typeof fetch
+    const source = await DuckDBInstance.create(join(directory, 'source.duckdb'))
+    const connection = await source.connect()
+    const exported = await createParquetExport(connection)
+    connection.closeSync(); source.closeSync()
+    cleanups.push(() => rmSync(exported.directory, { recursive: true, force: true }))
+    globalThis.fetch = (async () => new Response(JSON.stringify(exported.manifest))) as unknown as typeof fetch
     await withBunDuckDbHost(join(directory, 'phone.duckdb'), async (database) => {
-      const bridge: BridgeState = { phase: 'ready', transport: 'native', transportLabel: 'Test', lastSequence: 0, resyncCount: 0, session: null, capabilities: [], snapshot: null, error: null }
-      const client = { request: (() => Promise.reject(new Error('native download should not be used'))) as BridgeClient['request'], connect: async () => {}, refreshSnapshot: async () => {}, getState: () => bridge, subscribe: () => () => {}, subscribeEvents: () => () => {}, dispose() {} } as BridgeClient
-      const store = createMobileStore(client, undefined, database)
+      const paths = { 'file-activities': join(exported.directory, 'activities.parquet'), 'file-samples': join(exported.directory, 'samples.parquet') }
+      const resolveFile = (value: DatabaseValue): DatabaseValue => typeof value === 'object' && value?.type === 'hostFile' ? paths[value.id as keyof typeof paths] : value
+      const adapted = (host: DatabaseHost): DatabaseHost => ({
+        execute: (sql, parameters = []) => host.execute(sql, parameters.map(resolveFile)),
+        query: (sql, parameters = []) => host.query(sql, parameters.map(resolveFile)),
+        bulkInsert: (table, columns, rows) => host.bulkInsert(table, columns, rows),
+        transaction: (run) => host.transaction((transaction) => run(adapted(transaction))),
+      })
+      const bridge: BridgeState = { phase: 'ready', transport: 'native', transportLabel: 'Test', lastSequence: 0, resyncCount: 0, session: null, capabilities: ['file.download'], snapshot: null, error: null }
+      const request = (async (method: string, params: { url?: string }) => {
+        if (method === 'file.download') return { fileId: params.url!.endsWith('activities.parquet') ? 'file-activities' : 'file-samples', name: 'archive.parquet', sizeBytes: 1 }
+        if (method === 'file.close') return { closed: true }
+        throw new Error(`Unexpected ${method}`)
+      }) as BridgeClient['request']
+      const client = { request, connect: async () => {}, refreshSnapshot: async () => {}, getState: () => bridge, subscribe: () => () => {}, subscribeEvents: () => () => {}, dispose() {} } as BridgeClient
+      const store = createMobileStore(client, undefined, adapted(database))
       store.getState().setMacArchiveSourceDraft('https://mac.example.test:8443/')
 
       await store.getState().importCanonicalArchiveFromMac()

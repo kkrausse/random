@@ -172,6 +172,11 @@ enum ContractValidation {
         case "file.downloadArchive":
             guard exactKeys(params, ["url"]), let raw = params["url"] as? String, raw.count <= 2048, let url = URL(string: raw) else { return false }
             return url.scheme?.lowercased() == "https" && url.user == nil && url.password == nil
+        case "file.download":
+            guard exactKeys(params, ["url", "sizeBytes", "sha256"]), let raw = params["url"] as? String, raw.count <= 2048,
+                  let url = URL(string: raw), url.scheme?.lowercased() == "https", url.user == nil, url.password == nil,
+                  integer(params["sizeBytes"], min: 1, max: 256 * 1024 * 1024), let digest = params["sha256"] as? String else { return false }
+            return matches(digest, regex: hash)
         case "file.read":
             return exactKeys(params, ["fileId", "offset", "length"]) && validIdentifier(params["fileId"])
                 && integer(params["offset"], min: 0, max: 128 * 1024 * 1024)

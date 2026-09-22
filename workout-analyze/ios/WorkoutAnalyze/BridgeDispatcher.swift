@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import UIKit
 import UniformTypeIdentifiers
 
@@ -49,6 +50,43 @@ final class ArchiveFileService: NSObject, UIDocumentPickerDelegate {
         } catch {
             try? FileManager.default.removeItem(at: localURL)
             throw ShellError.storage("Downloaded archive could not be staged: \(error.localizedDescription)")
+        }
+    }
+
+    func downloadVerified(_ url: URL, expectedSize: Int, expectedSHA256: String) async throws -> [String: Any] {
+        guard url.scheme?.lowercased() == "https" else { throw ShellError.download("HTTPS is required") }
+        var request = URLRequest(url: url); request.cachePolicy = .reloadIgnoringLocalCacheData; request.timeoutInterval = 120
+        let (downloaded, response) = try await URLSession.shared.download(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), http.url?.scheme?.lowercased() == "https" else {
+            throw ShellError.download("Unexpected Parquet download response")
+        }
+        let size = (try downloaded.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0
+        guard size == expectedSize, (1...(256 * 1024 * 1024)).contains(size) else { throw ShellError.download("Parquet download size did not match its manifest") }
+        let input = try FileHandle(forReadingFrom: downloaded)
+        var digest = SHA256()
+        while true { let chunk = try input.read(upToCount: 1024 * 1024) ?? Data(); if chunk.isEmpty { break }; digest.update(data: chunk) }
+        try input.close()
+        let hash = digest.finalize().map { String(format: "%02x", $0) }.joined()
+        guard hash == expectedSHA256 else { throw ShellError.download("Parquet download hash did not match its manifest") }
+        let localURL = FileManager.default.temporaryDirectory.appendingPathComponent("workout-analyze-\(UUID().uuidString.lowercased()).parquet")
+        do {
+            try FileManager.default.moveItem(at: downloaded, to: localURL)
+            let handle = try FileHandle(forReadingFrom: localURL)
+            let id = "file-\(UUID().uuidString.lowercased())"
+            files[id] = OpenFile(handle: handle, url: localURL, scoped: false, removeOnClose: true, size: size)
+            return ["fileId": id, "name": localURL.lastPathComponent, "sizeBytes": size]
+        } catch {
+            try? FileManager.default.removeItem(at: localURL)
+            throw ShellError.storage("Downloaded Parquet file could not be staged: \(error.localizedDescription)")
+        }
+    }
+
+    func databaseParameters(_ values: [Any]) throws -> [Any] {
+        try values.map { value in
+            guard let reference = value as? [String: Any], Set(reference.keys) == Set(["type", "id"]), reference["type"] as? String == "hostFile",
+                  let id = reference["id"] as? String else { return value }
+            guard let file = files[id] else { throw ShellError.invalidState("Database file handle is closed or missing") }
+            return file.url.path
         }
     }
 
@@ -201,12 +239,12 @@ final class BridgeDispatcher {
                 limit: (params["limit"] as! NSNumber).intValue)
         case "database.execute":
             guard let database else { throw ShellError.invalidState("Native DuckDB is unavailable") }
-            let parameters = try JSONSerialization.data(withJSONObject: params["parameters"] as! [Any])
+            let parameters = try JSONSerialization.data(withJSONObject: archiveFiles.databaseParameters(params["parameters"] as! [Any]))
             try await database.executeBridge(sql: params["sql"] as! String, parametersJSON: parameters, transactionId: params["transactionId"] is NSNull ? nil : params["transactionId"] as? String)
             return ["completed": true]
         case "database.query":
             guard let database else { throw ShellError.invalidState("Native DuckDB is unavailable") }
-            let parameters = try JSONSerialization.data(withJSONObject: params["parameters"] as! [Any])
+            let parameters = try JSONSerialization.data(withJSONObject: archiveFiles.databaseParameters(params["parameters"] as! [Any]))
             return try Self.dictionary(await database.queryBridge(sql: params["sql"] as! String, parametersJSON: parameters, transactionId: params["transactionId"] is NSNull ? nil : params["transactionId"] as? String))
         case "database.queryNext":
             guard let database else { throw ShellError.invalidState("Native DuckDB is unavailable") }
@@ -228,6 +266,7 @@ final class BridgeDispatcher {
             try await database.rollback(params["transactionId"] as! String); return ["rolledBack": true]
         case "file.pickArchive": return try await archiveFiles.pick()
         case "file.downloadArchive": return try await archiveFiles.download(URL(string: params["url"] as! String)!)
+        case "file.download": return try await archiveFiles.downloadVerified(URL(string: params["url"] as! String)!, expectedSize: (params["sizeBytes"] as! NSNumber).intValue, expectedSHA256: params["sha256"] as! String)
         case "file.read":
             return try archiveFiles.read(id: params["fileId"] as! String, offset: (params["offset"] as! NSNumber).intValue, length: (params["length"] as! NSNumber).intValue)
         case "file.close":
@@ -266,7 +305,7 @@ final class BridgeDispatcher {
     }
 
     private func isMutation(_ method: String) -> Bool {
-        ["permissions.request", "location.start", "location.stop", "heartRate.scan", "heartRate.stopScan", "heartRate.connect", "heartRate.disconnect", "diagnostics.runChecks", "diagnostics.export", "appBuild.download", "appBuild.activate", "appBuild.rollback", "devSource.configure", "ui.reload", "database.execute", "database.bulkInsert", "database.begin", "database.commit", "database.rollback", "file.pickArchive", "file.downloadArchive", "file.close"].contains(method)
+        ["permissions.request", "location.start", "location.stop", "heartRate.scan", "heartRate.stopScan", "heartRate.connect", "heartRate.disconnect", "diagnostics.runChecks", "diagnostics.export", "appBuild.download", "appBuild.activate", "appBuild.rollback", "devSource.configure", "ui.reload", "database.execute", "database.bulkInsert", "database.begin", "database.commit", "database.rollback", "file.pickArchive", "file.downloadArchive", "file.download", "file.close"].contains(method)
     }
 
     private func synchronizeRecordingSensors(reply: [String: Any]) {

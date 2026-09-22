@@ -1,6 +1,10 @@
 export type DatabaseValue = string | number | bigint | boolean | null | {
   readonly type: 'timestamp'
   readonly value: string
+} | {
+  /** Opaque native-owned file handle. Only the native database host resolves it to a path. */
+  readonly type: 'hostFile'
+  readonly id: string
 }
 
 export type DatabaseRow = Record<string, unknown>
