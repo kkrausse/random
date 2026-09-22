@@ -1,8 +1,7 @@
-import { createHash } from 'node:crypto'
-
 import type { ActivitySample, RoutePoint } from '../domain/activity'
+import type { NormalizedActivity } from '../domain/activity'
 import type { DetectedRoute, RouteCoverage, RouteTraversal, RouteType } from '../domain/analysis'
-import type { ImportedActivity } from './Database'
+import { sha256 } from '../engine/sha256'
 
 export interface DetectionConfig {
   readonly maxRouteDeviationM: number
@@ -67,7 +66,7 @@ interface Point extends RoutePoint {
 }
 
 interface Path {
-  readonly activity: ImportedActivity
+  readonly activity: NormalizedActivity
   readonly id: string
   readonly points: ReadonlyArray<Point>
 }
@@ -148,7 +147,7 @@ const interpolateSample = (a: Point, b: Point, fraction: number): Point => {
   }
 }
 
-const samplePaths = (activity: ImportedActivity): Path[] => {
+const samplePaths = (activity: NormalizedActivity): Path[] => {
   const gps = activity.samples.flatMap((sample, sourcePosition) => sample.lat === null || sample.lon === null ? [] : [{
     lat: sample.lat, lon: sample.lon, sample, sourcePosition,
   }])
@@ -385,7 +384,7 @@ const directedSimilarity = (a: Candidate, b: Candidate, config: DetectionConfig)
   if (a.type !== b.type || a.sport !== b.sport || Math.min(a.distanceM, b.distanceM) / Math.max(a.distanceM, b.distanceM) < 0.75) return false
   const shorter = a.geometry.length <= b.geometry.length ? a : b
   const longer = shorter === a ? b : a
-  const fakePath: Path = { activity: null as unknown as ImportedActivity, id: '', points: longer.geometry as ReadonlyArray<Point> }
+  const fakePath: Path = { activity: null as unknown as NormalizedActivity, id: '', points: longer.geometry as ReadonlyArray<Point> }
   if (shorter.type === 'segment') return alignFrom(shorter.geometry, fakePath, 0, { ...config, maxRouteDeviationM: Math.max(config.maxRouteDeviationM, 50) }) !== null
   const ring = shorter.geometry.slice(0, -1)
   const index = spatialIndex(ring, 50)
@@ -409,14 +408,14 @@ const containedInterval = (container: Candidate, contained: Candidate, config: D
   }
   if (container.type !== 'segment' || contained.type !== 'segment' || container.sport !== contained.sport) return null
   if (container.distanceM + SAMPLE_SPACING_M < contained.distanceM) return null
-  const path: Path = { activity: null as unknown as ImportedActivity, id: '', points: container.geometry as ReadonlyArray<Point> }
+  const path: Path = { activity: null as unknown as NormalizedActivity, id: '', points: container.geometry as ReadonlyArray<Point> }
   return findMatches(contained.geometry, path, 'segment', config)[0] ?? null
 }
 
 const looselyContains = (container: Candidate, contained: Candidate, config: DetectionConfig) => {
   if (container.type !== 'segment' || contained.type !== 'segment' || container.sport !== contained.sport) return false
   if (container.distanceM + SAMPLE_SPACING_M < contained.distanceM) return false
-  const path: Path = { activity: null as unknown as ImportedActivity, id: '', points: container.geometry as ReadonlyArray<Point> }
+  const path: Path = { activity: null as unknown as NormalizedActivity, id: '', points: container.geometry as ReadonlyArray<Point> }
   return findMatches(contained.geometry, path, 'segment', { ...config, maxRouteDeviationM: Math.max(config.maxRouteDeviationM, 50) }).length > 0
 }
 
@@ -529,14 +528,14 @@ const segmentFamily = (representative: QualifiedCandidate, qualified: ReadonlyAr
 const sameClosedRoute = (loop: Candidate, segment: Candidate, config: DetectionConfig) => {
   if (loop.type !== 'loop' || segment.type !== 'segment' || loop.sport !== segment.sport) return false
   if (Math.min(loop.distanceM, segment.distanceM) / Math.max(loop.distanceM, segment.distanceM) < 0.8) return false
-  const path: Path = { activity: null as unknown as ImportedActivity, id: '', points: segment.geometry as ReadonlyArray<Point> }
+  const path: Path = { activity: null as unknown as NormalizedActivity, id: '', points: segment.geometry as ReadonlyArray<Point> }
   return findMatches(loop.geometry, path, 'loop', { ...config, maxRouteDeviationM: Math.max(config.maxRouteDeviationM, 50) }).length > 0
 }
 
 const repeatedLoop = (primitive: Candidate, candidate: Candidate, config: DetectionConfig) => {
   if (primitive.type !== 'loop' || candidate.type !== 'loop' || primitive.sport !== candidate.sport) return false
   if (candidate.distanceM < primitive.distanceM * 1.5) return false
-  const path: Path = { activity: null as unknown as ImportedActivity, id: '', points: candidate.geometry as ReadonlyArray<Point> }
+  const path: Path = { activity: null as unknown as NormalizedActivity, id: '', points: candidate.geometry as ReadonlyArray<Point> }
   const matches = findMatches(primitive.geometry, path, 'loop', { ...config, maxRouteDeviationM: Math.max(config.maxRouteDeviationM, 50) })
   const coveredEdges = matches.reduce((sum, match) => sum + match.endIndex - match.startIndex, 0)
   return matches.length >= 2 && coveredEdges / Math.max(1, candidate.geometry.length - 1) >= 0.75
@@ -623,9 +622,7 @@ const consolidateCandidates = (candidates: ReadonlyArray<Candidate>, config: Det
 
 const routeId = (candidate: Candidate) => {
   const normalized = canonicalLoop(candidate)
-  const hash = createHash('sha256')
-    .update(`${normalized.sport}:${normalized.type}:${quantizedGeometry(normalized.geometry)}`)
-    .digest('hex').slice(0, 20)
+  const hash = sha256(`${normalized.sport}:${normalized.type}:${quantizedGeometry(normalized.geometry)}`).slice(0, 20)
   return `${candidate.type}-${hash}`
 }
 
@@ -689,7 +686,7 @@ export interface DetectionResult {
   readonly coverages: ReadonlyArray<RouteCoverage>
 }
 
-export function detectRoutes(activities: ReadonlyArray<ImportedActivity>, overrides: Partial<DetectionConfig> = {}): DetectionResult {
+export function detectRoutes(activities: ReadonlyArray<NormalizedActivity>, overrides: Partial<DetectionConfig> = {}): DetectionResult {
   const config = resolveDetectionConfig(overrides)
   const paths = activities.flatMap(samplePaths)
   const pathSpatialIndexes = paths.map((path) => spatialIndex(path.points, config.maxRouteDeviationM))

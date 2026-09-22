@@ -5,12 +5,8 @@ import type { DuckDBAppender, DuckDBValue } from '@duckdb/node-api'
 import { Effect, Schema } from 'effect'
 
 import { Activity } from '../domain/activity'
-import type { DecodedActivity, RoutePoint, WorkoutDetail, WorkoutSample } from '../domain/activity'
+import type { NormalizedActivity, RoutePoint, WorkoutDetail, WorkoutSample } from '../domain/activity'
 import { FitnessDataError } from './errors'
-
-export interface ImportedActivity extends DecodedActivity {
-  readonly sourceActivityId: string
-}
 
 const databasePath = () =>
   path.resolve(process.env.FITNESS_DATABASE_PATH ?? 'data/fitness.duckdb')
@@ -22,7 +18,7 @@ const append = (appender: DuckDBAppender, value: DuckDBValue) => {
   appender.appendValue(value)
 }
 
-export const rebuildDatabase = (activities: ReadonlyArray<ImportedActivity>) =>
+export const rebuildDatabase = (activities: ReadonlyArray<NormalizedActivity>) =>
   Effect.tryPromise({
     try: async () => {
       const destination = databasePath()
