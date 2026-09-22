@@ -1,6 +1,6 @@
 # Architecture north star
 
-Status: design direction agreed in discussion on 2026-09-21. The first Bun analysis slice described below is implemented; foreground journal consumers, browser transport, and Swift-native DuckDB remain pending integration verification. This document takes precedence over earlier proposals where they assume desktop-only analysis or a required companion computer.
+Status: design direction agreed in discussion on 2026-09-21. The first in-process Bun analysis slice described below is implemented; its database interface is execution-facing, not a completed wire protocol. Foreground journal consumers, browser transport, and Swift-native DuckDB remain pending integration verification. This document takes precedence over earlier proposals where they assume desktop-only analysis or a required companion computer.
 
 ## Same application, interchangeable local hosts
 
@@ -85,7 +85,9 @@ The existing recorded ride has roughly 5,000–6,000 journal events, making batc
 
 ### Implemented analysis slice (2026-09-21)
 
-The existing Bun CLI now runs route analysis through a portable TypeScript engine and a small host contract for parameterized SQL, queries, transactions, and bulk insertion. Shared code owns normalized-input queries, analysis table schemas, the detector, and atomic result replacement; the Bun adapter owns only native DuckDB connection/value details. Detector IDs use a portable synchronous SHA-256 implementation and retain their previous values. The browser/WKWebView transport and Swift DuckDB adapter are not implemented yet.
+The existing Bun CLI now runs route analysis through a portable TypeScript engine and a small execution-facing host interface for parameterized SQL, queries, transactions, and bulk insertion. Shared code owns normalized-input queries, analysis table schemas, the detector, and atomic result replacement; the Bun adapter owns only native DuckDB connection/value details. Detector IDs use a portable synchronous SHA-256 implementation and retain their previous values.
+
+That TypeScript interface is not yet a browser/native wire contract. Its transaction callback executes client-side, `bigint` parameters and generic native result rows do not yet have bridge encodings, and a future transport must define transaction session ownership so every callback operation reaches the same native connection and transaction. The current `withBunDuckDbHost` adapter scopes one connection exclusively to one callback and expects sequential use; it does not serialize concurrent operations. The browser/WKWebView transport and Swift DuckDB adapter are not implemented yet.
 
 ## Remaining integration questions
 

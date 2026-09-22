@@ -6,8 +6,13 @@ export type DatabaseValue = string | number | bigint | boolean | null | {
 export type DatabaseRow = Record<string, unknown>
 
 /**
- * Transport-safe primitives implemented by each native host. SQL and domain
- * behavior intentionally live above this boundary.
+ * Execution-facing database operations implemented by each host. SQL and
+ * domain behavior intentionally live above this boundary.
+ *
+ * This is not a wire protocol: DatabaseValue and DatabaseRow still include
+ * runtime-native values, and transaction() runs its callback in the calling
+ * TypeScript runtime. A remote host adapter must define value/result encoding
+ * and retain one transaction session for every callback operation.
  */
 export interface DatabaseHost {
   execute(sql: string, parameters?: ReadonlyArray<DatabaseValue>): Promise<void>
