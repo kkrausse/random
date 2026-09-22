@@ -23,6 +23,15 @@ export interface ProjectedRouteMap {
   readonly originY: number
 }
 
+export const projectPointsIntoRouteMap = (points: ReadonlyArray<GeographicPoint>, map: Pick<ProjectedRouteMap, 'worldSize' | 'originX' | 'originY'>) =>
+  points.map(projectGeographicPoint).map((point) => ({
+    x: coordinate(point.x * map.worldSize - map.originX),
+    y: coordinate(point.y * map.worldSize - map.originY),
+  }))
+
+export const routePathFromProjectedPoints = (points: ReadonlyArray<{ readonly x: number; readonly y: number }>) =>
+  points.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ')
+
 const coordinate = (value: number) => Number(value.toFixed(3))
 
 export const projectGeographicPoint = (point: GeographicPoint) => {
@@ -70,12 +79,9 @@ export const createRouteMap = (points: ReadonlyArray<GeographicPoint>, width: nu
     }
   }
 
-  const screenPoints = projected.map((point) => ({
-    x: coordinate(point.x * worldSize - originX),
-    y: coordinate(point.y * worldSize - originY),
-  }))
+  const screenPoints = projectPointsIntoRouteMap(points, { worldSize, originX, originY })
   return {
-    path: screenPoints.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' '),
+    path: routePathFromProjectedPoints(screenPoints),
     tiles,
     points: screenPoints,
     start: screenPoints[0]!,

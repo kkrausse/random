@@ -21,7 +21,7 @@ Finish commits locally before the Saved screen. Saved supports GPX and `workoutB
 
 ## State and source boundary
 
-`mobile/src/bridge/client.ts` is the single typed transport boundary. It validates native/simulator replies and events, installs atomic snapshots, detects event-envelope gaps, and resynchronizes. It fails closed if the native bridge is absent; simulator data is available only when explicitly requested.
+`mobile/src/bridge/client.ts` is the single typed transport boundary. It validates transport replies and events, installs atomic snapshots, detects event-envelope gaps, and resynchronizes. It fails closed if the native bridge is absent. Synthetic transport data is available to automated tests only; production and development URLs never select it by query parameter.
 
 `mobile/src/store.ts` is the sole React projection. It owns lifecycle commands, request errors, polling, the one raw-observation subscription, cursor catch-up, bounded trail projection, and subscription cleanup. Components use narrow Zustand selectors and do not call the bridge, sensors, or an engine.
 

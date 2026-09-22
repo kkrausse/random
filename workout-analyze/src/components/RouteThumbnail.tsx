@@ -2,12 +2,11 @@ import { Link } from '@tanstack/react-router'
 
 import type { RoutePoint } from '../domain/activity'
 import type { RouteType } from '../domain/analysis'
-import { createRouteMap, projectGeographicPoint } from '../shared/route-map'
+import { createRouteMap, projectPointsIntoRouteMap, routePathFromProjectedPoints } from '../shared/route-map'
 
 const WIDTH = 132
 const HEIGHT = 64
 const PADDING = 7
-const coordinate = (value: number) => Number(value.toFixed(3))
 
 export interface RouteOverlay {
   readonly id: string
@@ -49,11 +48,8 @@ export function RouteThumbnail({ points, linkAttribution = true, selectedIndex, 
   const selected = selectedIndex === undefined ? null : map?.points[selectedIndex]
   const renderedOverlays = map ? overlays.flatMap((overlay) => {
     if (overlay.points.length < 2) return []
-    const overlayPoints = overlay.points.map(projectGeographicPoint).map((point) => ({
-      x: coordinate(point.x * map.worldSize - map.originX),
-      y: coordinate(point.y * map.worldSize - map.originY),
-    }))
-    return [{ ...overlay, path: overlayPoints.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ') }]
+    const overlayPoints = projectPointsIntoRouteMap(overlay.points, map)
+    return [{ ...overlay, path: routePathFromProjectedPoints(overlayPoints) }]
   }).sort((a, b) => b.distanceM - a.distanceM) : []
   const activeOverlay = overlays.find((overlay) => overlay.id === activeOverlayId)
 
