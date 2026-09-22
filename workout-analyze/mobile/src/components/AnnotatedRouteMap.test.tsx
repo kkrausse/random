@@ -38,6 +38,8 @@ describe('AnnotatedRouteMap', () => {
     expect(html).toContain('aria-label="Workout with one matched segment"')
     expect(html).toContain('aria-label="Select Westbound segment"')
     expect(html).toContain('map-annotation is-selected')
+    expect(html).toContain('<image')
+    expect(html.indexOf('<image')).toBeLessThan(html.indexOf('annotated-base-shadow'))
     expect(html).not.toContain('NaN')
     expect(html.indexOf('annotated-base')).toBeLessThan(html.indexOf('map-annotation is-selected'))
     const annotationPath = html.match(/map-annotation-line" d="([^"]+)/)?.[1]

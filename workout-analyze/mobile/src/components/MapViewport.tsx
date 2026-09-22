@@ -23,6 +23,15 @@ export const zoomAt = (transform: MapTransform, nextScale: number, anchor: { x: 
 
 export const movedBeyondClickThreshold = (distance: number) => distance >= DRAG_THRESHOLD_PX
 
+export const constrainMapTransform = (transform: MapTransform, viewport: { width: number; height: number }): MapTransform => {
+  if (transform.scale <= MIN_SCALE) return { scale: MIN_SCALE, x: 0, y: 0 }
+  return {
+    ...transform,
+    x: Math.max(viewport.width * (1 - transform.scale), Math.min(0, transform.x)),
+    y: Math.max(viewport.height * (1 - transform.scale), Math.min(0, transform.y)),
+  }
+}
+
 interface PointerPosition { readonly x: number; readonly y: number }
 
 export const MapViewport = ({ children, className, label, interactive = true, overlay }: {
@@ -67,7 +76,11 @@ export const MapViewport = ({ children, className, label, interactive = true, ov
     const bounds = rootRef.current?.getBoundingClientRect()
     return { x: clientX - (bounds?.left ?? 0), y: clientY - (bounds?.top ?? 0) }
   }
-  const zoom = (factor: number, anchor = center()) => setTransform((current) => zoomAt(current, current.scale * factor, anchor))
+  const constrain = (next: MapTransform) => {
+    const bounds = rootRef.current?.getBoundingClientRect()
+    return constrainMapTransform(next, { width: bounds?.width ?? 0, height: bounds?.height ?? 0 })
+  }
+  const zoom = (factor: number, anchor = center()) => setTransform((current) => constrain(zoomAt(current, current.scale * factor, anchor)))
   const reset = () => setTransform({ scale: 1, x: 0, y: 0 })
   const pointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!interactive || (event.pointerType === 'mouse' && event.button !== 0)) return
@@ -85,9 +98,10 @@ export const MapViewport = ({ children, className, label, interactive = true, ov
     if (active.length === 1) {
       const dx = next.x - prior.x
       const dy = next.y - prior.y
+      if (transform.scale === MIN_SCALE) return
       dragDistance.current += Math.hypot(dx, dy)
       if (movedBeyondClickThreshold(dragDistance.current)) suppressClick.current = true
-      setTransform((current) => ({ ...current, x: current.x + dx, y: current.y + dy }))
+      setTransform((current) => constrain({ ...current, x: current.x + dx, y: current.y + dy }))
       return
     }
     const [first, second] = active
@@ -98,7 +112,7 @@ export const MapViewport = ({ children, className, label, interactive = true, ov
     if (previous?.distance) {
       setTransform((current) => {
         const translated = { ...current, x: current.x + pinchCenter.x - previous.center.x, y: current.y + pinchCenter.y - previous.center.y }
-        return zoomAt(translated, current.scale * distance / previous.distance, pinchCenter)
+        return constrain(zoomAt(translated, current.scale * distance / previous.distance, pinchCenter))
       })
       suppressClick.current = true
     }
@@ -117,7 +131,7 @@ export const MapViewport = ({ children, className, label, interactive = true, ov
 
   return <div
     ref={rootRef}
-    className={`${className}${interactive ? ' map-interactive' : ''}`}
+    className={`${className}${interactive ? ` map-interactive${transform.scale > MIN_SCALE ? ' map-is-zoomed' : ''}` : ''}`}
     role="region"
     aria-label={label}
     onPointerDown={pointerDown}

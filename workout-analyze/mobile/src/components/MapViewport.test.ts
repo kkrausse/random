@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { movedBeyondClickThreshold, zoomAt } from './MapViewport'
+import { constrainMapTransform, movedBeyondClickThreshold, zoomAt } from './MapViewport'
 
 describe('map viewport interaction math', () => {
   test('keeps the geographic point beneath the zoom anchor stationary', () => {
@@ -17,5 +17,10 @@ describe('map viewport interaction math', () => {
     expect(zoomAt({ scale: 2, x: 0, y: 0 }, 0.1, { x: 0, y: 0 }).scale).toBe(1)
     expect(movedBeyondClickThreshold(5.9)).toBe(false)
     expect(movedBeyondClickThreshold(6)).toBe(true)
+  })
+
+  test('keeps panning inside the scaled map and recenters a fitted map', () => {
+    expect(constrainMapTransform({ scale: 2, x: 20, y: -999 }, { width: 320, height: 190 })).toEqual({ scale: 2, x: 0, y: -190 })
+    expect(constrainMapTransform({ scale: 1, x: -80, y: -40 }, { width: 320, height: 190 })).toEqual({ scale: 1, x: 0, y: 0 })
   })
 })
