@@ -2,6 +2,7 @@ import type { ActivitySample, NormalizedActivity } from '../domain/activity'
 import type { DetectionResult } from '../services/SegmentDetector'
 import { detectRoutes, resolveDetectionConfig } from '../services/SegmentDetector'
 import type { DetectionConfig } from '../services/SegmentDetector'
+import type { DetectionProgress, DetectionProgressListener } from '../services/SegmentDetector'
 import type { DatabaseHost } from './database'
 import { databaseTimestamp } from './database'
 
@@ -83,10 +84,27 @@ export const publishRouteAnalysis = (database: DatabaseHost, analysis: Detection
     await transaction.execute('CREATE INDEX traversals_route_date ON route_traversals(route_id, started_at); CREATE INDEX coverages_route_date ON route_coverages(route_id, started_at);')
   })
 
-export const rebuildRouteAnalysis = async (database: DatabaseHost, overrides: Partial<DetectionConfig> = {}) => {
+export interface RouteAnalysisProgress {
+  readonly phase: 'load-inputs' | 'detect-routes' | 'publish-results'
+  readonly activities?: number
+  readonly samples?: number
+  readonly detection?: DetectionProgress
+}
+
+export interface RouteDetector {
+  (activities: ReadonlyArray<NormalizedActivity>, config: DetectionConfig, onProgress?: DetectionProgressListener): Promise<DetectionResult> | DetectionResult
+}
+
+export const rebuildRouteAnalysis = async (database: DatabaseHost, overrides: Partial<DetectionConfig> = {}, options: {
+  readonly detect?: RouteDetector
+  readonly onProgress?: (progress: RouteAnalysisProgress) => void
+} = {}) => {
   const config = resolveDetectionConfig(overrides)
+  options.onProgress?.({ phase: 'load-inputs' })
   const activities = await readNormalizedActivities(database)
-  const analysis = detectRoutes(activities, config)
+  options.onProgress?.({ phase: 'load-inputs', activities: activities.length, samples: activities.reduce((sum, activity) => sum + activity.samples.length, 0) })
+  const analysis = await (options.detect ?? detectRoutes)(activities, config, (detection) => options.onProgress?.({ phase: 'detect-routes', activities: activities.length, detection }))
+  options.onProgress?.({ phase: 'publish-results', activities: activities.length, samples: activities.reduce((sum, activity) => sum + activity.samples.length, 0) })
   await publishRouteAnalysis(database, analysis, config)
   return { activities: activities.length, routes: analysis.routes.length, traversals: analysis.traversals.length, config }
 }

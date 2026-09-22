@@ -686,9 +686,31 @@ export interface DetectionResult {
   readonly coverages: ReadonlyArray<RouteCoverage>
 }
 
-export function detectRoutes(activities: ReadonlyArray<NormalizedActivity>, overrides: Partial<DetectionConfig> = {}): DetectionResult {
+export type DetectionProgress =
+  | { readonly phase: 'prepare-paths'; readonly completed: number; readonly total: number }
+  | { readonly phase: 'find-candidates'; readonly completed: number; readonly total: number; readonly candidates: number }
+  | { readonly phase: 'match-candidates'; readonly completed: number; readonly total: number; readonly qualified: number }
+  | { readonly phase: 'build-results'; readonly completed: number; readonly total: number; readonly routes: number }
+
+export type DetectionProgressListener = (progress: DetectionProgress) => void
+
+const progressReporter = (listener: DetectionProgressListener | undefined) => {
+  let lastKey = ''
+  return (progress: DetectionProgress) => {
+    if (!listener) return
+    const key = `${progress.phase}:${progress.completed}:${progress.total}`
+    if (key === lastKey) return
+    lastKey = key
+    listener(progress)
+  }
+}
+
+export function detectRoutes(activities: ReadonlyArray<NormalizedActivity>, overrides: Partial<DetectionConfig> = {}, onProgress?: DetectionProgressListener): DetectionResult {
   const config = resolveDetectionConfig(overrides)
+  const report = progressReporter(onProgress)
+  report({ phase: 'prepare-paths', completed: 0, total: activities.length })
   const paths = activities.flatMap(samplePaths)
+  report({ phase: 'prepare-paths', completed: activities.length, total: activities.length })
   const pathSpatialIndexes = paths.map((path) => spatialIndex(path.points, config.maxRouteDeviationM))
   const bySportCell = new Map<string, number[]>()
   paths.forEach((path, pathIndex) => {
@@ -701,6 +723,8 @@ export function detectRoutes(activities: ReadonlyArray<NormalizedActivity>, over
   })
 
   const candidatePairs = new Set<string>()
+  const candidateSearchSteps = paths.length * 2
+  report({ phase: 'find-candidates', completed: 0, total: candidateSearchSteps, candidates: 0 })
   paths.forEach((path, pathIndex) => {
     for (const point of path.points) {
       const [x, y] = cellCoordinates(point, config.candidateCellM)
@@ -710,6 +734,7 @@ export function detectRoutes(activities: ReadonlyArray<NormalizedActivity>, over
         }
       }
     }
+    report({ phase: 'find-candidates', completed: pathIndex + 1, total: candidateSearchSteps, candidates: candidatePairs.size })
   })
 
   const candidates: Candidate[] = []
@@ -718,7 +743,7 @@ export function detectRoutes(activities: ReadonlyArray<NormalizedActivity>, over
     candidates.push(...pairCandidates(paths[a]!, paths[b]!, config))
   }
 
-  for (const path of paths) {
+  for (const [pathIndex, path] of paths.entries()) {
     const cumulative = [0]
     for (let index = 1; index < path.points.length; index += 1) cumulative.push(cumulative[index - 1]! + pointDistanceM(path.points[index - 1]!, path.points[index]!))
     const index = spatialIndex(path.points, config.loopClosureM)
@@ -745,6 +770,7 @@ export function detectRoutes(activities: ReadonlyArray<NormalizedActivity>, over
         candidates.push({ type: 'loop', sport: path.activity.sport, geometry, distanceM: Math.min(distanceM, pathDistanceM(geometry)) })
       }
     }
+    report({ phase: 'find-candidates', completed: paths.length + pathIndex + 1, total: candidateSearchSteps, candidates: candidates.length })
   }
 
   // This only merges near-identical, equal-length directed sequences. Meaningfully shorter candidates remain independent
@@ -752,7 +778,8 @@ export function detectRoutes(activities: ReadonlyArray<NormalizedActivity>, over
   const consolidatedCandidates = consolidateCandidates(candidates, config)
 
   const qualified: QualifiedCandidate[] = []
-  for (const candidate of consolidatedCandidates) {
+  report({ phase: 'match-candidates', completed: 0, total: consolidatedCandidates.length, qualified: 0 })
+  for (const [candidateIndex, candidate] of consolidatedCandidates.entries()) {
     const geometry = candidate.geometry.map(({ lat, lon }) => ({ lat, lon }))
     const pathsNear = (point: RoutePoint) => {
       const result = new Set<number>()
@@ -779,6 +806,7 @@ export function detectRoutes(activities: ReadonlyArray<NormalizedActivity>, over
       })
     const workoutIds = new Set(matches.map(({ path }) => path.activity.sourceActivityId))
     if (workoutIds.size >= config.minWorkoutCount) qualified.push({ ...candidate, matches, workoutIds })
+    report({ phase: 'match-candidates', completed: candidateIndex + 1, total: consolidatedCandidates.length, qualified: qualified.length })
   }
 
   qualified.sort((a, b) => {
@@ -810,7 +838,8 @@ export function detectRoutes(activities: ReadonlyArray<NormalizedActivity>, over
   const routes: DetectedRoute[] = []
   const traversals: RouteTraversal[] = []
   const coverages: RouteCoverage[] = []
-  for (const candidate of representatives) {
+  report({ phase: 'build-results', completed: 0, total: representatives.length, routes: 0 })
+  for (const [candidateIndex, candidate] of representatives.entries()) {
     const family = candidate.type === 'segment' ? segmentFamily(candidate, qualified, config) : null
     const materialized: Candidate = family
       ? {
@@ -857,7 +886,10 @@ export function detectRoutes(activities: ReadonlyArray<NormalizedActivity>, over
       return value ? [value] : []
     })
     const workoutCount = new Set(fullValues.map((value) => value.activityId)).size
-    if (workoutCount < config.minWorkoutCount) continue
+    if (workoutCount < config.minWorkoutCount) {
+      report({ phase: 'build-results', completed: candidateIndex + 1, total: representatives.length, routes: routes.length })
+      continue
+    }
     const byActivity = new Map<string, RouteTraversal[]>()
     for (const value of fullValues) byActivity.set(value.activityId, [...(byActivity.get(value.activityId) ?? []), value])
     const workoutDistances = [...byActivity.values()].map((items) => items.reduce((sum, item) => sum + item.distanceM, 0) / items.length)
@@ -887,6 +919,7 @@ export function detectRoutes(activities: ReadonlyArray<NormalizedActivity>, over
     })
     traversals.push(...fullValues)
     coverages.push(...coverageValues.map((item) => item.coverage))
+    report({ phase: 'build-results', completed: candidateIndex + 1, total: representatives.length, routes: routes.length })
   }
 
   routes.sort((a, b) => b.overallScore - a.overallScore)
