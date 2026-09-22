@@ -6,6 +6,8 @@ import { Effect } from 'effect'
 
 import { getActivity, listActivities, rebuildDatabase } from './Database'
 import { getAnalysisSettings, getDetectedRoute, listDetectedRoutes, listWorkoutRouteMatches, rebuildRouteAnalysis } from './AnalysisDatabase'
+import { withBunDuckDbHost } from '../hosts/bun/DuckDbHost'
+import { databaseTimestamp } from '../engine/database'
 
 let temporaryDirectory: string | undefined
 
@@ -15,6 +17,29 @@ afterEach(async () => {
 })
 
 describe('Database', () => {
+  test('Garmin rebuild retains normalized non-Garmin activities and provenance', async () => {
+    temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'fitness-retention-db-'))
+    process.env.FITNESS_DATABASE_PATH = path.join(temporaryDirectory, 'fitness.duckdb')
+    await Effect.runPromise(rebuildDatabase([]))
+    await withBunDuckDbHost(process.env.FITNESS_DATABASE_PATH, async (database) => database.transaction(async (transaction) => {
+      await transaction.bulkInsert('activities', ['id', 'source', 'source_activity_id', 'sport', 'started_at', 'duration_seconds', 'distance_m', 'ascent_m', 'avg_hr_bpm', 'max_hr_bpm'], [[
+        'iphone:ride-1', 'iphone-recorder', 'ride-1', 'cycling', databaseTimestamp('2026-01-01T00:00:00Z'), 10, 20, 0, null, null,
+      ]])
+      await transaction.bulkInsert('activity_samples', ['activity_id', 'timestamp', 'lat', 'lon', 'distance_m', 'altitude_m', 'speed_mps', 'heart_rate_bpm', 'cadence', 'power_w'], [[
+        'iphone:ride-1', databaseTimestamp('2026-01-01T00:00:01Z'), 1, 2, 0, null, null, null, null, null,
+      ]])
+      await transaction.bulkInsert('normalization_sources', ['activity_id', 'source', 'source_activity_id', 'input_kind', 'normalization_version', 'source_version', 'observation_count', 'sample_count', 'normalized_at'], [[
+        'iphone:ride-1', 'iphone-recorder', 'ride-1', 'saved-observations-v1', 'v1', 'source-v1', 3, 1, databaseTimestamp('2026-01-01T00:01:00Z'),
+      ]])
+    }))
+    await Effect.runPromise(rebuildDatabase([]))
+    expect((await Effect.runPromise(listActivities)).map((activity) => activity.id)).toEqual(['iphone:ride-1'])
+    await withBunDuckDbHost(process.env.FITNESS_DATABASE_PATH, async (database) => {
+      expect(Number((await database.query('SELECT count(*) count FROM normalization_sources'))[0]!.count)).toBe(1)
+      expect(Number((await database.query('SELECT count(*) count FROM activity_samples'))[0]!.count)).toBe(1)
+    })
+  })
+
   test('round-trips activities and GPS samples through DuckDB', async () => {
     temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'fitness-db-'))
     process.env.FITNESS_DATABASE_PATH = path.join(temporaryDirectory, 'fitness.duckdb')

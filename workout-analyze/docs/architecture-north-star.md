@@ -1,6 +1,6 @@
 # Architecture north star
 
-Status: design direction agreed in discussion on 2026-09-21. The first in-process Bun analysis slice and local-browser database transport described below are implemented. Foreground journal normalization consumers and Swift-native DuckDB remain pending. This document takes precedence over earlier proposals where they assume desktop-only analysis or a required companion computer.
+Status: design direction agreed in discussion on 2026-09-21. The in-process analysis slice, local-browser database transport, and saved-observation iPhone normalization consumer described below are implemented. Swift-native DuckDB remains pending. This document takes precedence over earlier proposals where they assume desktop-only analysis or a required companion computer.
 
 ## Same application, interchangeable local hosts
 
@@ -102,4 +102,4 @@ The current segment detector performs its geometric matching in TypeScript. Chan
 
 ## Current gap
 
-The [browser workflow](mobile-browser-workflow.md) now browses the three real recovered iPhone workouts read-only, plus the existing local DuckDB workout and route-analysis archive. The in-memory simulator and isolated replay remain optional tools rather than the default experience. The remaining parity gap is the installed phone host: it retains native recording/history, but does not yet implement native DuckDB or expose workout-library/segment analysis capabilities. Live route recognition is also not implemented.
+The [browser workflow](mobile-browser-workflow.md) now normalizes the three real recovered iPhone workouts from their durable saved observations into the local DuckDB archive before rebuilding analysis. `normalization_sources` records the input kind, processing version, source version, and counts; stable `iphone:<session-id>` identities and transactional replacement make repeat ingestion idempotent. The zero-journal legacy ride deliberately falls back to its authoritative saved observations. FIT data rebuilds retain non-Garmin normalized rows. The remaining parity gap is the installed phone host: it retains native recording/history, but does not yet implement native DuckDB or expose workout-library/segment analysis capabilities. Live route recognition is also not implemented.
