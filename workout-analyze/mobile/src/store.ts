@@ -11,8 +11,14 @@ import { createReplayController, type ReplayController } from '../../src/replay/
 import { createBrowserLocalRecordingSource } from '../../src/replay/source'
 import type { ReplaySnapshot } from '../../src/replay/types'
 import { recommendedDevelopmentUrl } from './config'
+import type { SavedArchiveClient } from './archive/client'
+import type { DatabaseHost } from '../../src/engine/database'
+import type { Activity, WorkoutDetail } from '../../src/domain/activity'
+import type { DetectedRoute, RouteDetail, WorkoutRouteMatch } from '../../src/domain/analysis'
+import { getArchiveActivity, getArchiveAnalysisSettings, getArchiveRoute, listArchiveActivities, listArchiveRoutes, listArchiveWorkoutMatches, type ArchiveAnalysisSettings } from '../../src/engine/catalog'
+import { rebuildRouteAnalysis } from '../../src/engine/analysis'
 
-export type Screen = 'home' | 'live' | 'paused' | 'recovery' | 'saved' | 'history' | 'savedDetail' | 'heartRate' | 'settings' | 'diagnostics' | 'replay'
+export type Screen = 'home' | 'live' | 'paused' | 'recovery' | 'saved' | 'history' | 'savedDetail' | 'library' | 'libraryDetail' | 'routes' | 'routeDetail' | 'heartRate' | 'settings' | 'diagnostics' | 'replay'
 export type RequestState = { readonly status: 'pending' | 'success' | 'error'; readonly error: string | null }
 type NoticeArea = 'recording' | 'diagnostics' | 'sensors' | 'settings'
 export interface UiSourceState {
@@ -76,6 +82,15 @@ export interface MobileState {
   readonly savedWorkoutId: string | null
   readonly savedWorkouts: readonly SavedWorkoutSummary[]
   readonly savedWorkoutDetail: SavedWorkoutDetail | null
+  readonly archiveSourceLabel: string | null
+  readonly archiveLoadState: 'unavailable' | 'loading' | 'ready' | 'empty' | 'error'
+  readonly analysisHostAvailable: boolean
+  readonly libraryWorkouts: readonly Activity[]
+  readonly libraryWorkoutDetail: WorkoutDetail | null
+  readonly libraryWorkoutMatches: readonly WorkoutRouteMatch[]
+  readonly routes: readonly DetectedRoute[]
+  readonly routeDetail: RouteDetail | null
+  readonly analysisSettings: ArchiveAnalysisSettings | null
   readonly requests: Readonly<Record<string, RequestState>>
   readonly notices: Readonly<Record<NoticeArea, string | null>>
   readonly developmentSourceDraft: string
@@ -98,6 +113,11 @@ export interface MobileState {
   loadSavedWorkouts(): Promise<void>
   openSavedWorkout(savedWorkoutId: string): Promise<void>
   exportSavedWorkout(sessionId: string, format: 'workoutBundleV1' | 'gpx'): Promise<void>
+  loadLibrary(): Promise<void>
+  openLibraryWorkout(activityId: string): Promise<void>
+  loadRoutes(): Promise<void>
+  openRoute(routeId: string): Promise<void>
+  rebuildAnalysis(): Promise<void>
   requestPermission(permission: 'locationWhenInUse' | 'bluetooth'): Promise<void>
   startLocation(backgroundMode: 'foregroundOnly' | 'continueWhenBackgrounded'): Promise<void>
   stopLocation(): Promise<void>
@@ -137,7 +157,7 @@ export const loadSavedWorkoutDetail = async (client: Pick<BridgeClient, 'request
   return { ...first, observations: { ...page, afterSequence: null, items } }
 }
 
-export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> => {
+export const createMobileStore = (client: BridgeClient, localArchive?: SavedArchiveClient, database?: DatabaseHost): StoreApi<MobileState> => {
   let started = false
   let pollGeneration = 0
   let observationGeneration = 0
@@ -160,6 +180,7 @@ export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> =
         set((state) => ({ requests: { ...state.requests, [key]: { status: 'success', error: null } } }))
       } catch (error) {
         const detail = message(error, `${key} failed`)
+        if (key === 'archive-list') set({ archiveLoadState: 'error' })
         set((state) => ({ requests: { ...state.requests, [key]: { status: 'error', error: detail } } }))
         setNotice(area, detail)
         await client.refreshSnapshot().catch(() => undefined)
@@ -232,7 +253,7 @@ export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> =
           bridge, recorderSupported, session: snapshot.session, permissions: snapshot.permissions, builds: snapshot.appBuild,
           diagnostics: snapshot.diagnostics, location: snapshot.location, heartRate: snapshot.heartRate, uiSource, configuredDevelopmentSourceUrl,
           ...(!state.developmentSourceDirty && configuredDevelopmentSourceUrl ? { developmentSourceDraft: configuredDevelopmentSourceUrl } : {}),
-          ...(!['settings', 'diagnostics', 'heartRate', 'history', 'savedDetail', 'replay'].includes(state.screen) && !(snapshot.session.state === 'finished' && state.screen === 'home') ? { screen: screenForSession(snapshot.session) } : {}),
+           ...(!['settings', 'diagnostics', 'heartRate', 'history', 'savedDetail', 'library', 'libraryDetail', 'routes', 'routeDetail', 'replay'].includes(state.screen) && !(snapshot.session.state === 'finished' && state.screen === 'home') ? { screen: screenForSession(snapshot.session) } : {}),
         }
       })
       if (snapshot) void attachObservations(snapshot.session)
@@ -267,7 +288,9 @@ export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> =
       screen: 'home', returnScreen: 'home', bridge: client.getState(), session: client.getState().session, recorderSupported: false,
       permissions: null, builds: null, diagnostics: null, checks: [], location: null, heartRate: null, locations: [], measurements: [],
       trail: [], observationCursor: null, rawJournalSequence: null, recordingIssues: [], savedWorkoutId: null, requests: {},
-      savedWorkouts: [], savedWorkoutDetail: null, notices: { recording: null, diagnostics: null, sensors: null, settings: null }, developmentSourceDraft: recommendedDevelopmentUrl, developmentSourceDirty: false,
+       savedWorkouts: [], savedWorkoutDetail: null, archiveSourceLabel: localArchive?.label ?? null, archiveLoadState: localArchive ? 'loading' : 'unavailable',
+       analysisHostAvailable: Boolean(database), libraryWorkouts: [], libraryWorkoutDetail: null, libraryWorkoutMatches: [], routes: [], routeDetail: null, analysisSettings: null,
+       notices: { recording: null, diagnostics: null, sensors: null, settings: null }, developmentSourceDraft: recommendedDevelopmentUrl, developmentSourceDirty: false,
       configuredDevelopmentSourceUrl: undefined, uiSource: null, replay: initialReplay,
       start() {
         if (started) return () => undefined
@@ -277,7 +300,9 @@ export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> =
         const onVisibility = () => { if (document.visibilityState === 'visible') void get().refresh() }
         document.addEventListener('visibilitychange', onVisibility)
         timer = setInterval(() => { if (document.visibilityState === 'visible') void get().refresh() }, 10_000)
-        void client.connect().then(async () => { await get().refresh(); if (client.getState().capabilities.includes('archive.list')) await get().loadSavedWorkouts() }).catch(() => undefined)
+         if (localArchive) void get().loadSavedWorkouts()
+         if (database) { void get().loadLibrary(); void get().loadRoutes() }
+         void client.connect().then(async () => { await get().refresh(); if (!localArchive && client.getState().capabilities.includes('archive.list')) await get().loadSavedWorkouts() }).catch(() => undefined)
         return () => {
           if (!started) return
           started = false; pollGeneration += 1; observationGeneration += 1
@@ -304,11 +329,14 @@ export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> =
         } catch (error) { if (generation === pollGeneration) setNotice('diagnostics', message(error, 'Refresh failed')) }
       },
       reconnectBridge() { return run('bridge-connect', 'settings', async () => { await client.connect(); await get().refresh() }) },
-      setScreen(screen) {
+       setScreen(screen) {
         const previous = get().screen
         if (screen !== 'diagnostics' && (previous === 'diagnostics' || get().location?.probeId)) stopActiveProbes()
-        set({ screen, ...(['settings', 'diagnostics', 'heartRate'].includes(screen) && !['settings', 'diagnostics', 'heartRate'].includes(previous) ? { returnScreen: previous } : {}) })
-        if (screen === 'diagnostics') void get().refresh()
+         set({ screen, ...(['settings', 'diagnostics', 'heartRate'].includes(screen) && !['settings', 'diagnostics', 'heartRate'].includes(previous) ? { returnScreen: previous } : {}) })
+         if (screen === 'diagnostics') void get().refresh()
+         if (screen === 'history') void get().loadSavedWorkouts()
+         if (screen === 'library') void get().loadLibrary()
+         if (screen === 'routes') void get().loadRoutes()
       },
       returnFromUtility() { set((state) => ({ screen: state.returnScreen })) },
       setDevelopmentSourceDraft(developmentSourceDraft) { set({ developmentSourceDraft, developmentSourceDirty: true }) },
@@ -318,11 +346,41 @@ export const createMobileStore = (client: BridgeClient): StoreApi<MobileState> =
       finishWorkout() { return run('workout-finish', 'recording', async () => { const session = currentAvailableSession(); const result = await client.request('workout.finish', { sessionId: session.sessionId!, expectedRevision: session.revision }); set({ savedWorkoutId: result.savedWorkoutId }); installSession(result.session); if (get().bridge.capabilities.includes('archive.list')) await get().loadSavedWorkouts() }) },
       recoverWorkout(action) { return run(`workout-recover-${action}`, 'recording', async () => { const session = currentAvailableSession(); const result = await client.request('workout.recover', { sessionId: session.sessionId!, expectedRevision: session.revision, action }); if ('session' in result) { set({ savedWorkoutId: result.savedWorkoutId }); installSession(result.session) } else installSession(result) }) },
       exportWorkout(format) { return run(`workout-export-${format}`, 'recording', async () => { const session = currentAvailableSession(); const result = await client.request('workout.export', { sessionId: session.sessionId!, format }); setNotice('recording', result.presented ? `${format === 'gpx' ? 'GPX' : 'Lossless workout bundle'} share sheet opened.` : 'Export was prepared but the share sheet was not presented.') }) },
-      loadSavedWorkouts() { return run('archive-list', 'recording', async () => { if (!get().bridge.capabilities.includes('archive.list')) return; const page = await client.request('archive.list', { afterCursor: null, limit: 50 }); set({ savedWorkouts: page.items }) }) },
+       loadSavedWorkouts() { return run('archive-list', 'recording', async () => {
+         set({ archiveLoadState: 'loading' })
+         const page = localArchive ? await localArchive.list() : get().bridge.capabilities.includes('archive.list') ? await client.request('archive.list', { afterCursor: null, limit: 50 }) : null
+         if (!page) { set({ archiveLoadState: 'unavailable' }); return }
+         set({ savedWorkouts: page.items, archiveSourceLabel: localArchive?.label ?? 'This iPhone', archiveLoadState: page.items.length ? 'ready' : 'empty' })
+       }) },
       openSavedWorkout(savedWorkoutId) { return run('archive-detail', 'recording', async () => {
-        set({ savedWorkoutDetail: await loadSavedWorkoutDetail(client, savedWorkoutId), screen: 'savedDetail' })
+         const savedWorkoutDetail = localArchive ? await localArchive.detail(savedWorkoutId) : await loadSavedWorkoutDetail(client, savedWorkoutId)
+         set({ savedWorkoutDetail, screen: 'savedDetail' })
       }) },
-      exportSavedWorkout(sessionId, format) { return run(`archive-export-${format}`, 'recording', async () => { const result = await client.request('workout.export', { sessionId, format }); setNotice('recording', result.presented ? `${format === 'gpx' ? 'GPX' : 'Lossless raw bundle'} share sheet opened.` : 'Export prepared but share sheet was not presented.') }) },
+       exportSavedWorkout(sessionId, format) { return run(`archive-export-${format}`, 'recording', async () => { const result = await client.request('workout.export', { sessionId, format }); setNotice('recording', result.presented ? `${format === 'gpx' ? 'GPX' : 'Lossless raw bundle'} share sheet opened.` : 'Export prepared but share sheet was not presented.') }) },
+       loadLibrary() { return run('library-list', 'recording', async () => { if (!database) return; set({ libraryWorkouts: await listArchiveActivities(database) }) }) },
+       openLibraryWorkout(activityId) { return run('library-detail', 'recording', async () => {
+         if (!database) throw new Error('Workout library is unavailable on this host')
+         const [libraryWorkoutDetail, libraryWorkoutMatches] = await Promise.all([getArchiveActivity(database, activityId), listArchiveWorkoutMatches(database, activityId)])
+         if (!libraryWorkoutDetail) throw new Error('Workout was not found')
+         set({ libraryWorkoutDetail, libraryWorkoutMatches, screen: 'libraryDetail' })
+       }) },
+       loadRoutes() { return run('routes-list', 'recording', async () => {
+         if (!database) return
+         const [routes, analysisSettings] = await Promise.all([listArchiveRoutes(database), getArchiveAnalysisSettings(database)])
+         set({ routes, analysisSettings })
+       }) },
+       openRoute(routeId) { return run('route-detail', 'recording', async () => {
+         if (!database) throw new Error('Segment analysis is unavailable on this host')
+         const routeDetail = await getArchiveRoute(database, routeId)
+         if (!routeDetail) throw new Error('Detected route was not found')
+         set({ routeDetail, screen: 'routeDetail' })
+       }) },
+       rebuildAnalysis() { return run('analysis-rebuild', 'recording', async () => {
+         if (!database) throw new Error('Analysis rebuild requires a local database host')
+         const config = get().analysisSettings?.config ?? {}
+         await rebuildRouteAnalysis(database, config)
+         await get().loadRoutes()
+       }) },
       requestPermission(permission) { return run(`permission-${permission}`, 'sensors', async () => { await client.request('permissions.request', { permission }); await synchronize() }) },
       startLocation(backgroundMode) { return run(`location-${backgroundMode}`, 'sensors', async () => { await client.request('location.start', { desiredAccuracy: 'best', distanceFilterM: 0, backgroundMode, maxDurationSeconds: 120 }); await synchronize() }) },
       stopLocation() { return run('location-stop', 'sensors', async () => { const id = get().location?.probeId; if (id) await client.request('location.stop', { probeId: id }); await synchronize() }) },

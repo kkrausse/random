@@ -1,4 +1,4 @@
-import { Activity, ArrowLeft, Bike, CheckCircle2, ChevronRight, CircleAlert, Download, Gauge, HeartPulse, MapPin, Pause, Play, RefreshCw, RotateCcw, Settings as SettingsIcon, Share2, ShieldCheck, Wifi, FastForward } from 'lucide-react'
+import { Activity, ArrowLeft, Bike, CheckCircle2, ChevronRight, CircleAlert, Database, Download, Gauge, HeartPulse, MapPin, Pause, Play, RefreshCw, Repeat2, RotateCcw, Route as RouteIcon, Settings as SettingsIcon, Share2, ShieldCheck, Wifi, FastForward } from 'lucide-react'
 import { useState } from 'react'
 import { useStore } from 'zustand'
 import type { AvailableSessionSnapshot, Capability, RecorderLocationObservation, StatusRow } from '../../src/shared/mobile'
@@ -32,7 +32,7 @@ export const App = ({ store }: { store: MobileStore }) => {
   const screen = useStore(store, (state) => state.screen)
   const screens: Record<Screen, React.ReactNode> = {
     home: <Home store={store} />, live: <Live store={store} />, paused: <Paused store={store} />, recovery: <Recovery store={store} />,
-    saved: <Saved store={store} />, history: <History store={store} />, savedDetail: <SavedDetail store={store} />, heartRate: <HeartRate store={store} />, settings: <Settings store={store} />, diagnostics: <Diagnostics store={store} />, replay: <Replay store={store} />,
+    saved: <Saved store={store} />, history: <History store={store} />, savedDetail: <SavedDetail store={store} />, library: <Library store={store} />, libraryDetail: <LibraryDetail store={store} />, routes: <Routes store={store} />, routeDetail: <RouteDetailScreen store={store} />, heartRate: <HeartRate store={store} />, settings: <Settings store={store} />, diagnostics: <Diagnostics store={store} />, replay: <Replay store={store} />,
   }
   return screens[screen]
 }
@@ -49,6 +49,12 @@ const Home = ({ store }: { store: MobileStore }) => {
   const requestPermission = useStore(store, (state) => state.requestPermission)
   const setScreen = useStore(store, (state) => state.setScreen)
   const savedWorkouts = useStore(store, (state) => state.savedWorkouts)
+  const archiveSource = useStore(store, (state) => state.archiveSourceLabel)
+  const archiveState = useStore(store, (state) => state.archiveLoadState)
+  const analysisAvailable = useStore(store, (state) => state.analysisHostAvailable)
+  const libraryCount = useStore(store, (state) => state.libraryWorkouts.length)
+  const routeCount = useStore(store, (state) => state.routes.length)
+  const localHost = Boolean(archiveSource)
   const loadReplay = useStore(store, (state) => state.loadLocalReplay)
   const locationAuth = permissions?.location.details.authorization
   const needsPermission = locationAuth === 'notDetermined'
@@ -57,19 +63,21 @@ const Home = ({ store }: { store: MobileStore }) => {
   const busy = pending(requests, 'workout-') || pending(requests, 'permission-location')
   return <main className="app-shell home-screen">
     <TopBar title="Workout Ledger" />
-    <section className="home-hero"><Pill tone={bridge.phase === 'ready' ? 'good' : 'warning'}>{bridge.transportLabel}</Pill><h1>Ready to<br /><em>ride.</em></h1><p>GPS recording works without a heart-rate monitor or route catalog.</p></section>
-    <section className="home-status"><article><MapPin /><div><span>GPS</span><strong>{denied ? 'Permission blocked' : permissions?.location.reason ?? 'Connecting…'}</strong></div></article><article><HeartPulse /><div><span>Heart rate · optional</span><strong>{heartRate?.connectedDevice?.name ?? heartRate?.reason ?? 'Not connected'}</strong></div></article></section>
+    <section className="home-hero"><Pill tone={localHost || bridge.phase === 'ready' ? 'good' : 'warning'}>{localHost ? 'Local Bun host' : bridge.transportLabel}</Pill><h1>{localHost ? <>Your<br /><em>rides.</em></> : <>Ready to<br /><em>ride.</em></>}</h1><p>{localHost ? 'Browse real recovered iPhone recordings and local segment analysis.' : 'GPS recording works without a heart-rate monitor or route catalog.'}</p></section>
+    <section className="home-status">{localHost ? <><article><ShieldCheck /><div><span>Recovered iPhone storage</span><strong>{archiveState === 'ready' ? `${savedWorkouts.length} finished workouts · read-only` : archiveState === 'error' ? 'Archive load failed' : 'Loading durable archive…'}</strong></div></article><article><Database /><div><span>Local analysis archive</span><strong>{analysisAvailable ? `${libraryCount} workouts · ${routeCount} routes` : 'Unavailable'}</strong></div></article></> : <><article><MapPin /><div><span>GPS</span><strong>{denied ? 'Permission blocked' : permissions?.location.reason ?? 'Connecting…'}</strong></div></article><article><HeartPulse /><div><span>Heart rate · optional</span><strong>{heartRate?.connectedDevice?.name ?? heartRate?.reason ?? 'Not connected'}</strong></div></article></>}</section>
     {!recorderSupported && bridge.phase === 'ready' && <p className="notice notice-error">This installed native shell does not provide the frozen recorder capabilities. Update the shell to record; diagnostics and source utilities remain available.</p>}
     {notice && <p className="notice notice-error" role="alert">{notice}</p>}
-    {bridge.capabilities.includes('archive.list') && <button className="recent-workout" onClick={() => setScreen('history')}><Activity /><span><strong>Saved workouts</strong><small>{savedWorkouts.length ? `${savedWorkouts.length} available on this device` : 'No completed rides yet'}</small></span><ChevronRight /></button>}
-    <UtilityButtons store={store} />
+    {(archiveSource || bridge.capabilities.includes('archive.list')) && <button className="recent-workout" onClick={() => setScreen('history')}><Activity /><span><strong>Saved iPhone workouts</strong><small>{archiveState === 'loading' ? 'Loading durable archive…' : archiveState === 'error' ? 'Archive failed to load · tap to retry' : savedWorkouts.length ? `${savedWorkouts.length} durable recordings · ${archiveSource ?? 'This iPhone'}` : 'No completed rides in archive'}</small></span><ChevronRight /></button>}
+    {analysisAvailable && <section className="archive-entries"><button onClick={() => setScreen('library')}><Database /><span><strong>Workout library</strong><small>{libraryCount ? `${libraryCount} normalized workouts` : 'Loading local archive…'}</small></span><ChevronRight /></button><button onClick={() => setScreen('routes')}><RouteIcon /><span><strong>Segments & loops</strong><small>{routeCount ? `${routeCount} detected routes` : 'Loading analysis…'}</small></span><ChevronRight /></button></section>}
+    {!analysisAvailable && bridge.phase === 'ready' && <p className="capability-note">Segments and library analysis are not installed in this native shell yet. Phone recording and its durable history remain available.</p>}
+    {!localHost && <UtilityButtons store={store} />}
     {import.meta.env.DEV && <Button className="full replay-entry" onClick={() => void loadReplay()}><FastForward /> Load immutable local replay</Button>}
-    <div className="home-bottom">
+    {!localHost && <div className="home-bottom">
       {active ? <Button variant="primary" disabled={busy} onClick={() => setScreen(session!.state === 'recording' ? 'live' : session!.state === 'paused' ? 'paused' : 'recovery')}><Bike /> Return to ride</Button>
         : needsPermission ? <Button variant="primary" disabled={busy || !recorderSupported} onClick={() => void requestPermission('locationWhenInUse')}><MapPin /> Allow location to start</Button>
           : <Button variant="primary" disabled={busy || !recorderSupported || denied} onClick={() => void startWorkout('waitForReliableLocation')}><Bike /> Start ride</Button>}
       <p><ShieldCheck /> Starts immediately and waits for reliable GPS. Native recording continues if this UI reloads.</p>
-    </div>
+    </div>}
   </main>
 }
 
@@ -96,7 +104,11 @@ const History = ({ store }: { store: MobileStore }) => {
   const requests = useStore(store, (state) => state.requests)
   const open = useStore(store, (state) => state.openSavedWorkout)
   const setScreen = useStore(store, (state) => state.setScreen)
-  return <main className="app-shell"><TopBar title="Saved workouts" back={() => setScreen('home')} /><section className="page-heading"><h1>On this iPhone</h1><p>Native records, reopened from durable storage—not browser memory.</p></section><section className="history-list">{items.map((item) => <button key={item.savedWorkoutId} onClick={() => void open(item.savedWorkoutId)} disabled={pending(requests, 'archive-detail')}><Bike /><span><strong>{new Date(item.startedAt).toLocaleString()}</strong><small>{distance(item.metrics.distanceM)} · {duration(item.durationMs)} · {item.observationCount.toLocaleString()} normalized recorder events</small></span><ChevronRight /></button>)}{items.length === 0 && <p className="notice">No saved workouts are available yet.</p>}</section></main>
+  const source = useStore(store, (state) => state.archiveSourceLabel)
+  const state = useStore(store, (value) => value.archiveLoadState)
+  const reload = useStore(store, (value) => value.loadSavedWorkouts)
+  const notice = useStore(store, (value) => value.notices.recording)
+  return <main className="app-shell"><TopBar title="Saved workouts" back={() => setScreen('home')} /><section className="page-heading"><h1>iPhone archive</h1><p>{source ?? 'Native iPhone storage'} · durable recordings, not browser fixtures or replay state.</p></section>{state === 'loading' && <p className="notice">Loading the durable archive…</p>}{state === 'error' && <><p className="notice notice-error" role="alert">{notice ?? 'The archive could not be loaded.'}</p><Button className="full" onClick={() => void reload()}><RefreshCw /> Retry archive</Button></>}<section className="history-list">{items.map((item) => <button key={item.savedWorkoutId} onClick={() => void open(item.savedWorkoutId)} disabled={pending(requests, 'archive-detail')}><Bike /><span><strong>{new Date(item.startedAt).toLocaleString()}</strong><small>{distance(item.metrics.distanceM)} · {duration(item.durationMs)} · {item.observationCount.toLocaleString()} normalized events{item.rawEventCount ? ` · ${item.rawEventCount.toLocaleString()} raw` : ''}</small></span><ChevronRight /></button>)}{state === 'empty' && <p className="notice">The archive loaded successfully and contains no finished workouts.</p>}</section></main>
 }
 
 const SavedDetail = ({ store }: { store: MobileStore }) => {
@@ -105,11 +117,56 @@ const SavedDetail = ({ store }: { store: MobileStore }) => {
   const notice = useStore(store, (state) => state.notices.recording)
   const exportSaved = useStore(store, (state) => state.exportSavedWorkout)
   const setScreen = useStore(store, (state) => state.setScreen)
+  const canExport = useStore(store, (state) => state.bridge.capabilities.includes('workout.export'))
   if (!detail) return <History store={store} />
   const trail = detail.observations.items.filter((item): item is RecorderLocationObservation => item.kind === 'location' && item.horizontalAccuracyM <= 50)
   const metrics = detail.summary.metrics
   const started = new Date(detail.summary.startedAt)
-  return <main className="app-shell saved-screen"><TopBar title="Saved ride" back={() => setScreen('history')} /><header className="workout-heading"><p className="eyebrow">CYCLING · DURABLE NATIVE RECORD</p><h1>{started.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</h1><div><span>{started.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</span><strong>{distance(metrics.distanceM)}</strong><span>{duration(detail.summary.durationMs)}</span></div></header><RideMap trail={trail} quality={metrics.locationQuality} fitRoute /><section className="ride-metrics saved-metrics"><Metric label="Active" value={duration(metrics.activeDurationMs)} /><Metric label="Distance" value={distance(metrics.distanceM)} /><Metric label="Avg speed" value={metrics.averageSpeedMps === null ? '—' : `${speed(metrics.averageSpeedMps)} km/h`} /><Metric label="Heart rate" value={metrics.heartRateBpm === null ? '—' : `${metrics.heartRateBpm} bpm`} /><Metric label="Ascent · est." value={`${Math.round(metrics.elevationGainM)} m`} /><Metric label="GPS points" value={trail.length.toLocaleString()} /></section><p className="saved-id">{detail.summary.observationCount.toLocaleString()} normalized events · Session {detail.summary.sessionId}<br />Engine {detail.pinnedEngine.buildId}</p>{detail.summary.hasFatalIssue && <p className="notice notice-error">This workout contains a fatal recording issue. Export remains available for diagnosis.</p>}<div className="export-actions"><Button disabled={pending(requests, 'archive-export')} onClick={() => void exportSaved(detail.summary.sessionId, 'gpx')}><Share2 /> Export GPX</Button><Button disabled={pending(requests, 'archive-export')} onClick={() => void exportSaved(detail.summary.sessionId, 'workoutBundleV1')}><Download /> Export complete raw bundle</Button></div>{notice && <p className="notice">{notice}</p>}</main>
+  return <main className="app-shell saved-screen"><TopBar title="Saved ride" back={() => setScreen('history')} /><header className="workout-heading"><p className="eyebrow">CYCLING · DURABLE IPHONE RECORD</p><h1>{started.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</h1><div><span>{started.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</span><strong>{distance(metrics.distanceM)}</strong><span>{duration(detail.summary.durationMs)}</span></div></header><RideMap trail={trail} quality={metrics.locationQuality} fitRoute /><section className="ride-metrics saved-metrics"><Metric label="Active" value={duration(metrics.activeDurationMs)} /><Metric label="Distance" value={distance(metrics.distanceM)} /><Metric label="Avg speed" value={metrics.averageSpeedMps === null ? '—' : `${speed(metrics.averageSpeedMps)} km/h`} /><Metric label="Heart rate" value={metrics.heartRateBpm === null ? '—' : `${metrics.heartRateBpm} bpm`} /><Metric label="Ascent · est." value={`${Math.round(metrics.elevationGainM)} m`} /><Metric label="GPS points" value={trail.length.toLocaleString()} /></section><p className="saved-id">{detail.summary.observationCount.toLocaleString()} normalized events · {detail.summary.rawEventCount?.toLocaleString() ?? '—'} raw events<br />Session {detail.summary.sessionId}<br />Engine {detail.pinnedEngine.buildId}</p>{detail.summary.hasFatalIssue && <p className="notice notice-error">This workout contains a fatal recording issue.</p>}{canExport ? <div className="export-actions"><Button disabled={pending(requests, 'archive-export')} onClick={() => void exportSaved(detail.summary.sessionId, 'gpx')}><Share2 /> Export GPX</Button><Button disabled={pending(requests, 'archive-export')} onClick={() => void exportSaved(detail.summary.sessionId, 'workoutBundleV1')}><Download /> Export complete raw bundle</Button></div> : <p className="notice">Recovered archive browsing is read-only. Export is available when this same UI is hosted by the native iPhone shell.</p>}{notice && <p className="notice">{notice}</p>}</main>
+}
+
+const RouteGeometryMap = ({ points }: { points: readonly { lat: number; lon: number }[] }) => {
+  const map = createRouteMap(points, 320, 190, 16)
+  if (!map) return <div className="route-geometry map-empty"><MapPin /><strong>Route unavailable</strong></div>
+  return <div className="route-geometry" aria-label={`Route map with ${points.length.toLocaleString()} points`}><svg viewBox="0 0 320 190" preserveAspectRatio="none"><path className="trail-shadow" d={map.path} /><path className="trail-line" d={map.path} /><circle className="route-start" cx={map.start.x} cy={map.start.y} r="4" /><circle className="rider" cx={map.end.x} cy={map.end.y} r="5" /></svg></div>
+}
+
+const Library = ({ store }: { store: MobileStore }) => {
+  const items = useStore(store, (state) => state.libraryWorkouts)
+  const requests = useStore(store, (state) => state.requests)
+  const open = useStore(store, (state) => state.openLibraryWorkout)
+  const setScreen = useStore(store, (state) => state.setScreen)
+  const notice = useStore(store, (state) => state.notices.recording)
+  return <main className="app-shell"><TopBar title="Workout library" back={() => setScreen('home')} /><section className="page-heading"><Database className="heading-icon" /><h1>{items.length} workouts</h1><p>Normalized local DuckDB archive. This is separate from the recovered iPhone recorder history.</p></section>{pending(requests, 'library-list') && items.length === 0 && <p className="notice">Loading workout history…</p>}{notice && <p className="notice notice-error">{notice}</p>}<section className="history-list">{items.map((item) => <button key={item.id} onClick={() => void open(item.id)} disabled={pending(requests, 'library-detail')}><Bike /><span><strong>{new Date(item.startedAt).toLocaleDateString()} · {item.sport}</strong><small>{item.distanceM === null ? 'Distance unavailable' : distance(item.distanceM)} · {item.durationSeconds === null ? 'Duration unavailable' : duration(item.durationSeconds * 1000)}</small></span><ChevronRight /></button>)}</section></main>
+}
+
+const LibraryDetail = ({ store }: { store: MobileStore }) => {
+  const workout = useStore(store, (state) => state.libraryWorkoutDetail)
+  const matches = useStore(store, (state) => state.libraryWorkoutMatches)
+  const openRoute = useStore(store, (state) => state.openRoute)
+  const setScreen = useStore(store, (state) => state.setScreen)
+  if (!workout) return <Library store={store} />
+  const route = workout.samples.map(({ lat, lon }) => ({ lat, lon }))
+  return <main className="app-shell"><TopBar title="Workout" back={() => setScreen('library')} /><header className="workout-heading"><p className="eyebrow">{workout.sport.toUpperCase()} · NORMALIZED ARCHIVE</p><h1>{new Date(workout.startedAt).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</h1><div><strong>{workout.distanceM === null ? '—' : distance(workout.distanceM)}</strong><span>{workout.durationSeconds === null ? '—' : duration(workout.durationSeconds * 1000)}</span></div></header>{route.length > 1 && <RouteGeometryMap points={route} />}<section className="ride-metrics saved-metrics"><Metric label="Ascent" value={workout.ascentM === null ? '—' : `${Math.round(workout.ascentM)} m`} /><Metric label="Avg HR" value={workout.avgHrBpm === null ? '—' : `${Math.round(workout.avgHrBpm)} bpm`} /><Metric label="Max HR" value={workout.maxHrBpm === null ? '—' : `${Math.round(workout.maxHrBpm)} bpm`} /><Metric label="GPS points" value={route.length.toLocaleString()} /></section><section className="sublist"><h2>Matched segments & loops</h2>{matches.map((match) => <button key={match.traversalId} onClick={() => void openRoute(match.routeId)}><span><strong>{match.routeName}</strong><small>{match.routeType} · {distance(match.distanceM)} · {duration(match.durationSec * 1000)}</small></span><ChevronRight /></button>)}{matches.length === 0 && <p className="notice">No detected routes matched this workout.</p>}</section></main>
+}
+
+const Routes = ({ store }: { store: MobileStore }) => {
+  const routes = useStore(store, (state) => state.routes)
+  const settings = useStore(store, (state) => state.analysisSettings)
+  const requests = useStore(store, (state) => state.requests)
+  const open = useStore(store, (state) => state.openRoute)
+  const rebuild = useStore(store, (state) => state.rebuildAnalysis)
+  const setScreen = useStore(store, (state) => state.setScreen)
+  const notice = useStore(store, (state) => state.notices.recording)
+  return <main className="app-shell"><TopBar title="Segments & loops" back={() => setScreen('home')} /><section className="page-heading"><RouteIcon className="heading-icon" /><h1>{routes.length} routes</h1><p>Detected by shared TypeScript analysis over the normalized local archive.{settings?.analyzedAt ? ` Last rebuilt ${new Date(settings.analyzedAt).toLocaleString()}.` : ''}</p></section>{notice && <p className="notice notice-error">{notice}</p>}<section className="route-list">{routes.map((route) => <button key={route.id} onClick={() => void open(route.id)} disabled={pending(requests, 'route-detail')}><RouteGeometryMap points={route.geometry} /><div><span className={`route-kind route-kind-${route.type}`}>{route.type === 'loop' ? <Repeat2 /> : <RouteIcon />}{route.type}</span><h2>{route.name}</h2><p>{distance(route.distanceM)} · {route.workoutCount} workouts · {route.traversalCount} traversals</p></div></button>)}</section><div className="analysis-action"><Button className="full" disabled={pending(requests, 'analysis-rebuild')} onClick={() => void rebuild()}><RefreshCw /> {pending(requests, 'analysis-rebuild') ? 'Rebuilding in shared web engine…' : 'Rebuild analysis'}</Button><small>Replaces derived analysis atomically. Original workouts are unchanged.</small></div></main>
+}
+
+const RouteDetailScreen = ({ store }: { store: MobileStore }) => {
+  const route = useStore(store, (state) => state.routeDetail)
+  const setScreen = useStore(store, (state) => state.setScreen)
+  const openWorkout = useStore(store, (state) => state.openLibraryWorkout)
+  if (!route) return <Routes store={store} />
+  return <main className="app-shell"><TopBar title={route.type === 'loop' ? 'Loop' : 'Segment'} back={() => setScreen('routes')} /><section className="route-detail-heading"><span className={`route-kind route-kind-${route.type}`}>{route.type === 'loop' ? <Repeat2 /> : <RouteIcon />}{route.type}</span><h1>{route.name}</h1><p>{route.sport} · {distance(route.distanceM)} · {route.workoutCount} workouts</p></section><RouteGeometryMap points={route.geometry} /><section className="ride-metrics saved-metrics"><Metric label="Traversals" value={route.traversalCount.toLocaleString()} /><Metric label="Match" value={`${Math.round(route.matchScore * 100)}%`} /><Metric label="First" value={new Date(route.firstTraversalAt).toLocaleDateString()} /><Metric label="Latest" value={new Date(route.lastTraversalAt).toLocaleDateString()} /></section><section className="sublist"><h2>Efforts</h2>{route.traversals.map((effort) => <button key={effort.id} onClick={() => void openWorkout(effort.activityId)}><span><strong>{new Date(effort.startedAt).toLocaleDateString()} · {duration(effort.durationSec * 1000)}</strong><small>{effort.avgSpeed === null ? 'Speed unavailable' : `${speed(effort.avgSpeed)} km/h`} · quality {Math.round(effort.qualityScore * 100)}%</small></span><ChevronRight /></button>)}</section></main>
 }
 
 const RideMap = ({ trail, quality, showTiles = true, fitRoute = false }: { trail: readonly RecorderLocationObservation[]; quality: AvailableSessionSnapshot['metrics']['locationQuality']; showTiles?: boolean; fitRoute?: boolean }) => {

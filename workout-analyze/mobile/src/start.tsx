@@ -4,6 +4,8 @@ import { App } from './App'
 import { createBridgeClient, nativeTransport, unavailableNativeTransport } from './bridge/client'
 import { createSimulatorTransport } from './bridge/simulator'
 import { createMobileStore } from './store'
+import { createRecoveredArchiveClient } from './archive/client'
+import { createLocalDatabaseHost } from './database/client'
 import './styles.css'
 
 const params = new URLSearchParams(window.location.search)
@@ -11,7 +13,9 @@ const native = nativeTransport()
 const simulatorRequested = params.get('simulator') === '1' || params.has('fault')
 const transport = native ?? (simulatorRequested ? createSimulatorTransport(params.get('fault')) : unavailableNativeTransport())
 const client = createBridgeClient(transport)
-const store = createMobileStore(client)
+const localArchive = import.meta.env.DEV && !native && !simulatorRequested ? createRecoveredArchiveClient() : undefined
+const localDatabase = import.meta.env.DEV && !native && !simulatorRequested ? createLocalDatabaseHost() : undefined
+const store = createMobileStore(client, localArchive, localDatabase)
 if (import.meta.env.DEV) {
   const kind = native ? 'native' : simulatorRequested ? 'simulator' : 'unavailable'
   void import('./dev/runner').then(({ installDevRunner }) => installDevRunner({ client, store, kind })).catch((error) => {

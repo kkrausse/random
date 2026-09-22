@@ -1,6 +1,6 @@
 # Architecture north star
 
-Status: design direction agreed in discussion on 2026-09-21. The first in-process Bun analysis slice described below is implemented; its database interface is execution-facing, not a completed wire protocol. Foreground journal consumers, browser transport, and Swift-native DuckDB remain pending integration verification. This document takes precedence over earlier proposals where they assume desktop-only analysis or a required companion computer.
+Status: design direction agreed in discussion on 2026-09-21. The first in-process Bun analysis slice and local-browser database transport described below are implemented. Foreground journal normalization consumers and Swift-native DuckDB remain pending. This document takes precedence over earlier proposals where they assume desktop-only analysis or a required companion computer.
 
 ## Same application, interchangeable local hosts
 
@@ -87,7 +87,7 @@ The existing recorded ride has roughly 5,000–6,000 journal events, making batc
 
 The existing Bun CLI now runs route analysis through a portable TypeScript engine and a small execution-facing host interface for parameterized SQL, queries, transactions, and bulk insertion. Shared code owns normalized-input queries, analysis table schemas, the detector, and atomic result replacement; the Bun adapter owns only native DuckDB connection/value details. Detector IDs use a portable synchronous SHA-256 implementation and retain their previous values.
 
-That TypeScript interface is not yet a browser/native wire contract. Its transaction callback executes client-side, `bigint` parameters and generic native result rows do not yet have bridge encodings, and a future transport must define transaction session ownership so every callback operation reaches the same native connection and transaction. The current `withBunDuckDbHost` adapter scopes one connection exclusively to one callback and expects sequential use; it does not serialize concurrent operations. The browser/WKWebView transport and Swift DuckDB adapter are not implemented yet.
+The local mobile browser now adapts this interface to same-origin Bun HTTP requests. It encodes bigint values, retains a server-side connection per transaction session, and supports query, execute, bulk insert, commit, and rollback. Shared TypeScript uses it for workout/route queries and invokes the portable rebuild engine in the web runtime; the endpoint does not contain detector/domain methods. This development transport is not yet the frozen native wire contract, does not serialize concurrent operations within one transaction, and is intentionally available only from the Vite development server. The Swift DuckDB adapter remains unimplemented.
 
 ## Remaining integration questions
 
@@ -102,4 +102,4 @@ The current segment detector performs its geometric matching in TypeScript. Chan
 
 ## Current gap
 
-The [browser workflow](mobile-browser-workflow.md) currently offers an in-memory simulator and a separate recorded-ride replay view. These are useful development tools, but do not yet fulfill the persistent interchangeable-host goal. Earlier desktop-companion and route-pack proposals describe an incremental starting point, not a permanent dependency on desktop analysis.
+The [browser workflow](mobile-browser-workflow.md) now browses the three real recovered iPhone workouts read-only, plus the existing local DuckDB workout and route-analysis archive. The in-memory simulator and isolated replay remain optional tools rather than the default experience. The remaining parity gap is the installed phone host: it retains native recording/history, but does not yet implement native DuckDB or expose workout-library/segment analysis capabilities. Live route recognition is also not implemented.
