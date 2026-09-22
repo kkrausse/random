@@ -47,6 +47,9 @@ export type Capability =
   | 'database.begin'
   | 'database.commit'
   | 'database.rollback'
+  | 'file.pickArchive'
+  | 'file.read'
+  | 'file.close'
 
 export const PHASE1_BASE_CAPABILITIES: ReadonlyArray<Capability> = [
   'bridge.ping', 'session.snapshot', 'permissions.status',
@@ -79,8 +82,10 @@ export const DATABASE_CAPABILITIES: ReadonlyArray<Capability> = [
   'database.execute', 'database.query', 'database.queryNext', 'database.bulkInsert',
   'database.begin', 'database.commit', 'database.rollback',
 ]
+/** User-mediated Files picker plus bounded byte reads; interpretation remains web-owned. */
+export const FILE_CAPABILITIES: ReadonlyArray<Capability> = ['file.pickArchive', 'file.read', 'file.close']
 
-export const MOBILE_CAPABILITIES: ReadonlyArray<Capability> = [...PHASE1_CAPABILITIES, ...RECORDING_CAPABILITIES, ...ARCHIVE_CAPABILITIES, ...JOURNAL_CAPABILITIES, ...DATABASE_CAPABILITIES]
+export const MOBILE_CAPABILITIES: ReadonlyArray<Capability> = [...PHASE1_CAPABILITIES, ...RECORDING_CAPABILITIES, ...ARCHIVE_CAPABILITIES, ...JOURNAL_CAPABILITIES, ...DATABASE_CAPABILITIES, ...FILE_CAPABILITIES]
 
 export type MobileMethod = 'bridge.hello' | Capability
 export type StatusKind = 'ok' | 'waiting' | 'unavailable' | 'error'
@@ -141,6 +146,9 @@ export interface CommandParams {
   readonly 'database.begin': Record<string, never>
   readonly 'database.commit': { readonly transactionId: string }
   readonly 'database.rollback': { readonly transactionId: string }
+  readonly 'file.pickArchive': Record<string, never>
+  readonly 'file.read': { readonly fileId: string; readonly offset: number; readonly length: number }
+  readonly 'file.close': { readonly fileId: string }
 }
 
 export interface DatabaseStatementParams { readonly sql: string; readonly parameters: readonly unknown[]; readonly transactionId: string | null }
@@ -570,6 +578,9 @@ export interface CommandResults {
   readonly 'database.begin': { readonly transactionId: string }
   readonly 'database.commit': { readonly committed: true }
   readonly 'database.rollback': { readonly rolledBack: true }
+  readonly 'file.pickArchive': { readonly fileId: string; readonly name: string; readonly sizeBytes: number }
+  readonly 'file.read': { readonly dataBase64: string; readonly offset: number; readonly nextOffset: number; readonly sizeBytes: number; readonly done: boolean }
+  readonly 'file.close': { readonly closed: true }
 }
 
 export type BridgeErrorCode = 'invalidRequest' | 'unsupportedVersion' | 'unsupportedMethod' | 'invalidState' | 'revisionConflict' | 'permissionDenied' | 'sensorUnavailable' | 'storageFailure' | 'incompatibleBuild' | 'downloadFailure' | 'internalError'

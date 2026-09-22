@@ -156,7 +156,7 @@ struct RecoveryView: View {
     }
 }
 
-private extension UIApplication {
+extension UIApplication {
     var topViewController: UIViewController? {
         let scene = connectedScenes.compactMap { $0 as? UIWindowScene }.first(where: { $0.activationState == .foregroundActive })
         var controller = scene?.windows.first(where: \.isKeyWindow)?.rootViewController

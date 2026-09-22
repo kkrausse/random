@@ -24,6 +24,7 @@ let recordingCapabilities = [
 let archiveCapabilities = ["archive.list", "archive.detail"]
 let journalCapabilities = ["journal.read"]
 let databaseCapabilities = ["database.execute", "database.query", "database.queryNext", "database.bulkInsert", "database.begin", "database.commit", "database.rollback"]
+let fileCapabilities = ["file.pickArchive", "file.read", "file.close"]
 
 struct BuildFile: Codable, Equatable {
     let path: String

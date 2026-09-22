@@ -60,4 +60,32 @@ xcodebuild -project ios/WorkoutAnalyze.xcodeproj -scheme WorkoutAnalyze \
 
 For a physical-device check, connect and trust the iPhone, enable Developer Mode, select the existing WorkoutAnalyze signing team in Xcode, and run the `WorkoutAnalyze` scheme. Do not change signing credentials for simulator verification. In the app, finish or use an existing saved ride, open **Segments & loops**, and tap **Import & rebuild analysis**. The saved recorder archive remains in SQLite; normalized workouts and analysis are written to the separate native DuckDB file.
 
-Mac-to-iPhone archive bundle transfer is not present in this build. Do not copy a Mac `.duckdb` file over the phone database: a future importer must merge versioned stable workout IDs while preserving the phone journal and local analysis generations.
+## Transfer existing Mac history to iPhone
+
+Build both updated layers before installing; an older native shell does not have the Files picker capability:
+
+```sh
+bun run mobile:build
+xcodebuild -project ios/WorkoutAnalyze.xcodeproj -scheme WorkoutAnalyze \
+  -sdk iphonesimulator -configuration Debug -arch arm64 \
+  CODE_SIGNING_ALLOWED=NO build
+```
+
+For the actual phone, open `ios/WorkoutAnalyze.xcodeproj` in Xcode, select the existing signing team and connected iPhone, then run the `WorkoutAnalyze` scheme. No phone installation was performed while implementing this workflow.
+
+Export on the Mac:
+
+1. Start `bun run mobile:dev` from `/Users/kkrausse/Documents/repos/kkrausse/random/workout-analyze` and open `http://localhost:4317`.
+2. Open **Workout library**.
+3. Tap **Download archive**. The browser downloads `workout-analyze-YYYY-MM-DD.workout-archive.zip` from the existing local `data/fitness.duckdb`; it does not modify that database or source Garmin files.
+4. AirDrop the ZIP to the iPhone and choose **Save to Files**, or move it to iCloud Drive/On My iPhone manually.
+
+Import on the iPhone:
+
+1. Open the newly built Workout Analyze app and open **Workout library**.
+2. Tap **Import from Files**, select the transferred ZIP, and leave the app foregrounded through reading, validation, and merge progress.
+3. Check the inserted/unchanged/conflict counts. Same-ID conflicts are deliberately skipped, never silently replaced.
+4. Return home, open **Segments & loops**, and tap **Import & rebuild analysis**. The bundle deliberately excludes Mac analysis generations, so routes remain empty/stale until this phone-side rebuild completes.
+5. Verify the workout count in **Workout library**, open several old Garmin workouts, and verify route/sample maps. Repeat the import once: it should report the imported workouts as unchanged and insert zero.
+
+The version-1 archive carries normalized canonical workout rows, samples in 10,000-row JSON chunks, source normalization metadata when available, and deterministic revision hashes inside a compressed ZIP. Limits are 128 MiB compressed and 512 MiB expanded. The current web implementation still materializes the compressed archive and its expanded ZIP entries in memory, so very large future archives may need streaming ZIP support; the current real archive (~193k samples) produces about a 5.6 MiB bundle. Native reads are bounded at 128 KiB per bridge response. Do not copy or replace `analysis.duckdb`: import is a transaction into the phone archive and never touches the separate recorder SQLite journal.
