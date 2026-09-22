@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useStore } from 'zustand'
 import type { AvailableSessionSnapshot, Capability, RecorderLocationObservation, StatusRow } from '../../src/shared/mobile'
 import { createRouteMap } from '../../src/shared/route-map'
-import type { MobileStore, Screen } from './store'
+import type { MobileState, MobileStore, Screen } from './store'
 import { isAvailableSession } from './store'
 import { Button } from './components/Button'
 import { AnnotatedRouteMap, segmentColors } from './components/AnnotatedRouteMap'
@@ -23,6 +23,7 @@ const duration = (milliseconds: number) => {
 const distance = (meters: number) => meters >= 1000 ? `${(meters / 1000).toFixed(2)} km` : `${Math.round(meters)} m`
 const speed = (metersPerSecond: number | null) => metersPerSecond === null ? '—' : (metersPerSecond * 3.6).toFixed(1)
 const pending = (requests: Readonly<Record<string, { status: string }>>, prefix?: string) => Object.entries(requests).some(([key, value]) => value.status === 'pending' && (!prefix || key.startsWith(prefix)))
+export const selectLibraryWorkouts = (state: Pick<MobileState, 'libraryWorkouts'>) => state.libraryWorkouts
 const Pill = ({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: string }) => <span className={`pill pill-${tone}`}>{children}</span>
 const TopBar = ({ title, back, action }: { title: string; back?: () => void; action?: React.ReactNode }) => <header className="topbar"><div>{back && <button className="icon-button" onClick={back} aria-label="Back"><ArrowLeft /></button>}</div><strong>{title}</strong><div>{action}</div></header>
 const UtilityButtons = ({ store }: { store: MobileStore }) => {
@@ -101,7 +102,7 @@ const Replay = ({ store }: { store: MobileStore }) => {
   </main>
 }
 
-const History = ({ store }: { store: MobileStore }) => {
+export const History = ({ store }: { store: MobileStore }) => {
   const items = useStore(store, (state) => state.savedWorkouts)
   const requests = useStore(store, (state) => state.requests)
   const open = useStore(store, (state) => state.openSavedWorkout)
@@ -111,7 +112,8 @@ const History = ({ store }: { store: MobileStore }) => {
   const reload = useStore(store, (value) => value.loadSavedWorkouts)
   const notice = useStore(store, (value) => value.notices.recording)
   const analysisAvailable = useStore(store, (value) => value.analysisHostAvailable)
-  const normalized = useStore(store, (value) => new Set(value.libraryWorkouts.filter((workout) => workout.id.startsWith('iphone:')).map((workout) => workout.sourceActivityId)))
+  const libraryWorkouts = useStore(store, selectLibraryWorkouts)
+  const normalized = new Set(libraryWorkouts.filter((workout) => workout.id.startsWith('iphone:')).map((workout) => workout.sourceActivityId))
   return <main className="app-shell"><TopBar title="Saved workouts" back={() => setScreen('home')} /><section className="page-heading"><h1>iPhone archive</h1><p>{source ?? 'Native iPhone storage'} · durable recorder history.</p></section><section className="archive-analysis-boundary"><RouteIcon /><div><strong>{normalized.size === items.length && items.length ? 'Included in analysis' : 'Ready to import'}</strong><p>Import uses durable recorder observations without changing the original iPhone archive.</p>{analysisAvailable && <Button onClick={() => setScreen('routes')}><RefreshCw /> Import &amp; analyze</Button>}</div></section>{state === 'loading' && <p className="notice">Loading the durable archive…</p>}{state === 'error' && <><p className="notice notice-error" role="alert">{notice ?? 'The archive could not be loaded.'}</p><Button className="full" onClick={() => void reload()}><RefreshCw /> Retry archive</Button></>}<section className="history-list">{items.map((item) => <button key={item.savedWorkoutId} onClick={() => void open(item.savedWorkoutId)} disabled={pending(requests, 'archive-detail')}><Bike /><span><strong>{new Date(item.startedAt).toLocaleString()}</strong><small>{distance(item.metrics.distanceM)} · {duration(item.durationMs)} · {item.observationCount.toLocaleString()} normalized recorder events{item.rawEventCount ? ` · ${item.rawEventCount.toLocaleString()} raw` : ''} · {normalized.has(item.sessionId) ? 'included in analysis' : 'ready to import'}</small></span><ChevronRight /></button>)}{state === 'empty' && <p className="notice">The archive loaded successfully and contains no finished workouts.</p>}</section></main>
 }
 
