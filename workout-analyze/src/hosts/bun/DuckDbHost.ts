@@ -1,7 +1,7 @@
 import { DuckDBInstance, DuckDBTimestampTZValue } from '@duckdb/node-api'
 import type { DuckDBConnection, DuckDBValue } from '@duckdb/node-api'
 
-import type { DatabaseHost, DatabaseValue } from '../../engine/database'
+import type { DatabaseHost, DatabaseValue } from '../../engine/database.ts'
 
 const nativeValue = (value: DatabaseValue): DuckDBValue => value && typeof value === 'object'
   ? new DuckDBTimestampTZValue(BigInt(new Date(value.value).getTime()) * 1_000n)
@@ -12,7 +12,7 @@ const identifier = (value: string) => {
   return value
 }
 
-const connectionHost = (connection: DuckDBConnection, inTransaction = false): DatabaseHost => ({
+export const createBunDuckDbConnectionHost = (connection: DuckDBConnection, inTransaction = false): DatabaseHost => ({
   async execute(sql, parameters = []) {
     await connection.run(sql, parameters.map(nativeValue))
   },
@@ -45,7 +45,7 @@ const connectionHost = (connection: DuckDBConnection, inTransaction = false): Da
     if (inTransaction) throw new Error('Nested database transactions are not supported')
     await connection.run('BEGIN TRANSACTION')
     try {
-      const result = await run(connectionHost(connection, true))
+      const result = await run(createBunDuckDbConnectionHost(connection, true))
       await connection.run('COMMIT')
       return result
     } catch (error) {
@@ -64,7 +64,7 @@ export const withBunDuckDbHost = async <A>(path: string, run: (host: DatabaseHos
   const instance = await DuckDBInstance.create(path)
   const connection = await instance.connect()
   try {
-    return await run(connectionHost(connection))
+    return await run(createBunDuckDbConnectionHost(connection))
   } finally {
     connection.closeSync()
     instance.closeSync()

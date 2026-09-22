@@ -7,3 +7,4 @@
   - Reproduction: run that CLI's `execute 'return { url: page.url(), title: await page.title() }'`.
   - Exact error, also repeated on navigation attempt: `Relay is draining for an explicit restart; retry after it completes`.
   - Expected: create a visible page and return a continuation session. Actual: execute exits 1; status reports zero active targets and seven CDP clients. This session did not request a restart or force-stop anything.
+  - 2026-09-22 recurrence: two Bun-backed CLI attempts to open the integrated `http://localhost:4317/` workflow at 390 × 844 returned the same draining error. `browser-control doctor` reported matching 0.7.0 builds, compatible connected extension, zero active targets/CDP clients, and 74 disconnected retained sessions. HTTP endpoint and domain-query verification succeeded, but no visible page could be created.
