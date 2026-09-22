@@ -169,6 +169,9 @@ enum ContractValidation {
                   rows.allSatisfy({ $0.count == columns.count }) else { return false }
             return params["transactionId"] is NSNull || validIdentifier(params["transactionId"])
         case "database.commit", "database.rollback": return exactKeys(params, ["transactionId"]) && validIdentifier(params["transactionId"])
+        case "file.downloadArchive":
+            guard exactKeys(params, ["url"]), let raw = params["url"] as? String, raw.count <= 2048, let url = URL(string: raw) else { return false }
+            return url.scheme?.lowercased() == "https" && url.user == nil && url.password == nil
         case "file.read":
             return exactKeys(params, ["fileId", "offset", "length"]) && validIdentifier(params["fileId"])
                 && integer(params["offset"], min: 0, max: 128 * 1024 * 1024)

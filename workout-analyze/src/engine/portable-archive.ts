@@ -8,7 +8,7 @@ import { sha256 } from './sha256'
 export const PORTABLE_ARCHIVE_FORMAT = 'workout-analyze-canonical-v1' as const
 export const PORTABLE_ARCHIVE_EXTENSION = '.workout-archive.zip'
 const SAMPLE_CHUNK_SIZE = 10_000
-const MAX_COMPRESSED_BYTES = 128 * 1024 * 1024
+export const PORTABLE_ARCHIVE_MAX_COMPRESSED_BYTES = 128 * 1024 * 1024
 const MAX_EXPANDED_BYTES = 512 * 1024 * 1024
 const activityColumns = ['id', 'source', 'source_activity_id', 'sport', 'started_at', 'duration_seconds', 'distance_m', 'ascent_m', 'avg_hr_bpm', 'max_hr_bpm'] as const
 const sampleColumns = ['activity_id', 'timestamp', 'lat', 'lon', 'distance_m', 'altitude_m', 'speed_mps', 'heart_rate_bpm', 'cadence', 'power_w'] as const
@@ -45,8 +45,8 @@ const validSample = (row: unknown): row is JsonValue[] => Array.isArray(row) && 
   && row.slice(1).every(finiteOrNull)
 const revisionFor = (activity: PortableActivity, samples: readonly JsonValue[][], provenance: PortableWorkout['provenance']) => sha256(JSON.stringify({ activity, samples, provenance }))
 
-export const exportPortableArchive = async (database: DatabaseHost, onProgress?: (value: ArchiveProgress) => void): Promise<Uint8Array> => {
-  await ensureIphoneNormalizationSchema(database)
+export const exportPortableArchive = async (database: DatabaseHost, onProgress?: (value: ArchiveProgress) => void, options: { readonly prepareSchema?: boolean } = {}): Promise<Uint8Array> => {
+  if (options.prepareSchema !== false) await ensureIphoneNormalizationSchema(database)
   const rows = await database.query(`SELECT id, source, source_activity_id, sport, started_at::VARCHAR started_at,
     duration_seconds, distance_m, ascent_m, avg_hr_bpm, max_hr_bpm FROM activities ORDER BY id`)
   const provenanceRows = await database.query('SELECT activity_id, input_kind, normalization_version, source_version FROM normalization_sources')
@@ -81,7 +81,7 @@ export const exportPortableArchive = async (database: DatabaseHost, onProgress?:
 }
 
 const parseBundle = (bytes: Uint8Array, onProgress?: (value: ArchiveProgress) => void) => {
-  if (!bytes.length || bytes.length > MAX_COMPRESSED_BYTES) throw new Error('Archive is empty or exceeds the 128 MiB import limit')
+  if (!bytes.length || bytes.length > PORTABLE_ARCHIVE_MAX_COMPRESSED_BYTES) throw new Error('Archive is empty or exceeds the 128 MiB import limit')
   onProgress?.({ stage: 'validating', completed: 0, total: bytes.length })
   let files: Record<string, Uint8Array>
   let declaredExpanded = 0

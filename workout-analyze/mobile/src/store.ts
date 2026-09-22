@@ -19,7 +19,7 @@ import { getArchiveActivity, getArchiveAnalysisSettings, getArchiveRoute, listAr
 import { rebuildRouteAnalysis } from '../../src/engine/analysis'
 import { ingestIphoneWorkouts, iphoneActivityId, type IphoneIngestionSummary } from '../../src/engine/iphone-normalization'
 import { exportPortableArchive, importPortableArchive, PORTABLE_ARCHIVE_EXTENSION, type ArchiveImportSummary, type ArchiveProgress } from '../../src/engine/portable-archive'
-import { downloadArchive, pickNativeArchive } from './archive/transfer'
+import { downloadArchive, downloadPortableArchive, pickNativeArchive } from './archive/transfer'
 
 export type Screen = 'home' | 'live' | 'paused' | 'recovery' | 'saved' | 'history' | 'savedDetail' | 'library' | 'libraryDetail' | 'routes' | 'routeDetail' | 'heartRate' | 'settings' | 'diagnostics' | 'replay'
 export type RequestState = { readonly status: 'pending' | 'success' | 'error'; readonly error: string | null }
@@ -103,6 +103,8 @@ export interface MobileState {
   readonly notices: Readonly<Record<NoticeArea, string | null>>
   readonly developmentSourceDraft: string
   readonly developmentSourceDirty: boolean
+  readonly macArchiveSourceDraft: string
+  readonly macArchiveSourceDirty: boolean
   readonly configuredDevelopmentSourceUrl: string | null | undefined
   readonly uiSource: UiSourceState | null
   readonly replay: ReplaySnapshot
@@ -112,6 +114,7 @@ export interface MobileState {
   setScreen(screen: Screen): void
   returnFromUtility(): void
   setDevelopmentSourceDraft(url: string): void
+  setMacArchiveSourceDraft(url: string): void
   startWorkout(startPolicy: 'immediate' | 'waitForReliableLocation'): Promise<void>
   pauseWorkout(): Promise<void>
   resumeWorkout(): Promise<void>
@@ -128,6 +131,7 @@ export interface MobileState {
   rebuildAnalysis(): Promise<void>
   exportCanonicalArchive(): Promise<void>
   importCanonicalArchive(): Promise<void>
+  importCanonicalArchiveFromMac(): Promise<void>
   requestPermission(permission: 'locationWhenInUse' | 'bluetooth'): Promise<void>
   startLocation(backgroundMode: 'foregroundOnly' | 'continueWhenBackgrounded'): Promise<void>
   stopLocation(): Promise<void>
@@ -262,7 +266,8 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
         return {
           bridge, recorderSupported, session: snapshot.session, permissions: snapshot.permissions, builds: snapshot.appBuild,
           diagnostics: snapshot.diagnostics, location: snapshot.location, heartRate: snapshot.heartRate, uiSource, configuredDevelopmentSourceUrl,
-          ...(!state.developmentSourceDirty && configuredDevelopmentSourceUrl ? { developmentSourceDraft: configuredDevelopmentSourceUrl } : {}),
+           ...(!state.developmentSourceDirty && configuredDevelopmentSourceUrl ? { developmentSourceDraft: configuredDevelopmentSourceUrl } : {}),
+           ...(!state.macArchiveSourceDirty && configuredDevelopmentSourceUrl ? { macArchiveSourceDraft: configuredDevelopmentSourceUrl } : {}),
            ...(!['settings', 'diagnostics', 'heartRate', 'history', 'savedDetail', 'library', 'libraryDetail', 'routes', 'routeDetail', 'replay'].includes(state.screen) && !(snapshot.session.state === 'finished' && state.screen === 'home') ? { screen: screenForSession(snapshot.session) } : {}),
         }
       })
@@ -293,6 +298,15 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
       if (!isAvailableSession(session) || !session.sessionId) throw new Error('No active workout session')
       return session
     }
+    const mergeCanonicalArchive = async (bytes: Uint8Array) => {
+      if (!database) throw new Error('Archive import requires a local database host')
+      const archiveImport = await importPortableArchive(database, bytes, (archiveTransferProgress) => set({ archiveTransferProgress }))
+      set({ archiveImport })
+      await Promise.all([get().loadLibrary(), get().loadRoutes()])
+      setNotice('recording', archiveImport.conflicts.length
+        ? `Imported ${archiveImport.inserted}; skipped ${archiveImport.unchanged} unchanged and ${archiveImport.conflicts.length} same-ID conflicts. Rebuild analysis next.`
+        : `Imported ${archiveImport.inserted}; ${archiveImport.unchanged} unchanged. Rebuild analysis next.`)
+    }
 
     return {
       screen: 'home', returnScreen: 'home', bridge: client.getState(), session: client.getState().session, recorderSupported: false,
@@ -300,7 +314,8 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
       trail: [], observationCursor: null, rawJournalSequence: null, recordingIssues: [], savedWorkoutId: null, requests: {},
        savedWorkouts: [], savedWorkoutDetail: null, savedWorkoutNormalizedDetail: null, savedWorkoutMatches: [], archiveSourceLabel: localArchive?.label ?? null, archiveLoadState: localArchive ? 'loading' : 'unavailable',
          analysisHostAvailable: Boolean(database), libraryWorkouts: [], libraryWorkoutDetail: null, libraryWorkoutMatches: [], routes: [], routeDetail: null, analysisSettings: null, iphoneIngestion: null, archiveTransferProgress: null, archiveImport: null,
-       notices: { recording: null, diagnostics: null, sensors: null, settings: null }, developmentSourceDraft: recommendedDevelopmentUrl, developmentSourceDirty: false,
+        notices: { recording: null, diagnostics: null, sensors: null, settings: null }, developmentSourceDraft: recommendedDevelopmentUrl, developmentSourceDirty: false,
+       macArchiveSourceDraft: recommendedDevelopmentUrl, macArchiveSourceDirty: false,
       configuredDevelopmentSourceUrl: undefined, uiSource: null, replay: initialReplay,
       start() {
         if (started) return () => undefined
@@ -333,7 +348,7 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
             set((state) => {
               const uiSource = sourceStateFromDiagnostics(diagnostics)
               const configuredDevelopmentSourceUrl = uiSource?.configured.kind === 'development' ? uiSource.configured.url : uiSource ? null : state.configuredDevelopmentSourceUrl
-              return { permissions, builds, diagnostics, uiSource, configuredDevelopmentSourceUrl, ...(!state.developmentSourceDirty && configuredDevelopmentSourceUrl ? { developmentSourceDraft: configuredDevelopmentSourceUrl } : {}) }
+               return { permissions, builds, diagnostics, uiSource, configuredDevelopmentSourceUrl, ...(!state.developmentSourceDirty && configuredDevelopmentSourceUrl ? { developmentSourceDraft: configuredDevelopmentSourceUrl } : {}), ...(!state.macArchiveSourceDirty && configuredDevelopmentSourceUrl ? { macArchiveSourceDraft: configuredDevelopmentSourceUrl } : {}) }
             })
           }
         } catch (error) { if (generation === pollGeneration) setNotice('diagnostics', message(error, 'Refresh failed')) }
@@ -350,6 +365,7 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
       },
       returnFromUtility() { set((state) => ({ screen: state.returnScreen })) },
       setDevelopmentSourceDraft(developmentSourceDraft) { set({ developmentSourceDraft, developmentSourceDirty: true }) },
+      setMacArchiveSourceDraft(macArchiveSourceDraft) { set({ macArchiveSourceDraft, macArchiveSourceDirty: true }) },
       startWorkout(startPolicy) { return run('workout-start', 'recording', async () => { const result = await client.request('workout.start', { expectedRevision: get().session?.revision ?? 0, sport: 'cycling', startPolicy }); set({ savedWorkoutId: null }); installSession(result) }) },
       pauseWorkout() { return run('workout-pause', 'recording', async () => { const session = currentAvailableSession(); installSession(await client.request('workout.pause', { sessionId: session.sessionId!, expectedRevision: session.revision })) }) },
       resumeWorkout() { return run('workout-resume', 'recording', async () => { const session = currentAvailableSession(); installSession(await client.request('workout.resume', { sessionId: session.sessionId!, expectedRevision: session.revision })) }) },
@@ -411,16 +427,18 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
         importCanonicalArchive() { return run('archive-transfer-import', 'recording', async () => {
           if (!database) throw new Error('Archive import requires a local database host')
           if (!get().bridge.capabilities.includes('file.pickArchive')) throw new Error('This native shell does not provide the Files archive picker')
-          try {
-            const selected = await pickNativeArchive(client, (completed, total) => set({ archiveTransferProgress: { stage: 'reading', completed, total } }))
-            const archiveImport = await importPortableArchive(database, selected.bytes, (archiveTransferProgress) => set({ archiveTransferProgress }))
-            set({ archiveImport })
-            await Promise.all([get().loadLibrary(), get().loadRoutes()])
-            setNotice('recording', archiveImport.conflicts.length
-              ? `Imported ${archiveImport.inserted}; skipped ${archiveImport.unchanged} unchanged and ${archiveImport.conflicts.length} same-ID conflicts. Rebuild analysis next.`
-              : `Imported ${archiveImport.inserted}; ${archiveImport.unchanged} unchanged. Rebuild analysis next.`)
-          } finally { set({ archiveTransferProgress: null }) }
-        }) },
+           try {
+             const selected = await pickNativeArchive(client, (completed, total) => set({ archiveTransferProgress: { stage: 'reading', completed, total } }))
+             await mergeCanonicalArchive(selected.bytes)
+           } finally { set({ archiveTransferProgress: null }) }
+         }) },
+         importCanonicalArchiveFromMac() { return run('archive-transfer-mac', 'recording', async () => {
+           if (!database) throw new Error('Archive import requires a local database host')
+           try {
+             const selected = await downloadPortableArchive(client, get().bridge.capabilities.includes('file.downloadArchive'), get().macArchiveSourceDraft, (completed, total) => set({ archiveTransferProgress: { stage: 'reading', completed, total } }))
+             await mergeCanonicalArchive(selected.bytes)
+           } finally { set({ archiveTransferProgress: null }) }
+         }) },
       requestPermission(permission) { return run(`permission-${permission}`, 'sensors', async () => { await client.request('permissions.request', { permission }); await synchronize() }) },
       startLocation(backgroundMode) { return run(`location-${backgroundMode}`, 'sensors', async () => { await client.request('location.start', { desiredAccuracy: 'best', distanceFilterM: 0, backgroundMode, maxDurationSeconds: 120 }); await synchronize() }) },
       stopLocation() { return run('location-stop', 'sensors', async () => { const id = get().location?.probeId; if (id) await client.request('location.stop', { probeId: id }); await synchronize() }) },

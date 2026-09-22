@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class ArchiveFileService: NSObject, UIDocumentPickerDelegate {
-    private struct OpenFile { let handle: FileHandle; let url: URL; let scoped: Bool; let size: Int }
+    private struct OpenFile { let handle: FileHandle; let url: URL; let scoped: Bool; let removeOnClose: Bool; let size: Int }
     private var files: [String: OpenFile] = [:]
     private var pickerContinuation: CheckedContinuation<[String: Any], Error>?
 
@@ -31,9 +31,25 @@ final class ArchiveFileService: NSObject, UIDocumentPickerDelegate {
             guard (1...(128 * 1024 * 1024)).contains(size) else { if scoped { url.stopAccessingSecurityScopedResource() }; throw ShellError.invalidRequest("Archive must be between 1 byte and 128 MiB") }
             let handle = try FileHandle(forReadingFrom: url)
             let id = "file-\(UUID().uuidString.lowercased())"
-            files[id] = OpenFile(handle: handle, url: url, scoped: scoped, size: size)
+            files[id] = OpenFile(handle: handle, url: url, scoped: scoped, removeOnClose: false, size: size)
             continuation.resume(returning: ["fileId": id, "name": values.name ?? url.lastPathComponent, "sizeBytes": size])
         } catch { continuation.resume(throwing: error) }
+    }
+
+    func download(_ url: URL) async throws -> [String: Any] {
+        let data = try await BoundedHTTPSDownload.fetch(url, limit: 128 * 1024 * 1024)
+        guard !data.isEmpty else { throw ShellError.download("Downloaded archive was empty") }
+        let localURL = FileManager.default.temporaryDirectory.appendingPathComponent("workout-analyze-\(UUID().uuidString.lowercased()).workout-archive.zip")
+        do {
+            try data.write(to: localURL, options: .atomic)
+            let handle = try FileHandle(forReadingFrom: localURL)
+            let id = "file-\(UUID().uuidString.lowercased())"
+            files[id] = OpenFile(handle: handle, url: localURL, scoped: false, removeOnClose: true, size: data.count)
+            return ["fileId": id, "name": localURL.lastPathComponent, "sizeBytes": data.count]
+        } catch {
+            try? FileManager.default.removeItem(at: localURL)
+            throw ShellError.storage("Downloaded archive could not be staged: \(error.localizedDescription)")
+        }
     }
 
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
@@ -54,6 +70,7 @@ final class ArchiveFileService: NSObject, UIDocumentPickerDelegate {
         guard let file = files.removeValue(forKey: id) else { throw ShellError.invalidState("Archive file is closed or missing") }
         try file.handle.close()
         if file.scoped { file.url.stopAccessingSecurityScopedResource() }
+        if file.removeOnClose { try? FileManager.default.removeItem(at: file.url) }
     }
 }
 
@@ -210,6 +227,7 @@ final class BridgeDispatcher {
             guard let database else { throw ShellError.invalidState("Native DuckDB is unavailable") }
             try await database.rollback(params["transactionId"] as! String); return ["rolledBack": true]
         case "file.pickArchive": return try await archiveFiles.pick()
+        case "file.downloadArchive": return try await archiveFiles.download(URL(string: params["url"] as! String)!)
         case "file.read":
             return try archiveFiles.read(id: params["fileId"] as! String, offset: (params["offset"] as! NSNumber).intValue, length: (params["length"] as! NSNumber).intValue)
         case "file.close":
@@ -248,7 +266,7 @@ final class BridgeDispatcher {
     }
 
     private func isMutation(_ method: String) -> Bool {
-        ["permissions.request", "location.start", "location.stop", "heartRate.scan", "heartRate.stopScan", "heartRate.connect", "heartRate.disconnect", "diagnostics.runChecks", "diagnostics.export", "appBuild.download", "appBuild.activate", "appBuild.rollback", "devSource.configure", "ui.reload", "database.execute", "database.bulkInsert", "database.begin", "database.commit", "database.rollback", "file.pickArchive", "file.close"].contains(method)
+        ["permissions.request", "location.start", "location.stop", "heartRate.scan", "heartRate.stopScan", "heartRate.connect", "heartRate.disconnect", "diagnostics.runChecks", "diagnostics.export", "appBuild.download", "appBuild.activate", "appBuild.rollback", "devSource.configure", "ui.reload", "database.execute", "database.bulkInsert", "database.begin", "database.commit", "database.rollback", "file.pickArchive", "file.downloadArchive", "file.close"].contains(method)
     }
 
     private func synchronizeRecordingSensors(reply: [String: Any]) {

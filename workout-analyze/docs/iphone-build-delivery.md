@@ -62,7 +62,7 @@ For a physical-device check, connect and trust the iPhone, enable Developer Mode
 
 ## Transfer existing Mac history to iPhone
 
-Build both updated layers before installing; an older native shell does not have the Files picker capability:
+Build both updated layers before installing; an older native shell does not have the bounded HTTPS archive-download capability:
 
 ```sh
 bun run mobile:build
@@ -73,12 +73,14 @@ xcodebuild -project ios/WorkoutAnalyze.xcodeproj -scheme WorkoutAnalyze \
 
 For the actual phone, open `ios/WorkoutAnalyze.xcodeproj` in Xcode, select the existing signing team and connected iPhone, then run the `WorkoutAnalyze` scheme. No phone installation was performed while implementing this workflow.
 
-Export on the Mac:
+Direct import from the Mac (preferred):
 
-1. Start `bun run mobile:dev` from `/Users/kkrausse/Documents/repos/kkrausse/random/workout-analyze` and open `http://localhost:4317`.
-2. Open **Workout library**.
-3. Tap **Download archive**. The browser downloads `workout-analyze-YYYY-MM-DD.workout-archive.zip` from the existing local `data/fitness.duckdb`; it does not modify that database or source Garmin files.
-4. AirDrop the ZIP to the iPhone and choose **Save to Files**, or move it to iCloud Drive/On My iPhone manually.
+1. Start `bun run mobile:dev` from `/Users/kkrausse/Documents/repos/kkrausse/random/workout-analyze`. Tailscale Serve continues to expose that unchanged server at `https://kevins-macbook-pro-2.tail7e28fb.ts.net:8443/`.
+2. On the iPhone, open **Workout library**. Confirm **Local Mac URL** points at the current development origin (it follows the configured development source until edited), then tap **Import from Mac**.
+3. The native shell downloads `GET /__workout/portable-archive` over trusted HTTPS with a 128 MiB bound. The endpoint generates the existing version-1 archive using queries only; it does not modify `data/fitness.duckdb`, Garmin source files, or the iPhone recorder journal.
+4. Leave the app foregrounded through download, validation, and merge. Check inserted/unchanged/conflict counts, then open **Segments & loops** and tap **Import & rebuild analysis**.
+
+The fallback manual flow remains available: open **Workout library** in the Mac browser, tap **Download archive**, AirDrop the ZIP into Files, then use **Import from Files** on iPhone. Both buttons feed the identical shared TypeScript bundle validation and merge function; same-ID conflicts are skipped and repeat imports are unchanged rather than overwritten.
 
 Import on the iPhone:
 
