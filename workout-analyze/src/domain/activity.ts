@@ -57,3 +57,8 @@ export interface DecodedActivity {
   readonly maxHrBpm: number | null
   readonly samples: ReadonlyArray<ActivitySample>
 }
+
+/** Canonical analysis input, independent of any storage implementation. */
+export interface NormalizedActivity extends DecodedActivity {
+  readonly sourceActivityId: string
+}

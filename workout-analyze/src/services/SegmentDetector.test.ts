@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 
-import type { ImportedActivity } from './Database'
+import type { NormalizedActivity } from '../domain/activity'
 import { detectRoutes, pointDistanceM, resolveDetectionConfig } from './SegmentDetector'
 
-const activity = (id: string, offset: number): ImportedActivity => ({
+const activity = (id: string, offset: number): NormalizedActivity => ({
   sourceActivityId: id,
   sport: 'running',
   startedAt: new Date('2026-01-01T00:00:00Z'),
@@ -25,7 +25,7 @@ const activity = (id: string, offset: number): ImportedActivity => ({
   })),
 })
 
-const routeActivity = (id: string, points: ReadonlyArray<readonly [number, number]>, seconds = 10): ImportedActivity => ({
+const routeActivity = (id: string, points: ReadonlyArray<readonly [number, number]>, seconds = 10): NormalizedActivity => ({
   sourceActivityId: id,
   sport: 'running',
   startedAt: new Date('2026-01-01T00:00:00Z'),
@@ -64,6 +64,7 @@ describe('segment detection', () => {
     expect(result.routes.length).toBeGreaterThan(0)
     expect(result.routes[0]?.workoutCount).toBe(3)
     expect(result.routes[0]?.type).toBe('segment')
+    expect(result.routes[0]?.id).toBe('segment-6c3df8075ecb7c0b5bd0')
     expect(result.traversals).toHaveLength(3)
     expect(detectRoutes(activities, { minWorkoutCount: 4 }).routes).toHaveLength(0)
   })
@@ -73,7 +74,7 @@ describe('segment detection', () => {
   })
 
   test('classifies a closed route repeated across three workouts as a loop', () => {
-    const loop = (id: string, offset: number): ImportedActivity => ({
+    const loop = (id: string, offset: number): NormalizedActivity => ({
       ...activity(id, offset),
       samples: Array.from({ length: 33 }, (_, index) => {
         const angle = index / 32 * Math.PI * 2

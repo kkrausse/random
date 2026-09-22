@@ -1,6 +1,6 @@
 # Architecture north star
 
-Status: design direction agreed in discussion on 2026-09-21; not a description of completed implementation. Foreground consumers and host-side native DuckDB are the current working direction, pending integration verification. This document takes precedence over earlier proposals where they assume desktop-only analysis or a required companion computer.
+Status: design direction agreed in discussion on 2026-09-21. The first Bun analysis slice described below is implemented; foreground journal consumers, browser transport, and Swift-native DuckDB remain pending integration verification. This document takes precedence over earlier proposals where they assume desktop-only analysis or a required companion computer.
 
 ## Same application, interchangeable local hosts
 
@@ -82,6 +82,10 @@ The existing recorded ride has roughly 5,000–6,000 journal events, making batc
 - **Segment analysis:** accept a full rebuild over a defined normalized input revision when workouts or analysis logic change. Incremental route discovery is not a current requirement. This rebuild reads canonical data, not raw journals, unless normalization also changed.
 - **Safe result replacement:** compute replacement results before publishing them. Replace all related derived tables in one transaction, or stage a new result generation and atomically publish it. Do not expose an empty/partial analysis between deletion and reinsertion. Preserve the previous successful results if a run is interrupted, and record their input revision/configuration so staleness is visible.
 - **Replay/seek:** proposed default is isolated replay state rather than rolling back the canonical archive when the playback cursor moves backward. Explicit projection rebuilds replace persisted derived state; ordinary playback need not do so.
+
+### Implemented analysis slice (2026-09-21)
+
+The existing Bun CLI now runs route analysis through a portable TypeScript engine and a small host contract for parameterized SQL, queries, transactions, and bulk insertion. Shared code owns normalized-input queries, analysis table schemas, the detector, and atomic result replacement; the Bun adapter owns only native DuckDB connection/value details. Detector IDs use a portable synchronous SHA-256 implementation and retain their previous values. The browser/WKWebView transport and Swift DuckDB adapter are not implemented yet.
 
 ## Remaining integration questions
 
