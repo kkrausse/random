@@ -15,6 +15,15 @@ import { contextStats, contextUsage, relativeTime, shortenLocation } from "./ses
 const PAGE_SIZE = 100
 export const NEW_SESSION_VALUE = "__claude_sessions_new__"
 const locationKey = (session: SessionInfo) => session.location.directory
+const SESSION_SUMMARY_REFRESH_EVENTS = new Set([
+  "session.created",
+  "session.moved",
+  "session.agent.selected",
+  "session.model.selected",
+  "session.revert.staged",
+  "session.revert.cleared",
+  "session.revert.committed",
+])
 
 export type SessionController = ReturnType<typeof createSessionController>
 
@@ -457,7 +466,8 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
           id = fresh.parentID && !sessions().some((item) => item.id === fresh.parentID) ? fresh.parentID : undefined
         }
         setLiveVersion((version) => version + 1)
-        refreshAttention(liveSessions().filter((session) => seen.has(session.id)), true)
+        // Permission/form events refresh attention explicitly. Metadata reads
+        // must not invalidate those caches and create a session-event loop.
         refreshAttention(liveSessions())
       })).done
     }
@@ -535,16 +545,37 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
           if (["permission.asked", "permission.replied", "form.created", "form.replied", "form.cancelled"].includes(details.type)) {
             setReviewVersion((version) => version + 1)
           }
-          // Public data.listen envelope; do not enumerate lifecycle event names.
-          // Token/text fragments and view notifications don't change our summary.
-          if (!details.type.startsWith("session.") || details.type === "session.deleted"
-            || details.type === "session.viewed" || details.type === "session.step.streamed"
-            || details.type.startsWith("session.text.") || details.type.startsWith("session.reasoning.")
-            || details.type.startsWith("session.tool.input.")) return
-          if ("sessionID" in details.data && typeof details.data.sessionID === "string") {
-            if (details.type === "session.created") deletedIDs.delete(details.data.sessionID)
-            refreshFromEvent(details.data.sessionID)
+          if (!details.type.startsWith("session.") || !("sessionID" in details.data)
+            || typeof details.data.sessionID !== "string") return
+          const sessionID = details.data.sessionID
+
+          // Runtime events are already reflected by the host status cache.
+          // Recompute badges without fetching the session, its transcript, or
+          // permission/form caches for every step, tool, usage, and shell event.
+          if (details.type === "session.status" || details.type === "session.idle"
+            || details.type.startsWith("session.execution.")) {
+            setLiveVersion((version) => version + 1)
+            if (details.type === "session.idle") refreshContextForSession(sessionID)
+            return
           }
+          if (details.type === "session.usage.updated") {
+            setSessions((loaded) => loaded.map((session) => session.id === sessionID
+              ? { ...session, cost: details.data.cost, tokens: details.data.tokens }
+              : session))
+            return
+          }
+          if (details.type === "session.renamed") {
+            setSessions((loaded) => loaded.map((session) => session.id === sessionID
+              ? { ...session, title: details.data.title }
+              : session))
+            return
+          }
+          if (!SESSION_SUMMARY_REFRESH_EVENTS.has(details.type)) return
+          if (details.type === "session.created") {
+            deletedIDs.delete(sessionID)
+            queriedSessions.delete(sessionID)
+          }
+          refreshFromEvent(sessionID)
         }),
         context.data.on("permission.asked", (event) => refreshLocationForSession(event.data.sessionID)),
         context.data.on("permission.replied", (event) => refreshLocationForSession(event.data.sessionID)),
