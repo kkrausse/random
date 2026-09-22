@@ -20,15 +20,7 @@ The Bun host copies the complete recovered SQLite trio to a temporary working di
 
 Set `WORKOUT_RECOVERED_ARCHIVE=/absolute/path/to/recording-v1.sqlite` to use another complete recovered archive. Keep its sibling `-wal` and `-shm` files beside it.
 
-## Recording simulator
-
-Open <http://localhost:4317/?simulator=1> for the in-memory recording simulator.
-
-This runs the same mobile React UI used in the iOS WKWebView, with an in-memory replacement for the native bridge. Vite provides hot updates while editing the UI.
-
-Exercise permission → start → pause/resume → finish/save → history → saved detail. Simulated permissions, sensors, exports, and build controls do not invoke iOS services. The simulator uses a short fixed route and fixed metrics; it does not provide a continuously advancing ride. Finishing creates a synthetic saved workout. Reloading resets simulator data.
-
-The browser correctly labels native recording/sensor capabilities unavailable; it does not pretend Bun can record iPhone sensors. The installed iPhone bridge remains the authority for recording and its live device archive. Native DuckDB support is not implemented yet, so the installed shell clearly omits workout-library and segment-analysis entry points.
+The browser correctly labels native recording/sensor capabilities unavailable; it does not pretend Bun can record iPhone sensors. The installed iPhone bridge remains the authority for recording and its live device archive. Native DuckDB support is not implemented yet, so the installed shell clearly omits workout-library and segment-analysis entry points. The old `?simulator=1` and `?fault=…` query parameters are intentionally ignored and open this normal local-host application. Synthetic transports remain test helpers only.
 
 ## Actual recorded ride replay
 
@@ -46,14 +38,14 @@ Replay remains an isolated timeline tool. The default local-host history now rea
 
 ## Development loop
 
-1. Use the simulator at phone size for layout and navigation.
+1. Use the local Bun host at phone size for layout, archive, and analysis navigation.
 2. Use local replay for realistic route geometry and metrics playback.
 3. Edit the mobile React UI/store and inspect updates in the browser.
 4. Verify WKWebView rendering and native behavior on the phone as appropriate.
 
 Phone-size Chromium emulation does not reproduce WebKit, native GPS/BLE, locked-screen recording, SQLite durability, native share sheets, or build installation.
 
-Segment/loop list and detail browsing, workout matches, and explicit analysis rebuild are available through the default local Bun host. Live segment recognition and native Swift DuckDB are not implemented.
+Segment/loop list and detail browsing, annotated normalized-workout maps, effort selection, workout navigation, and explicit analysis rebuild are available through the default local Bun host. Recovered phone workouts remain recorder-observation archives and are not yet normalized into DuckDB, so their maps explicitly show no inferred segment matches. Live segment recognition and native Swift DuckDB are not implemented.
 
 ## Verification on 2026-09-22
 
