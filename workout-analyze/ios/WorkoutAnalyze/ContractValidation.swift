@@ -169,14 +169,15 @@ enum ContractValidation {
                   rows.allSatisfy({ $0.count == columns.count }) else { return false }
             return params["transactionId"] is NSNull || validIdentifier(params["transactionId"])
         case "database.commit", "database.rollback": return exactKeys(params, ["transactionId"]) && validIdentifier(params["transactionId"])
-        case "file.downloadArchive":
-            guard exactKeys(params, ["url"]), let raw = params["url"] as? String, raw.count <= 2048, let url = URL(string: raw) else { return false }
-            return url.scheme?.lowercased() == "https" && url.user == nil && url.password == nil
-        case "file.download":
-            guard exactKeys(params, ["url", "sizeBytes", "sha256"]), let raw = params["url"] as? String, raw.count <= 2048,
-                  let url = URL(string: raw), url.scheme?.lowercased() == "https", url.user == nil, url.password == nil,
-                  integer(params["sizeBytes"], min: 1, max: 256 * 1024 * 1024), let digest = params["sha256"] as? String else { return false }
-            return matches(digest, regex: hash)
+        case "file.create":
+            return exactKeys(params, ["name", "sizeBytes", "sha256"]) && text(params["name"], max: 512)
+                && integer(params["sizeBytes"], min: 1, max: 256 * 1024 * 1024)
+                && (params["sha256"] as? String).map { matches($0, regex: hash) } == true
+        case "file.write":
+            return exactKeys(params, ["fileId", "offset", "dataBase64"]) && validIdentifier(params["fileId"])
+                && integer(params["offset"], min: 0, max: 256 * 1024 * 1024)
+                && (params["dataBase64"] as? String).map { !$0.isEmpty && $0.count <= 131_072 && Data(base64Encoded: $0)?.count ?? 0 <= 96 * 1024 } == true
+        case "file.finalize": return exactKeys(params, ["fileId"]) && validIdentifier(params["fileId"])
         case "file.read":
             return exactKeys(params, ["fileId", "offset", "length"]) && validIdentifier(params["fileId"])
                 && integer(params["offset"], min: 0, max: 128 * 1024 * 1024)

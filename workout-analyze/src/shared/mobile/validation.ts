@@ -65,14 +65,9 @@ const validateParams = (method: MobileMethod, params: unknown): boolean => {
     case 'database.bulkInsert': return exactKeys(params, ['table', 'columns', 'rows', 'transactionId']) && typeof params.table === 'string' && databaseIdentifier.test(params.table) && Array.isArray(params.columns) && params.columns.length > 0 && params.columns.length <= 128 && params.columns.every((value) => typeof value === 'string' && databaseIdentifier.test(value)) && Array.isArray(params.rows) && params.rows.length <= 2_000 && params.rows.every((row) => Array.isArray(row) && row.length === (params.columns as unknown[]).length) && (params.transactionId === null || typeof params.transactionId === 'string' && idPattern.test(params.transactionId))
     case 'database.commit':
     case 'database.rollback': return exactKeys(params, ['transactionId']) && typeof params.transactionId === 'string' && idPattern.test(params.transactionId)
-    case 'file.downloadArchive': {
-      if (!exactKeys(params, ['url']) || !text(params.url, 2048)) return false
-      try { const url = new URL(params.url as string); return url.protocol === 'https:' && !url.username && !url.password } catch { return false }
-    }
-    case 'file.download': {
-      if (!exactKeys(params, ['url', 'sizeBytes', 'sha256']) || !text(params.url, 2048) || !safeInteger(params.sizeBytes, 1, 256 * 1024 * 1024) || typeof params.sha256 !== 'string' || !hashPattern.test(params.sha256)) return false
-      try { const url = new URL(params.url as string); return url.protocol === 'https:' && !url.username && !url.password } catch { return false }
-    }
+    case 'file.create': return exactKeys(params, ['name', 'sizeBytes', 'sha256']) && text(params.name, 512) && safeInteger(params.sizeBytes, 1, 256 * 1024 * 1024) && typeof params.sha256 === 'string' && hashPattern.test(params.sha256)
+    case 'file.write': return exactKeys(params, ['fileId', 'offset', 'dataBase64']) && typeof params.fileId === 'string' && idPattern.test(params.fileId) && safeInteger(params.offset, 0, 256 * 1024 * 1024) && base64Bytes(params.dataBase64, 131_072)
+    case 'file.finalize': return exactKeys(params, ['fileId']) && typeof params.fileId === 'string' && idPattern.test(params.fileId)
     case 'file.read': return exactKeys(params, ['fileId', 'offset', 'length']) && typeof params.fileId === 'string' && idPattern.test(params.fileId) && safeInteger(params.offset) && safeInteger(params.length, 1, 128 * 1024)
     case 'file.close': return exactKeys(params, ['fileId']) && typeof params.fileId === 'string' && idPattern.test(params.fileId)
     default: return empty(params)
@@ -369,8 +364,9 @@ const validSuccessResult = (method: MobileMethod, value: unknown): boolean => {
     case 'database.query':
     case 'database.queryNext': return databaseQueryPage(value)
     case 'file.pickArchive':
-    case 'file.downloadArchive': return record(value) && exactKeys(value, ['fileId', 'name', 'sizeBytes']) && text(value.fileId, 128) && text(value.name, 512) && safeInteger(value.sizeBytes, 1, 128 * 1024 * 1024)
-    case 'file.download': return record(value) && exactKeys(value, ['fileId', 'name', 'sizeBytes']) && text(value.fileId, 128) && text(value.name, 512) && safeInteger(value.sizeBytes, 1, 256 * 1024 * 1024)
+    case 'file.create': return record(value) && exactKeys(value, ['fileId', 'name', 'sizeBytes']) && text(value.fileId, 128) && text(value.name, 512) && safeInteger(value.sizeBytes, 1, 256 * 1024 * 1024)
+    case 'file.write': return record(value) && exactKeys(value, ['nextOffset', 'sizeBytes']) && safeInteger(value.nextOffset, 1, 256 * 1024 * 1024) && safeInteger(value.sizeBytes, 1, 256 * 1024 * 1024) && (value.nextOffset as number) <= (value.sizeBytes as number)
+    case 'file.finalize': return record(value) && exactKeys(value, ['finalized', 'sizeBytes', 'sha256']) && value.finalized === true && safeInteger(value.sizeBytes, 1, 256 * 1024 * 1024) && typeof value.sha256 === 'string' && hashPattern.test(value.sha256)
     case 'file.read': return record(value) && exactKeys(value, ['dataBase64', 'offset', 'nextOffset', 'sizeBytes', 'done']) && typeof value.dataBase64 === 'string' && value.dataBase64.length <= 180_000 && safeInteger(value.offset) && safeInteger(value.nextOffset) && safeInteger(value.sizeBytes, 1, 128 * 1024 * 1024) && typeof value.done === 'boolean' && (value.nextOffset as number) >= (value.offset as number)
     case 'file.close': return record(value) && exactKeys(value, ['closed']) && value.closed === true
     case 'database.bulkInsert': return exactKeys(value, ['inserted']) && safeInteger(value.inserted)

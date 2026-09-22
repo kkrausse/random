@@ -32,10 +32,14 @@ const json = (value: unknown) => JSON.stringify(value, (_key, item) => typeof it
 const parse = (value: string) => JSON.parse(value, (_key, item) => item && typeof item === 'object' && Object.keys(item).length === 1 && typeof item.$databaseBigInt === 'string' ? BigInt(item.$databaseBigInt) : item) as Operation
 
 const allowedArchiveOrigin = (origin: string) => {
+  // WKWebView's bundled custom-scheme page can be reported either explicitly
+  // or as an opaque `null` origin depending on WebKit version.
+  if (origin === 'null' || origin === 'workout-analyze://app') return true
   try {
     const url = new URL(origin)
     return url.protocol === 'https:' && url.hostname.endsWith('.ts.net')
       || url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname)
+      || url.protocol === 'workout-analyze:' && url.hostname === 'app'
   } catch { return false }
 }
 

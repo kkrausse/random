@@ -5,7 +5,14 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class ArchiveFileService: NSObject, UIDocumentPickerDelegate {
-    private struct OpenFile { let handle: FileHandle; let url: URL; let scoped: Bool; let removeOnClose: Bool; let size: Int }
+    private final class OpenFile {
+        var handle: FileHandle; let url: URL; let scoped: Bool; let removeOnClose: Bool; let size: Int
+        let expectedSHA256: String?; var written: Int; var finalized: Bool
+        init(handle: FileHandle, url: URL, scoped: Bool, removeOnClose: Bool, size: Int, expectedSHA256: String? = nil, written: Int? = nil, finalized: Bool = true) {
+            self.handle = handle; self.url = url; self.scoped = scoped; self.removeOnClose = removeOnClose; self.size = size
+            self.expectedSHA256 = expectedSHA256; self.written = written ?? size; self.finalized = finalized
+        }
+    }
     private var files: [String: OpenFile] = [:]
     private var pickerContinuation: CheckedContinuation<[String: Any], Error>?
 
@@ -37,48 +44,36 @@ final class ArchiveFileService: NSObject, UIDocumentPickerDelegate {
         } catch { continuation.resume(throwing: error) }
     }
 
-    func download(_ url: URL) async throws -> [String: Any] {
-        let data = try await BoundedHTTPSDownload.fetch(url, limit: 128 * 1024 * 1024)
-        guard !data.isEmpty else { throw ShellError.download("Downloaded archive was empty") }
-        let localURL = FileManager.default.temporaryDirectory.appendingPathComponent("workout-analyze-\(UUID().uuidString.lowercased()).workout-archive.zip")
+    func create(name: String, size: Int, sha256: String) throws -> [String: Any] {
+        let suffix = name.hasSuffix(".parquet") ? ".parquet" : ".bin"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("workout-analyze-\(UUID().uuidString.lowercased())\(suffix)")
+        guard FileManager.default.createFile(atPath: url.path, contents: nil) else { throw ShellError.storage("Native temporary file could not be created") }
         do {
-            try data.write(to: localURL, options: .atomic)
-            let handle = try FileHandle(forReadingFrom: localURL)
             let id = "file-\(UUID().uuidString.lowercased())"
-            files[id] = OpenFile(handle: handle, url: localURL, scoped: false, removeOnClose: true, size: data.count)
-            return ["fileId": id, "name": localURL.lastPathComponent, "sizeBytes": data.count]
-        } catch {
-            try? FileManager.default.removeItem(at: localURL)
-            throw ShellError.storage("Downloaded archive could not be staged: \(error.localizedDescription)")
-        }
+            files[id] = OpenFile(handle: try FileHandle(forWritingTo: url), url: url, scoped: false, removeOnClose: true, size: size, expectedSHA256: sha256, written: 0, finalized: false)
+            return ["fileId": id, "name": name, "sizeBytes": size]
+        } catch { try? FileManager.default.removeItem(at: url); throw error }
     }
 
-    func downloadVerified(_ url: URL, expectedSize: Int, expectedSHA256: String) async throws -> [String: Any] {
-        guard url.scheme?.lowercased() == "https" else { throw ShellError.download("HTTPS is required") }
-        var request = URLRequest(url: url); request.cachePolicy = .reloadIgnoringLocalCacheData; request.timeoutInterval = 120
-        let (downloaded, response) = try await URLSession.shared.download(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), http.url?.scheme?.lowercased() == "https" else {
-            throw ShellError.download("Unexpected Parquet download response")
-        }
-        let size = (try downloaded.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0
-        guard size == expectedSize, (1...(256 * 1024 * 1024)).contains(size) else { throw ShellError.download("Parquet download size did not match its manifest") }
-        let input = try FileHandle(forReadingFrom: downloaded)
+    func write(id: String, offset: Int, dataBase64: String) throws -> [String: Any] {
+        guard let file = files[id], !file.finalized else { throw ShellError.invalidState("Writable host file is closed, missing, or finalized") }
+        guard offset == file.written, let data = Data(base64Encoded: dataBase64), !data.isEmpty, data.count <= 96 * 1024,
+              file.written + data.count <= file.size else { throw ShellError.invalidRequest("Host file write offset or bytes are invalid") }
+        try file.handle.write(contentsOf: data); file.written += data.count
+        return ["nextOffset": file.written, "sizeBytes": file.size]
+    }
+
+    func finalize(id: String) throws -> [String: Any] {
+        guard let file = files[id], !file.finalized, file.written == file.size, let expected = file.expectedSHA256 else { throw ShellError.invalidState("Host file is incomplete, missing, or already finalized") }
+        try file.handle.synchronize(); try file.handle.close()
+        let input = try FileHandle(forReadingFrom: file.url)
         var digest = SHA256()
         while true { let chunk = try input.read(upToCount: 1024 * 1024) ?? Data(); if chunk.isEmpty { break }; digest.update(data: chunk) }
         try input.close()
-        let hash = digest.finalize().map { String(format: "%02x", $0) }.joined()
-        guard hash == expectedSHA256 else { throw ShellError.download("Parquet download hash did not match its manifest") }
-        let localURL = FileManager.default.temporaryDirectory.appendingPathComponent("workout-analyze-\(UUID().uuidString.lowercased()).parquet")
-        do {
-            try FileManager.default.moveItem(at: downloaded, to: localURL)
-            let handle = try FileHandle(forReadingFrom: localURL)
-            let id = "file-\(UUID().uuidString.lowercased())"
-            files[id] = OpenFile(handle: handle, url: localURL, scoped: false, removeOnClose: true, size: size)
-            return ["fileId": id, "name": localURL.lastPathComponent, "sizeBytes": size]
-        } catch {
-            try? FileManager.default.removeItem(at: localURL)
-            throw ShellError.storage("Downloaded Parquet file could not be staged: \(error.localizedDescription)")
-        }
+        let actual = digest.finalize().map { String(format: "%02x", $0) }.joined()
+        guard actual == expected else { files.removeValue(forKey: id); try? FileManager.default.removeItem(at: file.url); throw ShellError.storage("Host file hash did not match its manifest") }
+        file.handle = try FileHandle(forReadingFrom: file.url); file.finalized = true
+        return ["finalized": true, "sizeBytes": file.size, "sha256": actual]
     }
 
     func databaseParameters(_ values: [Any]) throws -> [Any] {
@@ -86,6 +81,7 @@ final class ArchiveFileService: NSObject, UIDocumentPickerDelegate {
             guard let reference = value as? [String: Any], Set(reference.keys) == Set(["type", "id"]), reference["type"] as? String == "hostFile",
                   let id = reference["id"] as? String else { return value }
             guard let file = files[id] else { throw ShellError.invalidState("Database file handle is closed or missing") }
+            guard file.finalized else { throw ShellError.invalidState("Database file handle is not finalized") }
             return file.url.path
         }
     }
@@ -97,6 +93,7 @@ final class ArchiveFileService: NSObject, UIDocumentPickerDelegate {
 
     func read(id: String, offset: Int, length: Int) throws -> [String: Any] {
         guard let file = files[id] else { throw ShellError.invalidState("Archive file is closed or missing") }
+        guard file.finalized else { throw ShellError.invalidState("Archive file is not finalized") }
         guard offset <= file.size else { throw ShellError.invalidRequest("Archive read offset exceeds file size") }
         try file.handle.seek(toOffset: UInt64(offset))
         let data = try file.handle.read(upToCount: min(length, file.size - offset)) ?? Data()
@@ -265,8 +262,9 @@ final class BridgeDispatcher {
             guard let database else { throw ShellError.invalidState("Native DuckDB is unavailable") }
             try await database.rollback(params["transactionId"] as! String); return ["rolledBack": true]
         case "file.pickArchive": return try await archiveFiles.pick()
-        case "file.downloadArchive": return try await archiveFiles.download(URL(string: params["url"] as! String)!)
-        case "file.download": return try await archiveFiles.downloadVerified(URL(string: params["url"] as! String)!, expectedSize: (params["sizeBytes"] as! NSNumber).intValue, expectedSHA256: params["sha256"] as! String)
+        case "file.create": return try archiveFiles.create(name: params["name"] as! String, size: (params["sizeBytes"] as! NSNumber).intValue, sha256: params["sha256"] as! String)
+        case "file.write": return try archiveFiles.write(id: params["fileId"] as! String, offset: (params["offset"] as! NSNumber).intValue, dataBase64: params["dataBase64"] as! String)
+        case "file.finalize": return try archiveFiles.finalize(id: params["fileId"] as! String)
         case "file.read":
             return try archiveFiles.read(id: params["fileId"] as! String, offset: (params["offset"] as! NSNumber).intValue, length: (params["length"] as! NSNumber).intValue)
         case "file.close":
@@ -305,7 +303,7 @@ final class BridgeDispatcher {
     }
 
     private func isMutation(_ method: String) -> Bool {
-        ["permissions.request", "location.start", "location.stop", "heartRate.scan", "heartRate.stopScan", "heartRate.connect", "heartRate.disconnect", "diagnostics.runChecks", "diagnostics.export", "appBuild.download", "appBuild.activate", "appBuild.rollback", "devSource.configure", "ui.reload", "database.execute", "database.bulkInsert", "database.begin", "database.commit", "database.rollback", "file.pickArchive", "file.downloadArchive", "file.download", "file.close"].contains(method)
+        ["permissions.request", "location.start", "location.stop", "heartRate.scan", "heartRate.stopScan", "heartRate.connect", "heartRate.disconnect", "diagnostics.runChecks", "diagnostics.export", "appBuild.download", "appBuild.activate", "appBuild.rollback", "devSource.configure", "ui.reload", "database.execute", "database.bulkInsert", "database.begin", "database.commit", "database.rollback", "file.pickArchive", "file.create", "file.write", "file.finalize", "file.close"].contains(method)
     }
 
     private func synchronizeRecordingSensors(reply: [String: Any]) {
