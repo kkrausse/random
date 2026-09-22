@@ -3,7 +3,7 @@ import Foundation
 enum ContractValidation {
     static let identifier = try! NSRegularExpression(pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
     static let hash = try! NSRegularExpression(pattern: "^[a-f0-9]{64}$")
-    static let methods = Set(["bridge.hello"] + phase1Capabilities + sensorCapabilities + recordingCapabilities + archiveCapabilities + journalCapabilities)
+    static let methods = Set(["bridge.hello"] + phase1Capabilities + sensorCapabilities + recordingCapabilities + archiveCapabilities + journalCapabilities + databaseCapabilities)
     static let checks = Set(["bridgePing", "capabilityCompatibility", "diagnosticStorage", "engineFixture"])
 
     static func matches(_ value: String, regex: NSRegularExpression) -> Bool {
@@ -59,7 +59,7 @@ enum ContractValidation {
               ISO8601DateFormatter().date(from: manifest.createdAt) != nil,
               manifest.bridgeProtocol == VersionRange(min: 1, max: 1),
               manifest.engineApi == VersionRange(min: 1, max: 1), manifest.checkpointSchemaVersion == 1,
-               Set(manifest.requiredCapabilities).isSubset(of: Set(phase1Capabilities + sensorCapabilities + recordingCapabilities)),
+                Set(manifest.requiredCapabilities).isSubset(of: Set(phase1Capabilities + sensorCapabilities + recordingCapabilities + archiveCapabilities + journalCapabilities + databaseCapabilities)),
               (1...1024).contains(manifest.files.count) else {
             throw ShellError.incompatibleBuild("Manifest identity or API is incompatible")
         }
@@ -157,6 +157,18 @@ enum ContractValidation {
             return exactKeys(params, ["sessionId", "afterJournalSequence", "limit"])
                 && validIdentifier(params["sessionId"]) && nullableSequence(params["afterJournalSequence"])
                 && integer(params["limit"], min: 1, max: 200)
+        case "database.execute", "database.query":
+            return exactKeys(params, ["sql", "parameters", "transactionId"])
+                && text(params["sql"], max: 128 * 1024) && (params["parameters"] as? [Any]).map { $0.count <= 4096 } == true
+                && (params["transactionId"] is NSNull || validIdentifier(params["transactionId"]))
+        case "database.queryNext": return exactKeys(params, ["resultId"]) && validIdentifier(params["resultId"])
+        case "database.bulkInsert":
+            guard exactKeys(params, ["table", "columns", "rows", "transactionId"]), let table = params["table"] as? String,
+                  databaseIdentifier(table), let columns = params["columns"] as? [String], !columns.isEmpty, columns.count <= 128,
+                  columns.allSatisfy(databaseIdentifier), let rows = params["rows"] as? [[Any]], rows.count <= 2_000,
+                  rows.allSatisfy({ $0.count == columns.count }) else { return false }
+            return params["transactionId"] is NSNull || validIdentifier(params["transactionId"])
+        case "database.commit", "database.rollback": return exactKeys(params, ["transactionId"]) && validIdentifier(params["transactionId"])
         case "diagnostics.runChecks":
             guard exactKeys(params, ["checks"]) else { return false }
             if params["checks"] is NSNull { return true }
@@ -189,6 +201,10 @@ enum ContractValidation {
 
     private static func validIdentifier(_ value: Any?) -> Bool {
         (value as? String).map { matches($0, regex: identifier) } == true
+    }
+
+    private static func databaseIdentifier(_ value: String) -> Bool {
+        value.range(of: "^[A-Za-z_][A-Za-z0-9_]*$", options: .regularExpression) != nil
     }
 
     private static func integer(_ value: Any?, min: Int, max: Int) -> Bool {

@@ -6,6 +6,7 @@ final class BridgeDispatcher {
     let diagnostics: DiagnosticsService
     let sensors: SensorService
     let recording: RecordingService
+    let database: DuckDBService?
     let log: DiagnosticLog
     var presentShare: ((URL) -> Bool)?
     var reloadUI: (() -> Void)?
@@ -13,8 +14,8 @@ final class BridgeDispatcher {
 
     private var mutationCache: [String: (method: String, reply: [String: Any])] = [:]
 
-    init(builds: BuildManager, diagnostics: DiagnosticsService, sensors: SensorService, recording: RecordingService, log: DiagnosticLog) {
-        self.builds = builds; self.diagnostics = diagnostics; self.sensors = sensors; self.recording = recording; self.log = log
+    init(builds: BuildManager, diagnostics: DiagnosticsService, sensors: SensorService, recording: RecordingService, database: DuckDBService?, log: DiagnosticLog) {
+        self.builds = builds; self.diagnostics = diagnostics; self.sensors = sensors; self.recording = recording; self.database = database; self.log = log
     }
 
     func dispatch(_ body: Any) async -> [String: Any] {
@@ -51,12 +52,15 @@ final class BridgeDispatcher {
     private func execute(method: String, params: [String: Any]) async throws -> [String: Any] {
         switch method {
         case "bridge.hello":
+            var capabilities = phase1Capabilities + sensorCapabilities
+            if recording.available { capabilities += recordingCapabilities + archiveCapabilities + journalCapabilities }
+            if database != nil { capabilities += databaseCapabilities }
+            var unavailable: [[String: String]] = []
+            if !recording.available { unavailable.append(["capability": "workout.recorder", "reason": "Recording engine or durable storage is unavailable"]) }
+            if database == nil { unavailable.append(["capability": "database.duckdb", "reason": "Native DuckDB could not open its durable store"]) }
             return [
                 "shellVersion": "0.1.0", "protocolVersion": 1, "engineApiVersion": 1, "checkpointSchemaVersion": 1,
-                "capabilities": phase1Capabilities + sensorCapabilities + (recording.available ? recordingCapabilities + archiveCapabilities + journalCapabilities : []),
-                "unavailableCapabilities": recording.available ? [] : [
-                    ["capability": "workout.recorder", "reason": "Recording engine or durable storage is unavailable"]
-                ]
+                "capabilities": capabilities, "unavailableCapabilities": unavailable
             ]
         case "bridge.ping":
             let received = ISOTime.now()
@@ -119,6 +123,33 @@ final class BridgeDispatcher {
                 sessionId: params["sessionId"] as! String,
                 after: params["afterJournalSequence"] is NSNull ? nil : (params["afterJournalSequence"] as! NSNumber).intValue,
                 limit: (params["limit"] as! NSNumber).intValue)
+        case "database.execute":
+            guard let database else { throw ShellError.invalidState("Native DuckDB is unavailable") }
+            let parameters = try JSONSerialization.data(withJSONObject: params["parameters"] as! [Any])
+            try await database.executeBridge(sql: params["sql"] as! String, parametersJSON: parameters, transactionId: params["transactionId"] is NSNull ? nil : params["transactionId"] as? String)
+            return ["completed": true]
+        case "database.query":
+            guard let database else { throw ShellError.invalidState("Native DuckDB is unavailable") }
+            let parameters = try JSONSerialization.data(withJSONObject: params["parameters"] as! [Any])
+            return try Self.dictionary(await database.queryBridge(sql: params["sql"] as! String, parametersJSON: parameters, transactionId: params["transactionId"] is NSNull ? nil : params["transactionId"] as? String))
+        case "database.queryNext":
+            guard let database else { throw ShellError.invalidState("Native DuckDB is unavailable") }
+            return try Self.dictionary(await database.nextResultBridge(params["resultId"] as! String))
+        case "database.bulkInsert":
+            guard let database else { throw ShellError.invalidState("Native DuckDB is unavailable") }
+            let rows = params["rows"] as! [[Any]]
+            let rowsJSON = try JSONSerialization.data(withJSONObject: rows)
+            try await database.bulkInsertBridge(table: params["table"] as! String, columns: params["columns"] as! [String], rowsJSON: rowsJSON, transactionId: params["transactionId"] is NSNull ? nil : params["transactionId"] as? String)
+            return ["inserted": rows.count]
+        case "database.begin":
+            guard let database else { throw ShellError.invalidState("Native DuckDB is unavailable") }
+            return ["transactionId": try await database.begin()]
+        case "database.commit":
+            guard let database else { throw ShellError.invalidState("Native DuckDB is unavailable") }
+            try await database.commit(params["transactionId"] as! String); return ["committed": true]
+        case "database.rollback":
+            guard let database else { throw ShellError.invalidState("Native DuckDB is unavailable") }
+            try await database.rollback(params["transactionId"] as! String); return ["rolledBack": true]
         case "diagnostics.snapshot": return diagnostics.snapshot()
         case "diagnostics.runChecks":
             let requested = params["checks"] is NSNull ? nil : params["checks"] as? [String]
@@ -153,7 +184,7 @@ final class BridgeDispatcher {
     }
 
     private func isMutation(_ method: String) -> Bool {
-        ["permissions.request", "location.start", "location.stop", "heartRate.scan", "heartRate.stopScan", "heartRate.connect", "heartRate.disconnect", "diagnostics.runChecks", "diagnostics.export", "appBuild.download", "appBuild.activate", "appBuild.rollback", "devSource.configure", "ui.reload"].contains(method)
+        ["permissions.request", "location.start", "location.stop", "heartRate.scan", "heartRate.stopScan", "heartRate.connect", "heartRate.disconnect", "diagnostics.runChecks", "diagnostics.export", "appBuild.download", "appBuild.activate", "appBuild.rollback", "devSource.configure", "ui.reload", "database.execute", "database.bulkInsert", "database.begin", "database.commit", "database.rollback"].contains(method)
     }
 
     private func synchronizeRecordingSensors(reply: [String: Any]) {
@@ -166,5 +197,10 @@ final class BridgeDispatcher {
         case "finished": sensors.stopRecordingLocation()
         default: break
         }
+    }
+
+    private static func dictionary(_ data: Data) throws -> [String: Any] {
+        guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw ShellError.internalFailure("Native database returned an invalid page") }
+        return value
     }
 }

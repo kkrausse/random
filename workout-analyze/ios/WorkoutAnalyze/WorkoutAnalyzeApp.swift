@@ -17,6 +17,7 @@ final class AppHostModel: ObservableObject {
     let sensors: SensorService
     let diagnostics: DiagnosticsService
     let recording: RecordingService
+    let database: DuckDBService?
     let dispatcher: BridgeDispatcher
     let web: WebHost
 
@@ -25,10 +26,11 @@ final class AppHostModel: ObservableObject {
         let builds = BuildManager(log: log)
         let sensors = SensorService(log: log)
         let recording = RecordingService(builds: builds, log: log)
+        let database = try? DuckDBService.applicationDatabase()
         let diagnostics = DiagnosticsService(log: log, builds: builds, sensors: sensors)
         diagnostics.recording = recording
-        let dispatcher = BridgeDispatcher(builds: builds, diagnostics: diagnostics, sensors: sensors, recording: recording, log: log)
-        self.log = log; self.builds = builds; self.sensors = sensors; self.diagnostics = diagnostics; self.recording = recording; self.dispatcher = dispatcher
+        let dispatcher = BridgeDispatcher(builds: builds, diagnostics: diagnostics, sensors: sensors, recording: recording, database: database, log: log)
+        self.log = log; self.builds = builds; self.sensors = sensors; self.diagnostics = diagnostics; self.recording = recording; self.database = database; self.dispatcher = dispatcher
         web = WebHost(builds: builds, dispatcher: dispatcher)
         sensors.emitEvent = { [weak dispatcher] type, payload in dispatcher?.emitEvent?(type, payload) }
         sensors.recordLocation = { [weak recording] observation in recording?.ingestLocation(observation) }
@@ -51,6 +53,7 @@ final class AppHostModel: ObservableObject {
 struct RootView: View {
     @ObservedObject var model: AppHostModel
     @State private var recoveryPresented = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         HostedWebView(host: model.web)
@@ -60,6 +63,9 @@ struct RootView: View {
             }
             .sheet(isPresented: $recoveryPresented) { RecoveryView(model: model) }
             .task { model.web.loadSelectedSource() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase != .active, let database = model.database { Task { await database.rollbackAll() } }
+            }
     }
 }
 

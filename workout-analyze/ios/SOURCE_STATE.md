@@ -15,3 +15,9 @@ Native lifecycle truth is available without changing the strict bridge contract 
 - `generation`: native load generation
 
 A future first-class `appBuild.status.uiSource` requires a coordinated shared-contract revision because current clients reject unknown status keys.
+
+## Native analysis database
+
+The installed shell opens `Application Support/WorkoutAnalyze/analysis.duckdb` through the official `duckdb-swift` package pinned to 1.1.3. `bridge.hello` advertises the seven `database.*` capabilities only when that durable store opened successfully. The WKWebView adapter exposes generic execute/query/bulk/transaction primitives; schemas, normalization, and analysis remain in shared TypeScript.
+
+Each transaction ID owns one DuckDB connection. The actor serializes operations, abandoned sessions expire after 60 seconds, and all open transactions roll back when the app leaves the active scene. Native query cursors page 200 rows at a time; web bulk inserts are split below the bridge size limit. None of this changes or replaces the recorder's SQLite journal.

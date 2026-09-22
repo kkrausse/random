@@ -4,7 +4,7 @@ import { App } from './App'
 import { createBridgeClient, nativeTransport, unavailableNativeTransport } from './bridge/client'
 import { createMobileStore } from './store'
 import { createRecoveredArchiveClient } from './archive/client'
-import { createLocalDatabaseHost } from './database/client'
+import { createLocalDatabaseHost, createNativeDatabaseHost } from './database/client'
 import './styles.css'
 
 const params = new URLSearchParams(window.location.search)
@@ -12,7 +12,7 @@ const native = nativeTransport()
 const transport = native ?? unavailableNativeTransport()
 const client = createBridgeClient(transport)
 const localArchive = import.meta.env.DEV && !native ? createRecoveredArchiveClient() : undefined
-const localDatabase = import.meta.env.DEV && !native ? createLocalDatabaseHost() : undefined
+const localDatabase = native ? createNativeDatabaseHost(client) : import.meta.env.DEV ? createLocalDatabaseHost() : undefined
 const store = createMobileStore(client, localArchive, localDatabase)
 if (import.meta.env.DEV) {
   const kind = native ? 'native' : 'unavailable'
