@@ -4,6 +4,7 @@ import type { DuckDBConnection } from '@duckdb/node-api'
 import type { Plugin } from 'vite'
 import type { DatabaseHost } from '../../src/engine/database.ts'
 import { createBunDuckDbConnectionHost } from '../../src/hosts/bun/DuckDbHost.ts'
+import { exportPortableArchive, PORTABLE_ARCHIVE_EXTENSION } from '../../src/engine/portable-archive.ts'
 
 type Operation =
   | { op: 'query' | 'execute'; sql: string; parameters?: unknown[]; transactionId?: string }
@@ -25,6 +26,34 @@ const readBody = (request: import('node:http').IncomingMessage) => new Promise<s
 const json = (value: unknown) => JSON.stringify(value, (_key, item) => typeof item === 'bigint' ? { $databaseBigInt: item.toString() } : item)
 const parse = (value: string) => JSON.parse(value, (_key, item) => item && typeof item === 'object' && Object.keys(item).length === 1 && typeof item.$databaseBigInt === 'string' ? BigInt(item.$databaseBigInt) : item) as Operation
 
+const allowedArchiveOrigin = (origin: string) => {
+  try {
+    const url = new URL(origin)
+    return url.protocol === 'https:' && url.hostname.endsWith('.ts.net')
+      || url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname)
+  } catch { return false }
+}
+
+export const servePortableArchive = async (request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse, database: DatabaseHost) => {
+  response.setHeader('Cache-Control', 'no-store')
+  const origin = request.headers.origin
+  if (origin && allowedArchiveOrigin(origin)) response.setHeader('Access-Control-Allow-Origin', origin)
+  if (request.method === 'OPTIONS') { response.statusCode = 204; response.end(); return }
+  if (request.method !== 'GET') { response.statusCode = 405; response.end('Archive download accepts GET requests only'); return }
+  try {
+    // prepareSchema=false is deliberate: this endpoint is a query-only view of the existing archive.
+    const bytes = await exportPortableArchive(database, undefined, { prepareSchema: false })
+    response.setHeader('Content-Type', 'application/zip')
+    response.setHeader('Content-Length', String(bytes.byteLength))
+    response.setHeader('Content-Disposition', `attachment; filename="workout-analyze-${new Date().toISOString().slice(0, 10)}${PORTABLE_ARCHIVE_EXTENSION}"`)
+    response.end(Buffer.from(bytes))
+  } catch (error) {
+    response.statusCode = 500
+    response.setHeader('Content-Type', 'application/json')
+    response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Archive export failed' }))
+  }
+}
+
 export const localDatabasePlugin = (): Plugin => {
   let instance: DuckDBInstance | null = null
   const transactions = new Map<string, { connection: DuckDBConnection; host: DatabaseHost }>()
@@ -36,6 +65,13 @@ export const localDatabasePlugin = (): Plugin => {
   return {
     name: 'workout-local-database-host', apply: 'serve',
     configureServer(server) {
+      server.middlewares.use('/__workout/portable-archive', async (request, response) => {
+        let temporary: DuckDBConnection | null = null
+        try {
+          const opened = await connection(); temporary = opened.connection
+          await servePortableArchive(request, response, opened.host)
+        } finally { temporary?.closeSync() }
+      })
       server.middlewares.use('/__workout/database', async (request, response) => {
         response.setHeader('Content-Type', 'application/json')
         response.setHeader('Cache-Control', 'no-store')

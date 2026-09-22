@@ -76,6 +76,14 @@ final class ContractValidationTests: XCTestCase {
         XCTAssertThrowsError(try ContractValidation.validateCommand(wrongWidth))
     }
 
+    func testArchiveDownloadRequiresCredentialFreeHTTPS() {
+        let valid: [String: Any] = ["protocolVersion": 1, "requestId": "archive-1", "method": "file.downloadArchive", "params": ["url": "https://mac.example.test:8443/__workout/portable-archive"]]
+        XCTAssertNoThrow(try ContractValidation.validateCommand(valid))
+        var insecure = valid
+        insecure["params"] = ["url": "http://mac.example.test/archive"]
+        XCTAssertThrowsError(try ContractValidation.validateCommand(insecure))
+    }
+
     func testHeartRatePacketParsing() {
         let uint8 = SensorService.parseHeartRatePacket(Data([0x00, 72]))
         XCTAssertEqual(uint8?["bpm"] as? Int, 72)

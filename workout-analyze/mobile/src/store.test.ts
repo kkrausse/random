@@ -4,10 +4,17 @@ import { createBridgeClient, type BridgeClient, type BridgeState } from './bridg
 import { createSimulatorTransport } from './bridge/simulator'
 import { createMobileStore, loadSavedWorkoutDetail, observationEventSessionId, sourceStateFromDiagnostics } from './store'
 import { recommendedDevelopmentUrl } from './config'
+import { withBunDuckDbHost } from '../../src/hosts/bun/DuckDbHost'
+import { ensureIphoneNormalizationSchema } from '../../src/engine/iphone-normalization'
+import { exportPortableArchive } from '../../src/engine/portable-archive'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 
 const browser = globalThis as unknown as { window: Window; document: Document }
+const originalFetch = globalThis.fetch
 const cleanups: Array<() => void> = []
-afterEach(() => cleanups.splice(0).forEach((cleanup) => cleanup()))
+afterEach(() => { cleanups.splice(0).forEach((cleanup) => cleanup()); globalThis.fetch = originalFetch })
 
 const installDomStubs = () => {
   browser.window = { setTimeout } as unknown as Window
@@ -19,6 +26,29 @@ const installDomStubs = () => {
 }
 
 describe('mobile store', () => {
+  test('downloads a Mac archive and feeds it through the canonical merge unchanged', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'mobile-mac-import-'))
+    cleanups.push(() => rmSync(directory, { recursive: true, force: true }))
+    const bytes = await withBunDuckDbHost(join(directory, 'source.duckdb'), async (database) => {
+      await ensureIphoneNormalizationSchema(database)
+      await database.bulkInsert('activities', ['id', 'source', 'source_activity_id', 'sport', 'started_at', 'duration_seconds', 'distance_m', 'ascent_m', 'avg_hr_bpm', 'max_hr_bpm'], [['garmin:mac-1', 'garmin', 'mac-1', 'cycling', { type: 'timestamp', value: '2026-09-20T10:00:00.000Z' }, 60, 100, 2, null, null]])
+      return exportPortableArchive(database)
+    })
+    globalThis.fetch = (async () => new Response(new Blob([bytes as BlobPart]), { headers: { 'content-length': String(bytes.byteLength) } })) as unknown as typeof fetch
+    await withBunDuckDbHost(join(directory, 'phone.duckdb'), async (database) => {
+      const bridge: BridgeState = { phase: 'ready', transport: 'native', transportLabel: 'Test', lastSequence: 0, resyncCount: 0, session: null, capabilities: [], snapshot: null, error: null }
+      const client = { request: (() => Promise.reject(new Error('native download should not be used'))) as BridgeClient['request'], connect: async () => {}, refreshSnapshot: async () => {}, getState: () => bridge, subscribe: () => () => {}, subscribeEvents: () => () => {}, dispose() {} } as BridgeClient
+      const store = createMobileStore(client, undefined, database)
+      store.getState().setMacArchiveSourceDraft('https://mac.example.test:8443/')
+
+      await store.getState().importCanonicalArchiveFromMac()
+
+      expect(store.getState().archiveImport).toMatchObject({ inserted: 1, unchanged: 0, conflicts: [] })
+      expect(store.getState().libraryWorkouts.map((workout) => workout.id)).toContain('garmin:mac-1')
+      expect(Number((await database.query('SELECT count(*) count FROM activities'))[0]?.count)).toBe(1)
+    })
+  })
+
   test('loads every archive detail page before presenting a saved route', async () => {
     const calls: Array<number | null> = []
     const items = Array.from({ length: 450 }, (_, index) => ({ kind: 'transition', sequence: index + 1 }))
