@@ -225,9 +225,9 @@ test("closing keeps reads and events alive; reopening does not fetch; unloading 
     await until(() => f.controller.state.ready())
     title = "Updated while closed"
     const before = reads
-    f.handlers.get("*")!({ details: { type: "session.renamed", data: { sessionID: "parent" } } })
+    f.handlers.get("*")!({ details: { type: "session.renamed", data: { sessionID: "parent", title } } })
     await until(() => f.controller.state.sessions().some((row) => row.title === title))
-    assert.ok(reads > before)
+    assert.equal(reads, before, "rename payload updates the row without fetching it")
     await flush()
     const settled = reads
     close = mount(f.controller)
@@ -247,6 +247,9 @@ test("closing keeps reads and events alive; reopening does not fetch; unloading 
       return { ...f.session, title: "Late" }
     }
     f.handlers.get("*")!({ details: { type: "session.status", data: { sessionID: "parent" } } })
+    await flush()
+    assert.equal(reads, settled, "status events do not fetch session summaries")
+    f.handlers.get("*")!({ details: { type: "session.moved", data: { sessionID: "parent" } } })
     await until(() => !!signal)
     f.controller.dispose()
     await until(() => !!signal?.aborted)
