@@ -1,6 +1,7 @@
 import { MapPin } from 'lucide-react'
 import type { RoutePoint } from '../../../src/domain/activity'
 import { createRouteMap, projectPointsIntoRouteMap, routePathFromProjectedPoints } from '../../../src/shared/route-map'
+import { MapViewport } from './MapViewport'
 
 export const segmentColors = ['#b8f34b', '#80c7ff', '#f7c85c', '#e987ff', '#47d7d0', '#ff8b67', '#ff79ad', '#b4d56b'] as const
 
@@ -25,7 +26,7 @@ export const AnnotatedRouteMap = ({ points, annotations = [], selectedId, onSele
     path: routePathFromProjectedPoints(projectPointsIntoRouteMap(item.points, map)),
   })).sort((left, right) => Number(left.id === selectedId) - Number(right.id === selectedId))
 
-  return <div className="annotated-map" aria-label={label}>
+  return <MapViewport className="annotated-map map-bleed" label={label} overlay={<small className="attribution">© OpenStreetMap contributors</small>}>
     {map.tiles.map((tile) => <img key={`${tile.href}-${tile.x}-${tile.y}`} src={tile.href} alt="" style={{ left: tile.x, top: tile.y }} />)}
     <svg viewBox="0 0 320 210" preserveAspectRatio="none">
       <path className="annotated-base-shadow" d={map.path} />
@@ -37,6 +38,5 @@ export const AnnotatedRouteMap = ({ points, annotations = [], selectedId, onSele
       <circle className="route-start" cx={map.start.x} cy={map.start.y} r="4" />
       <circle className="route-finish" cx={map.end.x} cy={map.end.y} r="5" />
     </svg>
-    <small className="attribution">© OpenStreetMap contributors</small>
-  </div>
+  </MapViewport>
 }
