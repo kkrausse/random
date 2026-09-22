@@ -62,6 +62,10 @@ actor DuckDBService {
 
     func execute(sql: String, parameters: [Any], transactionId: String?) throws {
         let connection = try connection(transactionId)
+        if parameters.isEmpty {
+            try connection.execute(sql)
+            return
+        }
         _ = try prepared(connection: connection, sql: sql, parameters: parameters).execute()
     }
 
