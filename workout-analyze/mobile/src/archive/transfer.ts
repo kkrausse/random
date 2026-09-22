@@ -1,5 +1,6 @@
 import type { BridgeClient } from '../bridge/client'
 import { PORTABLE_ARCHIVE_MAX_COMPRESSED_BYTES } from '../../../src/engine/portable-archive'
+import { parseParquetArchiveManifest, type ParquetArchiveManifest, type ParquetArchiveProgress } from '../../../src/engine/parquet-archive'
 
 const decodeBase64 = (value: string) => {
   const binary = atob(value)
@@ -32,6 +33,47 @@ export const portableArchiveDownloadUrl = (source: string) => {
   const base = new URL(source)
   if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password) throw new Error('Mac URL must be an HTTP or HTTPS URL without credentials')
   return new URL('/__workout/portable-archive', base).href
+}
+
+export const parquetArchiveManifestUrl = (source: string) => {
+  const base = new URL(source)
+  if (base.protocol !== 'https:' || base.username || base.password) throw new Error('Mac URL must be an HTTPS URL without credentials')
+  return new URL('/__workout/portable-parquet/manifest.json', base).href
+}
+
+export interface DownloadedParquetArchive {
+  readonly manifest: ParquetArchiveManifest
+  readonly files: Readonly<Record<'activities' | 'samples', { readonly type: 'hostFile'; readonly id: string }>>
+  close(): Promise<void>
+}
+
+export const downloadParquetArchive = async (
+  client: Pick<BridgeClient, 'request'>,
+  source: string,
+  onProgress?: (progress: ParquetArchiveProgress) => void,
+): Promise<DownloadedParquetArchive> => {
+  const manifestUrl = parquetArchiveManifestUrl(source)
+  const response = await fetch(manifestUrl, { cache: 'no-store' })
+  if (!response.ok) throw new Error(`Mac Parquet manifest download failed (${response.status})`)
+  const manifest = parseParquetArchiveManifest(await response.json())
+  const total = manifest.files.reduce((sum, file) => sum + file.sizeBytes, 0)
+  let completed = 0
+  const handles: Partial<Record<'activities' | 'samples', string>> = {}
+  try {
+    for (const file of manifest.files) {
+      onProgress?.({ stage: 'download', completed, total })
+      const url = new URL(`/__workout/portable-parquet/${manifest.exportId}/${file.path}`, manifestUrl).href
+      const selected = await client.request('file.download', { url, sizeBytes: file.sizeBytes, sha256: file.sha256 })
+      handles[file.role] = selected.fileId
+      completed += file.sizeBytes
+      onProgress?.({ stage: 'download', completed, total })
+    }
+    const close = async () => { await Promise.all(Object.values(handles).map((fileId) => client.request('file.close', { fileId }).catch(() => undefined))) }
+    return { manifest, files: { activities: { type: 'hostFile', id: handles.activities! }, samples: { type: 'hostFile', id: handles.samples! } }, close }
+  } catch (error) {
+    await Promise.all(Object.values(handles).map((fileId) => client.request('file.close', { fileId }).catch(() => undefined)))
+    throw error
+  }
 }
 
 const fetchWebArchive = async (url: string, onProgress?: (read: number, total: number) => void) => {

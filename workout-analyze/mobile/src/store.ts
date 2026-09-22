@@ -19,7 +19,8 @@ import { getArchiveActivity, getArchiveAnalysisSettings, getArchiveRoute, listAr
 import { rebuildRouteAnalysis } from '../../src/engine/analysis'
 import { ingestIphoneWorkouts, iphoneActivityId, type IphoneIngestionSummary } from '../../src/engine/iphone-normalization'
 import { exportPortableArchive, importPortableArchive, PORTABLE_ARCHIVE_EXTENSION, type ArchiveImportSummary, type ArchiveProgress } from '../../src/engine/portable-archive'
-import { downloadArchive, downloadPortableArchive, pickNativeArchive } from './archive/transfer'
+import { importParquetArchive, type ParquetArchiveProgress } from '../../src/engine/parquet-archive'
+import { downloadArchive, downloadParquetArchive, pickNativeArchive } from './archive/transfer'
 
 export type Screen = 'home' | 'live' | 'paused' | 'recovery' | 'saved' | 'history' | 'savedDetail' | 'library' | 'libraryDetail' | 'routes' | 'routeDetail' | 'heartRate' | 'settings' | 'diagnostics' | 'replay'
 export type RequestState = { readonly status: 'pending' | 'success' | 'error'; readonly error: string | null }
@@ -97,7 +98,7 @@ export interface MobileState {
   readonly routeDetail: RouteDetail | null
   readonly analysisSettings: ArchiveAnalysisSettings | null
   readonly iphoneIngestion: IphoneIngestionSummary | null
-  readonly archiveTransferProgress: ArchiveProgress | null
+  readonly archiveTransferProgress: ArchiveProgress | ParquetArchiveProgress | null
   readonly archiveImport: ArchiveImportSummary | null
   readonly requests: Readonly<Record<string, RequestState>>
   readonly notices: Readonly<Record<NoticeArea, string | null>>
@@ -433,12 +434,19 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
            } finally { set({ archiveTransferProgress: null }) }
          }) },
          importCanonicalArchiveFromMac() { return run('archive-transfer-mac', 'recording', async () => {
-           if (!database) throw new Error('Archive import requires a local database host')
-           try {
-             const selected = await downloadPortableArchive(client, get().bridge.capabilities.includes('file.downloadArchive'), get().macArchiveSourceDraft, (completed, total) => set({ archiveTransferProgress: { stage: 'reading', completed, total } }))
-             await mergeCanonicalArchive(selected.bytes)
-           } finally { set({ archiveTransferProgress: null }) }
-         }) },
+            if (!database) throw new Error('Archive import requires a local database host')
+            if (!get().bridge.capabilities.includes('file.download')) throw new Error('This native shell does not support direct Parquet downloads')
+            let selected: Awaited<ReturnType<typeof downloadParquetArchive>> | null = null
+            try {
+              selected = await downloadParquetArchive(client, get().macArchiveSourceDraft, (archiveTransferProgress) => set({ archiveTransferProgress }))
+              const archiveImport = await importParquetArchive(database, selected.manifest, selected.files, (archiveTransferProgress) => set({ archiveTransferProgress }))
+              set({ archiveImport })
+              await Promise.all([get().loadLibrary(), get().loadRoutes()])
+              setNotice('recording', archiveImport.conflicts.length
+                ? `Imported ${archiveImport.inserted} from Parquet; skipped ${archiveImport.unchanged} unchanged and ${archiveImport.conflicts.length} same-ID conflicts. Rebuild analysis next.`
+                : `Imported ${archiveImport.inserted} from Parquet; ${archiveImport.unchanged} unchanged. Rebuild analysis next.`)
+            } finally { await selected?.close(); set({ archiveTransferProgress: null }) }
+          }) },
       requestPermission(permission) { return run(`permission-${permission}`, 'sensors', async () => { await client.request('permissions.request', { permission }); await synchronize() }) },
       startLocation(backgroundMode) { return run(`location-${backgroundMode}`, 'sensors', async () => { await client.request('location.start', { desiredAccuracy: 'best', distanceFilterM: 0, backgroundMode, maxDurationSeconds: 120 }); await synchronize() }) },
       stopLocation() { return run('location-stop', 'sensors', async () => { const id = get().location?.probeId; if (id) await client.request('location.stop', { probeId: id }); await synchronize() }) },

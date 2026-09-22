@@ -3,9 +3,11 @@ import type { DuckDBConnection, DuckDBValue } from '@duckdb/node-api'
 
 import type { DatabaseHost, DatabaseValue } from '../../engine/database.ts'
 
-const nativeValue = (value: DatabaseValue): DuckDBValue => value && typeof value === 'object'
-  ? new DuckDBTimestampTZValue(BigInt(new Date(value.value).getTime()) * 1_000n)
-  : value
+const nativeValue = (value: DatabaseValue): DuckDBValue => {
+  if (!value || typeof value !== 'object') return value
+  if (value.type === 'hostFile') throw new Error('Native host file handles cannot be resolved by the Bun database host')
+  return new DuckDBTimestampTZValue(BigInt(new Date(value.value).getTime()) * 1_000n)
+}
 
 const identifier = (value: string) => {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) throw new Error(`Invalid database identifier: ${value}`)

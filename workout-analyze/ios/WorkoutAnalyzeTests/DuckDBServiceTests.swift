@@ -54,6 +54,18 @@ final class DuckDBServiceTests: XCTestCase {
         XCTAssertEqual((page["rows"] as? [[String: Any]])?.count, 1)
     }
 
+    func testPinnedDuckDBHasBuiltInParquetAndAcceptsBoundHostPath() async throws {
+        let service = try DuckDBService()
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("duckdb-service-\(UUID().uuidString).parquet")
+        defer { try? FileManager.default.removeItem(at: path) }
+        let quoted = path.path.replacingOccurrences(of: "'", with: "''")
+        try await service.executeBridge(sql: "COPY (SELECT 7::BIGINT AS value) TO '\(quoted)' (FORMAT PARQUET, COMPRESSION SNAPPY)", parametersJSON: json([]), transactionId: nil)
+
+        let page = try object(await service.queryBridge(sql: "SELECT value FROM read_parquet(?)", parametersJSON: json([path.path]), transactionId: nil))
+
+        XCTAssertEqual(((page["rows"] as? [[String: Any]])?.first)?["value"] as? Int, 7)
+    }
+
     private func json(_ value: Any) throws -> Data { try JSONSerialization.data(withJSONObject: value) }
     private func object(_ data: Data) throws -> [String: Any] { try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any]) }
 }

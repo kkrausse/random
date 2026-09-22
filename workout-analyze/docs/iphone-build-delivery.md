@@ -77,17 +77,17 @@ Direct import from the Mac (preferred):
 
 1. Start `bun run mobile:dev` from `/Users/kkrausse/Documents/repos/kkrausse/random/workout-analyze`. Tailscale Serve continues to expose that unchanged server at `https://kevins-macbook-pro-2.tail7e28fb.ts.net:8443/`.
 2. On the iPhone, open **Workout library**. Confirm **Local Mac URL** points at the current development origin (it follows the configured development source until edited), then tap **Import from Mac**.
-3. The native shell downloads `GET /__workout/portable-archive` over trusted HTTPS with a 128 MiB bound. The endpoint generates the existing version-1 archive using queries only; it does not modify `data/fitness.duckdb`, Garmin source files, or the iPhone recorder journal.
+3. The page fetches only the small versioned manifest from `GET /__workout/portable-parquet/manifest.json`. The native shell downloads its two hash-checked Parquet files directly to host-owned temporary paths. The web view never receives sample rows or Parquet bytes.
 4. Leave the app foregrounded through download, validation, and merge. Check inserted/unchanged/conflict counts, then open **Segments & loops** and tap **Import & rebuild analysis**.
 
-The fallback manual flow remains available: open **Workout library** in the Mac browser, tap **Download archive**, AirDrop the ZIP into Files, then use **Import from Files** on iPhone. Both buttons feed the identical shared TypeScript bundle validation and merge function; same-ID conflicts are skipped and repeat imports are unchanged rather than overwritten.
+The old manual ZIP flow remains available and is explicitly labelled **Import legacy ZIP from Files**. It is separate from the preferred Mac Parquet path; new Mac imports do not create or transport JSON sample chunks.
 
 Import on the iPhone:
 
 1. Open the newly built Workout Analyze app and open **Workout library**.
-2. Tap **Import from Files**, select the transferred ZIP, and leave the app foregrounded through reading, validation, and merge progress.
+2. For a legacy bundle, tap **Import legacy ZIP from Files**, select the transferred ZIP, and leave the app foregrounded through reading, validation, and merge progress.
 3. Check the inserted/unchanged/conflict counts. Same-ID conflicts are deliberately skipped, never silently replaced.
 4. Return home, open **Segments & loops**, and tap **Import & rebuild analysis**. The bundle deliberately excludes Mac analysis generations, so routes remain empty/stale until this phone-side rebuild completes.
 5. Verify the workout count in **Workout library**, open several old Garmin workouts, and verify route/sample maps. Repeat the import once: it should report the imported workouts as unchanged and insert zero.
 
-The version-1 archive carries normalized canonical workout rows, samples in 10,000-row JSON chunks, source normalization metadata when available, and deterministic revision hashes inside a compressed ZIP. Limits are 128 MiB compressed and 512 MiB expanded. The current web implementation still materializes the compressed archive and its expanded ZIP entries in memory, so very large future archives may need streaming ZIP support; the current real archive (~193k samples) produces about a 5.6 MiB bundle. Native reads are bounded at 128 KiB per bridge response. Do not copy or replace `analysis.duckdb`: import is a transaction into the phone archive and never touches the separate recorder SQLite journal.
+The Parquet-v1 manifest names `activities.parquet` and `samples.parquet` and records exact sizes and SHA-256 hashes. The Mac creates both files from one DuckDB snapshot and computes deterministic per-workout revisions in SQL. iOS keeps each verified download alive until the shared TypeScript orchestration finishes; native DuckDB 1.1.3 resolves opaque handles to trusted paths and stages with `read_parquet(?)`. Shared SQL validates counts, canonical IDs, relationships, and revisions, then atomically inserts only absent IDs, records provenance, skips explicit same-ID conflicts, and invalidates derived analysis only when rows were inserted. Phone recordings and the recorder SQLite journal are never overwritten. The legacy JSON ZIP implementation remains only for explicit Files import.
