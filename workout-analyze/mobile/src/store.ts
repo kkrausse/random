@@ -18,6 +18,8 @@ import type { DetectedRoute, RouteDetail, WorkoutRouteMatch } from '../../src/do
 import { getArchiveActivity, getArchiveAnalysisSettings, getArchiveRoute, listArchiveActivities, listArchiveRoutes, listArchiveWorkoutMatches, type ArchiveAnalysisSettings } from '../../src/engine/catalog'
 import { rebuildRouteAnalysis } from '../../src/engine/analysis'
 import { ingestIphoneWorkouts, iphoneActivityId, type IphoneIngestionSummary } from '../../src/engine/iphone-normalization'
+import { exportPortableArchive, importPortableArchive, PORTABLE_ARCHIVE_EXTENSION, type ArchiveImportSummary, type ArchiveProgress } from '../../src/engine/portable-archive'
+import { downloadArchive, pickNativeArchive } from './archive/transfer'
 
 export type Screen = 'home' | 'live' | 'paused' | 'recovery' | 'saved' | 'history' | 'savedDetail' | 'library' | 'libraryDetail' | 'routes' | 'routeDetail' | 'heartRate' | 'settings' | 'diagnostics' | 'replay'
 export type RequestState = { readonly status: 'pending' | 'success' | 'error'; readonly error: string | null }
@@ -95,6 +97,8 @@ export interface MobileState {
   readonly routeDetail: RouteDetail | null
   readonly analysisSettings: ArchiveAnalysisSettings | null
   readonly iphoneIngestion: IphoneIngestionSummary | null
+  readonly archiveTransferProgress: ArchiveProgress | null
+  readonly archiveImport: ArchiveImportSummary | null
   readonly requests: Readonly<Record<string, RequestState>>
   readonly notices: Readonly<Record<NoticeArea, string | null>>
   readonly developmentSourceDraft: string
@@ -122,6 +126,8 @@ export interface MobileState {
   loadRoutes(): Promise<void>
   openRoute(routeId: string): Promise<void>
   rebuildAnalysis(): Promise<void>
+  exportCanonicalArchive(): Promise<void>
+  importCanonicalArchive(): Promise<void>
   requestPermission(permission: 'locationWhenInUse' | 'bluetooth'): Promise<void>
   startLocation(backgroundMode: 'foregroundOnly' | 'continueWhenBackgrounded'): Promise<void>
   stopLocation(): Promise<void>
@@ -293,7 +299,7 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
       permissions: null, builds: null, diagnostics: null, checks: [], location: null, heartRate: null, locations: [], measurements: [],
       trail: [], observationCursor: null, rawJournalSequence: null, recordingIssues: [], savedWorkoutId: null, requests: {},
        savedWorkouts: [], savedWorkoutDetail: null, savedWorkoutNormalizedDetail: null, savedWorkoutMatches: [], archiveSourceLabel: localArchive?.label ?? null, archiveLoadState: localArchive ? 'loading' : 'unavailable',
-        analysisHostAvailable: Boolean(database), libraryWorkouts: [], libraryWorkoutDetail: null, libraryWorkoutMatches: [], routes: [], routeDetail: null, analysisSettings: null, iphoneIngestion: null,
+         analysisHostAvailable: Boolean(database), libraryWorkouts: [], libraryWorkoutDetail: null, libraryWorkoutMatches: [], routes: [], routeDetail: null, analysisSettings: null, iphoneIngestion: null, archiveTransferProgress: null, archiveImport: null,
        notices: { recording: null, diagnostics: null, sensors: null, settings: null }, developmentSourceDraft: recommendedDevelopmentUrl, developmentSourceDirty: false,
       configuredDevelopmentSourceUrl: undefined, uiSource: null, replay: initialReplay,
       start() {
@@ -383,7 +389,7 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
          if (!routeDetail) throw new Error('Detected route was not found')
          set({ routeDetail, screen: 'routeDetail' })
        }) },
-        rebuildAnalysis() { return run('analysis-rebuild', 'recording', async () => {
+         rebuildAnalysis() { return run('analysis-rebuild', 'recording', async () => {
           if (!database) throw new Error('Analysis rebuild requires a local database host')
           if (get().archiveLoadState === 'loading' || get().archiveLoadState === 'unavailable' && get().bridge.capabilities.includes('archive.list')) await get().loadSavedWorkouts()
           const workouts = get().savedWorkouts
@@ -393,6 +399,27 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
           await rebuildRouteAnalysis(database, config)
           set({ iphoneIngestion })
           await Promise.all([get().loadRoutes(), get().loadLibrary()])
+         }) },
+        exportCanonicalArchive() { return run('archive-transfer-export', 'recording', async () => {
+          if (!database) throw new Error('Archive export requires a local database host')
+          try {
+            const bytes = await exportPortableArchive(database, (archiveTransferProgress) => set({ archiveTransferProgress }))
+            downloadArchive(bytes, `workout-analyze-${new Date().toISOString().slice(0, 10)}${PORTABLE_ARCHIVE_EXTENSION}`)
+            setNotice('recording', `Portable archive downloaded (${(bytes.byteLength / 1024 / 1024).toFixed(1)} MiB). It contains normalized workouts and samples, not analysis results or the recorder journal.`)
+          } finally { set({ archiveTransferProgress: null }) }
+        }) },
+        importCanonicalArchive() { return run('archive-transfer-import', 'recording', async () => {
+          if (!database) throw new Error('Archive import requires a local database host')
+          if (!get().bridge.capabilities.includes('file.pickArchive')) throw new Error('This native shell does not provide the Files archive picker')
+          try {
+            const selected = await pickNativeArchive(client, (completed, total) => set({ archiveTransferProgress: { stage: 'reading', completed, total } }))
+            const archiveImport = await importPortableArchive(database, selected.bytes, (archiveTransferProgress) => set({ archiveTransferProgress }))
+            set({ archiveImport })
+            await Promise.all([get().loadLibrary(), get().loadRoutes()])
+            setNotice('recording', archiveImport.conflicts.length
+              ? `Imported ${archiveImport.inserted}; skipped ${archiveImport.unchanged} unchanged and ${archiveImport.conflicts.length} same-ID conflicts. Rebuild analysis next.`
+              : `Imported ${archiveImport.inserted}; ${archiveImport.unchanged} unchanged. Rebuild analysis next.`)
+          } finally { set({ archiveTransferProgress: null }) }
         }) },
       requestPermission(permission) { return run(`permission-${permission}`, 'sensors', async () => { await client.request('permissions.request', { permission }); await synchronize() }) },
       startLocation(backgroundMode) { return run(`location-${backgroundMode}`, 'sensors', async () => { await client.request('location.start', { desiredAccuracy: 'best', distanceFilterM: 0, backgroundMode, maxDurationSeconds: 120 }); await synchronize() }) },

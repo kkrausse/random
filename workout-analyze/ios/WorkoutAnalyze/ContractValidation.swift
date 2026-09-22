@@ -3,7 +3,7 @@ import Foundation
 enum ContractValidation {
     static let identifier = try! NSRegularExpression(pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
     static let hash = try! NSRegularExpression(pattern: "^[a-f0-9]{64}$")
-    static let methods = Set(["bridge.hello"] + phase1Capabilities + sensorCapabilities + recordingCapabilities + archiveCapabilities + journalCapabilities + databaseCapabilities)
+    static let methods = Set(["bridge.hello"] + phase1Capabilities + sensorCapabilities + recordingCapabilities + archiveCapabilities + journalCapabilities + databaseCapabilities + fileCapabilities)
     static let checks = Set(["bridgePing", "capabilityCompatibility", "diagnosticStorage", "engineFixture"])
 
     static func matches(_ value: String, regex: NSRegularExpression) -> Bool {
@@ -59,7 +59,7 @@ enum ContractValidation {
               ISO8601DateFormatter().date(from: manifest.createdAt) != nil,
               manifest.bridgeProtocol == VersionRange(min: 1, max: 1),
               manifest.engineApi == VersionRange(min: 1, max: 1), manifest.checkpointSchemaVersion == 1,
-                Set(manifest.requiredCapabilities).isSubset(of: Set(phase1Capabilities + sensorCapabilities + recordingCapabilities + archiveCapabilities + journalCapabilities + databaseCapabilities)),
+                Set(manifest.requiredCapabilities).isSubset(of: Set(phase1Capabilities + sensorCapabilities + recordingCapabilities + archiveCapabilities + journalCapabilities + databaseCapabilities + fileCapabilities)),
               (1...1024).contains(manifest.files.count) else {
             throw ShellError.incompatibleBuild("Manifest identity or API is incompatible")
         }
@@ -169,6 +169,11 @@ enum ContractValidation {
                   rows.allSatisfy({ $0.count == columns.count }) else { return false }
             return params["transactionId"] is NSNull || validIdentifier(params["transactionId"])
         case "database.commit", "database.rollback": return exactKeys(params, ["transactionId"]) && validIdentifier(params["transactionId"])
+        case "file.read":
+            return exactKeys(params, ["fileId", "offset", "length"]) && validIdentifier(params["fileId"])
+                && integer(params["offset"], min: 0, max: 128 * 1024 * 1024)
+                && integer(params["length"], min: 1, max: 128 * 1024)
+        case "file.close": return exactKeys(params, ["fileId"]) && validIdentifier(params["fileId"])
         case "diagnostics.runChecks":
             guard exactKeys(params, ["checks"]) else { return false }
             if params["checks"] is NSNull { return true }
