@@ -9,7 +9,7 @@ import { ensureIphoneNormalizationSchema } from '../../src/engine/iphone-normali
 import type { DatabaseHost, DatabaseValue } from '../../src/engine/database'
 import { createParquetExport } from '../../scripts/mobile/local-database'
 import { DuckDBInstance } from '@duckdb/node-api'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -40,7 +40,13 @@ describe('mobile store', () => {
     const exported = await createParquetExport(connection)
     connection.closeSync(); source.closeSync()
     cleanups.push(() => rmSync(exported.directory, { recursive: true, force: true }))
-    globalThis.fetch = (async () => new Response(JSON.stringify(exported.manifest))) as unknown as typeof fetch
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('manifest.json')) return new Response(JSON.stringify(exported.manifest))
+      const path = join(exported.directory, url.endsWith('activities.parquet') ? 'activities.parquet' : 'samples.parquet')
+      const bytes = readFileSync(path)
+      return new Response(bytes, { headers: { 'content-length': String(bytes.byteLength) } })
+    }) as unknown as typeof fetch
     await withBunDuckDbHost(join(directory, 'phone.duckdb'), async (database) => {
       const paths = { 'file-activities': join(exported.directory, 'activities.parquet'), 'file-samples': join(exported.directory, 'samples.parquet') }
       const resolveFile = (value: DatabaseValue): DatabaseValue => typeof value === 'object' && value?.type === 'hostFile' ? paths[value.id as keyof typeof paths] : value
@@ -50,9 +56,12 @@ describe('mobile store', () => {
         bulkInsert: (table, columns, rows) => host.bulkInsert(table, columns, rows),
         transaction: (run) => host.transaction((transaction) => run(adapted(transaction))),
       })
-      const bridge: BridgeState = { phase: 'ready', transport: 'native', transportLabel: 'Test', lastSequence: 0, resyncCount: 0, session: null, capabilities: ['file.download'], snapshot: null, error: null }
-      const request = (async (method: string, params: { url?: string }) => {
-        if (method === 'file.download') return { fileId: params.url!.endsWith('activities.parquet') ? 'file-activities' : 'file-samples', name: 'archive.parquet', sizeBytes: 1 }
+      const bridge: BridgeState = { phase: 'ready', transport: 'native', transportLabel: 'Test', lastSequence: 0, resyncCount: 0, session: null, capabilities: ['file.create', 'file.write', 'file.finalize'], snapshot: null, error: null }
+      const offsets: Record<string, number> = {}
+      const request = (async (method: string, params: { name?: string; fileId?: string; offset?: number; dataBase64?: string }) => {
+        if (method === 'file.create') { const fileId = params.name === 'activities.parquet' ? 'file-activities' : 'file-samples'; offsets[fileId] = 0; return { fileId, name: params.name, sizeBytes: exported.manifest.files.find((file) => file.path === params.name)!.sizeBytes } }
+        if (method === 'file.write') { const size = atob(params.dataBase64!).length; offsets[params.fileId!] = params.offset! + size; return { nextOffset: offsets[params.fileId!], sizeBytes: exported.manifest.files.find((file) => params.fileId!.includes(file.role))!.sizeBytes } }
+        if (method === 'file.finalize') { const file = exported.manifest.files.find((candidate) => params.fileId!.includes(candidate.role))!; return { finalized: true, sizeBytes: file.sizeBytes, sha256: file.sha256 } }
         if (method === 'file.close') return { closed: true }
         throw new Error(`Unexpected ${method}`)
       }) as BridgeClient['request']

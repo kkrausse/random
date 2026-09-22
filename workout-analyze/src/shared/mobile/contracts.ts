@@ -48,8 +48,9 @@ export type Capability =
   | 'database.commit'
   | 'database.rollback'
   | 'file.pickArchive'
-  | 'file.downloadArchive'
-  | 'file.download'
+  | 'file.create'
+  | 'file.write'
+  | 'file.finalize'
   | 'file.read'
   | 'file.close'
 
@@ -85,7 +86,7 @@ export const DATABASE_CAPABILITIES: ReadonlyArray<Capability> = [
   'database.begin', 'database.commit', 'database.rollback',
 ]
 /** User-mediated Files picker plus bounded byte reads; interpretation remains web-owned. */
-export const FILE_CAPABILITIES: ReadonlyArray<Capability> = ['file.pickArchive', 'file.downloadArchive', 'file.download', 'file.read', 'file.close']
+export const FILE_CAPABILITIES: ReadonlyArray<Capability> = ['file.pickArchive', 'file.create', 'file.write', 'file.finalize', 'file.read', 'file.close']
 
 export const MOBILE_CAPABILITIES: ReadonlyArray<Capability> = [...PHASE1_CAPABILITIES, ...RECORDING_CAPABILITIES, ...ARCHIVE_CAPABILITIES, ...JOURNAL_CAPABILITIES, ...DATABASE_CAPABILITIES, ...FILE_CAPABILITIES]
 
@@ -149,8 +150,9 @@ export interface CommandParams {
   readonly 'database.commit': { readonly transactionId: string }
   readonly 'database.rollback': { readonly transactionId: string }
   readonly 'file.pickArchive': Record<string, never>
-  readonly 'file.downloadArchive': { readonly url: string }
-  readonly 'file.download': { readonly url: string; readonly sizeBytes: number; readonly sha256: string }
+  readonly 'file.create': { readonly name: string; readonly sizeBytes: number; readonly sha256: string }
+  readonly 'file.write': { readonly fileId: string; readonly offset: number; readonly dataBase64: string }
+  readonly 'file.finalize': { readonly fileId: string }
   readonly 'file.read': { readonly fileId: string; readonly offset: number; readonly length: number }
   readonly 'file.close': { readonly fileId: string }
 }
@@ -583,8 +585,9 @@ export interface CommandResults {
   readonly 'database.commit': { readonly committed: true }
   readonly 'database.rollback': { readonly rolledBack: true }
   readonly 'file.pickArchive': { readonly fileId: string; readonly name: string; readonly sizeBytes: number }
-  readonly 'file.downloadArchive': { readonly fileId: string; readonly name: string; readonly sizeBytes: number }
-  readonly 'file.download': { readonly fileId: string; readonly name: string; readonly sizeBytes: number }
+  readonly 'file.create': { readonly fileId: string; readonly name: string; readonly sizeBytes: number }
+  readonly 'file.write': { readonly nextOffset: number; readonly sizeBytes: number }
+  readonly 'file.finalize': { readonly finalized: true; readonly sizeBytes: number; readonly sha256: string }
   readonly 'file.read': { readonly dataBase64: string; readonly offset: number; readonly nextOffset: number; readonly sizeBytes: number; readonly done: boolean }
   readonly 'file.close': { readonly closed: true }
 }

@@ -435,7 +435,7 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
          }) },
          importCanonicalArchiveFromMac() { return run('archive-transfer-mac', 'recording', async () => {
             if (!database) throw new Error('Archive import requires a local database host')
-            if (!get().bridge.capabilities.includes('file.download')) throw new Error('This native shell does not support direct Parquet downloads')
+            if (!['file.create', 'file.write', 'file.finalize'].every((capability) => get().bridge.capabilities.includes(capability as import('../../src/shared/mobile').Capability))) throw new Error('This native shell does not support host file staging')
             let selected: Awaited<ReturnType<typeof downloadParquetArchive>> | null = null
             try {
               selected = await downloadParquetArchive(client, get().macArchiveSourceDraft, (archiveTransferProgress) => set({ archiveTransferProgress }))

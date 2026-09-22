@@ -47,6 +47,51 @@ export interface DownloadedParquetArchive {
   close(): Promise<void>
 }
 
+const encodeBase64 = (bytes: Uint8Array) => {
+  let binary = ''
+  for (let offset = 0; offset < bytes.length; offset += 32 * 1024) binary += String.fromCharCode(...bytes.subarray(offset, offset + 32 * 1024))
+  return btoa(binary)
+}
+
+const stageResponseInNativeFile = async (
+  client: Pick<BridgeClient, 'request'>,
+  response: Response,
+  file: ParquetArchiveManifest['files'][number],
+  completedBefore: number,
+  total: number,
+  onProgress?: (progress: ParquetArchiveProgress) => void,
+) => {
+  if (!response.ok) throw new Error(`Mac Parquet download failed (${response.status})`)
+  const declared = Number(response.headers.get('content-length') ?? 0)
+  if (declared && declared !== file.sizeBytes) throw new Error(`Mac Parquet size changed for ${file.path}`)
+  const created = await client.request('file.create', { name: file.path, sizeBytes: file.sizeBytes, sha256: file.sha256 })
+  let offset = 0
+  try {
+    const write = async (bytes: Uint8Array) => {
+      for (let start = 0; start < bytes.length; start += 96 * 1024) {
+        const chunk = bytes.subarray(start, start + 96 * 1024)
+        const result = await client.request('file.write', { fileId: created.fileId, offset, dataBase64: encodeBase64(chunk) })
+        if (result.sizeBytes !== file.sizeBytes || result.nextOffset !== offset + chunk.byteLength) throw new Error('Native host file write cursor did not advance')
+        offset = result.nextOffset
+        onProgress?.({ stage: 'download', completed: completedBefore + offset, total })
+      }
+    }
+    if (response.body) {
+      const reader = response.body.getReader()
+      try {
+        while (true) { const page = await reader.read(); if (page.done) break; await write(page.value) }
+      } catch (error) { await reader.cancel().catch(() => undefined); throw error }
+    } else await write(new Uint8Array(await response.arrayBuffer()))
+    if (offset !== file.sizeBytes) throw new Error(`Mac Parquet download was incomplete for ${file.path}`)
+    const finalized = await client.request('file.finalize', { fileId: created.fileId })
+    if (!finalized.finalized || finalized.sizeBytes !== file.sizeBytes || finalized.sha256 !== file.sha256) throw new Error(`Native host file verification failed for ${file.path}`)
+    return created.fileId
+  } catch (error) {
+    await client.request('file.close', { fileId: created.fileId }).catch(() => undefined)
+    throw error
+  }
+}
+
 export const downloadParquetArchive = async (
   client: Pick<BridgeClient, 'request'>,
   source: string,
@@ -63,8 +108,8 @@ export const downloadParquetArchive = async (
     for (const file of manifest.files) {
       onProgress?.({ stage: 'download', completed, total })
       const url = new URL(`/__workout/portable-parquet/${manifest.exportId}/${file.path}`, manifestUrl).href
-      const selected = await client.request('file.download', { url, sizeBytes: file.sizeBytes, sha256: file.sha256 })
-      handles[file.role] = selected.fileId
+      const response = await fetch(url, { cache: 'no-store' })
+      handles[file.role] = await stageResponseInNativeFile(client, response, file, completed, total, onProgress)
       completed += file.sizeBytes
       onProgress?.({ stage: 'download', completed, total })
     }
@@ -104,10 +149,9 @@ const fetchWebArchive = async (url: string, onProgress?: (read: number, total: n
   return bytes
 }
 
-export const downloadPortableArchive = async (client: Pick<BridgeClient, 'request'>, nativeDownload: boolean, source: string, onProgress?: (read: number, total: number) => void) => {
+export const downloadPortableArchive = async (source: string, onProgress?: (read: number, total: number) => void) => {
   const url = portableArchiveDownloadUrl(source)
-  if (!nativeDownload) return { name: 'workout-analyze.workout-archive.zip', bytes: await fetchWebArchive(url, onProgress) }
-  return readNativeArchive(client, await client.request('file.downloadArchive', { url }), onProgress)
+  return { name: 'workout-analyze.workout-archive.zip', bytes: await fetchWebArchive(url, onProgress) }
 }
 
 export const downloadArchive = (bytes: Uint8Array, name: string) => {
