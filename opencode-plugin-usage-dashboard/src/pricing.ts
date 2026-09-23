@@ -50,13 +50,12 @@ export function estimateSpend(responses: readonly Response[], models: readonly M
       ) / 1_000_000
     }
     total += cost
-    const variantKey = `${key}:${message.model.variant ?? "default"}`
-    byModel[variantKey] = (byModel[variantKey] ?? 0) + cost
+    byModel[key] = (byModel[key] ?? 0) + cost
     const time = message.time.completed ?? message.time.created
     const index = bins.findIndex((bin) => time >= bin.range.from && time < bin.range.to)
     if (index >= 0) {
       byBucket[index]! += cost
-      const values = byBucketModel[variantKey] ??= bins.map(() => 0)
+      const values = byBucketModel[key] ??= bins.map(() => 0)
       values[index]! += cost
     }
   }

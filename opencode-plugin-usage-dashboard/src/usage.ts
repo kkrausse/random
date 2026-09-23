@@ -9,6 +9,31 @@ export function totalTokens(tokens: TokenUsageInfo): number {
   return tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write
 }
 
+export function groupModels(models: Stats["models"]): Stats["models"] {
+  const grouped = new Map<string, Stats["models"][number]>()
+  for (const entry of models) {
+    const key = `${entry.model.providerID}/${entry.model.id}`
+    const existing = grouped.get(key)
+    if (!existing) {
+      grouped.set(key, {
+        model: { providerID: entry.model.providerID, id: entry.model.id },
+        steps: entry.steps,
+        cost: entry.cost,
+        tokens: { ...entry.tokens, cache: { ...entry.tokens.cache } },
+      })
+      continue
+    }
+    existing.steps += entry.steps
+    existing.cost += entry.cost
+    existing.tokens.input += entry.tokens.input
+    existing.tokens.output += entry.tokens.output
+    existing.tokens.reasoning += entry.tokens.reasoning
+    existing.tokens.cache.read += entry.tokens.cache.read
+    existing.tokens.cache.write += entry.tokens.cache.write
+  }
+  return [...grouped.values()]
+}
+
 export function bounds(range: Range, now: number): { from: number; to: number; width: number } {
   const day = 86_400_000
   if (range === "today") {
