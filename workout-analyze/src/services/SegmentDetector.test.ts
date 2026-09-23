@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { NormalizedActivity } from '../domain/activity'
-import { detectRoutes, pointDistanceM, resolveDetectionConfig } from './SegmentDetector'
+import { detectRoutes, pointDistanceM, resolveDetectionConfig, segmentWithinLoop } from './SegmentDetector'
 
 const activity = (id: string, offset: number): NormalizedActivity => ({
   sourceActivityId: id,
@@ -171,6 +171,30 @@ describe('segment detection', () => {
 
     expect(result.routes.filter((route) => route.type === 'loop')).toHaveLength(1)
     expect(result.routes.filter((route) => route.type === 'segment')).toHaveLength(0)
+  })
+
+  test('folds a segment that crosses the loop seam, even with different workout support', () => {
+    const lap = circle(0)
+    const partial = [...lap.slice(24, -1), ...lap.slice(0, 18)]
+    const result = detectRoutes([
+      ...[1, 2, 3].map((id) => routeActivity(`loop-${id}`, lap)),
+      ...[1, 2, 3].map((id) => routeActivity(`partial-${id}`, partial)),
+    ], { minSegmentDistanceM: 100, routeSeparationM: 5, minSegmentSupportJaccard: 1 })
+
+    expect(result.routes.filter((route) => route.type === 'loop')).toHaveLength(1)
+    expect(result.routes.filter((route) => route.type === 'segment')).toHaveLength(0)
+  })
+
+  test('does not suppress a longer segment merely because it contains a loop', () => {
+    const ring = circle(0).map(([lat, lon]) => ({ lat, lon }))
+    const loop = { type: 'loop' as const, sport: 'running', geometry: ring, distanceM: 850 }
+    const partial = { type: 'segment' as const, sport: 'running', geometry: [...ring.slice(24, -1), ...ring.slice(0, 18)], distanceM: 600 }
+    const longer = { type: 'segment' as const, sport: 'running', geometry: [...ring, { lat: 37, lon: -121.9986 }], distanceM: 870 }
+
+    expect(segmentWithinLoop(loop, partial, resolveDetectionConfig())).toBe(true)
+    expect(segmentWithinLoop(loop, longer, resolveDetectionConfig())).toBe(false)
+    expect(segmentWithinLoop(loop, { ...partial, geometry: [...partial.geometry].reverse() }, resolveDetectionConfig())).toBe(false)
+    expect(segmentWithinLoop(loop, { ...partial, geometry: partial.geometry.map(({ lat, lon }) => ({ lat: lat + 0.0004, lon })) }, resolveDetectionConfig())).toBe(false)
   })
 
   test('finds a configured 100m segment across neighboring candidate grid cells', () => {

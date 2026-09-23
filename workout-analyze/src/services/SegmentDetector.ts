@@ -525,11 +525,29 @@ const segmentFamily = (representative: QualifiedCandidate, qualified: ReadonlyAr
   return { geometry, observations: verified, supportProfile, distances }
 }
 
-const sameClosedRoute = (loop: Candidate, segment: Candidate, config: DetectionConfig) => {
+type RouteGeometry = Pick<Candidate, 'type' | 'sport' | 'distanceM'> & { readonly geometry: ReadonlyArray<RoutePoint> }
+
+export const segmentWithinLoop = (loop: RouteGeometry, segment: RouteGeometry, config: DetectionConfig) => {
   if (loop.type !== 'loop' || segment.type !== 'segment' || loop.sport !== segment.sport) return false
-  if (Math.min(loop.distanceM, segment.distanceM) / Math.max(loop.distanceM, segment.distanceM) < 0.8) return false
-  const path: Path = { activity: null as unknown as NormalizedActivity, id: '', points: segment.geometry as ReadonlyArray<Point> }
-  return findMatches(loop.geometry, path, 'loop', { ...config, maxRouteDeviationM: Math.max(config.maxRouteDeviationM, 50) }).length > 0
+  // Suppress a segment that follows part of the loop, not a longer segment
+  // that happens to contain a whole loop along its way.
+  if (segment.distanceM > loop.distanceM + SAMPLE_SPACING_M) return false
+  if (segment.distanceM > loop.distanceM) {
+    const segmentPath: Path = { activity: null as unknown as NormalizedActivity, id: '', points: segment.geometry as unknown as ReadonlyArray<Point> }
+    if (findMatches(loop.geometry, segmentPath, 'loop', config).length) return false
+  }
+  const ring = loop.geometry.slice(0, -1)
+  const path: Path = { activity: null as unknown as NormalizedActivity, id: '', points: [...ring, ...ring, ring[0]!] as unknown as ReadonlyArray<Point> }
+  const tolerance = Math.max(config.maxRouteDeviationM, 50)
+  const index = spatialIndex(ring, tolerance)
+  // Resampled points on the same GPS trace can be out of phase by nearly one
+  // 40m sample. Allow that in ordered alignment, but require the actual traces
+  // to stay within the configured deviation to avoid nearby parallel routes.
+  const nearLoop = segment.geometry.filter((point) => nearbyIndices(point, index, tolerance)
+    .some((i) => pointDistanceM(point, ring[i]!) <= config.maxRouteDeviationM)).length
+  if (nearLoop / segment.geometry.length < 0.8) return false
+  return nearbyIndices(segment.geometry[0]!, index, tolerance).some((start) =>
+    alignFrom(segment.geometry, path, start, { ...config, maxRouteDeviationM: tolerance }) !== null)
 }
 
 const repeatedLoop = (primitive: Candidate, candidate: Candidate, config: DetectionConfig) => {
@@ -540,8 +558,6 @@ const repeatedLoop = (primitive: Candidate, candidate: Candidate, config: Detect
   const coveredEdges = matches.reduce((sum, match) => sum + match.endIndex - match.startIndex, 0)
   return matches.length >= 2 && coveredEdges / Math.max(1, candidate.geometry.length - 1) >= 0.75
 }
-
-type RouteGeometry = Pick<Candidate, 'type' | 'sport' | 'distanceM'> & { readonly geometry: ReadonlyArray<RoutePoint> }
 
 const sameLoopShape = (a: RouteGeometry, b: RouteGeometry, config: DetectionConfig) => {
   if (a.type !== 'loop' || b.type !== 'loop' || a.sport !== b.sport) return false
@@ -822,7 +838,7 @@ export function detectRoutes(activities: ReadonlyArray<NormalizedActivity>, over
       }
     }
     const duplicate = representatives.some((representative) => {
-      if (candidate.type === 'segment' && representative.type === 'loop') return sameClosedRoute(representative, candidate, config)
+      if (candidate.type === 'segment' && representative.type === 'loop') return segmentWithinLoop(representative, candidate, config)
       if (candidate.type === 'segment') {
         const supportSimilarity = workoutJaccard(candidate.workoutIds, representative.workoutIds)
         return supportSimilarity >= config.minSegmentSupportJaccard
