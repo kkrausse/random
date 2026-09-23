@@ -97,6 +97,7 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
     const [loading, setLoading] = createSignal(false)
     const [failure, setFailure] = createSignal<string>()
     const [selectedValue, setSelectedValue] = createSignal(NEW_SESSION_VALUE)
+    const [expanded, setExpanded] = createSignal<Set<string>>(new Set())
     const [search, setSearch] = createSignal("")
     const [tick, setTick] = createSignal(0)
     const [reviewVersion, setReviewVersion] = createSignal(0)
@@ -143,8 +144,15 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
       ), openingTimes))
     })
     const options = createMemo(() => [
-      { title: "New session", description: "Start with a blank prompt", value: NEW_SESSION_VALUE, state: "new" as const, statusState: "new" as const, depth: 0 },
-      ...rows().filter(({ session }) => !search() || `${session.title ?? "Untitled session"} ${session.location.directory}`.toLowerCase().includes(search().toLowerCase())).map(({ session, state, runningChildren, depth, inactiveByAge, rowAttention }) => {
+      { title: "New session", description: "Start with a blank prompt", value: NEW_SESSION_VALUE, state: "new" as const, statusState: "new" as const, depth: 0, childCount: 0, expanded: false },
+      ...rows().filter(({ session }) => {
+        if (search()) return `${session.title ?? "Untitled session"} ${session.location.directory}`.toLowerCase().includes(search().toLowerCase())
+        // One expansion reveals the entire loaded family, including grandchildren.
+        // Orphans become their own roots until an ancestor is loaded.
+        const root = lifecycleOwner(sessions(), session)
+        return root.id === session.id || expanded().has(root.id) || session.id === currentSessionID()
+          || descendantIDs(sessions(), session.id).includes(currentSessionID() ?? "")
+      }).map(({ session, state, runningChildren, depth, inactiveByAge, rowAttention }) => {
         const statusState = state === "inactive" && !isArchived(session.id) ? rowAttention ?? state : state
         const baseStatus = {
           permission: "Permission required", question: "Question waiting", unavailable: "Status unavailable", checking: "Checking status…",
@@ -160,10 +168,23 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
         return {
           title: session.title?.trim() || "Untitled session", description: details.join(" · "), status, state, statusState, inactiveByAge,
           value: session.id, depth, updated: relativeTime(session.time.updated),
+          childCount: lifecycleOwner(sessions(), session).id === session.id ? descendantIDs(sessions(), session.id).length : 0,
+          expanded: expanded().has(session.id),
         }
       }),
     ])
     const selectedIndex = createMemo(() => options().findIndex((option) => option.value === selectedValue()))
+    function toggleChildren() {
+      const selected = sessions().find((session) => session.id === selectedValue())
+      const id = selected ? lifecycleOwner(sessions(), selected).id : selectedValue()
+      if (id === NEW_SESSION_VALUE || !descendantIDs(sessions(), id).length) return
+      const next = new Set(expanded())
+      if (next.has(id)) {
+        next.delete(id)
+        if (selectedValue() !== id) setSelectedValue(id)
+      } else next.add(id)
+      setExpanded(next)
+    }
     const selectedSession = createMemo(() => sessions().find((session) => session.id === selectedValue()))
     const [contextSyncing, setContextSyncing] = createSignal(false)
     const [contextVersion, setContextVersion] = createSignal(0)
@@ -583,12 +604,14 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
         context.data.on("form.replied", (event) => refreshLocationForSession(event.data.sessionID)),
         context.data.on("form.cancelled", (event) => refreshLocationForSession(event.data.sessionID)),
         context.data.on("session.deleted", (event) => {
-          deletedIDs.add(event.data.sessionID)
-          if (!changingLifecycle() && selectedValue() === event.data.sessionID) setSelectedValue(NEW_SESSION_VALUE)
-          setSessions((loaded) => loaded.filter((item) => item.id !== event.data.sessionID))
-          queriedSessions.delete(event.data.sessionID)
-          setAttentionChecks((current) => { const next = new Map(current); next.delete(event.data.sessionID); return next })
-          setAttentionErrors((current) => { const next = new Map(current); next.delete(event.data.sessionID); return next })
+          // Server deletion removes the entire family. Reconcile loaded children
+          // even if the stream delivers only the root's deletion event.
+          const removed = new Set([event.data.sessionID, ...descendantIDs(liveSessions(), event.data.sessionID)])
+          for (const id of removed) { deletedIDs.add(id); queriedSessions.delete(id) }
+          if (!changingLifecycle() && removed.has(selectedValue())) setSelectedValue(NEW_SESSION_VALUE)
+          setSessions((loaded) => loaded.filter((item) => !removed.has(item.id)))
+          setAttentionChecks((current) => { const next = new Map(current); for (const id of removed) next.delete(id); return next })
+          setAttentionErrors((current) => { const next = new Map(current); for (const id of removed) next.delete(id); return next })
         }),
       ]
       unsubscribe = () => { for (const stop of unsubscribes) stop() }
@@ -610,6 +633,7 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
           setCurrentSessionID(id)
           setSelectedValue(id ?? NEW_SESSION_VALUE)
           setSearch("")
+          setExpanded(new Set<string>())
           setTick((value) => value + 1)
           setAttached(true)
         })
@@ -652,7 +676,7 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
       commands: {
         select: (value: string) => { if (!disposed) setSelectedValue(value) },
         search: (value: string) => { if (!disposed) { setSearch(value); setSelectedValue(NEW_SESSION_VALUE) } },
-        loadMore: () => loadMore(), refresh, changeLifecycle, replyToPermission,
+        loadMore: () => loadMore(), refresh, changeLifecycle, replyToPermission, toggleChildren,
       },
       attach,
       dispose() {

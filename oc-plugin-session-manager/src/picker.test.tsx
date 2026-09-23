@@ -162,7 +162,18 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
     assert.doesNotMatch(setup.captureCharFrame(), /Status unavailable/)
     // A running grandchild outside the list page activates its idle parent.
     assert.match(setup.captureCharFrame(), /1 sub-agent running/)
+    assert.match(setup.captureCharFrame(), /▸ 2 sub-agents/)
+    assert.doesNotMatch(setup.captureCharFrame(), /Grandchild/)
+    commands.find((c) => c.bind === "down").run()
+    commands.find((c) => c.bind === "space").run()
+    await setup.renderOnce()
+    assert.match(setup.captureCharFrame(), /▾ 2 sub-agents/)
     assert.match(setup.captureCharFrame(), /Grandchild/)
+    commands.find((c) => c.bind === "space").run()
+    await setup.renderOnce()
+    assert.doesNotMatch(setup.captureCharFrame(), /Grandchild/)
+    commands.find((c) => c.bind === "space").run()
+    await setup.renderOnce()
     const parentRow = setup.renderer.root.findDescendantById("claude-session-row-1")!
     const childRow = setup.renderer.root.findDescendantById("claude-session-row-2")!
     const runningTitle = setup.renderer.root.findDescendantById("claude-session-title-1")!
@@ -192,7 +203,6 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
     await new Promise((resolve) => setTimeout(resolve, 20))
     await setup.renderOnce()
     assert.match(setup.captureCharFrame(), /Permission required · 2 sub-agents running/)
-    commands.find((c) => c.bind === "down").run()
     commands.find((c) => c.bind === "down").run() // Child action is owned by the root.
     setLifecycle("inactive", "child", true) // Clean up stale child-specific attributes.
     await commands.find((c) => c.bind === "x").run()

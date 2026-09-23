@@ -102,6 +102,29 @@ function mount(controller: SessionController) {
   })
 }
 
+test("a root deletion event clears loaded descendants and their navigation links", async () => {
+  const f = fixture((context) => {
+    const parent = { id: "parent", title: "Parent", location: { directory: "/test" }, time: { updated: Date.now() }, cost: 0 }
+    const child = { ...parent, id: "child", parentID: "parent", title: "Child" }
+    const grandchild = { ...parent, id: "grandchild", parentID: "child", title: "Grandchild" }
+    context.client.session.list = async () => ({ data: [parent, child, grandchild], cursor: {} })
+  })
+  const close = mount(f.controller)
+  try {
+    await until(() => f.controller.state.options().some((row) => row.value === "parent"))
+    assert.equal(f.controller.state.options().some((row) => row.value === "child"), false)
+    f.controller.commands.toggleChildren()
+    assert.ok(f.controller.state.options().some((row) => row.value === "grandchild"))
+    f.controller.commands.select("grandchild")
+    f.handlers.get("session.deleted")!({ data: { sessionID: "parent" } })
+    assert.equal(f.controller.state.selectedValue(), NEW_SESSION_VALUE)
+    assert.deepEqual(f.controller.state.options().map((row) => row.value), [NEW_SESSION_VALUE])
+  } finally {
+    close()
+    f.controller.dispose()
+  }
+})
+
 test("archive job and guard survive closing and reopening; subscriptions belong to the controller", async () => {
   const f = fixture()
   let close = mount(f.controller)
