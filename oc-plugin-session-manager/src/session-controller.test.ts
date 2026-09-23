@@ -125,6 +125,33 @@ test("a root deletion event clears loaded descendants and their navigation links
   }
 })
 
+test("a recent child page loads its older ancestors before showing picker rows", async () => {
+  const requested: string[] = []
+  const f = fixture((context) => {
+    const parent = { id: "parent", title: "Older parent", location: { directory: "/test" }, time: { updated: Date.now() - 100_000 }, cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }
+    const child = { ...parent, id: "child", title: "Recent child", parentID: "parent", time: { updated: Date.now() } }
+    context.ui.router.current = () => ({ type: "home" })
+    context.client.session.list = async () => ({ data: [child], cursor: {} })
+    context.client.session.get = async ({ sessionID }: any) => {
+      requested.push(sessionID)
+      return parent
+    }
+  })
+  const close = mount(f.controller)
+  try {
+    await until(() => f.controller.state.options().some((row) => row.value === "parent"))
+    assert.deepEqual(requested, ["parent"])
+    assert.deepEqual(f.controller.state.options().map((row) => row.value), [NEW_SESSION_VALUE, "parent"])
+    f.controller.commands.select("parent")
+    f.controller.commands.toggleChildren()
+    assert.ok(f.controller.state.options().some((row) => row.value === "child"))
+  } finally {
+    close()
+    f.controller.dispose()
+  }
+})
+
 test("archive job and guard survive closing and reopening; subscriptions belong to the controller", async () => {
   const f = fixture()
   let close = mount(f.controller)
