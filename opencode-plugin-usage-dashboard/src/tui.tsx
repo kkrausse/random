@@ -7,9 +7,9 @@ import { chart } from "./chart"
 import { estimateSpend, loadResponses, type Spend } from "./pricing"
 import { bounds, compact, loadBuckets, metricValue, money, totalTokens, type Metric, type Range, type Stats } from "./usage"
 
-const ranges: Range[] = ["24h", "today", "7d", "30d"]
+const ranges: Range[] = ["24h", "today", "7d", "14d", "30d"]
 const metrics: Metric[] = ["steps", "output", "cache", "cost"]
-const rangeNames: Record<Range, string> = { "24h": "24 hours", today: "Today", "7d": "Week", "30d": "Month" }
+const rangeNames: Record<Range, string> = { "24h": "24 hours", today: "Today", "7d": "Week", "14d": "2 Weeks", "30d": "Month" }
 
 function row(columns: readonly string[], widths: readonly number[]) {
   return columns.map((value, index) => {
@@ -108,10 +108,7 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
     const values = chartValues()
     if (!points) return []
     if (!values) return []
-    const labels = points.map((point) => range() === "24h" || range() === "today"
-      ? new Date(point.range.from).toLocaleTimeString([], { hour: "numeric" })
-      : new Date(point.range.from).toLocaleDateString([], { month: "numeric", day: "numeric" }))
-    return chart(values, labels, dimensions().width - 6, metric() === "cost")
+    return chart(values, points.map((point) => point.range), dimensions().width - 6, metric() === "cost", range())
   })
   const toolUsage = createMemo(() => {
     const tools = stats()?.tools

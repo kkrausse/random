@@ -7,6 +7,7 @@ test("today starts at local midnight; rolling 24h starts exactly one day back", 
   expect(bounds("today", now).from).toBe(new Date(2026, 8, 23).getTime())
   expect(bounds("24h", now).from).toBe(now - 86_400_000)
   expect(bounds("7d", now).from).toBe(new Date(2026, 8, 17).getTime())
+  expect(bounds("14d", now).from).toBe(new Date(2026, 8, 10).getTime())
   expect(bounds("7d", now).width).toBe(86_400_000)
 })
 
