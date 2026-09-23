@@ -11,6 +11,7 @@
 
 ## 2026-09-22 — relay rejects all executes while indefinitely draining (CLI 0.7.0)
 
+- **Resolved for current verification (2026-09-23):** CLI/relay 0.8.2 (build `2026-09-20T05:32:28.650Z`) with extension 0.0.25/protocol 2 successfully created session `irs-save-restore-verify`, navigated its session-owned tab to `http://localhost:5002/`, read snapshots, and clicked `Edit local copy`. The old drain condition no longer reproduces. The editor test itself is blocked separately by `OPFS already owned by another Vivari kernel` from another live client on the same origin; this is not a Browser Control relay failure.
 - CLI/relay build `2026-09-05T19:03:42.828Z`, extension 0.0.24 / protocol 2.
 - Context: localhost:5002 editor smoke test; `doctor --json` reports connected extension, zero active targets, and seven CDP clients in `status --json`. Relay process had been running since September 16.
 - Reproduction: `browser-control execute --json 'return { url: page.url(), title: await page.title() }'` fails before opening a session-owned tab. `browser-control relay restart` also fails.
