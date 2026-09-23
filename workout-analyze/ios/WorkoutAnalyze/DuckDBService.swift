@@ -1,9 +1,66 @@
 import Foundation
 import DuckDB
+import CryptoKit
 
 /// Owns the durable analytical database and all connection-scoped transactions.
 /// Domain schemas and SQL deliberately remain in the shared web application.
 actor DuckDBService {
+    private struct RecoverySelection: Decodable {
+        let filename: String
+        let databaseSHA256: String
+        let sourceWALSHA256: String
+    }
+
+    private static func verifiedRecovery(in directory: URL) throws -> (url: URL, initial: Bool, marker: Data)? {
+        let marker = directory.appendingPathComponent("analysis-recovery-selection.json")
+        guard FileManager.default.fileExists(atPath: marker.path) else { return nil }
+        let markerData = try Data(contentsOf: marker)
+        let selection = try JSONDecoder().decode(RecoverySelection.self, from: markerData)
+        guard selection.filename.hasPrefix("analysis-restored-"), selection.filename.hasSuffix(".duckdb"),
+              !selection.filename.contains("/"), !selection.filename.contains(".."),
+              selection.sourceWALSHA256 == "d129548514614eea2eed1a8c5121ec161f7cbf0b0cf4dbcb993c5d2c386799cd" else {
+            throw ShellError.invalidState("Recovery selection does not identify the captured populated WAL")
+        }
+        let url = directory.appendingPathComponent(selection.filename)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw ShellError.invalidState("Restored database is missing")
+        }
+        let receipt = directory.appendingPathComponent("analysis-recovery-activated.json")
+        if FileManager.default.fileExists(atPath: receipt.path) {
+            guard try Data(contentsOf: receipt) == markerData else {
+                throw ShellError.invalidState("Recovery activation receipt and selection differ")
+            }
+            // Once activated, normal imports and analysis can change the file.
+            // The receipt pins its identity without re-checking the initial hash.
+            return (url, false, markerData)
+        }
+        guard !FileManager.default.fileExists(atPath: url.path + ".wal"),
+              selection.databaseSHA256 == SHA256.hash(data: try Data(contentsOf: url)).map({ String(format: "%02x", $0) }).joined() else {
+            throw ShellError.invalidState("Restored database has a WAL or differs from the verified native artifact")
+        }
+        return (url, true, markerData)
+    }
+
+    private static func verifyPopulatedRecovery(at url: URL) throws {
+        let database = try Database(store: .file(at: url))
+        let connection = try database.connect()
+        let checks = [
+            ("SELECT count(*)::VARCHAR FROM activities", "173"),
+            ("SELECT count(*)::VARCHAR FROM activity_samples", "195928"),
+            ("SELECT count(*)::VARCHAR FROM detected_routes", "31"),
+            ("SELECT count(*)::VARCHAR FROM route_traversals", "421"),
+            ("SELECT count(*)::VARCHAR FROM route_coverages", "1890"),
+            ("SELECT md5(string_agg(id || ':' || traversal_count::VARCHAR || ':' || workout_count::VARCHAR, '|' ORDER BY id)) FROM detected_routes", "e47d85d7e98e93bad1fd63112582dd8f"),
+            ("SELECT md5(string_agg(id || ':' || route_id || ':' || activity_id, '|' ORDER BY id)) FROM route_traversals", "66ab2962eac0f0b059a6e5fccd3da2cd"),
+            ("SELECT md5(string_agg(id, '|' ORDER BY id)) FROM activities", "6d99f0b4cb2542f2b774d865e7c73fef"),
+        ]
+        for (sql, expected) in checks {
+            guard try connection.query(sql)[0].cast(to: String.self)[0] == expected else {
+                throw ShellError.invalidState("Restored analysis identity check failed: \(sql)")
+            }
+        }
+    }
+
     private struct TransactionSession {
         let connection: Connection
         var touchedAt: Foundation.Date
@@ -42,6 +99,23 @@ actor DuckDBService {
         try files.createDirectory(at: directory, withIntermediateDirectories: true)
         let original = directory.appendingPathComponent("analysis.duckdb")
         let native = directory.appendingPathComponent("analysis-native.duckdb")
+        // Explicit, content-addressed activation takes precedence only after
+        // validating the native-format artifact and the captured data identity.
+        // A bad marker fails closed; no older store or WAL is opened as fallback.
+        do {
+            if let restored = try verifiedRecovery(in: directory) {
+                if restored.initial { try verifyPopulatedRecovery(at: restored.url) }
+                let service = try DuckDBService(url: restored.url)
+                if restored.initial {
+                    try restored.marker.write(to: directory.appendingPathComponent("analysis-recovery-activated.json"), options: .atomic)
+                }
+                report("selected", restored.url.lastPathComponent, restored.initial ? "Verified populated WAL recovery" : "Activated populated WAL recovery")
+                return service
+            }
+        } catch {
+            report("failed", "analysis-recovery-selection.json", String(describing: error))
+            throw error
+        }
         // Once recovery has begun, the first recovery store is the authority.
         // A later empty fallback must never hide an earlier populated store.
         let recoveries = try files.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
