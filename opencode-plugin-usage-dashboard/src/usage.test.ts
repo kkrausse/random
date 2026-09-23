@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { bounds } from "./usage"
+import { bounds, totalTokens } from "./usage"
 import { accountLimits } from "./codex"
 
 test("today starts at local midnight; rolling 24h starts exactly one day back", () => {
@@ -22,4 +22,8 @@ test("Codex named limits do not duplicate the default rateLimits entry", () => {
     },
   }
   expect(accountLimits(account).map((limit) => limit.id)).toEqual(["codex", "other"])
+})
+
+test("total tokens includes both cache paths and reasoning", () => {
+  expect(totalTokens({ input: 10, output: 20, reasoning: 3, cache: { read: 70, write: 2 } })).toBe(105)
 })
