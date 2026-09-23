@@ -1,0 +1,24 @@
+{
+  "name": "opencode-plugin-usage-dashboard",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tui": "./tui.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@opencode/plugin": "2.0.14"
+  },
+  "devDependencies": {
+    "@opentui/core": "0.5.10",
+    "@opentui/solid": "0.5.10",
+    "@types/bun": "^1.4.2",
+    "@types/node": "24.12.2",
+    "solid-js": "1.9.12",
+    "typescript": "^5.9.2"
+  }
+}

@@ -19,6 +19,8 @@
 !opencode-plugin-commit-diff-viewer/**
 !oc-plugin-session-manager/
 !oc-plugin-session-manager/**
+!opencode-plugin-usage-dashboard/
+!opencode-plugin-usage-dashboard/**
 !mortgage-calculator/
 !mortgage-calculator/**
 !boox-plugin-test/
