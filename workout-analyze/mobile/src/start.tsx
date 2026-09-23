@@ -13,7 +13,7 @@ const transport = native ?? unavailableNativeTransport()
 const client = createBridgeClient(transport)
 const localArchive = import.meta.env.DEV && !native ? createRecoveredArchiveClient() : undefined
 const localDatabase = native ? createNativeDatabaseHost(client) : import.meta.env.DEV ? createLocalDatabaseHost() : undefined
-const store = createMobileStore(client, localArchive, localDatabase)
+const store = createMobileStore(client, localArchive, localDatabase, { requiresDatabaseCapability: Boolean(native) })
 if (import.meta.env.DEV) {
   const kind = native ? 'native' : 'unavailable'
   void import('./dev/runner').then(({ installDevRunner }) => installDevRunner({ client, store, kind })).catch((error) => {

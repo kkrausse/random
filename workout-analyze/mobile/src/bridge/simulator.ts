@@ -48,7 +48,7 @@ export const createSimulatorTransport = (fault: string | null = null): BridgeTra
   return { kind: 'simulator', label: fault ? `Browser simulator · ${fault}` : 'Browser simulator · recorder fixture', post(raw) {
     const command = parseCommand(raw)
     switch (command.method) {
-      case 'bridge.hello': reply(command, { shellVersion: 'sim-1.0.0', protocolVersion: 1, engineApiVersion: 1, checkpointSchemaVersion: 1, capabilities: fault === 'legacy-shell' ? PHASE1_CAPABILITIES : MOBILE_CAPABILITIES, unavailableCapabilities: fault === 'legacy-shell' ? [{ capability: 'workout.recorder', reason: 'Native update required' }] : [] }); break
+      case 'bridge.hello': reply(command, { shellVersion: 'sim-1.0.0', protocolVersion: 1, engineApiVersion: 1, checkpointSchemaVersion: 1, capabilities: fault === 'legacy-shell' ? PHASE1_CAPABILITIES : fault === 'no-database' ? MOBILE_CAPABILITIES.filter((capability) => !capability.startsWith('database.')) : MOBILE_CAPABILITIES, unavailableCapabilities: fault === 'legacy-shell' ? [{ capability: 'workout.recorder', reason: 'Native update required' }] : [] }); break
       case 'bridge.ping': reply(command, { nonce: (command.params as CommandParams['bridge.ping']).nonce, nativeReceivedAt: now(), nativeSentAt: now() }); break
       case 'session.snapshot': reply(command, session()); break
       case 'bridge.snapshot': reply(command, snapshot()); break
