@@ -149,7 +149,9 @@ const SavedDetail = ({ store }: { store: MobileStore }) => {
 const RouteGeometryMap = ({ points, interactive = true }: { points: readonly { lat: number; lon: number }[]; interactive?: boolean }) => {
   const map = createRouteMap(points, 320, 190, 16)
   if (!map) return <div className="route-geometry map-empty"><MapPin /><strong>Route unavailable</strong></div>
-  return <MapViewport className={`route-geometry${interactive ? ' map-bleed' : ''}`} label={`Route map with ${points.length.toLocaleString()} points`} interactive={interactive}><svg viewBox="0 0 320 190" preserveAspectRatio="none"><path className="trail-shadow" d={map.path} /><path className="trail-line" d={map.path} /><circle className="route-start" cx={map.start.x} cy={map.start.y} r="4" /><circle className="rider" cx={map.end.x} cy={map.end.y} r="5" /></svg></MapViewport>
+  // List thumbnails need only visible tiles; detail maps retain surrounding tiles for panning.
+  const tiles = interactive ? map.tiles : map.tiles.filter((tile) => tile.x < 320 && tile.x + 256 > 0 && tile.y < 190 && tile.y + 256 > 0)
+  return <MapViewport className={`route-geometry${interactive ? ' map-bleed' : ''}`} label={`Route map with ${points.length.toLocaleString()} points`} interactive={interactive} overlay={<small className="attribution">Tiles © Esri, contributors</small>}><svg viewBox="0 0 320 190" preserveAspectRatio="none">{tiles.map((tile) => <image key={`${tile.href}-${tile.x}-${tile.y}`} href={tile.href} x={tile.x} y={tile.y} width="256" height="256" aria-hidden="true" />)}<path className="trail-shadow" d={map.path} /><path className="trail-line" d={map.path} /><circle className="route-start" cx={map.start.x} cy={map.start.y} r="4" /><circle className="rider" cx={map.end.x} cy={map.end.y} r="5" /></svg></MapViewport>
 }
 
 const Library = ({ store }: { store: MobileStore }) => {
