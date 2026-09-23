@@ -11,6 +11,7 @@ export interface Spend {
   unpriced: number
   byModel: Record<string, number>
   byBucket: number[]
+  byBucketModel: Record<string, number[]>
   zenEquivalent: boolean
 }
 
@@ -24,6 +25,7 @@ export function estimateSpend(responses: readonly Response[], models: readonly M
   const inventory = new Map(models.map((model) => [`${model.providerID}/${model.id}`, model]))
   const byModel: Record<string, number> = {}
   const byBucket = bins.map(() => 0)
+  const byBucketModel: Record<string, number[]> = {}
   let total = 0
   let quoted = 0
   let unpriced = 0
@@ -52,9 +54,13 @@ export function estimateSpend(responses: readonly Response[], models: readonly M
     byModel[variantKey] = (byModel[variantKey] ?? 0) + cost
     const time = message.time.completed ?? message.time.created
     const index = bins.findIndex((bin) => time >= bin.range.from && time < bin.range.to)
-    if (index >= 0) byBucket[index]! += cost
+    if (index >= 0) {
+      byBucket[index]! += cost
+      const values = byBucketModel[variantKey] ??= bins.map(() => 0)
+      values[index]! += cost
+    }
   }
-  return { total, quoted, unpriced, byModel, byBucket, zenEquivalent }
+  return { total, quoted, unpriced, byModel, byBucket, byBucketModel, zenEquivalent }
 }
 
 export async function loadResponses(client: Client, from: number, to: number, project: string | undefined, signal: AbortSignal) {

@@ -26,6 +26,8 @@ test("prices each response at its context tier, keeps variants separate, and res
   expect(result.byModel["openai/example:medium"]).toBeCloseTo(1.49)
   expect(result.byBucket[0]).toBeCloseTo(1.31)
   expect(result.byBucket[1]).toBeCloseTo(0.5)
+  expect(result.byBucketModel["openai/example:medium"]).toEqual([expect.any(Number), 0.5])
+  expect(result.byBucketModel["openai/example:medium"]![0]).toBeCloseTo(0.99)
   expect(result.quoted).toBe(2)
   expect(result.unpriced).toBe(1)
   expect(result.zenEquivalent).toBe(true)
