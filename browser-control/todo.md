@@ -1,5 +1,14 @@
 # Browser Control follow-ups
 
+## 2026-09-23 — click action hangs after dispatch in local workout UI (CLI 0.8.2)
+
+- CLI/relay 0.8.2, build `2026-09-20T05:32:28.650Z`; extension 0.0.25 / protocol 2.
+- Context: adopted user-owned `http://localhost:4317/` tab, session `workout-ui-inspect`; desktop-served Workout Analyze mobile UI. Doctor reports healthy relay and one active target.
+- Reproduction: inspect the landing snapshot, then `await ref("e2").click(); return {url:page.url(), snapshot:await snapshot()}` with a 20-second CLI deadline. The library screen appeared, but the execute exceeded the deadline. In that library, `page.getByRole("button", {name:"9/19/2026 · cycling 16.31 km · 43:22"}).click()` timed out after 30 seconds at `performing click action`; `ref("e4").click({timeout:10000})` reproduced the same timeout. The target was visible, enabled, stable, and unobstructed by the DOM hit test.
+- Expected: a click on the visible button resolves after dispatch and the next page can be inspected.
+- Actual: the Playwright click promise remained pending even though the landing click had changed the rendered screen. A subsequent `locator.evaluate(x => x.click())` returned promptly, and a fresh snapshot showed the workout detail. The URL remained `/` because this app switches screens in place.
+- Recovery: `doctor`, short follow-up snapshots, DOM hit test, and a narrow DOM click after verifying the target. No relay restart, database operation, or session replacement. Investigate whether the browser/app's main-thread work or click completion semantics cause the pending action.
+
 ## 2026-09-22 — relay rejects all executes while indefinitely draining (CLI 0.7.0)
 
 - CLI/relay build `2026-09-05T19:03:42.828Z`, extension 0.0.24 / protocol 2.
