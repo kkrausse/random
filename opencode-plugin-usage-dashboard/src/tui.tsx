@@ -5,7 +5,7 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "so
 import { accountLimits, loadCodexUsage, type CodexAccount } from "./codex"
 import { chart } from "./chart"
 import { estimateSpend, loadResponses, type Spend } from "./pricing"
-import { bounds, compact, loadBuckets, metricValue, money, type Metric, type Range, type Stats } from "./usage"
+import { bounds, compact, loadBuckets, metricValue, money, totalTokens, type Metric, type Range, type Stats } from "./usage"
 
 const ranges: Range[] = ["24h", "today", "7d", "30d"]
 const metrics: Metric[] = ["steps", "output", "cache", "cost"]
@@ -117,10 +117,19 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
     const tools = stats()?.tools
     return tools?.mode === "detail" ? tools.usage : []
   })
-  const modelWidths = createMemo(() => dimensions().width >= 105 ? [38, 7, 9, 9, 9, 10] : [Math.max(18, dimensions().width - 52), 7, 9, 9, 10])
-  const modelColumns = createMemo(() => modelWidths().length === 6
-    ? ["Model", "Steps", "Input", "Output", "Cache", "Spend ≈"]
-    : ["Model", "Steps", "Output", "Cache", "Spend ≈"])
+  const modelWidths = createMemo(() => dimensions().width >= 105
+    ? [34, 7, 12, 9, 9, 9, 10]
+    : dimensions().width >= 85
+      ? [Math.max(20, dimensions().width - 65), 7, 12, 9, 9, 10]
+      : [Math.max(16, dimensions().width - 53), 7, 12, 9, 10])
+  const modelColumns = createMemo(() => ["Model", "Steps", "Total tokens", ...(modelWidths().length === 7 ? ["Input"] : []), "Output", ...(modelWidths().length >= 6 ? ["Cache"] : []), "Spend ≈"])
+  const modelRow = (name: string, steps: number, tokens: Stats["tokens"], cost: string) => row([
+    name, compact(steps), compact(totalTokens(tokens)),
+    ...(modelWidths().length === 7 ? [compact(tokens.input)] : []),
+    compact(tokens.output),
+    ...(modelWidths().length >= 6 ? [compact(tokens.cache.read)] : []),
+    cost,
+  ], modelWidths())
   const modelUsage = createMemo(() => [...(stats()?.models ?? [])].sort((a, b) => {
     const prices = spend()?.byModel
     const key = (model: typeof a) => `${model.model.providerID}/${model.model.id}:${model.model.variant ?? "default"}`
@@ -198,12 +207,6 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
   }))
 
   const section = (title: string) => <text fg={accent}>{title}</text>
-  const line = (label: string, value: string, action?: () => void) => (
-    <box flexDirection="row" justifyContent="space-between">
-      <text fg={action ? accent : muted} onMouseDown={(event) => { if (event.button === 0) action?.() }}>{label}{action ? "  ↗" : ""}</text>
-      <text fg={text} onMouseDown={(event) => { if (event.button === 0) action?.() }}>{value}</text>
-    </box>
-  )
 
   return (
     <box flexDirection="column" flexGrow={1} minHeight={0} paddingLeft={2} paddingRight={2} paddingTop={1}>
@@ -220,29 +223,19 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
           }}>{range() === value ? `▸ ${rangeNames[value]}` : `${index() + 1} ${rangeNames[value]}`}</text>}</For>
         </box>
         <text fg={muted}>t choose period · m chart metric · p project · r refresh · Esc back</text>
-        <text fg={accent}>{rangeNames[range()]} · {metric().toUpperCase()}</text>
+        <text fg={accent}>{rangeNames[range()]} · {activeModel() ?? "All models"}</text>
       </box>
       <scrollbox focused flexGrow={1} minHeight={0} scrollY scrollX={false} contentOptions={{ flexDirection: "column" }} verticalScrollbarOptions={{ visible: false }}>
         <box flexDirection="column" paddingBottom={2}>
-          {section("OPENCODE ACTIVITY")}
-          <Show when={stats()} fallback={<text fg={muted}>{statsError() || "Loading OpenCode usage…"}</text>}>
-            {(data) => (
-              <box flexDirection="column">
-                {line("Model steps / prompts", `${compact(data().steps)} / ${compact(data().prompts)}`, () => setMetric("steps"))}
-                {line("Sessions / subagents", `${data().sessions} / ${data().subagents}`)}
-                {line("Fresh input / output", `${compact(data().tokens.input)} / ${compact(data().tokens.output)}`, () => setMetric("output"))}
-                {line("Cache read / write", `${compact(data().tokens.cache.read)} / ${compact(data().tokens.cache.write)}`, () => setMetric("cache"))}
-                {line("Recorded charge", money(data().cost))}
-                {line("Estimated model spend (quoted equivalent)", spend() ? money(spend()!.total) : spendError() || "Calculating…", () => setMetric("cost"))}
-                <Show when={spend()}>{(value) => <text fg={muted}>  {value().quoted} quoted responses · {value().unpriced} unpriced · {value().zenEquivalent ? "Zen list prices for OpenAI account models" : "model list prices"}</text>}</Show>
-              </box>
-            )}
-          </Show>
-
-          <box paddingTop={1} flexDirection="column">
+          <box flexDirection="column">
             <text fg={accent} onMouseDown={(event) => { if (event.button === 0) void chooseBucket() }}>
-              ACTIVITY CHART · {metric().toUpperCase()}{activeModel() ? ` · ${activeModel()}` : ""}   [click for periods · m switch]
+              ACTIVITY CHART{activeModel() ? ` · ${activeModel()}` : ""}   [click chart for periods]
             </text>
+            <box flexDirection="row" gap={2}>
+              <For each={metrics}>{(value) => <text fg={metric() === value ? accent : muted} onMouseDown={(event) => {
+                if (event.button === 0) setMetric(value)
+              }}>{metric() === value ? `▸ ${value.toUpperCase()}` : value.toUpperCase()}</text>}</For>
+            </box>
             <Show when={activeModel()}><text fg={accent} onMouseDown={(event) => { if (event.button === 0) setActiveModel(undefined) }}>← All models (clear filter)</text></Show>
             <Show when={displayChart().length} fallback={<text fg={muted}>{bucketError() || spendError() || (metric() === "cost" && buckets() ? "Calculating priced responses…" : "Calculating timeline…")}</text>}>
               <For each={displayChart()}>{(line) => <text fg={accent} onMouseDown={(event) => { if (event.button === 0) void chooseBucket() }}>{line}</text>}</For>
@@ -253,19 +246,28 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
             {section("MODELS")}
             <text fg={muted}>{row(modelColumns(), modelWidths())}</text>
             <text fg={muted}>{"─".repeat(modelWidths().reduce((sum, width) => sum + width + 2, -2))}</text>
-            <For each={modelUsage()} fallback={<text fg={muted}>No model usage in this period</text>}>
+            <For each={modelUsage()}>
               {(model) => <text fg={activeModel() === `${model.model.providerID}/${model.model.id}:${model.model.variant ?? "default"}` ? accent : text} onMouseDown={(event) => {
                 if (event.button !== 0) return
                 const key = `${model.model.providerID}/${model.model.id}:${model.model.variant ?? "default"}`
                 setActiveModel(activeModel() === key ? undefined : key)
-              }}>{row([
+              }}>{modelRow(
                   `${model.model.providerID}/${model.model.id}${model.model.variant && model.model.variant !== "default" ? `:${model.model.variant}` : ""}`,
-                  compact(model.steps),
-                  ...(modelWidths().length === 6 ? [compact(model.tokens.input)] : []),
-                  compact(model.tokens.output), compact(model.tokens.cache.read),
+                  model.steps, model.tokens,
                   spend() ? money(spend()!.byModel[`${model.model.providerID}/${model.model.id}:${model.model.variant ?? "default"}`] ?? 0) : "…",
-                ], modelWidths())}</text>}
+                )}</text>}
             </For>
+            <Show when={stats()} fallback={<text fg={muted}>{statsError() || "Loading model usage…"}</text>}>
+              {(data) => <>
+                <text fg={muted}>{"─".repeat(modelWidths().reduce((sum, width) => sum + width + 2, -2))}</text>
+                <text fg={accent} onMouseDown={(event) => { if (event.button === 0) setActiveModel(undefined) }}>
+                  {modelRow("TOTAL", data().steps, data().tokens, spend() ? money(spend()!.total) : spendError() || "…")}
+                </text>
+                <text fg={muted}>{data().sessions} sessions · {data().subagents} subagents · {data().prompts} prompts · recorded charge {money(data().cost)}</text>
+              </>}
+            </Show>
+            <Show when={spend()}>{(value) => <text fg={muted}>{value().quoted} priced responses · {value().unpriced} unpriced · {value().zenEquivalent ? "Zen list-price equivalent" : "model list prices"}</text>}</Show>
+            <text fg={muted}>Total tokens = input + output + reasoning + cache read + write</text>
           </box>
 
           <box paddingTop={1} flexDirection="column">

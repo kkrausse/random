@@ -6,7 +6,7 @@ Add this directory to `plugins` in `~/.config/opencode/cli.json`, restart OpenCo
 
 Use `1`–`4`, the clickable period choices, or `t` to select 24 hours, today, the last 7 calendar days, or the last 30 calendar days. `m` cycles the chart metric (including estimated spend); `p` toggles all/current project; `r` refreshes; `Esc` returns to the previous session or home. Times use the local timezone.
 
-Click a summary metric to graph it, a model row to filter the chart (click it again to clear), the chart to inspect a time bucket, a tool row for call details, or a Codex row for its full reset details. The project label toggles project scope.
+Click a chart metric to switch the graph, a model row to filter it (click it again or the TOTAL row to clear), the chart to inspect a time bucket, a tool row for call details, or a Codex row for its full reset details. The project label toggles project scope. The model table's TOTAL row covers the selected period; total tokens include input, output, reasoning, and cache read/write.
 
 **Estimated model spend** prices each response at its model's quoted per-million-token rates, including context-tier rates and cache read/write. When an OpenAI account model has no published rate, the dashboard uses the equivalent OpenCode Zen model's list price. This is a quoted equivalent, **not actual subscription billing**. Positive recorded charges are used as-is; unpriced responses are counted and excluded from the estimate. Codex percentages and reset times are local account allowances, not consumption attributable to these sessions.
 

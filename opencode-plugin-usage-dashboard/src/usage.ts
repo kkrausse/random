@@ -1,8 +1,13 @@
 import type { Plugin } from "@opencode/plugin/tui"
+import type { TokenUsageInfo } from "@opencode/client"
 
 export type Stats = Awaited<ReturnType<Plugin.Context["client"]["session"]["stats"]>>
 export type Range = "24h" | "today" | "7d" | "30d"
 export type Metric = "steps" | "output" | "cache" | "cost"
+
+export function totalTokens(tokens: TokenUsageInfo): number {
+  return tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write
+}
 
 export function bounds(range: Range, now: number): { from: number; to: number; width: number } {
   const day = 86_400_000
