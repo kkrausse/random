@@ -17,7 +17,7 @@ import type { Activity, WorkoutDetail } from '../../src/domain/activity'
 import type { DetectedRoute, RouteDetail, WorkoutRouteMatch } from '../../src/domain/analysis'
 import { getArchiveActivity, getArchiveAnalysisSettings, getArchiveRoute, listArchiveActivities, listArchiveRoutes, listArchiveWorkoutMatches, type ArchiveAnalysisSettings } from '../../src/engine/catalog'
 import { rebuildRouteAnalysis, type RouteAnalysisProgress, type RouteDetector } from '../../src/engine/analysis'
-import { ingestIphoneWorkouts, iphoneActivityId, type IphoneIngestionSummary } from '../../src/engine/iphone-normalization'
+import { countImportedIphoneWorkouts, ingestIphoneWorkouts, iphoneActivityId, type IphoneIngestionSummary } from '../../src/engine/iphone-normalization'
 import { exportPortableArchive, importPortableArchive, PORTABLE_ARCHIVE_EXTENSION, type ArchiveImportSummary, type ArchiveProgress } from '../../src/engine/portable-archive'
 import { importParquetArchive, type ParquetArchiveProgress } from '../../src/engine/parquet-archive'
 import { downloadArchive, downloadParquetArchive, pickNativeArchive } from './archive/transfer'
@@ -116,6 +116,7 @@ export interface MobileState {
   readonly routeDetail: RouteDetail | null
   readonly analysisSettings: ArchiveAnalysisSettings | null
   readonly iphoneIngestion: IphoneIngestionSummary | null
+  readonly importedIphoneWorkouts: number | null
   readonly analysisStatus: AnalysisStatus
   readonly archiveTransferProgress: ArchiveProgress | ParquetArchiveProgress | null
   readonly archiveImport: ArchiveImportSummary | null
@@ -202,6 +203,8 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
   let stopEventSubscription: (() => void) | null = null
   let timer: ReturnType<typeof setInterval> | null = null
   let replayController: ReplayController | null = null
+  let iphoneSync: Promise<void> | null = null
+  let archiveRevision = 0
   const now = options.now ?? (() => new Date())
   const idleAnalysisStatus: AnalysisStatus = { state: 'idle', phase: 'idle', startedAt: null, finishedAt: null, durationMs: null, activities: null, samples: null, completed: null, total: null, candidates: null, qualified: null, routes: null, traversals: null, error: null }
   const initialReplay: ReplaySnapshot = { status: 'idle', metadata: null, checkpoint: null, observations: [], issues: [], metrics: null, positionMs: 0, durationMs: 0, speed: 1, error: null }
@@ -332,12 +335,30 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
         : `Imported ${archiveImport.inserted}; ${archiveImport.unchanged} unchanged. Rebuild analysis next.`)
     }
 
+    const syncIphoneArchive = (): Promise<void> => {
+      if (iphoneSync) return iphoneSync
+      if (!databaseReady() || !database || !['ready', 'empty'].includes(get().archiveLoadState)) return Promise.resolve()
+      const revision = archiveRevision
+      iphoneSync = run('iphone-import', 'recording', async () => {
+        const workouts = get().savedWorkouts
+        const load = (id: string) => localArchive ? localArchive.detail(id) : loadSavedWorkoutDetail(client, id)
+        const iphoneIngestion = await ingestIphoneWorkouts(database, workouts, load)
+        if (iphoneIngestion.imported > 0) await database.transaction((transaction) => transaction.execute('DROP TABLE IF EXISTS route_coverages; DROP TABLE IF EXISTS route_traversals; DROP TABLE IF EXISTS detected_routes; DROP TABLE IF EXISTS analysis_settings;'))
+        if (revision === archiveRevision) set({ iphoneIngestion, importedIphoneWorkouts: await countImportedIphoneWorkouts(database, workouts) })
+        if (iphoneIngestion.imported > 0) {
+          await Promise.all([get().loadLibrary(), get().loadRoutes()])
+          setNotice('recording', `${iphoneIngestion.imported} saved iPhone ${iphoneIngestion.imported === 1 ? 'workout' : 'workouts'} imported. Segment analysis now needs a rebuild.`)
+        }
+      }).finally(() => { iphoneSync = null; if (revision !== archiveRevision && started) void syncIphoneArchive() })
+      return iphoneSync
+    }
+
     return {
       screen: 'home', returnScreen: 'home', bridge: client.getState(), session: client.getState().session, recorderSupported: false,
       permissions: null, builds: null, diagnostics: null, checks: [], location: null, heartRate: null, locations: [], measurements: [],
       trail: [], observationCursor: null, rawJournalSequence: null, recordingIssues: [], savedWorkoutId: null, requests: {},
         savedWorkouts: [], savedWorkoutDetail: null, savedWorkoutNormalizedDetail: null, savedWorkoutMatches: [], archiveSourceLabel: localArchive?.label ?? null, archiveLoadState: localArchive ? 'loading' : 'unavailable', localBrowserHost: Boolean(localArchive),
-          analysisHostAvailable: Boolean(database && !options.requiresDatabaseCapability), libraryWorkouts: [], libraryWorkoutDetail: null, libraryWorkoutMatches: [], routes: [], routeDetail: null, analysisSettings: null, iphoneIngestion: null, analysisStatus: idleAnalysisStatus, archiveTransferProgress: null, archiveImport: null,
+          analysisHostAvailable: Boolean(database && !options.requiresDatabaseCapability), libraryWorkouts: [], libraryWorkoutDetail: null, libraryWorkoutMatches: [], routes: [], routeDetail: null, analysisSettings: null, iphoneIngestion: null, importedIphoneWorkouts: null, analysisStatus: idleAnalysisStatus, archiveTransferProgress: null, archiveImport: null,
         notices: { recording: null, diagnostics: null, sensors: null, settings: null }, developmentSourceDraft: recommendedDevelopmentUrl, developmentSourceDirty: false,
        macArchiveSourceDraft: recommendedDevelopmentUrl, macArchiveSourceDirty: false,
       configuredDevelopmentSourceUrl: undefined, uiSource: null, replay: initialReplay,
@@ -346,12 +367,12 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
         started = true
         stopBridgeSubscription = client.subscribe(projectBridge)
         stopEventSubscription = client.subscribeEvents(onEvent)
-        const onVisibility = () => { if (document.visibilityState === 'visible') void get().refresh() }
+         const onVisibility = () => { if (document.visibilityState === 'visible') { void get().refresh(); if (localArchive || get().bridge.capabilities.includes('archive.list')) void get().loadSavedWorkouts() } }
         document.addEventListener('visibilitychange', onVisibility)
         timer = setInterval(() => { if (document.visibilityState === 'visible') void get().refresh() }, 10_000)
          if (localArchive) void get().loadSavedWorkouts()
          if (databaseReady()) { void get().loadLibrary(); void get().loadRoutes() }
-          void client.connect().then(async () => { await get().refresh(); if (!localArchive && client.getState().capabilities.includes('archive.list')) await get().loadSavedWorkouts(); if (databaseReady()) { await get().loadLibrary(); await get().loadRoutes() } }).catch(() => undefined)
+          void client.connect().then(async () => { await get().refresh(); if (!localArchive && client.getState().capabilities.includes('archive.list')) await get().loadSavedWorkouts(); if (databaseReady()) { await get().loadLibrary(); await get().loadRoutes(); void syncIphoneArchive() } }).catch(() => undefined)
         return () => {
           if (!started) return
           started = false; pollGeneration += 1; observationGeneration += 1
@@ -384,7 +405,7 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
          set({ screen, ...(['settings', 'diagnostics', 'heartRate'].includes(screen) && !['settings', 'diagnostics', 'heartRate'].includes(previous) ? { returnScreen: previous } : {}) })
          if (screen === 'diagnostics') void get().refresh()
          if (screen === 'history') void get().loadSavedWorkouts()
-         if (screen === 'library') void get().loadLibrary()
+          if (screen === 'library') { void get().loadLibrary(); if (localArchive || get().bridge.capabilities.includes('archive.list')) void get().loadSavedWorkouts() }
          if (screen === 'routes') void get().loadRoutes()
       },
       returnFromUtility() { set((state) => ({ screen: state.returnScreen })) },
@@ -396,12 +417,25 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
       finishWorkout() { return run('workout-finish', 'recording', async () => { const session = currentAvailableSession(); const result = await client.request('workout.finish', { sessionId: session.sessionId!, expectedRevision: session.revision }); set({ savedWorkoutId: result.savedWorkoutId }); installSession(result.session); if (get().bridge.capabilities.includes('archive.list')) await get().loadSavedWorkouts() }) },
       recoverWorkout(action) { return run(`workout-recover-${action}`, 'recording', async () => { const session = currentAvailableSession(); const result = await client.request('workout.recover', { sessionId: session.sessionId!, expectedRevision: session.revision, action }); if ('session' in result) { set({ savedWorkoutId: result.savedWorkoutId }); installSession(result.session) } else installSession(result) }) },
       exportWorkout(format) { return run(`workout-export-${format}`, 'recording', async () => { const session = currentAvailableSession(); const result = await client.request('workout.export', { sessionId: session.sessionId!, format }); setNotice('recording', result.presented ? `${format === 'gpx' ? 'GPX' : 'Lossless workout bundle'} share sheet opened.` : 'Export was prepared but the share sheet was not presented.') }) },
-       loadSavedWorkouts() { return run('archive-list', 'recording', async () => {
-         set({ archiveLoadState: 'loading' })
-         const page = localArchive ? await localArchive.list() : get().bridge.capabilities.includes('archive.list') ? await client.request('archive.list', { afterCursor: null, limit: 50 }) : null
-         if (!page) { set({ archiveLoadState: 'unavailable' }); return }
-         set({ savedWorkouts: page.items, archiveSourceLabel: localArchive?.label ?? 'This iPhone', archiveLoadState: page.items.length ? 'ready' : 'empty' })
-       }) },
+        loadSavedWorkouts() { return run('archive-list', 'recording', async () => {
+          set({ archiveLoadState: 'loading' })
+          const page = localArchive ? await localArchive.list() : get().bridge.capabilities.includes('archive.list') ? await client.request('archive.list', { afterCursor: null, limit: 50 }) : null
+          if (!page) { set({ archiveLoadState: 'unavailable' }); return }
+          const items = [...page.items]
+          if (!localArchive) {
+            let next = page
+            const cursors = new Set<string>()
+            while (next.hasMore) {
+              if (!next.nextCursor || cursors.has(next.nextCursor)) throw new Error('Saved workout archive cursor did not advance')
+              cursors.add(next.nextCursor)
+              next = await client.request('archive.list', { afterCursor: next.nextCursor, limit: 50 })
+              items.push(...next.items)
+            }
+          }
+          archiveRevision += 1
+          set({ savedWorkouts: items, importedIphoneWorkouts: null, archiveSourceLabel: localArchive?.label ?? 'This iPhone', archiveLoadState: items.length ? 'ready' : 'empty' })
+          void syncIphoneArchive()
+        }) },
        openSavedWorkout(savedWorkoutId) { return run('archive-detail', 'recording', async () => {
           const savedWorkoutDetail = localArchive ? await localArchive.detail(savedWorkoutId) : await loadSavedWorkoutDetail(client, savedWorkoutId)
           const normalizedId = iphoneActivityId(savedWorkoutDetail.summary.sessionId)
@@ -466,19 +500,12 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
              throw error
            }
           }) },
-         importSavedIphoneWorkouts() { return run('iphone-import', 'recording', async () => {
-           if (!database || !databaseReady()) throw new Error('Saved workout import requires a local database host')
-           if (get().archiveLoadState === 'loading') throw new Error('Saved workouts are still loading; try the import again when the archive is ready')
-           if (get().archiveLoadState === 'unavailable' || get().archiveLoadState === 'error') await get().loadSavedWorkouts()
-           if (get().archiveLoadState === 'unavailable' || get().archiveLoadState === 'error') throw new Error('Saved iPhone workouts are unavailable')
-           const workouts = get().savedWorkouts
-           const load = (id: string) => localArchive ? localArchive.detail(id) : loadSavedWorkoutDetail(client, id)
-           const iphoneIngestion = await ingestIphoneWorkouts(database, workouts, load)
-           if (iphoneIngestion.imported > 0) await database.transaction((transaction) => transaction.execute('DROP TABLE IF EXISTS route_coverages; DROP TABLE IF EXISTS route_traversals; DROP TABLE IF EXISTS detected_routes; DROP TABLE IF EXISTS analysis_settings;'))
-           set({ iphoneIngestion })
-           await Promise.all([get().loadLibrary(), get().loadRoutes()])
-           setNotice('recording', `${iphoneIngestion.imported} saved iPhone ${iphoneIngestion.imported === 1 ? 'workout' : 'workouts'} imported; ${iphoneIngestion.unchanged} unchanged.${iphoneIngestion.imported ? ' Segment analysis now needs a rebuild.' : ''}`)
-         }) },
+          async importSavedIphoneWorkouts() {
+            if (!database || !databaseReady()) throw new Error('Saved workout import requires a local database host')
+            if (get().archiveLoadState !== 'ready' && get().archiveLoadState !== 'empty') await get().loadSavedWorkouts()
+            if (get().archiveLoadState !== 'ready' && get().archiveLoadState !== 'empty') return
+            await syncIphoneArchive()
+          },
         exportCanonicalArchive() { return run('archive-transfer-export', 'recording', async () => {
           if (!database || !databaseReady()) throw new Error('Archive export requires a local database host')
           try {
