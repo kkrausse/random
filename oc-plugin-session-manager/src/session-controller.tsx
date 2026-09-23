@@ -517,6 +517,26 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
         }, { signal }))
         const known = new Map(liveSessions().map((session) => [session.id, session]))
         for (const session of result.data) if (!deletedIDs.has(session.id)) known.set(session.id, session)
+        // A recent child can be paged in without its older parent. Hydrate
+        // missing ancestors so it does not look like a parentless session.
+        const missing = [...new Set([...known.values()].map((session) => session.parentID).filter((id): id is string => !!id && !known.has(id) && !deletedIDs.has(id)))]
+        const checked = new Set<string>()
+        while (missing.length) {
+          const id = missing.shift()!
+          if (checked.has(id) || known.has(id)) continue
+          checked.add(id)
+          try {
+            const parent = yield* operation({ operation: "Load session ancestor", sessionID: id },
+              (signal) => context.client.session.get({ sessionID: id }, { signal }))
+            if (deletedIDs.has(id)) continue
+            known.set(id, parent)
+            if (parent.parentID && !known.has(parent.parentID)) missing.push(parent.parentID)
+          } catch (error) {
+            // A genuinely deleted parent leaves a navigable orphan. Other
+            // lookup failures must not silently imply that the link is gone.
+            if ((error as { cause?: { _tag?: string } })?.cause?._tag !== "SessionNotFoundError") throw error
+          }
+        }
         const loaded = [...known.values()]
         setSessions(loaded)
         setCursor(result.cursor.next ?? undefined)
