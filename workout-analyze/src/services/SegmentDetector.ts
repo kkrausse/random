@@ -556,6 +556,50 @@ const sameLoopShape = (a: RouteGeometry, b: RouteGeometry, config: DetectionConf
   return within(aRing, bRing, bIndex) && within(bRing, aRing, aIndex)
 }
 
+// Candidate containment needs matching endpoints, so shifted laps of the same circuit can
+// survive as several almost-complete segments. Compare the published efforts as well as
+// the geometry: nearby parallel roads and routes ridden on different occasions are not duplicates.
+export const deduplicateEffortRoutes = (routes: ReadonlyArray<DetectedRoute>, traversals: ReadonlyArray<RouteTraversal>) => {
+  const efforts = new Map<string, RouteTraversal[]>()
+  for (const effort of traversals) efforts.set(effort.routeId, [...(efforts.get(effort.routeId) ?? []), effort])
+  const proximity = (shorter: DetectedRoute, longer: DetectedRoute) => {
+    if (shorter.sport !== longer.sport || shorter.type !== 'segment') return false
+    const index = spatialIndex(longer.geometry, 20)
+    return shorter.geometry.filter((point) => nearbyIndices(point, index, 20)
+      .some((i) => pointDistanceM(point, longer.geometry[i]!) <= 20)).length / shorter.geometry.length >= 0.8
+  }
+  const sharedEfforts = (a: DetectedRoute, b: DetectedRoute) => {
+    const first = efforts.get(a.id) ?? []
+    const second = efforts.get(b.id) ?? []
+    if (!first.length || !second.length) return false
+    const byActivity = new Map<string, RouteTraversal[]>()
+    for (const effort of second) byActivity.set(effort.activityId, [...(byActivity.get(effort.activityId) ?? []), effort])
+    const matched = first.filter((effort) => (byActivity.get(effort.activityId) ?? []).some((other) => {
+      const overlap = Math.min(Date.parse(effort.endedAt), Date.parse(other.endedAt))
+        - Math.max(Date.parse(effort.startedAt), Date.parse(other.startedAt))
+      // Equivalent laps may start at different points on the circuit. Their
+      // time windows can overlap by only half a lap despite covering the same route.
+      return overlap >= 0.45 * Math.min(effort.durationSec, other.durationSec) * 1_000
+    })).length
+    return matched / first.length >= 0.8 && matched / second.length >= 0.8
+  }
+  // A primitive loop is preferable to a nearly complete segment; otherwise keep the
+  // route with the most observed efforts, then the longer representative.
+  const priority = [...routes].sort((a, b) =>
+    Number(b.type === 'loop') - Number(a.type === 'loop')
+    || b.traversalCount - a.traversalCount || b.distanceM - a.distanceM)
+  const kept: DetectedRoute[] = []
+  for (const route of priority) {
+    const duplicate = kept.some((representative) => route.type === 'segment'
+      && representative.workoutCount >= route.workoutCount / 1.1
+      && representative.traversalCount >= route.traversalCount / 1.15
+      && proximity(route, representative)
+      && sharedEfforts(route, representative))
+    if (!duplicate) kept.push(route)
+  }
+  return routes.filter((route) => kept.includes(route))
+}
+
 const hasSelfOverlap = (candidate: Candidate, radiusM: number) => {
   const points = candidate.type === 'loop' ? candidate.geometry.slice(0, -1) : candidate.geometry
   if (points.length < 4) return false
@@ -923,8 +967,9 @@ export function detectRoutes(activities: ReadonlyArray<NormalizedActivity>, over
   }
 
   routes.sort((a, b) => b.overallScore - a.overallScore)
-  const uniqueRoutes = routes.filter((route, routeIndex) => route.type !== 'loop' || !routes.slice(0, routeIndex).some((existing) =>
+  const uniqueLoops = routes.filter((route, routeIndex) => route.type !== 'loop' || !routes.slice(0, routeIndex).some((existing) =>
     existing.type === 'loop' && sameLoopShape(route, existing, config)))
+  const uniqueRoutes = deduplicateEffortRoutes(uniqueLoops, traversals)
   const selectedIds = new Set<string>()
   for (const sport of new Set(uniqueRoutes.map((route) => route.sport))) {
     for (const type of ['segment', 'loop'] as const) {
