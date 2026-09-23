@@ -114,6 +114,26 @@ final class DuckDBServiceTests: XCTestCase {
         XCTAssertEqual(final["observed_at"] as? String, "2026-09-21T12:34:56.123Z")
     }
 
+    func testLargeRouteRowsPageBelowBridgeReplyLimit() async throws {
+        let service = try DuckDBService()
+        try await service.executeBridge(sql: "CREATE TABLE routes(id INTEGER, geometry_json VARCHAR, support_profile_json VARCHAR)", parametersJSON: json([]), transactionId: nil)
+        let rows: [[Any]] = (0..<31).map { [$0, String(repeating: "g", count: 11_000), String(repeating: "s", count: 10_000)] }
+        try await service.bulkInsertBridge(table: "routes", columns: ["id", "geometry_json", "support_profile_json"], rowsJSON: json(rows), transactionId: nil)
+
+        var page = try object(await service.queryBridge(sql: "SELECT * FROM routes ORDER BY id", parametersJSON: json([]), transactionId: nil))
+        var ids: [Int] = []
+        var pages = 0
+        while true {
+            pages += 1
+            XCTAssertLessThan(try json(["protocolVersion": 1, "requestId": "web-test", "ok": true, "result": page]).count, maximumBridgeBytes)
+            ids.append(contentsOf: try XCTUnwrap(page["rows"] as? [[String: Any]]).compactMap { $0["id"] as? Int })
+            guard let resultId = page["resultId"] as? String else { break }
+            page = try object(await service.nextResultBridge(resultId))
+        }
+        XCTAssertGreaterThan(pages, 1)
+        XCTAssertEqual(ids, Array(0..<31))
+    }
+
     func testTransactionCommitAndRollbackOwnership() async throws {
         let service = try DuckDBService()
         try await service.executeBridge(sql: "CREATE TABLE values_table(value BIGINT)", parametersJSON: json([]), transactionId: nil)
