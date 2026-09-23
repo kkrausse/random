@@ -18,7 +18,7 @@ async function until(check: () => boolean) {
   assert.ok(check(), "controller operation settled")
 }
 
-function fixture(configure?: (context: any) => void) {
+function fixture(configure?: (context: any) => void, archives: any[] = []) {
   const session = {
     id: "parent", title: "Parent", location: { directory: "/test" }, time: { updated: Date.now() },
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, cost: 0,
@@ -86,13 +86,35 @@ function fixture(configure?: (context: any) => void) {
     },
   }
   configure?.(context)
-  const controller = createSessionController(context, { list: empty, save: async () => {}, remove: async () => {} })
+  const controller = createSessionController(context, { list: async () => archives, save: async () => {}, remove: async () => {} })
   return {
     controller, context, session, lifecycle, setLifecycle, lifecycleGate, replyGate, handlers,
     counts: () => ({ markerWrites, replies, subscriptions, unsubscriptions }),
     replySignal: () => replySignal,
   }
 }
+
+test("legacy restore cannot silently reset archived session recency", async () => {
+  const toasts: string[] = []
+  const f = fixture((context) => {
+    context.client.session.import = async () => assert.fail("raw import must not run from the picker")
+    context.ui.toast.show = ({ message }: { message: string }) => toasts.push(message)
+  }, [{ version: 1, archivedAt: Date.now(), familyIDs: ["legacy"], transcript: {
+    info: { id: "legacy", title: "Legacy", location: { directory: "/test" }, time: { created: 1, updated: 2 },
+      cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }, messages: [],
+  } }])
+  const close = mount(f.controller)
+  try {
+    await until(() => f.controller.state.options().some((row) => row.value === "legacy"))
+    f.controller.commands.select("legacy")
+    assert.equal(f.controller.commands.changeLifecycle(false), undefined)
+    assert.match(toasts.at(-1) ?? "", /import-legacy-local\.ts legacy/)
+    assert.equal(f.counts().markerWrites, 0)
+  } finally {
+    close()
+    f.controller.dispose()
+  }
+})
 
 // A view owns only its attachment; the controller owns state and mutation guards.
 function mount(controller: SessionController) {

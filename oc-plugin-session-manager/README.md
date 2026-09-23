@@ -18,7 +18,7 @@ Adds Claude Code-style session navigation to the OpenCode V2 terminal UI:
 - Click **Archive** or press `x` to **soft archive**: recursively stop the family, remove its tracked shells, cancel all pending durable inbox items, and verify inactivity. Parent and child transcripts stay in OpenCode. **Restore** / `r` sets an explicit active override on the parent without starting work, so an old conversation does not immediately fall back to inactive. These actions keep the picker open.
 - Cleanup repeats the stop/shell/inbox sweep and requires two consecutive clean checks, with a short settling interval. It discovers late descendants and retries up to four sweeps. If cleanup fails or work keeps arriving, the picker reports the error rather than marking the family archived. Unreachable runtimes (including deleted directories) are errors in this stricter soft-archive flow.
 - After `x` or `r` succeeds, selection moves to the next row in the original section, or the previous row at the end of that section, while preserving the scroll offset. If the section had only one row, selection falls back to **New session**. Navigating while the request is pending keeps your newer selection.
-- Legacy local archive files appear under **Inactive** with an **Archived** status, subdued titles, a message count, and a scrollable user/assistant transcript preview. `Enter` reminds you to restore these with `r` before opening. Soft-archived and age-inactive sessions open their normal history directly. Age-inactive rows show **Inactive · 7d+**, and their preview explains that no cleanup was performed.
+- Legacy local archive files appear under **Inactive** with an **Archived** status, subdued titles, a message count, and a scrollable user/assistant transcript preview. `Enter` reminds you to restore these before opening; `r` displays the local recovery command. Soft-archived and age-inactive sessions open their normal history directly. Age-inactive rows show **Inactive · 7d+**, and their preview explains that no cleanup was performed.
 - Press `/` to filter loaded live sessions and all archived parents by title or directory; submit an empty filter to clear it.
 - Existing inactive markers remain readable. Running/attention status takes precedence, so renewed activity remains visible. Press `x` to run cleanup again, or `r` to explicitly mark the family active.
 - Archiving or restoring a child resolves its top-level parent through the API, including unloaded ancestors. Cleanup follows all paginated descendants. **Only the root owns the inactive marker**; old child markers are cleared for that family. Children inherit the parent's lifecycle section and remain nested under it.
@@ -128,9 +128,28 @@ if marker storage fails, history stays intact and cleanup can be retried.
 
 `archiveSession` in `src/archive.ts` is **deprecated** and no longer called by the
 picker. It remains available for legacy verification/recovery. Existing files
-still appear in the picker with transcript previews and can be restored with `r`.
-They are not automatically imported or converted. Unlike soft archives, these
-sessions must be imported before opening their history in OpenCode.
+still appear in the picker with transcript previews. They are not automatically
+imported or converted. Unlike soft archives, these sessions must be imported
+before opening their history in OpenCode. The picker does not run the raw restore:
+the current OpenCode import endpoint resets `time.updated` to now, crowding recent
+history out of the first page. Use the local recovery script instead:
+
+```sh
+cd /path/to/oc-plugin-session-manager
+bun scripts/import-legacy-local.ts ses_example
+# Or import all remaining local bundles:
+bun scripts/import-legacy-local.ts --all
+```
+
+The script requires a **local** connected OpenCode service, `opencode`, `sqlite3`,
+and `lsof`. It verifies the service owns the local database, makes consistent
+database and lifecycle backups, and processes parents before children. For each
+bundle it imports (or resumes a matching partial import), verifies message IDs
+and location, restores the original update timestamp in `session_v2`, sets the
+root's inactive marker, and moves the JSON into `archives/restored/` **last**.
+It stops on the first failure so the remaining files can be retried; the saved
+backups and already imported data remain available. Restart an already-running
+TUI to refresh its cached session list and lifecycle storage.
 
 Legacy archives are local to the TUI machine, including when connected to a remote server:
 
@@ -155,18 +174,20 @@ The deprecated export/delete flow uses the connected client's APIs:
 4. `DELETE /api/session/{parentID}` recursively deletes the family; verify each
    family member returns session-not-found. Sweep owned shells again to catch
    any created by late notifications before deletion completed.
-5. Restore with `POST /api/session/import` using the saved `transcript` object
-   and an explicit `location: transcript.info.location`. V2 otherwise imports
-   into the server's default location, even when `info.location` is present.
-   On success, move the archive into `archives/restored/` as a retained backup.
+5. The local recovery script imports with `POST /api/session/import` using the
+   saved `transcript` object and an explicit `location: transcript.info.location`.
+   V2 otherwise imports into the server's default location. Since V2 also resets
+   `time.updated`, the script restores the saved timestamp and inactive marker
+   before moving the archive into `archives/restored/` as a retained backup.
 
 For a local directory that has been removed, V2's interrupt endpoint can return
 500 while export and deletion still work. The plugin tolerates that response
 only when the local filesystem reports `ENOENT`, no workspace is attached, and
 the server's active-session list confirms the session is inactive. It skips
 runtime/shell calls for that session's unavailable location and checks inactivity
-again before saving and deleting. Other errors still abort archival. Restoring
-such an archive uses its original location, so recreate that directory first.
+again before saving and deleting. Other errors still abort archival. The
+installed 2.0.15 import accepts the original location even when its directory
+no longer exists; recreate the directory before opening that session for work.
 
 Only the parent transcript and metadata return. Pending inbox work, child sessions,
 and processes do not return. Import does not submit a prompt. Failed deletion or
