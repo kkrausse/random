@@ -29,18 +29,54 @@ actor DuckDBService {
         }
     }
 
-    static func applicationDatabase() throws -> DuckDBService {
+    static func applicationDatabase(report: (String, String, String?) -> Void = { _, _, _ in }) throws -> DuckDBService {
         let support = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-        let directory = support.appendingPathComponent("WorkoutAnalyze", isDirectory: true)
+        return try applicationDatabase(in: support.appendingPathComponent("WorkoutAnalyze", isDirectory: true), report: report)
+    }
+
+    static func applicationDatabase(in directory: URL, report: (String, String, String?) -> Void = { _, _, _ in }) throws -> DuckDBService {
+        let files = FileManager.default
+        try files.createDirectory(at: directory, withIntermediateDirectories: true)
         let original = directory.appendingPathComponent("analysis.duckdb")
+        let native = directory.appendingPathComponent("analysis-native.duckdb")
+        // Reuse a successful recovery on subsequent launches rather than making
+        // another empty database. New names sort newest first.
+        let recoveries = try files.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix("analysis-recovery-") && $0.pathExtension == "duckdb" }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }
+        for url in [original, native] + recoveries {
+            // A stranded WAL is captured data too. Never create a database at its
+            // basename: opening it might replay or replace that WAL.
+            if !files.fileExists(atPath: url.path), files.fileExists(atPath: url.path + ".wal") {
+                report("failed", url.lastPathComponent, "Database file is missing but its WAL exists")
+                continue
+            }
+            // An absent earlier store must not hide a populated later store.
+            if !files.fileExists(atPath: url.path),
+               (url == original && (files.fileExists(atPath: native.path) || !recoveries.isEmpty)
+                || url == native && !recoveries.isEmpty) { continue }
+            do {
+                let service = try DuckDBService(url: url)
+                report("selected", url.lastPathComponent, nil)
+                return service
+            } catch {
+                report("failed", url.lastPathComponent, String(describing: error))
+            }
+        }
+        // Never retry a failed existing basename. A UUID ensures that both its
+        // database and WAL are new, even if a previous recovery also failed.
+        let timestamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        var new: URL
+        repeat {
+            new = directory.appendingPathComponent("analysis-recovery-\(timestamp)-\(UUID().uuidString.lowercased()).duckdb")
+        } while files.fileExists(atPath: new.path) || files.fileExists(atPath: new.path + ".wal")
         do {
-            return try DuckDBService(url: original)
+            let service = try DuckDBService(url: new)
+            report("selected", new.lastPathComponent, nil)
+            return service
         } catch {
-            // Earlier browser-hosted analysis wrote this file with a newer DuckDB
-            // storage format. Keep it intact for export/recovery and open a separate
-            // native-compatible store rather than replacing the user's archive.
-            guard FileManager.default.fileExists(atPath: original.path) else { throw error }
-            return try DuckDBService(url: directory.appendingPathComponent("analysis-native.duckdb"))
+            report("failed", new.lastPathComponent, String(describing: error))
+            throw error
         }
     }
 
