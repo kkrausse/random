@@ -107,6 +107,7 @@ export interface MobileState {
   readonly savedWorkoutMatches: readonly WorkoutRouteMatch[]
   readonly archiveSourceLabel: string | null
   readonly archiveLoadState: 'unavailable' | 'loading' | 'ready' | 'empty' | 'error'
+  readonly localBrowserHost: boolean
   readonly analysisHostAvailable: boolean
   readonly libraryWorkouts: readonly Activity[]
   readonly libraryWorkoutDetail: WorkoutDetail | null
@@ -335,7 +336,7 @@ export const createMobileStore = (client: BridgeClient, localArchive?: SavedArch
       screen: 'home', returnScreen: 'home', bridge: client.getState(), session: client.getState().session, recorderSupported: false,
       permissions: null, builds: null, diagnostics: null, checks: [], location: null, heartRate: null, locations: [], measurements: [],
       trail: [], observationCursor: null, rawJournalSequence: null, recordingIssues: [], savedWorkoutId: null, requests: {},
-       savedWorkouts: [], savedWorkoutDetail: null, savedWorkoutNormalizedDetail: null, savedWorkoutMatches: [], archiveSourceLabel: localArchive?.label ?? null, archiveLoadState: localArchive ? 'loading' : 'unavailable',
+        savedWorkouts: [], savedWorkoutDetail: null, savedWorkoutNormalizedDetail: null, savedWorkoutMatches: [], archiveSourceLabel: localArchive?.label ?? null, archiveLoadState: localArchive ? 'loading' : 'unavailable', localBrowserHost: Boolean(localArchive),
           analysisHostAvailable: Boolean(database && !options.requiresDatabaseCapability), libraryWorkouts: [], libraryWorkoutDetail: null, libraryWorkoutMatches: [], routes: [], routeDetail: null, analysisSettings: null, iphoneIngestion: null, analysisStatus: idleAnalysisStatus, archiveTransferProgress: null, archiveImport: null,
         notices: { recording: null, diagnostics: null, sensors: null, settings: null }, developmentSourceDraft: recommendedDevelopmentUrl, developmentSourceDirty: false,
        macArchiveSourceDraft: recommendedDevelopmentUrl, macArchiveSourceDirty: false,
