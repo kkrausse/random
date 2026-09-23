@@ -51,9 +51,10 @@ button, input { font: inherit; } button { -webkit-tap-highlight-color: transpare
 .map-interactive:active { cursor: grabbing; }
 .map-transform-layer { position: absolute; inset: 0; transform: translate3d(var(--map-x, 0), var(--map-y, 0), 0) scale(var(--map-scale, 1)); transform-origin: 0 0; will-change: transform; }
 .map-transform-layer > img { position: absolute; width: 256px; height: 256px; }
-.ride-map .map-transform-layer > img,.ride-map svg image { opacity: .63; filter: saturate(.6) brightness(.68) contrast(1.15); }
-.annotated-map .map-transform-layer > img { opacity: .55; filter: saturate(.55) brightness(.62) contrast(1.18); }
-.ride-map .map-transform-layer > svg,.annotated-map .map-transform-layer > svg,.route-geometry .map-transform-layer > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ride-map .map-transform-layer > img,.ride-map svg image { opacity: .85; filter: saturate(.75) brightness(.85); }
+.annotated-map .map-transform-layer > img { opacity: .85; filter: saturate(.75) brightness(.85); }
+.annotated-map svg image { opacity: .85; filter: saturate(.75) brightness(.85); }
+.ride-map .map-transform-layer > svg,.annotated-map .map-transform-layer > svg,.route-geometry .map-transform-layer > svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .map-controls { position: absolute; z-index: 5; top: 8px; right: 8px; display: flex; gap: 5px; }
 .map-controls button { width: 42px; height: 42px; padding: 0; display: grid; place-items: center; color: #fff; border: 1px solid rgba(255,255,255,.2); border-radius: 11px; background: rgba(6,16,13,.88); box-shadow: 0 2px 9px rgba(0,0,0,.25); }
 .map-controls button:disabled { opacity: .38; }

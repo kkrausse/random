@@ -31,7 +31,17 @@ actor DuckDBService {
 
     static func applicationDatabase() throws -> DuckDBService {
         let support = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-        return try DuckDBService(url: support.appendingPathComponent("WorkoutAnalyze", isDirectory: true).appendingPathComponent("analysis.duckdb"))
+        let directory = support.appendingPathComponent("WorkoutAnalyze", isDirectory: true)
+        let original = directory.appendingPathComponent("analysis.duckdb")
+        do {
+            return try DuckDBService(url: original)
+        } catch {
+            // Earlier browser-hosted analysis wrote this file with a newer DuckDB
+            // storage format. Keep it intact for export/recovery and open a separate
+            // native-compatible store rather than replacing the user's archive.
+            guard FileManager.default.fileExists(atPath: original.path) else { throw error }
+            return try DuckDBService(url: directory.appendingPathComponent("analysis-native.duckdb"))
+        }
     }
 
     func begin() throws -> String {

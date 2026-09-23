@@ -26,7 +26,12 @@ final class AppHostModel: ObservableObject {
         let builds = BuildManager(log: log)
         let sensors = SensorService(log: log)
         let recording = RecordingService(builds: builds, log: log)
-        let database = try? DuckDBService.applicationDatabase()
+        let database: DuckDBService?
+        do { database = try DuckDBService.applicationDatabase() }
+        catch {
+            database = nil
+            log.append(subsystem: "database", message: "Native DuckDB could not open", metadata: ["reason": error.localizedDescription])
+        }
         let diagnostics = DiagnosticsService(log: log, builds: builds, sensors: sensors)
         diagnostics.recording = recording
         let dispatcher = BridgeDispatcher(builds: builds, diagnostics: diagnostics, sensors: sensors, recording: recording, database: database, log: log)

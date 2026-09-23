@@ -14,13 +14,15 @@ describe('map viewport interaction math', () => {
 
   test('clamps zoom and distinguishes taps from drags', () => {
     expect(zoomAt({ scale: 1, x: 0, y: 0 }, 99, { x: 0, y: 0 }).scale).toBe(6)
-    expect(zoomAt({ scale: 2, x: 0, y: 0 }, 0.1, { x: 0, y: 0 }).scale).toBe(1)
+    expect(zoomAt({ scale: 2, x: 0, y: 0 }, 0.1, { x: 0, y: 0 }).scale).toBe(0.5)
     expect(movedBeyondClickThreshold(5.9)).toBe(false)
     expect(movedBeyondClickThreshold(6)).toBe(true)
   })
 
-  test('keeps panning inside the scaled map and recenters a fitted map', () => {
+  test('bounds panning while allowing the fitted route to move over surrounding tiles', () => {
     expect(constrainMapTransform({ scale: 2, x: 20, y: -999 }, { width: 320, height: 190 })).toEqual({ scale: 2, x: 0, y: -190 })
-    expect(constrainMapTransform({ scale: 1, x: -80, y: -40 }, { width: 320, height: 190 })).toEqual({ scale: 1, x: 0, y: 0 })
+    expect(constrainMapTransform({ scale: 1, x: -80, y: -40 }, { width: 320, height: 190 })).toEqual({ scale: 1, x: -80, y: -40 })
+    expect(constrainMapTransform({ scale: 0.5, x: -80, y: -40 }, { width: 320, height: 190 })).toEqual({ scale: 0.5, x: 0, y: 0 })
+    expect(constrainMapTransform({ scale: 0.5, x: 999, y: 999 }, { width: 320, height: 190 })).toEqual({ scale: 0.5, x: 160, y: 95 })
   })
 })
