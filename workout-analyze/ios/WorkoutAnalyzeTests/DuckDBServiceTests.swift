@@ -1,7 +1,67 @@
 import XCTest
+import CryptoKit
 @testable import WorkoutAnalyze
 
 final class DuckDBServiceTests: XCTestCase {
+    func testRecoveredExportOpensInPinnedNativeEngine() async throws {
+        guard let export = ProcessInfo.processInfo.environment["WORKOUT_RECOVERY_EXPORT"] else {
+            throw XCTSkip("Set WORKOUT_RECOVERY_EXPORT to a disposable DuckDB export")
+        }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("duckdb-import-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let filename = "analysis-recovery-2026-09-23T14-29-44Z-restored.duckdb"
+        let url = directory.appendingPathComponent(filename)
+        let quote = export.replacingOccurrences(of: "'", with: "''")
+        do {
+            let service = try DuckDBService(url: url)
+            try await service.execute(sql: "IMPORT DATABASE '\(quote)'", parameters: [], transactionId: nil)
+            try await assertRecoveredState(service)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path + ".wal"))
+        var selected: String?
+        let reopened = try DuckDBService.applicationDatabase(in: directory) { result, name, _ in
+            if result == "selected" { selected = name }
+        }
+        XCTAssertEqual(selected, filename)
+        try await assertRecoveredState(reopened)
+        let hash = SHA256.hash(data: try Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
+        let marker = directory.appendingPathComponent("analysis-recovery-selection.json")
+        let restored = directory.appendingPathComponent("analysis-restored-2026-09-23.duckdb")
+        try FileManager.default.copyItem(at: url, to: restored)
+        try json(["filename": restored.lastPathComponent, "databaseSHA256": hash, "sourceWALSHA256": "d129548514614eea2eed1a8c5121ec161f7cbf0b0cf4dbcb993c5d2c386799cd"]).write(to: marker)
+        var activation: String?
+        let activated = try DuckDBService.applicationDatabase(in: directory) { result, name, _ in
+            if result == "selected" { activation = name }
+        }
+        XCTAssertEqual(activation, restored.lastPathComponent)
+        try await assertRecoveredState(activated)
+        try await activated.execute(sql: "CREATE TABLE recovery_post_activation(value INTEGER); INSERT INTO recovery_post_activation VALUES (7)", parameters: [], transactionId: nil)
+        let afterWrite = try DuckDBService.applicationDatabase(in: directory)
+        let postActivation = try object(await afterWrite.queryBridge(sql: "SELECT value FROM recovery_post_activation", parametersJSON: json([]), transactionId: nil))
+        XCTAssertEqual((postActivation["rows"] as? [[String: Any]])?.first?["value"] as? Int, 7)
+        try Data("invalid".utf8).write(to: marker)
+        XCTAssertThrowsError(try DuckDBService.applicationDatabase(in: directory))
+    }
+
+    private func assertRecoveredState(_ service: DuckDBService) async throws {
+        let result = try object(await service.queryBridge(sql: "SELECT (SELECT count(*) FROM activities) workouts, (SELECT count(*) FROM activity_samples) samples, (SELECT count(*) FROM detected_routes) routes, (SELECT count(*) FROM route_traversals) traversals, (SELECT count(*) FROM route_coverages) coverages", parametersJSON: json([]), transactionId: nil))
+        let row = try XCTUnwrap((result["rows"] as? [[String: Any]])?.first)
+        XCTAssertEqual(row["workouts"] as? Int, 173)
+        XCTAssertEqual(row["samples"] as? Int, 195928)
+        XCTAssertEqual(row["routes"] as? Int, 31)
+        XCTAssertEqual(row["traversals"] as? Int, 421)
+        XCTAssertEqual(row["coverages"] as? Int, 1890)
+        for (sql, digest) in [
+            ("SELECT md5(string_agg(id || ':' || traversal_count::VARCHAR || ':' || workout_count::VARCHAR, '|' ORDER BY id)) digest FROM detected_routes", "e47d85d7e98e93bad1fd63112582dd8f"),
+            ("SELECT md5(string_agg(id || ':' || route_id || ':' || activity_id, '|' ORDER BY id)) digest FROM route_traversals", "66ab2962eac0f0b059a6e5fccd3da2cd"),
+            ("SELECT md5(string_agg(id, '|' ORDER BY id)) digest FROM activities", "6d99f0b4cb2542f2b774d865e7c73fef"),
+        ] {
+            let page = try object(await service.queryBridge(sql: sql, parametersJSON: json([]), transactionId: nil))
+            XCTAssertEqual((page["rows"] as? [[String: Any]])?.first?["digest"] as? String, digest)
+        }
+    }
+
     func testStrandedWALIsNotOpenedAsANewDatabase() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("duckdb-recovery-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
