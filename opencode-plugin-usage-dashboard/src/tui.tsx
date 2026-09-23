@@ -5,7 +5,7 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "so
 import { accountLimits, loadCodexUsage, type CodexAccount } from "./codex"
 import { chart } from "./chart"
 import { estimateSpend, loadResponses, type Spend } from "./pricing"
-import { bounds, compact, loadBuckets, metricValue, money, totalTokens, type Metric, type Range, type Stats } from "./usage"
+import { bounds, compact, groupModels, loadBuckets, metricValue, money, totalTokens, type Metric, type Range, type Stats } from "./usage"
 
 const ranges: Range[] = ["24h", "today", "7d", "14d", "30d"]
 const metrics: Metric[] = ["steps", "output", "cache", "cost"]
@@ -97,7 +97,7 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
     if (metric() === "cost") return selected ? spend()?.byBucketModel[selected] ?? points.map(() => 0) : spend()?.byBucket
     return points.map((point) => {
       if (!selected) return metricValue(point, metric())
-      const model = point.models.find((item) => `${item.model.providerID}/${item.model.id}:${item.model.variant ?? "default"}` === selected)
+      const model = groupModels(point.models).find((item) => `${item.model.providerID}/${item.model.id}` === selected)
       if (!model) return 0
       if (metric() === "steps") return model.steps
       return metric() === "output" ? model.tokens.output : model.tokens.cache.read
@@ -127,9 +127,9 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
     ...(modelWidths().length >= 6 ? [compact(tokens.cache.read)] : []),
     cost,
   ], modelWidths())
-  const modelUsage = createMemo(() => [...(stats()?.models ?? [])].sort((a, b) => {
+  const modelUsage = createMemo(() => groupModels(stats()?.models ?? []).sort((a, b) => {
     const prices = spend()?.byModel
-    const key = (model: typeof a) => `${model.model.providerID}/${model.model.id}:${model.model.variant ?? "default"}`
+    const key = (model: typeof a) => `${model.model.providerID}/${model.model.id}`
     return prices ? (prices[key(b)] ?? 0) - (prices[key(a)] ?? 0) : b.steps - a.steps
   }))
   const codexWidths = createMemo(() => dimensions().width >= 100 ? [18, 10, 16, 8, 20, 7] : [12, 8, 12, 7, 16, 7])
@@ -244,14 +244,14 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
             <text fg={muted}>{row(modelColumns(), modelWidths())}</text>
             <text fg={muted}>{"─".repeat(modelWidths().reduce((sum, width) => sum + width + 2, -2))}</text>
             <For each={modelUsage()}>
-              {(model) => <text fg={activeModel() === `${model.model.providerID}/${model.model.id}:${model.model.variant ?? "default"}` ? accent : text} onMouseDown={(event) => {
+              {(model) => <text fg={activeModel() === `${model.model.providerID}/${model.model.id}` ? accent : text} onMouseDown={(event) => {
                 if (event.button !== 0) return
-                const key = `${model.model.providerID}/${model.model.id}:${model.model.variant ?? "default"}`
+                const key = `${model.model.providerID}/${model.model.id}`
                 setActiveModel(activeModel() === key ? undefined : key)
               }}>{modelRow(
-                  `${model.model.providerID}/${model.model.id}${model.model.variant && model.model.variant !== "default" ? `:${model.model.variant}` : ""}`,
+                  `${model.model.providerID}/${model.model.id}`,
                   model.steps, model.tokens,
-                  spend() ? money(spend()!.byModel[`${model.model.providerID}/${model.model.id}:${model.model.variant ?? "default"}`] ?? 0) : "…",
+                  spend() ? money(spend()!.byModel[`${model.model.providerID}/${model.model.id}`] ?? 0) : "…",
                 )}</text>}
             </For>
             <Show when={stats()} fallback={<text fg={muted}>{statsError() || "Loading model usage…"}</text>}>
