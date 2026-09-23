@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { NormalizedActivity } from '../domain/activity'
-import { detectRoutes, pointDistanceM, resolveDetectionConfig } from './SegmentDetector'
+import type { DetectedRoute, RouteTraversal } from '../domain/analysis'
+import { deduplicateEffortRoutes, detectRoutes, pointDistanceM, resolveDetectionConfig } from './SegmentDetector'
 
 const activity = (id: string, offset: number): NormalizedActivity => ({
   sourceActivityId: id,
@@ -58,6 +59,33 @@ const circle = (phase: number, radius = 0.0012) => Array.from({ length: 33 }, (_
 })
 
 describe('segment detection', () => {
+  test('suppresses a shifted partial lap with the same efforts, but preserves independent or better-supported routes', () => {
+    const ring = circle(0).map(([lat, lon]) => ({ lat, lon }))
+    const route = (id: string, type: 'loop' | 'segment', geometry: DetectedRoute['geometry'], count: number): DetectedRoute => ({
+      id, name: id, type, sport: 'running', geometry, supportProfile: [], distanceM: type === 'loop' ? 900 : 800,
+      workoutCount: count, traversalCount: count * 3, matchScore: 0.8, popularityScore: 0.8, overallScore: 1,
+      firstTraversalAt: '2026-01-01T00:00:00Z', lastTraversalAt: '2026-01-01T00:10:00Z',
+    })
+    const loop = route('loop', 'loop', ring, 3)
+    const partial = route('partial', 'segment', [...ring.slice(16, 32), ...ring.slice(0, 13)], 3)
+    const parallel = route('parallel', 'segment', partial.geometry.map(({ lat, lon }) => ({ lat: lat + 0.0004, lon })), 3)
+    const extra = route('extra', 'segment', partial.geometry, 4)
+    const effort = (routeId: string, activity: number, lap: number, offset: number): RouteTraversal => ({
+      id: `${routeId}:${activity}:${lap}`, routeId, activityId: `activity:${activity}`,
+      startedAt: new Date(Date.UTC(2026, 0, 1, 0, 0, lap * 100 + offset)).toISOString(),
+      endedAt: new Date(Date.UTC(2026, 0, 1, 0, 0, lap * 100 + offset + 90)).toISOString(),
+      durationSec: 90, distanceM: 800, avgHeartRate: null, avgSpeed: 8, matchErrorM: 1,
+      qualityScore: 0.8, lapCount: 1, lapTimesSec: [90], activityRoute: [],
+    })
+    const efforts = [
+      ...[1, 2, 3].flatMap((activity) => [0, 1, 2].flatMap((lap) => [effort('loop', activity, lap, 0), effort('partial', activity, lap, 45)])),
+      ...[1, 2, 3].flatMap((activity) => [0, 1, 2].map((lap) => effort('parallel', activity, lap, 45))),
+      ...[1, 2, 3, 4].flatMap((activity) => [0, 1, 2].map((lap) => effort('extra', activity, lap, 45))),
+    ]
+    expect(deduplicateEffortRoutes([loop, partial, parallel, extra], efforts).map((item) => item.id))
+      .toEqual(['loop', 'parallel', 'extra'])
+  })
+
   test('reports genuine phase work counts without changing detector output', () => {
     const activities = [routeActivity('1', eastbound(37)), routeActivity('2', eastbound(37.00001)), routeActivity('3', eastbound(36.99999))]
     const progress: Array<{ phase: string; completed: number; total: number }> = []
