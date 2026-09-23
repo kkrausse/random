@@ -27,6 +27,7 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
   const dimensions = useTerminalDimensions()
   const [range, setRange] = createSignal<Range>("24h")
   const [metric, setMetric] = createSignal<Metric>("steps")
+  const [activeModel, setActiveModel] = createSignal<string>()
   const [currentProject, setCurrentProject] = createSignal(false)
   const [refresh, setRefresh] = createSignal(0)
   const [stats, setStats] = createSignal<Stats>()
@@ -89,10 +90,23 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
     onCleanup(() => controller.abort())
   })
 
+  const chartValues = createMemo(() => {
+    const points = buckets()
+    if (!points) return
+    const selected = activeModel()
+    if (metric() === "cost") return selected ? spend()?.byBucketModel[selected] ?? points.map(() => 0) : spend()?.byBucket
+    return points.map((point) => {
+      if (!selected) return metricValue(point, metric())
+      const model = point.models.find((item) => `${item.model.providerID}/${item.model.id}:${item.model.variant ?? "default"}` === selected)
+      if (!model) return 0
+      if (metric() === "steps") return model.steps
+      return metric() === "output" ? model.tokens.output : model.tokens.cache.read
+    })
+  })
   const displayChart = createMemo(() => {
     const points = buckets()
+    const values = chartValues()
     if (!points) return []
-    const values = metric() === "cost" ? spend()?.byBucket : points.map((point) => metricValue(point, metric()))
     if (!values) return []
     const labels = points.map((point) => range() === "24h" || range() === "today"
       ? new Date(point.range.from).toLocaleTimeString([], { hour: "numeric" })
@@ -117,8 +131,8 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
     const limits = accountLimits(account)
     const windows = limits.flatMap((limit) => [limit.primary, limit.secondary].filter((window) => window != null)
       .map((window) => ({ limit: limit.limitName ?? limit.id, window })))
-    if (!windows.length) return [[account.account.name, account.usage?.planType ?? account.identity?.plan ?? "–", "–", "–", account.error ?? "Unavailable", "–"]]
-    return windows.map(({ limit, window }, index) => [
+    if (!windows.length) return [{ columns: [account.account.name, account.usage?.planType ?? account.identity?.plan ?? "–", "–", "–", account.error ?? "Unavailable", "–"], account }]
+    return windows.map(({ limit, window }, index) => ({ account, columns: [
       index === 0 ? account.account.name : "",
       index === 0 ? account.usage?.planType ?? account.identity?.plan ?? "–" : "",
       `${limit} ${window.windowDurationMins ? `${compact(window.windowDurationMins / 60)}h` : ""}`,
@@ -128,7 +142,7 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
         return `${date.toLocaleDateString([], { month: "short", day: "numeric" })} ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
       })() : "–",
       index === 0 ? String(account.usage?.rateLimitResetCredits?.availableCount ?? "–") : "",
-    ])
+    ] }))
   }))
 
   async function chooseRange() {
@@ -137,6 +151,37 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
       options: ranges.map((value) => ({ title: rangeNames[value], value })),
     })
     if (result) setRange(result as Range)
+  }
+
+  async function chooseBucket() {
+    const points = buckets()
+    const values = chartValues()
+    if (!points || !values) return
+    const selected = await props.context.ui.dialog.select({
+      title: `${metric().toUpperCase()} by period`,
+      options: points.map((point, index) => ({
+        title: `${new Date(point.range.from).toLocaleString()} — ${metric() === "cost" ? money(values[index]!) : compact(values[index]!)}`,
+        value: String(index),
+      })),
+    })
+    if (selected == null) return
+    const point = points[Number(selected)]
+    if (!point) return
+    await props.context.ui.dialog.alert({
+      title: new Date(point.range.from).toLocaleString(),
+      message: `${point.steps} steps · ${compact(point.tokens.output)} output · ${compact(point.tokens.cache.read)} cache read${spend() ? ` · ${money(spend()!.byBucket[Number(selected)] ?? 0)} estimated spend` : ""}`,
+    })
+  }
+
+  function showAccount(account: CodexAccount) {
+    const limits = accountLimits(account)
+    const windows = limits.flatMap((limit) => [limit.primary, limit.secondary].filter((window) => window != null)
+      .map((window) => `${limit.limitName ?? limit.id}: ${window.usedPercent == null ? "usage unknown" : `${Math.max(0, 100 - window.usedPercent)}% left`}${window.resetsAt ? ` · resets ${new Date(window.resetsAt * 1000).toLocaleString()}` : ""}`))
+    void props.context.ui.dialog.alert({
+      title: account.account.name,
+      message: [account.usage?.planType ?? account.identity?.plan ?? account.account.source, ...windows,
+        `Reset credits: ${account.usage?.rateLimitResetCredits?.availableCount ?? "unknown"}`, account.error ?? ""].filter(Boolean).join("\n"),
+    })
   }
 
   props.context.keymap.layer(() => ({
@@ -153,16 +198,22 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
   }))
 
   const section = (title: string) => <text fg={accent}>{title}</text>
-  const line = (label: string, value: string) => (
+  const line = (label: string, value: string, action?: () => void) => (
     <box flexDirection="row" justifyContent="space-between">
-      <text fg={muted}>{label}</text><text fg={text}>{value}</text>
+      <text fg={action ? accent : muted} onMouseDown={(event) => { if (event.button === 0) action?.() }}>{label}{action ? "  ↗" : ""}</text>
+      <text fg={text} onMouseDown={(event) => { if (event.button === 0) action?.() }}>{value}</text>
     </box>
   )
 
   return (
     <box flexDirection="column" flexGrow={1} minHeight={0} paddingLeft={2} paddingRight={2} paddingTop={1}>
       <box flexDirection="column" height={4} flexShrink={0}>
-        <text fg={text}>Usage dashboard · {currentProject() ? "Current project" : "All projects"}</text>
+        <box flexDirection="row" gap={1}>
+          <text fg={text}>Usage dashboard ·</text>
+          <text fg={accent} onMouseDown={(event) => {
+            if (event.button === 0) setCurrentProject(!currentProject())
+          }}>{currentProject() ? "Current project ▾" : "All projects ▾"}</text>
+        </box>
         <box flexDirection="row" gap={2}>
           <For each={ranges}>{(value, index) => <text fg={range() === value ? accent : muted} onMouseDown={(event) => {
             if (event.button === 0) setRange(value)
@@ -177,21 +228,24 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
           <Show when={stats()} fallback={<text fg={muted}>{statsError() || "Loading OpenCode usage…"}</text>}>
             {(data) => (
               <box flexDirection="column">
-                {line("Model steps / prompts", `${compact(data().steps)} / ${compact(data().prompts)}`)}
+                {line("Model steps / prompts", `${compact(data().steps)} / ${compact(data().prompts)}`, () => setMetric("steps"))}
                 {line("Sessions / subagents", `${data().sessions} / ${data().subagents}`)}
-                {line("Fresh input / output", `${compact(data().tokens.input)} / ${compact(data().tokens.output)}`)}
-                {line("Cache read / write", `${compact(data().tokens.cache.read)} / ${compact(data().tokens.cache.write)}`)}
+                {line("Fresh input / output", `${compact(data().tokens.input)} / ${compact(data().tokens.output)}`, () => setMetric("output"))}
+                {line("Cache read / write", `${compact(data().tokens.cache.read)} / ${compact(data().tokens.cache.write)}`, () => setMetric("cache"))}
                 {line("Recorded charge", money(data().cost))}
-                {line("Estimated model spend (quoted equivalent)", spend() ? money(spend()!.total) : spendError() || "Calculating…")}
+                {line("Estimated model spend (quoted equivalent)", spend() ? money(spend()!.total) : spendError() || "Calculating…", () => setMetric("cost"))}
                 <Show when={spend()}>{(value) => <text fg={muted}>  {value().quoted} quoted responses · {value().unpriced} unpriced · {value().zenEquivalent ? "Zen list prices for OpenAI account models" : "model list prices"}</text>}</Show>
               </box>
             )}
           </Show>
 
           <box paddingTop={1} flexDirection="column">
-            {section(`ACTIVITY CHART · ${metric().toUpperCase()}   [m switch]`)}
+            <text fg={accent} onMouseDown={(event) => { if (event.button === 0) void chooseBucket() }}>
+              ACTIVITY CHART · {metric().toUpperCase()}{activeModel() ? ` · ${activeModel()}` : ""}   [click for periods · m switch]
+            </text>
+            <Show when={activeModel()}><text fg={accent} onMouseDown={(event) => { if (event.button === 0) setActiveModel(undefined) }}>← All models (clear filter)</text></Show>
             <Show when={displayChart().length} fallback={<text fg={muted}>{bucketError() || spendError() || (metric() === "cost" && buckets() ? "Calculating priced responses…" : "Calculating timeline…")}</text>}>
-              <For each={displayChart()}>{(line) => <text fg={accent}>{line}</text>}</For>
+              <For each={displayChart()}>{(line) => <text fg={accent} onMouseDown={(event) => { if (event.button === 0) void chooseBucket() }}>{line}</text>}</For>
             </Show>
           </box>
 
@@ -200,7 +254,11 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
             <text fg={muted}>{row(modelColumns(), modelWidths())}</text>
             <text fg={muted}>{"─".repeat(modelWidths().reduce((sum, width) => sum + width + 2, -2))}</text>
             <For each={modelUsage()} fallback={<text fg={muted}>No model usage in this period</text>}>
-              {(model) => <text fg={text}>{row([
+              {(model) => <text fg={activeModel() === `${model.model.providerID}/${model.model.id}:${model.model.variant ?? "default"}` ? accent : text} onMouseDown={(event) => {
+                if (event.button !== 0) return
+                const key = `${model.model.providerID}/${model.model.id}:${model.model.variant ?? "default"}`
+                setActiveModel(activeModel() === key ? undefined : key)
+              }}>{row([
                   `${model.model.providerID}/${model.model.id}${model.model.variant && model.model.variant !== "default" ? `:${model.model.variant}` : ""}`,
                   compact(model.steps),
                   ...(modelWidths().length === 6 ? [compact(model.tokens.input)] : []),
@@ -215,7 +273,12 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
             <text fg={muted}>{row(["Tool", "Calls", "Failed", "P50"], [22, 9, 9, 10])}</text>
             <text fg={muted}>{"─".repeat(56)}</text>
             <For each={toolUsage()} fallback={<text fg={muted}>No tool calls in this period</text>}>
-              {(tool) => <text fg={text}>{row([tool.name, compact(tool.calls), String(tool.failed), `${tool.durationP50 ?? "–"}ms`], [22, 9, 9, 10])}</text>}
+              {(tool) => <text fg={text} onMouseDown={(event) => {
+                if (event.button === 0) void props.context.ui.dialog.alert({
+                  title: tool.name,
+                  message: `${tool.calls} calls · ${tool.succeeded} succeeded · ${tool.failed} failed · ${tool.unfinished} unfinished\nMedian duration: ${tool.durationP50 ?? "unknown"}ms`,
+                })
+              }}>{row([tool.name, compact(tool.calls), String(tool.failed), `${tool.durationP50 ?? "–"}ms`], [22, 9, 9, 10])}</text>}
             </For>
           </box>
 
@@ -225,7 +288,7 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
               <text fg={muted}>{row(["Account", "Plan", "Limit", "Left", "Resets", "Credits"], codexWidths())}</text>
               <text fg={muted}>{"─".repeat(codexWidths().reduce((sum, width) => sum + width + 2, -2))}</text>
               <For each={codexRows()} fallback={<text fg={muted}>No accounts configured</text>}>
-                {(columns) => <text fg={text}>{row(columns, codexWidths())}</text>}
+                {(entry) => <text fg={text} onMouseDown={(event) => { if (event.button === 0) showAccount(entry.account) }}>{row(entry.columns, codexWidths())}</text>}
               </For>
             </Show>
             <Show when={codexLoading() && accounts()}><text fg={muted}>Refreshing accounts…</text></Show>
