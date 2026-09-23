@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { RecorderObservation, SavedWorkoutDetail } from '../shared/mobile'
 import { withBunDuckDbHost } from '../hosts/bun/DuckDbHost'
-import { ingestIphoneWorkouts, iphoneActivityId, normalizeIphoneWorkout } from './iphone-normalization'
+import { countImportedIphoneWorkouts, ingestIphoneWorkouts, iphoneActivityId, normalizeIphoneWorkout } from './iphone-normalization'
 
 const transition = (sequence: number, from: string, to: string): RecorderObservation => ({
   kind: 'transition', sessionId: 'ride-test', sequence, transitionId: `t${sequence}`, from, to,
@@ -63,8 +63,17 @@ test('repeated ingestion does not duplicate an activity or its samples', async (
       const second = await ingestIphoneWorkouts(database, [workout.summary], async () => workout)
       expect(first.imported).toBe(1)
       expect(second.unchanged).toBe(1)
+      expect(await countImportedIphoneWorkouts(database, [workout.summary])).toBe(1)
       expect(Number((await database.query('SELECT count(*) count FROM activities'))[0]!.count)).toBe(1)
       expect(Number((await database.query('SELECT count(*) count FROM activity_samples'))[0]!.count)).toBe(2)
+
+      const changed = detail([transition(1, 'idle', 'recording'), location(2, 0), location(3, .001), location(4, .002), transition(5, 'recording', 'finished')], 15)
+      const third = await ingestIphoneWorkouts(database, [changed.summary], async () => changed)
+      expect(third).toMatchObject({ discovered: 1, imported: 1, unchanged: 0 })
+      expect(third.activities[0]?.sourceVersion).not.toBe(first.activities[0]?.sourceVersion)
+      expect(Number((await database.query('SELECT count(*) count FROM activities'))[0]!.count)).toBe(1)
+      expect(Number((await database.query('SELECT count(*) count FROM activity_samples'))[0]!.count)).toBe(3)
+      expect(await countImportedIphoneWorkouts(database, [changed.summary])).toBe(1)
     })
   } finally { rmSync(directory, { recursive: true, force: true }) }
 })

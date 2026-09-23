@@ -74,6 +74,43 @@ describe('mobile store', () => {
     })
   })
 
+  test('syncs saved recordings after native database readiness and picks up later changes', async () => {
+    installDomStubs()
+    const directory = mkdtempSync(join(tmpdir(), 'mobile-iphone-sync-'))
+    cleanups.push(() => rmSync(directory, { recursive: true, force: true }))
+    await withBunDuckDbHost(join(directory, 'analysis.duckdb'), async (database) => {
+      let version = 1
+      const summary = () => ({ savedWorkoutId: 'saved-one', sessionId: 'ride-one', sport: 'cycling' as const, startedAt: '2026-01-01T00:00:00Z', finishedAt: '2026-01-01T00:01:00Z', durationMs: 60_000, observationCount: 0, latestSequence: 0, rawEventCount: version, lastJournalSequence: version, hasFatalIssue: false, metrics: { activeDurationMs: 60_000, elapsedDurationMs: 60_000, distanceM: version * 100, averageSpeedMps: 1, currentSpeedMps: null, currentSpeedObservedAt: null, altitudeM: null, elevationGainM: 0, heartRateBpm: null, heartRateObservedAt: null, locationQuality: 'waiting' as const, heartRateQuality: 'unconfigured' as const } })
+      let details = 0
+      const archive: SavedArchiveClient = {
+        label: 'iPhone',
+        async list() { return { afterCursor: null, items: [summary()], nextCursor: null, hasMore: false, snapshotAt: '2026-01-01T00:01:00Z' } },
+        async detail() { details++; return { summary: summary(), pinnedEngine: { buildId: 'engine', apiVersion: 1, checkpointSchemaVersion: 1 }, recordingFormatVersion: 1, units: 'SI', derivation: { algorithmId: 'engine', engineBuildId: 'engine', configId: 'default', firstInputSequence: null, lastInputSequence: 0 }, observations: { afterSequence: null, items: [], nextSequence: null, oldestAvailableSequence: null, latestDurableSequence: 0, hasMore: false, droppedBeforeSequence: false } } },
+      }
+      let bridge: BridgeState = { phase: 'connecting', transport: 'native', transportLabel: 'Test', lastSequence: 0, resyncCount: 0, session: null, capabilities: [], snapshot: null, error: null }
+      let subscriber: (state: BridgeState) => void = () => {}
+      const client = { request: (() => Promise.reject(new Error('Unexpected bridge request'))) as BridgeClient['request'], connect: async () => { bridge = { ...bridge, phase: 'ready', capabilities: ['database.query'] }; subscriber(bridge) }, refreshSnapshot: async () => {}, getState: () => bridge, subscribe: (listener: typeof subscriber) => { subscriber = listener; return () => {} }, subscribeEvents: () => () => {}, dispose() {} } as BridgeClient
+      const store = createMobileStore(client, archive, database, { requiresDatabaseCapability: true })
+      const stop = store.getState().start()
+      cleanups.push(stop)
+      for (let i = 0; i < 100 && store.getState().importedIphoneWorkouts !== 1; i++) await Bun.sleep(10)
+      for (let i = 0; i < 100 && store.getState().libraryWorkouts.length !== 1; i++) await Bun.sleep(10)
+      expect(store.getState().importedIphoneWorkouts).toBe(1)
+      expect(store.getState().libraryWorkouts.map((item) => item.id)).toEqual(['iphone:ride-one'])
+      expect(details).toBe(1)
+      const initialVersion = store.getState().iphoneIngestion?.activities[0]?.sourceVersion
+      version = 2
+      store.getState().setScreen('library')
+      for (let i = 0; i < 100 && store.getState().iphoneIngestion?.activities[0]?.sourceVersion === initialVersion; i++) await Bun.sleep(10)
+      for (let i = 0; i < 100 && store.getState().importedIphoneWorkouts !== 1; i++) await Bun.sleep(10)
+      expect(store.getState().iphoneIngestion).toMatchObject({ discovered: 1, imported: 1, unchanged: 0 })
+      expect(Number((await database.query("SELECT count(*) count FROM activities WHERE id = 'iphone:ride-one'"))[0]?.count)).toBe(1)
+      expect(Number((await database.query("SELECT distance_m FROM activities WHERE id = 'iphone:ride-one'"))[0]?.distance_m)).toBe(200)
+      expect(details).toBe(2)
+      stop()
+    })
+  })
+
   test('downloads Mac Parquet through native handles without transporting sample rows', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'mobile-mac-import-'))
     cleanups.push(() => rmSync(directory, { recursive: true, force: true }))

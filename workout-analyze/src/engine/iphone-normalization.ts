@@ -24,7 +24,7 @@ const distanceBetween = (a: { latitudeDegrees: number; longitudeDegrees: number 
   return 6_371_000 * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x))
 }
 
-const sourceVersion = (detail: SavedWorkoutDetail) => [
+export const iphoneSourceVersion = (detail: Pick<SavedWorkoutDetail, 'recordingFormatVersion' | 'pinnedEngine' | 'derivation' | 'summary'>) => [
   IPHONE_NORMALIZATION_VERSION,
   detail.recordingFormatVersion,
   detail.pinnedEngine.buildId,
@@ -33,6 +33,9 @@ const sourceVersion = (detail: SavedWorkoutDetail) => [
   detail.summary.rawEventCount ?? 0,
   detail.summary.finishedAt,
 ].join(':')
+
+// The archive summary omits format/engine metadata. Fetch details for a saved ride
+// before comparing its version; the durable source_version remains authoritative.
 
 /** Converts the durable recorder projection into the same logical model as FIT imports. */
 export const normalizeIphoneWorkout = (detail: SavedWorkoutDetail): IphoneNormalizationResult => {
@@ -80,7 +83,7 @@ export const normalizeIphoneWorkout = (detail: SavedWorkoutDetail): IphoneNormal
   }
   return {
     activityId: iphoneActivityId(detail.summary.sessionId), activity, inputKind: 'saved-observations-v1',
-    sourceVersion: sourceVersion(detail), observationCount: ordered.length, sampleCount: samples.length,
+    sourceVersion: iphoneSourceVersion(detail), observationCount: ordered.length, sampleCount: samples.length,
   }
 }
 
@@ -126,20 +129,32 @@ export interface IphoneIngestionSummary {
   readonly activities: ReadonlyArray<{ readonly id: string; readonly samples: number; readonly sourceVersion: string }>
 }
 
+/** Count only saved recordings whose normalized source is present in this database. */
+export const countImportedIphoneWorkouts = async (database: DatabaseHost, workouts: readonly SavedWorkoutSummary[]): Promise<number> => {
+  await ensureIphoneNormalizationSchema(database)
+  const rows = await database.query("SELECT a.id FROM activities a JOIN normalization_sources n ON a.id = n.activity_id WHERE n.source = 'iphone-recorder' AND a.source = 'iphone-recorder'")
+  const ids = new Set(rows.map((row) => String(row.id)))
+  return workouts.filter((workout) => ids.has(iphoneActivityId(workout.sessionId))).length
+}
+
 export const ingestIphoneWorkouts = async (
   database: DatabaseHost,
   workouts: readonly SavedWorkoutSummary[],
   loadDetail: (savedWorkoutId: string) => Promise<SavedWorkoutDetail>,
 ): Promise<IphoneIngestionSummary> => {
   await ensureIphoneNormalizationSchema(database)
-  const existing = new Map((await database.query("SELECT activity_id, source_version FROM normalization_sources WHERE source='iphone-recorder'"))
+  const existing = new Map((await database.query("SELECT n.activity_id, n.source_version FROM normalization_sources n JOIN activities a ON a.id = n.activity_id WHERE n.source='iphone-recorder' AND a.source='iphone-recorder'"))
     .map((row) => [String(row.activity_id), String(row.source_version)]))
+  const conflictingIds = new Set((await database.query("SELECT id FROM activities WHERE source <> 'iphone-recorder' AND id LIKE 'iphone:%'"))
+    .map((row) => String(row.id)))
   let imported = 0
   let unchanged = 0
   const activities: Array<{ id: string; samples: number; sourceVersion: string }> = []
   for (const workout of workouts) {
     const detail = await loadDetail(workout.savedWorkoutId)
+    if (detail.summary.savedWorkoutId !== workout.savedWorkoutId || detail.summary.sessionId !== workout.sessionId) throw new Error('Saved workout identity changed during import')
     const normalized = normalizeIphoneWorkout(detail)
+    if (conflictingIds.has(normalized.activityId)) throw new Error(`Activity ID ${normalized.activityId} belongs to another source`)
     if (existing.get(normalized.activityId) === normalized.sourceVersion) unchanged += 1
     else { await persist(database, normalized); imported += 1 }
     activities.push({ id: normalized.activityId, samples: normalized.sampleCount, sourceVersion: normalized.sourceVersion })
