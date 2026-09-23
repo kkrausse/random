@@ -6,7 +6,7 @@ import { Cause, Effect } from "effect"
 import { descendantIDs, imputedInactiveRoots, inheritLifecycle, lifecycleOwner, nestRows, propagateAttention, sessionState, sortRows, type Attention } from "./session-groups"
 import { sectionNeighbor } from "./picker-selection"
 import { makeRunner, operation } from "./effects"
-import { fileArchiveStore, restoreSession, type Archive, type ArchiveStore } from "./archive"
+import { fileArchiveStore, type Archive, type ArchiveStore } from "./archive"
 import { sessionFamily, softArchiveSession } from "./soft-archive"
 import { loadInbox, pendingOrder, requestKey } from "./inbox"
 import { attentionAPI } from "./attention-api"
@@ -328,6 +328,13 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
       const selected = selectedSession()
       if (disposed || !selected || changingLifecycle() || replying()) return
       if (!inactive && isArchived(selected.id) && !archivesReady()) return
+      if (!inactive && isArchived(selected.id)) {
+        context.ui.toast.show({
+          message: `Use bun scripts/import-legacy-local.ts ${selected.id} from oc-plugin-session-manager to restore this legacy archive without resetting its activity time`,
+          variant: "warning",
+        })
+        return
+      }
       const session = lifecycleOwner(sessions(), selected)
       const family = [session.id, ...descendantIDs(sessions(), session.id)]
       const affected = new Set(family)
@@ -355,12 +362,6 @@ export function createSessionController(context: Plugin.Context, archiveStore: A
             for (const member of stopped) next.set(member.id, requestsAPI.read(member))
             return next
           })
-        } else if (isArchived(session.id)) {
-          const restored = yield* operation({ operation: "Restore archived session", sessionID: session.id },
-            () => restoreSession(context.client, archiveStore, archived(session.id)!))
-          deletedIDs.delete(restored.id)
-          setSessions((items) => [...items.filter((item) => item.id !== restored.id), restored])
-          setArchives((items) => items.filter((item) => item.transcript.info.id !== session.id))
         } else {
           const family = yield* operation({ operation: "Load family to restore", sessionID: session.id }, () => sessionFamily(context.client, session))
           owner = family[0]!
