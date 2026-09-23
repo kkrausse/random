@@ -51,7 +51,7 @@ describe('routePath', () => {
     }))
 
     expect(markup).not.toContain('<a')
-    expect(markup).toContain('<span class="map-attribution">© OpenStreetMap</span>')
+    expect(markup).toContain('<span class="map-attribution">Tiles © Esri, contributors</span>')
   })
 
   test('projects interactive overlays into the workout map coordinate space', () => {

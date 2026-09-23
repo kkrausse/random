@@ -113,8 +113,8 @@ export function RouteThumbnail({ points, linkAttribution = true, selectedIndex, 
         </span>
       </Link>}
       {map && (linkAttribution
-        ? <a className="map-attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap</a>
-        : <span className="map-attribution">© OpenStreetMap</span>)}
+        ? <a className="map-attribution" href="https://www.esri.com/en-us/legal/terms/full-master-agreement" target="_blank" rel="noreferrer">Tiles © Esri, contributors</a>
+        : <span className="map-attribution">Tiles © Esri, contributors</span>)}
     </div>
   )
 }
