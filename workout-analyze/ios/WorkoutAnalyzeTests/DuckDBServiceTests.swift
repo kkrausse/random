@@ -16,7 +16,7 @@ final class DuckDBServiceTests: XCTestCase {
         XCTAssertEqual((result["rows"] as? [[String: Any]])?.first?["answer"] as? Int, 1)
     }
 
-    func testFailedStoresAndWALsStayIntactAndRecoveryCanQuery() async throws {
+    func testFailedNativeStoreNeverCreatesAnotherEmptyRecovery() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("duckdb-recovery-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -25,14 +25,11 @@ final class DuckDBServiceTests: XCTestCase {
             try Data(repeating: UInt8(index + 1), count: 128).write(to: directory.appendingPathComponent(name))
         }
         var attempts: [(String, String, String?)] = []
-        let service = try DuckDBService.applicationDatabase(in: directory) { attempts.append(($0, $1, $2)) }
-        XCTAssertEqual(attempts.map(\.0), ["failed", "failed", "selected"])
-        XCTAssertEqual(attempts.prefix(2).map(\.1), ["analysis.duckdb", "analysis-native.duckdb"])
-        XCTAssertTrue(attempts.prefix(2).allSatisfy { $0.2 != nil })
-        let selected = try XCTUnwrap(attempts.last?.1)
-        XCTAssertTrue(selected.hasPrefix("analysis-recovery-"))
-        let result = try object(await service.queryBridge(sql: "SELECT 42 AS answer", parametersJSON: json([]), transactionId: nil))
-        XCTAssertEqual((result["rows"] as? [[String: Any]])?.first?["answer"] as? Int, 42)
+        XCTAssertThrowsError(try DuckDBService.applicationDatabase(in: directory) { attempts.append(($0, $1, $2)) })
+        XCTAssertEqual(attempts.map(\.0), ["failed", "failed"])
+        XCTAssertEqual(attempts.map(\.1), ["analysis.duckdb", "analysis-native.duckdb"])
+        XCTAssertTrue(attempts.allSatisfy { $0.2 != nil })
+        XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath: directory.path).contains { $0.hasPrefix("analysis-recovery-") })
         for (index, name) in preserved.enumerated() {
             XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent(name)), Data(repeating: UInt8(index + 1), count: 128), name)
         }
@@ -51,11 +48,55 @@ final class DuckDBServiceTests: XCTestCase {
         }
         var attempts: [(String, String)] = []
         let reopened = try DuckDBService.applicationDatabase(in: directory) { outcome, filename, _ in attempts.append((outcome, filename)) }
-        XCTAssertEqual(attempts.map(\.0), ["failed", "failed", "selected"])
+        XCTAssertEqual(attempts.map(\.0), ["selected"])
         XCTAssertEqual(attempts.last?.1, recovery)
         let result = try object(await reopened.queryBridge(sql: "SELECT value FROM retained", parametersJSON: json([]), transactionId: nil))
         XCTAssertEqual((result["rows"] as? [[String: Any]])?.first?["value"] as? Int, 17)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { $0.hasPrefix("analysis-recovery-") }.count, 1)
+    }
+
+    func testPopulatedRecoveryIsNotHiddenByNewerEmptyRecoveryWhenWALCannotReplay() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("duckdb-recovery-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let populated = directory.appendingPathComponent("analysis-recovery-2026-09-23T12-00-00Z-first.duckdb")
+        try Data(repeating: 0xFF, count: 128).write(to: populated)
+        let empty = directory.appendingPathComponent("analysis-recovery-2026-09-23T13-00-00Z-second.duckdb")
+        _ = try DuckDBService(url: empty)
+        var attempts: [(String, String)] = []
+        XCTAssertThrowsError(try DuckDBService.applicationDatabase(in: directory) { outcome, filename, _ in attempts.append((outcome, filename)) })
+        XCTAssertEqual(attempts.map(\.1), [populated.lastPathComponent])
+        XCTAssertEqual(attempts.map(\.0), ["failed"])
+    }
+
+    func testAnalysisScaleIndexedTransactionSurvivesReopenWithoutWALReplay() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("duckdb-checkpoint-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("analysis-recovery-test.duckdb")
+        do {
+            let service = try DuckDBService(url: url)
+            try await service.execute(sql: "CREATE TABLE activities(id VARCHAR PRIMARY KEY); CREATE TABLE activity_samples(activity_id VARCHAR, sample_id INTEGER); CREATE TABLE detected_routes(id VARCHAR PRIMARY KEY); CREATE TABLE route_traversals(id VARCHAR PRIMARY KEY, route_id VARCHAR);", parameters: [], transactionId: nil)
+            let importId = try await service.begin()
+            try await service.execute(sql: "INSERT INTO activities SELECT 'workout-' || i::VARCHAR FROM range(173) t(i)", parameters: [], transactionId: importId)
+            try await service.execute(sql: "INSERT INTO activity_samples SELECT 'workout-' || (i % 173)::VARCHAR, i FROM range(195928) t(i)", parameters: [], transactionId: importId)
+            try await service.commit(importId)
+            let analysisId = try await service.begin()
+            try await service.execute(sql: "INSERT INTO detected_routes SELECT 'route-' || i::VARCHAR FROM range(31) t(i)", parameters: [], transactionId: analysisId)
+            try await service.execute(sql: "INSERT INTO route_traversals SELECT 'traversal-' || i::VARCHAR, 'route-' || (i % 31)::VARCHAR FROM range(421) t(i)", parameters: [], transactionId: analysisId)
+            try await service.execute(sql: "CREATE INDEX traversals_route ON route_traversals(route_id)", parameters: [], transactionId: analysisId)
+            try await service.commit(analysisId)
+            let counts = try object(await service.queryBridge(sql: "SELECT (SELECT count(*) FROM activities) workouts, (SELECT count(*) FROM activity_samples) samples, (SELECT count(*) FROM detected_routes) routes, (SELECT count(*) FROM route_traversals) traversals", parametersJSON: json([]), transactionId: nil))
+            let row = try XCTUnwrap((counts["rows"] as? [[String: Any]])?.first)
+            XCTAssertEqual(row["workouts"] as? Int, 173)
+            XCTAssertEqual(row["samples"] as? Int, 195928)
+            XCTAssertEqual(row["routes"] as? Int, 31)
+            XCTAssertEqual(row["traversals"] as? Int, 421)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path + ".wal"), "Committed work should already be checkpointed into the database file")
+        let reopened = try DuckDBService.applicationDatabase(in: directory)
+        let result = try object(await reopened.queryBridge(sql: "SELECT count(*) AS count FROM activity_samples", parametersJSON: json([]), transactionId: nil))
+        XCTAssertEqual((result["rows"] as? [[String: Any]])?.first?["count"] as? Int, 195928)
     }
 
     func testMissingEarlierStoresDoNotHideAnExistingRecovery() async throws {

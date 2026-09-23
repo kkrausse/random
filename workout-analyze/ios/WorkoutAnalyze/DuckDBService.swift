@@ -42,12 +42,12 @@ actor DuckDBService {
         try files.createDirectory(at: directory, withIntermediateDirectories: true)
         let original = directory.appendingPathComponent("analysis.duckdb")
         let native = directory.appendingPathComponent("analysis-native.duckdb")
-        // Reuse a successful recovery on subsequent launches rather than making
-        // another empty database. New names sort newest first.
+        // Once recovery has begun, the first recovery store is the authority.
+        // A later empty fallback must never hide an earlier populated store.
         let recoveries = try files.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
             .filter { $0.lastPathComponent.hasPrefix("analysis-recovery-") && $0.pathExtension == "duckdb" }
-            .sorted { $0.lastPathComponent > $1.lastPathComponent }
-        for url in [original, native] + recoveries {
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        for url in (recoveries.isEmpty ? [original, native] : [recoveries[0]]) {
             // A stranded WAL is captured data too. Never create a database at its
             // basename: opening it might replay or replace that WAL.
             if !files.fileExists(atPath: url.path), files.fileExists(atPath: url.path + ".wal") {
@@ -64,8 +64,12 @@ actor DuckDBService {
                 return service
             } catch {
                 report("failed", url.lastPathComponent, String(describing: error))
+                // There may be committed data in this store's WAL. Do not
+                // silently select an empty/newer store and report success.
+                if !recoveries.isEmpty || url == native { throw error }
             }
         }
+        if !recoveries.isEmpty { throw ShellError.invalidState("Recovery store is missing its database but has a WAL; preserve it for repair") }
         // Never retry a failed existing basename. A UUID ensures that both its
         // database and WAL are new, even if a previous recovery also failed.
         let timestamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
@@ -96,6 +100,7 @@ actor DuckDBService {
         try expireAbandonedWork(except: id)
         guard let session = transactions.removeValue(forKey: id) else { throw ShellError.invalidState("Database transaction is missing or expired") }
         try session.connection.execute("COMMIT")
+        try checkpointIfIdle()
     }
 
     func rollback(_ id: String) throws {
@@ -107,15 +112,18 @@ actor DuckDBService {
         for session in transactions.values { try? session.connection.execute("ROLLBACK") }
         transactions.removeAll()
         results.removeAll()
+        try? checkpointIfIdle()
     }
 
     func execute(sql: String, parameters: [Any], transactionId: String?) throws {
         let connection = try connection(transactionId)
         if parameters.isEmpty {
             try connection.execute(sql)
+            if transactionId == nil { try checkpointIfIdle() }
             return
         }
         _ = try prepared(connection: connection, sql: sql, parameters: parameters).execute()
+        if transactionId == nil { try checkpointIfIdle() }
     }
 
     func executeBridge(sql: String, parametersJSON: Data, transactionId: String?) throws {
@@ -159,6 +167,13 @@ actor DuckDBService {
             for (offset, value) in row.enumerated() { try bind(value, to: statement, at: offset + 1) }
             _ = try statement.execute()
         }
+        if transactionId == nil { try checkpointIfIdle() }
+    }
+
+    private func checkpointIfIdle() throws {
+        guard transactions.isEmpty else { return }
+        let connection = try database.connect()
+        try connection.execute("CHECKPOINT")
     }
 
     func bulkInsertBridge(table: String, columns: [String], rowsJSON: Data, transactionId: String?) throws {
