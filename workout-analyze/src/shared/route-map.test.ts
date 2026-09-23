@@ -14,5 +14,7 @@ describe('createRouteMap', () => {
     expect(map!.points.every(({ x, y }) => x >= 0 && x <= 320 && y >= 0 && y <= 220)).toBeTrue()
     expect(Math.abs(map!.end.x - map!.start.x)).toBeGreaterThan(150)
     expect(map!.tiles.length).toBeGreaterThan(0)
+    expect(map!.tiles[0]?.href).toContain('World_Topo_Map/MapServer/tile/')
+    expect(map!.tiles.some((tile) => tile.x < 0)).toBeTrue()
   })
 })

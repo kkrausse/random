@@ -1,4 +1,3 @@
-import { LocateFixed, Minus, Plus } from 'lucide-react'
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent, useEffect, useRef, useState } from 'react'
 
 export interface MapTransform {
@@ -7,7 +6,7 @@ export interface MapTransform {
   readonly y: number
 }
 
-const MIN_SCALE = 1
+const MIN_SCALE = 0.5
 const MAX_SCALE = 6
 const DRAG_THRESHOLD_PX = 6
 
@@ -24,7 +23,16 @@ export const zoomAt = (transform: MapTransform, nextScale: number, anchor: { x: 
 export const movedBeyondClickThreshold = (distance: number) => distance >= DRAG_THRESHOLD_PX
 
 export const constrainMapTransform = (transform: MapTransform, viewport: { width: number; height: number }): MapTransform => {
-  if (transform.scale <= MIN_SCALE) return { scale: MIN_SCALE, x: 0, y: 0 }
+  if (transform.scale <= 1) {
+    const centerX = viewport.width * (1 - transform.scale) / 2
+    const centerY = viewport.height * (1 - transform.scale) / 2
+    const reach = Math.min(0.4, (3 * transform.scale - 1) / 2)
+    return {
+      scale: transform.scale,
+      x: Math.max(centerX - viewport.width * reach, Math.min(centerX + viewport.width * reach, transform.x)),
+      y: Math.max(centerY - viewport.height * reach, Math.min(centerY + viewport.height * reach, transform.y)),
+    }
+  }
   return {
     ...transform,
     x: Math.max(viewport.width * (1 - transform.scale), Math.min(0, transform.x)),
@@ -81,7 +89,6 @@ export const MapViewport = ({ children, className, label, interactive = true, ov
     return constrainMapTransform(next, { width: bounds?.width ?? 0, height: bounds?.height ?? 0 })
   }
   const zoom = (factor: number, anchor = center()) => setTransform((current) => constrain(zoomAt(current, current.scale * factor, anchor)))
-  const reset = () => setTransform({ scale: 1, x: 0, y: 0 })
   const pointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!interactive || (event.pointerType === 'mouse' && event.button !== 0)) return
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -98,7 +105,6 @@ export const MapViewport = ({ children, className, label, interactive = true, ov
     if (active.length === 1) {
       const dx = next.x - prior.x
       const dy = next.y - prior.y
-      if (transform.scale === MIN_SCALE) return
       dragDistance.current += Math.hypot(dx, dy)
       if (movedBeyondClickThreshold(dragDistance.current)) suppressClick.current = true
       setTransform((current) => constrain({ ...current, x: current.x + dx, y: current.y + dy }))
@@ -131,7 +137,7 @@ export const MapViewport = ({ children, className, label, interactive = true, ov
 
   return <div
     ref={rootRef}
-    className={`${className}${interactive ? ` map-interactive${transform.scale > MIN_SCALE ? ' map-is-zoomed' : ''}` : ''}`}
+    className={`${className}${interactive ? ` map-interactive${transform.scale > 1 ? ' map-is-zoomed' : ''}` : ''}`}
     role="region"
     aria-label={label}
     onPointerDown={pointerDown}
@@ -148,10 +154,5 @@ export const MapViewport = ({ children, className, label, interactive = true, ov
   >
     <div className="map-transform-layer" style={layerStyle}>{children}</div>
     {overlay}
-    {interactive && <div className="map-controls" aria-label="Map controls" onPointerDown={(event) => event.stopPropagation()}>
-      <button type="button" aria-label="Zoom in" onClick={() => zoom(1.5)}><Plus /></button>
-      <button type="button" aria-label="Zoom out" disabled={transform.scale === MIN_SCALE} onClick={() => zoom(1 / 1.5)}><Minus /></button>
-      <button type="button" aria-label="Reset map view" disabled={transform.scale === MIN_SCALE && transform.x === 0 && transform.y === 0} onClick={reset}><LocateFixed /></button>
-    </div>}
   </div>
 }

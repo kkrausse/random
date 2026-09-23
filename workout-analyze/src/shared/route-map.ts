@@ -67,12 +67,14 @@ export const createRouteMap = (points: ReadonlyArray<GeographicPoint>, width: nu
   const tileCount = 2 ** zoom
   const tiles: RouteMapTile[] = []
 
-  for (let tileY = Math.floor(originY / TILE_SIZE); tileY <= Math.floor((originY + height) / TILE_SIZE); tileY += 1) {
+  // Keep one viewport of surrounding tiles so zooming out from the initial fit
+  // does not reveal an empty border around the original SVG viewport.
+  for (let tileY = Math.floor((originY - height) / TILE_SIZE); tileY <= Math.floor((originY + height * 2) / TILE_SIZE); tileY += 1) {
     if (tileY < 0 || tileY >= tileCount) continue
-    for (let tileX = Math.floor(originX / TILE_SIZE); tileX <= Math.floor((originX + width) / TILE_SIZE); tileX += 1) {
+    for (let tileX = Math.floor((originX - width) / TILE_SIZE); tileX <= Math.floor((originX + width * 2) / TILE_SIZE); tileX += 1) {
       const wrappedX = ((tileX % tileCount) + tileCount) % tileCount
       tiles.push({
-        href: `https://tile.openstreetmap.org/${zoom}/${wrappedX}/${tileY}.png`,
+        href: `https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/${zoom}/${tileY}/${wrappedX}`,
         x: coordinate(tileX * TILE_SIZE - originX),
         y: coordinate(tileY * TILE_SIZE - originY),
       })

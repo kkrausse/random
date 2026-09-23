@@ -60,6 +60,8 @@ xcodebuild -project ios/WorkoutAnalyze.xcodeproj -scheme WorkoutAnalyze \
 
 For a physical-device check, connect and trust the iPhone, enable Developer Mode, select the existing WorkoutAnalyze signing team in Xcode, and run the `WorkoutAnalyze` scheme. Do not change signing credentials for simulator verification. In the app, finish or use an existing saved ride, open **Workout library**, and tap **Import saved iPhone workouts**. Then open **Segments & loops** and tap **Run segment analysis**. These are deliberately separate operations: import normalizes the SQLite recorder archive into native DuckDB, while analysis reads only the normalized DuckDB archive and never imports or contacts the network.
 
+If an older Mac-hosted DuckDB wrote `Application Support/WorkoutAnalyze/analysis.duckdb` in a storage format the pinned native engine cannot open, the shell leaves that file intact and starts a separate `analysis-native.duckdb`. The original recorder archive remains separate in SQLite. Use **Import from Mac** to populate the compatible analysis store with normalized Mac workouts, then **Import saved iPhone workouts** and run segment analysis. Do not delete the older database during migration.
+
 ## Transfer existing Mac history to iPhone
 
 Build both updated layers before installing; an older native shell does not have the bounded HTTPS archive-download capability:
