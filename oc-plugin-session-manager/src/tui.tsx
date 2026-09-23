@@ -174,7 +174,7 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
     visiblePreview, permission, inboxRequest, inboxOwner, inboxErrors, isInbox,
     previewLoading, previewError, replying, replyChoice, isArchived, isDeleted,
   } = controller.state
-  const { select: setSelectedValue, search: searchSessions, loadMore, refresh, changeLifecycle, replyToPermission } = controller.commands
+   const { select: setSelectedValue, search: searchSessions, loadMore, refresh, changeLifecycle, replyToPermission, toggleChildren } = controller.commands
   const route = props.context.ui.router.current()
   const currentSessionID = props.returnSessionID ?? (route.type === "session" ? route.sessionID : undefined)
   onCleanup(controller.attach(currentSessionID))
@@ -285,7 +285,8 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
       { bind: "shift+down", run: () => moveSelection(8) },
       { bind: "return", run: selectCurrent },
       { bind: "linefeed", run: selectCurrent },
-      { bind: "right", run: selectCurrent },
+       { bind: "right", run: selectCurrent },
+       { bind: "space", run: (_input, event) => { if (!event?.repeated) toggleChildren() } },
       { bind: "x", run: (_input, event) => { if (!event?.repeated) return changeLifecycle(true) } },
       { bind: "r", run: (_input, event) => { if (!event?.repeated) return changeLifecycle(false) } },
       { bind: "a", run: (_input, event) => { if (!event?.repeated) return replyToPermission("once") } },
@@ -419,9 +420,21 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
                     overflow="hidden"
                     paddingLeft={Math.max(0, Math.min(option().depth, 4) * 2)}
                   >
-                    <text id={`claude-session-title-${index}`} wrapMode="none" flexShrink={1} fg={titleColor()} attributes={active() ? TextAttributes.BOLD : undefined}>
-                      {option().title}
-                    </text>
+                     <text id={`claude-session-title-${index}`} wrapMode="none" flexShrink={1} fg={titleColor()} attributes={active() ? TextAttributes.BOLD : undefined}>
+                       {option().title}
+                     </text>
+                     {"childCount" in option() && option().childCount ? (
+                       <text wrapMode="none" flexShrink={0} fg={descriptionColor()}
+                         onMouseDown={(event) => {
+                           if (event.button !== 0) return
+                           event.stopPropagation()
+                           event.preventDefault()
+                           selectRowByValue(option().value)
+                           toggleChildren()
+                         }}>
+                         {` ${option().expanded ? "▾" : "▸"} ${option().childCount} sub-agent${option().childCount === 1 ? "" : "s"}`}
+                       </text>
+                     ) : null}
                     {(() => {
                       const row = option()
                       return !mobile() && "status" in row && row.status ? (
