@@ -30,7 +30,7 @@ final class AppHostModel: ObservableObject {
         do { database = try DuckDBService.applicationDatabase() }
         catch {
             database = nil
-            log.append(subsystem: "database", message: "Native DuckDB could not open", metadata: ["reason": error.localizedDescription])
+            log.append(subsystem: "database", message: "Native DuckDB could not open", metadata: ["reason": String(describing: error)])
         }
         let diagnostics = DiagnosticsService(log: log, builds: builds, sensors: sensors)
         diagnostics.recording = recording
