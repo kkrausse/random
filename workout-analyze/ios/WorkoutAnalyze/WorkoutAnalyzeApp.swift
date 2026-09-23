@@ -26,14 +26,24 @@ final class AppHostModel: ObservableObject {
         let builds = BuildManager(log: log)
         let sensors = SensorService(log: log)
         let recording = RecordingService(builds: builds, log: log)
+        var databaseAttempts: [[String: String]] = []
         let database: DuckDBService?
-        do { database = try DuckDBService.applicationDatabase() }
+        do {
+            database = try DuckDBService.applicationDatabase { outcome, filename, reason in
+                var attempt = ["outcome": outcome, "filename": filename]
+                if let reason { attempt["reason"] = reason }
+                databaseAttempts.append(attempt)
+                log.append(subsystem: "database", message: outcome == "selected" ? "Native DuckDB store selected" : "Native DuckDB store failed to open", metadata: attempt)
+            }
+        }
         catch {
             database = nil
             log.append(subsystem: "database", message: "Native DuckDB could not open", metadata: ["reason": String(describing: error)])
         }
         let diagnostics = DiagnosticsService(log: log, builds: builds, sensors: sensors)
         diagnostics.recording = recording
+        diagnostics.databaseAttempts = databaseAttempts
+        diagnostics.databaseAvailable = database != nil
         let dispatcher = BridgeDispatcher(builds: builds, diagnostics: diagnostics, sensors: sensors, recording: recording, database: database, log: log)
         self.log = log; self.builds = builds; self.sensors = sensors; self.diagnostics = diagnostics; self.recording = recording; self.database = database; self.dispatcher = dispatcher
         web = WebHost(builds: builds, dispatcher: dispatcher)

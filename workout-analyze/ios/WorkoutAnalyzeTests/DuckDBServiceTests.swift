@@ -2,6 +2,82 @@ import XCTest
 @testable import WorkoutAnalyze
 
 final class DuckDBServiceTests: XCTestCase {
+    func testStrandedWALIsNotOpenedAsANewDatabase() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("duckdb-recovery-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let wal = directory.appendingPathComponent("analysis.duckdb.wal")
+        let bytes = Data(repeating: 0xAB, count: 128)
+        try bytes.write(to: wal)
+        let service = try DuckDBService.applicationDatabase(in: directory)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("analysis.duckdb").path))
+        XCTAssertEqual(try Data(contentsOf: wal), bytes)
+        let result = try object(await service.queryBridge(sql: "SELECT 1 AS answer", parametersJSON: json([]), transactionId: nil))
+        XCTAssertEqual((result["rows"] as? [[String: Any]])?.first?["answer"] as? Int, 1)
+    }
+
+    func testFailedStoresAndWALsStayIntactAndRecoveryCanQuery() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("duckdb-recovery-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let preserved = ["analysis.duckdb", "analysis.duckdb.wal", "analysis-native.duckdb", "analysis-native.duckdb.wal", "recording-v1.sqlite", "recording-v1.sqlite-wal"]
+        for (index, name) in preserved.enumerated() {
+            try Data(repeating: UInt8(index + 1), count: 128).write(to: directory.appendingPathComponent(name))
+        }
+        var attempts: [(String, String, String?)] = []
+        let service = try DuckDBService.applicationDatabase(in: directory) { attempts.append(($0, $1, $2)) }
+        XCTAssertEqual(attempts.map(\.0), ["failed", "failed", "selected"])
+        XCTAssertEqual(attempts.prefix(2).map(\.1), ["analysis.duckdb", "analysis-native.duckdb"])
+        XCTAssertTrue(attempts.prefix(2).allSatisfy { $0.2 != nil })
+        let selected = try XCTUnwrap(attempts.last?.1)
+        XCTAssertTrue(selected.hasPrefix("analysis-recovery-"))
+        let result = try object(await service.queryBridge(sql: "SELECT 42 AS answer", parametersJSON: json([]), transactionId: nil))
+        XCTAssertEqual((result["rows"] as? [[String: Any]])?.first?["answer"] as? Int, 42)
+        for (index, name) in preserved.enumerated() {
+            XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent(name)), Data(repeating: UInt8(index + 1), count: 128), name)
+        }
+    }
+
+    func testExistingRecoveryStoreIsReusedAfterBothOriginalStoresFail() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("duckdb-recovery-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Data(repeating: 0xFF, count: 128).write(to: directory.appendingPathComponent("analysis.duckdb"))
+        try Data(repeating: 0xEE, count: 128).write(to: directory.appendingPathComponent("analysis-native.duckdb"))
+        let recovery = "analysis-recovery-2026-09-23T12-00-00Z-\(UUID().uuidString).duckdb"
+        do {
+            let first = try DuckDBService(url: directory.appendingPathComponent(recovery))
+            try await first.executeBridge(sql: "CREATE TABLE retained(value INTEGER); INSERT INTO retained VALUES (17)", parametersJSON: json([]), transactionId: nil)
+        }
+        var attempts: [(String, String)] = []
+        let reopened = try DuckDBService.applicationDatabase(in: directory) { outcome, filename, _ in attempts.append((outcome, filename)) }
+        XCTAssertEqual(attempts.map(\.0), ["failed", "failed", "selected"])
+        XCTAssertEqual(attempts.last?.1, recovery)
+        let result = try object(await reopened.queryBridge(sql: "SELECT value FROM retained", parametersJSON: json([]), transactionId: nil))
+        XCTAssertEqual((result["rows"] as? [[String: Any]])?.first?["value"] as? Int, 17)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { $0.hasPrefix("analysis-recovery-") }.count, 1)
+    }
+
+    func testMissingEarlierStoresDoNotHideAnExistingRecovery() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("duckdb-recovery-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let recovery = "analysis-recovery-2026-09-23T12-00-00Z-\(UUID().uuidString).duckdb"
+        do {
+            let first = try DuckDBService(url: directory.appendingPathComponent(recovery))
+            try await first.executeBridge(sql: "CREATE TABLE retained(value INTEGER); INSERT INTO retained VALUES (19)", parametersJSON: json([]), transactionId: nil)
+        }
+        var selected: String?
+        let reopened = try DuckDBService.applicationDatabase(in: directory) { outcome, filename, _ in
+            if outcome == "selected" { selected = filename }
+        }
+        XCTAssertEqual(selected, recovery)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("analysis.duckdb").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("analysis-native.duckdb").path))
+        let result = try object(await reopened.queryBridge(sql: "SELECT value FROM retained", parametersJSON: json([]), transactionId: nil))
+        XCTAssertEqual((result["rows"] as? [[String: Any]])?.first?["value"] as? Int, 19)
+    }
+
     func testParameterlessExecuteSupportsSchemaBatches() async throws {
         let service = try DuckDBService()
         try await service.executeBridge(sql: """

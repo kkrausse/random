@@ -10,6 +10,8 @@ final class DiagnosticsService: ObservableObject {
     private let builds: BuildManager
     private let sensors: SensorService
     var recording: RecordingService?
+    var databaseAttempts: [[String: String]] = []
+    var databaseAvailable = false
     private var lastBridgeRoundTrip: String?
 
     init(log: DiagnosticLog, builds: BuildManager, sensors: SensorService) {
@@ -64,6 +66,7 @@ final class DiagnosticsService: ObservableObject {
             row(id: "locationProbe", label: "Location probe", status: location["state"] as? String == "error" ? "error" : (location["state"] as? String == "active" ? "ok" : "waiting"), reason: location["reason"] as! String, observedAt: now, freshness: "fresh", details: ["state": location["state"]!, "receivedCount": location["receivedCount"]!, "acceptedCount": location["acceptedCount"]!, "rejectedCount": location["rejectedCount"]!]),
             row(id: "heartRateProbe", label: "Heart-rate probe", status: heartRate["state"] as? String == "error" ? "error" : (heartRate["state"] as? String == "connected" ? "ok" : "waiting"), reason: heartRate["reason"] as! String, observedAt: now, freshness: "fresh", details: ["state": heartRate["state"]!, "receivedCount": heartRate["receivedCount"]!, "parseErrorCount": heartRate["parseErrorCount"]!, "reconnectCount": heartRate["reconnectCount"]!]),
             row(id: "storage", label: "Native storage", status: volume == nil ? "waiting" : "ok", reason: volume == nil ? "Available capacity could not be read" : "Application support storage is accessible", observedAt: now, freshness: "fresh", details: ["availableBytes": volume ?? NSNull()]),
+            row(id: "analysisDatabase", label: "Analysis database", status: databaseAvailable ? "ok" : "error", reason: databaseAvailable ? "Native DuckDB store is available" : "Native DuckDB stores could not open", observedAt: now, freshness: "fresh", details: ["attempts": databaseAttempts, "selectedStore": databaseAttempts.last(where: { $0["outcome"] == "selected" })?["filename"] ?? NSNull()]),
             row(id: "engine", label: "Analysis engine", status: engineStatus, reason: engineReason, observedAt: now, freshness: "fresh", details: engineDetails)
         ] + recordingRows(now: now)
         return ["capturedAt": now, "rows": rows, "eventSequence": eventSequence, "telemetryDelivery": log.uploadStatus()]
