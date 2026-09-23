@@ -18,6 +18,9 @@ actor DuckDBService {
     private var transactions: [String: TransactionSession] = [:]
     private var results: [String: ResultCursor] = [:]
     private let pageSize = 200
+    // Leave room for the bridge envelope and JSON escaping; WebHost rejects
+    // replies larger than maximumBridgeBytes.
+    private let pageBytes = 128 * 1024
     private let expiry: TimeInterval = 60
 
     init(url: URL? = nil) throws {
@@ -122,7 +125,7 @@ actor DuckDBService {
     func query(sql: String, parameters: [Any], transactionId: String?) throws -> [String: Any] {
         let connection = try connection(transactionId)
         let result = try prepared(connection: connection, sql: sql, parameters: parameters).execute()
-        return page(rows: try rows(result))
+        return try page(rows: rows(result))
     }
 
     func queryBridge(sql: String, parametersJSON: Data, transactionId: String?) throws -> Data {
@@ -132,13 +135,12 @@ actor DuckDBService {
     func nextResult(_ id: String) throws -> [String: Any] {
         try expireAbandonedWork()
         guard var cursor = results.removeValue(forKey: id) else { throw ShellError.invalidState("Database result cursor is missing or expired") }
-        let end = min(cursor.offset + pageSize, cursor.rows.count)
-        let items = Array(cursor.rows[cursor.offset..<end])
-        cursor.offset = end
+        let page = try resultPage(cursor.rows, from: cursor.offset)
+        cursor.offset = page.end
         cursor.touchedAt = Foundation.Date()
-        let hasMore = end < cursor.rows.count
+        let hasMore = page.end < cursor.rows.count
         if hasMore { results[id] = cursor }
-        return ["rows": items, "resultId": hasMore ? id : NSNull(), "hasMore": hasMore]
+        return ["rows": page.rows, "resultId": hasMore ? id : NSNull(), "hasMore": hasMore]
     }
 
     func nextResultBridge(_ id: String) throws -> Data { try Self.json(nextResult(id)) }
@@ -231,11 +233,27 @@ actor DuckDBService {
         }
     }
 
-    private func page(rows: [[String: Any]]) -> [String: Any] {
-        guard rows.count > pageSize else { return ["rows": rows, "resultId": NSNull(), "hasMore": false] }
+    private func page(rows: [[String: Any]]) throws -> [String: Any] {
+        let first = try resultPage(rows, from: 0)
+        guard first.end < rows.count else { return ["rows": first.rows, "resultId": NSNull(), "hasMore": false] }
         let id = "dbresult-\(UUID().uuidString.lowercased())"
-        results[id] = ResultCursor(rows: rows, offset: pageSize, touchedAt: Foundation.Date())
-        return ["rows": Array(rows.prefix(pageSize)), "resultId": id, "hasMore": true]
+        results[id] = ResultCursor(rows: rows, offset: first.end, touchedAt: Foundation.Date())
+        return ["rows": first.rows, "resultId": id, "hasMore": true]
+    }
+
+    private func resultPage(_ rows: [[String: Any]], from start: Int) throws -> (rows: [[String: Any]], end: Int) {
+        var end = start
+        var bytes = 2
+        while end < rows.count && end - start < pageSize {
+            let rowBytes = try JSONSerialization.data(withJSONObject: rows[end]).count + 1
+            if bytes + rowBytes > pageBytes {
+                if end == start { throw ShellError.internalFailure("Database result row exceeds native bridge page limit") }
+                break
+            }
+            bytes += rowBytes
+            end += 1
+        }
+        return (Array(rows[start..<end]), end)
     }
 
     private func expireAbandonedWork(except id: String? = nil) throws {
