@@ -214,6 +214,24 @@ describe('mobile store', () => {
     expect(store.getState()).toMatchObject({ screen: 'savedDetail', savedWorkoutDetail: { recordingFormatVersion: 1, units: 'SI', observations: { latestDurableSequence: 6 } } })
   })
 
+  test('opens a saved ride on an older native shell without DuckDB capabilities', async () => {
+    installDomStubs()
+    const client = createBridgeClient(createSimulatorTransport('no-database'), 500)
+    const database = { query: () => { throw new Error('Native DuckDB is unavailable') } } as unknown as DatabaseHost
+    const store = createMobileStore(client, undefined, database, { requiresDatabaseCapability: true })
+    cleanups.push(store.getState().start(), () => client.dispose())
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(store.getState().analysisHostAvailable).toBe(false)
+    expect(store.getState().requests['library-list']).toBeUndefined()
+
+    await store.getState().requestPermission('locationWhenInUse')
+    await store.getState().startWorkout('waitForReliableLocation')
+    await store.getState().finishWorkout()
+    await store.getState().openSavedWorkout('sim-saved-ride-1')
+    expect(store.getState()).toMatchObject({ screen: 'savedDetail', savedWorkoutDetail: { summary: { savedWorkoutId: 'sim-saved-ride-1' } }, savedWorkoutNormalizedDetail: null, savedWorkoutMatches: [] })
+    expect(store.getState().requests['archive-detail']?.status).toBe('success')
+  })
+
   test('gates recording on legacy shells while leaving utilities available', async () => {
     installDomStubs()
     const client = createBridgeClient(createSimulatorTransport('legacy-shell'), 500)
