@@ -2,7 +2,7 @@ import type { Plugin } from "@opencode/plugin/tui"
 import type { TokenUsageInfo } from "@opencode/client"
 
 export type Stats = Awaited<ReturnType<Plugin.Context["client"]["session"]["stats"]>>
-export type Range = "24h" | "today" | "7d" | "30d"
+export type Range = "24h" | "today" | "7d" | "14d" | "30d"
 export type Metric = "steps" | "output" | "cache" | "cost"
 
 export function totalTokens(tokens: TokenUsageInfo): number {
@@ -19,7 +19,7 @@ export function bounds(range: Range, now: number): { from: number; to: number; w
   if (range === "24h") return { from: now - day, to: now, width: 2 * 3_600_000 }
   const date = new Date(now)
   date.setHours(0, 0, 0, 0)
-  date.setDate(date.getDate() - (range === "7d" ? 6 : 29))
+  date.setDate(date.getDate() - (range === "7d" ? 6 : range === "14d" ? 13 : 29))
   return { from: date.getTime(), to: now, width: day }
 }
 

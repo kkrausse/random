@@ -4,7 +4,7 @@ An OpenCode V2 CLI plugin with a `/usage` dashboard for local session statistics
 
 Add this directory to `plugins` in `~/.config/opencode/cli.json`, restart OpenCode, then run `/usage` or choose **Open usage dashboard** from the command palette. `codex-usage` must be on the TUI process's `PATH` to show account allowances; the rest of the dashboard works without it.
 
-Use `1`–`4`, the clickable period choices, or `t` to select 24 hours, today, the last 7 calendar days, or the last 30 calendar days. `m` cycles the chart metric (including estimated spend); `p` toggles all/current project; `r` refreshes; `Esc` returns to the previous session or home. Times use the local timezone.
+Use `1`–`5`, the clickable period choices, or `t` to select 24 hours, today, the last 7, 14, or 30 calendar days. `m` cycles the chart metric (including estimated spend); `p` toggles all/current project; `r` refreshes; `Esc` returns to the previous session or home. Times use the local timezone. Chart labels mark each bar's time window or calendar date, and grouped bars show their inclusive date range.
 
 Click a chart metric to switch the graph, a model row to filter it (click it again or the TOTAL row to clear), the chart to inspect a time bucket, a tool row for call details, or a Codex row for its full reset details. The project label toggles project scope. The model table's TOTAL row covers the selected period; total tokens include input, output, reasoning, and cache read/write.
 
