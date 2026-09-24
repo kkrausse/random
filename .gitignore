@@ -11,8 +11,6 @@
 !skills/**
 !timegrapher/
 !timegrapher/**
-!workout-analyze/
-!workout-analyze/**
 !garmin-watch-face/
 !garmin-watch-face/**
 !opencode-plugin-commit-diff-viewer/
@@ -62,7 +60,3 @@ node_modules/
 .netrc
 .npmrc.local
 *.har
-
-# Physical-device workout captures contain private location and sensor data.
-workout-analyze/data/phone-recovery-*/
-workout-analyze/data/local-replays/
