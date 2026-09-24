@@ -1,5 +1,8 @@
 # Browser-control checks
 
+- [x] 2026-09-24, browser-control CLI/relay 0.8.2, extension 0.0.25, IRS local port 5002, session `irs-workspace-ui-verify`: an initial `execute` selecting a saved-workspace row exceeded the shell's 30-second timeout (`Command exceeded timeout of 30000 ms`). Expected prompt selection within the timeout; a short subsequent snapshot showed the same live tab/dialog and clicking a fresh ref succeeded. No relay restart or tab replacement.
+  A later `waitFor` timed out after the app reported `Workspace clear failed while removing /workspace/node_modules: ENOTEMPTY`; a retry timed out because it expected a restored status while the app instead displayed `The editor is not ready to save`. These were app failures and an overly narrow wait predicate, not evidence of a lost browser target. A short DOM read diagnosed the issue; closing the dialog, exiting and reopening the editor reached Ready. Future scripts should wait for success **or** an alert and return the failure immediately.
+
 - [ ] 2026-09-17 UTC, browser-control 0.7.0 (CLI/relay build
   `2026-09-05T19:03:42.828Z`), irs-tools local integration on port 5193:
   `browser-control execute 'return {url:page.url(),title:await page.title()}'`
