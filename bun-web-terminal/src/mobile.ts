@@ -47,14 +47,27 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
   preview.setAttribute("role", "status");
   toolbar.before(preview);
   const microphone = toolbar.querySelector<HTMLButtonElement>('[data-key="Microphone"]')!;
+  const warmIndicator = document.createElement("span");
+  warmIndicator.className = "dictation-warm";
+  warmIndicator.textContent = "Mic on · muted";
+  warmIndicator.title = "Microphone stays open for up to 30 seconds after Stop";
+  warmIndicator.hidden = true;
+  microphone.after(warmIndicator);
+  let warm = false;
   const dictation = new DictationController(connection, {
     clearControl: () => setControl(false), paste: text => terminal.paste(text), notice,
     preview: text => { preview.textContent = text; },
     startup: text => { if (microphone.dataset.state === "loading") microphone.querySelector("span")!.textContent = text; },
+    warm(active) {
+      warm = active;
+      microphone.dataset.warm = String(active);
+      warmIndicator.hidden = !active;
+      if (microphone.dataset.state === "idle") microphone.setAttribute("aria-label", active ? "Start dictation · microphone on and muted" : "Start dictation");
+    },
     state(state) {
       microphone.dataset.state = state;
       microphone.setAttribute("aria-pressed", String(["loading", "recording", "waiting", "finishing"].includes(state)));
-      microphone.setAttribute("aria-label", { idle: "Start dictation", loading: "Stop dictation · starting microphone", recording: "Stop dictation", waiting: "Stop dictation · buffering audio", finishing: "Finishing dictation", error: "Retry dictation", unavailable: "Dictation unavailable" }[state]);
+      microphone.setAttribute("aria-label", { idle: warm ? "Start dictation · microphone on and muted" : "Start dictation", loading: "Stop dictation · starting microphone", recording: "Stop dictation", waiting: "Stop dictation · buffering audio", finishing: "Finishing dictation", error: "Retry dictation", unavailable: "Dictation unavailable" }[state]);
       microphone.title = microphone.getAttribute("aria-label")!;
       microphone.disabled = state === "finishing";
       const label = microphone.querySelector("span") ?? microphone.appendChild(document.createElement("span"));

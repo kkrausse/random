@@ -138,6 +138,13 @@ through phone sleep, browser termination, or a page reload. Server-side transpor
 queues remain bounded to about two seconds, and the five-minute capture cap is
 explicit.
 
+After Stop, the phone keeps its microphone stream open but muted for up to 30
+seconds so the next dictation can reuse it without another `getUserMedia()` startup.
+The toolbar visibly says **Mic on · muted** while this is happening; the browser
+may also keep its microphone-use indicator on. The stream is released on expiry,
+terminal detachment, page navigation, or backgrounding. The first tap after the
+page opens still needs normal microphone startup.
+
 | Environment variable | Default / meaning |
 | --- | --- |
 | `DICTATION_EXECUTABLE` | `../dictation-server/.build/release/dictation-server`, resolved relative to this project |

@@ -6,6 +6,7 @@ export type DictationState = "idle" | "loading" | "recording" | "waiting" | "fin
 type View = {
   state(state: DictationState): void;
   startup(stage: string): void;
+  warm(active: boolean): void;
   preview(text: string): void;
   notice(text: string): void;
   clearControl(): void;
@@ -23,13 +24,17 @@ type Recording = {
 // must receive the same audio from byte zero. 300 seconds of f32le mono is 19.2 MB.
 const maximumBytes = dictationLimits.seconds * 64_000;
 const inFlightBytes = 64_000; // below the two-second queues at both server boundaries
+const warmMicMs = 30_000;
 
 export class DictationController {
   private recording?: Recording;
   private prepared?: { context: AudioContext; module: Promise<void> };
+  private warm?: { stream: MediaStream; sessionId: string; timer: ReturnType<typeof setTimeout> };
   constructor(private connection: TerminalConnection, private view: View) {
     view.state("idle");
+    view.warm(false);
     connection.onAttachmentChange(() => {
+      if (!connection.attachment) this.discardWarm();
       const r = this.recording;
       if (!r) return;
       if (connection.terminalStopped) { this.cancel("Dictation stopped · terminal detached"); return; }
@@ -38,9 +43,12 @@ export class DictationController {
       if (!attachment) { r.socket?.close(); this.wait(r); }
       else if (!r.socket || r.socket.readyState === WebSocket.CLOSED) this.connect(r);
     });
-    document.addEventListener("visibilitychange", () => { if (document.hidden) this.cancel(); });
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) { this.cancel(); this.discardWarm(); }
+    });
     window.addEventListener("pagehide", () => {
       this.cancel();
+      this.discardWarm();
       if (this.prepared) void this.prepared.context.close().catch(() => {});
       this.prepared = undefined;
     });
@@ -62,6 +70,44 @@ export class DictationController {
         void context.close().catch(() => {});
       });
     } catch { /* Retry setup on the next tap if prewarming is not supported. */ }
+  }
+
+  private takeWarm(sessionId: string) {
+    const warm = this.warm;
+    if (!warm) return;
+    if (warm.sessionId !== sessionId || !warm.stream.getAudioTracks().some(track => track.readyState === "live")) {
+      this.discardWarm();
+      return;
+    }
+    clearTimeout(warm.timer);
+    this.warm = undefined;
+    warm.stream.getAudioTracks().forEach(track => { track.enabled = true; });
+    this.view.warm(false);
+    return warm.stream;
+  }
+
+  private keepWarm(r: Recording) {
+    const stream = r.stream;
+    if (!stream || document.hidden || !this.connection.attachment
+      || !stream.getAudioTracks().some(track => track.readyState === "live")) return;
+    this.discardWarm();
+    r.stream = undefined;
+    stream.getAudioTracks().forEach(track => {
+      track.enabled = false;
+      track.addEventListener("ended", () => { if (this.warm?.stream === stream) this.discardWarm(); }, { once: true });
+    });
+    const timer = setTimeout(() => this.discardWarm(), warmMicMs);
+    this.warm = { stream, sessionId: r.sessionId, timer };
+    this.view.warm(true);
+  }
+
+  private discardWarm() {
+    const warm = this.warm;
+    if (!warm) return;
+    this.warm = undefined;
+    clearTimeout(warm.timer);
+    warm.stream.getTracks().forEach(track => track.stop());
+    this.view.warm(false);
   }
 
   toggle() {
@@ -92,7 +138,9 @@ export class DictationController {
       this.view.startup("Mic access…");
       this.deadline(r, 120_000, "Microphone permission timed out");
       const resumed = context.resume();
-      const permission = navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }, video: false });
+      const reused = this.takeWarm(attachment.sessionId);
+      const permission = reused ? Promise.resolve(reused)
+        : navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }, video: false });
       void this.startAudio(r, resumed, permission, module);
       this.connect(r);
     } catch (error) { this.error(error); }
@@ -130,7 +178,12 @@ export class DictationController {
             this.pump(r);
             if (kept.byteLength < bytes.byteLength && !r.stopping) this.stop(r);
           }
-          if (data.type === "drained") { r.drained = true; this.releaseAudio(r); this.pump(r); }
+          if (data.type === "drained") {
+            r.drained = true;
+            if (r.stopping) this.keepWarm(r);
+            this.releaseAudio(r);
+            this.pump(r);
+          }
         } catch (error) { this.error(error); }
       };
       r.source = r.context.createMediaStreamSource(r.stream!);
@@ -270,6 +323,7 @@ export class DictationController {
     clearTimeout(r.retry);
     r.socket?.close();
     this.releaseAudio(r);
+    if (state === "error") this.discardWarm();
     this.view.state(state);
     if (state !== "unavailable") this.prepare();
   }
@@ -281,8 +335,9 @@ export class DictationController {
   }
   cancel(message?: string) {
     const r = this.recording;
-    if (!r) return;
+    if (!r) { this.discardWarm(); return; }
     this.cleanup(r, "idle");
+    this.discardWarm();
     if (!r.transcript.diverged) this.view.preview("");
     if (message) this.view.notice(message);
   }

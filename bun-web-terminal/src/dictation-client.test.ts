@@ -25,11 +25,14 @@ test("records before ready, paces by inference acks, and replays after disconnec
   const pastes: string[] = [];
   const states: DictationState[] = [];
   const startup: string[] = [];
+  const warm: boolean[] = [];
   let modules = 0;
   let microphoneRequests = 0;
+  let microphoneStopped = false;
+  const track = { readyState: "live", enabled: true, stop() { this.readyState = "ended"; microphoneStopped = true; }, addEventListener() {} };
   let node!: FakeNode;
   let attachmentListener = () => {};
-  let attachment = { sessionId: "session", attachmentId: "first" };
+  let attachment: { sessionId: string; attachmentId: string } | undefined = { sessionId: "session", attachmentId: "first" };
 
   class FakeSocket {
     static readonly OPEN = 1;
@@ -69,7 +72,7 @@ test("records before ready, paces by inference acks, and replays after disconnec
   replace("isSecureContext", true);
   replace("navigator", { mediaDevices: { getUserMedia: async () => {
     microphoneRequests++;
-    return { getTracks: () => [{ stop() {}, addEventListener() {} }] };
+    return { getTracks: () => [track], getAudioTracks: () => [track] };
   } } });
   replace("window", { AudioContext: FakeContext, AudioWorkletNode: FakeNode, addEventListener() {} });
   replace("AudioContext", FakeContext);
@@ -81,7 +84,8 @@ test("records before ready, paces by inference acks, and replays after disconnec
   const connection = { get attachment() { return attachment; }, terminalStopped: false,
     onAttachmentChange(listener: () => void) { attachmentListener = listener; return () => {}; } } as unknown as TerminalConnection;
   const controller = new DictationController(connection, {
-    state: value => states.push(value), startup: text => startup.push(text), preview() {}, notice() {}, clearControl() {}, paste: text => pastes.push(text),
+    state: value => states.push(value), startup: text => startup.push(text), warm: active => warm.push(active),
+    preview() {}, notice() {}, clearControl() {}, paste: text => pastes.push(text),
   });
   expect(modules).toBe(1);
   expect(microphoneRequests).toBe(0);
@@ -122,6 +126,18 @@ test("records before ready, paces by inference acks, and replays after disconnec
   second.emit({ type: "done", recordingId: secondId, sequence: 19 });
   expect(pastes).toEqual(["hello ", "world"]);
   expect(states.at(-1)).toBe("idle");
-  attachment = { sessionId: "session", attachmentId: "next" };
+  expect(warm.at(-1)).toBe(true);
+  expect(track.enabled).toBe(false);
+  expect(microphoneStopped).toBe(false);
+
+  const oldNode = node;
+  controller.toggle();
+  await until(() => node !== oldNode);
+  expect(microphoneRequests).toBe(1);
+  expect(track.enabled).toBe(true);
+  expect(warm.at(-1)).toBe(false);
+  attachment = undefined;
   attachmentListener();
+  controller.cancel();
+  expect(microphoneStopped).toBe(true);
 });
