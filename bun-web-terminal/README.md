@@ -18,7 +18,7 @@ bun run dev
 For an existing clone, run the last two commands from `bun-web-terminal/` after pulling updates. Use `bun start` instead of `bun run dev` to run without server file watching. Client assets are built automatically at startup. Restart Bun after browser-only or sibling wrapper changes so the client bundle and WASM are rebuilt together.
 
 Open the **Mac sign-in** link printed at startup, or scan the QR on your phone
-through Tailscale. After signing in, you can open <http://127.0.0.1:3000/sessions>
+through Tailscale. After signing in, you can open <http://127.0.0.1:4784/sessions>
 normally. Sessions keep running when the browser disconnects. The effective local Ghostty palette and font are loaded with `ghostty +show-config --default` at startup.
 
 Desktop Ghostty is optional; without it, the app uses a fallback theme. Tailscale is optional for remote access, and the sibling dictation service is optional for voice input. Neither is required for a local terminal.
@@ -51,7 +51,7 @@ loopback connections. Phone/Tailscale and localhost require separate initial
 sign-ins. Cookies last up to 30 days and survive Bun restarts and watch reloads.
 
 Credentials use a generic-password item with service `bun-web-terminal.auth.v1`
-and account `port-3000` (or your configured `PORT`) in the default macOS Keychain.
+and account `port-4784` (or your configured `PORT`) in the default macOS Keychain.
 macOS may request Keychain access; a locked or inaccessible Keychain stops startup
 rather than silently rotating credentials or writing a plaintext fallback.
 No credential file is stored in the repo. This server now requires macOS.
@@ -200,7 +200,7 @@ with the built executable, run `bun docs/verify-dictation-supervision.ts`. For r
 model/reset/overload checks, run the service's `scripts/verify.ts` as documented
 in its README.
 
-To test alongside a manually used instance on port 3000, use a separate port **and build directory**:
+To test alongside a manually used instance on port 4784, use a separate port **and build directory**:
 
 ```sh
 PORT=3107 TERMINAL_DIST="$(mktemp -d)" bun start
@@ -211,11 +211,11 @@ Open the printed Mac sign-in link, start `btop`, repeatedly resize the window, t
 To expose it only to devices permitted by your tailnet policy, keep the app bound to its default loopback address and run Tailscale Serve in another terminal:
 
 ```sh
-tailscale serve --bg 3000
+tailscale serve --bg --https=443 4784
 tailscale serve status
 ```
 
-Open the reported `https://<machine>.<tailnet>.ts.net/sessions` URL. Tailscale terminates HTTPS and proxies HTTP and WebSocket traffic to `127.0.0.1:3000`. Remove the Serve configuration with `tailscale serve reset`.
+Open the reported `https://<machine>.<tailnet>.ts.net/sessions` URL. Tailscale terminates HTTPS and proxies HTTP and WebSocket traffic to `127.0.0.1:4784`. Remove the Serve configuration with `tailscale serve reset` (this also removes any other Serve routes on the machine).
 
 Startup prints a scannable QR code and sign-in links. It automatically
 detects an existing Tailscale Serve HTTPS root route pointing to this instance's
@@ -227,7 +227,7 @@ starting Bun so the HTTPS origin is discovered and accepted for sign-in.
 
 Environment variables:
 
-- `PORT`: HTTP port, default `3000`
+- `PORT`: HTTP port, default `4784`
 - `TERMINAL_PUBLIC_URL`: optional HTTPS origin or `/sessions` URL for remote sign-in; otherwise detected from Tailscale Serve, falling back to localhost
 - `HOST`: bind address, default `127.0.0.1`; `0.0.0.0` permits a remote HTTPS reverse proxy (authentication still required)
 - `TERMINAL_CWD`: shell working directory, default is this repository's parent directory

@@ -12,7 +12,7 @@ type SocketData = { kind: "terminal"; sessionId: string; cols: number; rows: num
   | { kind: "dictation"; proxy?: DictationProxy };
 
 const host = process.env.HOST ?? "127.0.0.1";
-const port = parsePort(process.env.PORT ?? "3000");
+const port = parsePort(process.env.PORT ?? "4784");
 const attachmentLimit = 20 * 1024 * 1024;
 const dist = process.env.TERMINAL_DIST ?? join(import.meta.dir, "..", "dist");
 const defaultTerminalCwd = join(import.meta.dir, "..", "..");
