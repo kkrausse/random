@@ -1,6 +1,6 @@
 ---
 name: Decision Matrix
-description: Create or critique a decision matrix for choosing between technical, product, or personal approaches. Use when asked to compare options, make tradeoffs explicit, or work through a decision using Rich Hickey's Design in Practice method.
+description: Rich Hickey decision matrices for comparing approaches and tradeoffs.
 ---
 
 # Decision matrices
