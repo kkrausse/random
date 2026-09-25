@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert"
+import { existsSync } from "node:fs"
 import { OpenCode } from "@opencode/client"
 import { Service } from "@opencode/client/service"
 import { attentionClient } from "../src/attention-api"
@@ -36,8 +37,10 @@ const active = await client.session.active({ signal })
 assert.ok(active && typeof active === "object" && !Array.isArray(active), "Unexpected active-session response")
 const directory = process.argv[2] ?? process.cwd()
 const requests = await api.discover({ directory }, signal)
-for (const session of page.data) await api.probe(session.id, signal)
-console.log(`PASS: OpenCode ${info.version}; location attention reads; ${page.data.length} session request probes; permission/interrupt contracts`)
+const probeable = page.data.filter((session) => existsSync(session.location.directory))
+for (const session of probeable) await api.probe(session.id, signal)
+console.log(`PASS: OpenCode ${info.version}; location attention reads; ${probeable.length} session request probes; permission/interrupt contracts`)
+if (probeable.length < page.data.length) console.log(`SKIP: ${page.data.length - probeable.length} session(s) in deleted directories (per-session API returns HTTP 500)`)
 console.log(`Pending at checked location: ${requests.permissions.length} permissions, ${requests.forms.length} questions (contents not printed)`)
-if (!page.data.length) console.log("SKIP: per-session reads (service has no sessions)")
+if (!probeable.length) console.log("SKIP: per-session reads (no sessions with accessible directories on this page)")
 console.log("TUI cache capabilities are checked by the plugin at runtime; this check exercises the installed HTTP API only.")

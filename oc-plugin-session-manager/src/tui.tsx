@@ -325,7 +325,11 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
         </box>
       ) : null}
       <Show when={ready()} fallback={<text fg={colors.muted}>Loading sessions…</text>}>
-      {attentionErrors().size || [...attention().values()].includes("unavailable") ? (
+      {/* Row failures remain on their rows; warn globally only when discovery fails
+          despite another live session at that location being readable. */}
+      {[...attentionErrors().keys()].some((key) => key.startsWith("location:")
+        && sessions().some((session) => !isArchived(session.id) && session.location.directory === key.slice("location:".length)
+          && !attentionErrors().has(session.id))) ? (
         <text fg={colors.error}>Status unavailable · Ctrl+R to retry</text>
       ) : null}
         <scrollbox

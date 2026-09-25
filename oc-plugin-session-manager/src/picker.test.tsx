@@ -154,12 +154,32 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
     await new Promise((resolve) => setTimeout(resolve, 20))
     await setup.renderOnce()
     assert.match(setup.captureCharFrame(), /Status unavailable/)
-    assert.match(setup.captureCharFrame(), /Ctrl\+R to retry/)
+    assert.doesNotMatch(setup.captureCharFrame(), /Status unavailable · Ctrl\+R to retry/,
+      "a failed historical row must not show a global warning")
+    // A deleted location fails discovery as well as every per-session read.
+    context.client.form.list = async () => { throw new Error("location missing") }
+    context.data.session.form.sync = async () => { throw new Error("session location missing") }
+    handlers.get("server.connected")!({})
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await setup.renderOnce()
+    assert.doesNotMatch(setup.captureCharFrame(), /Status unavailable · Ctrl\+R to retry/,
+      "a location with only failed rows should not alarm the whole picker")
+    context.client.form.list = async () => ({ data: questions })
     context.data.session.form.sync = empty
     commands.find((c) => c.bind === "ctrl+r").run()
     await new Promise((resolve) => setTimeout(resolve, 20))
     await setup.renderOnce()
     assert.doesNotMatch(setup.captureCharFrame(), /Status unavailable/)
+    context.client.form.list = async () => { throw new Error("location discovery unavailable") }
+    handlers.get("server.connected")!({})
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await setup.renderOnce()
+    assert.match(setup.captureCharFrame(), /Status unavailable · Ctrl\+R to retry/,
+      "location discovery failure still warns when session rows are otherwise healthy")
+    context.client.form.list = async () => ({ data: questions })
+    commands.find((c) => c.bind === "ctrl+r").run()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await setup.renderOnce()
     // A running grandchild outside the list page activates its idle parent.
     assert.match(setup.captureCharFrame(), /1 sub-agent running/)
     assert.match(setup.captureCharFrame(), /▸ 2 sub-agents/)
