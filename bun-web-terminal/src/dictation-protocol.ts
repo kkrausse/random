@@ -2,8 +2,8 @@ export const audioFormat = { sampleRate: 16000, channels: 1, format: "f32le" } a
 export const dictationLimits = { frameBytes: 6400, queueBytes: 128_000, seconds: 300 } as const;
 export type DictationStart = typeof audioFormat & { type: "start"; version: 1; recordingId: string };
 export type DictationEvent = {
-  type: "loading" | "ready" | "partial" | "final" | "done" | "error";
-  recordingId: string; sequence: number; text?: string; code?: string; message?: string;
+  type: "loading" | "ready" | "ack" | "partial" | "final" | "done" | "error";
+  recordingId: string; sequence: number; text?: string; code?: string; message?: string; bytes?: number;
 };
 
 export function validStart(value: any): value is DictationStart {
@@ -29,6 +29,7 @@ export class DictationEvents {
     switch (value.type) {
       case "loading": if (this.phase !== "loading") return false; break;
       case "ready": if (this.phase !== "loading") return false; this.phase = "ready"; break;
+      case "ack": if (this.phase !== "ready" || !Number.isSafeInteger(value.bytes) || value.bytes <= 0) return false; break;
       case "partial": if (this.phase !== "ready" || typeof value.text !== "string") return false; break;
       case "final": if (this.phase !== "ready" || typeof value.text !== "string") return false; this.phase = "final"; break;
       case "done": if (this.phase !== "final") return false; this.phase = "done"; break;

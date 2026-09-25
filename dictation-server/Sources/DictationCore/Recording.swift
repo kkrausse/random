@@ -16,6 +16,7 @@ package final class Recording: @unchecked Sendable {
     private var sequence = 0
     private var queued = 0
     private var total = 0
+    private var processed = 0
     private var outgoing = 0
     private var timer: Task<Void, Never>?
 
@@ -24,7 +25,7 @@ package final class Recording: @unchecked Sendable {
         self.decoder = decoder
         (stream, continuation) = AsyncStream.makeStream()
         timer = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 300_000_000_000)
+            try? await Task.sleep(nanoseconds: 600_000_000_000)
             if !Task.isCancelled { self?.fail("duration_limit") }
         }
         Task { await run() }
@@ -133,6 +134,7 @@ package final class Recording: @unchecked Sendable {
                 case .audio(let data):
                     try await decoder.append(decodeAudio(data))
                     drained(data.count)
+                    acknowledged(data.count)
                 case .stop:
                     let text = try await decoder.finish()
                     // Release before done so a subsequent recording can immediately acquire.
@@ -142,5 +144,10 @@ package final class Recording: @unchecked Sendable {
             }
         } catch { fail((error as? ProtocolFailure)?.code ?? "inference_failed") }
         await decoder.release(token)
+    }
+    private func acknowledged(_ count: Int) {
+        lock.lock(); defer { lock.unlock() }
+        processed += count
+        if state == "ready" || state == "finishing" { emitLocked("ack", extra: ["bytes": processed]) }
     }
 }

@@ -65,7 +65,9 @@ export class DictationProxy {
           if (value.type === "ready") {
             this.phase = "ready";
             clearTimeout(this.deadline);
-            this.deadline = setTimeout(() => this.fail("duration_limit", "Recording exceeds five minutes"), 300_000);
+            // Capture may run for five minutes while the phone is offline, then
+            // need time to upload/replay before stop reaches the decoder.
+            this.deadline = setTimeout(() => this.fail("duration_limit", "Dictation session timed out"), 600_000);
           }
           this.peer.send(event.data);
           if (value.type === "done" || value.type === "error") this.close();

@@ -33,7 +33,7 @@ function fixture() {
     new Map([[session.id, session]]), { connect: async () => new WebSocket(`ws://127.0.0.1:${server.port}`) });
   disposals.push(() => { proxy.close(); server.stop(true); });
   return { proxy, start, sent, received, attachment, closed: () => closed,
-    emit: (type: string, sequence: number, text?: string) => remote!.send(JSON.stringify({ type, sequence, recordingId: start.recordingId, text })),
+    emit: (type: string, sequence: number, text?: string, bytes?: number) => remote!.send(JSON.stringify({ type, sequence, recordingId: start.recordingId, text, bytes })),
   };
 }
 
@@ -46,14 +46,16 @@ test("proxy strips terminal identity and orders audio before stop", async () => 
   f.emit("ready", 0);
   await until(() => f.sent.length === 1);
   f.proxy.message(new Uint8Array(5120));
+  f.emit("ack", 1, undefined, 5120);
+  await until(() => f.sent.length === 2);
   f.proxy.message(JSON.stringify({ type: "stop", recordingId: f.start.recordingId }));
   await until(() => f.received.length === 3);
   expect(f.received[1].length).toBe(5120);
   expect(f.received[2].type).toBe("stop");
-  f.emit("final", 1, "hello");
-  f.emit("done", 2);
+  f.emit("final", 2, "hello");
+  f.emit("done", 3);
   await until(f.closed);
-  expect(f.sent.map(event => event.type)).toEqual(["ready", "final", "done"]);
+  expect(f.sent.map(event => event.type)).toEqual(["ready", "ack", "final", "done"]);
 });
 
 test("attachment takeover immediately cancels and rejects late transcripts", async () => {

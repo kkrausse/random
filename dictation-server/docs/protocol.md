@@ -35,9 +35,18 @@ Send binary frames of **16,000 Hz, mono, little-endian Float32** samples. Frames
 must be nonempty, divisible by four, finite, and at most 6,400 bytes (100 ms).
 Recommended packet size is 5,120 bytes (80 ms). Queued plus in-flight audio is
 capped at 128,000 bytes (two seconds); a recording is limited to five minutes
-of wall time and audio. Outgoing cumulative events have a bounded 256 KB queue.
+of audio and a ten-minute connection lifetime (to allow delayed uploads and
+replay). Outgoing cumulative events have a bounded 256 KB queue.
 Invalid state/format and overload terminate the connection rather than dropping
 chunks and continuing.
+
+After each audio frame finishes inference, the service sends an ordered
+`{"type":"ack","recordingId":"…","sequence":3,"bytes":5120}` event. `bytes` is
+the cumulative byte count processed by this connection, not merely received by
+the WebSocket. Clients should keep their own bounded audio history and limit
+unacknowledged bytes to less than the service's two-second queue. On reconnect,
+start a new recording and replay from byte zero; acknowledgments and counters
+from the previous recording cannot be reused.
 
 After draining the capture worklet/resampler and sending the final binary frame:
 
@@ -74,6 +83,8 @@ Partials and final are **cumulative transcripts**, not deltas. Prefix stability
 is not guaranteed by the API. Consumers must handle revisions and deduplicate
 final output according to their insertion policy. Reconnection always means a
 new recording; sequence numbers do not promise exactly-once terminal delivery.
+A replaying client must deduplicate already-inserted text or stop automatic
+insertion if the new transcript changes that prefix.
 
 ## Bun browser boundary
 

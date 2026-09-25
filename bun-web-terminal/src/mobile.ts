@@ -52,12 +52,12 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
     preview: text => { preview.textContent = text; },
     state(state) {
       microphone.dataset.state = state;
-      microphone.setAttribute("aria-pressed", String(["loading", "recording", "finishing"].includes(state)));
-      microphone.setAttribute("aria-label", { idle: "Start dictation", loading: "Cancel dictation · loading", recording: "Stop dictation", finishing: "Finishing dictation", error: "Retry dictation", unavailable: "Dictation unavailable" }[state]);
+      microphone.setAttribute("aria-pressed", String(["loading", "recording", "waiting", "finishing"].includes(state)));
+      microphone.setAttribute("aria-label", { idle: "Start dictation", loading: "Stop dictation · starting microphone", recording: "Stop dictation", waiting: "Stop dictation · buffering audio", finishing: "Finishing dictation", error: "Retry dictation", unavailable: "Dictation unavailable" }[state]);
       microphone.title = microphone.getAttribute("aria-label")!;
       microphone.disabled = state === "finishing";
       const label = microphone.querySelector("span") ?? microphone.appendChild(document.createElement("span"));
-      label.textContent = { idle: "", loading: "Loading…", recording: "Stop", finishing: "Finishing…", error: "!", unavailable: "!" }[state];
+      label.textContent = { idle: "", loading: "Starting…", recording: "Stop", waiting: "Stop · Buffering", finishing: "Finishing…", error: "!", unavailable: "!" }[state];
     },
   });
   const focus = () => terminal.textarea?.focus({ preventScroll: true });

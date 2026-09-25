@@ -27,6 +27,7 @@ export class TerminalConnection {
     return this.ready && this.socket?.readyState === WebSocket.OPEN && this.attachmentId
       ? { sessionId: this.id, attachmentId: this.attachmentId } : undefined;
   }
+  get terminalStopped() { return this.stopped; }
 
   onAttachmentChange(listener: () => void) {
     this.attachmentListeners.add(listener);

@@ -26,6 +26,22 @@ describe("append-only terminal dictation", () => {
     expect(pipeline.accept("one\n\ttwo\x1b\x00\u009b ")).toBe("one  two ");
     expect(pipeline.accept("one\n\ttwo\x1b\x00\u009b three\r\nfour", true)).toBe("three  four");
   });
+  test("replayed audio does not paste an already committed prefix twice", () => {
+    const pipeline = new TranscriptPipeline();
+    expect(pipeline.accept("hello world ")).toBe("hello world ");
+    pipeline.replay();
+    expect(pipeline.accept("hello ")).toBe("");
+    expect(pipeline.accept("hello world ")).toBe("");
+    expect(pipeline.accept("hello world again!", true)).toBe("again!");
+  });
+  test("a changed replayed prefix stops automatic insertion", () => {
+    const pipeline = new TranscriptPipeline();
+    expect(pipeline.accept("hello world ")).toBe("hello world ");
+    pipeline.replay();
+    expect(pipeline.accept("hello planet again ")).toBe("");
+    expect(pipeline.diverged).toBe(true);
+    expect(pipeline.preview).toBe("hello planet again ");
+  });
 });
 
 describe("microphone resampling", () => {
@@ -60,11 +76,12 @@ describe("dictation protocol", () => {
     expect(events.accept(event("ready", 1, "old"))).toBe(false);
     expect(events.accept(event("ready", 1))).toBe(true);
     expect(events.accept(event("partial", 2))).toBe(true);
-    expect(events.accept(event("partial", 2))).toBe(false);
-    expect(events.accept(event("final", 3))).toBe(true);
-    expect(events.accept(event("partial", 4))).toBe(false);
-    expect(events.accept(event("final", 4))).toBe(false);
-    expect(events.accept(event("done", 4))).toBe(true);
+    expect(events.accept({ ...event("ack", 3), bytes: 5120 })).toBe(true);
+    expect(events.accept({ ...event("ack", 4), bytes: 0 })).toBe(false);
+    expect(events.accept(event("partial", 3))).toBe(false);
+    expect(events.accept(event("final", 4))).toBe(true);
+    expect(events.accept({ ...event("ack", 5), bytes: 10240 })).toBe(false);
+    expect(events.accept(event("done", 5))).toBe(true);
   });
   test("validates audio bytes and declared format", () => {
     const start = { type: "start", version: 1, recordingId: crypto.randomUUID(), sampleRate: 16000, channels: 1, format: "f32le" };

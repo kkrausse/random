@@ -105,12 +105,14 @@ local Swift Hex app, under `~/Library/Application Support/FluidAudio/Models/para
 It does not download models. See [service setup](../dictation-server/README.md)
 for the exact required assets and standalone commands. Bun launches the release
 executable on the first status/recording request, keeps the model resident, and
-owns child shutdown. Initial model loading is shown separately from recording.
+owns child shutdown. The phone starts capturing as soon as microphone permission
+and its audio processor are ready, without waiting for the model.
 
 On your phone, open the terminal through the Tailscale **HTTPS** URL. Tap the mic,
-allow microphone access, wait for **Stop**, and speak. Tap **Stop** to flush the
-last word. A tap during **Loading…** cancels. Starting dictation preserves keyboard
-visibility and clears one-shot Ctrl. Audio comes from the phone; transcription
+allow microphone access, and speak even if the connection is still loading. Tap
+**Stop** to flush the last word. A tap during microphone startup cancels.
+Starting dictation preserves keyboard visibility and clears one-shot Ctrl.
+Audio comes from the phone; transcription
 runs on the Mac. Only one remote recording can run at once.
 
 Whole words are pasted live at the application's current cursor, with the pending
@@ -120,10 +122,17 @@ before moving the application's cursor or changing contexts. If the model revise
 an observed prefix, automatic insertion stops and the final transcript remains
 in the selectable preview for recovery.
 
-Disconnect, takeover, navigation, or page suspension cancels capture and releases
-the microphone; already pasted text remains. Dictation never resumes or replays
-automatically after reconnect. Recordings are capped at five minutes, with bounded
-audio queues and explicit overload errors.
+The phone retains up to five minutes of audio in memory (about 19 MB raw) while
+recording, even when the server is unavailable. Inference acknowledgments pace
+uploads; if the dictation socket drops, a new decoder session replays the entire
+recording. Already inserted text is not pasted again; if the replay changes that
+prefix, automatic insertion stops and the recovery transcript stays visible.
+Temporary terminal disconnection also waits for reattachment, but a permanent
+takeover, navigation, or page suspension cancels capture. Stop waits for buffered
+audio and the final transcript (up to five minutes); it cannot preserve capture
+through phone sleep, browser termination, or a page reload. Server-side transport
+queues remain bounded to about two seconds, and the five-minute capture cap is
+explicit.
 
 | Environment variable | Default / meaning |
 | --- | --- |
