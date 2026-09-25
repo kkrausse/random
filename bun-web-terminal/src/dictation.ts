@@ -5,6 +5,7 @@ import { TranscriptPipeline } from "./transcript";
 export type DictationState = "idle" | "loading" | "recording" | "waiting" | "finishing" | "error" | "unavailable";
 type View = {
   state(state: DictationState): void;
+  startup(stage: string): void;
   preview(text: string): void;
   notice(text: string): void;
   clearControl(): void;
@@ -15,7 +16,7 @@ type Recording = {
   context: AudioContext; stream?: MediaStream; node?: AudioWorkletNode; source?: MediaStreamAudioSourceNode;
   socket?: WebSocket; timer?: ReturnType<typeof setTimeout>; retry?: ReturnType<typeof setTimeout>;
   transcript: TranscriptPipeline; chunks: Uint8Array[]; bytes: number;
-  sent: number; acknowledged: number; ready: boolean; drained: boolean; stopping: boolean; stopSent: boolean; attempts: number;
+  sent: number; acknowledged: number; ready: boolean; capturing: boolean; drained: boolean; stopping: boolean; stopSent: boolean; attempts: number;
 };
 
 // Keep the entire recording until done: a disconnected decoder starts fresh and
@@ -25,6 +26,7 @@ const inFlightBytes = 64_000; // below the two-second queues at both server boun
 
 export class DictationController {
   private recording?: Recording;
+  private prepared?: { context: AudioContext; module: Promise<void> };
   constructor(private connection: TerminalConnection, private view: View) {
     view.state("idle");
     connection.onAttachmentChange(() => {
@@ -37,8 +39,29 @@ export class DictationController {
       else if (!r.socket || r.socket.readyState === WebSocket.CLOSED) this.connect(r);
     });
     document.addEventListener("visibilitychange", () => { if (document.hidden) this.cancel(); });
-    window.addEventListener("pagehide", () => this.cancel());
+    window.addEventListener("pagehide", () => {
+      this.cancel();
+      if (this.prepared) void this.prepared.context.close().catch(() => {});
+      this.prepared = undefined;
+    });
     if (!isSecureContext || !navigator.mediaDevices?.getUserMedia || !window.AudioContext || !window.AudioWorkletNode) view.state("unavailable");
+    else this.prepare();
+  }
+
+  private prepare() {
+    if (this.prepared || document.hidden) return;
+    try {
+      // This loads the recorder before the tap, but never requests mic access.
+      // A page-created context remains suspended until resume() in the gesture.
+      const context = new AudioContext();
+      const module = context.audioWorklet.addModule("/audio-worklet.js");
+      this.prepared = { context, module };
+      void module.catch(() => {
+        if (this.prepared?.context !== context) return;
+        this.prepared = undefined;
+        void context.close().catch(() => {});
+      });
+    } catch { /* Retry setup on the next tap if prewarming is not supported. */ }
   }
 
   toggle() {
@@ -57,29 +80,36 @@ export class DictationController {
     this.view.clearControl();
     this.view.preview("");
     try {
-      const context = new AudioContext();
+      const prepared = this.prepared;
+      this.prepared = undefined;
+      const context = prepared?.context ?? new AudioContext();
+      const module = prepared?.module ?? context.audioWorklet.addModule("/audio-worklet.js");
       const r: Recording = { id: "", attachmentId: attachment.attachmentId, sessionId: attachment.sessionId,
         phase: "loading", context, transcript: new TranscriptPipeline(), chunks: [], bytes: 0,
-        sent: 0, acknowledged: 0, ready: false, drained: false, stopping: false, stopSent: false, attempts: 0 };
+        sent: 0, acknowledged: 0, ready: false, capturing: false, drained: false, stopping: false, stopSent: false, attempts: 0 };
       this.recording = r;
       this.view.state("loading");
+      this.view.startup("Mic access…");
       this.deadline(r, 120_000, "Microphone permission timed out");
       const resumed = context.resume();
       const permission = navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }, video: false });
-      void this.startAudio(r, resumed, permission);
+      void this.startAudio(r, resumed, permission, module);
       this.connect(r);
     } catch (error) { this.error(error); }
   }
 
-  private async startAudio(r: Recording, resumed: Promise<void>, permission: Promise<MediaStream>) {
+  private async startAudio(r: Recording, resumed: Promise<void>, permission: Promise<MediaStream>, module: Promise<void>) {
     try {
+      void resumed.catch(error => { if (this.recording === r) this.error(error); });
       const microphone = permission.then(stream => {
         if (this.recording !== r) { stream.getTracks().forEach(track => track.stop()); throw new Error("Recording canceled"); }
         r.stream = stream;
+        this.view.startup("Audio processor…");
         stream.getTracks().forEach(track => track.addEventListener("ended", () => { if (this.recording === r && !r.stopping) this.cancel("Microphone disconnected"); }));
       });
-      await Promise.all([resumed, microphone, r.context.audioWorklet.addModule("/audio-worklet.js")]);
+      await Promise.all([microphone, module]);
       if (this.recording !== r) return;
+      this.view.startup("Audio startup…");
       const node = r.node = new AudioWorkletNode(r.context, "dictation", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
       node.onprocessorerror = () => { if (this.recording === r) this.error(new Error("Microphone processor failed")); };
       node.port.onmessage = ({ data }) => {
@@ -87,6 +117,12 @@ export class DictationController {
         try {
           if (data.type === "error") throw new Error(data.message);
           if (data.type === "audio") {
+            if (!r.capturing) {
+              r.capturing = true;
+              r.phase = r.ready ? "recording" : "waiting";
+              this.view.state(r.phase);
+              this.deadline(r, 300_000, "Recording reached the five-minute limit");
+            }
             const bytes = new Uint8Array(data.bytes);
             const kept = bytes.subarray(0, Math.max(0, maximumBytes - r.bytes));
             if (kept.byteLength) { r.chunks.push(kept); r.bytes += kept.byteLength; }
@@ -101,14 +137,9 @@ export class DictationController {
       r.source.connect(node);
       node.connect(r.context.destination);
       r.context.onstatechange = () => {
-        if (this.recording === r && !r.stopping && r.context.state !== "running") this.cancel("Dictation stopped · audio suspended");
+        if (this.recording === r && r.capturing && !r.stopping && r.context.state !== "running") this.cancel("Dictation stopped · audio suspended");
       };
       if (r.stopping) node.port.postMessage("stop");
-      else {
-        r.phase = r.ready ? "recording" : "waiting";
-        this.view.state(r.phase);
-        this.deadline(r, 300_000, "Recording reached the five-minute limit");
-      }
     } catch (error) { if (this.recording === r) this.error(error); }
   }
 
@@ -141,7 +172,7 @@ export class DictationController {
         if (event.type === "ready") {
           r.ready = true;
           r.attempts = 0;
-          if (!r.stopping && r.node) { r.phase = "recording"; this.view.state("recording"); }
+          if (!r.stopping && r.capturing) { r.phase = "recording"; this.view.state("recording"); }
           this.pump(r);
         }
         if (event.type === "ack") {
@@ -199,7 +230,7 @@ export class DictationController {
 
   private wait(r: Recording) {
     if (this.recording !== r) return;
-    r.phase = r.stopping ? "finishing" : "waiting";
+    r.phase = r.stopping ? "finishing" : r.capturing ? "waiting" : "loading";
     this.view.state(r.phase);
     clearTimeout(r.retry);
     r.retry = setTimeout(() => {
@@ -240,6 +271,7 @@ export class DictationController {
     r.socket?.close();
     this.releaseAudio(r);
     this.view.state(state);
+    if (state !== "unavailable") this.prepare();
   }
   private error(error: unknown) {
     const message = error instanceof Error ? error.message : "Dictation failed";

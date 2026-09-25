@@ -106,7 +106,11 @@ It does not download models. See [service setup](../dictation-server/README.md)
 for the exact required assets and standalone commands. Bun launches the release
 executable on the first status/recording request, keeps the model resident, and
 owns child shutdown. The phone starts capturing as soon as microphone permission
-and its audio processor are ready, without waiting for the model.
+and its audio processor are ready, without waiting for the model. The browser
+prepares the audio processor on page load without requesting microphone access;
+the mic button shows **Mic access…**, **Audio processor…**, or **Audio startup…**
+until the first actual audio packet confirms recording. These steps can still
+take time on a phone, especially on the first permission request.
 
 On your phone, open the terminal through the Tailscale **HTTPS** URL. Tap the mic,
 allow microphone access, and speak even if the connection is still loading. Tap

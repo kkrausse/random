@@ -50,6 +50,7 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
   const dictation = new DictationController(connection, {
     clearControl: () => setControl(false), paste: text => terminal.paste(text), notice,
     preview: text => { preview.textContent = text; },
+    startup: text => { if (microphone.dataset.state === "loading") microphone.querySelector("span")!.textContent = text; },
     state(state) {
       microphone.dataset.state = state;
       microphone.setAttribute("aria-pressed", String(["loading", "recording", "waiting", "finishing"].includes(state)));

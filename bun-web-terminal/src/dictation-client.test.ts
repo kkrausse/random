@@ -24,6 +24,9 @@ test("records before ready, paces by inference acks, and replays after disconnec
   const sockets: FakeSocket[] = [];
   const pastes: string[] = [];
   const states: DictationState[] = [];
+  const startup: string[] = [];
+  let modules = 0;
+  let microphoneRequests = 0;
   let node!: FakeNode;
   let attachmentListener = () => {};
   let attachment = { sessionId: "session", attachmentId: "first" };
@@ -54,16 +57,20 @@ test("records before ready, paces by inference acks, and replays after disconnec
     disconnect() {}
   }
   class FakeContext {
-    audioWorklet = { addModule: async (_path: string) => {} };
+    audioWorklet = { addModule: async (_path: string) => { modules++; } };
     onstatechange: (() => void) | null = null;
     state = "running";
     destination = {};
-    resume = async () => {};
+    // Graph setup must not wait for this promise; some mobile browsers settle it late.
+    resume = () => new Promise<void>(() => {});
     close = async () => {};
     createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
   }
   replace("isSecureContext", true);
-  replace("navigator", { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() {}, addEventListener() {} }] }) } });
+  replace("navigator", { mediaDevices: { getUserMedia: async () => {
+    microphoneRequests++;
+    return { getTracks: () => [{ stop() {}, addEventListener() {} }] };
+  } } });
   replace("window", { AudioContext: FakeContext, AudioWorkletNode: FakeNode, addEventListener() {} });
   replace("AudioContext", FakeContext);
   replace("AudioWorkletNode", FakeNode);
@@ -74,10 +81,15 @@ test("records before ready, paces by inference acks, and replays after disconnec
   const connection = { get attachment() { return attachment; }, terminalStopped: false,
     onAttachmentChange(listener: () => void) { attachmentListener = listener; return () => {}; } } as unknown as TerminalConnection;
   const controller = new DictationController(connection, {
-    state: value => states.push(value), preview() {}, notice() {}, clearControl() {}, paste: text => pastes.push(text),
+    state: value => states.push(value), startup: text => startup.push(text), preview() {}, notice() {}, clearControl() {}, paste: text => pastes.push(text),
   });
+  expect(modules).toBe(1);
+  expect(microphoneRequests).toBe(0);
   controller.toggle();
   await until(() => !!node);
+  expect(modules).toBe(1);
+  expect(microphoneRequests).toBe(1);
+  expect(startup).toContain("Audio startup…");
   const first = sockets[0]!;
   // 16 frames = 81,920 bytes; only 12 fit in the one-second inference window.
   for (let i = 0; i < 16; i++) node!.port.onmessage({ data: { type: "audio", bytes: new Uint8Array(5120).buffer } });
