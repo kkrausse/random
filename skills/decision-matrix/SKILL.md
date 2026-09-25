@@ -7,6 +7,8 @@ description: Rich Hickey decision matrices for comparing approaches and tradeoff
 
 Use the approach Rich Hickey describes in [Design in Practice (2023)](https://youtu.be/c5QF2HjHLSE?t=2348). The [transcript](https://github.com/matthiasn/talk-transcripts/blob/master/Hickey_Rich/DesignInPractice.md) covers the matrix from ~39:08 to ~53:18; [slides](https://download.clojure.org/presentations/DesignInPractice.pdf). The matrix is a shared thinking tool for *creating* a better approach, not a weighted-score shopping exercise.
 
+**Default deliverable: an actual decision matrix table.** If the user invokes this skill or asks for a Rich Hickey decision matrix about a decision, produce a populated Markdown table in the response, not merely advice on how to make one, a prose comparison, or a list of pros and cons. Put the decision statement immediately above it, with criteria as rows and approaches as columns. Follow the table with only a short synthesis and open questions. If the user explicitly requests a different format, honor that instead. If they provide no decision or candidate subject at all, ask what decision they want to compare.
+
 ## Work through the decision
 
 1. State the **problem and specific decision** succinctly at the top (A1 in a spreadsheet). If given a requested feature or favorite solution, first identify the underlying objective and obstacle. If essential context is missing, ask a focused question; otherwise state assumptions and start a draft.
@@ -18,7 +20,7 @@ Use the approach Rich Hickey describes in [Design in Practice (2023)](https://yo
 
 ## Output and collaboration
 
-- For a quick request, use a readable Markdown table followed by a brief synthesis and next questions. For an ongoing team decision, offer a live-editable spreadsheet or spreadsheet-ready table; don't create an external document unless asked or appropriate to the user's workspace.
+- Make the table visible **in the answer**, even if the research is incomplete: fill what is known, mark unknown cells `?`, and state assumptions. Do not postpone the table pending exhaustive research or clarifying questions unless there is no identifiable decision. For an ongoing team decision, you may additionally offer a live-editable spreadsheet or spreadsheet-ready version; don't create an external document unless asked or appropriate to the user's workspace.
 - Keep the decision statement, criteria, and relevant details in view. Don't hide the essential comparison behind links, comments, or generic pros/cons blobs. Links can supplement a cell's summary.
 - Distinguish evidence from assumptions and preferences. If information is insufficient to pick a winner, say so and identify the smallest useful investigation rather than manufacturing certainty.
 - A matrix can compare high-level directions or lower-level implementation tactics; be explicit which decision is being made.
