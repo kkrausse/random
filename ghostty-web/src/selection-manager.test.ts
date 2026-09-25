@@ -146,9 +146,9 @@ describe('SelectionManager', () => {
         canvas.dispatchEvent(event);
       };
       mouse('mousedown', 0);
-      mouse('mousemove', 4);
-      mouse('mouseup', 4);
-      mouse('click', 4);
+      mouse('mousemove', 4.75);
+      mouse('mouseup', 4.75);
+      mouse('click', 4.75);
       expect(term.getSelection()).toBe('Hello');
       expect(copied).toEqual(['Hello']);
       expect(sent).toEqual([]);
@@ -156,9 +156,9 @@ describe('SelectionManager', () => {
       expect(copied).toEqual(['Hello', 'Hello']);
       term.options.copyOnSelect = false;
       mouse('mousedown', 0);
-      mouse('mousemove', 4);
-      mouse('mouseup', 4);
-      mouse('click', 4);
+      mouse('mousemove', 4.75);
+      mouse('mouseup', 4.75);
+      mouse('click', 4.75);
       expect(term.getSelection()).toBe('Hello');
       expect(copied).toEqual(['Hello', 'Hello']);
       term.copySelection();
@@ -186,6 +186,51 @@ describe('SelectionManager', () => {
       );
       expect(selMgr.isSelecting).toBe(true);
 
+      term.dispose();
+    });
+
+    test('snaps drag endpoints to character boundaries across rows and in reverse', async () => {
+      if (!container) return;
+      const term = await createIsolatedTerminal({ cols: 20, rows: 5, copyOnSelect: false, selectOnDrag: true });
+      term.open(container);
+      term.write('first line\r\nsecond line\r\nthird line');
+      const canvas = term.renderer!.getCanvas();
+      const { width, height } = term.renderer!.getMetrics();
+      canvas.getBoundingClientRect = () => new DOMRect(0, 0, width * 20, height * 5);
+      Object.defineProperty(canvas, 'clientHeight', { value: height * 5 });
+      const mouse = (type: string, col: number, row: number) => {
+        const event = new MouseEvent(type, {
+          button: 0, bubbles: true, clientX: col * width, clientY: (row + 0.5) * height,
+        });
+        Object.defineProperty(event, 'offsetX', { value: col * width });
+        Object.defineProperty(event, 'offsetY', { value: (row + 0.5) * height });
+        canvas.dispatchEvent(event);
+      };
+
+      mouse('mousedown', 0, 0);
+      mouse('mousemove', 0.25, 1);
+      mouse('mouseup', 0.25, 1);
+      expect(term.getSelection()).toBe('first line');
+
+      mouse('mousedown', 0, 0);
+      mouse('mousemove', 0.75, 1);
+      mouse('mouseup', 0.75, 1);
+      expect(term.getSelection()).toBe('first line\ns');
+
+      mouse('mousedown', 5, 1);
+      mouse('mousemove', 1.75, 1);
+      mouse('mouseup', 1.75, 1);
+      expect(term.getSelection()).toBe('cond');
+
+      mouse('mousedown', 0, 1);
+      mouse('mousemove', 19.25, 0);
+      mouse('mouseup', 19.25, 0);
+      expect(term.getSelection()).toBe('\ns');
+
+      mouse('mousedown', 0, 1);
+      mouse('mousemove', 0.25, 0);
+      mouse('mouseup', 0.25, 0);
+      expect(term.getSelection()).toBe('first line\ns');
       term.dispose();
     });
   });

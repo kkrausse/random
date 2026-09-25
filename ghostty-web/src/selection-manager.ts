@@ -491,9 +491,7 @@ export class SelectionManager {
         // Mark current selection rows as dirty before updating
         this.markCurrentSelectionDirty();
 
-        const cell = this.pixelToCell(e.offsetX, e.offsetY);
-        const absoluteRow = this.viewportRowToAbsolute(cell.row);
-        this.selectionEnd = { col: cell.col, absoluteRow };
+        this.selectionEnd = this.pixelToSelectionEnd(e.offsetX, e.offsetY);
         this.requestRender();
 
         // Check if near edges for auto-scroll
@@ -567,9 +565,7 @@ export class SelectionManager {
             // Mark current selection rows as dirty before updating
             this.markCurrentSelectionDirty();
 
-            const cell = this.pixelToCell(offsetX, offsetY);
-            const absoluteRow = this.viewportRowToAbsolute(cell.row);
-            this.selectionEnd = { col: cell.col, absoluteRow };
+            this.selectionEnd = this.pixelToSelectionEnd(offsetX, offsetY);
             this.requestRender();
           }
         }
@@ -869,6 +865,26 @@ export class SelectionManager {
       col: Math.max(0, Math.min(col, this.terminal.cols - 1)),
       row: Math.max(0, Math.min(row, this.terminal.rows - 1)),
     };
+  }
+
+  /**
+   * A drag ends at the nearest boundary between cells, not at the cell's left
+   * edge. Our selection ranges are inclusive, so convert that boundary back
+   * to a cell on the appropriate side of the anchor. In particular, dragging
+   * into the left half of the next row should end on the previous row.
+   */
+  private pixelToSelectionEnd(x: number, y: number): { col: number; absoluteRow: number } {
+    const metrics = this.renderer.getMetrics();
+    const cols = this.terminal.cols;
+    const row = Math.max(0, Math.min(Math.floor(y / metrics.height), this.terminal.rows - 1));
+    const absoluteRow = this.viewportRowToAbsolute(row);
+    const boundaryCol = Math.max(0, Math.min(Math.floor(x / metrics.width + 0.5), cols));
+    const boundary = absoluteRow * cols + boundaryCol;
+    const anchor = this.selectionStart!.absoluteRow * cols + this.selectionStart!.col;
+    // A boundary at the anchor still selects its cell once the drag threshold
+    // has been met. Forward ranges exclude the cell after the boundary.
+    const end = boundary > anchor ? boundary - 1 : boundary;
+    return { col: ((end % cols) + cols) % cols, absoluteRow: Math.floor(end / cols) };
   }
 
   /**
