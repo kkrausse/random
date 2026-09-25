@@ -5,6 +5,7 @@ type TerminalView = {
   write(data: Uint8Array): void;
   status(status: Status): void;
   mouseMode(tracking: boolean): void;
+  selection(text: string): void;
 };
 
 // Binary messages are terminal bytes; text messages are protocol controls.
@@ -44,6 +45,8 @@ export class TerminalConnection {
   }
 
   resize() { if (this.ready) this.control({ type: "resize", ...this.view.size() }); }
+  finishSelection() { if (this.ready) this.control({ type: "finish-selection" }); }
+  cancelSelection() { if (this.ready) this.control({ type: "cancel-selection" }); }
 
   restore() {
     if (this.stopped) return;
@@ -93,6 +96,8 @@ export class TerminalConnection {
           this.ping();
         } else if (message.type === "mouse-mode" && typeof message.tracking === "boolean") {
           this.view.mouseMode(message.tracking);
+        } else if (message.type === "selection" && typeof message.text === "string") {
+          this.view.selection(message.text);
         } else if (message.type === "pong") {
           clearTimeout(this.pongTimeout);
           this.pongTimeout = undefined;

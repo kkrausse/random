@@ -4,6 +4,7 @@ import { installScrolling } from "./scroll";
 import { installMobileControls } from "./mobile";
 import { ApplicationClipboard, ClipboardRequests } from "./clipboard";
 import { hasAutomaticSessionName, sessionLabel } from "./session-display";
+import { installTmuxSelection } from "./tmux-selection";
 
 type Session = {
   id: string;
@@ -145,13 +146,17 @@ async function startTerminalPage() {
   );
   copyApplication.addEventListener("click", () => { void applicationClipboard.copy(); });
   const clipboardRequests = new ClipboardRequests(text => applicationClipboard.receive(text));
+  const touchPointer = matchMedia("(any-pointer: coarse)").matches;
+  let applicationMouse = false;
+  let tmuxSelectionText = "";
+  let pendingTmuxSelection = false;
   const terminal = new Terminal({
     cursorBlink: true,
     fontFamily: theme.fontFamily,
     fontSize: theme.fontSize,
     scrollback: 10_000,
-    selectOnDrag: false, // Updated from tmux's inner application mouse mode below.
-    copyOnSelect: false, // Set true to copy automatically when highlighting text.
+    selectOnDrag: false, // Desktop shell drags belong to tmux copy mode.
+    copyOnSelect: false, // Only applies to Ghostty Web's local (Shift/touch) selection.
     onClipboardWrite(success) {
       if (!copyToast) return;
       clearTimeout(copyToastTimer);
@@ -174,6 +179,15 @@ async function startTerminalPage() {
   container.dataset.renderer = "webgl";
   fitTerminal();
   if (!matchMedia("(any-pointer: coarse)").matches) terminal.focus();
+  container.addEventListener("keydown", (event) => {
+    if (event.metaKey && event.code === "KeyC" && tmuxSelectionText && !terminal.hasSelection()) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void navigator.clipboard.writeText(tmuxSelectionText).then(
+        () => notice("Copied"), () => notice("Copy failed · Try again"),
+      );
+    }
+  }, { capture: true });
   terminal.onTitleChange(updateTitle);
   // Ctrl+Tab / Ctrl+Shift+Tab switch browser tabs. The emulator would encode
   // these and preventDefault them, so stop them at window capture before they
@@ -205,6 +219,9 @@ async function startTerminalPage() {
     reset() {
       clipboardRequests.reset();
       applicationClipboard.reset();
+      tmuxSelectionText = "";
+      pendingTmuxSelection = false;
+      applicationMouse = false;
       terminal.options.selectOnDrag = false;
       titleBuffer = "";
       titleDecoder.decode();
@@ -217,8 +234,12 @@ async function startTerminalPage() {
       terminal.write(data);
     },
     mouseMode(tracking) {
-      terminal.options.selectOnDrag = !tracking;
+      applicationMouse = tracking;
+      // Keep the existing phone touch selection behavior; desktop shell drags
+      // now use tmux's copy mode instead of a separate browser buffer.
+      terminal.options.selectOnDrag = touchPointer && !tracking;
     },
+    selection(text) { pendingTmuxSelection = false; tmuxSelectionText = text; },
     status(status) {
       if (!connectionStatus) return;
       connectionStatus.dataset.status = status;
@@ -228,6 +249,15 @@ async function startTerminalPage() {
       }[status];
     },
   });
+  const tmuxSelection = touchPointer ? undefined : installTmuxSelection(
+    container, terminal, () => applicationMouse,
+    () => { pendingTmuxSelection = true; connection.finishSelection(); },
+    () => {
+      if (tmuxSelectionText || pendingTmuxSelection) connection.cancelSelection();
+      tmuxSelectionText = "";
+      pendingTmuxSelection = false;
+    },
+  );
   const mobile = installMobileControls(container, terminal, (message) => {
     if (!copyToast) return;
     clearTimeout(copyToastTimer);
@@ -235,7 +265,16 @@ async function startTerminalPage() {
     copyToast.textContent = message;
     copyToastTimer = setTimeout(() => { copyToast.textContent = ""; }, 3000);
   }, connection);
-  terminal.onData((data) => connection.input(mobile.input(data)));
+  terminal.onData((data) => {
+    const routed = tmuxSelection?.input(data) ?? data;
+    if (!routed) return;
+    if ((tmuxSelectionText || pendingTmuxSelection) && !/^\x1b\[<\d+;\d+;\d+[Mm]$/.test(routed)) {
+      connection.cancelSelection();
+      tmuxSelectionText = "";
+      pendingTmuxSelection = false;
+    }
+    connection.input(mobile.input(routed));
+  });
   terminal.onResize(() => connection.resize());
   // Ctrl+V belongs to the terminal (e.g. Emacs scroll-down); paste remains Cmd+V
   // on macOS and Ctrl+Shift+V elsewhere.

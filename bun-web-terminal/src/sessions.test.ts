@@ -157,3 +157,62 @@ test("discovers standard tmux sessions and tracks renames and external removal",
     tmux("kill-server");
   }
 });
+
+test("tmux handles shell mouse drag selection on an isolated attachment", async () => {
+  const ghostty = await Ghostty.load(new URL(import.meta.resolve("@random/ghostty-web/ghostty-vt.wasm")).pathname);
+  const terminal = ghostty.createTerminal(80, 12);
+  const socket = `bun-web-terminal-selection-${crypto.randomUUID()}`;
+  const manager = new SessionManager(import.meta.dir, socket);
+  const tmux = (...args: string[]) => Bun.spawnSync(["tmux", "-L", socket, "-f", "/dev/null", ...args]);
+  let attachment: Attachment | undefined;
+  let selected = "";
+  try {
+    const previousShell = process.env.SHELL;
+    process.env.SHELL = '/bin/sh';
+    let session: Session;
+    try { session = manager.create(); }
+    finally { process.env.SHELL = previousShell; }
+    attachment = manager.attach(session, {
+      send(data) {
+        if (data instanceof Uint8Array) {
+          terminal.write(data);
+          let response: string | null;
+          while ((response = terminal.readResponse()) !== null) attachment?.input(new TextEncoder().encode(response));
+          queueMicrotask(() => attachment?.acknowledge(data.byteLength));
+        }
+        else {
+          const message = JSON.parse(data);
+          if (message.type === "selection") selected = message.text;
+        }
+      },
+      close() {},
+    }, 80, 12);
+    await Bun.sleep(300);
+    expect(terminal.hasMouseTracking()).toBe(true);
+    tmux('send-keys', '-t', session.id, "i=1; while [ $i -le 60 ]; do printf 'LINE-%03d\\n' $i; i=$((i+1)); done", 'Enter');
+    await until(() => tmux('capture-pane', '-p', '-t', session.id).stdout.toString().includes('LINE-060'));
+    const mouse = (button: number, col: number, row: number, release = false) =>
+      attachment!.input(new TextEncoder().encode(`\x1b[<${button};${col};${row}${release ? 'm' : 'M'}`));
+    mouse(0, 1, 7);
+    await Bun.sleep(50);
+    mouse(32, 5, 2);
+    await until(() => tmux('display-message', '-p', '-t', session.id, '#{pane_mode}').stdout.toString().trim() === 'copy-mode');
+    expect(terminal.hasMouseTracking()).toBe(true);
+    expect(tmux('display-message', '-p', '-t', session.id, '#{selection_present}').stdout.toString().trim()).toBe('1');
+    for (let i = 0; i < 10; i++) mouse(64, 1, 1);
+    await until(() => Number(tmux('display-message', '-p', '-t', session.id, '#{scroll_position}').stdout.toString()) > 30);
+    // Browser release is consumed, then this control copies without canceling.
+    attachment.finishSelection();
+    await until(() => selected.includes('LINE-002'));
+    expect(selected).toContain('LINE-040');
+    expect(tmux('display-message', '-p', '-t', session.id, '#{pane_mode}').stdout.toString().trim()).toBe('copy-mode');
+    expect(tmux('display-message', '-p', '-t', session.id, '#{selection_present}').stdout.toString().trim()).toBe('1');
+    expect(terminal.hasMouseTracking()).toBe(true);
+    attachment.cancelSelection();
+    expect(tmux('display-message', '-p', '-t', session.id, '#{pane_mode}').stdout.toString().trim()).toBe('');
+  } finally {
+    manager.dispose();
+    tmux('kill-server');
+    terminal.free();
+  }
+});

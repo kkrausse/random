@@ -21,6 +21,8 @@ export type Attachment = {
   input(data: Uint8Array): void;
   resize(cols: number, rows: number): void;
   acknowledge(bytes: number): boolean;
+  finishSelection(): void;
+  cancelSelection(): void;
   close(code?: number, reason?: string): void;
 };
 
@@ -82,6 +84,8 @@ export class SessionManager {
     let resizeTimer: ReturnType<typeof setTimeout> | undefined;
     let mouseTimer: ReturnType<typeof setTimeout> | undefined;
     let mouseTracking: boolean | undefined;
+    let selectionTimer: ReturnType<typeof setTimeout> | undefined;
+    const command = (args: string[]) => this.command(args);
     // tmux's outer mouse mode is always on for scrolling. Read the pane's
     // application modes separately; serialize queries so slow tmux cannot pile up.
     const reportMouseMode = async () => {
@@ -122,6 +126,29 @@ export class SessionManager {
         }, 100);
       },
       acknowledge(bytes) { return flow.acknowledge(bytes); },
+      finishSelection() {
+        clearTimeout(selectionTimer);
+        // PTY writes are asynchronous; let the final mouse motion reach tmux
+        // before reading its copy-mode selection. Do not forward mouse release:
+        // tmux's default binding would copy and cancel the visible highlight.
+        selectionTimer = setTimeout(() => {
+          selectionTimer = undefined;
+          if (closed) return;
+          const mode = command(["display-message", "-p", "-t", session.id, "#{pane_mode}|#{selection_present}"]);
+          if (mode.exitCode !== 0 || mode.stdout.toString().trim() !== "copy-mode|1") return;
+          const copied = command(["send-keys", "-t", session.id, "-X", "copy-selection-no-clear"]);
+          if (copied.exitCode !== 0) return;
+          const buffer = command(["show-buffer"]);
+          if (buffer.exitCode === 0 && buffer.stdout.byteLength <= 2_000_000) {
+            peer.send(JSON.stringify({ type: "selection", text: buffer.stdout.toString() }));
+          }
+        }, 30);
+      },
+      cancelSelection() {
+        clearTimeout(selectionTimer);
+        selectionTimer = undefined;
+        if (!closed) command(["send-keys", "-t", session.id, "-X", "cancel"]);
+      },
       close(code = 1000, reason = "Attachment closed") {
         if (closed) return;
         closed = true;
@@ -130,6 +157,7 @@ export class SessionManager {
         clearTimeout(resizeTimer);
         flow.dispose();
         clearTimeout(mouseTimer);
+        clearTimeout(selectionTimer);
         if (session.attachment === attachment) session.attachment = undefined;
         child?.kill();
         child?.terminal?.close();
