@@ -1,4 +1,5 @@
 import { resetCredentials } from "./credentials";
 
-await resetCredentials(Number(process.env.PORT ?? "4784"));
+const port = Number(process.env.PORT ?? "4784");
+await resetCredentials(port === 4784 ? 3000 : port);
 console.log("Keychain credentials removed. Restart the server to generate new credentials and revoke existing sign-ins. A running server retains its credentials until stopped.");

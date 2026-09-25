@@ -13,6 +13,8 @@ type SocketData = { kind: "terminal"; sessionId: string; cols: number; rows: num
 
 const host = process.env.HOST ?? "127.0.0.1";
 const port = parsePort(process.env.PORT ?? "4784");
+// Keep existing sign-ins when moving the default listener from 3000 to 4784.
+const credentialPort = port === 4784 ? 3000 : port;
 const attachmentLimit = 20 * 1024 * 1024;
 const dist = process.env.TERMINAL_DIST ?? join(import.meta.dir, "..", "dist");
 const defaultTerminalCwd = join(import.meta.dir, "..", "..");
@@ -22,7 +24,7 @@ if (host !== "127.0.0.1" && host !== "::1" && host !== "localhost" && host !== "
   throw new Error("HOST must be a loopback address or 0.0.0.0.");
 }
 const publicUrl = await publicSessionsUrl(port);
-const auth = new TerminalAuth(port, publicUrl, await loadCredentials(port));
+const auth = new TerminalAuth(port, publicUrl, await loadCredentials(credentialPort));
 
 await buildClient();
 const theme = loadGhosttyTheme();

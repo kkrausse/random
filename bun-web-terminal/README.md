@@ -51,7 +51,10 @@ loopback connections. Phone/Tailscale and localhost require separate initial
 sign-ins. Cookies last up to 30 days and survive Bun restarts and watch reloads.
 
 Credentials use a generic-password item with service `bun-web-terminal.auth.v1`
-and account `port-4784` (or your configured `PORT`) in the default macOS Keychain.
+and account `port-3000` for the default port `4784`, preserving existing sign-ins
+from the old default port. Other configured `PORT` values use `port-<PORT>`.
+Running instances on ports 3000 and 4784 therefore share credentials; do not
+reset authentication for one unless you intend to revoke sign-ins for both.
 macOS may request Keychain access; a locked or inaccessible Keychain stops startup
 rather than silently rotating credentials or writing a plaintext fallback.
 No credential file is stored in the repo. This server now requires macOS.
