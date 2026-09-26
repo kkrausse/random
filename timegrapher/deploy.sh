@@ -15,4 +15,6 @@ rsync -avz --delete --rsync-path="sudo rsync" \
   "$DIST_DIR"/ \
   "$HOST:$REMOTE_DIR/"
 
+ssh "$HOST" "sudo chmod -R a+rX '$REMOTE_DIR'"
+
 echo "==> Done."

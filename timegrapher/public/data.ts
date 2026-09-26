@@ -66,6 +66,7 @@ export type ConfigureAnalysisMessage = {
   periodSeconds: number;
   binCount: number;
   liftAngleDegrees: number;
+  precedingEventThresholdPercentile: number;
 };
 
 export type FoldRow = {

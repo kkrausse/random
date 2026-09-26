@@ -40,6 +40,7 @@ const state = {
   featureRate: DEFAULT_FEATURE_RATE,
   binCount: DEFAULT_BIN_COUNT,
   liftAngleDegrees: DEFAULT_LIFT_ANGLE_DEGREES,
+  precedingEventThresholdPercentile: DEFAULT_PRECEDING_EVENT_THRESHOLD_PERCENTILE,
   cycleBeats: 2,
   bands: [] as string[],
   frames: [] as Frame[],
@@ -55,6 +56,11 @@ const configure = (message: ConfigureAnalysisMessage) => {
     Number(message.liftAngleDegrees) || DEFAULT_LIFT_ANGLE_DEGREES,
     20,
     90,
+  );
+  state.precedingEventThresholdPercentile = clamp(
+    Number(message.precedingEventThresholdPercentile) || DEFAULT_PRECEDING_EVENT_THRESHOLD_PERCENTILE,
+    50,
+    99,
   );
   trimFrames();
 };
@@ -389,7 +395,7 @@ const buildBalanceAmplitude = (fold: NonNullable<ReturnType<typeof buildTracking
     fold.bins,
     beatBinCount,
     smoothRadius,
-    DEFAULT_PRECEDING_EVENT_THRESHOLD_PERCENTILE,
+    state.precedingEventThresholdPercentile,
   );
   const tickPeakBin = findPeakBin(fold.bins, 0, beatBinCount);
   const tockStartBin = beatBinCount;
@@ -433,7 +439,7 @@ const buildBalanceAmplitude = (fold: NonNullable<ReturnType<typeof buildTracking
 
   return {
     liftAngleDegrees: state.liftAngleDegrees,
-    precedingEventThresholdPercentile: DEFAULT_PRECEDING_EVENT_THRESHOLD_PERCENTILE,
+    precedingEventThresholdPercentile: state.precedingEventThresholdPercentile,
     precedingEventThresholdValue: thresholdValue,
     averageDegrees: averageDegrees === null ? null : Number(averageDegrees.toFixed(1)),
     averageLiftSeconds:

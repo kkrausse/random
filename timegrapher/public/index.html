@@ -31,7 +31,7 @@
 
       header {
         display: grid;
-        grid-template-columns: auto 1fr auto auto;
+        grid-template-columns: auto 1fr auto auto auto;
         gap: 12px 16px;
         align-items: start;
         padding: 14px 18px;
@@ -91,15 +91,21 @@
         grid-column: 4;
       }
 
+      .unlock-threshold-control {
+        grid-column: 5;
+      }
+
       .period-control input {
         width: 160px;
       }
 
-      .lift-angle-control input {
+      .lift-angle-control input,
+      .unlock-threshold-control input {
         width: 160px;
       }
 
-      .lift-angle-value {
+      .lift-angle-value,
+      .unlock-threshold-value {
         width: 48px;
         min-width: 48px;
         color: #4a5564;
@@ -222,6 +228,21 @@
         margin-top: 10px;
       }
 
+      @media (min-width: 741px) and (max-width: 1200px) {
+        header {
+          grid-template-columns: auto 1fr auto auto;
+        }
+
+        .unlock-threshold-control {
+          grid-column: 3 / 5;
+          grid-row: 2;
+        }
+
+        header .stats-wrap {
+          grid-row: 3;
+        }
+      }
+
       @media (max-width: 740px) {
         main {
           min-height: 100svh;
@@ -286,7 +307,8 @@
         }
 
         .period-control,
-        .lift-angle-control {
+        .lift-angle-control,
+        .unlock-threshold-control {
           display: grid;
           grid-column: auto;
           grid-template-columns: 72px minmax(0, 1fr) 52px;
@@ -294,7 +316,8 @@
         }
 
         .period-control input,
-        .lift-angle-control input {
+        .lift-angle-control input,
+        .unlock-threshold-control input {
           flex: 1;
           width: auto;
           min-width: 0;
@@ -336,18 +359,21 @@
         }
 
         .period-control,
-        .lift-angle-control {
+        .lift-angle-control,
+        .unlock-threshold-control {
           grid-template-columns: 1fr 52px;
         }
 
         .period-control input,
-        .lift-angle-control input {
+        .lift-angle-control input,
+        .unlock-threshold-control input {
           grid-column: 1 / -1;
           grid-row: 2;
         }
 
         .period-value,
-        .lift-angle-value {
+        .lift-angle-value,
+        .unlock-threshold-value {
           justify-self: end;
         }
       }
@@ -392,6 +418,11 @@
           Lift angle
           <input id="lift-angle" type="range" min="20" max="90" step="1" />
           <output id="lift-angle-value" class="lift-angle-value" for="lift-angle">-</output>
+        </label>
+        <label class="unlock-threshold-control" title="Percentile of smoothed fold amplitude. Higher values ignore smaller early bumps and move the detected unlock closer to the main peak.">
+          Unlock cutoff
+          <input id="unlock-threshold" type="range" min="50" max="99" step="1" />
+          <output id="unlock-threshold-value" class="unlock-threshold-value" for="unlock-threshold">-</output>
         </label>
       </header>
       <section class="charts">

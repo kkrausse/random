@@ -2,6 +2,7 @@ import {
   DEFAULT_BIN_COUNT,
   DEFAULT_LIFT_ANGLE_DEGREES,
   DEFAULT_PERIOD_SECONDS,
+  DEFAULT_PRECEDING_EVENT_THRESHOLD_PERCENTILE,
   MAX_PERIOD_SECONDS,
   MIN_PERIOD_SECONDS,
 } from "./defaults";
@@ -90,6 +91,8 @@ const elements = {
   periodValue: query<HTMLOutputElement>("#period-value"),
   liftAngle: query<HTMLInputElement>("#lift-angle"),
   liftAngleValue: query<HTMLOutputElement>("#lift-angle-value"),
+  unlockThreshold: query<HTMLInputElement>("#unlock-threshold"),
+  unlockThresholdValue: query<HTMLOutputElement>("#unlock-threshold-value"),
   featureRate: query<HTMLElement>("#feature-rate"),
   sampleRate: query<HTMLElement>("#sample-rate"),
   bands: query<HTMLElement>("#bands"),
@@ -120,6 +123,8 @@ const setDefaultPeriod = () => {
 setDefaultPeriod();
 elements.liftAngle.value = String(DEFAULT_LIFT_ANGLE_DEGREES);
 elements.liftAngleValue.textContent = `${DEFAULT_LIFT_ANGLE_DEGREES}°`;
+elements.unlockThreshold.value = String(DEFAULT_PRECEDING_EVENT_THRESHOLD_PERCENTILE);
+elements.unlockThresholdValue.textContent = `${DEFAULT_PRECEDING_EVENT_THRESHOLD_PERCENTILE}th`;
 
 const app: AppState = {
   audioContext: null,
@@ -193,12 +198,19 @@ const getPeriodSeconds = () => Number(elements.period.value) || DEFAULT_PERIOD_S
 const getLiftAngleDegrees = () =>
   Number(elements.liftAngle.value) || DEFAULT_LIFT_ANGLE_DEGREES;
 
+const getUnlockThresholdPercentile = () =>
+  Number(elements.unlockThreshold.value) || DEFAULT_PRECEDING_EVENT_THRESHOLD_PERCENTILE;
+
 const updatePeriodDisplay = () => {
   elements.periodValue.textContent = `${getPeriodSeconds()}s`;
 };
 
 const updateLiftAngleDisplay = () => {
   elements.liftAngleValue.textContent = `${getLiftAngleDegrees()}°`;
+};
+
+const updateUnlockThresholdDisplay = () => {
+  elements.unlockThresholdValue.textContent = `${getUnlockThresholdPercentile()}th`;
 };
 
 const makeCaptureJson = () => {
@@ -216,20 +228,22 @@ const makeCaptureJson = () => {
   );
 };
 
-const copyCapture = async () => {
+const saveCapture = () => {
   if (app.captureBatches.length === 0) {
     setStatus("No capture data yet.");
     return;
   }
 
-  const json = makeCaptureJson();
-
-  try {
-    await navigator.clipboard.writeText(json);
-    setStatus(`Copied last ${CAPTURE_WINDOW_SECONDS}s capture.`);
-  } catch {
-    setStatus("Could not copy capture.");
-  }
+  const url = URL.createObjectURL(new Blob([makeCaptureJson()], { type: "application/json" }));
+  const link = document.createElement("a");
+  const timestamp = new Date().toISOString().replaceAll(":", "-");
+  link.href = url;
+  link.download = `timegrapher-capture-${timestamp}.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  setStatus(`Saved last ${CAPTURE_WINDOW_SECONDS}s capture.`);
 };
 
 const writeAscii = (view: DataView, offset: number, value: string) => {
@@ -462,6 +476,7 @@ const configureWorker = () => {
     periodSeconds: getPeriodSeconds(),
     binCount: DEFAULT_BIN_COUNT,
     liftAngleDegrees: getLiftAngleDegrees(),
+    precedingEventThresholdPercentile: getUnlockThresholdPercentile(),
   };
 
   app.worker.postMessage(message);
@@ -618,7 +633,7 @@ elements.toggle.addEventListener("click", async () => {
 });
 
 elements.captureToggle.addEventListener("click", () => {
-  copyCapture();
+  saveCapture();
 });
 
 elements.rawCaptureToggle.addEventListener("click", async () => {
@@ -636,5 +651,10 @@ elements.period.addEventListener("input", () => {
 
 elements.liftAngle.addEventListener("input", () => {
   updateLiftAngleDisplay();
+  configureWorker();
+});
+
+elements.unlockThreshold.addEventListener("input", () => {
+  updateUnlockThresholdDisplay();
   configureWorker();
 });
