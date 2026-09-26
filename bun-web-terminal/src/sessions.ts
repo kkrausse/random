@@ -21,7 +21,7 @@ export type Attachment = {
   input(data: Uint8Array): void;
   resize(cols: number, rows: number): void;
   acknowledge(bytes: number): boolean;
-  finishSelection(): void;
+  copySelection(): void;
   cancelSelection(): void;
   close(code?: number, reason?: string): void;
 };
@@ -126,11 +126,11 @@ export class SessionManager {
         }, 100);
       },
       acknowledge(bytes) { return flow.acknowledge(bytes); },
-      finishSelection() {
+      copySelection() {
         clearTimeout(selectionTimer);
-        // PTY writes are asynchronous; let the final mouse motion reach tmux
-        // before reading its copy-mode selection. Do not forward mouse release:
-        // tmux's default binding would copy and cancel the visible highlight.
+        // Only an explicit copy command may save the selection to tmux's buffer
+        // (and potentially forward it via OSC 52). Releasing the mouse only
+        // leaves the tmux copy-mode highlight in place.
         selectionTimer = setTimeout(() => {
           selectionTimer = undefined;
           if (closed) return;

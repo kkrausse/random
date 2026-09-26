@@ -166,15 +166,19 @@ test("tmux handles shell mouse drag selection on an isolated attachment", async 
   const tmux = (...args: string[]) => Bun.spawnSync(["tmux", "-L", socket, "-f", "/dev/null", ...args]);
   let attachment: Attachment | undefined;
   let selected = "";
+  const clipboardWrites: string[] = [];
+  const clipboard = new ClipboardRequests(text => clipboardWrites.push(text));
   try {
     const previousShell = process.env.SHELL;
     process.env.SHELL = '/bin/sh';
     let session: Session;
     try { session = manager.create(); }
     finally { process.env.SHELL = previousShell; }
+    expect(tmux('set-option', '-s', 'set-clipboard', 'on').exitCode).toBe(0);
     attachment = manager.attach(session, {
       send(data) {
         if (data instanceof Uint8Array) {
+          clipboard.write(data);
           terminal.write(data);
           let response: string | null;
           while ((response = terminal.readResponse()) !== null) attachment?.input(new TextEncoder().encode(response));
@@ -201,10 +205,18 @@ test("tmux handles shell mouse drag selection on an isolated attachment", async 
     expect(tmux('display-message', '-p', '-t', session.id, '#{selection_present}').stdout.toString().trim()).toBe('1');
     for (let i = 0; i < 10; i++) mouse(64, 1, 1);
     await until(() => Number(tmux('display-message', '-p', '-t', session.id, '#{scroll_position}').stdout.toString()) > 30);
-    // Browser release is consumed, then this control copies without canceling.
-    attachment.finishSelection();
+    // Browser release is consumed. Selection remains highlighted, but neither
+    // tmux's paste buffer nor the browser clipboard is changed yet.
+    const bufferBeforeCopy = tmux('show-buffer').stdout.toString();
+    expect(selected).toBe('');
+    expect(clipboardWrites).toEqual([]);
+    expect(tmux('show-buffer').stdout.toString()).toBe(bufferBeforeCopy);
+    expect(tmux('display-message', '-p', '-t', session.id, '#{selection_present}').stdout.toString().trim()).toBe('1');
+    // Only the explicit Cmd+C control copies without canceling the highlight.
+    attachment.copySelection();
     await until(() => selected.includes('LINE-002'));
     expect(selected).toContain('LINE-040');
+    expect(tmux('show-buffer').stdout.toString()).toBe(selected);
     expect(tmux('display-message', '-p', '-t', session.id, '#{pane_mode}').stdout.toString().trim()).toBe('copy-mode');
     expect(tmux('display-message', '-p', '-t', session.id, '#{selection_present}').stdout.toString().trim()).toBe('1');
     expect(terminal.hasMouseTracking()).toBe(true);

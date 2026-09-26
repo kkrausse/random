@@ -148,8 +148,8 @@ async function startTerminalPage() {
   const clipboardRequests = new ClipboardRequests(text => applicationClipboard.receive(text));
   const touchPointer = matchMedia("(any-pointer: coarse)").matches;
   let applicationMouse = false;
-  let tmuxSelectionText = "";
-  let pendingTmuxSelection = false;
+  let tmuxSelectionActive = false;
+  let pendingTmuxCopy = false;
   const terminal = new Terminal({
     cursorBlink: true,
     fontFamily: theme.fontFamily,
@@ -180,12 +180,11 @@ async function startTerminalPage() {
   fitTerminal();
   if (!matchMedia("(any-pointer: coarse)").matches) terminal.focus();
   container.addEventListener("keydown", (event) => {
-    if (event.metaKey && event.code === "KeyC" && tmuxSelectionText && !terminal.hasSelection()) {
+    if (event.metaKey && event.code === "KeyC" && tmuxSelectionActive && !terminal.hasSelection()) {
       event.preventDefault();
       event.stopImmediatePropagation();
-      void navigator.clipboard.writeText(tmuxSelectionText).then(
-        () => notice("Copied"), () => notice("Copy failed · Try again"),
-      );
+      pendingTmuxCopy = true;
+      connection.copySelection();
     }
   }, { capture: true });
   terminal.onTitleChange(updateTitle);
@@ -219,8 +218,8 @@ async function startTerminalPage() {
     reset() {
       clipboardRequests.reset();
       applicationClipboard.reset();
-      tmuxSelectionText = "";
-      pendingTmuxSelection = false;
+      tmuxSelectionActive = false;
+      pendingTmuxCopy = false;
       applicationMouse = false;
       terminal.options.selectOnDrag = false;
       titleBuffer = "";
@@ -239,7 +238,13 @@ async function startTerminalPage() {
       // now use tmux's copy mode instead of a separate browser buffer.
       terminal.options.selectOnDrag = touchPointer && !tracking;
     },
-    selection(text) { pendingTmuxSelection = false; tmuxSelectionText = text; },
+    selection(text) {
+      if (!pendingTmuxCopy || !tmuxSelectionActive) return;
+      pendingTmuxCopy = false;
+      void navigator.clipboard.writeText(text).then(
+        () => notice("Copied"), () => notice("Copy failed · Try again"),
+      );
+    },
     status(status) {
       if (!connectionStatus) return;
       connectionStatus.dataset.status = status;
@@ -251,11 +256,11 @@ async function startTerminalPage() {
   });
   const tmuxSelection = touchPointer ? undefined : installTmuxSelection(
     container, terminal, () => applicationMouse,
-    () => { pendingTmuxSelection = true; connection.finishSelection(); },
+    () => { tmuxSelectionActive = true; },
     () => {
-      if (tmuxSelectionText || pendingTmuxSelection) connection.cancelSelection();
-      tmuxSelectionText = "";
-      pendingTmuxSelection = false;
+      if (tmuxSelectionActive) connection.cancelSelection();
+      tmuxSelectionActive = false;
+      pendingTmuxCopy = false;
     },
   );
   const mobile = installMobileControls(container, terminal, (message) => {
@@ -268,10 +273,10 @@ async function startTerminalPage() {
   terminal.onData((data) => {
     const routed = tmuxSelection?.input(data) ?? data;
     if (!routed) return;
-    if ((tmuxSelectionText || pendingTmuxSelection) && !/^\x1b\[<\d+;\d+;\d+[Mm]$/.test(routed)) {
+    if (tmuxSelectionActive && !/^\x1b\[<\d+;\d+;\d+[Mm]$/.test(routed)) {
       connection.cancelSelection();
-      tmuxSelectionText = "";
-      pendingTmuxSelection = false;
+      tmuxSelectionActive = false;
+      pendingTmuxCopy = false;
     }
     connection.input(mobile.input(routed));
   });

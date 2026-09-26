@@ -105,15 +105,15 @@ test("manual refresh cancels pending automatic retries", () => {
   expect(f.sockets).toHaveLength(2);
 });
 
-test("selection controls stay on the attached socket and return the copied text", () => {
+test("copy requires an explicit control on the attached socket and returns the selected text", () => {
   const f = fixture();
-  f.connection.finishSelection();
+  f.connection.copySelection();
   expect(f.sent).toEqual([]);
   f.sockets[0]!.ready();
-  f.connection.finishSelection();
+  f.connection.copySelection();
   f.connection.cancelSelection();
   expect(f.sent.slice(-2).map(data => JSON.parse(data))).toEqual([
-    { type: "finish-selection" }, { type: "cancel-selection" },
+    { type: "copy-selection" }, { type: "cancel-selection" },
   ]);
   f.sockets[0]!.onmessage?.({ data: JSON.stringify({ type: "selection", text: "tmux history" }) });
   expect(f.selections).toEqual(["tmux history"]);
