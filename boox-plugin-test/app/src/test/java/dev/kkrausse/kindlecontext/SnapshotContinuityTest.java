@@ -1,4 +1,4 @@
-package dev.example.kindlecontext;
+package dev.kkrausse.kindlecontext;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;

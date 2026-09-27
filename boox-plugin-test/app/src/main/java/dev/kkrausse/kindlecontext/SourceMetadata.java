@@ -1,4 +1,4 @@
-package dev.example.kindlecontext;
+package dev.kkrausse.kindlecontext;
 
 final class SourceMetadata {
     final String title;

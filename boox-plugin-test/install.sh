@@ -53,5 +53,5 @@ printf 'Building debug APK...\n'
 printf 'Installing on %s...\n' "$SERIAL"
 "$ADB_BIN" -s "$SERIAL" install -r "$APK"
 
-printf 'Launching Kindle Context...\n'
-"$ADB_BIN" -s "$SERIAL" shell am start -n dev.example.kindlecontext/.MainActivity
+printf 'Launching Reading Context...\n'
+"$ADB_BIN" -s "$SERIAL" shell am start -n dev.kkrausse.kindlecontext/.MainActivity

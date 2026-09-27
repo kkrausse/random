@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace "dev.example.kindlecontext"
+    namespace "dev.kkrausse.kindlecontext"
     compileSdk 35
 
     defaultConfig {
-        applicationId "dev.example.kindlecontext"
+        applicationId "dev.kkrausse.kindlecontext"
         minSdk 30
         targetSdk 35
         versionCode 1

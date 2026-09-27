@@ -1,4 +1,4 @@
-package dev.example.kindlecontext;
+package dev.kkrausse.kindlecontext;
 
 import java.util.HashSet;
 import java.util.Locale;

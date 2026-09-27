@@ -5,6 +5,7 @@
     <queries>
         <package android:name="com.amazon.kindle" />
         <package android:name="com.substack.app" />
+        <package android:name="com.android.chrome" />
     </queries>
 
     <application

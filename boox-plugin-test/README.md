@@ -1,11 +1,11 @@
 # Reading Context
 
-Android reading assistant for a BOOX Palma 2. It captures a highlight plus rolling surrounding context from supported reading apps, sends that context to a dedicated OpenCode `1.18.13` server over Tailscale, and provides persistent reading chats on the device. Kindle and Substack are currently supported.
+Android reading assistant for a BOOX Palma 2. It captures a highlight plus surrounding context from Kindle, Substack, or Google Chrome, sends that context to a dedicated OpenCode `1.18.13` server over Tailscale, and provides persistent reading chats on the device.
 
 ## Architecture
 
 ```text
-Kindle or Substack on Palma 2
+Kindle, Substack, or Google Chrome on Palma 2
   -> Android accessibility service
   -> Reading Context Android app
   -> HTTP Basic over Tailscale
@@ -17,9 +17,10 @@ The deployed components are intentionally isolated:
 
 | Component | Value |
 | --- | --- |
-| Android package | `dev.example.kindlecontext` |
+| Android package | `dev.kkrausse.kindlecontext` |
 | Kindle package | `com.amazon.kindle` |
 | Substack package | `com.substack.app` |
+| Chrome package | `com.android.chrome` |
 | Server hostname | `raspberrypi.example.ts.net` |
 | Tailscale IPv4 | `100.64.0.10` |
 | Server port | `41137` |
@@ -34,23 +35,25 @@ Plain HTTP is intentional because traffic is carried inside Tailscale. OpenCode 
 
 ## Reading Flow
 
-1. Highlight text in Kindle or Substack while its selection toolbar is visible.
+1. Highlight text in Kindle, Substack, or Google Chrome while its selection toolbar is visible.
 2. Press the floating `K` accessibility shortcut.
 3. The service captures prose nodes intersecting the physical display, remembers exposed book or article metadata, and builds a rolling context window.
-4. The service invokes the reader's exposed `Copy` action. Substack's transient toolbar action is retained from its accessibility event because it is omitted from the active-window tree.
+4. The service invokes an exposed `Copy` action, including a transient action from an accessibility event or a separate selection-toolbar window when available.
 5. The app opens and reads the copied highlight with Android's foreground clipboard access.
 6. Choose a prompt template or enter a custom question.
 7. The app creates an OpenCode session and sends the configured surrounding-context window, the highlight, and the question. The default context limit is 2,000 words.
 8. The chat screen streams response updates from OpenCode's event endpoint, accepts follow-up messages, and shows current-session token, cache, and cost totals below the return button.
-9. Use `CHATS` to reopen sessions stored by the server or the source-app button (`KINDLE` or `SUBSTACK`) to return to the reading app.
+9. Use `CHATS` to reopen sessions stored by the server or the source-app button to return to the app captured most recently. Return uses that app's launcher, so exact tab or reading-position restoration depends on the source app.
 
 The initial prompt identifies the source app and includes the title and author when the reader exposes them, then combines captured snapshots into one chronological surrounding-context section without page labels. Kindle metadata comes from the selected library cover; Substack metadata comes from article title, byline, and heading semantics. A changed snapshot must share at least 12 consecutive words with the prior snapshot before earlier pages are retained; otherwise it starts a new context chain and clears stale metadata. This prevents text from another book in the same reader app from leaking into the prompt when the reader does not expose a stable book identifier. Kindle library screens are excluded from prose capture. The prompt uses XML-style boundaries to separate source material from the reader's instructions. Captured text is escaped so it cannot close or alter those boundaries. By default, the app sends at most 2,000 words and centers the highlighted passage in that window, splitting the remaining budget between earlier and later text. Highlight matching ignores case, punctuation, and whitespace differences. The compact capture preview uses a separate whitespace-collapsed 30-word window so it can show and bold the matched passage, with the number of omitted words reported on either side; the full configured window retains its paragraph formatting and is still sent to the model. If the highlight still cannot be matched in the accessibility prose, the exact copied highlight remains in its separate prompt field, the latest captured words are used as surrounding context, and the preview displays a warning. The limit is configurable in Android Settings. The question remains last.
 
 If the source app does not expose `Copy` or readable clipboard text, the app falls back to standard accessibility selection offsets. The surrounding context remains available when no highlight can be recovered.
 
-Supported readers are declared as source profiles in `KindleAccessibilityService`. Each profile provides its package, display label, copy action, and whether the action must be retained from a transient accessibility event. Captured source metadata drives return navigation, and context history resets when switching readers so text from separate sources is not mixed.
+Kindle, Substack, and Google Chrome (`com.android.chrome`, not BOOX NeoBrowser) are declared as source profiles in `KindleAccessibilityService`. The service polls only these known sources for rolling context. Chrome captures from its WebView rather than its browser toolbar and clears old context when the address-bar location changes. Captured package and app label drive return navigation, and context history resets when switching apps so text from separate sources is not mixed. Websites with inaccessible prose or browser error pages may provide incomplete or no capture. A generic, on-demand handler for other apps is follow-on work, not part of the current capture path.
 
 Kindle retains copied selections as annotations. Automatic deletion is intentionally not attempted because Copy closes and invalidates the selection toolbar before its accessible `Delete Highlight` action can run. See `progress_20260801_113544.md` for tested alternatives.
+
+Follow-on work: investigate a generic, explicitly triggered capture for other apps, and migrate the server/client contract to OpenCode V2 separately. Neither is implemented by the Chrome integration; the deployed server and client still use regular OpenCode `1.18.13`.
 
 ## Repository Layout
 
@@ -380,9 +383,11 @@ If multiple devices are connected, pass the target serial (or set `ANDROID_SERIA
 
 The script uses `ADB`, `adb` from `PATH`, or the SDK location under `ANDROID_HOME`. It builds the APK at `app/build/outputs/apk/debug/app-debug.apk`, installs it with `-r` to preserve captured context and connection preferences, and launches the app.
 
+Before installing on an existing device, confirm the APK uses `dev.kkrausse.kindlecontext` and matches the installed app's signing certificate. A different application ID creates a second Reading Context icon and accessibility shortcut; a different certificate cannot update in place. Do not uninstall the existing app to resolve either mismatch. After an install, verify BOOX App Freeze remains off for Reading Context (see below).
+
 ## Chrome Extension
 
-`chrome-plugin/` contains a Bun-built TypeScript and React Manifest V3 extension that connects to the same server and workspace as the Android app. React is limited to the side panel; the background and content scripts remain plain TypeScript. Sessions are shared through OpenCode, while the Chrome model, template, prompt presets, and credentials are stored separately in `chrome.storage.local`.
+`chrome-plugin/` is a separate desktop Chrome extension; Android Chrome uses the accessibility-service source profile described above, not this extension. The extension is a Bun-built TypeScript and React Manifest V3 extension that connects to the same server and workspace as the Android app. React is limited to the side panel; the background and content scripts remain plain TypeScript. Sessions are shared through OpenCode, while the Chrome model, template, prompt presets, and credentials are stored separately in `chrome.storage.local`.
 
 Install it for development:
 
@@ -437,6 +442,8 @@ Changing app settings only changes private Android preferences. It does not modi
 
 Disable freezing for `Reading Context` under `Settings -> Apps & Notifications -> Freeze Settings / App Freeze`. BOOX freezing disables the package, kills its accessibility service, removes it from enabled accessibility services, and clears the accessibility-button target.
 
+Use the BOOX launcher **Settings** (not Android's standard Settings screen) for this path. Find **Reading Context** in Freeze Settings and switch freezing **off**. If `Automatically enable freezing after installing an app` is on, repeat this check after an install or update. `adb shell pm enable` can temporarily revive a frozen app but does not disable BOOX's freeze policy; it will be disabled again when backgrounded.
+
 After installing an APK, verify:
 
 1. `Reading Context` is not frozen.
@@ -459,12 +466,12 @@ Inspect current state:
 Development-only recovery commands that preserve NaviBall:
 
 ```sh
-"$ADB" shell pm enable dev.example.kindlecontext
+"$ADB" shell pm enable dev.kkrausse.kindlecontext
 "$ADB" shell settings put secure enabled_accessibility_services \
-  'com.onyx.floatingbutton/.service.FloatButtonAccessibilityService:dev.example.kindlecontext/dev.example.kindlecontext.KindleAccessibilityService'
+  'com.onyx.floatingbutton/.service.FloatButtonAccessibilityService:dev.kkrausse.kindlecontext/.KindleAccessibilityService'
 "$ADB" shell settings put secure accessibility_enabled 1
 "$ADB" shell settings put secure accessibility_button_targets \
-  'dev.example.kindlecontext/dev.example.kindlecontext.KindleAccessibilityService'
+  'dev.kkrausse.kindlecontext/.KindleAccessibilityService'
 ```
 
 If Android still lists the service as crashed, toggle only `Reading Context Capture` off and on in accessibility settings.
@@ -516,9 +523,9 @@ Capture Kindle's UI Automator hierarchy:
 Pull private accessibility diagnostics:
 
 ```sh
-"$ADB" exec-out run-as dev.example.kindlecontext \
+"$ADB" exec-out run-as dev.kkrausse.kindlecontext \
   cat files/reading-accessibility-tree.txt > reading-accessibility-tree.txt
-"$ADB" exec-out run-as dev.example.kindlecontext \
+"$ADB" exec-out run-as dev.kkrausse.kindlecontext \
   cat files/reading-accessibility-events.txt > reading-accessibility-events.txt
 ```
 
@@ -554,7 +561,7 @@ Keep production pinned to a known-good OpenCode version and validate API compati
 Remove the Android app:
 
 ```sh
-"$ADB" uninstall dev.example.kindlecontext
+"$ADB" uninstall dev.kkrausse.kindlecontext
 ```
 
 Uninstalling removes private captures and connection preferences. It does not affect BOOX NaviBall or server-side OpenCode history.

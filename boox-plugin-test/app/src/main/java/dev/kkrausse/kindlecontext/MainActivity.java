@@ -1,4 +1,4 @@
-package dev.example.kindlecontext;
+package dev.kkrausse.kindlecontext;
 
 import android.app.Activity;
 import android.content.ClipData;
@@ -1187,9 +1187,10 @@ public class MainActivity extends Activity {
         }
         Intent launch = getPackageManager().getLaunchIntentForPackage(sourcePackage);
         if (launch != null) {
+            launch.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
             startActivity(launch);
         } else if (statusView != null) {
-            statusView.setText(sourceLabel() + " is not installed.");
+            statusView.setText("Could not open " + sourceLabel() + ".");
         }
     }
 
