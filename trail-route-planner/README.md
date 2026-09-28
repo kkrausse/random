@@ -22,4 +22,4 @@ bun run prepare:region /absolute/path/to/overpass-response.json
 
 The script uses a fixed 39.202,-120.075,39.255,-120.005 bbox and prints counts. `public/kings-beach.json` embeds the exact Overpass query, endpoint, upstream OSM-base timestamp, raw response SHA-256, ODbL attribution, way IDs/all tags, node IDs/tags, and each consecutive graph edge. Source ways can extend past the bounding rectangle because Overpass returns complete way geometry; no synthetic geometry is generated. The original API response is not committed; to byte-reproduce this exact snapshot, archive a response whose SHA matches the package metadata.
 
-Detailed scope, evidence, limitations, and browser test: [spikes/browser/REPORT.md](spikes/browser/REPORT.md).
+Documentation: [plan](doc/PLAN.md), [handoff](doc/HANDOFF.md), [browser report](doc/browser/REPORT.md), and [Organic Maps report](doc/organic-maps/REPORT.md).
