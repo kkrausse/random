@@ -193,6 +193,12 @@ A logical regional package contains whatever the chosen approach needs for map d
 - Ship a full personal-data archive export/import with a tested restore path before treating saved routes as durable. GPX export is an interoperability feature, not a complete backup.
 - Explore writing backups to a user-selected file/directory where browser support permits. Explicit downloadable backups are the portable baseline; cross-device syncing is deferred.
 
+### Open question: offline basemap source and package
+
+The current MapLibre basemap uses OpenTopoMap's public raster tile service online; only our OSM routing graph is bundled for offline use. Do **not** interpret OpenTopoMap's CC-BY-SA reuse license as blanket permission to bulk-download its hosted tiles. Its [usage notes](https://opentopomap.org/about) caution against mass downloads and provide no service guarantee. The [OSM standard tile policy](https://operations.osmfoundation.org/policies/tiles/) explicitly forbids offline prefetching from `tile.openstreetmap.org`. Provider-hosted tiles, OSM source extracts, and self-generated tiles have different rights and operational constraints.
+
+Preferred experiment: take one versioned OSM extract spanning the CA/NV test area; derive both the routing graph and a MapLibre-compatible vector basemap archive (evaluate PMTiles) from that snapshot. Source elevation/DEM separately if contours or hillshade are needed. Bundle or download the style, fonts, icons, and attributions, not just tile geometry. First prove local serving and a fully offline Kings Beach browser reload, measure bytes/build cost/render quality and retained routing evidence, then decide on downloadable Tahoe packages. Alternative: obtain explicit permission and offline terms from a tile provider rather than self-generating. Evaluate packaging, checksums, browser storage and update behavior against the region manifest above. Organic Maps `.mwm` remains a separate native-format candidate, not a MapLibre tile archive or an integrated browser renderer.
+
 Phone following needs only the highlighted route, current location, and a follow-location toggle. No turn-by-turn navigation, rerouting, or background tracking requirement. Begin as an installable web app; consider a native wrapper only if measured browser limitations justify it.
 
 ## 9. Future external data

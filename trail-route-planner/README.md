@@ -16,6 +16,12 @@ The map uses MapLibre for pan, wheel/⌘-scroll zoom, touch gestures, and route 
 
 The topo tiles are desaturated behind the highlighted route. Distances default to miles; switch between miles and kilometers beside the distance range. The chosen unit is remembered locally, while search and graph calculations remain in kilometers.
 
+### Offline basemap decision (open)
+
+The app currently bundles **routing data**, not background tiles. OpenTopoMap's [usage notes](https://opentopomap.org/about) allow attributed use of its CC-BY-SA map but caution against mass downloads from its public server and offer no availability guarantee. Reuse licensing alone is not permission to bulk-prefetch an entire region from that server; do not add such a downloader without explicit provider approval. The [OSM standard tile server policy](https://operations.osmfoundation.org/policies/tiles/) expressly prohibits bulk/offline tile downloads. OSM **raw data extracts** are a different thing: they can be acquired under ODbL and processed into our own tiles.
+
+Preferred prototype: build a small vector basemap archive (e.g. PMTiles) from a versioned OSM extract, render it with MapLibre, and package the style/fonts/icons too. Terrain contours or hillshade require a separately sourced elevation dataset. Generate the routing graph from the same OSM snapshot, then measure archive size, attribution obligations, local serving, and an offline reload before choosing the full Tahoe package. See the [plan's offline-package questions](doc/PLAN.md#8-offline-packages-and-personal-data-durability).
+
 To prepare the same region from current bounded OSM data (the source timestamp/checksum will change):
 
 ```sh
