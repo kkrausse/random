@@ -1,0 +1,53 @@
+import { test, expect } from "bun:test";
+import { Schema } from "effect";
+import { Region, analyze, interpret } from "./domain";
+import { adjacency, generate } from "./search";
+
+const region = Schema.decodeUnknownSync(Region)(await Bun.file(new URL("../public/kings-beach.json", import.meta.url)).json());
+
+test("regional package is real OSM topology with attributable raw way and node tags", () => {
+  expect(region.source.sha256).toMatch(/^[a-f0-9]{64}$/);
+  expect(region.source.osmBaseTimestamp).toMatch(/^2026-/);
+  expect(region.nodes.length).toBeGreaterThan(8000);
+  expect(region.edges.length).toBeGreaterThan(9000);
+  expect(region.ways.some(w => w.tags.motorcycle || w.tags.bicycle)).toBe(true);
+  for (const e of region.edges) { expect(e.a).toBeLessThan(region.nodes.length); expect(e.b).toBeLessThan(region.nodes.length); expect(e.way).toBeLessThan(region.ways.length); }
+});
+
+test("incompatible package version is rejected at boundary", () => {
+  expect(() => Schema.decodeUnknownSync(Region)({ ...region, format: 2 })).toThrow();
+});
+
+test("absence does not assert prohibition; explicit priority and inferred are separate", () => {
+  expect(interpret({ highway: "path" }, "motorcycle")).toEqual({ access: "unknown", basis: "unknown" });
+  expect(interpret({ highway: "footway" }, "foot")).toEqual({ access: "permitted", basis: "inferred", tag: "highway", value: "footway" });
+  expect(interpret({ access: "yes", motorcycle: "no" }, "motorcycle")).toEqual({ access: "prohibited", basis: "explicit", tag: "motorcycle", value: "no" });
+  expect(interpret({ motorcycle: "conditional" }, "motorcycle").access).toBe("restricted");
+});
+
+test("repeat traversal counts twice but unique edge once; attributes overlap", () => {
+  const e = region.edges.findIndex(edge => region.ways[edge.way].tags.motorcycle === "designated");
+  expect(e).toBeGreaterThanOrEqual(0);
+  const r = analyze(region, [e, e], [region.edges[e].a, region.edges[e].b, region.edges[e].a], "repeated");
+  expect(r.km).toBeCloseTo(r.uniqueKm * 2, 7);
+  expect(r.exposure.motorcycle.permitted).toBeCloseTo(r.km, 7);
+});
+
+test("real Kings Beach candidate paths are continuous, reproducible, deduplicated and mode-feasible", () => {
+  const adj = adjacency(region);
+  const start = 3007; // OSM node 4147514531, connected Kings Beach trail entrance vicinity
+  const request = { start, minKm: 3, maxKm: 9, mode: "hike" as const, shape: "loop" as const, seed: 3 };
+  const routes = generate(region, request);
+  expect(routes.length).toBeGreaterThan(3);
+  expect(generate(region, request).map(r => r.id)).toEqual(routes.map(r => r.id));
+  for (const r of routes) {
+    expect(r.nodes[0]).toBe(start); expect(r.nodes.at(-1)).toBe(start);
+    expect(r.nodes.length).toBe(r.edges.length + 1);
+    expect(r.uniqueKm).toBeLessThanOrEqual(r.km);
+    for (let i = 0; i < r.edges.length; i++) expect(adj[r.nodes[i]].some(s => s.edge === r.edges[i] && s.to === r.nodes[i + 1])).toBe(true);
+    expect(Object.values(r.exposure.motorcycle).reduce((sum, km) => sum + km, 0)).toBeCloseTo(r.km, 7);
+  }
+  const backs = generate(region, { ...request, shape: "out-and-back" });
+  expect(backs.length).toBeGreaterThan(2);
+  for (const r of backs) expect(r.km).toBeCloseTo(r.uniqueKm * 2, 6);
+});
