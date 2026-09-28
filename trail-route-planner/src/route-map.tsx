@@ -3,6 +3,7 @@ import type { FeatureCollection, LineString } from "geojson";
 import type { MapLayerMouseEvent, StyleSpecification } from "maplibre-gl";
 import MapView, { Layer, Marker, NavigationControl, ScaleControl, Source, type MapRef } from "react-map-gl/maplibre";
 import type { Region, Route } from "./domain";
+import type { DistanceUnit } from "./units";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 // The routing graph is bundled locally. Tiles are optional context, not a routing dependency.
@@ -18,7 +19,7 @@ const mapStyle: StyleSpecification = {
   },
   layers: [
     { id: "background", type: "background", paint: { "background-color": "#e8ede6" } },
-    { id: "basemap", type: "raster", source: "basemap" },
+    { id: "basemap", type: "raster", source: "basemap", paint: { "raster-saturation": -0.7, "raster-contrast": -0.12, "raster-opacity": 0.76 } },
   ],
 };
 const offlineStyle: StyleSpecification = {
@@ -34,11 +35,12 @@ interface RouteMapProps {
   route?: Route;
   start: number;
   inspectedEdge?: number;
+  units: DistanceUnit;
   onStartChange: (node: number) => void;
   onInspect: (edge: number) => void;
 }
 
-export function RouteMap({ region, route, start, inspectedEdge, onStartChange, onInspect }: RouteMapProps) {
+export function RouteMap({ region, route, start, inspectedEdge, units, onStartChange, onInspect }: RouteMapProps) {
   const mapRef = useRef<MapRef>(null);
   const [online, setOnline] = useState(navigator.onLine);
   useEffect(() => {
@@ -119,14 +121,14 @@ export function RouteMap({ region, route, start, inspectedEdge, onStartChange, o
     reuseMaps={false}
   >
     <NavigationControl position="top-right" showCompass={false}/>
-    <ScaleControl position="bottom-left" unit="metric"/>
+    <ScaleControl position="bottom-left" unit={units === "mi" ? "imperial" : "metric"}/>
     <Source id="network" type="geojson" data={network}>
-      <Layer id="network-roads" type="line" filter={["==", ["get", "trail"], false]} paint={{ "line-color": "#856f58", "line-width": 1.6, "line-opacity": 0.65 }}/>
-      <Layer id="network-trails" type="line" filter={["==", ["get", "trail"], true]} paint={{ "line-color": "#327b56", "line-width": 2, "line-opacity": 0.8 }}/>
+      <Layer id="network-roads" type="line" filter={["==", ["get", "trail"], false]} paint={{ "line-color": "#888a7d", "line-width": 1.5, "line-opacity": 0.5 }}/>
+      <Layer id="network-trails" type="line" filter={["==", ["get", "trail"], true]} paint={{ "line-color": "#638b75", "line-width": 1.8, "line-opacity": 0.55 }}/>
     </Source>
     <Source id="route" type="geojson" data={routeLines}>
-      <Layer id="route-casing" type="line" paint={{ "line-color": "#fffdf2", "line-width": 8, "line-opacity": 0.9 }}/>
-      <Layer id="route-line" type="line" layout={{ "line-cap": "round", "line-join": "round" }} paint={{ "line-color": ["case", ["get", "inspected"], "#d28d22", "#08764d"], "line-width": 5 }}/>
+      <Layer id="route-casing" type="line" paint={{ "line-color": "#fffdf2", "line-width": 10, "line-opacity": 0.98 }}/>
+      <Layer id="route-line" type="line" layout={{ "line-cap": "round", "line-join": "round" }} paint={{ "line-color": ["case", ["get", "inspected"], "#d28d22", "#075d45"], "line-width": 5.5 }}/>
       <Layer id="route-hit" type="line" paint={{ "line-color": "#000", "line-width": 18, "line-opacity": 0 }}/>
     </Source>
     <Marker longitude={origin.lon} latitude={origin.lat} anchor="center">

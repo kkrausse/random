@@ -14,6 +14,8 @@ Open `http://127.0.0.1:4173/` once online, wait for service worker installation,
 
 The map uses MapLibre for pan, wheel/⌘-scroll zoom, touch gestures, and route inspection. OpenTopoMap terrain/labels are fetched online only; the local OSM graph, routes, controls, and statistics still work offline, but there is no offline terrain basemap yet. Map data © OpenStreetMap contributors, SRTM; map style © OpenTopoMap (CC-BY-SA).
 
+The topo tiles are desaturated behind the highlighted route. Distances default to miles; switch between miles and kilometers beside the distance range. The chosen unit is remembered locally, while search and graph calculations remain in kilometers.
+
 To prepare the same region from current bounded OSM data (the source timestamp/checksum will change):
 
 ```sh

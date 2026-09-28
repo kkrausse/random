@@ -26,6 +26,11 @@ label{display:block;margin:16px 0 8px}
 .segmented{display:flex;background:#edf1e9;padding:3px;border-radius:7px;gap:3px}
 .segmented button{flex:1;border:0;background:transparent;color:#64736b;padding:9px 6px;font-size:12px;border-radius:5px;display:flex;justify-content:center;gap:7px;align-items:center}
 .segmented button.active{background:white;box-shadow:0 1px 4px #bac7b744;color:#154d38;font-weight:700}
+.unit-row{display:flex;align-items:center;justify-content:space-between;margin:16px 0 8px}
+.unit-row label{margin:0}
+.unit-switch{display:flex;gap:2px;padding:2px;background:#edf1e9;border-radius:6px}
+.unit-switch button{border:0;background:transparent;border-radius:4px;color:#64736b;padding:4px 10px;font-size:11px;font-weight:700}
+.unit-switch button[aria-pressed="true"]{background:white;color:#154d38;box-shadow:0 1px 3px #bac7b744}
 .range{display:flex;align-items:center;gap:10px}
 .range input{width:90px;border:1px solid #d6e0d5;border-radius:5px;background:white;padding:8px;color:#284236}
 .range span{font-size:12px;color:#8a978d}

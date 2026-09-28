@@ -1,4 +1,4 @@
-const CACHE = "trail-routes-v0-4";
+const CACHE = "trail-routes-v0-5";
 self.addEventListener("install", event => { event.waitUntil((async () => {
   const cache = await caches.open(CACHE);
   const assets = self.__ASSETS || ["/", "/kings-beach.json", "/manifest.webmanifest", "/icon.svg"];
