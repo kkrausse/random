@@ -6,6 +6,7 @@ import { Select } from "@base-ui/react/select";
 import { RegionStore, regionLayer } from "./services";
 import { interpret, type Region, type Route, type SearchRequest } from "./domain";
 import { adjacency } from "./search";
+import { RouteMap } from "./route-map";
 import "./style.css";
 
 const km = (v: number) => v.toFixed(1);
@@ -16,6 +17,7 @@ function App() {
   const [routes, setRoutes] = useState<Route[]>([]);
   const [selected, setSelected] = useState(0);
   const [edge, setEdge] = useState<number>();
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [sort, setSort] = useState<"score" | "distance" | "motorcycle" | "road">("score");
   const [mode, setMode] = useState<SearchRequest["mode"]>("hike");
   const [shape, setShape] = useState<SearchRequest["shape"]>("loop");
@@ -63,18 +65,6 @@ function App() {
   }, [region, start, min, max, mode, shape]);
   const ordered = useMemo(() => [...routes].sort((a, b) => sort === "distance" ? a.km - b.km : sort === "motorcycle" ? a.exposure.motorcycle.permitted - b.exposure.motorcycle.permitted : sort === "road" ? a.roadKm - b.roadKm : a.score - b.score), [routes, sort]);
   const route = ordered[selected];
-  const box = useMemo(() => {
-    if (!route || !region) return "0 0 1000 760";
-    const points = route.nodes.map(n => region.nodes[n]);
-    const xs = points.map(p => ((p.lon - region.bounds[1]) / (region.bounds[3] - region.bounds[1])) * 1000);
-    const ys = points.map(p => ((region.bounds[2] - p.lat) / (region.bounds[2] - region.bounds[0])) * 760);
-    const left = Math.min(...xs), top = Math.min(...ys), width = Math.max(150, Math.max(...xs) - left + 120), height = Math.max(130, Math.max(...ys) - top + 120);
-    return `${left - 60} ${top - 60} ${width} ${height}`;
-  }, [route, region]);
-  const bounds = region?.bounds ?? [39.202, -120.075, 39.255, -120.005];
-  const x = (lon: number) => ((lon - bounds[1]) / (bounds[3] - bounds[1])) * 1000;
-  const y = (lat: number) => ((bounds[2] - lat) / (bounds[2] - bounds[0])) * 760;
-  const path = (a: number, b: number) => `${x(region!.nodes[a].lon)},${y(region!.nodes[a].lat)} ${x(region!.nodes[b].lon)},${y(region!.nodes[b].lat)}`;
   const inspected = edge === undefined || !region ? undefined : region.edges[edge];
   const tags = inspected ? region!.ways[inspected.way].tags : undefined;
   return <div className="app">
@@ -84,15 +74,10 @@ function App() {
       <section className="results"><div className="results-title"><div><div className="eyebrow">EXPLORE OPTIONS</div><h2>{busy ? "Searching…" : `${routes.length} routes found`}</h2></div><Select.Root value={sort} onValueChange={v => setSort(v as typeof sort)}><Select.Trigger className="sort"><ArrowDownUp size={14}/><Select.Value/></Select.Trigger><Select.Portal><Select.Positioner><Select.Popup className="sort-menu">{(["score", "distance", "motorcycle", "road"] as const).map(s => <Select.Item key={s} value={s} className="sort-item">{s}</Select.Item>)}</Select.Popup></Select.Positioner></Select.Portal></Select.Root></div>
         <div className="table-wrap"><table><thead><tr><th>#</th><th>KM</th><th>TRAIL</th><th>ROAD</th><th>MOTO +</th><th>MOTO ?</th></tr></thead><tbody>{ordered.map((r, i) => <tr key={r.id} className={selected === i ? "chosen" : ""} onClick={() => { setSelected(i); setEdge(undefined); }}><td>{String(i + 1).padStart(2, "0")}</td><td>{km(r.km)}</td><td>{km(r.trailKm)}</td><td>{km(r.roadKm)}</td><td>{km(r.exposure.motorcycle.permitted)}</td><td>{km(r.exposure.motorcycle.unknown)}</td></tr>)}</tbody></table></div>
         <div className="table-note">Distances count repeated travel. + explicit permission; ? unresolved. These columns overlap other access categories.</div></section>
-    </aside><section className="map-panel"><div className="map-top"><span><span className="map-marker"/> KINGS BEACH / STATELINE</span><span>OSM DATA · {region?.source.osmBaseTimestamp.slice(0, 10) ?? "…"}</span></div>
-      {region && <svg className="map" viewBox={box} role="img" aria-label="Interactive trail network map" onClick={e => { const svg = e.currentTarget, point = svg.createSVGPoint(); point.x = e.clientX; point.y = e.clientY; const p = point.matrixTransform(svg.getScreenCTM()!.inverse()); let best = start, distance = Infinity; region.nodes.forEach((n, i) => { const d = Math.hypot(x(n.lon) - p.x, y(n.lat) - p.y); if (d < distance) { best = i; distance = d; } }); setStart(best); }}>
-        <rect width="1000" height="760" fill="#e8ede6"/><path d="M680 760 Q 650 680 760 620 Q 820 570 1000 550 L1000 760Z" fill="#bfd8dc"/>
-        {region.edges.map((e, i) => <polyline key={i} points={path(e.a, e.b)} stroke={["path", "footway", "track", "cycleway"].includes(region.ways[e.way].tags.highway) ? "#a8b8a2" : "#d5d0bd"} strokeWidth="1.4" fill="none"/>)}
-        {route?.edges.map((id, i) => { const e = region.edges[id]; return <polyline key={`${id}-${i}`} points={path(e.a, e.b)} stroke={id === edge ? "#e5a632" : "#218766"} strokeWidth={id === edge ? "7" : "4"} strokeLinecap="round" fill="none" className="route-edge" onClick={event => { event.stopPropagation(); setEdge(id); }}/>; })}
-        <circle cx={x(region.nodes[start].lon)} cy={y(region.nodes[start].lat)} r="9" fill="#fff" stroke="#155b46" strokeWidth="4"/>
-      </svg>}
-      <div className="map-hint">CLICK MAP TO SET START · CLICK ROUTE TO INSPECT</div>
-      {route && <div className="detail"><div className="eyebrow">SELECTED ROUTE / {String(selected + 1).padStart(2, "0")}</div><h2>{km(route.km)} km <small>{shape}</small></h2><div className="stats"><div><b>{km(route.uniqueKm)}</b><span>UNIQUE KM</span></div><div><b>{km(route.trailKm)}</b><span>TRAIL KM</span></div><div><b>{km(route.roadKm)}</b><span>ROAD KM</span></div></div><div className="evidence"><strong>ACCESS EVIDENCE · km traveled</strong>{(["motorcycle", "bicycle", "motor_vehicle"] as const).map(k => <div key={k}><span>{k.replace("_", " ")}</span><span>+ {km(route.exposure[k].permitted)} · − {km(route.exposure[k].prohibited)} · ~ {km(route.exposure[k].restricted)} · ? {km(route.exposure[k].unknown)}</span></div>)}<small>+ permitted, − prohibited, ~ conditional/restricted, ? unknown. Explicit / inferred / unknown motorcycle: {km(route.evidence.motorcycle.explicit)} / {km(route.evidence.motorcycle.inferred)} / {km(route.evidence.motorcycle.unknown)} km. No observed traffic or physical-separation evidence is inferred.</small></div></div>}
+    </aside><section className="map-panel"><div className="map-top"><span><span className="map-marker"/> KINGS BEACH / STATELINE</span><span>ONLINE BASEMAP · LOCAL OSM ROUTES · {region?.source.osmBaseTimestamp.slice(0, 10) ?? "…"}</span></div>
+      {region && <div className="map"><RouteMap region={region} route={route} start={start} inspectedEdge={edge} onStartChange={setStart} onInspect={setEdge}/></div>}
+      <div className="map-hint">DRAG TO PAN · ⌘/CTRL + SCROLL OR +/− TO ZOOM · CLICK TO SET START</div>
+       {route && <div className={`detail${detailsOpen ? " expanded" : ""}`}><div className="eyebrow">SELECTED ROUTE / {String(selected + 1).padStart(2, "0")}</div><button className="detail-toggle" onClick={() => setDetailsOpen(!detailsOpen)} aria-expanded={detailsOpen}>{detailsOpen ? "Less detail" : "Access detail"}</button><h2>{km(route.km)} km <small>{shape}</small></h2><div className="stats"><div><b>{km(route.uniqueKm)}</b><span>UNIQUE KM</span></div><div><b>{km(route.trailKm)}</b><span>TRAIL KM</span></div><div><b>{km(route.roadKm)}</b><span>ROAD KM</span></div></div><div className="evidence"><strong>ACCESS EVIDENCE · km traveled</strong>{(["motorcycle", "bicycle", "motor_vehicle"] as const).map(k => <div key={k}><span>{k.replace("_", " ")}</span><span>+ {km(route.exposure[k].permitted)} · − {km(route.exposure[k].prohibited)} · ~ {km(route.exposure[k].restricted)} · ? {km(route.exposure[k].unknown)}</span></div>)}<small>+ permitted, − prohibited, ~ conditional/restricted, ? unknown. Explicit / inferred / unknown motorcycle: {km(route.evidence.motorcycle.explicit)} / {km(route.evidence.motorcycle.inferred)} / {km(route.evidence.motorcycle.unknown)} km. No observed traffic or physical-separation evidence is inferred.</small></div></div>}
       {tags && inspected && <div className="inspect"><button className="close" onClick={() => setEdge(undefined)}>×</button><div className="eyebrow">SOURCE SEGMENT · OSM WAY {region!.ways[inspected.way].id}</div><h3>{tags.name || tags.highway || "Unnamed way"}</h3><p>{km(inspected.meters / 1000)} km · motorcycle: {interpret(tags, "motorcycle").access} ({interpret(tags, "motorcycle").basis})</p><div className="tags">{Object.entries(tags).map(([k, v]) => <div key={k}><span>{k}</span><b>{v}</b></div>)}</div><small>All raw OSM way tags shown; normalized priorities: {attrs.join(", ")}. Node tags retained in package.</small></div>}
       {error && <div className="error">{error}</div>}
     </section></main><footer>© OpenStreetMap contributors · ODbL · Experimental routes are not a legal access or safety guarantee. Coverage ends at package boundary.</footer>

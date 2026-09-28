@@ -12,6 +12,8 @@ bunx vite preview --host 127.0.0.1 --port 4173
 
 Open `http://127.0.0.1:4173/` once online, wait for service worker installation, then reload offline. The production build precaches the app, worker, stylesheet, and bundled Kings Beach region. `bun run dev` is not an offline installation test.
 
+The map uses MapLibre for pan, wheel/⌘-scroll zoom, touch gestures, and route inspection. OpenTopoMap terrain/labels are fetched online only; the local OSM graph, routes, controls, and statistics still work offline, but there is no offline terrain basemap yet. Map data © OpenStreetMap contributors, SRTM; map style © OpenTopoMap (CC-BY-SA).
+
 To prepare the same region from current bounded OSM data (the source timestamp/checksum will change):
 
 ```sh
