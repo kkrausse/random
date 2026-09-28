@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { Schema } from "effect";
-import { Region, analyze, interpret } from "./domain";
-import { adjacency, generate } from "./search";
+import { Region, SearchPreferences, analyze, interpret, type Way } from "./domain";
+import { adjacency, generate, meetsRequirements, preferencePenalty } from "./search";
 
 const region = Schema.decodeUnknownSync(Region)(await Bun.file(new URL("../public/kings-beach.json", import.meta.url)).json());
 
@@ -16,6 +16,13 @@ test("regional package is real OSM topology with attributable raw way and node t
 
 test("incompatible package version is rejected at boundary", () => {
   expect(() => Schema.decodeUnknownSync(Region)({ ...region, format: 2 })).toThrow();
+});
+
+test("access preferences accept only whole slider settings from -5 through +5", () => {
+  const decode = Schema.decodeUnknownSync(SearchPreferences);
+  expect(decode({ motorcar: -5, motorcycle: 0, bicycle: 5 })).toEqual({ motorcar: -5, motorcycle: 0, bicycle: 5 });
+  expect(() => decode({ motorcar: 5.5, motorcycle: 0, bicycle: 0 })).toThrow();
+  expect(() => decode({ motorcar: -6, motorcycle: 0, bicycle: 0 })).toThrow();
 });
 
 test("absence does not assert prohibition; explicit priority and inferred are separate", () => {
@@ -43,10 +50,35 @@ test("repeat traversal counts twice but unique edge once; attributes overlap", (
   expect(r.exposure.motorcycle.permitted).toBeCloseTo(r.km, 7);
 });
 
+test("access sliders rank permitted coverage without treating unknown as permission", () => {
+  const ways: Way[] = [
+    { ...region.ways[0], tags: { highway: "path", motorcar: "yes", motorcycle: "no", bicycle: "yes" } },
+    { ...region.ways[0], tags: { highway: "path", motorcycle: "yes" } },
+  ];
+  const example = { ...region, ways, edges: [
+    { ...region.edges[0], way: 0, meters: region.edges[0].meters },
+    { ...region.edges[0], way: 1, meters: region.edges[0].meters },
+  ] };
+  const route = analyze(example, [0, 1], [0, 1, 0], "mixed");
+  const neutral = { motorcar: 0, motorcycle: 0, bicycle: 0 };
+  expect(route.exposure.motorcar.permitted).toBeCloseTo(route.km / 2);
+  expect(route.exposure.motorcar.unknown).toBeCloseTo(route.km / 2);
+  expect(preferencePenalty(route, neutral)).toBe(0);
+  expect(preferencePenalty(route, { ...neutral, motorcycle: -5 })).toBeCloseTo(route.km * 2);
+  expect(preferencePenalty(route, { ...neutral, motorcycle: 5 })).toBeCloseTo(route.km * 2);
+  expect(meetsRequirements(route, { ...neutral, motorcar: 5 })).toBe(false);
+  expect(meetsRequirements(route, { ...neutral, motorcar: 4 })).toBe(true);
+  const almost = { ...route, exposure: { ...route.exposure, motorcar: { ...route.exposure.motorcar, permitted: route.km * 0.9 } } };
+  expect(meetsRequirements(almost, { ...neutral, motorcar: 5 })).toBe(true);
+  expect(meetsRequirements({ ...almost, exposure: { ...almost.exposure, motorcar: { ...almost.exposure.motorcar, permitted: route.km * 0.89 } } }, { ...neutral, motorcar: 5 })).toBe(false);
+  expect(meetsRequirements(analyze(example, [0], [0, 1], "car"), { ...neutral, motorcar: 5, bicycle: 5 })).toBe(true);
+  expect(meetsRequirements(analyze(example, [1], [0, 1], "unknown-car"), { ...neutral, motorcar: 5 })).toBe(false);
+});
+
 test("real Kings Beach candidate paths are continuous, reproducible, deduplicated and mode-feasible", () => {
   const adj = adjacency(region);
   const start = 3007; // OSM node 4147514531, connected Kings Beach trail entrance vicinity
-  const request = { start, minKm: 3, maxKm: 9, mode: "hike" as const, shape: "loop" as const, seed: 3 };
+  const request = { start, minKm: 3, maxKm: 9, mode: "hike" as const, shape: "loop" as const, seed: 3, preferences: { motorcar: 0, motorcycle: 0, bicycle: 0 } };
   const routes = generate(region, request);
   expect(routes.length).toBeGreaterThan(3);
   expect(generate(region, request).map(r => r.id)).toEqual(routes.map(r => r.id));
@@ -60,4 +92,6 @@ test("real Kings Beach candidate paths are continuous, reproducible, deduplicate
   const backs = generate(region, { ...request, shape: "out-and-back" });
   expect(backs.length).toBeGreaterThan(2);
   for (const r of backs) expect(r.km).toBeCloseTo(r.uniqueKm * 2, 6);
+  const required = generate(region, { ...request, preferences: { ...request.preferences, motorcar: 5 } });
+  for (const r of required) expect(r.exposure.motorcar.permitted / r.km).toBeGreaterThanOrEqual(0.9 - 1e-9);
 });

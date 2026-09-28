@@ -1,4 +1,19 @@
-import { analyze, interpret, type Region, type Route, type SearchRequest } from "./domain";
+import { analyze, interpret, type Region, type Route, type SearchPreferences, type SearchRequest } from "./domain";
+
+const accessTypes = ["motorcar", "motorcycle", "bicycle"] as const;
+
+// +5 is a strict coverage requirement. Other settings bias both path discovery and final ranking.
+export function meetsRequirements(route: Route, preferences: SearchPreferences): boolean {
+  return accessTypes.every(type => preferences[type] !== 5 || route.exposure[type].permitted / route.km >= 0.9 - 1e-9);
+}
+
+export function preferencePenalty(route: Route, preferences: SearchPreferences): number {
+  return accessTypes.reduce((sum, type) => {
+    const preference = preferences[type];
+    const permitted = route.exposure[type].permitted;
+    return sum + 0.8 * Math.abs(preference) * (preference > 0 ? route.km - permitted : preference < 0 ? permitted : 0);
+  }, 0);
+}
 
 interface Step { edge: number; to: number }
 export function adjacency(region: Region): Step[][] {
@@ -12,7 +27,7 @@ export function adjacency(region: Region): Step[][] {
 }
 
 // Lightweight binary heap: complete shortest-path searches stay bounded by region size.
-function shortest(region: Region, adj: Step[][], start: number, goal: number, mode: SearchRequest["mode"], penalty: Set<number>, variation: number) {
+function shortest(region: Region, adj: Step[][], start: number, goal: number, mode: SearchRequest["mode"], preferences: SearchPreferences, penalty: Set<number>, variation: number) {
   const distance = new Float64Array(region.nodes.length).fill(Infinity);
   const parent = new Int32Array(region.nodes.length).fill(-1);
   const via = new Int32Array(region.nodes.length).fill(-1);
@@ -29,9 +44,12 @@ function shortest(region: Region, adj: Step[][], start: number, goal: number, mo
       const own = interpret(tags, mode === "hike" ? "foot" : "bicycle");
       if (own.access === "prohibited" || own.access === "restricted" || (mode === "gravel" && tags.highway === "steps")) continue;
       if (region.nodes[step.to].tags.barrier && ["gate", "lift_gate", "stile"].includes(region.nodes[step.to].tags.barrier) === false) continue;
-      const motor = interpret(tags, "motor_vehicle");
       const road = ["residential", "service", "tertiary", "unclassified"].includes(tags.highway);
-      const modifier = 1 + (road ? 0.4 + variation * 0.3 : 0) + (motor.access === "permitted" ? 0.15 : 0) + (penalty.has(step.edge) ? 2.5 : 0);
+      const accessBias = accessTypes.reduce((sum, type) => {
+        const preference = preferences[type];
+        return sum + (preference && interpret(tags, type).access === "permitted" ? -0.12 * preference : 0);
+      }, 0);
+      const modifier = Math.max(0.2, 1 + (road ? 0.4 + variation * 0.3 : 0) + accessBias + (penalty.has(step.edge) ? 2.5 : 0));
       const next = cost + e.meters * modifier;
       if (next < distance[step.to]) { distance[step.to] = next; parent[step.to] = node; via[step.to] = step.edge; push([next, step.to]); }
     }
@@ -60,10 +78,10 @@ export function generate(region: Region, request: SearchRequest, cancelled: () =
   const candidates: Route[] = [], seen = new Set<string>();
   for (const [target] of sampled) {
     if (cancelled()) break;
-    const outward = shortest(region, adj, start, target, request.mode, new Set(), target % 3);
+    const outward = shortest(region, adj, start, target, request.mode, request.preferences, new Set(), target % 3);
     if (!outward) continue;
     const inbound = request.shape === "loop"
-      ? shortest(region, adj, target, start, request.mode, new Set(outward.edges), (target + 1) % 3)
+      ? shortest(region, adj, target, start, request.mode, request.preferences, new Set(outward.edges), (target + 1) % 3)
       : { nodes: [...outward.nodes].reverse(), edges: [...outward.edges].reverse() };
     if (!inbound) continue;
     const edges = [...outward.edges, ...inbound.edges];
@@ -73,8 +91,8 @@ export function generate(region: Region, request: SearchRequest, cancelled: () =
     seen.add(signature);
     const route = analyze(region, edges, nodes, `${request.shape}-${target}`);
     const middle = (request.minKm + request.maxKm) / 2;
-    route.score = Math.abs(route.km - middle) + route.roadKm * 0.55 + (request.shape === "loop" ? (route.km - route.uniqueKm) * 0.9 : 0);
-    if (route.km >= request.minKm * 0.55 && route.km <= request.maxKm * 1.5) candidates.push(route);
+    route.score = Math.abs(route.km - middle) + route.roadKm * 0.55 + (request.shape === "loop" ? (route.km - route.uniqueKm) * 0.9 : 0) + preferencePenalty(route, request.preferences);
+    if (route.km >= request.minKm * 0.55 && route.km <= request.maxKm * 1.5 && meetsRequirements(route, request.preferences)) candidates.push(route);
   }
   candidates.sort((a, b) => a.score - b.score);
   const chosen: Route[] = [];

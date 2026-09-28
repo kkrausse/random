@@ -15,7 +15,10 @@ export const Region = Schema.Struct({
   nodes: Schema.Array(Node), ways: Schema.Array(Way), edges: Schema.Array(Edge),
 });
 export interface Region extends Schema.Schema.Type<typeof Region> {}
-export const SearchRequest = Schema.Struct({ start: Schema.Number, minKm: Schema.Number, maxKm: Schema.Number, shape: Schema.Literals(["loop", "out-and-back"]), mode: Schema.Literals(["hike", "gravel"]), seed: Schema.Number });
+export const AccessPreference = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(-5), Schema.isLessThanOrEqualTo(5));
+export const SearchPreferences = Schema.Struct({ motorcar: AccessPreference, motorcycle: AccessPreference, bicycle: AccessPreference });
+export interface SearchPreferences extends Schema.Schema.Type<typeof SearchPreferences> {}
+export const SearchRequest = Schema.Struct({ start: Schema.Number, minKm: Schema.Number, maxKm: Schema.Number, shape: Schema.Literals(["loop", "out-and-back"]), mode: Schema.Literals(["hike", "gravel"]), seed: Schema.Number, preferences: SearchPreferences });
 export interface SearchRequest extends Schema.Schema.Type<typeof SearchRequest> {}
 
 export type Access = "permitted" | "prohibited" | "restricted" | "unknown";
@@ -43,14 +46,14 @@ export function interpret(tags: Record<string, string>, attribute: "motorcycle" 
 
 export interface Route {
   id: string; edges: number[]; nodes: number[]; km: number; uniqueKm: number; score: number;
-  exposure: Record<"motorcycle" | "bicycle" | "motor_vehicle", Record<Access, number>>;
-  evidence: Record<"motorcycle" | "bicycle" | "motor_vehicle", Record<"explicit" | "inferred" | "unknown", number>>;
+  exposure: Record<"motorcar" | "motorcycle" | "bicycle", Record<Access, number>>;
+  evidence: Record<"motorcar" | "motorcycle" | "bicycle", Record<"explicit" | "inferred" | "unknown", number>>;
   trailKm: number; roadKm: number;
 }
 
 export function analyze(region: Region, edges: number[], nodes: number[], id: string, score = 0): Route {
-  const exposure = Object.fromEntries(["motorcycle", "bicycle", "motor_vehicle"].map(k => [k, { permitted: 0, prohibited: 0, restricted: 0, unknown: 0 }])) as Route["exposure"];
-  const evidence = Object.fromEntries(["motorcycle", "bicycle", "motor_vehicle"].map(k => [k, { explicit: 0, inferred: 0, unknown: 0 }])) as Route["evidence"];
+  const exposure = Object.fromEntries(["motorcar", "motorcycle", "bicycle"].map(k => [k, { permitted: 0, prohibited: 0, restricted: 0, unknown: 0 }])) as Route["exposure"];
+  const evidence = Object.fromEntries(["motorcar", "motorcycle", "bicycle"].map(k => [k, { explicit: 0, inferred: 0, unknown: 0 }])) as Route["evidence"];
   let meters = 0, trail = 0, road = 0;
   for (const edgeId of edges) {
     const edge = region.edges[edgeId];
@@ -58,7 +61,7 @@ export function analyze(region: Region, edges: number[], nodes: number[], id: st
     meters += edge.meters;
     if (["path", "footway", "track", "cycleway", "bridleway", "steps"].includes(tags.highway)) trail += edge.meters;
     else road += edge.meters;
-    for (const key of ["motorcycle", "bicycle", "motor_vehicle"] as const) {
+    for (const key of ["motorcar", "motorcycle", "bicycle"] as const) {
       const e = interpret(tags, key);
       exposure[key][e.access] += edge.meters;
       evidence[key][e.basis] += edge.meters;
