@@ -40,6 +40,9 @@ const accessColorExpression = ["match", ["get", "access"],
   "permitted", accessColors.permitted, "prohibited", accessColors.prohibited,
   "restricted", accessColors.restricted, accessColors.unknown,
 ] satisfies ExpressionSpecification;
+const evidenceColorExpression = ["case", ["==", ["get", "basis"], "inferred"],
+  ["match", ["get", "access"], "permitted", "#5fa88a", "prohibited", "#dd8790", accessColorExpression], accessColorExpression,
+] satisfies ExpressionSpecification;
 
 interface RouteMapProps {
   region: Region;
@@ -67,7 +70,7 @@ export function RouteMap({ region, route, start, inspectedEdge, accessMode, onAc
     for (const edge of region.edges) {
       const a = region.nodes[edge.a], b = region.nodes[edge.b];
       features.push({
-        type: "Feature", properties: { access: interpret(region.ways[edge.way].tags, accessMode).access },
+        type: "Feature", properties: interpret(region.ways[edge.way].tags, accessMode),
         geometry: { type: "LineString", coordinates: [[a.lon, a.lat], [b.lon, b.lat]] },
       });
     }
@@ -81,7 +84,7 @@ export function RouteMap({ region, route, start, inspectedEdge, accessMode, onAc
         const edge = region.edges[id], a = region.nodes[edge.a], b = region.nodes[edge.b];
         return {
           type: "Feature" as const,
-          properties: { edge: id, inspected: id === inspectedEdge, access: interpret(region.ways[edge.way].tags, accessMode).access },
+          properties: { edge: id, inspected: id === inspectedEdge, ...interpret(region.ways[edge.way].tags, accessMode) },
           geometry: { type: "LineString" as const, coordinates: [[a.lon, a.lat], [b.lon, b.lat]] },
         };
       }),
@@ -136,11 +139,11 @@ export function RouteMap({ region, route, start, inspectedEdge, accessMode, onAc
     <NavigationControl position="top-right" showCompass={false}/>
     <ScaleControl position="bottom-left" unit={units === "mi" ? "imperial" : "metric"}/>
     <Source id="network" type="geojson" data={network}>
-      <Layer id="network-access" type="line" paint={{ "line-color": accessColorExpression, "line-width": 1.5, "line-opacity": ["case", ["==", ["get", "access"], "unknown"], 0.27, 0.42] }}/>
+      <Layer id="network-access" type="line" paint={{ "line-color": evidenceColorExpression, "line-width": 1.5, "line-opacity": ["case", ["==", ["get", "access"], "unknown"], 0.27, 0.42] }}/>
     </Source>
     <Source id="route" type="geojson" data={routeLines}>
       <Layer id="route-casing" type="line" layout={{ "line-cap": "round", "line-join": "round" }} paint={{ "line-color": "#ffffff", "line-width": 11.5 }}/>
-      <Layer id="route-line" type="line" layout={{ "line-cap": "round", "line-join": "round" }} paint={{ "line-color": ["case", ["get", "inspected"], "#f5ac20", accessColorExpression], "line-width": 6.5 }}/>
+      <Layer id="route-line" type="line" layout={{ "line-cap": "round", "line-join": "round" }} paint={{ "line-color": ["case", ["get", "inspected"], "#f5ac20", evidenceColorExpression], "line-width": 6.5 }}/>
       <Layer id="route-hit" type="line" paint={{ "line-color": "#000", "line-width": 18, "line-opacity": 0 }}/>
     </Source>
     <Marker longitude={origin.lon} latitude={origin.lat} anchor="center">
@@ -152,6 +155,6 @@ export function RouteMap({ region, route, start, inspectedEdge, accessMode, onAc
       {accessModes.map(mode => <button key={mode.id} type="button" aria-pressed={accessMode === mode.id} onClick={() => onAccessModeChange(mode.id)}>{mode.label}</button>)}
     </div>
     <div className="access-keys">{(Object.entries(accessColors) as [Access, string][]).map(([access, color]) => <span key={access}><i style={{ background: color }}/>{access}</span>)}</div>
-    <small>OSM access tags, not observed traffic. Purple = unresolved, not prohibited.</small>
+    <small>Access tags take priority. Lighter green/red = inferred from road type (cars); purple = unresolved. Not observed traffic.</small>
   </div>{!online && <div className="offline-notice">Offline · local trail network only</div>}</>;
 }

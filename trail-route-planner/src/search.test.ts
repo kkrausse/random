@@ -37,9 +37,32 @@ test("car and motorcycle coloring uses their own tags before shared vehicle acce
   expect(interpret(tags, "motorcycle")).toEqual({ access: "permitted", basis: "explicit", tag: "motorcycle", value: "yes" });
   expect(interpret(tags, "motorcar")).toEqual({ access: "prohibited", basis: "explicit", tag: "motorcar", value: "no" });
   expect(interpret({ motor_vehicle: "yes" }, "motorcar")).toEqual({ access: "permitted", basis: "explicit", tag: "motor_vehicle", value: "yes" });
-  expect(interpret({ highway: "residential" }, "motorcar")).toEqual({ access: "unknown", basis: "unknown" });
+  expect(interpret({ highway: "residential" }, "motorcar")).toEqual({ access: "permitted", basis: "inferred", tag: "highway", value: "residential" });
   expect(interpret({ motorcar: "no" }, "motorcycle")).toEqual({ access: "unknown", basis: "unknown" });
   expect(interpret({ motorcar: "destination" }, "motorcar").access).toBe("restricted");
+});
+
+test("car preference infers ordinary streets and paths but leaves ambiguous tracks unresolved", () => {
+  for (const highway of ["residential", "service", "primary", "motorway"]) {
+    expect(interpret({ highway }, "motorcar")).toEqual({ access: "permitted", basis: "inferred", tag: "highway", value: highway });
+  }
+  for (const highway of ["footway", "path", "cycleway", "steps"]) {
+    expect(interpret({ highway }, "motorcar")).toEqual({ access: "prohibited", basis: "inferred", tag: "highway", value: highway });
+  }
+  expect(interpret({ highway: "track" }, "motorcar")).toEqual({ access: "unknown", basis: "unknown" });
+  expect(interpret({ highway: "service", access: "private" }, "motorcar").access).toBe("prohibited");
+  expect(interpret({ highway: "residential", motor_vehicle: "destination" }, "motorcar").access).toBe("restricted");
+  expect(interpret({ highway: "path", motorcar: "yes" }, "motorcar").access).toBe("permitted");
+  expect(interpret({ highway: "residential" }, "motorcycle").access).toBe("unknown");
+
+  const street = region.edges.findIndex(edge => region.ways[edge.way].tags.highway === "residential" && !["motorcar", "motor_vehicle", "vehicle", "access"].some(key => region.ways[edge.way].tags[key]));
+  expect(street).toBeGreaterThanOrEqual(0);
+  const route = analyze(region, [street], [region.edges[street].a, region.edges[street].b], "street");
+  const neutral = { motorcar: 0, motorcycle: 0, bicycle: 0 };
+  expect(route.exposure.motorcar.permitted).toBeCloseTo(route.km);
+  expect(route.evidence.motorcar.inferred).toBeCloseTo(route.km);
+  expect(preferencePenalty(route, { ...neutral, motorcar: -5 })).toBeCloseTo(route.km * 4);
+  expect(meetsRequirements(route, { ...neutral, motorcar: 5 })).toBe(true);
 });
 
 test("repeat traversal counts twice but unique edge once; attributes overlap", () => {
@@ -62,7 +85,7 @@ test("access sliders rank permitted coverage without treating unknown as permiss
   const route = analyze(example, [0, 1], [0, 1, 0], "mixed");
   const neutral = { motorcar: 0, motorcycle: 0, bicycle: 0 };
   expect(route.exposure.motorcar.permitted).toBeCloseTo(route.km / 2);
-  expect(route.exposure.motorcar.unknown).toBeCloseTo(route.km / 2);
+  expect(route.exposure.motorcar.prohibited).toBeCloseTo(route.km / 2);
   expect(preferencePenalty(route, neutral)).toBe(0);
   expect(preferencePenalty(route, { ...neutral, motorcycle: -5 })).toBeCloseTo(route.km * 2);
   expect(preferencePenalty(route, { ...neutral, motorcycle: 5 })).toBeCloseTo(route.km * 2);
@@ -72,7 +95,7 @@ test("access sliders rank permitted coverage without treating unknown as permiss
   expect(meetsRequirements(almost, { ...neutral, motorcar: 5 })).toBe(true);
   expect(meetsRequirements({ ...almost, exposure: { ...almost.exposure, motorcar: { ...almost.exposure.motorcar, permitted: route.km * 0.89 } } }, { ...neutral, motorcar: 5 })).toBe(false);
   expect(meetsRequirements(analyze(example, [0], [0, 1], "car"), { ...neutral, motorcar: 5, bicycle: 5 })).toBe(true);
-  expect(meetsRequirements(analyze(example, [1], [0, 1], "unknown-car"), { ...neutral, motorcar: 5 })).toBe(false);
+  expect(meetsRequirements(analyze(example, [1], [0, 1], "car-free-path"), { ...neutral, motorcar: 5 })).toBe(false);
 });
 
 test("real Kings Beach candidate paths are continuous, reproducible, deduplicated and mode-feasible", () => {

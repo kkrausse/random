@@ -24,6 +24,10 @@ export interface SearchRequest extends Schema.Schema.Type<typeof SearchRequest> 
 export type Access = "permitted" | "prohibited" | "restricted" | "unknown";
 export interface Evidence { access: Access; basis: "explicit" | "inferred" | "unknown"; tag?: string; value?: string }
 
+// An OSM street classification is useful evidence of likely car access, not a verified access tag.
+const carStreets = new Set(["motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link", "secondary", "secondary_link", "tertiary", "tertiary_link", "unclassified", "residential", "living_street", "service"]);
+const carFreePaths = new Set(["pedestrian", "footway", "cycleway", "bridleway", "path", "steps"]);
+
 export function interpret(tags: Record<string, string>, attribute: "motorcycle" | "motorcar" | "bicycle" | "foot" | "motor_vehicle"): Evidence {
   const keys: Record<typeof attribute, string[]> = {
     motorcycle: ["motorcycle", "motor_vehicle", "vehicle", "access"],
@@ -38,6 +42,8 @@ export function interpret(tags: Record<string, string>, attribute: "motorcycle" 
       : ["no", "private"].includes(value) ? "prohibited" : "restricted";
     return { access, basis: "explicit", tag: key, value };
   }
+  if (attribute === "motorcar" && carStreets.has(tags.highway)) return { access: "permitted", basis: "inferred", tag: "highway", value: tags.highway };
+  if (attribute === "motorcar" && carFreePaths.has(tags.highway)) return { access: "prohibited", basis: "inferred", tag: "highway", value: tags.highway };
   if (attribute === "foot" && ["footway", "steps"].includes(tags.highway)) return { access: "permitted", basis: "inferred", tag: "highway", value: tags.highway };
   if (attribute === "bicycle" && tags.highway === "cycleway") return { access: "permitted", basis: "inferred", tag: "highway", value: tags.highway };
   // Classification does not establish verified prohibition of other users.
