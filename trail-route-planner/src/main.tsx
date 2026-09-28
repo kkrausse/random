@@ -4,11 +4,12 @@ import { Effect } from "effect";
 import { ArrowDownUp, Footprints, Mountain, RotateCcw, Search } from "lucide-react";
 import { Select } from "@base-ui/react/select";
 import { RegionStore, regionLayer } from "./services";
-import { interpret, type Region, type Route, type SearchPreferences, type SearchRequest } from "./domain";
-import { adjacency, DEFAULT_SEARCH_PREFERENCES } from "./search";
+import { interpret, type Region, type Route, type SearchPreferences } from "./domain";
+import { adjacency } from "./search";
 import { regionVehicleIntensity } from "./intensity";
-import { RouteMap, type MapAccessMode } from "./route-map";
-import { displayDistance, inputDistance, toKilometers, type DistanceUnit } from "./units";
+import { RouteMap } from "./route-map";
+import { displayDistance, inputDistance, toKilometers } from "./units";
+import { parseConfig, resolveStart, serializeConfig, type PlannerConfig } from "./url-config";
 import "./style.css";
 
 const attrs = ["highway", "surface", "tracktype", "smoothness", "width", "incline", "sac_scale", "mtb:scale", "access", "foot", "bicycle", "electric_bicycle", "motor_vehicle", "motorcar", "motorcycle", "horse", "oneway"];
@@ -16,23 +17,34 @@ const preferenceLabels: { key: keyof SearchPreferences; label: string }[] = [
   { key: "motorcar", label: "Cars" }, { key: "motorcycle", label: "Motorcycles" }, { key: "bicycle", label: "Bicycles" },
 ];
 function App() {
+  const [config, setConfig] = useState(() => parseConfig(window.location.search));
+  const configRef = useRef(config);
+  const updateConfig = (patch: Partial<PlannerConfig>, history: "push" | "replace" = "push") => {
+    const next = { ...configRef.current, ...patch };
+    if (!Number.isFinite(next.minKm) || !Number.isFinite(next.maxKm) || next.minKm < 0.1 || next.maxKm > 1000 || next.minKm >= next.maxKm || !Number.isSafeInteger(next.seed) || next.seed < 0 || next.seed > 2147483647) return;
+    if (JSON.stringify(next) === JSON.stringify(configRef.current)) return;
+    configRef.current = next;
+    setConfig(next);
+    const url = new URL(window.location.href);
+    url.search = serializeConfig(next, url.search);
+    window.history[history === "push" ? "pushState" : "replaceState"](null, "", url);
+  };
+  useEffect(() => {
+    const restore = () => { const next = parseConfig(window.location.search); configRef.current = next; setConfig(next); };
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, []);
+  const { mode, shape, preferences, units, minKm: min, maxKm: max, sort, accessMode, seed } = config;
   const [region, setRegion] = useState<Region>();
   const [error, setError] = useState("");
   const [routes, setRoutes] = useState<Route[]>([]);
   const [selected, setSelected] = useState(0);
   const [edge, setEdge] = useState<number>();
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [sort, setSort] = useState<"score" | "distance" | "motorcycle" | "road">("score");
-  const [mode, setMode] = useState<SearchRequest["mode"]>("hike");
-  const [accessMode, setAccessMode] = useState<MapAccessMode>("motorcycle");
-  const [shape, setShape] = useState<SearchRequest["shape"]>("loop");
-  const [preferences, setPreferences] = useState<SearchPreferences>(() => ({ ...DEFAULT_SEARCH_PREFERENCES }));
-  const [units, setUnits] = useState<DistanceUnit>(() => localStorage.getItem("trail-distance-unit") === "km" ? "km" : "mi");
-  const [min, setMin] = useState(toKilometers(2, "mi")), [max, setMax] = useState(toKilometers(6, "mi"));
-  const [start, setStart] = useState(0);
+  const [defaultStart, setDefaultStart] = useState(0);
+  const start = region ? resolveStart(region.nodes, config.start, defaultStart) : 0;
   const [busy, setBusy] = useState(false);
   const worker = useRef<Worker | undefined>(undefined);
-  useEffect(() => { localStorage.setItem("trail-distance-unit", units); }, [units]);
   useEffect(() => {
     const w = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
     worker.current = w;
@@ -57,7 +69,9 @@ function App() {
           if (!["path", "footway", "track"].includes(data.ways[e.way].tags.highway)) return;
           for (const n of [e.a, e.b]) { if (!largest.has(n)) continue; const p = data.nodes[n], d = Math.hypot((p.lat - target.lat) * 111, (p.lon - target.lon) * 86); if (d < distance) { best = n; distance = d; } }
         });
-        setStart(best);
+        setDefaultStart(best);
+        const requested = configRef.current.start;
+        if (!requested || !data.nodes.some(node => node.id === requested)) updateConfig({ start: data.nodes[best].id }, "replace");
       }).catch(e => setError(String(e)));
     return () => w.terminate();
   }, []);
@@ -69,8 +83,8 @@ function App() {
     const w = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" }); worker.current = w;
     w.onmessage = e => { if (e.data.type === "results") { setRoutes(e.data.routes); setSelected(0); setBusy(false); } if (e.data.type === "error") { setError(e.data.message); setBusy(false); } };
     w.postMessage({ type: "load", region });
-    w.postMessage({ type: "search", request: { start, minKm: min, maxKm: max, mode, shape, seed: 3, preferences } });
-  }, [region, start, min, max, mode, shape, preferences]);
+    w.postMessage({ type: "search", request: { start, minKm: min, maxKm: max, mode, shape, seed, preferences } });
+  }, [region, start, min, max, mode, shape, seed, preferences]);
   const ordered = useMemo(() => [...routes].sort((a, b) => sort === "distance" ? a.km - b.km : sort === "motorcycle" ? (a.intensity.motorcycle.weightedKm + 0.75 * a.intensity.motorcycle.unknownKm) / a.km - (b.intensity.motorcycle.weightedKm + 0.75 * b.intensity.motorcycle.unknownKm) / b.km : sort === "road" ? a.roadKm - b.roadKm : a.score - b.score), [routes, sort]);
   const route = ordered[selected];
   const inspected = edge === undefined || !region ? undefined : region.edges[edge];
@@ -81,13 +95,13 @@ function App() {
   return <div className="app">
     <header><div className="brand"><Mountain size={24}/><div><strong>Trail Routes</strong><span>KINGS BEACH · NORTH LAKE TAHOE</span></div></div><div className="status">{region ? `${region.ways.length.toLocaleString()} OSM ways · ${region.edges.length.toLocaleString()} edges` : "Loading region…"}<span className="dot"/> Offline-ready</div></header>
     <main><aside className="sidebar"><div className="intro"><div className="eyebrow">LOCAL ROUTE EXPLORER / V0</div><h1>Find your way<br/><em>out there.</em></h1><p>Routes generated on your device from real OpenStreetMap trails. Click the map to move the start.</p></div>
-       <section className="controls"><div className="section-title"><Search size={16}/> SEARCH PARAMETERS</div><label>ACTIVITY</label><div className="segmented"><button className={mode === "hike" ? "active" : ""} onClick={() => setMode("hike")}><Footprints size={15}/> Hiking</button><button className={mode === "gravel" ? "active" : ""} onClick={() => setMode("gravel")}>Gravel bike</button></div><label>ROUTE SHAPE</label><div className="segmented"><button className={shape === "loop" ? "active" : ""} onClick={() => setShape("loop")}><RotateCcw size={15}/> Loop</button><button className={shape === "out-and-back" ? "active" : ""} onClick={() => setShape("out-and-back")}>Out & back</button></div><div className="unit-row"><label htmlFor="min">DISTANCE RANGE · {units.toUpperCase()}</label><div className="unit-switch" role="group" aria-label="Distance units"><button aria-pressed={units === "mi"} onClick={() => setUnits("mi")}>mi</button><button aria-pressed={units === "km"} onClick={() => setUnits("km")}>km</button></div></div><div className="range"><input id="min" type="number" min="0.5" step="0.1" max={inputDistance(max, units)} value={inputDistance(min, units)} onChange={e => setMin(toKilometers(Number(e.target.value), units))}/><span>to</span><input aria-label="Maximum distance" type="number" min={inputDistance(min, units)} step="0.1" value={inputDistance(max, units)} onChange={e => setMax(toKilometers(Number(e.target.value), units))}/></div><div className="preference-heading">ROUTE PREFERENCES</div><p className="preference-help">Car and motorcycle sliders favor lower/higher estimated traffic intensity (−5 to +5), not legal permission. Bicycle favors permitted access. All settings are soft; distance and activity restrictions remain firm. Unknown traffic is not treated as zero.</p>{preferenceLabels.map(({ key, label }) => <div className="preference" key={key}><label htmlFor={`preference-${key}`}>{label}</label><input id={`preference-${key}`} type="range" min="-5" max="5" step="1" value={preferences[key]} onChange={e => setPreferences(current => ({ ...current, [key]: Number(e.target.value) }))}/><output htmlFor={`preference-${key}`}>{preferences[key] > 0 ? `+${preferences[key]}` : preferences[key]}</output></div>)}</section>
-     <section className="results"><div className="results-title"><div><div className="eyebrow">EXPLORE OPTIONS</div><h2>{busy ? "Searching…" : `${routes.length} routes found`}</h2></div><Select.Root value={sort} onValueChange={v => setSort(v as typeof sort)}><Select.Trigger className="sort"><ArrowDownUp size={14}/><Select.Value/></Select.Trigger><Select.Portal><Select.Positioner><Select.Popup className="sort-menu">{(["score", "distance", "motorcycle", "road"] as const).map(s => <Select.Item key={s} value={s} className="sort-item">{s}</Select.Item>)}</Select.Popup></Select.Positioner></Select.Portal></Select.Root></div>
+       <section className="controls"><div className="section-title"><Search size={16}/> SEARCH PARAMETERS</div><label>ACTIVITY</label><div className="segmented"><button className={mode === "hike" ? "active" : ""} onClick={() => updateConfig({ mode: "hike" })}><Footprints size={15}/> Hiking</button><button className={mode === "gravel" ? "active" : ""} onClick={() => updateConfig({ mode: "gravel" })}>Gravel bike</button></div><label>ROUTE SHAPE</label><div className="segmented"><button className={shape === "loop" ? "active" : ""} onClick={() => updateConfig({ shape: "loop" })}><RotateCcw size={15}/> Loop</button><button className={shape === "out-and-back" ? "active" : ""} onClick={() => updateConfig({ shape: "out-and-back" })}>Out & back</button></div><div className="unit-row"><label htmlFor="min">DISTANCE RANGE · {units.toUpperCase()}</label><div className="unit-switch" role="group" aria-label="Distance units"><button aria-pressed={units === "mi"} onClick={() => updateConfig({ units: "mi" })}>mi</button><button aria-pressed={units === "km"} onClick={() => updateConfig({ units: "km" })}>km</button></div></div><div className="range"><input id="min" type="number" min="0.5" step="0.1" max={inputDistance(max, units)} value={inputDistance(min, units)} onChange={e => updateConfig({ minKm: toKilometers(Number(e.target.value), units) }, "replace")}/><span>to</span><input aria-label="Maximum distance" type="number" min={inputDistance(min, units)} step="0.1" value={inputDistance(max, units)} onChange={e => updateConfig({ maxKm: toKilometers(Number(e.target.value), units) }, "replace")}/></div><label htmlFor="seed">ROUTE VARIATION SEED</label><div className="range"><input id="seed" type="number" min="0" max="2147483647" step="1" value={seed} onChange={e => updateConfig({ seed: Number(e.target.value) }, "replace")}/></div><div className="preference-heading">ROUTE PREFERENCES</div><p className="preference-help">Car and motorcycle sliders favor lower/higher estimated traffic intensity (−5 to +5), not legal permission. Bicycle favors permitted access. All settings are soft; distance and activity restrictions remain firm. Unknown traffic is not treated as zero.</p>{preferenceLabels.map(({ key, label }) => <div className="preference" key={key}><label htmlFor={`preference-${key}`}>{label}</label><input id={`preference-${key}`} type="range" min="-5" max="5" step="1" value={preferences[key]} onChange={e => updateConfig({ preferences: { ...configRef.current.preferences, [key]: Number(e.target.value) } }, "replace")}/><output htmlFor={`preference-${key}`}>{preferences[key] > 0 ? `+${preferences[key]}` : preferences[key]}</output></div>)}</section>
+     <section className="results"><div className="results-title"><div><div className="eyebrow">EXPLORE OPTIONS</div><h2>{busy ? "Searching…" : `${routes.length} routes found`}</h2></div><Select.Root value={sort} onValueChange={v => updateConfig({ sort: v as typeof sort })}><Select.Trigger className="sort"><ArrowDownUp size={14}/><Select.Value/></Select.Trigger><Select.Portal><Select.Positioner><Select.Popup className="sort-menu">{(["score", "distance", "motorcycle", "road"] as const).map(s => <Select.Item key={s} value={s} className="sort-item">{s}</Select.Item>)}</Select.Popup></Select.Positioner></Select.Portal></Select.Root></div>
           {!busy && routes.length === 0 && <p className="empty-results">No routes match these settings. Try widening the distance range or moving the start.</p>}
           <div className="table-wrap"><table><thead><tr><th>#</th><th>{units.toUpperCase()}</th><th>TRAIL</th><th>ROAD</th><th>CAR ×</th><th>MOTO ×</th><th>CAR +</th></tr></thead><tbody>{ordered.map((r, i) => <tr key={r.id} className={selected === i ? "chosen" : ""} onClick={() => { setSelected(i); setEdge(undefined); }}><td>{String(i + 1).padStart(2, "0")}</td><td>{distance(r.km)}</td><td>{distance(r.trailKm)}</td><td>{distance(r.roadKm)}</td><td>{r.intensity.motorcar.knownKm ? (r.intensity.motorcar.weightedKm / r.intensity.motorcar.knownKm).toFixed(2) : "?"}</td><td>{r.intensity.motorcycle.knownKm ? (r.intensity.motorcycle.weightedKm / r.intensity.motorcycle.knownKm).toFixed(2) : "?"}</td><td>{distance(r.exposure.motorcar.permitted)}</td></tr>)}</tbody></table></div>
           <div className="table-note">All distances in {units}. Repeated travel counts. × is distance-weighted estimated vehicle intensity on known segments (0 = no nearby motors, 1 = residential, 1.5 = larger road); ? means unknown. CAR + is separate permitted-access distance, not traffic.</div></section>
     </aside><section className="map-panel"><div className="map-top"><span><span className="map-marker"/> KINGS BEACH / STATELINE</span><span>ONLINE BASEMAP · LOCAL OSM ROUTES · {region?.source.osmBaseTimestamp.slice(0, 10) ?? "…"}</span></div>
-       {region && <div className="map"><RouteMap region={region} route={route} start={start} inspectedEdge={edge} accessMode={accessMode} onAccessModeChange={setAccessMode} units={units} onStartChange={setStart} onInspect={setEdge}/></div>}
+       {region && <div className="map"><RouteMap region={region} route={route} start={start} inspectedEdge={edge} accessMode={accessMode} onAccessModeChange={value => updateConfig({ accessMode: value })} units={units} onStartChange={node => updateConfig({ start: region.nodes[node].id })} onInspect={setEdge}/></div>}
       <div className="map-hint">DRAG TO PAN · ⌘/CTRL + SCROLL OR +/− TO ZOOM · CLICK TO SET START</div>
        {route && <div className={`detail${detailsOpen ? " expanded" : ""}`}><div className="eyebrow">SELECTED ROUTE / {String(selected + 1).padStart(2, "0")}</div><button className="detail-toggle" onClick={() => setDetailsOpen(!detailsOpen)} aria-expanded={detailsOpen}>{detailsOpen ? "Less detail" : "Access detail"}</button><h2>{distance(route.km)} {units} <small>{shape}</small></h2><div className="stats"><div><b>{distance(route.uniqueKm)}</b><span>UNIQUE {units.toUpperCase()}</span></div><div><b>{distance(route.trailKm)}</b><span>TRAIL {units.toUpperCase()}</span></div><div><b>{distance(route.roadKm)}</b><span>ROAD {units.toUpperCase()}</span></div></div><div className="evidence"><strong>TRAFFIC INTENSITY · modeled, not observed</strong>{(["motorcar", "motorcycle"] as const).map(k => <div key={k}><span>{k === "motorcar" ? "car" : "motorcycle"}</span><span>{route.intensity[k].knownKm ? (route.intensity[k].weightedKm / route.intensity[k].knownKm).toFixed(2) : "?"} × · {distance(route.intensity[k].knownKm)} {units} known · {distance(route.intensity[k].unknownKm)} {units} unknown</span></div>)}<small>Sidewalk beside a parallel road gets 80% of adjacent intensity ({distance(route.intensity.motorcar.sidewalkKm)} {units} identified); isolated sidewalk remains unknown. Unknown segments receive a provisional ranking cost, never a zero claim.</small><strong>ACCESS EVIDENCE · {units} traveled</strong>{(["motorcar", "motorcycle", "bicycle"] as const).map(k => <div key={k}><span>{k === "motorcar" ? "car" : k}</span><span>+ {distance(route.exposure[k].permitted)} · − {distance(route.exposure[k].prohibited)} · ~ {distance(route.exposure[k].restricted)} · ? {distance(route.exposure[k].unknown)}</span></div>)}<small>+ permitted, − prohibited, ~ conditional/restricted, ? unknown. Car access: {distance(route.evidence.motorcar.explicit)} tagged / {distance(route.evidence.motorcar.inferred)} inferred / {distance(route.evidence.motorcar.unknown)} unresolved {units}. Inferred access is not verified legal access or observed traffic.</small></div></div>}
         {tags && inspected && accessEvidence && <div className="inspect"><button className="close" onClick={() => setEdge(undefined)}>×</button><div className="eyebrow">SOURCE SEGMENT · OSM WAY {region!.ways[inspected.way].id}</div><h3>{tags.name || tags.highway || "Unnamed way"}</h3><p>{distance(inspected.meters / 1000)} {units} · {accessMode === "motorcar" ? "car" : accessMode}: {accessEvidence.access} ({accessEvidence.basis}{accessEvidence.tag ? `, ${accessEvidence.tag}=${accessEvidence.value}` : " — no applicable tag"})</p><p>Nearby traffic: car {inspectedIntensity?.motorcar ?? "?"} × · motorcycle {inspectedIntensity?.motorcycle ?? "?"} × ({inspectedIntensity?.basis}); separate from access above.</p><div className="tags">{Object.entries(tags).map(([k, v]) => <div key={k}><span>{k}</span><b>{v}</b></div>)}</div><small>All raw OSM way tags shown; normalized priorities: {attrs.join(", ")}. Node tags retained in package.</small></div>}
