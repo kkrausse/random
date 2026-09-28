@@ -71,7 +71,7 @@ tbody tr.chosen{background:#e0eddf;color:#126341;font-weight:700}
 .access-modes button:focus-visible{outline:2px solid #087c61;outline-offset:1px}
 .access-keys{display:flex;flex-wrap:wrap;gap:7px 12px;text-transform:capitalize}
 .access-keys span{display:flex;align-items:center;gap:4px}
-.access-keys i{width:12px;height:5px;display:inline-block;border-radius:3px}
+.access-keys i{width:15px;height:7px;display:inline-block;border-radius:3px}
 .access-legend small{display:block;margin-top:8px;line-height:1.35;color:#64746a}
 .detail,.inspect{position:absolute;z-index:2;bottom:48px;right:22px;width:min(370px,calc(100% - 44px));max-height:calc(100% - 145px);overflow:auto;background:#fbfcf7ee;backdrop-filter:blur(12px);box-shadow:0 10px 35px #182d2833;border:1px solid #dae4d8;border-radius:8px;padding:21px}
 .detail-toggle{display:none}

@@ -19,7 +19,7 @@ const mapStyle: StyleSpecification = {
   },
   layers: [
     { id: "background", type: "background", paint: { "background-color": "#e8ede6" } },
-    { id: "basemap", type: "raster", source: "basemap", paint: { "raster-saturation": -0.7, "raster-contrast": -0.12, "raster-opacity": 0.76 } },
+    { id: "basemap", type: "raster", source: "basemap", paint: { "raster-saturation": -0.9, "raster-contrast": -0.18, "raster-opacity": 0.58 } },
   ],
 };
 const offlineStyle: StyleSpecification = {
@@ -34,7 +34,7 @@ const accessModes: { id: MapAccessMode; label: string }[] = [
   { id: "motorcycle", label: "Motorcycle" }, { id: "motorcar", label: "Car" }, { id: "bicycle", label: "Bicycle" },
 ];
 const accessColors: Record<Access, string> = {
-  permitted: "#087c61", prohibited: "#b54e4a", restricted: "#aa7517", unknown: "#697682",
+  permitted: "#008d69", prohibited: "#d94450", restricted: "#c77c00", unknown: "#6753d4",
 };
 const accessColorExpression = ["match", ["get", "access"],
   "permitted", accessColors.permitted, "prohibited", accessColors.prohibited,
@@ -136,11 +136,11 @@ export function RouteMap({ region, route, start, inspectedEdge, accessMode, onAc
     <NavigationControl position="top-right" showCompass={false}/>
     <ScaleControl position="bottom-left" unit={units === "mi" ? "imperial" : "metric"}/>
     <Source id="network" type="geojson" data={network}>
-      <Layer id="network-access" type="line" paint={{ "line-color": accessColorExpression, "line-width": 2.2, "line-opacity": 0.65 }}/>
+      <Layer id="network-access" type="line" paint={{ "line-color": accessColorExpression, "line-width": 1.5, "line-opacity": ["case", ["==", ["get", "access"], "unknown"], 0.27, 0.42] }}/>
     </Source>
     <Source id="route" type="geojson" data={routeLines}>
-      <Layer id="route-casing" type="line" paint={{ "line-color": "#fffdf2", "line-width": 10, "line-opacity": 0.98 }}/>
-      <Layer id="route-line" type="line" layout={{ "line-cap": "round", "line-join": "round" }} paint={{ "line-color": ["case", ["get", "inspected"], "#e2a02c", accessColorExpression], "line-width": 5.5 }}/>
+      <Layer id="route-casing" type="line" layout={{ "line-cap": "round", "line-join": "round" }} paint={{ "line-color": "#ffffff", "line-width": 11.5 }}/>
+      <Layer id="route-line" type="line" layout={{ "line-cap": "round", "line-join": "round" }} paint={{ "line-color": ["case", ["get", "inspected"], "#f5ac20", accessColorExpression], "line-width": 6.5 }}/>
       <Layer id="route-hit" type="line" paint={{ "line-color": "#000", "line-width": 18, "line-opacity": 0 }}/>
     </Source>
     <Marker longitude={origin.lon} latitude={origin.lat} anchor="center">
@@ -152,6 +152,6 @@ export function RouteMap({ region, route, start, inspectedEdge, accessMode, onAc
       {accessModes.map(mode => <button key={mode.id} type="button" aria-pressed={accessMode === mode.id} onClick={() => onAccessModeChange(mode.id)}>{mode.label}</button>)}
     </div>
     <div className="access-keys">{(Object.entries(accessColors) as [Access, string][]).map(([access, color]) => <span key={access}><i style={{ background: color }}/>{access}</span>)}</div>
-    <small>OSM access tags, not observed traffic. Gray = unresolved, not prohibited.</small>
+    <small>OSM access tags, not observed traffic. Purple = unresolved, not prohibited.</small>
   </div>{!online && <div className="offline-notice">Offline · local trail network only</div>}</>;
 }
