@@ -5,7 +5,7 @@ import { ArrowDownUp, Footprints, Mountain, RotateCcw, Search } from "lucide-rea
 import { Select } from "@base-ui/react/select";
 import { RegionStore, regionLayer } from "./services";
 import { interpret, type Region, type Route, type SearchPreferences, type SearchRequest } from "./domain";
-import { adjacency } from "./search";
+import { adjacency, DEFAULT_SEARCH_PREFERENCES } from "./search";
 import { regionVehicleIntensity } from "./intensity";
 import { RouteMap, type MapAccessMode } from "./route-map";
 import { displayDistance, inputDistance, toKilometers, type DistanceUnit } from "./units";
@@ -26,7 +26,7 @@ function App() {
   const [mode, setMode] = useState<SearchRequest["mode"]>("hike");
   const [accessMode, setAccessMode] = useState<MapAccessMode>("motorcycle");
   const [shape, setShape] = useState<SearchRequest["shape"]>("loop");
-  const [preferences, setPreferences] = useState<SearchPreferences>({ motorcar: 0, motorcycle: 0, bicycle: 0 });
+  const [preferences, setPreferences] = useState<SearchPreferences>(() => ({ ...DEFAULT_SEARCH_PREFERENCES }));
   const [units, setUnits] = useState<DistanceUnit>(() => localStorage.getItem("trail-distance-unit") === "km" ? "km" : "mi");
   const [min, setMin] = useState(toKilometers(2, "mi")), [max, setMax] = useState(toKilometers(6, "mi"));
   const [start, setStart] = useState(0);

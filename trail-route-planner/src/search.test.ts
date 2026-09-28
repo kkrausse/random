@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { Schema } from "effect";
 import { Region, SearchPreferences, analyze, interpret, type Way } from "./domain";
-import { adjacency, generate, preferencePenalty } from "./search";
+import { adjacency, DEFAULT_SEARCH_PREFERENCES, NEUTRAL_SEARCH_PREFERENCES, generate, preferencePenalty } from "./search";
 import { describeVehicleIntensity, regionVehicleIntensity } from "./intensity";
 
 const region = Schema.decodeUnknownSync(Region)(await Bun.file(new URL("../public/kings-beach.json", import.meta.url)).json());
@@ -113,6 +113,7 @@ test("negative car preference discovers a tagged car-free route rather than trea
   const baseline = generate(small, request);
   const avoiding = generate(small, { ...request, preferences: { ...neutral, motorcar: -5 } });
   expect(baseline[0].km).toBeCloseTo(3.2);
+  expect(new Set(baseline.map(r => r.edges.join(",")))).toEqual(new Set(avoiding.map(r => r.edges.join(","))));
   expect(baseline[0].exposure.motorcar.permitted).toBeCloseTo(3.2); // explicit yes overrides path inference
   expect(avoiding[0].km).toBeCloseTo(4);
   expect(avoiding[0].exposure.motorcar.prohibited).toBeCloseTo(4); // motorcar=no overrides motor_vehicle=yes
@@ -123,6 +124,51 @@ test("negative car preference discovers a tagged car-free route rather than trea
   expect(fallback.length).toBeGreaterThan(0);
   expect(fallback[0].intensity.motorcar.unknownKm).toBeGreaterThan(0);
   expect(generate(small, { ...request, minKm: 3.25, maxKm: 3.3, preferences: { ...neutral, motorcar: -5 } })).toEqual([]);
+});
+
+test("sliders only rerank the same candidates at every position, including combined extremes", () => {
+  expect(DEFAULT_SEARCH_PREFERENCES).toEqual({ motorcar: -1, motorcycle: 0, bicycle: 0 });
+  expect(NEUTRAL_SEARCH_PREFERENCES).toEqual({ motorcar: 0, motorcycle: 0, bicycle: 0 });
+  const request = { start: 3007, minKm: 3.21868, maxKm: 9.65604, mode: "hike" as const,
+    shape: "loop" as const, seed: 3, preferences: NEUTRAL_SEARCH_PREFERENCES };
+  const neutral = generate(region, request);
+  const signatures = (routes: ReturnType<typeof generate>) => routes.map(r => `${r.id}:${r.edges.join(",")}`).sort();
+  expect(neutral.length).toBeGreaterThan(2);
+  const variants = [
+    ...([-5, -3, -1, 0, 1, 3, 5] as const).flatMap(value => (["motorcar", "motorcycle", "bicycle"] as const)
+      .map(key => ({ ...NEUTRAL_SEARCH_PREFERENCES, [key]: value }))),
+    { motorcar: -5, motorcycle: 5, bicycle: -5 },
+    { motorcar: 5, motorcycle: -5, bicycle: 5 },
+    { motorcar: -5, motorcycle: -5, bicycle: -5 },
+    { motorcar: 5, motorcycle: 5, bicycle: 5 },
+  ];
+  for (const preferences of variants) {
+    const routes = generate(region, { ...request, preferences });
+    expect(signatures(routes)).toEqual(signatures(neutral));
+    for (const route of routes) expect(route.km).toBeGreaterThanOrEqual(request.minKm - 1e-6);
+  }
+  expect(generate(region, { ...request, preferences: { ...NEUTRAL_SEARCH_PREFERENCES, motorcar: -5 } })[0].id).not.toBe(neutral[0].id);
+}, 40_000);
+
+test("fixed neutral discovery retains a valid road route when an avoidance detour exceeds range", () => {
+  const small = Schema.decodeUnknownSync(Region)({ ...region,
+    nodes: [[39, -120], [39.0005, -120], [39.009, -120], [39.0005, -119.999]].map(([lat, lon], i) => ({ id: String(i), lat, lon, tags: {} })),
+    ways: [{ id: "1", tags: { highway: "residential", foot: "yes" } }, { id: "2", tags: { highway: "path", motor_vehicle: "no" } }],
+    edges: [
+      { a: 0, b: 1, way: 0, meters: 900 }, { a: 1, b: 2, way: 0, meters: 900 },
+      { a: 0, b: 3, way: 1, meters: 1500 }, { a: 3, b: 2, way: 1, meters: 1500 },
+    ],
+  });
+  const request = { start: 0, minKm: 3.4, maxKm: 4, mode: "hike" as const,
+    shape: "out-and-back" as const, seed: 2, preferences: NEUTRAL_SEARCH_PREFERENCES };
+  const expected = generate(small, request);
+  expect(expected).toHaveLength(1);
+  expect(expected[0].km).toBeCloseTo(3.6);
+  expect(expected[0].roadKm).toBeCloseTo(3.6);
+  for (const motorcar of [-5, -1, 0, 1, 5]) {
+    const routes = generate(small, { ...request, preferences: { motorcar, motorcycle: -5, bicycle: 5 } });
+    expect(routes.map(r => r.edges)).toEqual(expected.map(r => r.edges));
+  }
 });
 
 test("real Kings Beach candidate paths are continuous, reproducible, deduplicated and mode-feasible", () => {
@@ -157,7 +203,7 @@ test("real Kings Beach candidate paths are continuous, reproducible, deduplicate
   expect(motoFavored.some(r => r.exposure.motorcycle.permitted / r.km < 0.9)).toBe(true);
 });
 
-test("default 2–6 mile loop favors less car access at −5 without relaxing the range", () => {
+test("2–6 mile loop favors less car intensity at −5 without relaxing the range", () => {
   const request = { start: 3007, minKm: 3.21868, maxKm: 9.65604, mode: "hike" as const, shape: "loop" as const, seed: 3,
     preferences: { motorcar: 0, motorcycle: 0, bicycle: 0 } };
   const neutral = generate(region, request);
