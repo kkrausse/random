@@ -1,6 +1,7 @@
 import { analyze, interpret, type Region, type Route, type SearchPreferences, type SearchRequest } from "./domain";
 
 const accessTypes = ["motorcar", "motorcycle", "bicycle"] as const;
+const distanceToleranceKm = 1e-6;
 
 // +5 is a strict coverage requirement. Other settings bias both path discovery and final ranking.
 export function meetsRequirements(route: Route, preferences: SearchPreferences): boolean {
@@ -11,6 +12,11 @@ export function preferencePenalty(route: Route, preferences: SearchPreferences):
   return accessTypes.reduce((sum, type) => {
     const preference = preferences[type];
     const permitted = route.exposure[type].permitted;
+    // Car avoidance values confirmed non-car access over unresolved tracks. Neither
+    // an untagged track nor a restricted way is evidence of a car-free route.
+    if (type === "motorcar" && preference < 0) {
+      return sum + Math.abs(preference) * (1.6 * permitted + 0.3 * (route.exposure[type].unknown + route.exposure[type].restricted));
+    }
     return sum + 0.8 * Math.abs(preference) * (preference > 0 ? route.km - permitted : preference < 0 ? permitted : 0);
   }, 0);
 }
@@ -47,6 +53,10 @@ function shortest(region: Region, adj: Step[][], start: number, goal: number, mo
       const road = ["residential", "service", "tertiary", "unclassified"].includes(tags.highway);
       const accessBias = accessTypes.reduce((sum, type) => {
         const preference = preferences[type];
+        if (type === "motorcar" && preference < 0) {
+          const access = interpret(tags, type).access;
+          return sum + Math.abs(preference) * (access === "permitted" ? 0.6 : access === "unknown" || access === "restricted" ? 0.12 : 0);
+        }
         return sum + (preference && interpret(tags, type).access === "permitted" ? -0.12 * preference : 0);
       }, 0);
       const modifier = Math.max(0.2, 1 + (road ? 0.4 + variation * 0.3 : 0) + accessBias + (penalty.has(step.edge) ? 2.5 : 0));
@@ -72,9 +82,15 @@ export function generate(region: Region, request: SearchRequest, cancelled: () =
     const air = Math.hypot((p.lat - origin.lat) * 111000, (p.lon - origin.lon) * 86000);
     if (air > request.minKm * 1000 * 0.12 && air < request.maxKm * 1000 * 0.57) targets.push([n, air]);
   }
-  // Deterministic spread across distance and bearing; cap searches independent of node count.
-  const selected = targets.filter(([n]) => n % 11 === Math.abs(request.seed) % 11).sort((a, b) => a[1] - b[1]);
-  const sampled = selected.filter((_, i) => i % Math.max(1, Math.floor(selected.length / 110)) === 0).slice(0, 110);
+  // Broaden car-avoidance targets: one shortest path per target can miss a
+  // less car-accessible corridor. Bound the extra searches on large regions.
+  const targetCount = request.preferences.motorcar < 0 ? 220 : 110;
+  const residues = request.preferences.motorcar < 0 ? 2 : 1;
+  const selected = targets.filter(([n]) => {
+    const residue = n % 11, seed = Math.abs(request.seed) % 11;
+    return residue === seed || (residues === 2 && residue === (seed + 1) % 11);
+  }).sort((a, b) => a[1] - b[1]);
+  const sampled = selected.filter((_, i) => i % Math.max(1, Math.floor(selected.length / targetCount)) === 0).slice(0, targetCount);
   const candidates: Route[] = [], seen = new Set<string>();
   for (const [target] of sampled) {
     if (cancelled()) break;
@@ -92,7 +108,7 @@ export function generate(region: Region, request: SearchRequest, cancelled: () =
     const route = analyze(region, edges, nodes, `${request.shape}-${target}`);
     const middle = (request.minKm + request.maxKm) / 2;
     route.score = Math.abs(route.km - middle) + route.roadKm * 0.55 + (request.shape === "loop" ? (route.km - route.uniqueKm) * 0.9 : 0) + preferencePenalty(route, request.preferences);
-    if (route.km >= request.minKm * 0.55 && route.km <= request.maxKm * 1.5 && meetsRequirements(route, request.preferences)) candidates.push(route);
+    if (route.km >= request.minKm - distanceToleranceKm && route.km <= request.maxKm + distanceToleranceKm && meetsRequirements(route, request.preferences)) candidates.push(route);
   }
   candidates.sort((a, b) => a.score - b.score);
   const chosen: Route[] = [];
