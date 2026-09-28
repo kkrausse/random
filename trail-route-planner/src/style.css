@@ -14,7 +14,7 @@ header{height:76px;flex:none;background:#142d27;color:#f5f6ee;display:flex;align
 .status{font-size:11px;color:#bdd0bc;display:flex;align-items:center;gap:9px}
 .dot{height:6px;width:6px;background:#a6d790;border-radius:50%;margin-left:12px}
 main{display:grid;grid-template-columns:minmax(395px,440px) minmax(0,1fr);flex:1;min-height:0}
-.sidebar{background:#fbfcf7;border-right:1px solid #d9e0d5;display:flex;flex-direction:column;min-height:0;overflow:auto}
+.sidebar{background:#fbfcf7;border-right:1px solid #d9e0d5;min-height:0;overflow-y:auto;overflow-x:hidden}
 .intro{padding:30px 29px 23px}
 .eyebrow,.section-title,label,.table-note,.map-top,.map-hint,.stats span{font-size:10px;letter-spacing:.13em;font-weight:700;color:#75847c}
 .intro h1{font-family:Georgia,serif;font-size:41px;line-height:1.02;letter-spacing:-.045em;margin:14px 0}
@@ -41,16 +41,16 @@ label{display:block;margin:16px 0 8px}
 .preference input{width:100%;accent-color:#167454;cursor:pointer}
 .preference output{font-size:12px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums;color:#154d38}
 .empty-results{padding:8px 27px;font-size:12px;line-height:1.5;color:#64746a}
-.results{display:flex;flex-direction:column;min-height:240px;flex:1}
+.results{min-height:0}
 .results-title{display:flex;justify-content:space-between;align-items:center;padding:22px 27px 14px}
 .results-title h2{font-family:Georgia,serif;font-size:22px;font-weight:400;margin:5px 0 0}
 .sort{border:1px solid #d8e0d6;background:white;color:#537064;border-radius:5px;padding:7px;display:flex;gap:5px;align-items:center;font-size:11px;text-transform:capitalize}
 .sort-menu{background:white;box-shadow:0 6px 24px #142d2733;padding:5px;border-radius:6px;z-index:5}
 .sort-item{padding:8px 20px;font-size:12px;cursor:pointer;text-transform:capitalize}
 .sort-item:hover{background:#e5eee5}
-.table-wrap{overflow:auto;flex:1;min-height:0}
+.table-wrap{overflow-x:auto}
 table{border-collapse:collapse;width:100%;white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}
-th{position:sticky;top:0;background:#eaf0e8;color:#647b6d;font-size:9px;letter-spacing:.07em;padding:11px 9px}
+th{background:#eaf0e8;color:#647b6d;font-size:9px;letter-spacing:.07em;padding:11px 9px}
 td{font-size:11px;padding:12px 9px;border-bottom:1px solid #e9ede7}
 th:first-child,td:first-child{text-align:left;padding-left:28px}
 tr{cursor:pointer}
