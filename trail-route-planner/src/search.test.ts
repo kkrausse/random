@@ -1,7 +1,8 @@
 import { test, expect } from "bun:test";
 import { Schema } from "effect";
 import { Region, SearchPreferences, analyze, interpret, type Way } from "./domain";
-import { adjacency, generate, meetsRequirements, preferencePenalty } from "./search";
+import { adjacency, generate, preferencePenalty } from "./search";
+import { describeVehicleIntensity, regionVehicleIntensity } from "./intensity";
 
 const region = Schema.decodeUnknownSync(Region)(await Bun.file(new URL("../public/kings-beach.json", import.meta.url)).json());
 
@@ -61,8 +62,7 @@ test("car preference infers ordinary streets and paths but leaves ambiguous trac
   const neutral = { motorcar: 0, motorcycle: 0, bicycle: 0 };
   expect(route.exposure.motorcar.permitted).toBeCloseTo(route.km);
   expect(route.evidence.motorcar.inferred).toBeCloseTo(route.km);
-  expect(preferencePenalty(route, { ...neutral, motorcar: -5 })).toBeCloseTo(route.km * 8);
-  expect(meetsRequirements(route, { ...neutral, motorcar: 5 })).toBe(true);
+  expect(preferencePenalty(route, { ...neutral, motorcar: -5 })).toBeCloseTo(route.km * 4);
 });
 
 test("repeat traversal counts twice but unique edge once; attributes overlap", () => {
@@ -73,7 +73,7 @@ test("repeat traversal counts twice but unique edge once; attributes overlap", (
   expect(r.exposure.motorcycle.permitted).toBeCloseTo(r.km, 7);
 });
 
-test("access sliders rank permitted coverage without treating unknown as permission", () => {
+test("vehicle sliders rank intensity, bicycle ranks permitted coverage, and +5 is soft", () => {
   const ways: Way[] = [
     { ...region.ways[0], tags: { highway: "path", motorcar: "yes", motorcycle: "no", bicycle: "yes" } },
     { ...region.ways[0], tags: { highway: "path", motorcycle: "yes" } },
@@ -88,14 +88,9 @@ test("access sliders rank permitted coverage without treating unknown as permiss
   expect(route.exposure.motorcar.prohibited).toBeCloseTo(route.km / 2);
   expect(preferencePenalty(route, neutral)).toBe(0);
   expect(preferencePenalty(route, { ...neutral, motorcycle: -5 })).toBeCloseTo(route.km * 2);
-  expect(preferencePenalty(route, { ...neutral, motorcycle: 5 })).toBeCloseTo(route.km * 2);
-  expect(meetsRequirements(route, { ...neutral, motorcar: 5 })).toBe(false);
-  expect(meetsRequirements(route, { ...neutral, motorcar: 4 })).toBe(true);
-  const almost = { ...route, exposure: { ...route.exposure, motorcar: { ...route.exposure.motorcar, permitted: route.km * 0.9 } } };
-  expect(meetsRequirements(almost, { ...neutral, motorcar: 5 })).toBe(true);
-  expect(meetsRequirements({ ...almost, exposure: { ...almost.exposure, motorcar: { ...almost.exposure.motorcar, permitted: route.km * 0.89 } } }, { ...neutral, motorcar: 5 })).toBe(false);
-  expect(meetsRequirements(analyze(example, [0], [0, 1], "car"), { ...neutral, motorcar: 5, bicycle: 5 })).toBe(true);
-  expect(meetsRequirements(analyze(example, [1], [0, 1], "car-free-path"), { ...neutral, motorcar: 5 })).toBe(false);
+  expect(preferencePenalty(route, { ...neutral, motorcycle: 5 })).toBeCloseTo(route.km * 4);
+  expect(preferencePenalty(route, { ...neutral, bicycle: 5 })).toBeCloseTo(route.km * 2);
+  expect(preferencePenalty(route, { ...neutral, motorcar: 5 })).toBeGreaterThan(0);
 });
 
 test("negative car preference discovers a tagged car-free route rather than treating an unknown track as car-free", () => {
@@ -125,9 +120,8 @@ test("negative car preference discovers a tagged car-free route rather than trea
 
   const withoutCarFree = { ...small, edges: small.edges.slice(0, 4) };
   const fallback = generate(withoutCarFree, { ...request, preferences: { ...neutral, motorcar: -5 } });
-  expect(fallback[0].km).toBeCloseTo(3.4);
-  expect(fallback[0].exposure.motorcar.unknown).toBeCloseTo(3.4);
-  expect(fallback[0].exposure.motorcar.prohibited).toBe(0);
+  expect(fallback.length).toBeGreaterThan(0);
+  expect(fallback[0].intensity.motorcar.unknownKm).toBeGreaterThan(0);
   expect(generate(small, { ...request, minKm: 3.25, maxKm: 3.3, preferences: { ...neutral, motorcar: -5 } })).toEqual([]);
 });
 
@@ -154,8 +148,13 @@ test("real Kings Beach candidate paths are continuous, reproducible, deduplicate
     expect(r.km).toBeLessThanOrEqual(request.maxKm + 1e-6);
     expect(r.km).toBeCloseTo(r.uniqueKm * 2, 6);
   }
-  const required = generate(region, { ...request, preferences: { ...request.preferences, motorcar: 5 } });
-  for (const r of required) expect(r.exposure.motorcar.permitted / r.km).toBeGreaterThanOrEqual(0.9 - 1e-9);
+  const favored = generate(region, { ...request, preferences: { ...request.preferences, motorcar: 5 } });
+  expect(favored.length).toBeGreaterThan(0);
+  for (const r of favored) expect(r.km).toBeGreaterThanOrEqual(request.minKm);
+  expect(favored.some(r => r.exposure.motorcar.permitted / r.km < 0.9)).toBe(true);
+  const motoFavored = generate(region, { ...request, preferences: { ...request.preferences, motorcycle: 5 } });
+  expect(motoFavored.length).toBeGreaterThan(0);
+  expect(motoFavored.some(r => r.exposure.motorcycle.permitted / r.km < 0.9)).toBe(true);
 });
 
 test("default 2–6 mile loop favors less car access at −5 without relaxing the range", () => {
@@ -168,7 +167,48 @@ test("default 2–6 mile loop favors less car access at −5 without relaxing th
     expect(route.km).toBeGreaterThanOrEqual(request.minKm - 1e-6);
     expect(route.km).toBeLessThanOrEqual(request.maxKm + 1e-6);
   }
-  expect(avoiding[0].exposure.motorcar.permitted).toBeLessThan(neutral[0].exposure.motorcar.permitted * 0.5);
-  expect(avoiding[0].exposure.motorcar.permitted / avoiding[0].km).toBeLessThan(neutral[0].exposure.motorcar.permitted / neutral[0].km);
-  expect(avoiding[0].exposure.motorcar.permitted).toBeGreaterThan(0); // no claim of zero car access
+  expect(avoiding[0].intensity.motorcar.weightedKm / avoiding[0].km).toBeLessThan(neutral[0].intensity.motorcar.weightedKm / neutral[0].km);
+});
+
+test("street baseline, dirt access split, and unknown are independent of legal access", () => {
+  expect(describeVehicleIntensity({ highway: "residential" })).toMatchObject({ motorcar: 1, motorcycle: 1 });
+  expect(describeVehicleIntensity({ highway: "primary" })).toMatchObject({ motorcar: 1.5, motorcycle: 1.5 });
+  expect(describeVehicleIntensity({ highway: "track", surface: "dirt", motor_vehicle: "no" })).toMatchObject({ motorcar: 0, motorcycle: 0 });
+  expect(describeVehicleIntensity({ highway: "track", surface: "dirt", motorcar: "no", motorcycle: "yes" })).toMatchObject({ motorcar: 0, motorcycle: 1 });
+  expect(describeVehicleIntensity({ highway: "track" })).toMatchObject({ motorcar: null, motorcycle: null });
+  expect(describeVehicleIntensity({ highway: "footway", footway: "sidewalk", motor_vehicle: "no" })).toMatchObject({ motorcar: null, motorcycle: null });
+  const neutral = { motorcar: 0, motorcycle: 0, bicycle: 0 };
+  const dirt = { highway: "track", surface: "dirt", motorcar: "no", motorcycle: "yes" };
+  const zero = { highway: "track", surface: "dirt", motor_vehicle: "no" };
+  const example = Schema.decodeUnknownSync(Region)({ ...region,
+    ways: [{ id: "1", tags: dirt }, { id: "2", tags: zero }],
+    edges: [{ a: 0, b: 1, way: 0, meters: 1000 }, { a: 1, b: 2, way: 1, meters: 1000 }],
+  });
+  const motorcycle = analyze(example, [0], [0, 1], "moto");
+  const motorFree = analyze(example, [1], [1, 2], "free");
+  expect(preferencePenalty(motorcycle, { ...neutral, motorcar: -5 })).toBe(preferencePenalty(motorFree, { ...neutral, motorcar: -5 }));
+  expect(preferencePenalty(motorcycle, { ...neutral, motorcycle: -5 })).toBeGreaterThan(preferencePenalty(motorFree, { ...neutral, motorcycle: -5 }));
+  expect(preferencePenalty(motorcycle, { ...neutral, motorcycle: 5 })).toBeLessThan(preferencePenalty(motorFree, { ...neutral, motorcycle: 5 }));
+});
+
+test("parallel adjacent sidewalk inherits discounted road traffic, isolated or crossing footway does not", () => {
+  const small = Schema.decodeUnknownSync(Region)({ ...region,
+    nodes: [
+      [39, -120], [39, -119.999], [39.00006, -120], [39.00006, -119.999],
+      [39.001, -120], [39.001, -119.999], [38.9995, -119.9995], [39.0005, -119.9995],
+    ].map(([lat, lon], i) => ({ id: String(i), lat, lon, tags: {} })),
+    ways: [{ id: "1", tags: { highway: "residential" } }, { id: "2", tags: { highway: "footway", footway: "sidewalk", motor_vehicle: "no" } }],
+    edges: [{ a: 0, b: 1, way: 0, meters: 86 }, { a: 2, b: 3, way: 1, meters: 86 }, { a: 4, b: 5, way: 1, meters: 86 }, { a: 6, b: 7, way: 1, meters: 111 }],
+  });
+  const values = regionVehicleIntensity(small);
+  expect(values[1]).toMatchObject({ motorcar: 0.8, motorcycle: 0.8, basis: "sidewalk" });
+  expect(values[2].motorcar).toBeNull();
+  expect(values[3].motorcar).toBeNull();
+  const route = analyze(small, [1, 1], [2, 3, 2], "sidewalk");
+  expect(route.intensity.motorcar.weightedKm).toBeCloseTo(0.8 * route.km);
+  expect(route.intensity.motorcar.sidewalkKm).toBeCloseTo(route.km);
+  expect(route.exposure.motorcar.prohibited).toBeCloseTo(route.km);
+  const isolated = analyze(small, [2, 2], [4, 5, 4], "isolated");
+  const avoiding = { motorcar: -5, motorcycle: 0, bicycle: 0 };
+  expect(preferencePenalty(route, avoiding)).toBeGreaterThan(preferencePenalty(isolated, avoiding));
 });

@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { regionVehicleIntensity } from "./intensity";
 
 export const RegionId = Schema.String.check(Schema.isMinLength(1)).pipe(Schema.brand("RegionId"));
 export const OsmWayId = Schema.String.check(Schema.isPattern(/^\d+$/)).pipe(Schema.brand("OsmWayId"));
@@ -54,12 +55,15 @@ export interface Route {
   id: string; edges: number[]; nodes: number[]; km: number; uniqueKm: number; score: number;
   exposure: Record<"motorcar" | "motorcycle" | "bicycle", Record<Access, number>>;
   evidence: Record<"motorcar" | "motorcycle" | "bicycle", Record<"explicit" | "inferred" | "unknown", number>>;
+  intensity: Record<"motorcar" | "motorcycle", { weightedKm: number; knownKm: number; unknownKm: number; sidewalkKm: number }>;
   trailKm: number; roadKm: number;
 }
 
 export function analyze(region: Region, edges: number[], nodes: number[], id: string, score = 0): Route {
   const exposure = Object.fromEntries(["motorcar", "motorcycle", "bicycle"].map(k => [k, { permitted: 0, prohibited: 0, restricted: 0, unknown: 0 }])) as Route["exposure"];
   const evidence = Object.fromEntries(["motorcar", "motorcycle", "bicycle"].map(k => [k, { explicit: 0, inferred: 0, unknown: 0 }])) as Route["evidence"];
+  const intensity: Route["intensity"] = { motorcar: { weightedKm: 0, knownKm: 0, unknownKm: 0, sidewalkKm: 0 }, motorcycle: { weightedKm: 0, knownKm: 0, unknownKm: 0, sidewalkKm: 0 } };
+  const estimates = regionVehicleIntensity(region);
   let meters = 0, trail = 0, road = 0;
   for (const edgeId of edges) {
     const edge = region.edges[edgeId];
@@ -72,9 +76,15 @@ export function analyze(region: Region, edges: number[], nodes: number[], id: st
       exposure[key][e.access] += edge.meters;
       evidence[key][e.basis] += edge.meters;
     }
+    for (const key of ["motorcar", "motorcycle"] as const) {
+      const value = estimates[edgeId][key], total = intensity[key];
+      if (value === null) total.unknownKm += edge.meters / 1000;
+      else { total.knownKm += edge.meters / 1000; total.weightedKm += value * edge.meters / 1000; }
+      if (estimates[edgeId].basis === "sidewalk") total.sidewalkKm += edge.meters / 1000;
+    }
   }
   return { id, edges, nodes, km: meters / 1000, uniqueKm: [...new Set(edges)].reduce((sum, e) => sum + region.edges[e].meters, 0) / 1000,
     score, exposure: Object.fromEntries(Object.entries(exposure).map(([k, v]) => [k, Object.fromEntries(Object.entries(v).map(([s, m]) => [s, m / 1000]))])) as Route["exposure"],
     evidence: Object.fromEntries(Object.entries(evidence).map(([k, v]) => [k, Object.fromEntries(Object.entries(v).map(([s, m]) => [s, m / 1000]))])) as Route["evidence"],
-    trailKm: trail / 1000, roadKm: road / 1000 };
+    intensity, trailKm: trail / 1000, roadKm: road / 1000 };
 }
