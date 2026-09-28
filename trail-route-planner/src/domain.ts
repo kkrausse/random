@@ -21,9 +21,10 @@ export interface SearchRequest extends Schema.Schema.Type<typeof SearchRequest> 
 export type Access = "permitted" | "prohibited" | "restricted" | "unknown";
 export interface Evidence { access: Access; basis: "explicit" | "inferred" | "unknown"; tag?: string; value?: string }
 
-export function interpret(tags: Record<string, string>, attribute: "motorcycle" | "bicycle" | "foot" | "motor_vehicle"): Evidence {
+export function interpret(tags: Record<string, string>, attribute: "motorcycle" | "motorcar" | "bicycle" | "foot" | "motor_vehicle"): Evidence {
   const keys: Record<typeof attribute, string[]> = {
     motorcycle: ["motorcycle", "motor_vehicle", "vehicle", "access"],
+    motorcar: ["motorcar", "motor_vehicle", "vehicle", "access"],
     bicycle: ["bicycle", "vehicle", "access"], foot: ["foot", "access"],
     motor_vehicle: ["motor_vehicle", "vehicle", "access"],
   };

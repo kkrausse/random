@@ -16,6 +16,8 @@ The map uses MapLibre for pan, wheel/⌘-scroll zoom, touch gestures, and route 
 
 The topo tiles are desaturated behind the highlighted route. Distances default to miles; switch between miles and kilometers beside the distance range. The chosen unit is remembered locally, while search and graph calculations remain in kilometers.
 
+The map's **Color by access** control switches the network and selected route between motorcycle, car (`motorcar`), and bicycle OSM access interpretations. Thick white-cased lines mark the selected route; thin lines show the surrounding graph. Green means tagged permitted, red prohibited, amber restricted/conditional, and gray unknown—not verified vehicle-free. Mode-specific tags take priority over shared `motor_vehicle`, `vehicle`, and `access` tags. Road classification alone is not treated as permission, and these colors describe tags, not observed traffic.
+
 ### Offline basemap decision (open)
 
 The app currently bundles **routing data**, not background tiles. OpenTopoMap's [usage notes](https://opentopomap.org/about) allow attributed use of its CC-BY-SA map but caution against mass downloads from its public server and offer no availability guarantee. Reuse licensing alone is not permission to bulk-prefetch an entire region from that server; do not add such a downloader without explicit provider approval. The [OSM standard tile server policy](https://operations.osmfoundation.org/policies/tiles/) expressly prohibits bulk/offline tile downloads. OSM **raw data extracts** are a different thing: they can be acquired under ODbL and processed into our own tiles.

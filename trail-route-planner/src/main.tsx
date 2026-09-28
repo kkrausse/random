@@ -6,7 +6,7 @@ import { Select } from "@base-ui/react/select";
 import { RegionStore, regionLayer } from "./services";
 import { interpret, type Region, type Route, type SearchRequest } from "./domain";
 import { adjacency } from "./search";
-import { RouteMap } from "./route-map";
+import { RouteMap, type MapAccessMode } from "./route-map";
 import { displayDistance, inputDistance, toKilometers, type DistanceUnit } from "./units";
 import "./style.css";
 
@@ -20,6 +20,7 @@ function App() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [sort, setSort] = useState<"score" | "distance" | "motorcycle" | "road">("score");
   const [mode, setMode] = useState<SearchRequest["mode"]>("hike");
+  const [accessMode, setAccessMode] = useState<MapAccessMode>("motorcycle");
   const [shape, setShape] = useState<SearchRequest["shape"]>("loop");
   const [units, setUnits] = useState<DistanceUnit>(() => localStorage.getItem("trail-distance-unit") === "km" ? "km" : "mi");
   const [min, setMin] = useState(toKilometers(2, "mi")), [max, setMax] = useState(toKilometers(6, "mi"));
@@ -69,6 +70,7 @@ function App() {
   const route = ordered[selected];
   const inspected = edge === undefined || !region ? undefined : region.edges[edge];
   const tags = inspected ? region!.ways[inspected.way].tags : undefined;
+  const accessEvidence = tags ? interpret(tags, accessMode) : undefined;
   const distance = (value: number) => displayDistance(value, units);
   return <div className="app">
     <header><div className="brand"><Mountain size={24}/><div><strong>Trail Routes</strong><span>KINGS BEACH · NORTH LAKE TAHOE</span></div></div><div className="status">{region ? `${region.ways.length.toLocaleString()} OSM ways · ${region.edges.length.toLocaleString()} edges` : "Loading region…"}<span className="dot"/> Offline-ready</div></header>
@@ -78,10 +80,10 @@ function App() {
          <div className="table-wrap"><table><thead><tr><th>#</th><th>{units.toUpperCase()}</th><th>TRAIL</th><th>ROAD</th><th>MOTO +</th><th>MOTO ?</th></tr></thead><tbody>{ordered.map((r, i) => <tr key={r.id} className={selected === i ? "chosen" : ""} onClick={() => { setSelected(i); setEdge(undefined); }}><td>{String(i + 1).padStart(2, "0")}</td><td>{distance(r.km)}</td><td>{distance(r.trailKm)}</td><td>{distance(r.roadKm)}</td><td>{distance(r.exposure.motorcycle.permitted)}</td><td>{distance(r.exposure.motorcycle.unknown)}</td></tr>)}</tbody></table></div>
          <div className="table-note">All distances in {units}. Repeated travel counts; + explicit permission; ? unresolved. Columns overlap other access categories.</div></section>
     </aside><section className="map-panel"><div className="map-top"><span><span className="map-marker"/> KINGS BEACH / STATELINE</span><span>ONLINE BASEMAP · LOCAL OSM ROUTES · {region?.source.osmBaseTimestamp.slice(0, 10) ?? "…"}</span></div>
-      {region && <div className="map"><RouteMap region={region} route={route} start={start} inspectedEdge={edge} units={units} onStartChange={setStart} onInspect={setEdge}/></div>}
+       {region && <div className="map"><RouteMap region={region} route={route} start={start} inspectedEdge={edge} accessMode={accessMode} onAccessModeChange={setAccessMode} units={units} onStartChange={setStart} onInspect={setEdge}/></div>}
       <div className="map-hint">DRAG TO PAN · ⌘/CTRL + SCROLL OR +/− TO ZOOM · CLICK TO SET START</div>
        {route && <div className={`detail${detailsOpen ? " expanded" : ""}`}><div className="eyebrow">SELECTED ROUTE / {String(selected + 1).padStart(2, "0")}</div><button className="detail-toggle" onClick={() => setDetailsOpen(!detailsOpen)} aria-expanded={detailsOpen}>{detailsOpen ? "Less detail" : "Access detail"}</button><h2>{distance(route.km)} {units} <small>{shape}</small></h2><div className="stats"><div><b>{distance(route.uniqueKm)}</b><span>UNIQUE {units.toUpperCase()}</span></div><div><b>{distance(route.trailKm)}</b><span>TRAIL {units.toUpperCase()}</span></div><div><b>{distance(route.roadKm)}</b><span>ROAD {units.toUpperCase()}</span></div></div><div className="evidence"><strong>ACCESS EVIDENCE · {units} traveled</strong>{(["motorcycle", "bicycle", "motor_vehicle"] as const).map(k => <div key={k}><span>{k.replace("_", " ")}</span><span>+ {distance(route.exposure[k].permitted)} · − {distance(route.exposure[k].prohibited)} · ~ {distance(route.exposure[k].restricted)} · ? {distance(route.exposure[k].unknown)}</span></div>)}<small>+ permitted, − prohibited, ~ conditional/restricted, ? unknown. Explicit / inferred / unknown motorcycle: {distance(route.evidence.motorcycle.explicit)} / {distance(route.evidence.motorcycle.inferred)} / {distance(route.evidence.motorcycle.unknown)} {units}. No observed traffic or physical-separation evidence is inferred.</small></div></div>}
-      {tags && inspected && <div className="inspect"><button className="close" onClick={() => setEdge(undefined)}>×</button><div className="eyebrow">SOURCE SEGMENT · OSM WAY {region!.ways[inspected.way].id}</div><h3>{tags.name || tags.highway || "Unnamed way"}</h3><p>{distance(inspected.meters / 1000)} {units} · motorcycle: {interpret(tags, "motorcycle").access} ({interpret(tags, "motorcycle").basis})</p><div className="tags">{Object.entries(tags).map(([k, v]) => <div key={k}><span>{k}</span><b>{v}</b></div>)}</div><small>All raw OSM way tags shown; normalized priorities: {attrs.join(", ")}. Node tags retained in package.</small></div>}
+       {tags && inspected && accessEvidence && <div className="inspect"><button className="close" onClick={() => setEdge(undefined)}>×</button><div className="eyebrow">SOURCE SEGMENT · OSM WAY {region!.ways[inspected.way].id}</div><h3>{tags.name || tags.highway || "Unnamed way"}</h3><p>{distance(inspected.meters / 1000)} {units} · {accessMode === "motorcar" ? "car" : accessMode}: {accessEvidence.access} ({accessEvidence.tag ? `${accessEvidence.tag}=${accessEvidence.value}` : "no applicable tag"})</p><div className="tags">{Object.entries(tags).map(([k, v]) => <div key={k}><span>{k}</span><b>{v}</b></div>)}</div><small>All raw OSM way tags shown; normalized priorities: {attrs.join(", ")}. Node tags retained in package.</small></div>}
       {error && <div className="error">{error}</div>}
     </section></main><footer>© OpenStreetMap contributors · ODbL · Experimental routes are not a legal access or safety guarantee. Coverage ends at package boundary.</footer>
   </div>;

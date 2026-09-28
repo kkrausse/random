@@ -25,6 +25,16 @@ test("absence does not assert prohibition; explicit priority and inferred are se
   expect(interpret({ motorcycle: "conditional" }, "motorcycle").access).toBe("restricted");
 });
 
+test("car and motorcycle coloring uses their own tags before shared vehicle access", () => {
+  const tags = { highway: "track", motorcycle: "yes", motorcar: "no", motor_vehicle: "private" };
+  expect(interpret(tags, "motorcycle")).toEqual({ access: "permitted", basis: "explicit", tag: "motorcycle", value: "yes" });
+  expect(interpret(tags, "motorcar")).toEqual({ access: "prohibited", basis: "explicit", tag: "motorcar", value: "no" });
+  expect(interpret({ motor_vehicle: "yes" }, "motorcar")).toEqual({ access: "permitted", basis: "explicit", tag: "motor_vehicle", value: "yes" });
+  expect(interpret({ highway: "residential" }, "motorcar")).toEqual({ access: "unknown", basis: "unknown" });
+  expect(interpret({ motorcar: "no" }, "motorcycle")).toEqual({ access: "unknown", basis: "unknown" });
+  expect(interpret({ motorcar: "destination" }, "motorcar").access).toBe("restricted");
+});
+
 test("repeat traversal counts twice but unique edge once; attributes overlap", () => {
   const e = region.edges.findIndex(edge => region.ways[edge.way].tags.motorcycle === "designated");
   expect(e).toBeGreaterThanOrEqual(0);

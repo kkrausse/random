@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FeatureCollection, LineString } from "geojson";
-import type { MapLayerMouseEvent, StyleSpecification } from "maplibre-gl";
+import type { ExpressionSpecification, MapLayerMouseEvent, StyleSpecification } from "maplibre-gl";
 import MapView, { Layer, Marker, NavigationControl, ScaleControl, Source, type MapRef } from "react-map-gl/maplibre";
-import type { Region, Route } from "./domain";
+import { interpret, type Access, type Region, type Route } from "./domain";
 import type { DistanceUnit } from "./units";
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -29,18 +29,31 @@ const offlineStyle: StyleSpecification = {
 };
 
 const emptyLines = (): FeatureCollection<LineString> => ({ type: "FeatureCollection", features: [] });
+export type MapAccessMode = "motorcycle" | "motorcar" | "bicycle";
+const accessModes: { id: MapAccessMode; label: string }[] = [
+  { id: "motorcycle", label: "Motorcycle" }, { id: "motorcar", label: "Car" }, { id: "bicycle", label: "Bicycle" },
+];
+const accessColors: Record<Access, string> = {
+  permitted: "#087c61", prohibited: "#b54e4a", restricted: "#aa7517", unknown: "#697682",
+};
+const accessColorExpression = ["match", ["get", "access"],
+  "permitted", accessColors.permitted, "prohibited", accessColors.prohibited,
+  "restricted", accessColors.restricted, accessColors.unknown,
+] satisfies ExpressionSpecification;
 
 interface RouteMapProps {
   region: Region;
   route?: Route;
   start: number;
   inspectedEdge?: number;
+  accessMode: MapAccessMode;
+  onAccessModeChange: (mode: MapAccessMode) => void;
   units: DistanceUnit;
   onStartChange: (node: number) => void;
   onInspect: (edge: number) => void;
 }
 
-export function RouteMap({ region, route, start, inspectedEdge, units, onStartChange, onInspect }: RouteMapProps) {
+export function RouteMap({ region, route, start, inspectedEdge, accessMode, onAccessModeChange, units, onStartChange, onInspect }: RouteMapProps) {
   const mapRef = useRef<MapRef>(null);
   const [online, setOnline] = useState(navigator.onLine);
   useEffect(() => {
@@ -54,12 +67,12 @@ export function RouteMap({ region, route, start, inspectedEdge, units, onStartCh
     for (const edge of region.edges) {
       const a = region.nodes[edge.a], b = region.nodes[edge.b];
       features.push({
-        type: "Feature", properties: { trail: ["path", "footway", "track", "cycleway"].includes(region.ways[edge.way].tags.highway) },
+        type: "Feature", properties: { access: interpret(region.ways[edge.way].tags, accessMode).access },
         geometry: { type: "LineString", coordinates: [[a.lon, a.lat], [b.lon, b.lat]] },
       });
     }
     return { type: "FeatureCollection", features } satisfies FeatureCollection<LineString>;
-  }, [region]);
+  }, [region, accessMode]);
   const routeLines = useMemo(() => {
     if (!route) return emptyLines();
     return {
@@ -68,12 +81,12 @@ export function RouteMap({ region, route, start, inspectedEdge, units, onStartCh
         const edge = region.edges[id], a = region.nodes[edge.a], b = region.nodes[edge.b];
         return {
           type: "Feature" as const,
-          properties: { edge: id, inspected: id === inspectedEdge },
+          properties: { edge: id, inspected: id === inspectedEdge, access: interpret(region.ways[edge.way].tags, accessMode).access },
           geometry: { type: "LineString" as const, coordinates: [[a.lon, a.lat], [b.lon, b.lat]] },
         };
       }),
     } satisfies FeatureCollection<LineString>;
-  }, [region, route, inspectedEdge]);
+  }, [region, route, inspectedEdge, accessMode]);
 
   const fitRoute = () => {
     if (!route?.nodes.length || !mapRef.current) return;
@@ -123,16 +136,22 @@ export function RouteMap({ region, route, start, inspectedEdge, units, onStartCh
     <NavigationControl position="top-right" showCompass={false}/>
     <ScaleControl position="bottom-left" unit={units === "mi" ? "imperial" : "metric"}/>
     <Source id="network" type="geojson" data={network}>
-      <Layer id="network-roads" type="line" filter={["==", ["get", "trail"], false]} paint={{ "line-color": "#888a7d", "line-width": 1.5, "line-opacity": 0.5 }}/>
-      <Layer id="network-trails" type="line" filter={["==", ["get", "trail"], true]} paint={{ "line-color": "#638b75", "line-width": 1.8, "line-opacity": 0.55 }}/>
+      <Layer id="network-access" type="line" paint={{ "line-color": accessColorExpression, "line-width": 2.2, "line-opacity": 0.65 }}/>
     </Source>
     <Source id="route" type="geojson" data={routeLines}>
       <Layer id="route-casing" type="line" paint={{ "line-color": "#fffdf2", "line-width": 10, "line-opacity": 0.98 }}/>
-      <Layer id="route-line" type="line" layout={{ "line-cap": "round", "line-join": "round" }} paint={{ "line-color": ["case", ["get", "inspected"], "#d28d22", "#075d45"], "line-width": 5.5 }}/>
+      <Layer id="route-line" type="line" layout={{ "line-cap": "round", "line-join": "round" }} paint={{ "line-color": ["case", ["get", "inspected"], "#e2a02c", accessColorExpression], "line-width": 5.5 }}/>
       <Layer id="route-hit" type="line" paint={{ "line-color": "#000", "line-width": 18, "line-opacity": 0 }}/>
     </Source>
     <Marker longitude={origin.lon} latitude={origin.lat} anchor="center">
       <div className="start-pin" title="Route start" aria-label="Route start"/>
     </Marker>
-  </MapView>{!online && <div className="offline-notice">Offline · local trail network only</div>}</>;
+  </MapView><div className="access-legend" aria-label="Map access coloring">
+    <strong>COLOR BY ACCESS</strong>
+    <div className="access-modes" role="group" aria-label="Vehicle type">
+      {accessModes.map(mode => <button key={mode.id} type="button" aria-pressed={accessMode === mode.id} onClick={() => onAccessModeChange(mode.id)}>{mode.label}</button>)}
+    </div>
+    <div className="access-keys">{(Object.entries(accessColors) as [Access, string][]).map(([access, color]) => <span key={access}><i style={{ background: color }}/>{access}</span>)}</div>
+    <small>OSM access tags, not observed traffic. Gray = unresolved, not prohibited.</small>
+  </div>{!online && <div className="offline-notice">Offline · local trail network only</div>}</>;
 }
