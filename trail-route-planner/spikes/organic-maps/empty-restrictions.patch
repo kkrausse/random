@@ -1,0 +1,15 @@
+diff --git a/generator/generator_tool/generator_tool.cpp b/generator/generator_tool/generator_tool.cpp
+--- a/generator/generator_tool/generator_tool.cpp
++++ b/generator/generator_tool/generator_tool.cpp
+@@ -459,6 +459,9 @@ MAIN_WITH_ERROR_HANDLING([](int argc, char ** argv)
+       /// @todo CHECK return result doesn't work now for some small countries like Somalie.
+-      if (!BuildRoadRestrictions(*routingGraph, dataFile, restrictionsFilename, osmToFeatureFilename) ||
+-          !BuildRoadAccessInfo(dataFile, roadAccessFilename, *osm2feature))
++      // Even a small extract without turn restrictions still needs its road-access section.
++      bool const restrictionsBuilt = BuildRoadRestrictions(*routingGraph, dataFile, restrictionsFilename,
++                                                          osmToFeatureFilename);
++      bool const accessBuilt = BuildRoadAccessInfo(dataFile, roadAccessFilename, *osm2feature);
++      if (!restrictionsBuilt || !accessBuilt)
+       {
+         LOG(LERROR, ("Routing build failed for", dataFile));
+       }
