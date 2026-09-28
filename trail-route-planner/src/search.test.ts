@@ -127,7 +127,7 @@ test("negative car preference discovers a tagged car-free route rather than trea
 });
 
 test("sliders only rerank the same candidates at every position, including combined extremes", () => {
-  expect(DEFAULT_SEARCH_PREFERENCES).toEqual({ motorcar: -1, motorcycle: 0, bicycle: 0 });
+  expect(DEFAULT_SEARCH_PREFERENCES).toEqual({ motorcar: 0, motorcycle: 0, bicycle: 0 });
   expect(NEUTRAL_SEARCH_PREFERENCES).toEqual({ motorcar: 0, motorcycle: 0, bicycle: 0 });
   const request = { start: 3007, minKm: 3.21868, maxKm: 9.65604, mode: "hike" as const,
     shape: "loop" as const, seed: 3, preferences: NEUTRAL_SEARCH_PREFERENCES };
@@ -169,6 +169,58 @@ test("fixed neutral discovery retains a valid road route when an avoidance detou
     const routes = generate(small, { ...request, preferences: { motorcar, motorcycle: -5, bicycle: 5 } });
     expect(routes.map(r => r.edges)).toEqual(expected.map(r => r.edges));
   }
+});
+
+test("car-road-only connected graph survives private/foot/bicycle tags, barriers, oneway and every slider position", () => {
+  // The bundled region has hundreds of service roads tagged access=private,
+  // plus residential/service oneways. A road-only neighborhood must not vanish.
+  const roadOnly = Schema.decodeUnknownSync(Region)({ ...region,
+    nodes: [[39, -120], [39.0005, -120], [39.009, -120]].map(([lat, lon], i) =>
+      ({ id: String(i), lat, lon, tags: i === 1 ? { barrier: "bollard" } : {} })),
+    ways: [{ id: "1", tags: { highway: "service", access: "private", foot: "no", bicycle: "no", oneway: "-1" } }],
+    edges: [{ a: 0, b: 1, way: 0, meters: 900 }, { a: 1, b: 2, way: 0, meters: 900 }],
+  });
+  const variants = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5];
+  for (const mode of ["hike", "gravel"] as const) for (const shape of ["loop", "out-and-back"] as const) {
+    const request = { start: 0, minKm: 3.4, maxKm: 4, mode, shape, seed: 2, preferences: DEFAULT_SEARCH_PREFERENCES };
+    const baseline = generate(roadOnly, request);
+    expect(baseline).toHaveLength(1);
+    expect(baseline[0].km).toBeCloseTo(3.6);
+    expect(baseline[0].roadKm).toBeCloseTo(3.6);
+    expect(baseline[0].exposure.motorcar.prohibited).toBeCloseTo(3.6);
+    const signatures = baseline.map(r => `${r.id}:${r.nodes.join(",")}:${r.edges.join(",")}`);
+    for (const value of variants) for (const key of ["motorcar", "motorcycle", "bicycle"] as const) {
+      const routes = generate(roadOnly, { ...request, preferences: { ...DEFAULT_SEARCH_PREFERENCES, [key]: value } });
+      expect(routes.map(r => `${r.id}:${r.nodes.join(",")}:${r.edges.join(",")}`)).toEqual(signatures);
+    }
+    for (const value of variants) {
+      const routes = generate(roadOnly, { ...request, preferences: { motorcar: value, motorcycle: -value, bicycle: value } });
+      expect(routes.map(r => `${r.id}:${r.nodes.join(",")}:${r.edges.join(",")}`)).toEqual(signatures);
+    }
+  }
+});
+
+test("mixed road alternatives remain in the pool but only explicit preferences rerank them", () => {
+  const mixed = Schema.decodeUnknownSync(Region)({ ...region,
+    nodes: [[39, -120], [39.0005, -120], [39.009, -120], [39.0005, -119.999]].map(([lat, lon], i) =>
+      ({ id: String(i), lat, lon, tags: {} })),
+    ways: [{ id: "1", tags: { highway: "residential", foot: "no", bicycle: "no" } },
+      { id: "2", tags: { highway: "track", motorcar: "no", foot: "yes", bicycle: "yes" } }],
+    edges: [{ a: 0, b: 1, way: 0, meters: 900 }, { a: 1, b: 2, way: 0, meters: 900 },
+      { a: 0, b: 3, way: 1, meters: 1000 }, { a: 3, b: 2, way: 1, meters: 1000 }],
+  });
+  const request = { start: 0, minKm: 3.4, maxKm: 4.1, mode: "hike" as const,
+    shape: "out-and-back" as const, seed: 2, preferences: DEFAULT_SEARCH_PREFERENCES };
+  const neutral = generate(mixed, request);
+  expect(neutral).toHaveLength(2);
+  expect(neutral[0].roadKm).toBeCloseTo(3.6);
+  const signatures = neutral.map(r => `${r.id}:${r.edges.join(",")}`).sort();
+  for (const value of [-5, -1, 0, 1, 5]) {
+    const routes = generate(mixed, { ...request, preferences: { motorcar: value, motorcycle: value, bicycle: value } });
+    expect(routes.map(r => `${r.id}:${r.edges.join(",")}`).sort()).toEqual(signatures);
+    expect(routes).toHaveLength(2);
+  }
+  expect(generate(mixed, { ...request, preferences: { ...DEFAULT_SEARCH_PREFERENCES, motorcar: -5 } })[0].trailKm).toBeCloseTo(4);
 });
 
 test("real Kings Beach candidate paths are continuous, reproducible, deduplicated and mode-feasible", () => {

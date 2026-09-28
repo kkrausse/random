@@ -4,7 +4,7 @@ import { regionVehicleIntensity, type VehicleIntensity } from "./intensity";
 const accessTypes = ["motorcar", "motorcycle", "bicycle"] as const;
 const distanceToleranceKm = 1e-6;
 export const NEUTRAL_SEARCH_PREFERENCES: SearchPreferences = { motorcar: 0, motorcycle: 0, bicycle: 0 };
-export const DEFAULT_SEARCH_PREFERENCES: SearchPreferences = { motorcar: -1, motorcycle: 0, bicycle: 0 };
+export const DEFAULT_SEARCH_PREFERENCES: SearchPreferences = { ...NEUTRAL_SEARCH_PREFERENCES };
 
 // These are fixed discovery strategies, not the user's sliders. Always search
 // neutral distances too: a traffic-avoiding detour may exceed the hard range.
@@ -41,9 +41,10 @@ interface Step { edge: number; to: number }
 export function adjacency(region: Region): Step[][] {
   const adj: Step[][] = Array.from({ length: region.nodes.length }, () => []);
   region.edges.forEach((e, i) => {
-    const tags = region.ways[e.way].tags;
-    if (tags.oneway !== "-1") adj[e.a].push({ edge: i, to: e.b });
-    if (tags.oneway !== "yes" && tags.oneway !== "1") adj[e.b].push({ edge: i, to: e.a });
+    // The imported oneway tag normally governs motor vehicles, not walking or
+    // gravel riding. It must not disconnect otherwise connected road routes.
+    adj[e.a].push({ edge: i, to: e.b });
+    adj[e.b].push({ edge: i, to: e.a });
   });
   return adj;
 }
@@ -63,9 +64,11 @@ function shortest(region: Region, adj: Step[][], intensities: VehicleIntensity[]
     if (node === goal) break;
     for (const step of adj[node]) {
       const e = region.edges[step.edge], tags = region.ways[e.way].tags;
-      const own = interpret(tags, mode === "hike" ? "foot" : "bicycle");
-      if (own.access === "prohibited" || own.access === "restricted" || (mode === "gravel" && tags.highway === "steps")) continue;
-      if (region.nodes[step.to].tags.barrier && ["gate", "lift_gate", "stile"].includes(region.nodes[step.to].tags.barrier) === false) continue;
+      // OSM access tags (including foot/bicycle=no, private roads, and node
+      // barriers) are incomplete evidence, not a routing exclusion. Otherwise
+      // a connected car-road-only region can yield no routes at any slider.
+      // Keep only the physical activity constraint for riding on steps.
+      if (mode === "gravel" && tags.highway === "steps") continue;
       const accessBias = vehicleBias(intensities[step.edge], preferences)
         + (preferences.bicycle && interpret(tags, "bicycle").access === "permitted" ? -0.12 * preferences.bicycle : 0);
       const modifier = Math.max(0.2, 1 + accessBias + (penalty.has(step.edge) ? 2.5 : 0));

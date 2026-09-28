@@ -5,6 +5,9 @@ import { DEFAULT_CONFIG, parseConfig, resolveStart, serializeConfig } from "./ur
 test("empty links use the shared search defaults", () => {
   expect(parseConfig("")).toEqual(DEFAULT_CONFIG);
   expect(parseConfig("").preferences).toEqual(DEFAULT_SEARCH_PREFERENCES);
+  expect(parseConfig("?car=invalid&motorcycle=99&bicycle=-6").preferences).toEqual({ motorcar: 0, motorcycle: 0, bicycle: 0 });
+  expect(parseConfig("?car=-5").preferences).toEqual({ motorcar: -5, motorcycle: 0, bicycle: 0 });
+  expect(parseConfig(serializeConfig(DEFAULT_CONFIG)).preferences).toEqual({ motorcar: 0, motorcycle: 0, bicycle: 0 });
 });
 
 test("all search and display configuration survives a URL roundtrip", () => {
