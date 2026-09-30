@@ -1,7 +1,7 @@
 import type { Terminal } from "@random/ghostty-web";
 
 // Long presses follow desktop drag routing; the Select toolbar forces local selection.
-export function installTerminalTouchControls(container: HTMLElement, terminal: Terminal, selecting: () => boolean, notice: (message: string) => void) {
+export function installTerminalTouchControls(container: HTMLElement, terminal: Terminal, selecting: () => boolean, notice: (message: string) => void, openLink: (x: number, y: number) => boolean = () => false) {
   let gesture: { id: number; x: number; y: number; lastX: number; lastY: number; moved: boolean; anchor: number; selecting: boolean; application: boolean } | undefined;
   let holdTimer: ReturnType<typeof setTimeout> | undefined;
   const clearHold = () => { clearTimeout(holdTimer); holdTimer = undefined; };
@@ -85,6 +85,7 @@ export function installTerminalTouchControls(container: HTMLElement, terminal: T
         } else selectTo(cellAt(touch.clientX, touch.clientY));
       }
     } else if (gesture && !gesture.moved) {
+      if (openLink(gesture.x, gesture.y)) { cancel(); return; }
       // Defer the entire click until release: a swipe must never press a TUI row.
       // Bypass the canvas focus listener so taps don't summon the software keyboard.
       for (const type of ["mousedown", "mouseup"]) {

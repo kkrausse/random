@@ -13,8 +13,8 @@ import type { IBufferRange, ILink, ILinkProvider } from '../types';
 /**
  * URL Regex Provider
  *
- * Detects plain text URLs on a single line using regex.
- * Does not support multi-line URLs or file paths.
+ * Detects plain text URLs across soft-wrapped buffer lines.
+ * Hard line breaks delimit URLs; file paths are not links.
  *
  * Supported protocols:
  * - https://, http://
@@ -52,8 +52,25 @@ export class UrlRegexProvider implements ILinkProvider {
       return;
     }
 
-    // Convert line cells to text
-    const lineText = this.lineToText(line);
+    // isWrapped marks continuation FROM the previous row. Keep cell positions
+    // alongside text offsets (wide and astral characters aren't one JS unit).
+    let firstRow = y;
+    while (firstRow > 0 && this.terminal.buffer.active.getLine(firstRow)?.isWrapped) firstRow--;
+    let lastRow = y;
+    while (this.terminal.buffer.active.getLine(lastRow + 1)?.isWrapped) lastRow++;
+    let lineText = '';
+    const positions: { x: number; y: number }[] = [];
+    for (let row = firstRow; row <= lastRow; row++) {
+      const current = this.terminal.buffer.active.getLine(row)!;
+      for (let x = 0; x < current.length; x++) {
+        const cell = current.getCell(x);
+        if (cell?.getWidth?.() === 0) continue;
+        const codepoint = cell?.getCodepoint() ?? 0;
+        const text = codepoint < 32 ? ' ' : String.fromCodePoint(codepoint);
+        lineText += text;
+        for (let i = 0; i < text.length; i++) positions.push({ x, y: row });
+      }
+    }
 
     // Reset regex state (global flag maintains state)
     UrlRegexProvider.URL_REGEX.lastIndex = 0;
@@ -62,23 +79,22 @@ export class UrlRegexProvider implements ILinkProvider {
     let match: RegExpExecArray | null = UrlRegexProvider.URL_REGEX.exec(lineText);
     while (match !== null) {
       let url = match[0];
-      const startX = match.index;
-      let endX = match.index + url.length - 1; // Inclusive end
 
       // Strip trailing punctuation
       const stripped = url.replace(UrlRegexProvider.TRAILING_PUNCTUATION, '');
       if (stripped.length < url.length) {
         url = stripped;
-        endX = startX + url.length - 1;
       }
 
       // Skip if URL is too short (e.g., just "http://")
-      if (url.length > 8) {
+      const start = positions[match.index]!;
+      const end = positions[match.index + url.length - 1]!;
+      if (url.length > 8 && start.y <= y && end.y >= y) {
         links.push({
           text: url,
           range: {
-            start: { x: startX, y },
-            end: { x: endX, y },
+            start,
+            end,
           },
           activate: (event) => {
             // Open link if Ctrl/Cmd is pressed
@@ -94,31 +110,6 @@ export class UrlRegexProvider implements ILinkProvider {
     }
 
     callback(links.length > 0 ? links : undefined);
-  }
-
-  /**
-   * Convert a buffer line to plain text string
-   */
-  private lineToText(line: IBufferLineForUrlProvider): string {
-    const chars: string[] = [];
-
-    for (let x = 0; x < line.length; x++) {
-      const cell = line.getCell(x);
-      if (!cell) {
-        chars.push(' ');
-        continue;
-      }
-
-      const codepoint = cell.getCodepoint();
-      // Skip null characters and control characters
-      if (codepoint === 0 || codepoint < 32) {
-        chars.push(' ');
-      } else {
-        chars.push(String.fromCodePoint(codepoint));
-      }
-    }
-
-    return chars.join('');
   }
 
   dispose(): void {
@@ -142,9 +133,11 @@ export interface ITerminalForUrlProvider {
  */
 interface IBufferLineForUrlProvider {
   length: number;
+  isWrapped?: boolean;
   getCell(x: number):
     | {
         getCodepoint(): number;
+        getWidth?(): number;
       }
     | undefined;
 }

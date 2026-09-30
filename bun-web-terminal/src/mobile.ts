@@ -3,6 +3,7 @@ import { DictationController } from "./dictation";
 import type { TerminalConnection } from "./connection";
 import { installTerminalTouchControls } from "./touch";
 import { terminalViewport } from "./viewport";
+import { terminalLinkAt } from "./links";
 
 // Leave key encoding, composition, bracketed paste, and mouse reporting to Ghostty.
 export function installMobileControls(container: HTMLElement, terminal: Terminal, notice: (message: string) => void, connection: TerminalConnection) {
@@ -109,7 +110,12 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
     }));
   });
 
-  installTerminalTouchControls(container, terminal, () => false, notice);
+  installTerminalTouchControls(container, terminal, () => false, notice, (x, y) => {
+    const url = terminalLinkAt(terminal, x, y);
+    if (!url) return false;
+    window.open(url, "_blank", "noopener,noreferrer");
+    return true;
+  });
 
   // visualViewport shrinks with the software keyboard even when 100dvh does not.
   const viewport = window.visualViewport;

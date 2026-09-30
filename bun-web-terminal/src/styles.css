@@ -38,7 +38,7 @@ body {
 .dictation-preview { flex: 0 0 auto; max-height: 25vh; overflow: auto; padding: 4px 8px; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 .dictation-preview:empty { display: none; }
 @media (any-pointer: coarse), (max-width: 600px) {
-  .terminal-keys { display: flex; }
+  .terminal-keys { display: flex; padding-bottom: max(22px, env(safe-area-inset-bottom)); }
   #terminal { touch-action: pinch-zoom; }
   .terminal-notices { top: calc(env(safe-area-inset-top) + 4px); right: 4px; }
 }

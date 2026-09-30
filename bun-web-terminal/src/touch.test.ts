@@ -23,7 +23,7 @@ afterEach(() => {
   });
 });
 
-function setup(manual = false, application = false) {
+function setup(manual = false, application = false, openLink: (x: number, y: number) => boolean = () => false) {
   const canvas = Object.assign(new EventTarget(), { getBoundingClientRect: () => ({ left: 0, top: 0 }) });
   const container = Object.assign(new EventTarget(), { querySelector: () => canvas });
   const selections: number[][] = [];
@@ -45,7 +45,7 @@ function setup(manual = false, application = false) {
     mouseEvents.push({ type, x: mouse.clientX, y: mouse.clientY, buttons: mouse.buttons });
   });
   canvas.addEventListener("wheel", event => wheels.push((event as WheelEvent).deltaY));
-  installTerminalTouchControls(container as unknown as HTMLElement, terminal as unknown as Terminal, () => manual, message => notices.push(message));
+  installTerminalTouchControls(container as unknown as HTMLElement, terminal as unknown as Terminal, () => manual, message => notices.push(message), openLink);
   const touch = (type: string, x = 25, y = 45, count = 1) => {
     const point = { identifier: 1, clientX: x, clientY: y };
     const event = Object.assign(new Event(type, { cancelable: true }), {
@@ -92,6 +92,24 @@ test("quick taps click only on release; swipes cancel the hold even when paused"
   expect(t.selections).toEqual([]);
   expect(t.clicks).toEqual(["down", "up"]);
   expect(t.wheels).toEqual([30]);
+});
+
+test("link taps open on release without pressing a TUI row; swipes and holds never open links", async () => {
+  const opened: number[][] = [];
+  const t = setup(false, true, (x, y) => { opened.push([x, y]); return true; });
+  t.touch("touchstart");
+  expect(opened).toEqual([]);
+  t.touch("touchend");
+  expect(opened).toEqual([[25, 45]]);
+  expect(t.clicks).toEqual([]);
+  t.touch("touchstart");
+  t.touch("touchmove", 25, 15);
+  t.touch("touchend", 25, 15);
+  t.touch("touchstart");
+  await Bun.sleep(550);
+  t.touch("touchend");
+  expect(opened).toHaveLength(1);
+  expect(t.clicks).toEqual(["down", "up"]);
 });
 
 test("multi-touch, cancellation and leaving the page disarm pending holds", async () => {
