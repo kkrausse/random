@@ -11,3 +11,5 @@ Click a chart metric to switch the graph, a model row to filter it (click it aga
 **Estimated model spend** prices each response at its model's quoted per-million-token rates, including context-tier rates and cache read/write. When an OpenAI account model has no published rate, the dashboard uses the equivalent OpenCode Zen model's list price. This is a quoted equivalent, **not actual subscription billing**. Positive recorded charges are used as-is; unpriced responses are counted and excluded from the estimate. Codex percentages and reset times are local account allowances, not consumption attributable to these sessions.
 
 Run `bun install` and `bun run check` to type-check the plugin.
+
+The account table labels returned allowance windows as Weekly, Daily, or their duration (for example, 5-hour). **Credits** shows the ordinary credit balance or availability; **Resets left** is the separate allowance-reset credit count. Only windows returned by the account are displayed.

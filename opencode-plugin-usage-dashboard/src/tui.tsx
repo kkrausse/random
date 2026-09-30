@@ -2,7 +2,7 @@
 import { Plugin } from "@opencode/plugin/tui"
 import { useTerminalDimensions } from "@opentui/solid"
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
-import { accountLimits, loadCodexUsage, type CodexAccount } from "./codex"
+import { accountCredits, accountLimits, limitWindowLabel, loadCodexUsage, type CodexAccount } from "./codex"
 import { chart } from "./chart"
 import { estimateSpend, loadResponses, type Spend } from "./pricing"
 import { bounds, compact, groupModels, loadBuckets, metricValue, money, totalTokens, type Metric, type Range, type Stats } from "./usage"
@@ -132,21 +132,22 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
     const key = (model: typeof a) => `${model.model.providerID}/${model.model.id}`
     return prices ? (prices[key(b)] ?? 0) - (prices[key(a)] ?? 0) : b.steps - a.steps
   }))
-  const codexWidths = createMemo(() => dimensions().width >= 100 ? [18, 10, 16, 8, 20, 7] : [12, 8, 12, 7, 16, 7])
+  const codexWidths = createMemo(() => dimensions().width >= 110 ? [18, 10, 22, 8, 20, 9, 11] : [12, 8, 18, 7, 16, 9, 11])
   const codexRows = createMemo(() => (accounts() ?? []).flatMap((account) => {
     const limits = accountLimits(account)
     const windows = limits.flatMap((limit) => [limit.primary, limit.secondary].filter((window) => window != null)
-      .map((window) => ({ limit: limit.limitName ?? limit.id, window })))
-    if (!windows.length) return [{ columns: [account.account.name, account.usage?.planType ?? account.identity?.plan ?? "–", "–", "–", account.error ?? "Unavailable", "–"], account }]
+      .map((window) => ({ limit, window })))
+    if (!windows.length) return [{ columns: [account.account.name, account.usage?.planType ?? account.identity?.plan ?? "–", "–", "–", account.error ?? "Unavailable", accountCredits(account), String(account.usage?.rateLimitResetCredits?.availableCount ?? "–")], account }]
     return windows.map(({ limit, window }, index) => ({ account, columns: [
       index === 0 ? account.account.name : "",
       index === 0 ? account.usage?.planType ?? account.identity?.plan ?? "–" : "",
-      `${limit} ${window.windowDurationMins ? `${compact(window.windowDurationMins / 60)}h` : ""}`,
+      limitWindowLabel(limit, window),
       window.usedPercent == null ? "?" : `${Math.max(0, 100 - window.usedPercent)}%`,
       window.resetsAt ? (() => {
         const date = new Date(window.resetsAt * 1000)
         return `${date.toLocaleDateString([], { month: "short", day: "numeric" })} ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
       })() : "–",
+      index === 0 ? accountCredits(account) : "",
       index === 0 ? String(account.usage?.rateLimitResetCredits?.availableCount ?? "–") : "",
     ] }))
   }))
@@ -182,11 +183,12 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
   function showAccount(account: CodexAccount) {
     const limits = accountLimits(account)
     const windows = limits.flatMap((limit) => [limit.primary, limit.secondary].filter((window) => window != null)
-      .map((window) => `${limit.limitName ?? limit.id}: ${window.usedPercent == null ? "usage unknown" : `${Math.max(0, 100 - window.usedPercent)}% left`}${window.resetsAt ? ` · resets ${new Date(window.resetsAt * 1000).toLocaleString()}` : ""}`))
+      .map((window) => `${limitWindowLabel(limit, window)}: ${window.usedPercent == null ? "usage unknown" : `${Math.max(0, 100 - window.usedPercent)}% left`}${window.resetsAt ? ` · resets ${new Date(window.resetsAt * 1000).toLocaleString()}` : ""}`))
     void props.context.ui.dialog.alert({
       title: account.account.name,
       message: [account.usage?.planType ?? account.identity?.plan ?? account.account.source, ...windows,
-        `Reset credits: ${account.usage?.rateLimitResetCredits?.availableCount ?? "unknown"}`, account.error ?? ""].filter(Boolean).join("\n"),
+        `Credits: ${accountCredits(account)}`,
+        `Resets left: ${account.usage?.rateLimitResetCredits?.availableCount ?? "unknown"}`, account.error ?? ""].filter(Boolean).join("\n"),
     })
   }
 
@@ -284,7 +286,7 @@ function Dashboard(props: { context: Plugin.Context; close: () => void }) {
           <box paddingTop={1} flexDirection="column">
             {section("CODEX ACCOUNT ALLOWANCES · local")}
             <Show when={accounts()} fallback={<text fg={muted}>{codexError() || "Checking accounts…"}</text>}>
-              <text fg={muted}>{row(["Account", "Plan", "Limit", "Left", "Resets", "Credits"], codexWidths())}</text>
+              <text fg={muted}>{row(["Account", "Plan", "Limit", "Left", "Resets", "Credits", "Resets left"], codexWidths())}</text>
               <text fg={muted}>{"─".repeat(codexWidths().reduce((sum, width) => sum + width + 2, -2))}</text>
               <For each={codexRows()} fallback={<text fg={muted}>No accounts configured</text>}>
                 {(entry) => <text fg={text} onMouseDown={(event) => { if (event.button === 0) showAccount(entry.account) }}>{row(entry.columns, codexWidths())}</text>}
