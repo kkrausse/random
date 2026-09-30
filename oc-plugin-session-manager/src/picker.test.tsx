@@ -78,8 +78,14 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
     },
     keymap: { layer: (fn: any) => commands.push(...fn().commands) },
     data: {
-      session: { status: (id: string) => running || activeChildren.has(id) ? "running" : "idle", message: { list: () => [], sync: empty, invalidate() {} }, cost: () => 0 },
-      location: { model: { list: () => [], sync: empty } },
+      session: { status: (id: string) => running || activeChildren.has(id) ? "running" : "idle", message: {
+        list: (id: string) => id === "s0" ? [{
+          id: "usage", type: "assistant", model: { providerID: "test", id: "test" },
+          tokens: { input: 25_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        }] : [],
+        sync: empty, invalidate() {},
+      }, cost: () => 0 },
+      location: { model: { list: () => [{ providerID: "test", id: "test", limit: { context: 100_000 } }], sync: empty } },
       on: (type: string, handler: (event: any) => void) => { handlers.set(type, handler); return () => handlers.delete(type) },
       listen: (handler: (event: any) => void) => { handlers.set("*", handler); return () => handlers.delete("*") },
     },
@@ -378,6 +384,10 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
         const details = setup.renderer.root.findDescendantById("claude-session-details-1")!
         assert.equal(details.y, title.y + 1, "status and age occupy the second line")
         assert.equal(timestamp.y, details.y)
+        const contextPercent = setup.renderer.root.findDescendantById("claude-session-context-1")!
+        assert.equal(contextPercent.y, details.y)
+        assert.ok(contextPercent.x + contextPercent.width <= timestamp.x, "context percent fits before the age")
+        assert.match(setup.captureCharFrame(), /25%\s+1m ago/, "mobile rows show context percent alongside age")
         assert.match(setup.captureCharFrame(), /Permission required/, "mobile rows retain their status text")
         opened = undefined
         await setup.mockMouse.click(row.x, row.y + 1)

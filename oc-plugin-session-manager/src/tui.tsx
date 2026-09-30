@@ -456,6 +456,11 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
                         <text wrapMode="none" flexGrow={1} flexShrink={1} fg={iconColor()}>
                           {"status" in option() ? (option() as { status?: string }).status ?? "" : ""}
                         </text>
+                        {rowPercents().get(option().value) ? (
+                          <text id={`claude-session-context-${index}`} wrapMode="none" flexShrink={0} fg={descriptionColor()}>
+                            {` ${rowPercents().get(option().value)}`}
+                          </text>
+                        ) : null}
                         <text id={`claude-session-age-${index}`} wrapMode="none" flexShrink={0} fg={descriptionColor()}>
                           {` ${(option() as { updated?: string }).updated ?? ""}`}
                         </text>
