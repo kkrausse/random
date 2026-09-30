@@ -22,7 +22,8 @@ body {
 
 #terminal { position: relative; width: 100%; flex: 1; min-height: 0; overflow: hidden; }
 
-.terminal-keys { display: none; flex: 0 0 auto; gap: 4px; overflow-x: auto; padding: 4px 4px calc(4px + env(safe-area-inset-bottom)); border-top: 1px solid var(--muted); }
+/* Keep button taps above iOS's bottom gesture edge, even when its safe area is zero. */
+.terminal-keys { display: none; flex: 0 0 auto; gap: 4px; overflow-x: auto; padding: 4px 4px calc(4px + 1em + env(safe-area-inset-bottom)); border-top: 1px solid var(--muted); }
 .terminal-keys button { flex: 0 0 auto; min-width: 44px; min-height: 44px; border: 1px solid var(--muted); border-radius: 3px; color: var(--foreground); background: var(--background); touch-action: manipulation; }
 .terminal-keys button[aria-pressed="true"] { color: var(--background); background: var(--accent); }
 .terminal-keys button svg { width: 20px; height: 20px; vertical-align: middle; }
