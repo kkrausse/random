@@ -367,9 +367,23 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
       assert.equal(picker.x, 0)
       assert.equal(picker.y, 0)
       const row = setup.renderer.root.findDescendantById("claude-session-row-1")!
+      assert.equal(row.height, width! < 70 ? 2 : 1)
       assert.equal(row.x + row.width, picker.x + picker.width, "session rows reach the picker's right edge")
-      const timestamp = row.getChildren().at(-1)!
+      const timestamp = width! < 70
+        ? setup.renderer.root.findDescendantById("claude-session-age-1")!
+        : row.getChildren().at(-1)!
       assert.equal(timestamp.x + timestamp.width, picker.x + picker.width, "timestamps have no reserved right column")
+      if (width! < 70) {
+        const title = setup.renderer.root.findDescendantById("claude-session-title-1")!
+        const details = setup.renderer.root.findDescendantById("claude-session-details-1")!
+        assert.equal(details.y, title.y + 1, "status and age occupy the second line")
+        assert.equal(timestamp.y, details.y)
+        assert.match(setup.captureCharFrame(), /Permission required/, "mobile rows retain their status text")
+        opened = undefined
+        await setup.mockMouse.click(row.x, row.y + 1)
+        await setup.mockMouse.click(row.x, row.y + 1)
+        assert.equal(opened, "s0", "double-clicking the second line's padded gutter opens the session")
+      }
       assert.ok(scroll.height >= 2, `list remains usable at ${width}x${height}`)
       assert.ok(preview.y + preview.height <= picker.y + picker.height)
       assert.ok(approve.y + approve.height <= preview.y + preview.height)
@@ -382,7 +396,6 @@ test("mouse and keyboard selection stay correct across lifecycle reordering", { 
         assert.ok(button.x >= preview.x && button.x + button.width <= preview.x + preview.width, `${id} fits at ${width}x${height}`)
       }
       if (width! < 70) {
-        assert.doesNotMatch(setup.captureCharFrame(), /Approval required/)
         assert.match(setup.captureCharFrame(), /echo hello/)
         assert.match(setup.captureCharFrame(), /shell · 1\/1/)
         assert.match(setup.captureCharFrame(), /Allow\s+Deny\s+Always/)

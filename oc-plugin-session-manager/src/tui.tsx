@@ -372,7 +372,7 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
                 ) : null}
                 <box
                   id={`claude-session-row-${index}`}
-                  height={1}
+                  height={mobile() ? 2 : 1}
                   flexShrink={0}
                   flexDirection="row"
                   paddingLeft={0}
@@ -416,14 +416,15 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
                     })()}
                   </box>
                   <box
-                    height={1}
-                    flexDirection="row"
+                    height={mobile() ? 2 : 1}
+                    flexDirection="column"
                     flexGrow={1}
                     flexBasis={0}
                     minWidth={0}
                     overflow="hidden"
                     paddingLeft={Math.max(0, Math.min(option().depth, 4) * 2)}
                   >
+                    <box height={1} flexDirection="row" minWidth={0} flexShrink={0}>
                      <text id={`claude-session-title-${index}`} wrapMode="none" flexShrink={1} fg={titleColor()} attributes={active() ? TextAttributes.BOLD : undefined}>
                        {option().title}
                      </text>
@@ -448,18 +449,27 @@ export function SessionPicker(props: { context: Plugin.Context; controller?: Ses
                       ) : (
                         null
                       )
-                    })()}
+                     })()}
+                    </box>
+                    {mobile() && option().state !== "new" ? (
+                      <box id={`claude-session-details-${index}`} height={1} flexDirection="row" minWidth={0} flexShrink={0}>
+                        <text wrapMode="none" flexGrow={1} flexShrink={1} fg={iconColor()}>
+                          {"status" in option() ? (option() as { status?: string }).status ?? "" : ""}
+                        </text>
+                        <text id={`claude-session-age-${index}`} wrapMode="none" flexShrink={0} fg={descriptionColor()}>
+                          {` ${(option() as { updated?: string }).updated ?? ""}`}
+                        </text>
+                      </box>
+                    ) : null}
                   </box>
-                  {option().state !== "new" ? (
+                  {!mobile() && option().state !== "new" ? (
                     <>
                       {!mobile() && "value" in option() && rowPercents().get(option().value as string) ? (
                         <text flexShrink={0} fg={descriptionColor()}>{` ${rowPercents().get(option().value as string)}`}</text>
                       ) : null}
-                      <box width={mobile() ? 5 : 8} flexShrink={0} justifyContent="flex-end">
-                        <text wrapMode="none" fg={descriptionColor()}>
-                          {mobile()
-                            ? ((option() as { updated?: string }).updated ?? "").replace(" ago", "").padStart(5)
-                            : ((option() as { updated?: string }).updated ?? "").padStart(8)}
+                       <box width={8} flexShrink={0} justifyContent="flex-end">
+                         <text wrapMode="none" fg={descriptionColor()}>
+                           {((option() as { updated?: string }).updated ?? "").padStart(8)}
                         </text>
                       </box>
                     </>
