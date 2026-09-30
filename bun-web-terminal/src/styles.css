@@ -22,12 +22,13 @@ body {
 
 #terminal { position: relative; width: 100%; flex: 1; min-height: 0; overflow: hidden; }
 
-.terminal-keys { --key-size: 44px; display: none; flex: 0 0 auto; flex-direction: column; gap: 4px; padding: 4px 4px 0; border-top: 1px solid var(--muted); }
-.terminal-key-row { display: grid; grid-template-columns: repeat(3, minmax(var(--key-size), 1fr)) repeat(3, var(--key-size)); gap: 4px; overflow-x: auto; }
+.terminal-keys { --enter-width: clamp(52px, calc((100vw - 216px) / 2), 100px); display: none; flex: 0 0 auto; flex-direction: column; gap: 4px; padding: 4px 4px 0; border-top: 1px solid var(--muted); }
+.terminal-key-row { display: grid; gap: 4px; overflow-x: auto; }
 /* Share the right-hand tracks so Up stays directly above Down. */
-.terminal-key-row:first-child { margin-right: calc(var(--key-size) / 2); }
-.terminal-key-row:last-child { margin-inline: calc(var(--key-size) / 2); }
-.terminal-keys button { flex: 0 0 auto; min-width: 44px; min-height: 44px; border: 1px solid var(--muted); border-radius: 3px; color: var(--foreground); background: var(--background); touch-action: manipulation; }
+.terminal-key-row:first-child { grid-template-columns: repeat(3, 36px) minmax(44px, 1fr) 36px var(--enter-width); margin-right: 32px; }
+.terminal-key-row:last-child { grid-template-columns: 36px minmax(32px, 1fr) repeat(3, 36px) var(--enter-width); margin-inline: 32px; }
+.terminal-keys button { flex: 0 0 auto; min-width: 0; min-height: 44px; padding: 2px; border: 1px solid var(--muted); border-radius: 3px; color: var(--foreground); background: var(--background); touch-action: manipulation; }
+.terminal-keys button[data-key="Select"] { font-size: 12px; }
 .terminal-keys button[aria-pressed="true"] { color: var(--background); background: var(--accent); }
 .terminal-keys button svg { width: 20px; height: 20px; vertical-align: middle; }
 .terminal-keys button:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }

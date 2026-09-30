@@ -1,5 +1,15 @@
 # Browser verification blocker
 
+- 2026-09-29, Browser Control 0.8.2, session `quiet-falcon-026`, local
+  toolbar screenshot check: `ref("e17").click()` on a session link timed out
+  waiting for the generated nth-of-type + exact accessible-name locator, although
+  a fresh snapshot still showed the link. Expected navigation; page stayed on
+  the session list. Recovered using the inspected stable href locator. No relay
+  restart. A toolbar locator screenshot also captured blank pixels at browser
+  zoom 80%; full-page screenshots worked. `setViewportSize(390,844)` produced
+  a 488×1055 CSS viewport; setting 312×675 produced the intended 390×844 CSS
+  viewport. Use measured CSS geometry, not requested emulation dimensions.
+
 - 2026-09-11, Browser Control 0.7.0, session `lucky-comet-321`, disposable
   localhost:3107 mobile-zoom check: after `page.setViewportSize` and raw CDP
   `Emulation.setDeviceMetricsOverride` (390×844, mobile, DPR 3) plus

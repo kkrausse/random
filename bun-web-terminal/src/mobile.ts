@@ -29,13 +29,17 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
     button.textContent = label!;
     button.setAttribute("aria-label", key!.replace("Arrow", "Arrow "));
     button.title = label!;
-    if (key === "Keyboard" || key === "Microphone" || key === "Enter") {
-      // Lucide keyboard, mic, and corner-down-left icons (ISC license; see docs/third-party-notices.md).
+    if (key === "Keyboard" || key === "Microphone" || key === "Enter" || key === "Copy" || key === "Paste") {
+      // Lucide icons (ISC license; see docs/third-party-notices.md).
       button.innerHTML = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${key === "Keyboard"
         ? '<rect width="20" height="14" x="2" y="5" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M10 13h.01M14 13h.01M18 13h.01M8 17h8"/>'
         : key === "Microphone"
           ? '<path d="M12 19v3m-5 0h10M5 10v2a7 7 0 0 0 14 0v-2"/><rect x="9" y="2" width="6" height="12" rx="3"/>'
-          : '<path d="m9 10-5 5 5 5"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/>'}</svg>`;
+          : key === "Copy"
+            ? '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'
+            : key === "Paste"
+              ? '<rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>'
+              : '<path d="m9 10-5 5 5 5"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/>'}</svg>`;
     }
     if (key === "Control" || key === "Select") button.setAttribute("aria-pressed", "false");
     rows[Math.floor(index / 6)]!.append(button);
