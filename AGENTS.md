@@ -8,7 +8,7 @@ URL. Default to private unless the user explicitly requests public access.
 
 Private shelf: https://raspberrypi.tail7e28fb.ts.net/ (requires Tailscale connected).
 
-- HTML directory (must contain `index.html`): `scripts/deploy-artifact.sh /absolute/path/to/artifact optional-slug`
+- Any folder (no HTML required): `scripts/deploy-artifact.sh /absolute/path/to/artifact optional-slug`
 - Any single file: `scripts/deploy-artifact.sh /absolute/path/to/file optional-slug`
 - PDF converted to a mobile-readable page: `scripts/publish-pdf-artifact.sh /absolute/path/to/file.pdf optional-slug`
 - Public publishing: add `--public` before the input in either command.
