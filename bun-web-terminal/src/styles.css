@@ -22,13 +22,13 @@ body {
 
 #terminal { position: relative; width: 100%; flex: 1; min-height: 0; overflow: hidden; }
 
-.terminal-keys { --enter-width: clamp(52px, calc((100vw - 216px) / 2), 100px); display: none; flex: 0 0 auto; flex-direction: column; gap: 4px; padding: 4px 4px 0; border-top: 1px solid var(--muted); }
+.terminal-keys { display: none; flex: 0 0 auto; flex-direction: column; gap: 4px; padding: 4px 4px 0; border-top: 1px solid var(--muted); }
 .terminal-key-row { display: grid; gap: 4px; overflow-x: auto; }
-/* Share the right-hand tracks so Up stays directly above Down. */
-.terminal-key-row:first-child { grid-template-columns: repeat(3, 36px) minmax(44px, 1fr) 36px var(--enter-width); margin-right: 32px; }
-.terminal-key-row:last-child { grid-template-columns: 36px minmax(32px, 1fr) repeat(3, 36px) var(--enter-width); margin-inline: 32px; }
+/* Align Up (column 5 of 6) with Down (column 4 of 5), accounting for 4px gaps
+   and the bottom row's 40px side margins. Each row has equal-width buttons. */
+.terminal-key-row:first-child { grid-template-columns: repeat(6, minmax(0, 1fr)); margin-right: calc((100% + 324px) / 15); }
+.terminal-key-row:last-child { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-inline: 40px; }
 .terminal-keys button { flex: 0 0 auto; min-width: 0; min-height: 44px; padding: 2px; border: 1px solid var(--muted); border-radius: 3px; color: var(--foreground); background: var(--background); touch-action: manipulation; }
-.terminal-keys button[data-key="Select"] { font-size: 12px; }
 .terminal-keys button[aria-pressed="true"] { color: var(--background); background: var(--accent); }
 .terminal-keys button svg { width: 20px; height: 20px; vertical-align: middle; }
 .terminal-keys button:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }

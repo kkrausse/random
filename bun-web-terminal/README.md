@@ -85,8 +85,8 @@ Terminal pages reconnect automatically after network interruptions or a suspende
 ## Phone controls
 
 - Tap the terminal to click in a mouse-aware application. The click is sent only when you lift your finger without dragging. Swipe vertically to scroll the application or tmux history; gestures use the same wheel encoding and sensitivity as desktop scrolling. A small movement threshold distinguishes taps from drags, and lifting your finger stops scrolling.
-- A horizontally scrollable extra-keys bar appears on touch devices and narrow windows: **keyboard icon**, **microphone icon**, **Esc**, **Tab**, one-shot **Ctrl**, arrows, **Paste**, **Select**, and **Copy**. Tap **Ctrl**, then a letter (for example **C** to interrupt or **U** to clear the shell input). The keyboard icon explicitly opens/closes the software keyboard; terminal taps and extra keys leave keyboard focus alone. Touch devices do not autofocus on page load.
-- Hold a finger still on terminal text for half a second, then drag to select. Like desktop dragging, this sends mouse press/drag/release to mouse-aware applications such as OpenCode, which handle their own selection and copying. At the shell or in applications without mouse support, it highlights locally; tap **Copy** after release. The next swipe scrolls normally. Moving before the hold completes scrolls instead of selecting. Alternatively, tap **Select** to force persistent local drag-to-select mode (and use **Copy**) even in mouse-aware applications; toggle it off to resume swipe scrolling.
+- A two-row extra-keys bar appears on touch devices and narrow windows: **keyboard icon**, **microphone icon**, **Esc**, **Enter**, one-shot **Ctrl**, arrows, and **Paste**/**Copy** icons. Buttons have equal widths within each row; the bottom row is inset from the sides. Tap **Ctrl**, then a letter (for example **C** to interrupt or **U** to clear the shell input). The keyboard icon explicitly opens/closes the software keyboard; terminal taps and extra keys leave keyboard focus alone. Touch devices do not autofocus on page load.
+- Hold a finger still on terminal text for half a second, then drag to select. Like desktop dragging, this sends mouse press/drag/release to mouse-aware applications such as OpenCode, which handle their own selection and copying. At the shell or in applications without mouse support, it highlights locally; tap **Copy** after release. The next swipe scrolls normally. Moving before the hold completes scrolls instead of selecting.
 - **Paste** uses the browser clipboard and the terminal's bracketed-paste handling. It needs HTTPS (or localhost) and browser clipboard permission; use the phone keyboard's paste action if access is unavailable.
 - The terminal fits the visible viewport above the software keyboard and sends the updated dimensions to tmux. The existing engine handles mobile text/composition input with autocorrect and capitalization disabled.
 
@@ -124,7 +124,10 @@ runs on the Mac. Only one remote recording can run at once.
 
 Whole words are pasted live at the application's current cursor, with the pending
 word previewed above the bar. Finalization releases the tail once. Dictation
-never sends Enter and removes terminal controls/newlines from dictated text. Stop
+removes terminal controls/newlines from dictated text. Pressing Enter during
+dictation stops recording, waits for the final transcript, then sends Enter once;
+failed or revised transcripts are not automatically submitted. Tapping Stop alone
+does not send Enter. Stop
 before moving the application's cursor or changing contexts. If the model revises
 an observed prefix, automatic insertion stops and the final transcript remains
 in the selectable preview for recovery.

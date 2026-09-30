@@ -19,7 +19,7 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
     ["Keyboard", "Keyboard"],
     ["Microphone", "Start dictation"],
     ["Escape", "Esc"], ["Control", "Ctrl"], ["ArrowUp", "↑"], ["Enter", "Enter"],
-    ["Paste", "Paste"], ["Select", "Select"], ["Copy", "Copy"],
+    ["Paste", "Paste"], ["Copy", "Copy"],
     ["ArrowLeft", "←"], ["ArrowDown", "↓"], ["ArrowRight", "→"],
   ];
   for (const [index, [key, label]] of keys.entries()) {
@@ -41,12 +41,11 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
               ? '<rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>'
               : '<path d="m9 10-5 5 5 5"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/>'}</svg>`;
     }
-    if (key === "Control" || key === "Select") button.setAttribute("aria-pressed", "false");
+    if (key === "Control") button.setAttribute("aria-pressed", "false");
     rows[Math.floor(index / 6)]!.append(button);
   }
   container.after(toolbar);
   let control = false;
-  let selecting = false;
   const setControl = (value: boolean) => {
     control = value;
     toolbar.querySelector('[data-key="Control"]')!.setAttribute("aria-pressed", String(value));
@@ -89,13 +88,6 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
       else focus();
       return;
     }
-    if (key === "Select") {
-      selecting = !selecting;
-      toolbar.querySelector('[data-key="Select"]')!.setAttribute("aria-pressed", String(selecting));
-      if (selecting) { terminal.textarea?.blur(); notice("Drag to select · then tap Copy"); }
-      else terminal.clearSelection();
-      return;
-    }
     if (key === "Copy") {
       const text = terminal.getSelection();
       if (!text) { notice("Select text first"); return; }
@@ -117,7 +109,7 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
     }));
   });
 
-  installTerminalTouchControls(container, terminal, () => selecting, notice);
+  installTerminalTouchControls(container, terminal, () => false, notice);
 
   // visualViewport shrinks with the software keyboard even when 100dvh does not.
   const viewport = window.visualViewport;
@@ -142,6 +134,10 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
 
   return {
     input(data: string) {
+      if ((data === "\r" || data === "\n") && dictation.submitAfterStop(() => {
+        setControl(false);
+        connection.input(data);
+      })) return "";
       if (!control) return data;
       setControl(false);
       if (data.length !== 1) return data;

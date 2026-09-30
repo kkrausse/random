@@ -26,6 +26,7 @@ test("records before ready, paces by inference acks, and replays after disconnec
   const states: DictationState[] = [];
   const startup: string[] = [];
   const warm: boolean[] = [];
+  const submitted: string[] = [];
   let modules = 0;
   let microphoneRequests = 0;
   let microphoneStopped = false;
@@ -89,6 +90,7 @@ test("records before ready, paces by inference acks, and replays after disconnec
   });
   expect(modules).toBe(1);
   expect(microphoneRequests).toBe(0);
+  expect(controller.submitAfterStop(() => submitted.push(pastes.join("")))).toBe(false);
   controller.toggle();
   await until(() => !!node);
   expect(modules).toBe(1);
@@ -118,12 +120,15 @@ test("records before ready, paces by inference acks, and replays after disconnec
   expect(second.sent.filter(value => value instanceof Uint8Array)).toHaveLength(12);
   second.emit({ type: "partial", recordingId: secondId, sequence: 1, text: "hello " });
   expect(pastes).toEqual(["hello "]);
-  controller.toggle();
+  expect(controller.submitAfterStop(() => submitted.push(pastes.join("")))).toBe(true);
+  expect(controller.submitAfterStop(() => submitted.push("duplicate"))).toBe(true);
   await until(() => states.at(-1) === "finishing");
   for (let i = 1; i <= 16; i++) second.emit({ type: "ack", recordingId: secondId, sequence: i + 1, bytes: i * 5120 });
   await until(() => typeof second.sent.at(-1) === "string" && JSON.parse(second.sent.at(-1) as string).type === "stop");
   second.emit({ type: "final", recordingId: secondId, sequence: 18, text: "hello world" });
+  expect(submitted).toEqual([]);
   second.emit({ type: "done", recordingId: secondId, sequence: 19 });
+  expect(submitted).toEqual(["hello world"]);
   expect(pastes).toEqual(["hello ", "world"]);
   expect(states.at(-1)).toBe("idle");
   expect(warm.at(-1)).toBe(true);
@@ -136,8 +141,10 @@ test("records before ready, paces by inference acks, and replays after disconnec
   expect(microphoneRequests).toBe(1);
   expect(track.enabled).toBe(true);
   expect(warm.at(-1)).toBe(false);
+  expect(controller.submitAfterStop(() => submitted.push("canceled"))).toBe(true);
   attachment = undefined;
   attachmentListener();
   controller.cancel();
   expect(microphoneStopped).toBe(true);
+  expect(submitted).toEqual(["hello world"]);
 });

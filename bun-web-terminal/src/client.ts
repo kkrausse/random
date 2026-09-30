@@ -278,7 +278,8 @@ async function startTerminalPage() {
       tmuxSelectionActive = false;
       pendingTmuxCopy = false;
     }
-    connection.input(mobile.input(routed));
+    const input = mobile.input(routed);
+    if (input) connection.input(input);
   });
   terminal.onResize(() => connection.resize());
   // Ctrl+V belongs to the terminal (e.g. Emacs scroll-down); paste remains Cmd+V

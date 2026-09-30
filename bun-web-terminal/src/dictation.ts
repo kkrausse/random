@@ -17,6 +17,7 @@ type Recording = {
   context: AudioContext; stream?: MediaStream; node?: AudioWorkletNode; source?: MediaStreamAudioSourceNode;
   socket?: WebSocket; timer?: ReturnType<typeof setTimeout>; retry?: ReturnType<typeof setTimeout>;
   transcript: TranscriptPipeline; chunks: Uint8Array[]; bytes: number;
+  submit?: () => void;
   sent: number; acknowledged: number; ready: boolean; capturing: boolean; drained: boolean; stopping: boolean; stopSent: boolean; attempts: number;
 };
 
@@ -146,6 +147,15 @@ export class DictationController {
     } catch (error) { this.error(error); }
   }
 
+  submitAfterStop(submit: () => void) {
+    const r = this.recording;
+    if (!r) return false;
+    // Repeated Enter presses while flushing must never submit more than once.
+    r.submit ??= submit;
+    if (!r.stopping) this.stop(r);
+    return true;
+  }
+
   private async startAudio(r: Recording, resumed: Promise<void>, permission: Promise<MediaStream>, module: Promise<void>) {
     try {
       void resumed.catch(error => { if (this.recording === r) this.error(error); });
@@ -244,7 +254,12 @@ export class DictationController {
           socket.close();
         }
         if (event.type === "done") {
-          if (this.connection.attachment) this.cleanup(r, "idle");
+          if (this.connection.attachment) {
+            const submit = r.transcript.diverged ? undefined : r.submit;
+            this.cleanup(r, "idle");
+            if (r.submit && !submit) this.view.notice("Transcript revised · review it before sending");
+            submit?.();
+          }
           else socket.close();
         }
       } catch (error) { this.error(error); }
