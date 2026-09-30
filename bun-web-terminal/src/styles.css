@@ -30,8 +30,6 @@ body {
 .terminal-keys button[data-state="error"], .terminal-keys button[data-state="unavailable"] { color: var(--danger); }
 .terminal-keys button[data-warm="true"] { border-color: var(--accent); }
 .terminal-keys button span:not(:empty) { margin-left: 4px; }
-.terminal-keys .dictation-warm { align-self: center; flex: 0 0 auto; color: var(--accent); font-size: 11px; white-space: nowrap; }
-.terminal-keys .dictation-warm[hidden] { display: none; }
 .dictation-preview { flex: 0 0 auto; max-height: 25vh; overflow: auto; padding: 4px 8px; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 .dictation-preview:empty { display: none; }
 @media (any-pointer: coarse), (max-width: 600px) {

@@ -47,12 +47,6 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
   preview.setAttribute("role", "status");
   toolbar.before(preview);
   const microphone = toolbar.querySelector<HTMLButtonElement>('[data-key="Microphone"]')!;
-  const warmIndicator = document.createElement("span");
-  warmIndicator.className = "dictation-warm";
-  warmIndicator.textContent = "Mic on · muted";
-  warmIndicator.title = "Microphone stays open for up to 30 seconds after Stop";
-  warmIndicator.hidden = true;
-  microphone.after(warmIndicator);
   let warm = false;
   const dictation = new DictationController(connection, {
     clearControl: () => setControl(false), paste: text => terminal.paste(text), notice,
@@ -61,7 +55,6 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
     warm(active) {
       warm = active;
       microphone.dataset.warm = String(active);
-      warmIndicator.hidden = !active;
       if (microphone.dataset.state === "idle") microphone.setAttribute("aria-label", active ? "Start dictation · microphone on and muted" : "Start dictation");
     },
     state(state) {
