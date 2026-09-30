@@ -18,10 +18,9 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
   const keys = [
     ["Keyboard", "Keyboard"],
     ["Microphone", "Start dictation"],
-    ["Escape", "Esc"], ["Enter", "Enter"], ["Control", "Ctrl"],
-    ["Paste", "Paste"],
-    ["ArrowUp", "↑"], ["ArrowDown", "↓"], ["ArrowLeft", "←"], ["ArrowRight", "→"],
-    ["Select", "Select"], ["Copy", "Copy"],
+    ["Escape", "Esc"], ["Control", "Ctrl"], ["ArrowUp", "↑"], ["Enter", "Enter"],
+    ["Paste", "Paste"], ["Select", "Select"], ["Copy", "Copy"],
+    ["ArrowLeft", "←"], ["ArrowDown", "↓"], ["ArrowRight", "→"],
   ];
   for (const [index, [key, label]] of keys.entries()) {
     const button = document.createElement("button");
