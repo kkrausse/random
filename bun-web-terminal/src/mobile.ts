@@ -10,14 +10,20 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
   toolbar.className = "terminal-keys";
   toolbar.setAttribute("role", "group");
   toolbar.setAttribute("aria-label", "Terminal extra keys");
+  const rows = [document.createElement("div"), document.createElement("div")];
+  for (const row of rows) {
+    row.className = "terminal-key-row";
+    toolbar.append(row);
+  }
   const keys = [
     ["Keyboard", "Keyboard"],
     ["Microphone", "Start dictation"],
     ["Escape", "Esc"], ["Enter", "Enter"], ["Control", "Ctrl"],
+    ["Paste", "Paste"],
     ["ArrowUp", "↑"], ["ArrowDown", "↓"], ["ArrowLeft", "←"], ["ArrowRight", "→"],
-    ["Paste", "Paste"], ["Select", "Select"], ["Copy", "Copy"],
+    ["Select", "Select"], ["Copy", "Copy"],
   ];
-  for (const [key, label] of keys) {
+  for (const [index, [key, label]] of keys.entries()) {
     const button = document.createElement("button");
     button.type = "button";
     button.dataset.key = key;
@@ -33,7 +39,7 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
           : '<path d="m9 10-5 5 5 5"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/>'}</svg>`;
     }
     if (key === "Control" || key === "Select") button.setAttribute("aria-pressed", "false");
-    toolbar.append(button);
+    rows[Math.floor(index / 6)]!.append(button);
   }
   container.after(toolbar);
   let control = false;
