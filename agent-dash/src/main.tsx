@@ -32,7 +32,25 @@ type Client = {
   shownAt: number;
   /** Tail of the output, to explain a failed ssh. */
   tail: string;
+  /** The harness asked for mouse reports, so it draws (and copies) its own selection. */
+  mouse: boolean;
+  /** An escape sequence split across output chunks, kept for the next chunk. */
+  carry: string;
 };
+
+// Harness output the dashboard acts on: mouse reporting on/off (DECSET 1000/1002/1003) and OSC 52
+// clipboard writes, which the embedded terminal doesn't pass on to the real terminal.
+const MOUSE_MODE = /\x1b\[\?([\d;]+)([hl])/g;
+const OSC52 = /\x1b\]52;[^;\x07\x1b]*;([A-Za-z0-9+/=]*)(?:\x07|\x1b\\)/g;
+const MOUSE_PARAMS = new Set(["1000", "1002", "1003"]);
+
+/** The unfinished escape sequence at the end of `text`, if any. */
+function unfinished(text: string): string {
+  const osc = text.lastIndexOf("\x1b]52;");
+  if (osc >= 0 && !/\x07|\x1b\\/.test(text.slice(osc))) return text.slice(osc, osc + 1_000_000);
+  const esc = text.lastIndexOf("\x1b");
+  return esc >= 0 && /^\x1b(\[\??[\d;]*|\]5?2?)?$/.test(text.slice(esc)) ? text.slice(esc) : "";
+}
 
 const isBackKey = (key: KeyEvent) => key.sequence === "\x1d" || (key.ctrl && key.name === "]");
 
@@ -132,9 +150,24 @@ function App(props: { store: DashStore }) {
       maxScrollback: 5000,
       onData: (d) => proc?.terminal?.write(d),
       onTerminalResize: (c, r) => proc?.terminal?.resize(c, r),
+      // The dashboard's own selection (only when the harness doesn't take the mouse) is copied on release.
+      onMouseUp: () => {
+        if (et.hasSelection()) renderer.copyToClipboardOSC52(et.getSelectedText());
+      },
     });
     host.add(et);
-    const c: Client = { session: s, et, proc: undefined!, shownAt: Date.now(), tail: "" };
+    const c: Client = { session: s, et, proc: undefined!, shownAt: Date.now(), tail: "", mouse: false, carry: "" };
+    // Mouse drags go to the harness either way; only select here when the harness isn't handling them,
+    // otherwise both draw a highlight over the same cells.
+    const canSelect = et.shouldStartSelection.bind(et);
+    et.shouldStartSelection = (x, y) => !c.mouse && canSelect(x, y);
+    const scan = (chunk: string) => {
+      const text = c.carry + chunk;
+      for (const [, params, set] of text.matchAll(MOUSE_MODE))
+        if (params!.split(";").some((p) => MOUSE_PARAMS.has(p))) c.mouse = set === "h";
+      for (const [, b64] of text.matchAll(OSC52)) renderer.copyToClipboardOSC52(Buffer.from(b64!, "base64").toString("utf8"));
+      c.carry = unfinished(text);
+    };
     // Store values are proxies; Bun.spawn needs a plain array.
     const cmd = on(m, [...s.open!.cmd], { cwd: s.open!.cwd, tty: true });
     proc = Bun.spawn(cmd, {
@@ -145,7 +178,9 @@ function App(props: { store: DashStore }) {
         rows,
         data: (_t, d) => {
           et.write(d);
-          c.tail = (c.tail + new TextDecoder().decode(d)).slice(-2000);
+          const text = new TextDecoder().decode(d);
+          c.tail = (c.tail + text).slice(-2000);
+          scan(text);
         },
       },
     });
