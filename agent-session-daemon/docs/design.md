@@ -220,7 +220,11 @@ too. They cannot be chatted with.
 Passive. `opencode serve` owns sessions, liveness, the event stream and
 pending permissions, so this adapter holds no state of its own.
 
-- Attach to the machine's existing `opencode serve` rather than spawning one,
+- Target OpenCode 2.x and `@opencode/client`. OpenCode 2 runs one shared
+  background service per user (`opencode serve --service`; URL from
+  `opencode service status`). A plain `opencode serve --port N` is a separate
+  private server and does not join it.
+- Attach to that background service rather than spawning one,
   so sessions from my normal OpenCode TUI show up. Spawn only if none is
   running.
 - `list`, `read`, `create`, `send`, `interrupt` map to the OpenCode SDK.

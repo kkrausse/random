@@ -400,6 +400,36 @@ terminal sessions as rows that can be approved but not chatted with.
 
 Both Paseo and T3 Code chose the SDK, not the supervisor.
 
+## OpenCode 2 changes the picture
+
+I run OpenCode 2.x (`opencode v2.0.19`), which differs from the 1.x that
+both projects were built around.
+
+- **OpenCode 2 has its own shared daemon.** Per its CLI docs: "OpenCode
+  discovers or starts one shared background server for your user account.
+  Every local OpenCode client connects to that server." It runs as
+  `opencode serve --service`; `opencode service status` prints its URL.
+- **A plain `opencode serve --port N` does not join it.** Tested locally: it
+  started a separate process with its own port and password (about 160 MB at
+  startup) and left the background service untouched. So anything that
+  spawns `opencode serve` gets a private server, with no consolidation.
+- **The 2.x server API is a breaking change.** The migration guide says
+  integrations on the V1 API "must migrate" and use `@opencode/client`.
+
+| | OpenCode 2 support | How it gets a server |
+|---|---|---|
+| T3 Code | None found: depends on `@opencode-ai/sdk` ^1.3.15 only | spawns `opencode serve` per thread |
+| Paseo | Yes, auto-selected from the installed version, via `@opencode/client` | spawns one private `opencode serve --port 0` |
+| Own daemon | `@opencode/client`, as `oc-plugin-session-manager` already uses | attaches to the shared background service |
+
+- T3 Code's OpenCode adapter most likely does not work with OpenCode 2 at
+  all. Not run, but the source has no 2.x client and the API is breaking.
+- Paseo works with 2.x but runs a second server beside the background
+  service. Whether sessions from my own OpenCode TUI appear in it is
+  unverified.
+- Only the own-daemon design uses the server that is already running, which
+  costs nothing extra and by construction shows my TUI's sessions.
+
 ## Unverified
 
 - Neither daemon was run; everything is from source and docs.
