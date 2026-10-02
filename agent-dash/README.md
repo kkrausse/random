@@ -37,8 +37,11 @@ All ssh traffic to a host shares one connection (ControlMaster sockets in
 
 ## List
 
-Sections: **Needs input**, **Finished** (done, failed, interrupted, never prompted),
-**Working**, **Archived** (collapsed; tab shows it). A session is archived when its
+Sections: **Working**, **Needs input**, **Finished** (done, failed, interrupted, never
+prompted), **Archived** (collapsed; tab shows it). Working is ordered by when each session
+started working, so one you just answered lands at its bottom, next to Needs input.
+In a session pane, mouse drags go to the harness, which draws and copies its own selection;
+for harnesses that don't take the mouse, the dashboard selects and copies on release. A session is archived when its
 harness archived it, you archived it here, or it is finished and untouched for 7
 days. Rows are labelled `machine·harness`; the footer lists sources with problems
 (red) and harnesses that aren't there (dim: not installed, unsupported, not running).

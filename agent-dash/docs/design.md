@@ -120,7 +120,16 @@ loop record.
 
 ## UI
 
-Sections Needs input → Finished → Working → Archived (collapsed). Order within a
+Sections Working → Needs input → Finished → Archived (collapsed). Order within a
 section is frozen once every source answered (or after 5 s); live updates move
-badges and sections, never positions within a section. Panes not shown for 15
+badges and sections, never positions within a section. Working is the exception:
+it is ordered by when each session was first seen working, so a newly working
+session joins its bottom.
+
+Inside a pane, mouse drags always go to the harness. The dashboard watches the
+harness output for mouse reporting (DECSET 1000/1002/1003): while it is on, the
+harness draws and copies its own selection and the dashboard's selection is off;
+while it is off, the dashboard selects and copies on release. OSC 52 clipboard
+writes from the harness are re-sent to the real terminal, since the embedded
+terminal doesn't pass them on. Panes not shown for 15
 minutes are closed (agents keep running in their daemons).

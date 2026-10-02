@@ -1,6 +1,7 @@
 // Session list across machines and harnesses, modeled on paseo-tui's list: 1-cell status gutter,
-// sections Needs input → Finished → Working → Archived, order within a section frozen while open
-// so live updates change badges (and sections) but never shuffle rows.
+// sections Working → Needs input → Finished → Archived, order within a section frozen while open
+// so live updates change badges (and sections) but never shuffle rows. Working is ordered by when
+// each session started working, so one you just answered lands at its bottom, next to Needs input.
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/solid";
 import { Index, Show, createEffect, createMemo, createSignal } from "solid-js";
@@ -13,11 +14,14 @@ import { relTime, shortPath } from "./format.ts";
 
 type Section = "needs" | "finished" | "working" | "archived";
 const SECTIONS: { id: Section; label: string }[] = [
+  { id: "working", label: "Working" },
   { id: "needs", label: "Needs input" },
   { id: "finished", label: "Finished" },
-  { id: "working", label: "Working" },
   { id: "archived", label: "Archived" },
 ];
+
+// When each session was first seen working (its updatedAt then); outlives list remounts.
+const workingSince = new Map<string, number>();
 const HEADER_H = 2;
 
 const sectionOf = (s: Session, archived: boolean): Section =>
@@ -75,6 +79,17 @@ export function SessionList(props: {
   });
   const order = (a: Session, b: Session) =>
     frozen.size ? (frozen.get(a.key) ?? -1) - (frozen.get(b.key) ?? -1) || liveOrder(a, b) : liveOrder(a, b);
+  createEffect(() => {
+    const working = new Set<string>();
+    for (const s of all())
+      if (s.status === "working") {
+        working.add(s.key);
+        if (!workingSince.has(s.key)) workingSince.set(s.key, s.updatedAt);
+      }
+    for (const k of workingSince.keys()) if (!working.has(k)) workingSince.delete(k);
+  });
+  const since = (s: Session) => workingSince.get(s.key) ?? s.updatedAt;
+  const workingOrder = (a: Session, b: Session) => since(a) - since(b) || a.key.localeCompare(b.key);
 
   const view = createMemo(() => {
     const q = filter().toLowerCase();
@@ -86,7 +101,7 @@ export function SessionList(props: {
     const items: Item[] = [];
     const list: Session[] = [];
     for (const { id } of SECTIONS) {
-      const rows = by.get(id)!.sort(order);
+      const rows = by.get(id)!.sort(id === "working" ? workingOrder : order);
       if (!rows.length) continue;
       items.push({ header: id, count: rows.length });
       if (id === "archived" && !showArchived() && !q) continue;
