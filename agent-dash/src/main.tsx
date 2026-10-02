@@ -48,6 +48,8 @@ function App(props: { store: DashStore }) {
   const [lastPick, setLastPick] = createSignal<Provider>();
   const [live, setLive] = createSignal<ReadonlySet<string>>(new Set());
   const [freshKeys, setFreshKeys] = createSignal<ReadonlySet<string>>(new Set());
+  // Used new chats whose session the poller hasn't reported yet.
+  const [pending, setPending] = createSignal<Session[]>([]);
   // Remount the list on return so it re-sorts with fresh status.
   const [mount, setMount] = createSignal({ n: 0, selected: undefined as string | undefined, flash: undefined as string | undefined });
   let host!: BoxRenderable;
@@ -56,6 +58,7 @@ function App(props: { store: DashStore }) {
     const alive = [...clients.values()].filter((c) => c.exited === undefined);
     setLive(new Set(alive.map((c) => c.session.key)));
     setFreshKeys(new Set(alive.filter((c) => c.fresh).map((c) => c.session.key)));
+    setPending(alive.filter((c) => c.claim && !c.fresh).map((c) => c.session));
   };
   const cachedFresh = (h: Provider) => [...clients.values()].find((c) => c.fresh === h && c.exited === undefined);
 
@@ -182,6 +185,11 @@ function App(props: { store: DashStore }) {
   useKeyboard((key) => {
     const c = view();
     if (!c) return;
+    // Submitting text makes a new chat a real one: "back" now goes to the list, not the picker.
+    if (c.fresh && key.name === "return" && !key.shift && !atPromptStart(c.et)) {
+      c.fresh = undefined;
+      syncLive();
+    }
     const plainLeft = key.name === "left" && !key.ctrl && !key.meta && !key.shift && !key.option;
     // ctrl+c on an idle empty prompt would quit the client (opencode/codex) or arm Claude's exit;
     // treat it as "back" instead. Mid-turn or with text typed it passes through to clear/interrupt.
@@ -210,6 +218,7 @@ function App(props: { store: DashStore }) {
               onNew={() => setScreen("new")}
               live={live}
               hidden={freshKeys}
+              extra={pending}
               onOpen={open}
               onQuit={quit}
             />

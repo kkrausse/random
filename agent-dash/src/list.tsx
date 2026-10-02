@@ -22,6 +22,8 @@ export function SessionList(props: {
   live: () => ReadonlySet<string>;
   /** Unused new chats; kept out of the list. */
   hidden: () => ReadonlySet<string>;
+  /** Rows for used new chats the poller hasn't reported yet. */
+  extra: () => Session[];
   onOpen: (s: Session) => void;
   onNew: () => void;
   onQuit: () => void;
@@ -42,7 +44,7 @@ export function SessionList(props: {
   let scroll: ScrollBoxRenderable | undefined;
 
   const now = Date.now();
-  const all = createMemo(() => PROVIDERS.flatMap((p) => state.sessions[p]).filter((s) => !props.hidden().has(s.key)));
+  const all = createMemo(() => [...props.extra(), ...PROVIDERS.flatMap((p) => state.sessions[p]).filter((s) => !props.hidden().has(s.key))]);
   const ready = () => PROVIDERS.every((p) => state.loaded[p]);
 
   // Frozen once every provider has answered; until then rows sort live.
