@@ -419,8 +419,21 @@ What Anthropic's published text says:
 - June 2026, after pausing a planned billing change: "ACP usage, `claude -p`,
   the Claude Agent SDK, and third-party apps built on the Agent SDK continue
   to work with Claude subscriptions exactly as they did before."
-- Prohibited since February 2026: reusing subscription OAuth tokens in
-  third-party tools, and developers offering Claude login in their products.
+- Prohibited: reusing subscription OAuth tokens in third-party tools, and
+  developers offering Claude login in their products.
+
+That is today's text. The 2026 history is less comfortable:
+
+| When | What Anthropic did |
+|---|---|
+| Jan | Third-party tools reusing subscription logins start failing; accounts banned for "gaming" pricing |
+| Feb | Legal page: subscription tokens "in any other product, tool, or service — including the Agent SDK — is not permitted" |
+| Apr 4 | Subscriptions stop covering third-party tools, OpenCode named |
+| May 13 | Reversed: third-party use allowed again through the Agent SDK, with a separate metered credit planned for June 15 |
+| Jun 15 | Credit plan paused; Agent SDK use draws from plan limits as before |
+
+So tier 2 below is permitted now, but the same category was prohibited for
+about three months this year.
 
 Risk ladder, lowest first:
 
@@ -432,9 +445,37 @@ Risk ladder, lowest first:
    heavy unattended volume. Avoid.
 4. Any plugin that reads or reuses the subscription token. Prohibited.
 
-The live risk at tier 2 is a billing change, not a ban: Anthropic has said
-it is reworking how subscriptions cover Agent SDK use and will give notice.
-The policy changed three times in 2026, so re-check before relying on it.
+The live risk at tier 2 is a policy or billing reversal more than a ban:
+Anthropic has said it is reworking how subscriptions cover Agent SDK use and
+will give notice. Re-check before relying on it.
+
+#### `opencode-claude` 1.3.4, read from the published package
+
+- Only dependency besides `zod` is `@anthropic-ai/claude-agent-sdk`.
+- No Anthropic API host anywhere; the only URLs are `127.0.0.1`, the
+  official install script and `claude.com`.
+- Never reads a token. It deletes `ANTHROPIC_API_KEY`,
+  `ANTHROPIC_AUTH_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN` from the child
+  environment so the CLI's own login is used, and stores only a placeholder
+  in OpenCode. Sign-in relays `claude auth login`.
+- No account rotation, no header or client spoofing.
+- Chat turns keep the `claude_code` system prompt preset, with instructions
+  appended.
+- Every chat turn sets `tools: []`, `permissionMode: "bypassPermissions"`
+  and `allowDangerouslySkipPermissions: true`. Claude Code's built-in tools
+  and its permission layer are off; OpenCode's permission system is the only
+  gate. These are SDK options, but the README does not mention them.
+- Titles and compaction summaries run as separate one-shot turns on a small
+  model with a custom system prompt.
+
+Rating: tier 2, at its upper edge.
+
+- Ban risk today: low. It follows today's published rules and handles no
+  credentials.
+- Risk of losing subscription coverage: moderate. It is exactly the pattern
+  restricted from February to May, with OpenCode named.
+- Slightly above Paseo or T3 Code, which run Claude Code with its own tools
+  and permission layer intact.
 
 ### C. Fork Paseo or T3 Code
 
