@@ -343,6 +343,35 @@ Against the goals:
 client per pane costs too much, even when the OpenCode client attaches to a
 shared server. See the next section.
 
+#### Variant: one pane per harness per machine
+
+Avoids the per-session cost: each pane runs that harness's own sessions
+view rather than one session.
+
+- Claude pane: `claude agents`, which lists every background session on
+  that machine with Working / Needs input, and lets me peek, reply and
+  dispatch. Sessions run under Claude Code's own supervisor.
+- OpenCode pane: one `opencode` TUI with `oc-plugin-session-manager`, whose
+  picker and inbox already cover that machine's sessions.
+- herdr only federates the panes across machines over SSH.
+
+Cost is two TUI clients per machine, fixed, regardless of session count.
+For Claude this uses official surfaces only, so it is the lowest ToS tier.
+
+Limits:
+
+- herdr tracks state per pane and assumes one agent per pane, so its sidebar
+  cannot show per-session status for a sessions-view pane. The status lives
+  inside each pane. A custom integration could report a rolled-up state per
+  pane (untested).
+- No single list across machines and harnesses, and no cross-machine inbox;
+  it is 2 x N panes to look at.
+- Splitting sessions into their own panes brings back a full client each.
+- Plain `tmux` over SSH gives nearly the same thing.
+
+Useful as a zero-build baseline, and as the fallback if subscription rules
+tighten again.
+
 ## Processes per session
 
 The cost that ruled out herdr, applied to the others.
