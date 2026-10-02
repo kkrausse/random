@@ -148,6 +148,52 @@ The Claude adapter sizes are the useful warning: the happy path is a few
 hundred lines, and the rest is edge cases (plan mode, questions, subagents,
 resume cursors, aborts). A self-built adapter starts small and grows.
 
+## API stability for a third-party UI
+
+| | Paseo | T3 Code |
+|---|---|---|
+| Client package | `@getpaseo/client`, published on npm | `@t3tools/contracts`, `@t3tools/client-runtime`, both `private`, unpublished |
+| Stated supported surface | Yes: the package root is "the supported SDK surface" | None |
+| Compatibility policy | Written: wire schema changes are append-only, both directions, with capability flags | Capability flags exist; no promise to outside clients |
+| Version | pre-1.0 (0.11 beta) | 0.0.44 |
+| Docs for building on it | `public-docs/sdk/*` | Internal docs only |
+| Known gap | Paseo's own CLI mostly uses the unsupported `internal/daemon-client` import, so the public surface may be incomplete | Must vendor from a git checkout and re-sync by hand |
+| Replay for a UI | Client refetches after its last cursor | Server replays from `afterSequence` |
+
+Paseo is the only one that treats outside clients as a supported use. T3 Code
+is usable but means pinning a commit and owning the upgrade.
+
+## Telemetry and outbound calls
+
+Checked by grepping server, client, CLI and protocol packages; not a full
+network audit.
+
+**T3 Code** sends product analytics to PostHog, on by default.
+
+- `apps/server/src/telemetry/AnalyticsService.ts` posts batches to
+  `https://us.i.posthog.com` with a built-in project key.
+- The identifier is a SHA-256 hash of, in order: the Codex account ID from
+  `~/.codex/auth.json`, the Claude user ID from `~/.claude.json`, or a random
+  installation ID.
+- Events: server boot heartbeat, client connected, thread started, turn
+  requested, session started/stopped, turn completed. Properties include
+  provider, model, reasoning effort, permission mode, duration and token
+  totals. Its docs state prompts, responses and file contents are not sent.
+- **Off switch:** `T3CODE_TELEMETRY_ENABLED=false` in the server's
+  environment. With it off, nothing is recorded or sent.
+- Not audited: its OpenTelemetry observability layer, desktop update checks,
+  and T3 Connect (Clerk sign-in plus relay), which is opt-in.
+
+**Paseo** has no analytics in the daemon, client, CLI or protocol packages:
+no PostHog, Sentry or similar dependency, and no telemetry code found.
+
+- The one default outbound service is the relay (`relay.paseo.sh`), which is
+  enabled unless configured off. Disable it and bind to the tailnet instead.
+- `https://app.paseo.sh` is in the default allowed origins for the hosted web
+  app; irrelevant with a custom client but worth removing.
+- Not checked: the Expo app and bundled plugins, which a custom TUI would not
+  run.
+
 ## Options
 
 ### A. TUI on `@getpaseo/client` (recommended first)
