@@ -5,6 +5,7 @@ import { statSync, readFileSync } from "node:fs";
 import type { Session, Status } from "./session.ts";
 
 type Entry = {
+  pid?: number;
   id?: string;
   sessionId: string;
   kind: "background" | "interactive";
@@ -28,6 +29,13 @@ function jobState(id: string): { mtime: number; detail?: string; needs?: string 
   }
 }
 
+// Paseo runs Claude headless (stream-json, no TTY); its sessions are only answerable from paseotui.
+function underPaseo(pid: number | undefined): boolean {
+  if (!pid) return false;
+  const ppid = Bun.spawnSync(["ps", "-o", "ppid=", "-p", String(pid)]).stdout.toString().trim();
+  return !!ppid && Bun.spawnSync(["ps", "-o", "comm=", "-p", ppid]).stdout.toString().includes("Paseo");
+}
+
 export async function listClaude(): Promise<Session[]> {
   const p = Bun.spawn(["claude", "agents", "--json", "--all"], { stdout: "pipe", stderr: "pipe" });
   const out = await new Response(p.stdout).text();
@@ -46,11 +54,12 @@ export async function listClaude(): Promise<Session[]> {
       : e.state === "done" ? "done"
       : "";
     const bg = e.kind === "background" && e.id;
+    const paseo = !bg && underPaseo(e.pid);
     return {
       provider: "claude",
       key: `claude:${e.sessionId}`,
       id: e.id ?? e.sessionId,
-      title: e.name ?? e.sessionId.slice(0, 8),
+      title: (e.name ?? e.sessionId.slice(0, 8)) + (paseo ? " (paseo)" : ""),
       cwd: e.cwd,
       status,
       detail,
@@ -58,8 +67,8 @@ export async function listClaude(): Promise<Session[]> {
       updatedAt: job?.mtime ?? e.startedAt ?? 0,
       archived: false,
       // An interactive session is owned by the terminal it runs in; a second client would fork it.
-      open: bg ? { cmd: ["claude", "attach", e.id!], cwd: e.cwd } : undefined,
-      closedReason: bg ? undefined : "interactive session · open it in its own terminal",
+      open: bg ? { cmd: ["claude", "attach", e.id!], cwd: e.cwd } : paseo ? { cmd: ["paseotui"], cwd: e.cwd } : undefined,
+      closedReason: bg || paseo ? undefined : "interactive session · open it in its own terminal",
     };
   });
 }
