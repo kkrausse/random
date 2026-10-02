@@ -6,7 +6,7 @@ When the user asks "publish this as a private artifact", "publish this publicly"
 or simply "publish this", use the commands below and return the printed clickable
 URL. Default to private unless the user explicitly requests public access.
 
-Private shelf: https://raspberrypi.tail7e28fb.ts.net/ (requires Tailscale connected).
+Private shelf: https://raspberrypi.guineafowl-truck.ts.net/ (requires Tailscale connected).
 
 - Any folder (no HTML required): `scripts/deploy-artifact.sh /absolute/path/to/artifact optional-slug`
 - Any single file: `scripts/deploy-artifact.sh /absolute/path/to/file optional-slug`
