@@ -217,6 +217,39 @@ no PostHog, Sentry or similar dependency, and no telemetry code found.
   elsewhere.
 - Cost: I own the Claude adapter's edge cases and keep up with SDK changes.
 
+### E. Fork T3 Code and add `apps/tui`
+
+A variant of D that avoids speaking the wire protocol by hand.
+
+- Fork the monorepo and add a new `apps/tui` that depends on the workspace
+  packages `@t3tools/contracts` and `@t3tools/client-runtime`, the same way
+  `apps/web`, `apps/desktop` and `apps/mobile` do.
+- `client-runtime` already holds the headless client logic: connection
+  registry and supervisor per environment, RPC, auth, thread state, and
+  pending-request derivation. It has no React imports and exposes each area
+  as a separate subpath export, so the `three`-based device viewers are
+  simply not imported.
+- The fork only adds a directory, so merging upstream rarely conflicts.
+  Upstream contract changes show up as type errors in the TUI.
+- T3 Code's `AGENTS.md` says many of its users run forks.
+- To check: a few `state/` and `platform/` files reference browser globals,
+  so some storage or platform layer may need a terminal implementation.
+
+This is the best way to build on T3 Code, and it keeps the server, web and
+mobile apps unmodified.
+
+### Mobile alongside a custom TUI
+
+Using their daemon means their mobile apps keep working next to my TUI: the
+daemon is the source of truth, so a session started from either shows in
+both. This is the main thing lost by building my own daemon (option B).
+
+- **Paseo:** store apps for iOS and Android. Over Tailscale, set
+  `daemon.listen` to the tailnet IP and add the host in the app as a direct
+  connection. No relay needed.
+- **T3 Code:** store apps for iOS and Android. Pair with
+  `t3 pair --tailscale`.
+
 ### C. Fork Paseo or T3 Code
 
 - Not worth it: too large, too fast-moving, and T3 Code states it is not
