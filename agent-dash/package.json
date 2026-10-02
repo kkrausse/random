@@ -9,6 +9,7 @@
   "dependencies": {
     "@opentui/core": "0.5.14",
     "@opentui/solid": "0.5.14",
+    "effect": "4.0.0-rc.117",
     "solid-js": "^1.9.15"
   },
   "devDependencies": {
