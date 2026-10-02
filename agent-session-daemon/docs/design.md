@@ -273,16 +273,57 @@ interface HostClient {
 
 ### TUI
 
-OpenTUI + Solid, the same stack as `oc-plugin-session-manager`, reusing its
-picker design:
+Solid + TypeScript on OpenTUI, the stack `oc-plugin-session-manager` and
+OpenCode's own TUI use. Take the look and interaction model from those two.
 
-- **List:** rows grouped by host, single-cell status gutter (`!` permission,
-  `?` question, spinner for working), harness tag, title, model, age.
-  Subagents collapsed under their parent.
-- **Inbox:** the first open request across all hosts, with Allow / Deny /
-  Always, one at a time.
-- **Session view:** transcript, streaming output, composer, interrupt.
+- **List:** from the session-manager plugin. Single-cell status gutter (`!`
+  permission, `?` question, spinner for working), title, age, with host and
+  harness tags added. Active / Inactive sections.
+- **Nested subagents in the list:** from the plugin. A parent shows its
+  subagent count and running count; `Space` expands the whole family; a
+  child's pending request rolls up to the parent's status.
+- **Inbox:** from the plugin. The first open request across all hosts, with
+  Allow / Deny / Always, one at a time.
+- **Session view:** OpenCode's layout for transcript, streaming output and
+  composer, plus interrupt.
+- **Subagents inside the session view:** Claude Code's presentation. Running
+  subagents appear inline in the parent's transcript with live status, and
+  can be expanded into their own transcript without leaving the parent.
 - **New session:** pick host, harness, model, directory, then type a prompt.
+- **Escape hatch:** a key that opens the session in the harness's own TUI
+  (`opencode` attached to the service, or `claude --resume`) for the cases
+  my renderer does not cover. Costs a full client, so on demand only.
+
+Scope warning: the transcript renderer (markdown, diffs, tool cards) is the
+largest UI cost. Start with list, inbox and a plain transcript; the escape
+hatch covers the rest.
+
+### Subagent model this requires
+
+Both subagent views need subagents to be first-class, not just events mixed
+into the parent stream:
+
+```ts
+interface SubagentSummary {
+  id: string
+  sessionId: string            // owning top-level session
+  parentSubagentId?: string    // nesting
+  title: string
+  state: "working" | "waiting" | "done" | "failed"
+  openRequest?: PendingRequest
+  openable: boolean            // can it be opened and messaged on its own?
+}
+```
+
+- The list view needs the tree and rolled-up state.
+- The in-session view needs a per-subagent event stream:
+  `session.watch` takes an optional `subagentId`.
+- OpenCode subagents are real child sessions (`openable: true`).
+- Claude subagents exist only inside the parent run (`openable: false`);
+  their events are the SDK messages tagged with the parent tool call.
+
+Paseo already models this the same way: a subagent descriptor with
+`parentSubagentId`, status and title, plus a per-subagent timeline fetch.
 
 ## Build order
 
@@ -307,5 +348,6 @@ picker design:
   the machine's existing login when no API key is set. Verify before step 2.
 - **Codex.** Would be a third adapter over `codex app-server` (JSON-RPC over
   stdio), which is what both Paseo and T3 Code do. Not planned.
-- **Subagents as rows or nested events.** Nested first; revisit if I want to
-  message a Claude subagent directly.
+- **Backend for the first version.** Paseo's client covers the TUI's needs
+  if the internal client is used; see "Is Paseo's API enough" in
+  [comparison.md](comparison.md). The UI above is the same either way.

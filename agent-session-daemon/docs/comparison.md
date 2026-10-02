@@ -186,6 +186,39 @@ the path their own apps exercise every day.
 T3 Code is the opposite: no supported surface, but `client-runtime` is the
 exact code its web, desktop and mobile apps run on.
 
+### Is Paseo's API enough for the TUI?
+
+`@getpaseo/client@0.11.0-beta.3` installs and imports under Bun (8 packages,
+25 MB). Not exercised against a running daemon.
+
+| Need | Paseo | Where |
+|---|---|---|
+| Several machines | one client instance per host; I merge | public |
+| Live session list with state | `agents.list({ subscribe })`, snapshot then updates | public |
+| Waiting on me | `pendingPermissions`, kinds tool / plan / question | public |
+| Answer a request | `respondToPermission` | public |
+| Start with harness + model + directory | `agents.create`, provider `claude/…`, `opencode/…` | public |
+| Model catalog per host | `providers.listModels` | public |
+| Streaming output | `timeline.subscribe`; assistant text arrives in pieces | public |
+| History | `timeline.refetch`, paged by cursor | public |
+| Reconnect | live-only; refetch after my last `(epoch, seq)` myself | public |
+| Interrupt a turn | `cancelAgent` | internal only |
+| Switch model / mode live | `setAgentModel`, `setAgentMode` | internal only |
+| Nested subagent tree | `listProviderSubagents`, with `parentSubagentId` and status | internal only |
+| Subagent transcript | `fetchProviderSubagentTimeline` | internal only |
+
+Functionally it is enough, including both subagent views. In practice the
+TUI would be written against the internal `DaemonClient`, as Paseo's own app
+is. The wire protocol under it has the append-only compatibility policy, so
+the risk is the client's method names changing between releases, not the
+daemon breaking; pin the client version.
+
+Still open, and only answerable by running it:
+
+- Whether sessions started in my own OpenCode or Claude TUIs appear.
+- Whether idle Claude processes are ever closed.
+- How its workspace model feels when I only care about sessions.
+
 ## Telemetry and outbound calls
 
 Checked by grepping server, client, CLI and protocol packages; not a full
