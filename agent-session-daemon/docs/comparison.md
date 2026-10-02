@@ -327,8 +327,16 @@ The cost that ruled out herdr, applied to the others.
   still suggests sizing about 1 GiB RAM per agent as a starting point.
 - So what matters is how fast idle Claude sessions are closed, and resumed
   lazily on the next message.
-- T3 Code's per-thread `opencode serve` is the one place a daemon design
-  repeats herdr's problem for OpenCode.
+- T3 Code's per-thread `opencode serve` is deliberate and documented
+  (`docs/internals/providers.md`): OpenCode's MCP registrations are
+  directory-scoped, T3 Code injects a thread-scoped MCP connection, and two
+  threads sharing a server in one directory would replace each other's.
+- It is avoidable: with a `serverUrl` set in the OpenCode provider settings,
+  T3 Code connects to that external server instead of spawning one
+  (`Layers/OpenCodeAdapter.ts`, `connectToOpenCodeServer`). Threads then
+  share it, at the cost of the MCP collision above. Not tested.
+- The per-thread server is headless and is killed with its session, so the
+  30-minute idle reaper bounds how many are alive.
 
 ### C. Fork Paseo or T3 Code
 
