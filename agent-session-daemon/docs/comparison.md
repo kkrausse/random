@@ -577,6 +577,52 @@ truth with on-demand clients; that is not proof none exists.
 This is now the recommended first build. Paseo or an own daemon only become
 necessary if I want Claude approvals in the list or a unified transcript.
 
+### I. Claude Code behind OpenCode's server API
+
+Idea: keep Claude Code running as itself through the Agent SDK, but expose
+it through OpenCode's server API so OpenCode's clients and
+`oc-plugin-session-manager` drive Claude sessions unchanged.
+
+Two ways to get there:
+
+**A standalone server that re-implements the API.** Not found anywhere.
+
+- The OpenCode 2 client has about 134 methods and 256 KB of generated
+  types. Its TUI calls many of them at startup (config, models, agents,
+  locations, forms, shells), so a usable subset is still large.
+- The API changes between patch releases; `oc-plugin-session-manager`'s
+  own audit doc records breaking changes across 2.0.3, 2.0.6 and 2.0.7.
+- This is the own-daemon work plus imitating OpenCode's data model.
+
+**A plugin inside the real OpenCode server.** Exists:
+`AeriumChris/opencode-claude-acp`. From its README only.
+
+- OpenCode 2 plugin (tested on 2.0.15) that registers a provider backed by
+  `@agentclientprotocol/claude-agent-acp`, the ACP adapter built on the
+  official Agent SDK.
+- One ACP connection and one native Claude session per OpenCode session.
+- Claude Code runs its own built-in tools; OpenCode's tools are also offered
+  through a session-scoped MCP server.
+- Approvals appear as OpenCode question forms (title only) with Deny /
+  Allow once / Allow always / Allow all.
+- Uses the local `claude` sign-in; no token handling documented.
+- Reports cache reads and writes through a `/claude-usage` command.
+- Gaps: no plan mode mapping, nothing on subagents, native tools show as a
+  generic `claude_code` activity, no edit-review UI.
+- Maturity: 0 stars, 21 commits, no releases.
+
+This differs from the rejected `opencode-claude` in the way that matters:
+that one makes Claude a model that OpenCode re-drives each request; this one
+holds a long-lived native Claude session. Caching should therefore behave
+natively, but that is the first thing to verify.
+
+ToS: tier 2. Anthropic's June statement names ACP usage explicitly, and
+Claude's own tools and permission layer stay on.
+
+If this direction is wanted, extend the plugin rather than re-implement the
+server: OpenCode keeps implementing its own API and only the Claude bridge
+is mine.
+
 ### C. Fork Paseo or T3 Code
 
 - Not worth it: too large, too fast-moving, and T3 Code states it is not
