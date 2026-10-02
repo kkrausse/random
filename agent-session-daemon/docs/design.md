@@ -205,6 +205,11 @@ does real work.
 - **Subagents:** messages with `parent_tool_use_id` become `subagent.*`
   events on the parent. No separate rows at first.
 - **Model switch:** `setModel()` on the live query.
+- **Prompt caching must keep working.** One long-lived `query()` with
+  streaming input behaves like interactive Claude Code, so caching is
+  Claude Code's own. Do not rebuild or re-send history per turn, and do not
+  vary the system prompt or tool list between turns of a session. Check
+  cache-read tokens in the usage on the result message during step 2.
 - **Idle reaping:** close the subprocess soon after a turn ends (minutes, not
   an hour) unless a request is open; it resumes on the next `send`. This is
   the main resource lever: each live session is a `claude` process, and

@@ -373,6 +373,10 @@ The cost that ruled out herdr, applied to the others.
 
 ### G. Claude inside OpenCode, via the Agent SDK
 
+**Rejected.** Prompt caching does not work through `opencode-claude` in my
+use, which makes every turn pay for the full context. Its README claims the
+opposite, so this is from experience, not from the code. Kept for the record.
+
 Instead of a new daemon, make Claude a model provider in OpenCode. OpenCode's
 background service is then the only daemon, and its multi-server app,
 `oc-plugin-session-manager`, the permission inbox and nested child sessions
