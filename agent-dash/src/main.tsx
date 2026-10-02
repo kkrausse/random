@@ -3,28 +3,35 @@ import { homedir } from "node:os";
 import { EmbeddedTerminalRenderable, TextAttributes, type BoxRenderable, type KeyEvent } from "@opentui/core";
 import { render, useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/solid";
 import { Show, createEffect, createSignal } from "solid-js";
-import { PROVIDERS, createDashStore, type DashStore } from "./store.ts";
-import { NewSession } from "./new-session.tsx";
-import { launch } from "./launch.ts";
-import { SessionList } from "./list.tsx";
-import type { Provider, Session } from "./session.ts";
+import { createDashStore, type DashStore } from "./store.ts";
+import { NewSession, type Pick } from "./new-session.tsx";
+import { SessionList, label } from "./list.tsx";
+import { on } from "./machines.ts";
+import { sessionKey, type Claim, type Session } from "./session.ts";
 import { colors, providerColor } from "./theme.ts";
 
 const store = createDashStore();
 store.start();
 
-// A native CLI running in a PTY, drawn by OpenTUI's embedded terminal. It outlives the pane:
-// going back to the list hides it, reopening shows it again.
-// A new session starts under a placeholder key; `claim` finds its real row once the poller sees it.
+// Hidden panes are closed after this long; the agents live on in their daemons and reopening is cheap.
+const REAP_MS = 15 * 60 * 1000;
+
+// A native CLI running in a PTY (over ssh for remote machines), drawn by OpenTUI's embedded
+// terminal. It outlives the pane: going back to the list hides it, reopening shows it again.
+// A new session starts under a placeholder key; `claim` finds its real row once its source reports it.
 // `fresh` marks an unused new chat: it is cached for reuse, hidden from the list, and "back" from
-// it returns to the harness picker.
+// it returns to the picker.
 type Client = {
   session: Session;
   et: EmbeddedTerminalRenderable;
   proc: Bun.Subprocess;
   exited?: number;
-  claim?: (s: Session) => boolean;
-  fresh?: Provider;
+  claim?: { claim: Claim; known: ReadonlySet<string> };
+  fresh?: Pick;
+  /** Last time it was on screen. */
+  shownAt: number;
+  /** Tail of the output, to explain a failed ssh. */
+  tail: string;
 };
 
 const isBackKey = (key: KeyEvent) => key.sequence === "\x1d" || (key.ctrl && key.name === "]");
@@ -38,6 +45,15 @@ function atPromptStart(et: EmbeddedTerminalRenderable): boolean {
   return cursor.visible && PROMPT_START.test(before);
 }
 
+const matches = (c: NonNullable<Client["claim"]>, ref: Session, s: Session) =>
+  s.machine === ref.machine &&
+  s.harness === ref.harness &&
+  ("id" in c.claim ? s.id === c.claim.id : s.cwd === c.claim.firstNewIn && !c.known.has(s.key));
+
+// sshd caps sessions per connection (MaxSessions, default 10); every pane, stream and command on a
+// host shares one connection.
+const SSH_REFUSED = /administratively prohibited|open failed|session request failed|Session open refused/i;
+
 function App(props: { store: DashStore }) {
   const renderer = useRenderer();
   const dims = useTerminalDimensions();
@@ -45,10 +61,10 @@ function App(props: { store: DashStore }) {
   // equals:false so re-setting the same client after a claim refreshes the header.
   const [view, setView] = createSignal<Client | undefined>(undefined, { equals: false });
   const [screen, setScreen] = createSignal<"list" | "new">("list");
-  const [lastPick, setLastPick] = createSignal<Provider>();
+  const [lastPick, setLastPick] = createSignal<Pick>();
   const [live, setLive] = createSignal<ReadonlySet<string>>(new Set());
   const [freshKeys, setFreshKeys] = createSignal<ReadonlySet<string>>(new Set());
-  // Used new chats whose session the poller hasn't reported yet.
+  // Used new chats whose session hasn't been reported yet.
   const [pending, setPending] = createSignal<Session[]>([]);
   // Remount the list on return so it re-sorts with fresh status.
   const [mount, setMount] = createSignal({ n: 0, selected: undefined as string | undefined, flash: undefined as string | undefined });
@@ -60,13 +76,17 @@ function App(props: { store: DashStore }) {
     setFreshKeys(new Set(alive.filter((c) => c.fresh).map((c) => c.session.key)));
     setPending(alive.filter((c) => c.claim && !c.fresh).map((c) => c.session));
   };
-  const cachedFresh = (h: Provider) => [...clients.values()].find((c) => c.fresh === h && c.exited === undefined);
+  const cachedFresh = (p: Pick) =>
+    [...clients.values()].find((c) => c.fresh?.machine === p.machine && c.fresh.harness === p.harness && c.exited === undefined);
 
   function show(c: Client | undefined) {
+    const now = Date.now();
     for (const other of clients.values()) {
+      if (other.et.visible) other.shownAt = now;
       other.et.visible = other === c;
       if (other !== c) other.et.blur();
     }
+    if (c) c.shownAt = now;
     c?.et.focus();
     setView(c);
   }
@@ -82,7 +102,6 @@ function App(props: { store: DashStore }) {
     if (c?.exited !== undefined) drop(c);
     show(undefined);
     setMount({ n: mount().n + 1, selected: c?.session.key, flash });
-    props.store.refresh();
   }
 
   function drop(c: Client) {
@@ -91,7 +110,18 @@ function App(props: { store: DashStore }) {
     syncLive();
   }
 
+  // Close pane clients that haven't been on screen for REAP_MS.
+  setInterval(() => {
+    const now = Date.now();
+    for (const c of [...clients.values()]) {
+      if (c === view() || now - c.shownAt < REAP_MS) continue;
+      if (c.exited === undefined) c.proc.kill();
+      drop(c);
+    }
+  }, 60_000).unref?.();
+
   function spawn(s: Session): Client {
+    const m = props.store.machine(s.machine);
     const cols = dims().width, rows = Math.max(1, dims().height - 1);
     let proc: Bun.Subprocess | undefined;
     const et = new EmbeddedTerminalRenderable(renderer, {
@@ -104,13 +134,22 @@ function App(props: { store: DashStore }) {
       onTerminalResize: (c, r) => proc?.terminal?.resize(c, r),
     });
     host.add(et);
+    const c: Client = { session: s, et, proc: undefined!, shownAt: Date.now(), tail: "" };
     // Store values are proxies; Bun.spawn needs a plain array.
-    proc = Bun.spawn([...s.open!.cmd], {
-      cwd: existsSync(s.open!.cwd) ? s.open!.cwd : homedir(),
+    const cmd = on(m, [...s.open!.cmd], { cwd: s.open!.cwd, tty: true });
+    proc = Bun.spawn(cmd, {
+      cwd: !m.ssh && existsSync(s.open!.cwd) ? s.open!.cwd : homedir(),
       env: { ...process.env, COLORTERM: "truecolor" },
-      terminal: { cols, rows, data: (_t, d) => et.write(d) },
+      terminal: {
+        cols,
+        rows,
+        data: (_t, d) => {
+          et.write(d);
+          c.tail = (c.tail + new TextDecoder().decode(d)).slice(-2000);
+        },
+      },
     });
-    const c: Client = { session: s, et, proc };
+    c.proc = proc;
     proc.exited.then((code) => {
       c.exited = code;
       syncLive();
@@ -119,7 +158,11 @@ function App(props: { store: DashStore }) {
         if (view() === c) back();
         else drop(c);
       } else {
-        et.write(`\r\n\x1b[33m[agentdash] ${s.open!.cmd.join(" ")} exited ${code} · ctrl+] to go back\x1b[0m\r\n`);
+        const refused = m.ssh && SSH_REFUSED.test(c.tail);
+        const why = refused
+          ? `${m.ssh} refused another ssh session on the shared connection (sshd MaxSessions, default 10) · close some panes or raise MaxSessions`
+          : `${s.open!.cmd.join(" ")}${m.ssh ? ` on ${m.id}` : ""} exited ${code}`;
+        et.write(`\r\n\x1b[33m[agentdash] ${why} · ctrl+] to go back\x1b[0m\r\n`);
       }
     });
     clients.set(s.key, c);
@@ -131,56 +174,57 @@ function App(props: { store: DashStore }) {
     show(clients.get(s.key) ?? spawn(s));
   }
 
-  async function pick(h: Provider, dir: string) {
-    const cached = cachedFresh(h);
+  async function pick(p: Pick, dir: string) {
+    const cached = cachedFresh(p);
     if (cached) {
       setScreen("list");
       show(cached);
       return;
     }
-    const known = new Set(props.store.state.sessions[h].map((s) => s.key));
-    const l = await launch(h, dir, known);
+    const known = new Set(props.store.rows(p.harness).filter((s) => s.machine === p.machine).map((s) => s.key));
+    const l = await props.store.launch(p.machine, p.harness, dir);
     const placeholder: Session = {
-      provider: h, key: `new:${Date.now()}`, id: "", title: `new ${h} session`, cwd: dir, status: "working", detail: "", model: "",
-      updatedAt: Date.now(), archived: false, open: { cmd: l.cmd, cwd: l.cwd },
+      machine: p.machine, harness: p.harness, key: sessionKey(p.machine, p.harness, `new-${Date.now()}`), id: "", title: `new ${p.harness} session`,
+      cwd: l.cwd, status: "working", detail: "", model: "", updatedAt: Date.now(), archived: false, open: { cmd: l.cmd, cwd: l.cwd },
     };
     const c = spawn(placeholder);
-    c.claim = l.claim;
-    c.fresh = h;
+    c.claim = { claim: l.claim, known };
+    c.fresh = p;
     syncLive();
     setScreen("list");
     show(c);
   }
 
   createEffect(() => {
-    const all = PROVIDERS.flatMap((p) => props.store.state.sessions[p]);
+    const all = props.store.rows();
     for (const c of [...clients.values()]) {
       // A fresh Claude chat is claimed at once (its id is known) but stays fresh until it works.
-      if (c.fresh === "claude" && !c.claim && all.find((s) => s.key === c.session.key)?.status === "working") {
+      if (c.fresh?.harness === "claude" && !c.claim && all.find((s) => s.key === c.session.key)?.status === "working") {
         c.fresh = undefined;
         syncLive();
       }
-      const real = c.claim && all.find(c.claim);
+      const cl = c.claim;
+      const real = cl && all.find((s) => matches(cl, c.session, s));
       if (!real) continue;
       clients.delete(c.session.key);
       c.session = real;
       c.claim = undefined;
-      if (c.fresh !== "claude") c.fresh = undefined;
+      if (c.fresh?.harness !== "claude") c.fresh = undefined;
       clients.set(real.key, c);
       syncLive();
       if (view() === c) setView(c);
     }
   });
 
-  const quit = () => {
+  const quit = async () => {
     // Clients only; every agent lives on in its own daemon.
     for (const c of clients.values()) c.proc.kill();
-    props.store.stop();
     renderer.destroy();
+    await props.store.stop();
     process.exit(0);
   };
 
-  const sessionStatus = (s: Session) => props.store.state.sessions[s.provider].find((x) => x.key === s.key)?.status;
+  const sessionStatus = (s: Session) => props.store.rows(s.harness).find((x) => x.key === s.key)?.status;
 
   useKeyboard((key) => {
     const c = view();
@@ -204,7 +248,14 @@ function App(props: { store: DashStore }) {
     <box flexDirection="column" width="100%" height="100%" backgroundColor={colors.bg}>
       <Show when={!view() && screen() === "new"}>
         <box flexGrow={1} minHeight={0}>
-          <NewSession initial={lastPick()} active={() => !view() && screen() === "new"} cached={(h) => !!cachedFresh(h)} onCancel={() => setScreen("list")} onPick={pick} />
+          <NewSession
+            store={props.store}
+            initial={lastPick()}
+            active={() => !view() && screen() === "new"}
+            cached={(p) => !!cachedFresh(p)}
+            onCancel={() => setScreen("list")}
+            onPick={pick}
+          />
         </box>
       </Show>
       <box visible={!view() && screen() === "list"} flexGrow={1} minHeight={0}>
@@ -220,14 +271,14 @@ function App(props: { store: DashStore }) {
               hidden={freshKeys}
               extra={pending}
               onOpen={open}
-              onQuit={quit}
+              onQuit={() => void quit()}
             />
           )}
         </Show>
       </box>
       <box visible={!!view()} flexGrow={1} minHeight={0} flexDirection="column">
         <box height={1} flexShrink={0} flexDirection="row" backgroundColor={colors.surfaceRaised}>
-          <text wrapMode="none" flexShrink={0} fg={providerColor(view()?.session.provider ?? "")}>{` ${view()?.session.provider ?? ""} `}</text>
+          <text wrapMode="none" flexShrink={0} fg={providerColor(view()?.session.harness ?? "")}>{` ${view() ? label(view()!.session) : ""} `}</text>
           <text wrapMode="none" flexGrow={1} fg={colors.text} attributes={TextAttributes.BOLD}>{view()?.session.title ?? ""}</text>
           <text wrapMode="none" flexShrink={0} fg={colors.muted}>{" ctrl+] back to list "}</text>
         </box>

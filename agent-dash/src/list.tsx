@@ -1,16 +1,31 @@
-// Session list across providers, modeled on paseo-tui's list: 1-cell status gutter, sort frozen
-// while open so live updates change badges but never positions.
+// Session list across machines and harnesses, modeled on paseo-tui's list: 1-cell status gutter,
+// sections Needs input → Finished → Working → Archived, order within a section frozen while open
+// so live updates change badges (and sections) but never shuffle rows.
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/solid";
 import { Index, Show, createEffect, createMemo, createSignal } from "solid-js";
 import type { Session, Status } from "./session.ts";
-import { PROVIDERS, type DashStore } from "./store.ts";
+import { QUIET } from "./errors.ts";
+import type { DashStore } from "./store.ts";
+import { isArchived } from "./archive.ts";
 import { colors, providerColor, spinner } from "./theme.ts";
 import { relTime, shortPath } from "./format.ts";
 
-const RECENT_MS = 24 * 3600 * 1000;
-const rank = (s: Status) => ({ needs: 0, error: 1, working: 2, idle: 3 })[s];
-const isActive = (s: Session, now: number) => !s.archived && (s.status !== "idle" || now - s.updatedAt < RECENT_MS);
+type Section = "needs" | "finished" | "working" | "archived";
+const SECTIONS: { id: Section; label: string }[] = [
+  { id: "needs", label: "Needs input" },
+  { id: "finished", label: "Finished" },
+  { id: "working", label: "Working" },
+  { id: "archived", label: "Archived" },
+];
+const HEADER_H = 2;
+
+const sectionOf = (s: Session, archived: boolean): Section =>
+  archived ? "archived" : s.status === "needs" ? "needs" : s.status === "working" ? "working" : "finished";
+
+export const label = (s: Pick<Session, "machine" | "harness">) => `${s.machine}·${s.harness}`;
+
+type Item = { header: Section; count: number } | { row: Session; section: Section };
 
 export function SessionList(props: {
   store: DashStore;
@@ -22,7 +37,7 @@ export function SessionList(props: {
   live: () => ReadonlySet<string>;
   /** Unused new chats; kept out of the list. */
   hidden: () => ReadonlySet<string>;
-  /** Rows for used new chats the poller hasn't reported yet. */
+  /** Rows for used new chats their source hasn't reported yet. */
   extra: () => Session[];
   onOpen: (s: Session) => void;
   onNew: () => void;
@@ -32,7 +47,7 @@ export function SessionList(props: {
   const [selected, setSelected] = createSignal(props.initialSelected ?? "");
   const [filter, setFilter] = createSignal("");
   const [filtering, setFiltering] = createSignal(false);
-  const [showInactive, setShowInactive] = createSignal(false);
+  const [showArchived, setShowArchived] = createSignal(false);
   const [flash, setFlashRaw] = createSignal(props.flash ?? "");
   let flashTimer: ReturnType<typeof setTimeout> | undefined;
   const setFlash = (m: string) => {
@@ -44,43 +59,55 @@ export function SessionList(props: {
   let scroll: ScrollBoxRenderable | undefined;
 
   const now = Date.now();
-  const all = createMemo(() => [...props.extra(), ...PROVIDERS.flatMap((p) => state.sessions[p]).filter((s) => !props.hidden().has(s.key))]);
-  const ready = () => PROVIDERS.every((p) => state.loaded[p]);
+  const all = createMemo(() => [...props.extra(), ...props.store.rows().filter((s) => !props.hidden().has(s.key))]);
+  const archivedOf = (s: Session) => isArchived(s, state.marks[s.machine], now);
+  // Ready once every source answered, or after a few seconds so one slow host can't hold the order.
+  const [timedOut, setTimedOut] = createSignal(false);
+  setTimeout(() => setTimedOut(true), 5000);
+  const ready = () => timedOut() || Object.values(state.sources).every((s) => s.loaded);
 
-  // Frozen once every provider has answered; until then rows sort live.
+  // Frozen once ready; until then rows sort live.
   const frozen = new Map<string, number>();
-  const liveOrder = (a: Session, b: Session) => rank(a.status) - rank(b.status) || b.updatedAt - a.updatedAt;
+  const liveOrder = (a: Session, b: Session) => b.updatedAt - a.updatedAt;
   createEffect(() => {
     if (!ready() || frozen.size) return;
     all().slice().sort(liveOrder).forEach((s, i) => frozen.set(s.key, i));
   });
+  const order = (a: Session, b: Session) =>
+    frozen.size ? (frozen.get(a.key) ?? -1) - (frozen.get(b.key) ?? -1) || liveOrder(a, b) : liveOrder(a, b);
 
-  const rows = createMemo(() => {
+  const view = createMemo(() => {
     const q = filter().toLowerCase();
     const matched = all().filter(
-      (s) => !q || s.title.toLowerCase().includes(q) || s.cwd.toLowerCase().includes(q) || s.provider.startsWith(q),
+      (s) => !q || s.title.toLowerCase().includes(q) || s.cwd.toLowerCase().includes(q) || label(s).toLowerCase().includes(q),
     );
-    const active = matched.filter((s) => isActive(s, now));
-    const inactive = matched.filter((s) => !isActive(s, now));
-    const order = (a: Session, b: Session) =>
-      frozen.size ? (frozen.get(a.key) ?? -1) - (frozen.get(b.key) ?? -1) || liveOrder(a, b) : liveOrder(a, b);
-    return {
-      list: [...active.sort(order), ...(showInactive() || q ? inactive.sort(order) : [])],
-      activeCount: active.length,
-      hiddenCount: showInactive() || q ? 0 : inactive.length,
-    };
+    const by = new Map<Section, Session[]>(SECTIONS.map((x) => [x.id, []]));
+    for (const s of matched) by.get(sectionOf(s, archivedOf(s)))!.push(s);
+    const items: Item[] = [];
+    const list: Session[] = [];
+    for (const { id } of SECTIONS) {
+      const rows = by.get(id)!.sort(order);
+      if (!rows.length) continue;
+      items.push({ header: id, count: rows.length });
+      if (id === "archived" && !showArchived() && !q) continue;
+      for (const s of rows) items.push({ row: s, section: id }), list.push(s);
+    }
+    return { items, list, archivedHidden: !showArchived() && !q ? by.get("archived")!.length : 0 };
   });
 
-  const index = createMemo(() => Math.max(0, rows().list.findIndex((s) => s.key === selected())));
-  const current = () => rows().list[index()];
+  const index = createMemo(() => Math.max(0, view().list.findIndex((s) => s.key === selected())));
+  const current = () => view().list[index()];
 
   createEffect(() => {
-    const list = rows().list;
+    const list = view().list;
     if (ready() && list.length && !list.some((s) => s.key === selected())) setSelected(list[Math.min(index(), list.length - 1)]!.key);
   });
-  const rowY = (i: number) => i + (i >= rows().activeCount ? 3 : 0);
   createEffect(() => {
-    const y = rowY(index());
+    let y = 0;
+    for (const it of view().items) {
+      if ("row" in it && it.row.key === selected()) break;
+      y += "row" in it ? 1 : HEADER_H;
+    }
     if (!scroll) return;
     const top = scroll.scrollTop, h = scroll.viewport.height;
     if (y < top) scroll.scrollTo(Math.max(0, y - 3));
@@ -88,9 +115,32 @@ export function SessionList(props: {
   });
 
   const move = (d: number) => {
-    const list = rows().list;
+    const list = view().list;
     if (list.length) setSelected(list[Math.min(list.length - 1, Math.max(0, index() + d))]!.key);
   };
+
+  /** Next row in the same section, else the previous one: where selection goes when this row leaves. */
+  const neighbor = (s: Session) => {
+    const its = view().items.filter((i): i is Extract<Item, { row: Session }> => "row" in i);
+    const i = its.findIndex((x) => x.row.key === s.key);
+    const sec = its[i]?.section;
+    return (its[i + 1]?.section === sec ? its[i + 1] : its[i - 1]?.section === sec ? its[i - 1] : undefined)?.row.key;
+  };
+
+  async function mark(s: Session, archived: boolean) {
+    if (!s.id) return setFlash("not started yet");
+    if (archived && archivedOf(s)) return setFlash("already archived");
+    if (!archived && s.archived) return setFlash(`archived in ${s.harness} itself · restore it there`);
+    if (!archived && !archivedOf(s)) return setFlash("not archived");
+    const next = neighbor(s);
+    try {
+      await props.store.mark(s, archived);
+      if (!(archived ? showArchived() : true) && next) setSelected(next);
+      setFlash(`${archived ? "archived" : "restored"} ${s.title}`);
+    } catch (e) {
+      setFlash(`${archived ? "archive" : "restore"} failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
 
   useKeyboard((key) => {
     if (!props.active() || key.defaultPrevented) return;
@@ -111,8 +161,9 @@ export function SessionList(props: {
       key.preventDefault();
       setFiltering(true);
     } else if (key.name === "n") props.onNew();
-    else if (key.name === "tab") setShowInactive(!showInactive());
-    else if (key.name === "r") props.store.refresh();
+    else if (key.name === "tab") setShowArchived(!showArchived());
+    else if (key.name === "x" && s) void mark(s, true);
+    else if (key.name === "r" && s) void mark(s, false);
     else if (key.name === "escape" && filter()) setFilter("");
     else if (key.name === "q" || (key.ctrl && key.name === "c")) props.onQuit();
   });
@@ -122,7 +173,15 @@ export function SessionList(props: {
     for (const s of all()) if (s.status === "needs" || s.status === "working") c[s.status]++;
     return c;
   });
-  const errors = () => PROVIDERS.filter((p) => state.errors[p]).map((p) => `${p}: ${state.errors[p]}`).join(" · ");
+  // Real failures first (red), then quiet "not here" states grouped by reason (dim).
+  const problems = createMemo(() => {
+    const srcs = Object.values(state.sources).filter((s) => s.problem);
+    const errors = srcs.filter((s) => !QUIET.has(s.problem!.kind)).map((s) => `${label(s)}: ${s.problem!.message}`);
+    const quiet = new Map<string, string[]>();
+    for (const s of srcs.filter((s) => QUIET.has(s.problem!.kind))) quiet.set(s.problem!.message, [...(quiet.get(s.problem!.message) ?? []), label(s)]);
+    return { errors: errors.join(" · "), quiet: [...quiet].map(([msg, who]) => `${who.join(", ")} ${msg}`).join(" · ") };
+  });
+  const labelWidth = createMemo(() => Math.max(8, ...all().map((s) => label(s).length)) + 1);
 
   return (
     <box flexDirection="column" width="100%" height="100%" backgroundColor={colors.bg}>
@@ -130,70 +189,90 @@ export function SessionList(props: {
         <text fg={colors.text} attributes={TextAttributes.BOLD}>
           agents · {counts().needs} need you · {counts().working} working
         </text>
-        <text wrapMode="none" fg={errors() ? colors.error : colors.dim}>{errors() || (ready() ? "" : "loading…")}</text>
+        <text wrapMode="none" fg={colors.dim}>{ready() ? "" : "loading…"}</text>
       </box>
       <scrollbox ref={scroll} flexGrow={1} minHeight={0} scrollY scrollX={false} viewportCulling contentOptions={{ flexDirection: "column" }} verticalScrollbarOptions={{ visible: false }}>
-        <Index each={rows().list}>
-          {(s, i) => {
-            const active = () => index() === i;
-            const st = () => s().status;
+        <Index each={view().items}>
+          {(it) => {
+            const header = () => {
+              const i = it();
+              return "header" in i ? i : undefined;
+            };
+            // Keeps the last row while the slot turns into a header, until the row view is disposed.
+            let last: Session | undefined;
+            const s = () => {
+              const i = it();
+              return "row" in i ? (last = i.row) : last!;
+            };
+            const active = () => current()?.key === s().key;
+            const st = (): Status => s().status;
             const color = () =>
-              st() === "needs" ? colors.permission : st() === "error" ? colors.error : st() === "working" ? colors.selected : colors.muted;
+              st() === "needs" ? colors.permission : st() === "failed" ? colors.error : st() === "working" ? colors.selected : colors.muted;
             const gutter = () =>
-              st() === "working" ? spinner() : st() === "needs" ? "!" : st() === "error" ? "×" : active() ? "❯" : " ";
-            return (
-              <>
-                <Show when={i === rows().activeCount}>
-                  <box height={3} flexShrink={0} border={["top"]} borderColor={colors.border}>
-                    <text fg={colors.text} attributes={TextAttributes.BOLD}>Inactive</text>
-                  </box>
-                </Show>
-                <box height={1} flexShrink={0} flexDirection="row" backgroundColor={active() ? colors.surfaceRaised : colors.bg} onMouseDown={() => setSelected(s().key)}>
-                  <box width={1} flexShrink={0}>
-                    <text fg={active() && (st() === "idle") ? colors.selected : color()}>{gutter()}</text>
-                  </box>
-                  <box flexDirection="row" flexGrow={1} flexBasis={0} minWidth={0} overflow="hidden" paddingLeft={1}>
-                    <text wrapMode="none" flexShrink={0} fg={providerColor(s().provider)}>{s().provider.padEnd(9)}</text>
-                    <text wrapMode="none" flexShrink={0} fg={active() ? colors.selected : s().open ? colors.text : colors.muted} attributes={active() ? TextAttributes.BOLD : undefined}>
-                      {s().title}
-                    </text>
-                    <Show when={s().detail}>
-                      <text wrapMode="none" flexShrink={1} fg={color()}>{` · ${s().detail.split("\n")[0]}`}</text>
-                    </Show>
-                  </box>
-                  <Show when={props.live().has(s().key)}>
-                    <text wrapMode="none" flexShrink={0} fg={colors.success}> ● open</text>
-                  </Show>
-                  <Show when={!s().open}>
-                    <text wrapMode="none" flexShrink={0} fg={colors.dim}> [view only]</text>
-                  </Show>
-                  <text wrapMode="none" flexShrink={0} fg={colors.dim}>{` ${s().cwd.split("/").pop()}`}</text>
-                  <box width={9} flexShrink={0} justifyContent="flex-end" flexDirection="row">
-                    <text wrapMode="none" fg={colors.muted}>{relTime(s().updatedAt)}</text>
-                  </box>
+              st() === "working" ? spinner() : st() === "needs" ? "!" : st() === "failed" ? "×" : st() === "interrupted" ? "-" : active() ? "❯" : " ";
+            const statusText = () => (st() === "failed" || st() === "interrupted" ? st() : "");
+            const row = () => (
+              <box height={1} flexShrink={0} flexDirection="row" backgroundColor={active() ? colors.surfaceRaised : colors.bg} onMouseDown={() => setSelected(s().key)}>
+                <box width={1} flexShrink={0}>
+                  <text fg={active() && !"needs working failed".includes(st()) ? colors.selected : color()}>{gutter()}</text>
                 </box>
-              </>
+                <box flexDirection="row" flexGrow={1} flexBasis={0} minWidth={0} overflow="hidden" paddingLeft={1}>
+                  <text wrapMode="none" flexShrink={0} fg={providerColor(s().harness)}>{label(s()).padEnd(labelWidth())}</text>
+                  <text wrapMode="none" flexShrink={0} fg={active() ? colors.selected : s().open ? colors.text : colors.muted} attributes={active() ? TextAttributes.BOLD : undefined}>
+                    {s().title}
+                  </text>
+                  <Show when={s().detail || statusText()}>
+                    <text wrapMode="none" flexShrink={1} fg={color()}>{` · ${(s().detail || statusText()).split("\n")[0]}`}</text>
+                  </Show>
+                </box>
+                <Show when={props.live().has(s().key)}>
+                  <text wrapMode="none" flexShrink={0} fg={colors.success}> ● open</text>
+                </Show>
+                <Show when={!s().open}>
+                  <text wrapMode="none" flexShrink={0} fg={colors.dim}> [view only]</text>
+                </Show>
+                <text wrapMode="none" flexShrink={0} fg={colors.dim}>{` ${s().cwd.split("/").pop()}`}</text>
+                <box width={9} flexShrink={0} justifyContent="flex-end" flexDirection="row">
+                  <text wrapMode="none" fg={colors.muted}>{relTime(s().updatedAt)}</text>
+                </box>
+              </box>
+            );
+            // Index reuses slots by position, so a slot can switch between header and row.
+            return (
+              <Show when={header()} keyed fallback={row()}>
+                {(h) => (
+                  <box height={HEADER_H} flexShrink={0} border={["top"]} borderColor={colors.border} flexDirection="row">
+                    <text fg={h.header === "needs" ? colors.permission : colors.text} attributes={TextAttributes.BOLD}>{SECTIONS.find((x) => x.id === h.header)!.label}</text>
+                    <text fg={colors.dim}>{` ${h.count}${h.header === "archived" && view().archivedHidden ? " · tab to show" : ""}`}</text>
+                  </box>
+                )}
+              </Show>
             );
           }}
         </Index>
       </scrollbox>
       <box height={4} flexShrink={0} flexDirection="column" border={["top"]} borderColor={current()?.status === "needs" ? colors.permission : colors.border}>
         <text height={1} wrapMode="none" fg={colors.muted}>
-          {current() ? [current()!.provider, current()!.model, shortPath(current()!.cwd)].filter(Boolean).join(" · ") : ""}
+          {current() ? [label(current()!), current()!.model, shortPath(current()!.cwd)].filter(Boolean).join(" · ") : ""}
         </text>
         <text height={1} wrapMode="none" fg={colors.text}>{current()?.detail.split("\n")[0] ?? ""}</text>
         <text height={1} wrapMode="none" fg={colors.dim}>
           {current() ? (current()!.open ? `⏎ ${current()!.open!.cmd.join(" ")}` : current()!.closedReason) : ""}
         </text>
       </box>
+      <Show when={problems().errors || problems().quiet}>
+        <box height={1} flexShrink={0} flexDirection="row" overflow="hidden">
+          <text wrapMode="none" flexShrink={0} fg={colors.error}>{problems().errors ? `${problems().errors}  ` : ""}</text>
+          <text wrapMode="none" fg={colors.dim}>{problems().quiet}</text>
+        </box>
+      </Show>
       <box height={1} flexShrink={0} flexDirection="row">
         <Show
           when={filtering()}
           fallback={
             <text fg={colors.dim} wrapMode="none">
               {flash() ? `${flash()} · ` : ""}
-              {filter() ? `filter: ${filter()} · ` : ""}
-              {rows().hiddenCount ? `${rows().hiddenCount} inactive (tab) · ` : ""}↑↓ move · ⏎ open · n new · / filter · r refresh · q quit · ctrl+] back from a session
+              {filter() ? `filter: ${filter()} · ` : ""}↑↓ move · ⏎ open · n new · x archive · r restore · tab archived · / filter · q quit · ctrl+] back from a session
             </text>
           }
         >

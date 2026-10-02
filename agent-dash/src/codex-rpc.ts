@@ -1,9 +1,6 @@
 // JSON-RPC to the shared Codex app-server daemon. Its control socket speaks WebSocket over a
 // Unix socket, which Bun's WebSocket cannot dial, so this frames RFC 6455 by hand.
-import { homedir } from "node:os";
 import type { Socket } from "bun";
-
-export const CODEX_SOCK = `${homedir()}/.codex/app-server-control/app-server-control.sock`;
 
 type Pending = { resolve: (v: any) => void; reject: (e: Error) => void };
 
@@ -17,11 +14,11 @@ export class CodexRpc {
   onNotification: (method: string, params: any) => void = () => {};
   onClose: () => void = () => {};
 
-  async connect(): Promise<void> {
+  async connect(path: string): Promise<void> {
     let opened!: () => void, failed!: (e: Error) => void;
     const ready = new Promise<void>((res, rej) => ((opened = res), (failed = rej)));
     this.sock = await Bun.connect({
-      unix: CODEX_SOCK,
+      unix: path,
       socket: {
         data: (_s, d) => {
           this.buf = concat(this.buf, d);
