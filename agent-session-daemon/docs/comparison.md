@@ -306,8 +306,29 @@ Against the goals:
 - No mobile app.
 - Not checked: telemetry.
 
-This may be the shortest path to "one terminal window, all machines, see
-what is waiting". Try it before building anything.
+**Rejected.** I tried this before: one full OpenCode or Claude Code TUI
+client per pane costs too much, even when the OpenCode client attaches to a
+shared server. See the next section.
+
+## Processes per session
+
+The cost that ruled out herdr, applied to the others.
+
+| | UI clients | Claude | OpenCode | Idle reaping |
+|---|---|---|---|---|
+| herdr | one full harness TUI per pane | one `claude` TUI per pane | one `opencode` TUI per pane | none; panes stay up |
+| Paseo | one, shared | one headless `claude` per live agent | one shared `opencode serve` per machine | none found (grep only) |
+| T3 Code | one, shared | one headless `claude` per live thread | one `opencode serve` **per thread** | stops sessions idle 30 min, sweeps every 5 |
+| Own daemon | one, shared | one headless `claude` per live session | the one `opencode serve` already running | mine to set |
+
+- Claude is the unavoidable cost. Every design built on the Agent SDK runs
+  one `claude` subprocess per live session; there is no shared Claude server.
+  It is headless, so cheaper than the TUI, but Anthropic's hosting guide
+  still suggests sizing about 1 GiB RAM per agent as a starting point.
+- So what matters is how fast idle Claude sessions are closed, and resumed
+  lazily on the next message.
+- T3 Code's per-thread `opencode serve` is the one place a daemon design
+  repeats herdr's problem for OpenCode.
 
 ### C. Fork Paseo or T3 Code
 

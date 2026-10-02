@@ -205,8 +205,10 @@ does real work.
 - **Subagents:** messages with `parent_tool_use_id` become `subagent.*`
   events on the parent. No separate rows at first.
 - **Model switch:** `setModel()` on the live query.
-- **Idle reaping:** close the subprocess after a period idle; it resumes on
-  the next `send`.
+- **Idle reaping:** close the subprocess soon after a turn ends (minutes, not
+  an hour) unless a request is open; it resumes on the next `send`. This is
+  the main resource lever: each live session is a `claude` process, and
+  keeping many of those up is the cost that ruled out herdr.
 
 Optional, later: also surface rows from `claude agents --json` so sessions
 started by hand in a terminal appear in the list, and register a
