@@ -623,6 +623,20 @@ If this direction is wanted, extend the plugin rather than re-implement the
 server: OpenCode keeps implementing its own API and only the Claude bridge
 is mine.
 
+**Multi-machine with this option.** The OpenCode TUI connects to one server
+at a time (`--server <url>`); only the desktop/web app lists several. The
+tweak belongs in `oc-plugin-session-manager`, not in OpenCode:
+
+- Give the plugin a host list and one extra `@opencode/client` connection
+  per remote service. My service already binds to the tailnet address.
+- Merge those sessions into the picker with a host tag. Status, nesting and
+  the permission inbox are API-only, so they work across machines as-is.
+- Opening a remote session is the one thing the plugin cannot do in place:
+  hand off to `opencode --server <url> -s <id>`, as in option H.
+
+Not checked: whether the plugin host allows that hand-off cleanly, and how
+the remote services authenticate.
+
 ### C. Fork Paseo or T3 Code
 
 - Not worth it: too large, too fast-moving, and T3 Code states it is not
