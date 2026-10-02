@@ -1,0 +1,6 @@
+#!/bin/sh
+# Launch agent-dash from any directory. Opened sessions run in their own cwd.
+ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+# bunfig.toml (Solid JSX preload) is read from the working directory.
+export AGENTDASH_CWD="${AGENTDASH_CWD:-$PWD}"
+cd "$ROOT" && exec bun src/main.tsx "$@"

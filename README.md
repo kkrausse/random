@@ -18,6 +18,7 @@ scripts, skills, or explorations that do not need their own repository.
 - [`isochron-home-map/`](./isochron-home-map): A static travel-time isochrone map.
 - [`bun-web-terminal/`](./bun-web-terminal): A Bun/tmux web terminal with phone controls.
 - [`ghostty-web/`](./ghostty-web): An xterm.js-style browser wrapper and WebGL renderer for official Ghostty WASM.
+- [`agent-dash/`](./agent-dash): One terminal status list for Claude Code, OpenCode and Codex sessions that opens each in its native CLI.
 - [`skills/`](./skills): Reusable agent skills.
 
 Projects are intentionally added one at a time. Other directories in this
