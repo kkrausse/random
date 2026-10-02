@@ -371,6 +371,71 @@ The cost that ruled out herdr, applied to the others.
 - The per-thread server is headless and is killed with its session, so the
   30-minute idle reaper bounds how many are alive.
 
+### G. Claude inside OpenCode, via the Agent SDK
+
+Instead of a new daemon, make Claude a model provider in OpenCode. OpenCode's
+background service is then the only daemon, and its multi-server app,
+`oc-plugin-session-manager`, the permission inbox and nested child sessions
+all apply to Claude sessions unchanged.
+
+Hard requirement: OpenCode talks to Claude only through the official
+`@anthropic-ai/claude-agent-sdk`, which runs the unmodified `claude` binary
+under my own `claude auth login`. No token handling of any kind.
+
+This already exists. From READMEs only; none installed or run.
+
+| Plugin | Talks to Claude via | OpenCode 2 | Tools run by | Notes |
+|---|---|---|---|---|
+| `openchamber/opencode-claude` | Agent SDK only | Yes (2.x required) | OpenCode, through a proxy | One Claude session per chat, resumed each message; subagents are OpenCode child sessions |
+| `ai-sdk-provider-claude-code` | Agent SDK only | Library, not a plugin | Claude Code itself | AI SDK provider (368 stars, active); a plugin could load it through the `aisdk` hook |
+| `akash-joshi/opencode-claude-code-plugin` | Spawns the CLI directly | Yes | OpenCode, through a proxy | Uses `--dangerously-skip-permissions` for unproxied tools and has multi-account failover. Fails the requirement |
+
+How the first one works: Claude Code's built-in tools are switched off and
+OpenCode's tools are handed to Claude instead, so every edit and shell
+command goes through OpenCode's permission system.
+
+Trade-offs:
+
+- Best reuse of anything on this list: no new daemon, no new protocol, and
+  the TUI I already have.
+- It is Claude Code's loop and model with OpenCode's tools, not Claude Code
+  as shipped. Claude-native subagent views, plan mode UI and tool behaviour
+  are replaced by OpenCode's.
+- Still one `claude` process per live session.
+- Depends on two moving targets: OpenCode's plugin API and the Agent SDK.
+
+### Terms of service
+
+Not legal advice, and I could not retrieve Anthropic's Help Center article
+itself; the June statement below is as quoted by Zed.
+
+What Anthropic's published text says:
+
+- Claude Code's legal page: subscription login is for "ordinary use of
+  Claude Code and other native Anthropic applications", and plan limits
+  "assume ordinary, individual usage of Claude Code and the Agent SDK".
+- The same page: an end user may sign in to "the unmodified Claude Code
+  binary with their own Claude subscription".
+- June 2026, after pausing a planned billing change: "ACP usage, `claude -p`,
+  the Claude Agent SDK, and third-party apps built on the Agent SDK continue
+  to work with Claude subscriptions exactly as they did before."
+- Prohibited since February 2026: reusing subscription OAuth tokens in
+  third-party tools, and developers offering Claude login in their products.
+
+Risk ladder, lowest first:
+
+1. Official surfaces only: `claude`, `claude agents`, Remote Control.
+2. The Agent SDK driving the unmodified binary under my own login, for my
+   own use. Paseo, T3 Code, my own daemon and SDK-only OpenCode plugins all
+   sit here; routing through OpenCode is not a different tier.
+3. Driving the CLI with permission checks bypassed, rotating accounts, or
+   heavy unattended volume. Avoid.
+4. Any plugin that reads or reuses the subscription token. Prohibited.
+
+The live risk at tier 2 is a billing change, not a ban: Anthropic has said
+it is reworking how subscriptions cover Agent SDK use and will give notice.
+The policy changed three times in 2026, so re-check before relying on it.
+
 ### C. Fork Paseo or T3 Code
 
 - Not worth it: too large, too fast-moving, and T3 Code states it is not
