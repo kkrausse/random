@@ -163,6 +163,29 @@ resume cursors, aborts). A self-built adapter starts small and grows.
 Paseo is the only one that treats outside clients as a supported use. T3 Code
 is usable but means pinning a commit and owning the upgrade.
 
+### How real is Paseo's public client?
+
+Checked in source. The public root of `@getpaseo/client` is a 1.1k-line
+facade over a 6.9k-line internal `DaemonClient`.
+
+- **Covered by the public facade:** list agents with live updates, create
+  (provider/model, mode, cwd, prompt), send, pending permissions and
+  `respondToPermission`, timeline subscribe and refetch, archive, provider
+  and model catalog, usage.
+- **Missing from the public facade:** interrupting a turn, and switching
+  model or mode on a live agent. All three exist on the internal client
+  (`cancelAgent`, `setAgentModel`, `setAgentMode`).
+- **Not what Paseo itself builds on:** the app imports the internal client
+  116 times and the public root 10 times; the CLI 9 to 2.
+
+So the supported surface is real and documented but young (first published
+May 2026) and thinner than what the first-party UI uses. A TUI would need the
+internal import for interrupt, which is explicitly unsupported, though it is
+the path their own apps exercise every day.
+
+T3 Code is the opposite: no supported surface, but `client-runtime` is the
+exact code its web, desktop and mobile apps run on.
+
 ## Telemetry and outbound calls
 
 Checked by grepping server, client, CLI and protocol packages; not a full
@@ -249,6 +272,42 @@ both. This is the main thing lost by building my own daemon (option B).
   connection. No relay needed.
 - **T3 Code:** store apps for iOS and Android. Pair with
   `t3 pair --tailscale`.
+
+### F. herdr: a different category
+
+[herdr](https://github.com/ogulcancelik/herdr) is not a daemon-plus-protocol
+design. It is a terminal multiplexer (think tmux) that knows about agents.
+From its README and docs only; source not read.
+
+- Runs the real `claude`, `codex`, `opencode` TUIs in PTY panes. Nothing is
+  re-rendered, so every harness feature works as-is, including native
+  subagent views and slash commands.
+- A background server per machine keeps panes alive across detach.
+- A sidebar marks each agent `working`, `blocked`, `done` or `idle`, from
+  process names plus terminal-output heuristics, with deeper integrations
+  for some agents.
+- "Several machines, one window": the client connects over SSH to a herdr
+  server on each saved machine and shows one combined agent list. SSH over
+  the tailnet works with no extra setup.
+- A documented socket API (newline-delimited JSON on a local Unix socket)
+  and CLI wrappers: list agents, read pane output, send input, wait for a
+  state, subscribe to events. Local socket only.
+- Rust, single binary, Apache-2.0, about 42k stars.
+
+Against the goals:
+
+- It is already a terminal UI with cross-machine status, which is most of
+  what I want, with zero adapter code.
+- "Start a session choosing harness and model" is just running the CLI with
+  flags in a new pane on the selected machine.
+- No structured transcript, no unified permission inbox with Allow/Deny
+  buttons: answering a prompt means focusing that pane and typing.
+- State detection is partly heuristic, so it can be wrong.
+- No mobile app.
+- Not checked: telemetry.
+
+This may be the shortest path to "one terminal window, all machines, see
+what is waiting". Try it before building anything.
 
 ### C. Fork Paseo or T3 Code
 
