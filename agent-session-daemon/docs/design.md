@@ -6,6 +6,13 @@ One terminal UI for every coding-agent session on every machine I own. See
 [comparison.md](comparison.md) for how Paseo and T3 Code solve the same
 problem and whether to reuse them instead.
 
+> **Start smaller first.** Option H in [comparison.md](comparison.md) gets one
+> list across machines with no daemon at all: status from `claude agents
+> --json` and the OpenCode service, and the official client opened on demand.
+> The list, nesting and inbox parts of the TUI below carry over unchanged;
+> the daemon, wire protocol and session view here are only needed if that
+> turns out not to be enough.
+
 ## Goals
 
 - See all Claude Code and OpenCode sessions across my Tailscale machines in

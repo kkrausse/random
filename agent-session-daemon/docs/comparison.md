@@ -510,6 +510,73 @@ Rating: tier 2, at its upper edge.
 - Slightly above Paseo or T3 Code, which run Claude Code with its own tools
   and permission layer intact.
 
+### H. Session switcher over the official clients
+
+A status TUI of my own, plus the harness's real client opened on demand for
+the one session I pick. Each harness's own daemon keeps sessions running;
+no daemon or protocol of mine, and no transcript renderer.
+
+Each provider supplies three things:
+
+1. **Status list:** id, title, directory, state (working / needs input /
+   done), updated time.
+2. **Open command:** the argv that opens that session in its official
+   client.
+3. **New command:** the argv that starts a session with a model and prompt.
+
+| | Claude Code | OpenCode 2 |
+|---|---|---|
+| Keeps sessions alive | its supervisor (`claude daemon`) | its background service |
+| Status list | `claude agents --json` | service API via `@opencode/client` |
+| Summary line | `name` field | session title |
+| Preview | `claude logs <id>` | messages via the API |
+| Open | `claude attach <id>` | `opencode -s <id>` |
+| New | `claude --bg --model … "prompt"` | `opencode --prompt …` or the API |
+| Leave without stopping | `Ctrl+Z` or `←` | quit the client |
+| Answer a request | in the attached client | from my TUI via the API, as the plugin does |
+
+`claude agents --json` verified on this machine: returns `id`, `name`,
+`cwd`, `kind`, `state`, `status`, `sessionId`, `startedAt`, `pid`.
+
+Other machines: run the same commands through `ssh -t host …` on the
+tailnet; OpenCode can instead be reached at each host's service URL.
+
+Where the client appears, simplest first:
+
+- **Hand off the terminal:** suspend my TUI, run the client full screen,
+  return on exit.
+- **tmux:** my TUI lives in one pane and opens clients in others, with a cap
+  on how many stay open. This gives per-session splits.
+- **Embedded terminal widget.** Most work, least needed.
+
+Against the constraints:
+
+- Resources: clients exist only while I am looking at them.
+- ToS: official surfaces only for Claude, the lowest tier.
+- Prompt caching, plan mode, skills: native, because it is the real client.
+- Subagents: Claude's own in-session view when attached; OpenCode children
+  nested in my list from the API. Exactly the two views I wanted.
+- Effort: the smallest option that still gives one list across machines.
+
+What it does not do:
+
+- No approve/deny inbox for Claude; I attach and answer there. OpenCode
+  requests can still be answered in place.
+- Claude sessions must be background sessions. Interactive ones in other
+  terminals are listed but cannot be attached.
+- `waitingFor` says a session needs input, not what it is asking.
+- Status is polled, per host.
+- No mobile client. Claude's Remote Control app covers Claude separately.
+
+Prior art: Claude Code's own agent view is this for one machine and one
+harness. `ccmux` and `agent-deck` are cross-machine and multi-harness but
+keep a live client per session in tmux and infer status from the screen or
+hooks. I found nothing that uses the harnesses' own daemons as the source of
+truth with on-demand clients; that is not proof none exists.
+
+This is now the recommended first build. Paseo or an own daemon only become
+necessary if I want Claude approvals in the list or a unified transcript.
+
 ### C. Fork Paseo or T3 Code
 
 - Not worth it: too large, too fast-moving, and T3 Code states it is not
