@@ -573,6 +573,42 @@ both projects were built around.
 - Only the own-daemon design uses the server that is already running, which
   costs nothing extra and by construction shows my TUI's sessions.
 
+## Effort: own daemon vs. Paseo
+
+Rough sizing, not measurement. The TUI is the same work either way and is
+the larger part; this compares only what sits behind `HostClient`.
+
+**OpenCode needs no daemon in either case.** OpenCode 2's background service
+already listens on the tailnet address (`opencode service status` here
+prints a `100.x` URL), so the TUI can talk to each host's service directly
+with `@opencode/client`. That is a `HostClient` of a few hundred lines,
+mostly lifted from `oc-plugin-session-manager`. It also avoids Paseo's
+second OpenCode server and shows sessions from my own OpenCode TUI.
+
+So the real comparison is the Claude side only:
+
+| | Paseo for Claude | Own Claude daemon |
+|---|---|---|
+| Code to write | `HostClient` over Paseo's internal client: ~300-600 lines | Server + protocol ~300-500, Claude adapter ~500-800 for the happy path, growing to ~2-3k with edge cases |
+| Time to a working list + inbox | a day or two | one to two weeks |
+| Long tail | their release notes | mine: questions, plan mode, subagent tracking, interrupts, resume, transcript mapping, SDK changes |
+| Install per host | their daemon, relay off, tailnet bind | my daemon as a user service |
+| Idle Claude processes | theirs; no reaper found | mine to set |
+| Mobile | their app works | none |
+| Codex later | already there | another adapter |
+
+Reference points for the long tail: T3 Code's Claude adapter is 5.7k lines
+and Paseo's is 10.8k. Both cover more than I need, but most of that is edge
+cases found by real use, not features.
+
+Recommended order:
+
+1. `HostClient` for OpenCode, direct to each host's service. Needed either
+   way, and cheap.
+2. `HostClient` for Claude over Paseo. Gets the whole TUI working.
+3. Replace 2 with my own Claude daemon only if Paseo's process handling,
+   caching or workspace model turns out to be a problem.
+
 ## Unverified
 
 - Neither daemon was run; everything is from source and docs.
