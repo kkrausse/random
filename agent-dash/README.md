@@ -51,13 +51,21 @@ harness archived it, you archived it here, or it is finished and untouched for 7
 days. Rows are labelled `machine·harness`; the footer lists sources with problems
 (red) and harnesses that aren't there (dim: not installed, unsupported, not running).
 
-Rows show **N subagents (M active)**, counting all descendants like the
+The list is a table: label, session title (cut at 40 columns; the footer has it in
+full), status line, then **subagents**, **ctx** and **age** (`<1m`, `5m`, `2h`, `3d`
+since the last update). Columns are as wide as the rows on screen need, and a column
+no row has a value for is left out. The working directory is in the footer only.
+
+**subagents** is `N` or `N (M active)`, counting all descendants like the
 session-manager plugin. Counts include finished descendants; `≥N` means the bounded
 history scan was incomplete. Children are not separate top-level rows. For Claude the
 total is the session's subagent transcripts; "active" is only known for background
 sessions (their job state lists what the current turn has running).
 
-Context badges show **N% ctx**, or a token count when the limit is unavailable:
+**ctx** is the tokens in the context window (`137k`), not a percentage: Claude's
+window size isn't recorded anywhere readable, and a share of an assumed limit would
+be a guess. Where a harness does report its limit, the footer shows it next to the
+exact count.
 
 - **OpenCode:** latest assistant-response usage and that model's location-specific
   context limit, fetched for active sessions. Completed sessions retain snapshots
@@ -68,9 +76,7 @@ Context badges show **N% ctx**, or a token count when the limit is unavailable:
   The dashboard does not resume threads to subscribe to usage.
 - **Claude:** the last response's input tokens (fresh, cache-read and cache-write),
   read from the session transcript, which is how Claude's own status line counts it.
-  The transcript doesn't record the window size, so the limit is assumed: 1M for
-  Claude 5 models and `[1m]` ids (or once usage passes 200k), else 200k. Unavailable
-  between a compaction and the next response.
+  No limit is known. Unavailable between a compaction and the next response.
 
 These are latest-response snapshots, not continuously exact streaming usage or
 lifetime billed tokens. The selected row's footer shows raw tokens and snapshot

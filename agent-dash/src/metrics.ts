@@ -20,18 +20,17 @@ export function subagentSummary(nodes: readonly AgentNode[], rootId: string, com
   return { total, active, complete };
 }
 
-export const contextPercent = (usage: ContextUsage) =>
-  usage.limitTokens && usage.limitTokens > 0 ? Math.round(usage.usedTokens / usage.limitTokens * 100) : undefined;
-
-export function subagentLabel(s: Subagents) {
-  if (!s.total) return "";
-  return `${s.complete ? "" : "≥"}${s.total} subagent${s.total === 1 ? "" : "s"}${s.active ? ` (${s.active} active)` : ""}`;
+/** The subagents column: a count, `≥` when the scan was cut short, and how many are running. */
+export function subagentCell(s: Subagents | undefined) {
+  if (!s?.total) return "";
+  return `${s.complete ? "" : "≥"}${s.total}${s.active ? ` (${s.active} active)` : ""}`;
 }
 
-export function contextLabel(usage: ContextUsage) {
-  const percent = contextPercent(usage);
-  const tokens = usage.usedTokens >= 1000 ? `${(usage.usedTokens / 1000).toFixed(1)}k` : `${Math.round(usage.usedTokens)}`;
-  return percent !== undefined ? `${percent}% ctx` : `${tokens} ctx`;
+/** The context column: tokens in the window, never a share of a limit that may only be assumed. */
+export function contextCell(usage: ContextUsage | undefined) {
+  if (!usage) return "";
+  const n = usage.usedTokens;
+  return n >= 999_500 ? `${(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : `${Math.round(n)}`;
 }
 
 export type UsageMessage = {

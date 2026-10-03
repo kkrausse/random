@@ -11,8 +11,8 @@ import { QUIET } from "./errors.ts";
 import type { DashStore } from "./store.ts";
 import { isArchived } from "./archive.ts";
 import { colors, providerColor, spinner } from "./theme.ts";
-import { relTime, shortPath } from "./format.ts";
-import { contextLabel, subagentLabel } from "./metrics.ts";
+import { age, fit, relTime, shortPath } from "./format.ts";
+import { contextCell, subagentCell } from "./metrics.ts";
 
 type Section = "needs" | "finished" | "working" | "archived";
 const SECTIONS: { id: Section; label: string }[] = [
@@ -25,6 +25,9 @@ const SECTIONS: { id: Section; label: string }[] = [
 // When each session was first seen working (its updatedAt then); outlives list remounts.
 const workingSince = new Map<string, number>();
 const HEADER_H = 2;
+const TITLE_MAX = 40;
+const AGE_W = 3;
+const GAP = "  ";
 
 const sectionOf = (s: Session, archived: boolean): Section =>
   archived ? "archived" : s.status === "needs" ? "needs" : s.status === "working" ? "working" : "finished";
@@ -206,6 +209,24 @@ export function SessionList(props: {
     return { errors: errors.join(" · "), quiet: [...quiet].map(([msg, who]) => `${who.join(", ")} ${msg}`).join(" · ") };
   });
   const labelWidth = createMemo(() => Math.max(8, ...all().map((s) => label(s).length)) + 1);
+  const stateCell = (s: Session) => (props.live().has(s.key) ? "● open" : s.open ? "" : "view only");
+  // Column widths fit the rows on screen. A column no row has anything for takes no space;
+  // otherwise it is at least as wide as its heading.
+  const cols = createMemo(() => {
+    const list = view().list;
+    const width = (head: string, cell: (s: Session) => string, max = Infinity) => {
+      const w = Math.max(0, ...list.map((s) => Bun.stringWidth(cell(s))));
+      return w ? Math.min(max, Math.max(w, head.length)) : 0;
+    };
+    return {
+      title: width("session", (s) => s.title, TITLE_MAX),
+      subagents: width("subagents", (s) => subagentCell(s.subagents)),
+      context: width("ctx", (s) => contextCell(s.context)),
+      state: width("", stateCell),
+    };
+  });
+  /** A fixed-width cell with its leading gap, or nothing when the column is empty. */
+  const cell = (text: string, width: number, right = false) => (width ? GAP + fit(text, width, right) : "");
 
   return (
     <box flexDirection="column" width="100%" height="100%" backgroundColor={colors.bg}>
@@ -217,6 +238,14 @@ export function SessionList(props: {
           </text>
         </box>
         <text wrapMode="none" fg={colors.dim}>{ready() ? "" : "loading…"}</text>
+      </box>
+      <box height={1} flexShrink={0} flexDirection="row">
+        <box flexDirection="row" flexGrow={1} flexBasis={0} minWidth={0} overflow="hidden" paddingLeft={2}>
+          <text wrapMode="none" flexShrink={0} fg={colors.dim}>{fit("", labelWidth()) + fit("session", cols().title) + GAP + "status"}</text>
+        </box>
+        <text wrapMode="none" flexShrink={0} fg={colors.dim}>
+          {cell("subagents", cols().subagents) + cell("ctx", cols().context, true) + cell("", cols().state) + cell("age", AGE_W, true)}
+        </text>
       </box>
       <scrollbox ref={scroll} flexGrow={1} minHeight={0} scrollY scrollX={false} viewportCulling contentOptions={{ flexDirection: "column" }} verticalScrollbarOptions={{ visible: false }}>
         <Index each={view().items}>
@@ -247,28 +276,21 @@ export function SessionList(props: {
                   <text wrapMode="none" flexShrink={0} fg={props.store.hostColor(s().machine)}>{s().machine}</text>
                   <text wrapMode="none" flexShrink={0} fg={providerColor(s().harness)}>{`·${s().harness}`.padEnd(labelWidth() - s().machine.length)}</text>
                   <text wrapMode="none" flexShrink={0} fg={active() ? colors.selected : s().open ? colors.text : colors.muted} attributes={active() ? TextAttributes.BOLD : undefined}>
-                    {s().title}
+                    {fit(s().title, cols().title)}
                   </text>
-                  <Show when={s().detail || statusText()}>
-                    <text wrapMode="none" flexShrink={1} fg={color()}>{` · ${(s().detail || statusText()).split("\n")[0]}`}</text>
-                  </Show>
+                  <text wrapMode="none" flexShrink={1} fg={color()}>{GAP + (s().detail || statusText()).split("\n")[0]}</text>
                 </box>
-                <Show when={s().subagents?.total}>
-                  <text wrapMode="none" flexShrink={0} fg={colors.muted}>{` · ${subagentLabel(s().subagents!)}`}</text>
+                {/* An empty text still takes a column, so an absent column renders nothing at all. */}
+                <Show when={cols().subagents}>
+                  <text wrapMode="none" flexShrink={0} fg={s().subagents?.active ? colors.selected : colors.muted}>{cell(subagentCell(s().subagents), cols().subagents)}</text>
                 </Show>
-                <Show when={s().context}>
-                  <text wrapMode="none" flexShrink={0} fg={colors.muted}>{` · ${contextLabel(s().context!)}`}</text>
+                <Show when={cols().context}>
+                  <text wrapMode="none" flexShrink={0} fg={colors.muted}>{cell(contextCell(s().context), cols().context, true)}</text>
                 </Show>
-                <Show when={props.live().has(s().key)}>
-                  <text wrapMode="none" flexShrink={0} fg={colors.success}> ● open</text>
+                <Show when={cols().state}>
+                  <text wrapMode="none" flexShrink={0} fg={props.live().has(s().key) ? colors.success : colors.dim}>{cell(stateCell(s()), cols().state)}</text>
                 </Show>
-                <Show when={!s().open}>
-                  <text wrapMode="none" flexShrink={0} fg={colors.dim}> [view only]</text>
-                </Show>
-                <text wrapMode="none" flexShrink={0} fg={colors.dim}>{` ${s().cwd.split("/").pop()}`}</text>
-                <box width={9} flexShrink={0} justifyContent="flex-end" flexDirection="row">
-                  <text wrapMode="none" fg={colors.muted}>{relTime(s().updatedAt)}</text>
-                </box>
+                <text wrapMode="none" flexShrink={0} fg={colors.muted}>{cell(age(s().updatedAt), AGE_W, true)}</text>
               </box>
             );
             // Index reuses slots by position, so a slot can switch between header and row.
@@ -287,7 +309,7 @@ export function SessionList(props: {
       </scrollbox>
       <box height={4} flexShrink={0} flexDirection="column" border={["top"]} borderColor={current()?.status === "needs" ? colors.permission : colors.border}>
         <text height={1} wrapMode="none" fg={colors.muted}>
-          {current() ? [label(current()!), current()!.model, shortPath(current()!.cwd)].filter(Boolean).join(" · ") : ""}
+          {current() ? [label(current()!), current()!.title, current()!.model, shortPath(current()!.cwd)].filter(Boolean).join(" · ") : ""}
         </text>
         <text height={1} wrapMode="none" fg={colors.text}>{[
           current()?.detail.split("\n")[0],

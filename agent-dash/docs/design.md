@@ -152,15 +152,16 @@ file's mtime changes), and counts `<sessionId>/subagents/agent-*.jsonl`. Context
 that response's `input + cache_creation + cache_read` tokens, matching Claude's own
 status line (output tokens are not counted, unlike OpenCode). A compaction boundary
 doesn't decode as usage, so context is unavailable until the next response. The window
-is not recorded anywhere readable, so the limit is a rule in `claude.ts` (1M for
-Claude 5 models and `[1m]` ids, or once usage passes 200k; else 200k) and the one
-place where a percentage rests on an assumption. The exact figure is only handed to a
-status-line script, which would need a per-host opt-in bridge. Subagent total is the
+is not recorded anywhere readable (the model id carries no `[1m]` marker even when
+usage reaches 500k), so Claude rows have no `limitTokens`. The exact figure is only
+handed to a status-line script, which would need a per-host opt-in bridge. Subagent total is the
 transcript count (nested ones land in the same folder); active is the job state's
 `fan` entries of kind `agent` without `doneAt`, so it is 0 for interactive sessions.
 
-Only show a percentage when the context limit is known. Missing means unavailable,
-not zero. The footer shows raw tokens and measurement age. Future providers can
+The list shows tokens used, not a percentage, for every harness: one harness can't
+supply a limit, and a column mixing shares and counts doesn't read as a column.
+Missing means unavailable, not zero. The footer shows exact tokens, the limit when
+the harness reports one, and measurement age. Future providers can
 leave either metric absent without changing the UI contract.
 
 ## Stop

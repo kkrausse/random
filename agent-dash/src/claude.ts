@@ -145,15 +145,11 @@ const Usage = Schema.Struct({
 });
 const decodeUsage = Schema.decodeUnknownOption(Schema.fromJsonString(Usage));
 
-// The transcript doesn't record the window. Claude 5 models (and any `[1m]` id) run with 1M here,
-// older ones with 200k; a response already past 200k settles it either way.
-const contextLimit = (model: string, used: number) =>
-  /\[1m\]/.test(model) || /^claude-(opus|sonnet|fable)-5/.test(model) || used > 200_000 ? 1_000_000 : 200_000;
-
 /**
  * Context as Claude's own status line counts it: the last response's input tokens, cached or not.
  * `line` is the transcript's last usage line; a compaction after it (or a line cut off by the
- * host's tail) doesn't decode, and means unavailable until the next response.
+ * host's tail) doesn't decode, and means unavailable until the next response. No limit: the
+ * transcript doesn't record the window size.
  */
 export function claudeContext(line: string): { usage: ContextUsage; model: string } | undefined {
   const decoded = decodeUsage(line);
@@ -161,7 +157,7 @@ export function claudeContext(line: string): { usage: ContextUsage; model: strin
   const { timestamp, message: { model, usage: u } } = decoded.value;
   const usedTokens = u.input_tokens + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
   if (!Number.isFinite(usedTokens) || usedTokens <= 0) return undefined;
-  return { model, usage: { usedTokens, limitTokens: contextLimit(model, usedTokens), measuredAt: Date.parse(timestamp) || Date.now() } };
+  return { model, usage: { usedTokens, measuredAt: Date.parse(timestamp) || Date.now() } };
 }
 
 // Paseo runs Claude headless (stream-json, no TTY); its sessions are only answerable from paseotui.

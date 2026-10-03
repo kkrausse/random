@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { contextLabel, contextPercent, latestContext, subagentLabel, subagentSummary, type UsageMessage } from "./metrics.ts";
+import { contextCell, latestContext, subagentCell, subagentSummary, type UsageMessage } from "./metrics.ts";
 import { codexContext } from "./codex.ts";
 
 test("subagent count includes nested descendants and their activity, not other roots", () => {
@@ -8,7 +8,7 @@ test("subagent count includes nested descendants and their activity, not other r
     { id: "grandchild", parentId: "child", active: false }, { id: "other", active: false },
   ], "root", true);
   expect(count).toEqual({ total: 2, active: 1, complete: true });
-  expect(subagentLabel(count)).toBe("2 subagents (1 active)");
+  expect(subagentCell(count)).toBe("2 (1 active)");
 });
 
 test("partial counts are lower bounds and cycles cannot loop or count the root", () => {
@@ -17,14 +17,14 @@ test("partial counts are lower bounds and cycles cannot loop or count the root",
     { id: "child", parentId: "root", active: false },
   ], "root", false);
   expect(count.total).toBe(1);
-  expect(subagentLabel(count)).toBe("≥1 subagent");
+  expect(subagentCell(count)).toBe("≥1");
 });
 
-test("context percentages require a known positive limit and don't pretend tokens are zero", () => {
-  expect(contextPercent({ usedTokens: 500, limitTokens: 1000, measuredAt: 0 })).toBe(50);
-  expect(contextPercent({ usedTokens: 500, measuredAt: 0 })).toBeUndefined();
-  expect(contextLabel({ usedTokens: 500, measuredAt: 0 })).toBe("500 ctx");
-  expect(contextLabel({ usedTokens: 1500, limitTokens: 0, measuredAt: 0 })).toBe("1.5k ctx");
+test("context shows tokens, with or without a limit, and nothing when unavailable", () => {
+  expect(contextCell({ usedTokens: 500, limitTokens: 1000, measuredAt: 0 })).toBe("500");
+  expect(contextCell({ usedTokens: 137_285, measuredAt: 0 })).toBe("137k");
+  expect(contextCell({ usedTokens: 1_234_000, measuredAt: 0 })).toBe("1.2M");
+  expect(contextCell(undefined)).toBe("");
 });
 
 const assistant = (id: string): UsageMessage => ({ id, type: "assistant", time: { created: 10, completed: 20 },
