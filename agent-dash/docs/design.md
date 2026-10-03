@@ -6,7 +6,7 @@ Layers, bottom up:
 machine helpers (machines.ts)    on() · forward() · exec/sh/lines · shared ssh connection
 harness streams                  claude.ts (host loop) · opencode.ts · codex.ts
 sources / store (store.ts)       one supervised fiber per machine × harness → Solid store
-UI (list.tsx, new-session.tsx,   Solid + OpenTUI; panes run the harness CLI in a PTY
+UI (list.tsx, new-session.tsx,   Solid + OpenTUI; an open session is the harness CLI in a PTY
     main.tsx)
 ```
 
@@ -194,10 +194,14 @@ badges and sections, never positions within a section. Working is the exception:
 it is ordered by when each session was first seen working, so a newly working
 session joins its bottom.
 
-Inside a pane, mouse drags always go to the harness. The dashboard watches the
-harness output for mouse reporting (DECSET 1000/1002/1003): while it is on, the
-harness draws and copies its own selection and the dashboard's selection is off;
-while it is off, the dashboard selects and copies on release. OSC 52 clipboard
-writes from the harness are re-sent to the real terminal, since the embedded
-terminal doesn't pass them on. Panes not shown for 15
+An open session owns the real terminal (`passthrough.ts`). The dashboard suspends
+its renderer and copies bytes both ways without an emulator in between, because
+OpenTUI's embedded terminal drops what it doesn't model (OSC 8 links, OSC 52).
+Two things are kept on the side from the same output stream. A hidden emulator,
+never drawn, tells whether the cursor sits at an empty prompt, which is what makes
+← leave the session; its query replies are discarded since the real terminal
+answers the harness. A record of the terminal modes the harness switched on
+(private modes, kitty keyboard flags, modifyOtherKeys) is undone when returning to
+the list and re-applied on reopening. A hidden client is kept one row short, so
+reopening is a real resize and the harness repaints itself. Clients not shown for 15
 minutes are closed (agents keep running in their daemons).

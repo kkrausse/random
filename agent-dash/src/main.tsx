@@ -1,67 +1,46 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { EmbeddedTerminalRenderable, TextAttributes, type BoxRenderable, type KeyEvent } from "@opentui/core";
-import { render, useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/solid";
+import { render, useRenderer } from "@opentui/solid";
 import { Show, createEffect, createSignal } from "solid-js";
 import { createDashStore, type DashStore } from "./store.ts";
 import { NewSession, type Pick } from "./new-session.tsx";
-import { SessionList, label } from "./list.tsx";
+import { SessionList } from "./list.tsx";
 import { on } from "./machines.ts";
+import { CLEAR, createModes, createShadow, isBackInput, isLeftInput, type Modes, type Shadow } from "./passthrough.ts";
 import { hasStarted, sessionKey, type Claim, type Session } from "./session.ts";
-import { colors, providerColor } from "./theme.ts";
+import { colors } from "./theme.ts";
 
 const store = createDashStore();
 store.start();
 
-// Hidden panes are closed after this long; the agents live on in their daemons and reopening is cheap.
+// Hidden clients are closed after this long; the agents live on in their daemons and reopening is cheap.
 const REAP_MS = 15 * 60 * 1000;
 
-// A native CLI running in a PTY (over ssh for remote machines), drawn by OpenTUI's embedded
-// terminal. It outlives the pane: going back to the list hides it, reopening shows it again.
+// A native CLI running in a PTY (over ssh for remote machines). While it is open the dashboard's
+// renderer is suspended and the CLI owns the real terminal: output and keys pass straight through.
+// It outlives the view: going back to the list hides it, reopening makes it repaint.
 // A new session starts under a placeholder key; `claim` finds its real row once its source reports it.
 // `fresh` marks an unused new chat: it is cached for reuse, hidden from the list, and "back" from
 // it returns to the picker.
 type Client = {
   session: Session;
-  et: EmbeddedTerminalRenderable;
   proc: Bun.Subprocess;
+  /** Never drawn; answers whether the cursor is at an empty prompt. */
+  shadow: Shadow;
+  /** Terminal modes the CLI switched on, undone for the list and re-applied on reopening. */
+  modes: Modes;
   exited?: number;
+  /** Why it exited, when that wasn't a clean leave. */
+  note?: string;
   claim?: { claim: Claim; known: ReadonlySet<string> };
   fresh?: Pick;
   /** Last time it was on screen. */
   shownAt: number;
   /** Tail of the output, to explain a failed ssh. */
   tail: string;
-  /** The harness asked for mouse reports, so it draws (and copies) its own selection. */
-  mouse: boolean;
-  /** An escape sequence split across output chunks, kept for the next chunk. */
-  carry: string;
 };
 
-// Harness output the dashboard acts on: mouse reporting on/off (DECSET 1000/1002/1003) and OSC 52
-// clipboard writes, which the embedded terminal doesn't pass on to the real terminal.
-const MOUSE_MODE = /\x1b\[\?([\d;]+)([hl])/g;
-const OSC52 = /\x1b\]52;[^;\x07\x1b]*;([A-Za-z0-9+/=]*)(?:\x07|\x1b\\)/g;
-const MOUSE_PARAMS = new Set(["1000", "1002", "1003"]);
-
-/** The unfinished escape sequence at the end of `text`, if any. */
-function unfinished(text: string): string {
-  const osc = text.lastIndexOf("\x1b]52;");
-  if (osc >= 0 && !/\x07|\x1b\\/.test(text.slice(osc))) return text.slice(osc, osc + 1_000_000);
-  const esc = text.lastIndexOf("\x1b");
-  return esc >= 0 && /^\x1b(\[\??[\d;]*|\]5?2?)?$/.test(text.slice(esc)) ? text.slice(esc) : "";
-}
-
-const isBackKey = (key: KeyEvent) => key.sequence === "\x1d" || (key.ctrl && key.name === "]");
-
-// ← leaves the pane when the cursor sits right after an input prompt with nothing typed before it.
-// A false positive is cheap: the client stays alive and reopening restores it as it was.
-const PROMPT_START = /^\s*[❯›>┃│]?\s*$/;
-function atPromptStart(et: EmbeddedTerminalRenderable): boolean {
-  const { lines, cursor } = et.screen();
-  const before = [...(lines[cursor.y] ?? "")].slice(0, cursor.x).join("");
-  return cursor.visible && PROMPT_START.test(before);
-}
+const size = () => ({ cols: process.stdout.columns || 80, rows: process.stdout.rows || 24 });
 
 const matches = (c: NonNullable<Client["claim"]>, ref: Session, s: Session) =>
   s.machine === ref.machine &&
@@ -74,9 +53,8 @@ const SSH_REFUSED = /administratively prohibited|open failed|session request fai
 
 function App(props: { store: DashStore }) {
   const renderer = useRenderer();
-  const dims = useTerminalDimensions();
   const clients = new Map<string, Client>();
-  // equals:false so re-setting the same client after a claim refreshes the header.
+  // equals:false so re-setting the same client after a claim refreshes it.
   const [view, setView] = createSignal<Client | undefined>(undefined, { equals: false });
   const [screen, setScreen] = createSignal<"list" | "new">("list");
   const [lastPick, setLastPick] = createSignal<Pick>();
@@ -86,7 +64,6 @@ function App(props: { store: DashStore }) {
   const [pending, setPending] = createSignal<Session[]>([]);
   // Remount the list on return so it re-sorts with fresh status.
   const [mount, setMount] = createSignal({ n: 0, selected: undefined as string | undefined, flash: undefined as string | undefined });
-  let host!: BoxRenderable;
 
   const syncLive = () => {
     const alive = [...clients.values()].filter((c) => c.exited === undefined);
@@ -97,21 +74,55 @@ function App(props: { store: DashStore }) {
   const cachedFresh = (p: Pick) =>
     [...clients.values()].find((c) => c.fresh?.machine === p.machine && c.fresh.harness === p.harness && c.exited === undefined);
 
+  // Keys go to the CLI untouched, except the ones that leave: ctrl+] anywhere, and ← when the
+  // cursor sits at an empty prompt.
+  const onInput = (data: Buffer) => {
+    const c = view();
+    if (!c) return;
+    const input = data.toString("latin1");
+    const left = isLeftInput(input) && (c.exited !== undefined || c.shadow.atPromptStart());
+    if (isBackInput(input) || left) back();
+    else if (c.exited === undefined) c.proc.terminal?.write(data);
+  };
+  const onResize = () => {
+    const c = view();
+    if (c?.exited === undefined) fit(c, size().rows);
+  };
+  function fit(c: Client | undefined, rows: number) {
+    const { cols } = size();
+    c?.shadow.resize(cols, rows);
+    c?.proc.terminal?.resize(cols, rows);
+  }
+
+  // Hand the terminal to a client, or take it back for the list.
   function show(c: Client | undefined) {
     const now = Date.now();
-    for (const other of clients.values()) {
-      if (other.et.visible) other.shownAt = now;
-      other.et.visible = other === c;
-      if (other !== c) other.et.blur();
+    const prev = view();
+    if (prev) {
+      prev.shownAt = now;
+      process.stdin.off("data", onInput);
+      process.stdout.off("resize", onResize);
+      process.stdout.write(prev.modes.undo());
+      // Hidden clients sit one row short, so reopening is a real resize and the CLI repaints.
+      if (prev.exited === undefined) fit(prev, Math.max(1, size().rows - 1));
+      renderer.resume();
     }
-    if (c) c.shownAt = now;
-    c?.et.focus();
     setView(c);
+    if (!c) return;
+    c.shownAt = now;
+    renderer.suspend();
+    process.stdout.write(CLEAR + c.modes.restore());
+    if (c.exited === undefined) fit(c, size().rows);
+    else process.stdout.write(`${c.tail}\r\n\x1b[0m\x1b[33m[agentdash] ${c.note} · ctrl+] or ← to go back\x1b[0m\r\n`);
+    process.stdin.setRawMode(true);
+    process.stdin.on("data", onInput);
+    process.stdin.resume();
+    process.stdout.on("resize", onResize);
   }
 
   function back(flash?: string) {
     const c = view();
-    // Whatever was just done in the pane (a prompt sent, an answer given) shows on the list now.
+    // Whatever was just done in the session (a prompt sent, an answer given) shows on the list now.
     if (c) props.store.refresh(c.session.machine);
     if (c?.fresh && c.exited === undefined) {
       setLastPick(c.fresh);
@@ -119,18 +130,18 @@ function App(props: { store: DashStore }) {
       setScreen("new");
       return;
     }
-    if (c?.exited !== undefined) drop(c);
     show(undefined);
+    if (c?.exited !== undefined) drop(c);
     setMount({ n: mount().n + 1, selected: c?.session.key, flash });
   }
 
   function drop(c: Client) {
     clients.delete(c.session.key);
-    c.et.destroy();
+    c.shadow.destroy();
     syncLive();
   }
 
-  // Close pane clients that haven't been on screen for REAP_MS.
+  // Close clients that haven't been on screen for REAP_MS.
   setInterval(() => {
     const now = Date.now();
     for (const c of [...clients.values()]) {
@@ -142,47 +153,23 @@ function App(props: { store: DashStore }) {
 
   function spawn(s: Session): Client {
     const m = props.store.machine(s.machine);
-    const cols = dims().width, rows = Math.max(1, dims().height - 1);
-    let proc: Bun.Subprocess | undefined;
-    const et = new EmbeddedTerminalRenderable(renderer, {
-      width: "100%",
-      height: "100%",
-      cols,
-      rows,
-      maxScrollback: 5000,
-      onData: (d) => proc?.terminal?.write(d),
-      onTerminalResize: (c, r) => proc?.terminal?.resize(c, r),
-      // The dashboard's own selection (only when the harness doesn't take the mouse) is copied on release.
-      onMouseUp: () => {
-        if (et.hasSelection()) renderer.copyToClipboardOSC52(et.getSelectedText());
-      },
-    });
-    host.add(et);
-    const c: Client = { session: s, et, proc: undefined!, shownAt: Date.now(), tail: "", mouse: false, carry: "" };
-    // Mouse drags go to the harness either way; only select here when the harness isn't handling them,
-    // otherwise both draw a highlight over the same cells.
-    const canSelect = et.shouldStartSelection.bind(et);
-    et.shouldStartSelection = (x, y) => !c.mouse && canSelect(x, y);
-    const scan = (chunk: string) => {
-      const text = c.carry + chunk;
-      for (const [, params, set] of text.matchAll(MOUSE_MODE))
-        if (params!.split(";").some((p) => MOUSE_PARAMS.has(p))) c.mouse = set === "h";
-      for (const [, b64] of text.matchAll(OSC52)) renderer.copyToClipboardOSC52(Buffer.from(b64!, "base64").toString("utf8"));
-      c.carry = unfinished(text);
-    };
+    const { cols, rows } = size();
+    const c: Client = { session: s, proc: undefined!, shadow: createShadow(cols, rows), modes: createModes(), shownAt: Date.now(), tail: "" };
+    const decoder = new TextDecoder();
     // Store values are proxies; Bun.spawn needs a plain array.
     const cmd = on(m, [...s.open!.cmd], { cwd: s.open!.cwd, tty: true });
-    proc = Bun.spawn(cmd, {
+    const proc = Bun.spawn(cmd, {
       cwd: !m.ssh && existsSync(s.open!.cwd) ? s.open!.cwd : homedir(),
       env: { ...process.env, COLORTERM: "truecolor" },
       terminal: {
         cols,
         rows,
         data: (_t, d) => {
-          et.write(d);
-          const text = new TextDecoder().decode(d);
+          if (view() === c) process.stdout.write(d);
+          c.shadow.write(d);
+          const text = decoder.decode(d, { stream: true });
           c.tail = (c.tail + text).slice(-2000);
-          scan(text);
+          c.modes.track(text);
         },
       },
     });
@@ -190,16 +177,18 @@ function App(props: { store: DashStore }) {
     proc.exited.then((code) => {
       c.exited = code;
       syncLive();
-      // A clean exit is the CLI's own "leave"; an error stays on screen until ctrl+].
+      // A clean exit is the CLI's own "leave"; an error stays on screen until ctrl+] or ←.
       if (code === 0) {
         if (view() === c) back();
         else drop(c);
       } else {
         const refused = m.ssh && SSH_REFUSED.test(c.tail);
-        const why = refused
+        c.note = refused
           ? `${m.ssh} refused another ssh session on the shared connection (sshd MaxSessions, default 10) · close some panes or raise MaxSessions`
           : `${s.open!.cmd.join(" ")}${m.ssh ? ` on ${m.id}` : ""} exited ${code}`;
-        et.write(`\r\n\x1b[33m[agentdash] ${why} · ctrl+] to go back\x1b[0m\r\n`);
+        // The CLI may have died with its modes still on.
+        if (view() === c) process.stdout.write(`${c.modes.undo()}\r\n\x1b[33m[agentdash] ${c.note} · ctrl+] or ← to go back\x1b[0m\r\n`);
+        c.modes.clear();
       }
     });
     clients.set(s.key, c);
@@ -250,7 +239,6 @@ function App(props: { store: DashStore }) {
       if (hasStarted(real)) c.fresh = undefined;
       clients.set(real.key, c);
       syncLive();
-      if (view() === c) setView(c);
     }
   });
 
@@ -261,22 +249,6 @@ function App(props: { store: DashStore }) {
     await props.store.stop();
     process.exit(0);
   };
-
-  const sessionStatus = (s: Session) => props.store.rows(s.harness).find((x) => x.key === s.key)?.status;
-
-  useKeyboard((key) => {
-    const c = view();
-    if (!c) return;
-    // The source confirms the first prompt; Enter may merely choose a model or dismiss a dialog.
-    const plainLeft = key.name === "left" && !key.ctrl && !key.meta && !key.shift && !key.option;
-    // ctrl+c on an idle empty prompt would quit the client (opencode/codex) or arm Claude's exit;
-    // treat it as "back" instead. Mid-turn or with text typed it passes through to clear/interrupt.
-    const idleCtrlC = key.ctrl && key.name === "c" && sessionStatus(c.session) !== "working";
-    if (isBackKey(key) || ((plainLeft || idleCtrlC) && c.exited === undefined && atPromptStart(c.et))) {
-      key.preventDefault();
-      back();
-    }
-  });
 
   return (
     <box flexDirection="column" width="100%" height="100%" backgroundColor={colors.bg}>
@@ -309,14 +281,6 @@ function App(props: { store: DashStore }) {
             />
           )}
         </Show>
-      </box>
-      <box visible={!!view()} flexGrow={1} minHeight={0} flexDirection="column">
-        <box height={1} flexShrink={0} flexDirection="row" backgroundColor={colors.surfaceRaised}>
-          <text wrapMode="none" flexShrink={0} fg={providerColor(view()?.session.harness ?? "")}>{` ${view() ? label(view()!.session) : ""} `}</text>
-          <text wrapMode="none" flexGrow={1} fg={colors.text} attributes={TextAttributes.BOLD}>{view()?.session.title ?? ""}</text>
-          <text wrapMode="none" flexShrink={0} fg={colors.muted}>{" ctrl+] back to list "}</text>
-        </box>
-        <box ref={host} flexGrow={1} minHeight={0} />
       </box>
     </box>
   );

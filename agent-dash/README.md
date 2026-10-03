@@ -1,10 +1,11 @@
 # agent-dash
 
 One status list for Claude Code, OpenCode and Codex sessions, on this machine and
-any others you can `ssh` to. Opening a session runs the harness's own CLI inside
-the dashboard (a PTY drawn by OpenTUI's embedded terminal, over ssh for remote
-machines), so agent-dash never reimplements a chat view. Each harness keeps its
-sessions in a daemon, so leaving a pane never stops the agent.
+any others you can `ssh` to. Opening a session hands the whole terminal to the
+harness's own CLI (in a PTY, over ssh for remote machines): its output and your keys
+pass straight through, so agent-dash never reimplements a chat view and nothing the
+harness prints (links, clipboard writes) is lost on the way. Each harness keeps its
+sessions in a daemon, so leaving a session never stops the agent.
 
 ```sh
 bun install
@@ -45,8 +46,8 @@ Sections: **Working**, **Needs input**, **Finished** (done, failed, interrupted,
 Row labels are `machine·harness`, the machine in
 its host color and the harness in its own. Working is ordered by when each session
 started working, so one you just answered lands at its bottom, next to Needs input.
-In a session pane, mouse drags go to the harness, which draws and copies its own selection;
-for harnesses that don't take the mouse, the dashboard selects and copies on release. A session is archived when its
+In an open session the mouse belongs to the harness and your terminal, as if the CLI were run
+directly. A session is archived when its
 harness archived it, you archived it here, or it is finished and untouched for 7
 days. Rows are labelled `machine·harness`; the footer lists sources with problems
 (red) and harnesses that aren't there (dim: not installed, unsupported, not running).
@@ -99,14 +100,14 @@ The conversation is kept either way; opening the session resumes it.
 New session: ↑↓ machine · ←→ harness · tab edit start dir · ⏎ open · esc back.
 Combinations whose harness is missing or unsupported are greyed out.
 
-In a session pane, go back to the list with:
+In an open session, go back to the list with:
 
 - ctrl+] anywhere
-- ← or ctrl+c on an empty prompt (ctrl+c passes through while the agent works or
-  text is typed, so it still clears and interrupts)
+- ← on an empty prompt
 
-The client stays alive in the background (● open) and reopens instantly; panes not
-shown for 15 minutes are closed. An unused new chat is cached for reuse ("·ready"),
+Every other key, ctrl+c included, goes to the harness. The client stays alive in the
+background (● open) and repaints when reopened; clients not shown for 15 minutes are
+closed. Opening a session clears the terminal's screen and scrollback first. An unused new chat is cached for reuse ("·ready"),
 and ← on its empty prompt returns to the picker.
 
 ## Providers
