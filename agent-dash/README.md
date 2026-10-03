@@ -79,6 +79,22 @@ and ← on its empty prompt returns to the picker.
 
 ## Providers
 
+What a harness needs to appear here, per machine:
+
+- **A daemon that owns its sessions**, so they outlive any client, including the dashboard's pane.
+- **Presence**: a cheap check that says installed / too old / daemon not running (shown dimly, not as errors).
+- **List**: every session with id, title, cwd, last update, model, whether the harness archived it,
+  and a status that maps onto `working | needs | done | failed | interrupted | idle`. Activity
+  (working, needs input) must come from the live process, not from a self-reported note.
+- **Change signal**: an event stream that triggers a re-list, or polling. Polling also re-lists on
+  demand, which the dashboard asks for when you leave a pane.
+- **Open**: a CLI that attaches to a session by id in a terminal (run over ssh for remote machines).
+- **New**: a CLI that starts a session in a directory, plus a way to recognise it in the list (an
+  id it prints, or the first new session in that directory).
+- **Stop** (optional): end whatever is still running so nothing starts again unprompted. `x` runs it
+  before archiving. A harness whose sessions can wake themselves (Claude's `/loop`, scheduled
+  wakeups) must stop the process; one that only runs when prompted just interrupts the turn.
+
 | Harness | Status | Open | New | Stop |
 |---|---|---|---|---|
 | Claude Code | per-host sh loop: `claude agents --json --all` + `~/.claude/jobs/<id>/state.json` every 2 s | `claude attach <id>` | `claude --bg`, then attach | `claude stop <id>` (ends the process and its wakeups; background sessions only) |
