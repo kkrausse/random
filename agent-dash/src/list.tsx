@@ -208,9 +208,12 @@ export function SessionList(props: {
   return (
     <box flexDirection="column" width="100%" height="100%" backgroundColor={colors.bg}>
       <box height={1} flexShrink={0} flexDirection="row" justifyContent="space-between">
-        <text fg={colors.text} attributes={TextAttributes.BOLD}>
-          agents · {counts().needs} need you · {counts().working} working
-        </text>
+        <box flexDirection="row">
+          <text fg={props.store.hostColor(props.store.here)} attributes={TextAttributes.BOLD}>{props.store.here}</text>
+          <text fg={colors.text} attributes={TextAttributes.BOLD}>
+            {` · agents · ${counts().needs} need you · ${counts().working} working`}
+          </text>
+        </box>
         <text wrapMode="none" fg={colors.dim}>{ready() ? "" : "loading…"}</text>
       </box>
       <scrollbox ref={scroll} flexGrow={1} minHeight={0} scrollY scrollX={false} viewportCulling contentOptions={{ flexDirection: "column" }} verticalScrollbarOptions={{ visible: false }}>

@@ -1,7 +1,7 @@
 // A machine is local or an SSH alias. Everything remote goes through `on` (run a command there) and
 // `forward` (reach a port or socket there), and every ssh rides one shared ControlMaster connection
 // per host, so streams, RPCs and panes cost channels, not connections.
-import { homedir, userInfo } from "node:os";
+import { homedir, hostname, userInfo } from "node:os";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { Effect, Schema, Semaphore, Stream } from "effect";
@@ -30,13 +30,29 @@ const MachineSchema = Schema.Struct({
 export const CONFIG_DIR = `${homedir()}/.config/agent-dash`;
 const MACHINES_FILE = `${CONFIG_DIR}/machines.json`;
 
-/** Read at startup; writes `[{"id":"local"}]` when absent. A bad file is fatal: there is nothing to show without it. */
+/** This machine's Tailscale name (first label of its MagicDNS name), else its short hostname. */
+export function localName(): string {
+  for (const bin of ["tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale"]) {
+    try {
+      const out = Bun.spawnSync([bin, "status", "--self", "--json"], { stderr: "ignore", timeout: 3000 });
+      const dns = JSON.parse(out.stdout.toString())?.Self?.DNSName;
+      if (typeof dns === "string" && dns) return dns.split(".")[0]!;
+    } catch {}
+  }
+  return hostname().split(".")[0]!;
+}
+
+/**
+ * Read at startup; writes this machine's entry when absent. The local machine's id `"local"` shows as
+ * its Tailscale name. A bad file is fatal: there is nothing to show without it.
+ */
 export function loadMachines(): Machine[] {
   if (!existsSync(MACHINES_FILE)) {
     mkdirSync(CONFIG_DIR, { recursive: true });
-    writeFileSync(MACHINES_FILE, JSON.stringify([{ id: "local" }], null, 2) + "\n");
+    writeFileSync(MACHINES_FILE, JSON.stringify([{ id: localName() }], null, 2) + "\n");
   }
-  return Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Array(MachineSchema)))(readFileSync(MACHINES_FILE, "utf8")).map((m) => ({ ...m }));
+  const machines = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Array(MachineSchema)))(readFileSync(MACHINES_FILE, "utf8"));
+  return machines.map((m) => (m.id === "local" && !m.ssh ? { ...m, id: localName() } : { ...m }));
 }
 
 // Non-interactive ssh shells skip .bashrc, so user-installed CLIs need these on PATH.

@@ -16,16 +16,18 @@ See [docs/design.md](docs/design.md) for how it works.
 
 ## Machines
 
-`~/.config/agent-dash/machines.json` (created as `[{"id":"local"}]` if absent):
+`~/.config/agent-dash/machines.json` (created with just this machine if absent):
 
 ```json
 [
-  { "id": "local" },
+  { "id": "mac" },
   { "id": "diesel2", "ssh": "diesel2", "dir": "~/devfs/repos/kkrausse" },
   { "id": "lrpi", "ssh": "lrpi" }
 ]
 ```
 
+- `id`: the name shown in the list. The entry without `ssh` is this machine; `"local"` there is
+  shown as its Tailscale name (else its hostname).
 - `ssh`: an alias/host from your ssh config (key auth; the dashboard never prompts).
 - `dir`: default start directory for new sessions there (default `~`).
 - `color`: label color for the host (hex); defaults to a palette color by position in the file.
