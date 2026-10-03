@@ -56,7 +56,7 @@ full), status line, then **subagents**, **tokens** and **age** (`<1m`, `5m`, `2h
 since the last update). Columns are as wide as the rows on screen need, and a column
 no row has a value for is left out. The working directory is in the footer only.
 
-**subagents** is `N` or `N (M active)`, counting all descendants like the
+**subagents** is `n / N` (active / total), counting all descendants like the
 session-manager plugin. Counts include finished descendants; `≥N` means the bounded
 history scan was incomplete. Children are not separate top-level rows. For Claude the
 total is the session's subagent transcripts; "active" is only known for background

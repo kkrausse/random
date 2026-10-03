@@ -244,7 +244,7 @@ export function SessionList(props: {
           <text wrapMode="none" flexShrink={0} fg={colors.dim}>{fit("", labelWidth()) + fit("session", cols().title) + GAP + "status"}</text>
         </box>
         <text wrapMode="none" flexShrink={0} fg={colors.dim}>
-          {cell("subagents", cols().subagents) + cell("tokens", cols().context, true) + cell("", cols().state) + cell("age", AGE_W, true)}
+          {cell("subagents", cols().subagents, true) + cell("tokens", cols().context, true) + cell("", cols().state) + cell("age", AGE_W, true)}
         </text>
       </box>
       <scrollbox ref={scroll} flexGrow={1} minHeight={0} scrollY scrollX={false} viewportCulling contentOptions={{ flexDirection: "column" }} verticalScrollbarOptions={{ visible: false }}>
@@ -282,7 +282,7 @@ export function SessionList(props: {
                 </box>
                 {/* An empty text still takes a column, so an absent column renders nothing at all. */}
                 <Show when={cols().subagents}>
-                  <text wrapMode="none" flexShrink={0} fg={s().subagents?.active ? colors.selected : colors.muted}>{cell(subagentCell(s().subagents), cols().subagents)}</text>
+                  <text wrapMode="none" flexShrink={0} fg={s().subagents?.active ? colors.selected : colors.muted}>{cell(subagentCell(s().subagents), cols().subagents, true)}</text>
                 </Show>
                 <Show when={cols().context}>
                   <text wrapMode="none" flexShrink={0} fg={colors.muted}>{cell(contextCell(s().context), cols().context, true)}</text>
