@@ -29,6 +29,7 @@ See [docs/design.md](docs/design.md) for how it works.
 
 - `id`: the name shown in the list. The entry without `ssh` is this machine; `"local"` there is
   shown as its Tailscale name (else its hostname).
+- `short`: a shorter name for list rows (e.g. `"d2"`); the footer and new-session picker keep `id`.
 - `ssh`: an alias/host from your ssh config (key auth; the dashboard never prompts).
 - `dir`: default start directory for new sessions there (default `~`).
 - `color`: label color for the host (hex); defaults to a palette color by position in the file.
@@ -52,18 +53,19 @@ harness archived it, you archived it here, or it is finished and untouched for 7
 days. Rows are labelled `machine·harness`; the footer lists sources with problems
 (red) and harnesses that aren't there (dim: not installed, unsupported, not running).
 
-The list is a table: label, session title (cut at 40 columns; the footer has it in
-full), status line, then **subagents**, **tokens** and **age** (`<1m`, `5m`, `2h`, `3d`
+The list is a table: label (the machine's `short` name and the harness as `clau`, `codex` or
+`openc`), session title (cut at 40 columns, or shorter on a narrow terminal so the right-hand
+columns stay on screen; the footer has it in full), status line, then **subs**, **tok** and **age** (`<1m`, `5m`, `2h`, `3d`
 since the last update). Columns are as wide as the rows on screen need, and a column
 no row has a value for is left out. The working directory is in the footer only.
 
-**subagents** is `n / N` (active / total), counting all descendants like the
+**subs** is `n/N` (active/total subagents), counting all descendants like the
 session-manager plugin. Counts include finished descendants; `≥N` means the bounded
 history scan was incomplete. Children are not separate top-level rows. For Claude the
 total is the session's subagent transcripts; "active" is only known for background
 sessions (their job state lists what the current turn has running).
 
-**tokens** is what is in the context window (`137k`), not a percentage: Claude's
+**tok** is what is in the context window (`137k`), not a percentage: Claude's
 window size isn't recorded anywhere readable, and a share of an assumed limit would
 be a guess. Where a harness does report its limit, the footer shows it next to the
 exact count.
@@ -106,7 +108,7 @@ In an open session, go back to the list with:
 - ← on an empty prompt
 
 Every other key, ctrl+c included, goes to the harness. The client stays alive in the
-background (● open) and repaints when reopened; clients not shown for 15 minutes are
+background (●) and repaints when reopened; clients not shown for 15 minutes are
 closed. Opening a session clears the terminal's screen and scrollback first. An unused new chat is cached for reuse ("·ready"),
 and ← on its empty prompt returns to the picker.
 
@@ -138,4 +140,4 @@ Remote OpenCode ports and Codex sockets are forwarded over the shared ssh connec
 OpenCode 1.x and Claude Code without `agents --json` show as unsupported.
 
 Interactive Claude sessions (plain `claude` in another terminal) are listed but
-marked view only: `claude attach` only accepts background jobs.
+marked `view`: `claude attach` only accepts background jobs.

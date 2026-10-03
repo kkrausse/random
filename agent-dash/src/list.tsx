@@ -3,14 +3,14 @@
 // so live updates change badges (and sections) but never shuffle rows. Working is ordered by when
 // each session started working, so one you just answered lands at its bottom, next to Needs input.
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/solid";
+import { useKeyboard, useTerminalDimensions } from "@opentui/solid";
 import { Index, Show, createEffect, createMemo, createSignal } from "solid-js";
 import type { Session, Status } from "./session.ts";
 import { isUnprompted } from "./session.ts";
 import { QUIET } from "./errors.ts";
 import type { DashStore } from "./store.ts";
 import { isArchived } from "./archive.ts";
-import { colors, providerColor, spinner } from "./theme.ts";
+import { colors, harnessShort, providerColor, spinner } from "./theme.ts";
 import { age, fit, relTime, shortPath } from "./format.ts";
 import { contextCell, subagentCell } from "./metrics.ts";
 
@@ -27,7 +27,7 @@ const workingSince = new Map<string, number>();
 const HEADER_H = 2;
 const TITLE_MAX = 40;
 const AGE_W = 3;
-const GAP = "  ";
+const GAP = " ";
 
 const sectionOf = (s: Session, archived: boolean): Section =>
   archived ? "archived" : s.status === "needs" ? "needs" : s.status === "working" ? "working" : "finished";
@@ -208,8 +208,11 @@ export function SessionList(props: {
     for (const s of srcs.filter((s) => QUIET.has(s.problem!.kind))) quiet.set(s.problem!.message, [...(quiet.get(s.problem!.message) ?? []), label(s)]);
     return { errors: errors.join(" · "), quiet: [...quiet].map(([msg, who]) => `${who.join(", ")} ${msg}`).join(" · ") };
   });
-  const labelWidth = createMemo(() => Math.max(8, ...all().map((s) => label(s).length)) + 1);
-  const stateCell = (s: Session) => (props.live().has(s.key) ? "● open" : s.open ? "" : "view only");
+  // Rows carry the short label (`short` host name, cut harness name); the footer has the full one.
+  const host = (s: Session) => props.store.hostShort(s.machine);
+  const labelWidth = createMemo(() => Math.max(0, ...view().list.map((s) => host(s).length + 1 + harnessShort(s.harness).length)) + 1);
+  const stateCell = (s: Session) => (props.live().has(s.key) ? "●" : s.open ? "" : "view");
+  const dims = useTerminalDimensions();
   // Column widths fit the rows on screen. A column no row has anything for takes no space;
   // otherwise it is at least as wide as its heading.
   const cols = createMemo(() => {
@@ -218,12 +221,14 @@ export function SessionList(props: {
       const w = Math.max(0, ...list.map((s) => Bun.stringWidth(cell(s))));
       return w ? Math.min(max, Math.max(w, head.length)) : 0;
     };
-    return {
-      title: width("session", (s) => s.title, TITLE_MAX),
-      subagents: width("subagents", (s) => subagentCell(s.subagents)),
-      context: width("tokens", (s) => contextCell(s.context)),
+    const right = {
+      subagents: width("subs", (s) => subagentCell(s.subagents)),
+      context: width("tok", (s) => contextCell(s.context)),
       state: width("", stateCell),
     };
+    // On a narrow terminal the title gives way (cut with an ellipsis) so the right columns stay on screen.
+    const taken = 2 + labelWidth() + [right.subagents, right.context, right.state, AGE_W].reduce((n, w) => n + (w ? w + GAP.length : 0), 0);
+    return { title: width("session", (s) => s.title, Math.max(8, Math.min(TITLE_MAX, dims().width - taken))), ...right };
   });
   /** A fixed-width cell with its leading gap, or nothing when the column is empty. */
   const cell = (text: string, width: number, right = false) => (width ? GAP + fit(text, width, right) : "");
@@ -244,7 +249,7 @@ export function SessionList(props: {
           <text wrapMode="none" flexShrink={0} fg={colors.dim}>{fit("", labelWidth()) + fit("session", cols().title) + GAP + "status"}</text>
         </box>
         <text wrapMode="none" flexShrink={0} fg={colors.dim}>
-          {cell("subagents", cols().subagents, true) + cell("tokens", cols().context, true) + cell("", cols().state) + cell("age", AGE_W, true)}
+          {cell("subs", cols().subagents, true) + cell("tok", cols().context, true) + cell("", cols().state) + cell("age", AGE_W, true)}
         </text>
       </box>
       <scrollbox ref={scroll} flexGrow={1} minHeight={0} scrollY scrollX={false} viewportCulling contentOptions={{ flexDirection: "column" }} verticalScrollbarOptions={{ visible: false }}>
@@ -273,8 +278,8 @@ export function SessionList(props: {
                   <text fg={active() && !"needs working failed".includes(st()) ? colors.selected : color()}>{gutter()}</text>
                 </box>
                 <box flexDirection="row" flexGrow={1} flexBasis={0} minWidth={0} overflow="hidden" paddingLeft={1}>
-                  <text wrapMode="none" flexShrink={0} fg={props.store.hostColor(s().machine)}>{s().machine}</text>
-                  <text wrapMode="none" flexShrink={0} fg={providerColor(s().harness)}>{`·${s().harness}`.padEnd(labelWidth() - s().machine.length)}</text>
+                  <text wrapMode="none" flexShrink={0} fg={props.store.hostColor(s().machine)}>{host(s())}</text>
+                  <text wrapMode="none" flexShrink={0} fg={providerColor(s().harness)}>{`·${harnessShort(s().harness)}`.padEnd(labelWidth() - host(s()).length)}</text>
                   <text wrapMode="none" flexShrink={0} fg={active() ? colors.selected : s().open ? colors.text : colors.muted} attributes={active() ? TextAttributes.BOLD : undefined}>
                     {fit(s().title, cols().title)}
                   </text>

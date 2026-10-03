@@ -8,7 +8,7 @@ test("subagent count includes nested descendants and their activity, not other r
     { id: "grandchild", parentId: "child", active: false }, { id: "other", active: false },
   ], "root", true);
   expect(count).toEqual({ total: 2, active: 1, complete: true });
-  expect(subagentCell(count)).toBe("1 / 2");
+  expect(subagentCell(count)).toBe("1/2");
 });
 
 test("partial counts are lower bounds and cycles cannot loop or count the root", () => {
@@ -17,7 +17,7 @@ test("partial counts are lower bounds and cycles cannot loop or count the root",
     { id: "child", parentId: "root", active: false },
   ], "root", false);
   expect(count.total).toBe(1);
-  expect(subagentCell(count)).toBe("0 / ≥1");
+  expect(subagentCell(count)).toBe("0/≥1");
 });
 
 test("context shows tokens, with or without a limit, and nothing when unavailable", () => {

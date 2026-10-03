@@ -23,6 +23,9 @@ export const HOST_COLORS = ["#38bdf8", "#f472b6", "#2dd4bf", "#a3e635", "#818cf8
 
 export const providerColor = (p: string) => (colors as Record<string, string>)[p] ?? colors.muted;
 
+/** Harness names cut to fit a narrow label column. */
+export const harnessShort = (h: string) => ({ claude: "clau", opencode: "openc" } as Record<string, string>)[h] ?? h;
+
 // One shared ticker so every working row spins in step without per-row timers.
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const [tick, setTick] = createSignal(0);

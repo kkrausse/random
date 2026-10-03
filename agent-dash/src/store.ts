@@ -118,6 +118,8 @@ export function createDashStore() {
       if (fiber) await Effect.runPromise(Fiber.interrupt(fiber).pipe(Effect.timeout("2 seconds"), Effect.ignore));
       machines.forEach(closeMaster);
     },
+    /** The machine's name in list rows: its `short` in machines.json, else its id. */
+    hostShort: (id: string) => machines.find((m) => m.id === id)?.short ?? id,
     /** The machine's color: its `color` in machines.json, else one from the palette by config order. */
     hostColor: (id: string) => {
       const i = machines.findIndex((m) => m.id === id);
