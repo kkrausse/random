@@ -52,7 +52,7 @@ days. Rows are labelled `machine·harness`; the footer lists sources with proble
 (red) and harnesses that aren't there (dim: not installed, unsupported, not running).
 
 The list is a table: label, session title (cut at 40 columns; the footer has it in
-full), status line, then **subagents**, **ctx** and **age** (`<1m`, `5m`, `2h`, `3d`
+full), status line, then **subagents**, **tokens** and **age** (`<1m`, `5m`, `2h`, `3d`
 since the last update). Columns are as wide as the rows on screen need, and a column
 no row has a value for is left out. The working directory is in the footer only.
 
@@ -62,7 +62,7 @@ history scan was incomplete. Children are not separate top-level rows. For Claud
 total is the session's subagent transcripts; "active" is only known for background
 sessions (their job state lists what the current turn has running).
 
-**ctx** is the tokens in the context window (`137k`), not a percentage: Claude's
+**tokens** is what is in the context window (`137k`), not a percentage: Claude's
 window size isn't recorded anywhere readable, and a share of an assumed limit would
 be a guess. Where a harness does report its limit, the footer shows it next to the
 exact count.

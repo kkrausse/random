@@ -221,7 +221,7 @@ export function SessionList(props: {
     return {
       title: width("session", (s) => s.title, TITLE_MAX),
       subagents: width("subagents", (s) => subagentCell(s.subagents)),
-      context: width("ctx", (s) => contextCell(s.context)),
+      context: width("tokens", (s) => contextCell(s.context)),
       state: width("", stateCell),
     };
   });
@@ -244,7 +244,7 @@ export function SessionList(props: {
           <text wrapMode="none" flexShrink={0} fg={colors.dim}>{fit("", labelWidth()) + fit("session", cols().title) + GAP + "status"}</text>
         </box>
         <text wrapMode="none" flexShrink={0} fg={colors.dim}>
-          {cell("subagents", cols().subagents) + cell("ctx", cols().context, true) + cell("", cols().state) + cell("age", AGE_W, true)}
+          {cell("subagents", cols().subagents) + cell("tokens", cols().context, true) + cell("", cols().state) + cell("age", AGE_W, true)}
         </text>
       </box>
       <scrollbox ref={scroll} flexGrow={1} minHeight={0} scrollY scrollX={false} viewportCulling contentOptions={{ flexDirection: "column" }} verticalScrollbarOptions={{ visible: false }}>
