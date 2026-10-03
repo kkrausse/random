@@ -28,6 +28,7 @@ See [docs/design.md](docs/design.md) for how it works.
 
 - `ssh`: an alias/host from your ssh config (key auth; the dashboard never prompts).
 - `dir`: default start directory for new sessions there (default `~`).
+- `color`: label color for the host (hex); defaults to a palette color by position in the file.
 - `path`: extra PATH entries on the host. `~/.local/bin`, `~/.bun/bin` and
   `~/.opencode/bin` are always added, since non-interactive ssh skips `.bashrc`.
 
@@ -38,7 +39,8 @@ All ssh traffic to a host shares one connection (ControlMaster sockets in
 ## List
 
 Sections: **Working**, **Needs input**, **Finished** (done, failed, interrupted, never
-prompted), **Archived** (collapsed; tab shows it). Working is ordered by when each session
+prompted), **Archived** (collapsed; tab shows it). Row labels are `machine·harness`, the machine in
+its host color and the harness in its own. Working is ordered by when each session
 started working, so one you just answered lands at its bottom, next to Needs input.
 In a session pane, mouse drags go to the harness, which draws and copies its own selection;
 for harnesses that don't take the mouse, the dashboard selects and copies on release. A session is archived when its
@@ -52,8 +54,13 @@ undo an archive made in the harness itself.
 
 ## Keys
 
-List: ↑↓/jk move · ⏎/→ open · n new · x archive · r restore · tab show archived ·
+List: ↑↓/jk move · ⏎/→ open · n new · x stop + archive · r restore · tab show archived ·
 / filter · q quit.
+
+`x` first stops whatever is still running in the session, so an archived session can't wake
+itself up later (a Claude `/loop` or scheduled wakeup), then archives it. If the stop fails the
+session stays unarchived. `x` on an already archived but still running session just stops it.
+The conversation is kept either way; opening the session resumes it.
 
 New session: ↑↓ machine · ←→ harness · tab edit start dir · ⏎ open · esc back.
 Combinations whose harness is missing or unsupported are greyed out.
@@ -70,11 +77,11 @@ and ← on its empty prompt returns to the picker.
 
 ## Providers
 
-| Harness | Status | Open | New |
-|---|---|---|---|
-| Claude Code | per-host sh loop: `claude agents --json --all` + `~/.claude/jobs/<id>/state.json` every 2 s | `claude attach <id>` | `claude --bg`, then attach |
-| OpenCode 2.x | background service HTTP API (`~/.local/state/opencode/service.json`, basic auth user `opencode`), re-read on `/api/event` events | `opencode -s <id>` | `opencode <dir>` |
-| Codex | app-server daemon, WebSocket over `~/.codex/app-server-control/app-server-control.sock`, re-read on thread notifications | `codex resume <id>` | `codex -C <dir>` |
+| Harness | Status | Open | New | Stop |
+|---|---|---|---|---|
+| Claude Code | per-host sh loop: `claude agents --json --all` + `~/.claude/jobs/<id>/state.json` every 2 s | `claude attach <id>` | `claude --bg`, then attach | `claude stop <id>` (ends the process and its wakeups; background sessions only) |
+| OpenCode 2.x | background service HTTP API (`~/.local/state/opencode/service.json`, basic auth user `opencode`), re-read on `/api/event` events | `opencode -s <id>` | `opencode <dir>` | `POST /api/session/<id>/interrupt` |
+| Codex | app-server daemon, WebSocket over `~/.codex/app-server-control/app-server-control.sock`, re-read on thread notifications | `codex resume <id>` | `codex -C <dir>` | `turn/interrupt` on the in-progress turn |
 
 Remote OpenCode ports and Codex sockets are forwarded over the shared ssh connection.
 OpenCode 1.x and Claude Code without `agents --json` show as unsupported.

@@ -8,11 +8,12 @@ import type { Harness, Session } from "./session.ts";
 import { HARNESSES } from "./session.ts";
 import { QUIET, fail, type SourceError } from "./errors.ts";
 import { closeMaster, expand, home, loadMachines, type Machine } from "./machines.ts";
-import { claudeSessions, hostFeed, launchClaude } from "./claude.ts";
+import { claudeSessions, hostFeed, launchClaude, stopClaude } from "./claude.ts";
 import { launchOpencode, opencodeSessions } from "./opencode.ts";
 import { codexSessions, launchCodex } from "./codex.ts";
 import { parseMarks, setMark, markKey, type Marks } from "./archive.ts";
 import type { Claim } from "./session.ts";
+import { HOST_COLORS } from "./theme.ts";
 
 export type Problem = { kind: SourceError["kind"]; message: string };
 export type Source = { machine: string; harness: Harness; rows: Session[]; problem?: Problem; loaded: boolean };
@@ -78,6 +79,11 @@ export function createDashStore() {
       ),
     );
   };
+  // Codex and OpenCode stop through their source's live connection, so each source publishes its
+  // stop function while connected.
+  const stoppers = new Map<string, (id: string) => Effect.Effect<void, SourceError>>();
+  const setStop = (k: string) => (f: ((id: string) => Effect.Effect<void, SourceError>) | undefined) => void (f ? stoppers.set(k, f) : stoppers.delete(k));
+
   const streamed = (m: Machine, h: Harness, s: Stream.Stream<ReadonlyArray<Session>, SourceError>) =>
     supervise(sourceKey(m.id, h), s.pipe(Stream.runForEach((rows) => setRows(sourceKey(m.id, h), rows))));
 
@@ -87,8 +93,8 @@ export function createDashStore() {
       Effect.all(
         [
           claude(m),
-          streamed(m, "opencode", Stream.unwrap(home(m).pipe(Effect.map((h) => opencodeSessions(m, h))))),
-          streamed(m, "codex", codexSessions(m)),
+          streamed(m, "opencode", Stream.unwrap(home(m).pipe(Effect.map((h) => opencodeSessions(m, h, setStop(sourceKey(m.id, "opencode"))))))),
+          streamed(m, "codex", codexSessions(m, setStop(sourceKey(m.id, "codex")))),
         ],
         { concurrency: "unbounded", discard: true },
       ),
@@ -107,6 +113,18 @@ export function createDashStore() {
     stop: async () => {
       if (fiber) await Effect.runPromise(Fiber.interrupt(fiber).pipe(Effect.timeout("2 seconds"), Effect.ignore));
       machines.forEach(closeMaster);
+    },
+    /** The machine's color: its `color` in machines.json, else one from the palette by config order. */
+    hostColor: (id: string) => {
+      const i = machines.findIndex((m) => m.id === id);
+      return machines[i]?.color ?? HOST_COLORS[Math.max(0, i) % HOST_COLORS.length]!;
+    },
+    /** End whatever is still running in the session, so nothing can start it again unprompted. */
+    stopSession: (s: Session): Promise<void> => {
+      if (!s.stoppable) return Promise.resolve();
+      if (s.harness === "claude") return Effect.runPromise(stopClaude(machine(s.machine), s.id));
+      const stop = stoppers.get(sourceKey(s.machine, s.harness));
+      return stop ? Effect.runPromise(stop(s.id)) : Promise.reject(new Error(`${s.machine}·${s.harness} not connected`));
     },
     rows: (h?: Harness) => Object.values(state.sources).flatMap((s) => (!h || s.harness === h ? s.rows : [])),
     /** Write a dashboard archive mark on the session's own host. */

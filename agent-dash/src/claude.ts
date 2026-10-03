@@ -146,6 +146,9 @@ export const claudeSessions = (m: Machine, rec: HostRecord): Effect.Effect<Sessi
           model: "",
           updatedAt: raw?.mtime ?? e.startedAt ?? 0,
           archived: false,
+          // A finished background session keeps its process, and with it any /loop or wakeup that can
+          // start it again. Interactive sessions belong to their terminal.
+          stoppable: !!bg && e.state !== "stopped" && e.state !== "killed",
           // An interactive session is owned by the terminal it runs in; a second client would fork it.
           open: bg ? { cmd: ["claude", "attach", e.id!], cwd: e.cwd } : paseo ? { cmd: ["paseotui"], cwd: e.cwd } : undefined,
           closedReason: bg || paseo ? undefined : "interactive session · open it in its own terminal",
@@ -163,3 +166,11 @@ export const launchClaude = (m: Machine, dir: string) =>
     return { cmd: ["claude", "attach", id], cwd: dir, claim: { id } };
   });
 
+
+/** Ends the background session's process (and its pending wakeups); `claude attach` resumes it. */
+export const stopClaude = (m: Machine, id: string) =>
+  Effect.gen(function* () {
+    const out = yield* exec(m, ["claude", "stop", id]);
+    // Already exited: nothing left to stop.
+    if (out.code !== 0 && !/No job matching/.test(out.stdout + out.stderr)) return yield* fail("failed", `claude stop: ${firstLine(out.stderr || out.stdout) || `exit ${out.code}`}`);
+  });

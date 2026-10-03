@@ -104,6 +104,7 @@ const list = (m: Machine, home: string, api: Api) =>
           model: s.model?.id ?? "",
           updatedAt: s.time.updated,
           archived: !!s.time.archived,
+          stoppable: s.id in active.data,
           open: { cmd: ["opencode", "-s", s.id], cwd },
         };
       });
@@ -135,13 +136,30 @@ const events = (api: Api): Stream.Stream<string, SourceError> =>
     Stream.filter((t) => RELEVANT.test(t)),
   );
 
-/** The machine's OpenCode sessions: the full list on start, on each relevant event, and every 60 s. */
-export const opencodeSessions = (m: Machine, home: string): Stream.Stream<ReadonlyArray<Session>, SourceError> =>
+/** Interrupts the session's running turn. OpenCode sessions never wake on their own. */
+const stopSession = (api: Api, id: string) =>
+  Effect.tryPromise({
+    try: async (signal) => {
+      const r = await fetch(`${api.base}/api/session/${id}/interrupt`, { method: "POST", headers: { authorization: api.auth }, signal });
+      if (!r.ok) throw new Error(`${r.status}`);
+    },
+    catch: (e) => fail("failed", `opencode interrupt: ${e instanceof Error ? e.message : String(e)}`),
+  });
+
+/**
+ * The machine's OpenCode sessions: the full list on start, on each relevant event, and every 60 s.
+ * While connected, `setStop` holds a function that stops a session through the same forward.
+ */
+export const opencodeSessions = (m: Machine, home: string, setStop: (stop: ((id: string) => Effect.Effect<void, SourceError>) | undefined) => void): Stream.Stream<ReadonlyArray<Session>, SourceError> =>
   Stream.unwrap(
     Effect.gen(function* () {
       const s = yield* service(m);
       const local = yield* forward(m, { tcp: { host: s.url.hostname, port: Number(s.url.port || 80) } });
       const api = { base: `${s.url.protocol}//${local}`, auth: s.auth };
+      yield* Effect.acquireRelease(
+        Effect.sync(() => setStop((id) => stopSession(api, id))),
+        () => Effect.sync(() => setStop(undefined)),
+      );
       return Stream.merge(Stream.tick("60 seconds"), events(api)).pipe(
         // Events arriving while a list is in flight collapse into one more list.
         Stream.buffer({ capacity: 1, strategy: "sliding" }),
