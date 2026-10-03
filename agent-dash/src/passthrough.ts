@@ -46,7 +46,10 @@ export function createShadow(cols: number, rows: number): Shadow {
     },
     atPromptStart() {
       if (handle === null) return false;
-      // The cursor is only known for a composed frame.
+      // The cursor is only known for a composed frame. Composing draws just the cells that changed
+      // since the last one, so invalidate first: a fresh buffer would otherwise come back blank,
+      // and a blank line reads as an empty prompt.
+      lib.embeddedTerminalInvalidate(handle);
       const buffer = OptimizedBuffer.create(cols, rows, "unicode");
       try {
         lib.embeddedTerminalCompose(handle, buffer.ptr, 0, 0);
