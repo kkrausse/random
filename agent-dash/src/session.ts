@@ -22,6 +22,8 @@ export type Session = {
   model: string;
   /** Archived in the harness itself. */
   archived: boolean;
+  /** Something is still running that `stop` would end (a turn, or a Claude process that can wake itself). */
+  stoppable: boolean;
 };
 
 export const sessionKey = (machine: string, harness: Harness, id: string) => `${machine}/${harness}:${id}`;

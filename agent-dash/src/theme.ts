@@ -18,6 +18,9 @@ export const colors = {
   opencode: "#a78bfa",
 };
 
+// Per-machine label colors, clear of the harness and status colors.
+export const HOST_COLORS = ["#38bdf8", "#f472b6", "#2dd4bf", "#a3e635", "#818cf8", "#fb7185"];
+
 export const providerColor = (p: string) => (colors as Record<string, string>)[p] ?? colors.muted;
 
 // One shared ticker so every working row spins in step without per-row timers.

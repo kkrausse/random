@@ -57,13 +57,27 @@ const list = (m: Machine, c: CodexRpc) =>
           model: t.model ?? "",
           updatedAt: t.updatedAt * 1000,
           archived: !done.has(t.id),
+          stoppable: t.status.type === "active",
           open: { cmd: ["codex", "resume", t.id], cwd: t.cwd },
         };
       });
   });
 
-/** The machine's Codex threads: the full list on connect, on each thread notification, and every 60 s. */
-export const codexSessions = (m: Machine): Stream.Stream<ReadonlyArray<Session>, SourceError> =>
+const Turns = decodeValue(Schema.Struct({ data: Schema.Array(Schema.Struct({ id: Schema.String, status: Schema.String })) }), "codex thread/turns/list");
+
+/** Interrupts the thread's in-progress turn, if any. Codex threads never wake on their own. */
+const stopThread = (c: CodexRpc, threadId: string) =>
+  Effect.gen(function* () {
+    const turns = yield* request(c, "thread/turns/list", { threadId, limit: 1, sortDirection: "desc", itemsView: "notLoaded" }).pipe(Effect.flatMap(Turns));
+    const turn = turns.data.find((t) => t.status === "inProgress");
+    if (turn) yield* request(c, "turn/interrupt", { threadId, turnId: turn.id });
+  });
+
+/**
+ * The machine's Codex threads: the full list on connect, on each thread notification, and every 60 s.
+ * While connected, `setStop` holds a function that stops a thread over the same connection.
+ */
+export const codexSessions = (m: Machine, setStop: (stop: ((id: string) => Effect.Effect<void, SourceError>) | undefined) => void): Stream.Stream<ReadonlyArray<Session>, SourceError> =>
   Stream.unwrap(
     Effect.gen(function* () {
       const out = (yield* sh(m, CHECK)).stdout.trim();
@@ -80,6 +94,10 @@ export const codexSessions = (m: Machine): Stream.Stream<ReadonlyArray<Session>,
           catch: (e) => fail("failed", `codex connect: ${e instanceof Error ? e.message : String(e)}`),
         }),
         (c) => Effect.sync(() => c.close()),
+      );
+      yield* Effect.acquireRelease(
+        Effect.sync(() => setStop((id) => stopThread(rpc, id))),
+        () => Effect.sync(() => setStop(undefined)),
       );
       const notifications = Stream.callback<void, SourceError>((q) =>
         Effect.sync(() => {

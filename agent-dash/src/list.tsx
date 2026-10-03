@@ -142,18 +142,25 @@ export function SessionList(props: {
     return (its[i + 1]?.section === sec ? its[i + 1] : its[i - 1]?.section === sec ? its[i - 1] : undefined)?.row.key;
   };
 
+  // Archiving stops the session first, so an archived session can't wake up again (a Claude /loop
+  // or wakeup); if the stop fails it stays unarchived.
   async function mark(s: Session, archived: boolean) {
     if (!s.id) return setFlash("not started yet");
-    if (archived && archivedOf(s)) return setFlash("already archived");
+    if (archived && archivedOf(s) && !s.stoppable) return setFlash("already archived");
     if (!archived && s.archived) return setFlash(`archived in ${s.harness} itself · restore it there`);
     if (!archived && !archivedOf(s)) return setFlash("not archived");
     const next = neighbor(s);
     try {
+      if (archived && s.stoppable) {
+        setFlash(`stopping ${s.title}…`);
+        await props.store.stopSession(s);
+        if (archivedOf(s)) return setFlash(`stopped ${s.title}`);
+      }
       await props.store.mark(s, archived);
       if (!(archived ? showArchived() : true) && next) setSelected(next);
       setFlash(`${archived ? "archived" : "restored"} ${s.title}`);
     } catch (e) {
-      setFlash(`${archived ? "archive" : "restore"} failed: ${e instanceof Error ? e.message : String(e)}`);
+      setFlash(`${archived ? "stop/archive" : "restore"} failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -232,7 +239,8 @@ export function SessionList(props: {
                   <text fg={active() && !"needs working failed".includes(st()) ? colors.selected : color()}>{gutter()}</text>
                 </box>
                 <box flexDirection="row" flexGrow={1} flexBasis={0} minWidth={0} overflow="hidden" paddingLeft={1}>
-                  <text wrapMode="none" flexShrink={0} fg={providerColor(s().harness)}>{label(s()).padEnd(labelWidth())}</text>
+                  <text wrapMode="none" flexShrink={0} fg={props.store.hostColor(s().machine)}>{s().machine}</text>
+                  <text wrapMode="none" flexShrink={0} fg={providerColor(s().harness)}>{`·${s().harness}`.padEnd(labelWidth() - s().machine.length)}</text>
                   <text wrapMode="none" flexShrink={0} fg={active() ? colors.selected : s().open ? colors.text : colors.muted} attributes={active() ? TextAttributes.BOLD : undefined}>
                     {s().title}
                   </text>
@@ -287,7 +295,7 @@ export function SessionList(props: {
           fallback={
             <text fg={colors.dim} wrapMode="none">
               {flash() ? `${flash()} · ` : ""}
-              {filter() ? `filter: ${filter()} · ` : ""}↑↓ move · ⏎ open · n new · x archive · r restore · tab archived · / filter · q quit · ctrl+] back from a session
+              {filter() ? `filter: ${filter()} · ` : ""}↑↓ move · ⏎ open · n new · x stop+archive · r restore · tab archived · / filter · q quit · ctrl+] back from a session
             </text>
           }
         >

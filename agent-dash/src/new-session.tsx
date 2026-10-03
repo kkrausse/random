@@ -83,7 +83,7 @@ export function NewSession(props: {
         {(m, r) => (
           <box height={1} flexDirection="row">
             <text fg={mi() === r() ? colors.selected : colors.dim}>{mi() === r() ? "❯ " : "  "}</text>
-            <text fg={mi() === r() ? colors.text : colors.muted} attributes={mi() === r() ? TextAttributes.BOLD : undefined}>{m.id.padEnd(width)}</text>
+            <text fg={props.store.hostColor(m.id)} attributes={mi() === r() ? TextAttributes.BOLD : undefined}>{m.id.padEnd(width)}</text>
             <For each={HARNESSES}>
               {(h, c) => {
                 const p = { machine: m.id, harness: h };

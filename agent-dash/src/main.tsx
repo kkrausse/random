@@ -220,7 +220,7 @@ function App(props: { store: DashStore }) {
     const l = await props.store.launch(p.machine, p.harness, dir);
     const placeholder: Session = {
       machine: p.machine, harness: p.harness, key: sessionKey(p.machine, p.harness, `new-${Date.now()}`), id: "", title: `new ${p.harness} session`,
-      cwd: l.cwd, status: "working", detail: "", model: "", updatedAt: Date.now(), archived: false, open: { cmd: l.cmd, cwd: l.cwd },
+      cwd: l.cwd, status: "working", detail: "", model: "", updatedAt: Date.now(), archived: false, stoppable: false, open: { cmd: l.cmd, cwd: l.cwd },
     };
     const c = spawn(placeholder);
     c.claim = { claim: l.claim, known };

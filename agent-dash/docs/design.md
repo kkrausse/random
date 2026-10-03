@@ -108,13 +108,25 @@ Status: `needs | working | done | failed | interrupted | idle` (idle = never
 prompted, e.g. a fresh `claude --bg`). A new session's claim is data:
 `{ id }` (Claude) or `{ firstNewIn: dir }` (OpenCode/Codex).
 
+## Stop
+
+One verb per harness that ends whatever is still running, so nothing starts again unprompted.
+`Session.stoppable` says whether there is anything to end. Claude sessions can wake themselves
+(`/loop`, scheduled wakeups), and a finished background session keeps its process, so every
+background session is stoppable until its state is `stopped`/`killed`; `claude stop` runs over
+`exec` like any short command, and "No job matching" counts as already stopped. Codex and
+OpenCode never wake on their own, so stopping is interrupting the running turn (stoppable =
+active). They need the source's live connection (the RPC socket, the forwarded API), so each of
+those streams publishes a stop function to the store while connected (`setStop`, released with
+the stream's scope); stopping while a source is disconnected fails.
+
 ## Archive
 
 Archived = harness archive, OR a dashboard mark, OR (not needs/working and
 `updatedAt` older than 7 days) unless explicitly restored. Marks live on each host in
 `~/.config/agent-dash/archive.json` as `{ "harness:id": true | false }` (false =
 explicit restore). `x`/`r` read, modify and replace the file on that host with a
-POSIX `sh` write (temp file + `mv`); last writer wins between two dashboards
+POSIX `sh` write (temp file + `mv`); `x` stops the session first and only marks it if the stop succeeded. Last writer wins between two dashboards
 archiving at the same moment. Every dashboard reads the file through that host's
 loop record.
 

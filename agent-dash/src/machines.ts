@@ -15,6 +15,8 @@ export interface Machine {
   readonly dir?: string;
   /** Extra PATH entries on the host, ahead of the defaults. */
   readonly path?: readonly string[];
+  /** Label color (any hex); defaults to one from the host palette. */
+  readonly color?: string;
 }
 
 const MachineSchema = Schema.Struct({
@@ -22,6 +24,7 @@ const MachineSchema = Schema.Struct({
   ssh: Schema.optionalKey(Schema.String),
   dir: Schema.optionalKey(Schema.String),
   path: Schema.optionalKey(Schema.Array(Schema.String)),
+  color: Schema.optionalKey(Schema.String),
 });
 
 export const CONFIG_DIR = `${homedir()}/.config/agent-dash`;
