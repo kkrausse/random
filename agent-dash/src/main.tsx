@@ -111,6 +111,8 @@ function App(props: { store: DashStore }) {
 
   function back(flash?: string) {
     const c = view();
+    // Whatever was just done in the pane (a prompt sent, an answer given) shows on the list now.
+    if (c) props.store.refresh(c.session.machine);
     if (c?.fresh && c.exited === undefined) {
       setLastPick(c.fresh);
       show(undefined);

@@ -60,13 +60,15 @@ export function createDashStore() {
       Effect.retry(retryPolicy),
     );
 
+  const refreshers = new Map<string, () => void>();
+
   // The host loop carries both the archive marks and the Claude rows; a Claude problem on one
   // tick (not installed, bad JSON) doesn't stop the loop.
   const claude = (m: Machine) => {
     const k = sourceKey(m.id, "claude");
     return supervise(
       k,
-      hostFeed(m).pipe(
+      hostFeed(m, (f) => void (f ? refreshers.set(m.id, f) : refreshers.delete(m.id))).pipe(
         Stream.runForEach((rec) =>
           Effect.gen(function* () {
             const marks = yield* parseMarks(rec.archive).pipe(Effect.option);
@@ -121,10 +123,15 @@ export function createDashStore() {
       const i = machines.findIndex((m) => m.id === id);
       return machines[i]?.color ?? HOST_COLORS[Math.max(0, i) % HOST_COLORS.length]!;
     },
+    /**
+     * Ask the machine's Claude loop for a record now instead of at its next tick. Codex and OpenCode
+     * push their changes, so they need no asking.
+     */
+    refresh: (machineId: string) => refreshers.get(machineId)?.(),
     /** End whatever is still running in the session, so nothing can start it again unprompted. */
     stopSession: (s: Session): Promise<void> => {
       if (!s.stoppable) return Promise.resolve();
-      if (s.harness === "claude") return Effect.runPromise(stopClaude(machine(s.machine), s.id));
+      if (s.harness === "claude") return Effect.runPromise(stopClaude(machine(s.machine), s.id).pipe(Effect.tap(() => Effect.sync(() => refreshers.get(s.machine)?.()))));
       const stop = stoppers.get(sourceKey(s.machine, s.harness));
       return stop ? Effect.runPromise(stop(s.id)) : Promise.reject(new Error(`${s.machine}·${s.harness} not connected`));
     },

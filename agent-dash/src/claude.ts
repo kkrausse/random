@@ -1,5 +1,6 @@
 // Claude Code has no subscribe API, so each host runs ONE long-lived POSIX sh loop over the shared
-// connection that prints a framed record every 2 s: the host's archive marks, `claude agents --json
+// connection that prints a framed record every 2 s, and at once for each line on its stdin (the
+// dashboard asks for one when it knows a status just changed, e.g. leaving a session pane): the host's archive marks, `claude agents --json
 // --all`, and the state.json of each listed background job (detail line, pending question). Job
 // files are re-sent only when their mtime changes. The same loop runs locally, so local and remote
 // are one code path. A host with no claude still runs the loop for its archive marks.
@@ -11,9 +12,12 @@ import { sessionKey, type Session, type Status } from "./session.ts";
 
 const TICK_S = 2;
 
+// A ticker and stdin feed one pipe; each line on it is one record. The record's commands read
+// /dev/null so they can't eat those lines. When the dashboard goes away, writes to the closed
+// stdout end the reader, then the ticker.
 const LOOP = `
 J="$HOME/.claude/jobs"; seen=""
-while :; do
+{ while :; do echo; sleep ${TICK_S}; done & cat; } | while read -r _; do {
   echo "@@archive"; cat "${ARCHIVE_FILE}" 2>/dev/null; echo
   if command -v claude >/dev/null 2>&1; then
     out=$(claude agents --json --all 2>&1); echo "@@claude $?"; printf '%s\\n' "$out"
@@ -27,8 +31,7 @@ while :; do
     seen=$next
   else echo "@@claude missing"; fi
   echo "@@end"
-  sleep ${TICK_S}
-done`;
+} </dev/null; done`;
 
 /** One tick of a host's loop. Job texts carry over from earlier records when unchanged. */
 export type HostRecord = {
@@ -70,10 +73,11 @@ function step(acc: Acc, line: string): readonly [Acc, HostRecord[]] {
 
 /**
  * The host's records. Every tick emits, so silence means a stuck loop: after ~3 missed ticks the
- * stream fails and the caller's retry restarts the command.
+ * stream fails and the caller's retry restarts the command. While running, `setRefresh` holds a
+ * function that asks for a record now.
  */
-export const hostFeed = (m: Machine): Stream.Stream<HostRecord, SourceError> =>
-  lines(m, ["sh", "-c", LOOP]).pipe(
+export const hostFeed = (m: Machine, setRefresh: (refresh: (() => void) | undefined) => void): Stream.Stream<HostRecord, SourceError> =>
+  lines(m, ["sh", "-c", LOOP], (write) => setRefresh(write && (() => write("\n")))).pipe(
     Stream.mapAccum(() => ({ prevJobs: new Map() }) as Acc, step),
     Stream.timeoutOrElse({ duration: `${TICK_S * 3 + 3} seconds`, orElse: () => Stream.fail(fail("failed", `${m.id}: claude loop stalled`)) }),
   );

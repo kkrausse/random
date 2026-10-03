@@ -143,15 +143,30 @@ export const exec = (m: Machine, cmd: readonly string[], opts: { cwd?: string; s
 /** `sh -c script` on the machine (POSIX sh: remote hosts may have nothing else). */
 export const sh = (m: Machine, script: string, opts: { stdin?: string; timeout?: number } = {}) => exec(m, ["sh", "-c", script], opts);
 
-/** stdout lines of a long-lived command on the machine; the process is killed when the stream ends. */
-export const lines = (m: Machine, cmd: readonly string[]): Stream.Stream<string, SourceError> =>
+/**
+ * stdout lines of a long-lived command on the machine; the process is killed when the stream ends.
+ * With `input`, its stdin is a pipe and `input` holds a writer to it while the process runs.
+ */
+export const lines = (m: Machine, cmd: readonly string[], input?: (write: ((s: string) => void) | undefined) => void): Stream.Stream<string, SourceError> =>
   Stream.unwrap(
     Effect.gen(function* () {
       yield* ensureMaster(m);
       const p = yield* Effect.acquireRelease(
-        Effect.sync(() => Bun.spawn(on(m, cmd), { cwd: homedir(), stdin: "ignore", stdout: "pipe", stderr: "pipe" })),
+        Effect.sync(() => Bun.spawn(on(m, cmd), { cwd: homedir(), stdin: input ? "pipe" : "ignore", stdout: "pipe", stderr: "pipe" })),
         (p) => Effect.sync(() => p.kill()),
       );
+      if (input && p.stdin) {
+        const stdin = p.stdin;
+        yield* Effect.acquireRelease(
+          Effect.sync(() =>
+            input((s) => {
+              stdin.write(s);
+              stdin.flush();
+            }),
+          ),
+          () => Effect.sync(() => input(undefined)),
+        );
+      }
       const exited = Effect.promise(async () => ({ code: await p.exited, stderr: await new Response(p.stderr).text() })).pipe(
         Effect.flatMap(({ code, stderr }) =>
           Effect.fail(fail(m.ssh && code === 255 ? "unreachable" : "failed", `${cmd[0]} exited ${code}${stderr.trim() ? `: ${firstLine(stderr)}` : ""}`)),

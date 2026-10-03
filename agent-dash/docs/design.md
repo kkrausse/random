@@ -51,7 +51,7 @@ Each source emits the complete current list on every item.
 
 | Harness | Mechanism | Why |
 |---|---|---|
-| Claude | one POSIX `sh` loop per host printing a framed record every 2 s | no subscribe API; remotes may have only `sh` (no jq/python/bun) |
+| Claude | one POSIX `sh` loop per host printing a framed record every 2 s, and on demand (a line on its stdin) | no subscribe API; remotes may have only `sh` (no jq/python/bun) |
 | OpenCode 2.x | `/api/event` SSE; relevant events (session.*, permission.*, form.*) trigger a re-list; 60 s resync | the server has an event stream |
 | Codex | app-server notifications (`thread/started`, `thread/status/changed`, `thread/archived`, ...) trigger a re-list; 60 s resync | the daemon broadcasts thread notifications to every client |
 
@@ -72,6 +72,9 @@ Frames, one record per tick:
 @@end
 ```
 
+A ticker subshell and the loop's stdin feed one pipe, and each line on it is one record, so the
+dashboard gets a record at once by writing a newline. It does that when you leave a session pane
+(a prompt you just sent shows as working without waiting for the tick) and after `claude stop`.
 The loop emits every tick even when nothing changed; no record for ~3 ticks fails
 the stream and the supervisor restarts the command. Local uses the same loop. A
 host without `claude` still runs it for its archive marks. The Paseo check (local
