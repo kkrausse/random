@@ -1,0 +1,19 @@
+{
+  "name": "pdf-to-web-script",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "codex-usage": "./codex-usage.ts"
+  },
+  "scripts": {
+    "pdf:web": "bun pdf-to-web.ts",
+    "test:codex-usage": "bun test codex-usage.test.ts"
+  },
+  "dependencies": {
+    "mupdf": "^1.28.0",
+    "sharp": "^0.35.4"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

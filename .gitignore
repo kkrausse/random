@@ -45,7 +45,11 @@
 !ghostty-web/**
 !dictation-server/
 !dictation-server/**
+!scripts/
+!scripts/**
 node_modules/
+# Converted PDFs are third-party content; they are published from here, not checked in.
+scripts/output/
 
 # Local machine files and credentials, including inside opted-in projects.
 .DS_Store
