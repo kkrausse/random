@@ -6,11 +6,13 @@ import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/solid";
 import { Index, Show, createEffect, createMemo, createSignal } from "solid-js";
 import type { Session, Status } from "./session.ts";
+import { isUnprompted } from "./session.ts";
 import { QUIET } from "./errors.ts";
 import type { DashStore } from "./store.ts";
 import { isArchived } from "./archive.ts";
 import { colors, providerColor, spinner } from "./theme.ts";
 import { relTime, shortPath } from "./format.ts";
+import { contextLabel, subagentLabel } from "./metrics.ts";
 
 type Section = "needs" | "finished" | "working" | "archived";
 const SECTIONS: { id: Section; label: string }[] = [
@@ -63,7 +65,7 @@ export function SessionList(props: {
   let scroll: ScrollBoxRenderable | undefined;
 
   const now = Date.now();
-  const all = createMemo(() => [...props.extra(), ...props.store.rows().filter((s) => !props.hidden().has(s.key))]);
+  const all = createMemo(() => [...props.extra(), ...props.store.rows()].filter((s) => !props.hidden().has(s.key) && !isUnprompted(s)));
   const archivedOf = (s: Session) => isArchived(s, state.marks[s.machine], now);
   // Ready once every source answered, or after a few seconds so one slow host can't hold the order.
   const [timedOut, setTimedOut] = createSignal(false);
@@ -251,6 +253,12 @@ export function SessionList(props: {
                     <text wrapMode="none" flexShrink={1} fg={color()}>{` · ${(s().detail || statusText()).split("\n")[0]}`}</text>
                   </Show>
                 </box>
+                <Show when={s().subagents?.total}>
+                  <text wrapMode="none" flexShrink={0} fg={colors.muted}>{` · ${subagentLabel(s().subagents!)}`}</text>
+                </Show>
+                <Show when={s().context}>
+                  <text wrapMode="none" flexShrink={0} fg={colors.muted}>{` · ${contextLabel(s().context!)}`}</text>
+                </Show>
                 <Show when={props.live().has(s().key)}>
                   <text wrapMode="none" flexShrink={0} fg={colors.success}> ● open</text>
                 </Show>
@@ -281,7 +289,10 @@ export function SessionList(props: {
         <text height={1} wrapMode="none" fg={colors.muted}>
           {current() ? [label(current()!), current()!.model, shortPath(current()!.cwd)].filter(Boolean).join(" · ") : ""}
         </text>
-        <text height={1} wrapMode="none" fg={colors.text}>{current()?.detail.split("\n")[0] ?? ""}</text>
+        <text height={1} wrapMode="none" fg={colors.text}>{[
+          current()?.detail.split("\n")[0],
+          current()?.context && `${current()!.context!.usedTokens.toLocaleString()}${current()!.context!.limitTokens ? ` / ${current()!.context!.limitTokens!.toLocaleString()}` : ""} context tokens · last response ${relTime(current()!.context!.measuredAt)}`,
+        ].filter(Boolean).join(" · ")}</text>
         <text height={1} wrapMode="none" fg={colors.dim}>
           {current() ? (current()!.open ? `⏎ ${current()!.open!.cmd.join(" ")}` : current()!.closedReason) : ""}
         </text>

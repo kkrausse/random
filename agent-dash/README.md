@@ -40,8 +40,9 @@ All ssh traffic to a host shares one connection (ControlMaster sockets in
 
 ## List
 
-Sections: **Working**, **Needs input**, **Finished** (done, failed, interrupted, never
-prompted), **Archived** (collapsed; tab shows it). Row labels are `machine·harness`, the machine in
+Sections: **Working**, **Needs input**, **Finished** (done, failed, interrupted, idle),
+**Archived** (collapsed; tab shows it). Known unprompted drafts are hidden, not archived or deleted.
+Row labels are `machine·harness`, the machine in
 its host color and the harness in its own. Working is ordered by when each session
 started working, so one you just answered lands at its bottom, next to Needs input.
 In a session pane, mouse drags go to the harness, which draws and copies its own selection;
@@ -49,6 +50,26 @@ for harnesses that don't take the mouse, the dashboard selects and copies on rel
 harness archived it, you archived it here, or it is finished and untouched for 7
 days. Rows are labelled `machine·harness`; the footer lists sources with problems
 (red) and harnesses that aren't there (dim: not installed, unsupported, not running).
+
+OpenCode and Codex rows show **N subagents (M active)**, counting all descendants
+like the session-manager plugin. Counts include finished descendants; `≥N` means
+the bounded history scan was incomplete. Children are not separate top-level rows.
+
+Context badges show **N% ctx**, or a token count when the limit is unavailable:
+
+- **OpenCode:** latest assistant-response usage and that model's location-specific
+  context limit, fetched for active sessions. Completed sessions retain snapshots
+  observed while they were active. Compaction/revert boundaries are respected.
+- **Codex:** latest `thread/tokenUsage/updated` notification received on the live
+  connection. No snapshot is available at initial connection until an event arrives;
+  receiving events depends on the server's notification/subscription behavior.
+  The dashboard does not resume threads to subscribe to usage.
+- **Claude:** currently unavailable in the dashboard's `agents`/job-state feed.
+  Claude can expose it to a status-line script, but no bridge is installed here.
+
+These are latest-response snapshots, not continuously exact streaming usage or
+lifetime billed tokens. The selected row's footer shows raw tokens and snapshot
+age. Missing data is omitted, never displayed as 0%.
 
 Archive marks live on each session's own host in `~/.config/agent-dash/archive.json`,
 so every dashboard sees the same marks. Restoring overrides the 7-day rule; it can't

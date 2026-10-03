@@ -147,6 +147,7 @@ export const claudeSessions = (m: Machine, rec: HostRecord): Effect.Effect<Sessi
           title: (e.name ?? e.sessionId.slice(0, 8)) + (paseo ? " (paseo)" : ""),
           cwd: e.cwd,
           status,
+          prompted: unprompted ? false : job?.needs || job?.detail ? true : undefined,
           detail,
           model: "",
           updatedAt: raw?.mtime ?? e.startedAt ?? 0,

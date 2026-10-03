@@ -105,11 +105,50 @@ Codex responses) is decoded with `Schema`, so format drift is a per-source error
 ## Session model
 
 `{ machine, harness, key = machine/harness:id, id, title, cwd, open?: {cmd, cwd},
-closedReason?, status, detail, updatedAt, model, archived }`. `open.cmd` is
+closedReason?, status, prompted?, detail, updatedAt, model, archived }`. `open.cmd` is
 machine-agnostic; the pane wraps it with `on(machine, cmd, { cwd, tty: true })`.
 Status: `needs | working | done | failed | interrupted | idle` (idle = never
 prompted, e.g. a fresh `claude --bg`). A new session's claim is data:
 `{ id }` (Claude) or `{ firstNewIn: dir }` (OpenCode/Codex).
+
+`prompted` is independent of status: false means a known empty draft; absent
+means unknown (do not hide it). Claude recognises its initial "send a prompt"
+state, Codex supplies the first-prompt preview, and OpenCode checks for a user
+message on idle sessions without an outcome (cached by update time). Live
+activity also confirms a chat has started. Claiming a session ID does not.
+The source confirms the first prompt; pressing Enter in a model picker is not
+enough. Known drafts stay hidden even after their client is closed; nothing is
+deleted or archived.
+
+### Optional metrics
+
+`subagents?: { total, active, complete }` counts all descendants, like the
+session-manager plugin. OpenCode and Codex retain parent links while summarising
+their native lists, then emit only roots. Codex explicitly requests subagent source
+kinds (the API defaults to interactive threads only). Both follow pagination, capped
+at 10 pages per list; incomplete scans render counts as lower bounds (`≥N`). Cycle
+and duplicate-ID guards prevent double-counting. These are compact badges, not an
+expandable child tree yet; not every child necessarily has an attachable CLI.
+
+`context?: { usedTokens, limitTokens?, measuredAt }` is a latest-response snapshot,
+not cumulative billed tokens. OpenCode uses the newest assistant usage after the
+last completed compaction and before any revert boundary, matching the plugin's
+formula (input + output + reasoning + cache read + cache write). It fetches the
+newest 100 messages for active roots and refreshes previously observed roots when
+they change. A revert boundary outside that page means unavailable. Model limits
+are resolved in the session's location and cached for 60 seconds. Optional lookups
+are bounded, time out, and fail independently of the basic list.
+
+Codex takes `last.totalTokens`, never cumulative `total`, from received
+`thread/tokenUsage/updated` events and uses `modelContextWindow` when available.
+The connection keeps snapshots in memory; it does not resume threads or otherwise
+mutate them to acquire a subscription. Initial availability and live event delivery
+depend on the server's notification behavior. Claude's current feed supplies neither
+metric; its status-line context API would need a separate opt-in bridge.
+
+Only show a percentage when the context limit is known. Missing means unavailable,
+not zero. The footer shows raw tokens and measurement age. Future providers can
+leave either metric absent without changing the UI contract.
 
 ## Stop
 

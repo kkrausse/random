@@ -5,7 +5,9 @@ import { Cause, Effect, Queue, Schema, Stream } from "effect";
 import { CodexRpc } from "./codex-rpc.ts";
 import { decodeValue, fail, type SourceError } from "./errors.ts";
 import { forward, sh, type Machine } from "./machines.ts";
-import { sessionKey, type Session, type Status } from "./session.ts";
+import { sessionKey, type ContextUsage, type Session, type Status } from "./session.ts";
+import { subagentSummary } from "./metrics.ts";
+import { readPages } from "./pages.ts";
 
 const CHECK = `
 command -v codex >/dev/null 2>&1 || { echo "@@missing"; exit 0; }
@@ -22,20 +24,40 @@ const Thread = Schema.Struct({
   updatedAt: Schema.Number,
   status: Schema.Struct({ type: Schema.String, activeFlags: Schema.optionalKey(Schema.Array(Schema.String)) }),
 });
-const decodeList = decodeValue(Schema.Struct({ data: Schema.Array(Thread) }), "codex thread/list");
+const decodeList = decodeValue(Schema.Struct({ data: Schema.Array(Thread), nextCursor: Schema.optionalKey(Schema.NullOr(Schema.String)) }), "codex thread/list");
+const SOURCE_KINDS = ["cli", "vscode", "exec", "appServer", "subAgent", "subAgentReview", "subAgentCompact", "subAgentThreadSpawn", "subAgentOther", "unknown"];
+
+const TokenUsage = Schema.Struct({ threadId: Schema.String, tokenUsage: Schema.Struct({
+  last: Schema.Struct({ totalTokens: Schema.Number }), modelContextWindow: Schema.NullOr(Schema.Number),
+}) });
+export function codexContext(value: unknown, now = Date.now()) {
+  const decoded = Schema.decodeUnknownOption(TokenUsage)(value);
+  if (decoded._tag === "None") return undefined;
+  const { threadId, tokenUsage: { last, modelContextWindow } } = decoded.value;
+  if (!Number.isFinite(last.totalTokens) || last.totalTokens <= 0) return undefined;
+  const usage: ContextUsage = { usedTokens: last.totalTokens, measuredAt: now,
+    limitTokens: modelContextWindow && Number.isFinite(modelContextWindow) && modelContextWindow > 0 ? modelContextWindow : undefined };
+  return { threadId, usage };
+}
 
 const RELEVANT = new Set(["thread/started", "thread/status/changed", "thread/archived", "thread/unarchived", "thread/deleted", "thread/closed", "thread/name/updated"]);
 
 const request = (c: CodexRpc, method: string, params: unknown) =>
   Effect.tryPromise({ try: () => c.request(method, params), catch: (e) => fail("failed", `codex ${method}: ${e instanceof Error ? e.message : String(e)}`) });
 
-const list = (m: Machine, c: CodexRpc) =>
+const list = (m: Machine, c: CodexRpc, contexts: Map<string, ContextUsage>) =>
   Effect.gen(function* () {
     const page = (archived: boolean) =>
-      request(c, "thread/list", { limit: archived ? 50 : 100, sortKey: "updated_at", useStateDbOnly: true, archived }).pipe(Effect.flatMap(decodeList));
+      readPages((cursor) => request(c, "thread/list", { limit: 100, sortKey: "updated_at", useStateDbOnly: true, archived, sourceKinds: SOURCE_KINDS, cursor }).pipe(
+        Effect.flatMap(decodeList), Effect.map((p) => ({ items: p.data, next: p.nextCursor, hasCursor: p.nextCursor !== undefined })),
+      ));
     const [live, archived] = yield* Effect.all([page(false), page(true)], { concurrency: 2 });
-    const done = new Set(live.data.map((t) => t.id));
-    return [...live.data, ...archived.data.filter((t) => !done.has(t.id))]
+    const done = new Set(live.items.map((t) => t.id));
+    const threads = [...live.items, ...archived.items.filter((t) => !done.has(t.id))];
+    const ids = new Set(threads.map((t) => t.id));
+    for (const id of contexts.keys()) if (!ids.has(id)) contexts.delete(id);
+    const nodes = threads.map((t) => ({ id: t.id, parentId: t.parentThreadId, active: t.status.type === "active" }));
+    return threads
       .filter((t) => !t.parentThreadId)
       .map((t): Session => {
         const flags = t.status.type === "active" ? (t.status.activeFlags ?? []) : [];
@@ -53,6 +75,9 @@ const list = (m: Machine, c: CodexRpc) =>
           title: t.name || t.preview.split("\n")[0] || t.id,
           cwd: t.cwd,
           status,
+          prompted: !!t.preview,
+          subagents: subagentSummary(nodes, t.id, live.complete && archived.complete),
+          context: contexts.get(t.id),
           detail: flags.includes("waitingOnApproval") ? "approval" : flags.includes("waitingOnUserInput") ? "input" : "",
           model: t.model ?? "",
           updatedAt: t.updatedAt * 1000,
@@ -95,19 +120,27 @@ export const codexSessions = (m: Machine, setStop: (stop: ((id: string) => Effec
         }),
         (c) => Effect.sync(() => c.close()),
       );
+      const contexts = new Map<string, ContextUsage>();
       yield* Effect.acquireRelease(
         Effect.sync(() => setStop((id) => stopThread(rpc, id))),
         () => Effect.sync(() => setStop(undefined)),
       );
       const notifications = Stream.callback<void, SourceError>((q) =>
         Effect.sync(() => {
-          rpc.onNotification = (method) => void (RELEVANT.has(method) && Queue.offerUnsafe(q, undefined));
+          rpc.onNotification = (method, params) => {
+            if (method === "thread/tokenUsage/updated") {
+              const snapshot = codexContext(params);
+              if (snapshot) contexts.set(snapshot.threadId, snapshot.usage);
+              else if (typeof params?.threadId === "string") contexts.delete(params.threadId);
+              Queue.offerUnsafe(q, undefined);
+            } else if (RELEVANT.has(method)) Queue.offerUnsafe(q, undefined);
+          };
           rpc.onClose = () => void Queue.failCauseUnsafe(q, Cause.fail(fail("failed", "codex socket closed")));
         }),
       );
       return Stream.merge(Stream.tick("60 seconds"), notifications).pipe(
         Stream.buffer({ capacity: 1, strategy: "sliding" }),
-        Stream.mapEffect(() => list(m, rpc)),
+        Stream.mapEffect(() => list(m, rpc, contexts)),
       );
     }),
   );

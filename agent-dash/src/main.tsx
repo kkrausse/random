@@ -7,7 +7,7 @@ import { createDashStore, type DashStore } from "./store.ts";
 import { NewSession, type Pick } from "./new-session.tsx";
 import { SessionList, label } from "./list.tsx";
 import { on } from "./machines.ts";
-import { sessionKey, type Claim, type Session } from "./session.ts";
+import { hasStarted, sessionKey, type Claim, type Session } from "./session.ts";
 import { colors, providerColor } from "./theme.ts";
 
 const store = createDashStore();
@@ -235,8 +235,9 @@ function App(props: { store: DashStore }) {
   createEffect(() => {
     const all = props.store.rows();
     for (const c of [...clients.values()]) {
-      // A fresh Claude chat is claimed at once (its id is known) but stays fresh until it works.
-      if (c.fresh?.harness === "claude" && !c.claim && all.find((s) => s.key === c.session.key)?.status === "working") {
+      // Claiming an ID doesn't mean a prompt was sent. This applies to every harness.
+      const reported = all.find((s) => s.key === c.session.key);
+      if (c.fresh && !c.claim && reported && hasStarted(reported)) {
         c.fresh = undefined;
         syncLive();
       }
@@ -246,7 +247,7 @@ function App(props: { store: DashStore }) {
       clients.delete(c.session.key);
       c.session = real;
       c.claim = undefined;
-      if (c.fresh?.harness !== "claude") c.fresh = undefined;
+      if (hasStarted(real)) c.fresh = undefined;
       clients.set(real.key, c);
       syncLive();
       if (view() === c) setView(c);
@@ -266,11 +267,7 @@ function App(props: { store: DashStore }) {
   useKeyboard((key) => {
     const c = view();
     if (!c) return;
-    // Submitting text makes a new chat a real one: "back" now goes to the list, not the picker.
-    if (c.fresh && key.name === "return" && !key.shift && !atPromptStart(c.et)) {
-      c.fresh = undefined;
-      syncLive();
-    }
+    // The source confirms the first prompt; Enter may merely choose a model or dismiss a dialog.
     const plainLeft = key.name === "left" && !key.ctrl && !key.meta && !key.shift && !key.option;
     // ctrl+c on an idle empty prompt would quit the client (opencode/codex) or arm Claude's exit;
     // treat it as "back" instead. Mid-turn or with text typed it passes through to clear/interrupt.
