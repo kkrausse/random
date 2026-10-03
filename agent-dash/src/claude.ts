@@ -123,18 +123,19 @@ export const claudeSessions = (m: Machine, rec: HostRecord): Effect.Effect<Sessi
         const job = raw ? yield* decodeJob(raw.text).pipe(Effect.orElseSucceed(() => ({}) as typeof JobState.Type)) : undefined;
         // A fresh `claude --bg` session reports "blocked" until its first prompt.
         const unprompted = /send a prompt to start/.test(job?.needs ?? "");
+        // `status` is the process (busy / waiting / idle); `state` is the session's own account of its
+        // task, which stays "working" when a turn ends without declaring it done. So activity comes
+        // from `status`, `state` only says how an idle session ended (or stands in when `status` is absent).
         const status: Status =
           unprompted ? "idle"
-          : e.status === "waiting" || e.state === "blocked" ? "needs"
-          : e.status === "busy" || e.state === "working" ? "working"
+          : (e.status ?? (e.state === "blocked" ? "waiting" : e.state === "working" ? "busy" : "idle")) === "waiting" ? "needs"
+          : (e.status ?? (e.state === "working" ? "busy" : "idle")) === "busy" ? "working"
           : e.state === "done" ? "done"
           : e.state === "failed" ? "failed"
           : e.state === "interrupted" || e.state === "stopped" || e.state === "killed" ? "interrupted"
           : "idle";
-        const detail =
-          status === "needs" ? (job?.needs ?? e.waitingFor ?? "waiting")
-          : status === "working" || status === "failed" ? (job?.detail ?? "")
-          : "";
+        // The job's last note (what it is doing, or where it left off).
+        const detail = status === "needs" ? (job?.needs ?? e.waitingFor ?? "waiting") : unprompted ? "" : (job?.detail ?? "");
         const bg = e.kind === "background" && e.id;
         const paseo = !bg && !m.ssh && underPaseo(e.pid);
         const id = e.id ?? e.sessionId;
