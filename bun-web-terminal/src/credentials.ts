@@ -1,4 +1,7 @@
 import { randomBytes } from "node:crypto";
+import { homedir } from "node:os";
+import { join, isAbsolute } from "node:path";
+import { loadFileCredentials, resetFileCredentials } from "./file-credentials";
 
 export type Credentials = { secret: string; signingKey: string };
 
@@ -11,21 +14,26 @@ export function decodeCredentials(value: string): Credentials {
   try {
     data = JSON.parse(Buffer.from(value.trim(), "base64").toString("utf8"));
   } catch {
-    throw new Error("Invalid terminal Keychain credentials. Stop the server and run bun run auth:reset to reset them.");
+    throw new Error("Invalid stored terminal credentials. Stop the server and run bun run auth:reset to reset them.");
   }
   const valid = (key: unknown): key is string => typeof key === "string" && /^[A-Za-z0-9_-]{43}$/.test(key)
     && Buffer.from(key, "base64url").toString("base64url") === key;
   if (data?.version !== 1 || !valid(data.secret) || !valid(data.signingKey)) {
-    throw new Error("Invalid terminal Keychain credentials. Stop the server and run bun run auth:reset to reset them.");
+    throw new Error("Invalid stored terminal credentials. Stop the server and run bun run auth:reset to reset them.");
   }
   return { secret: data.secret, signingKey: data.signingKey };
 }
 
 // Port-scoped so independently hosted instances have independent credentials.
 function identity(port: number) {
-  if (process.platform !== "darwin") throw new Error("Terminal credential storage requires macOS Keychain.");
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid terminal port.");
   return ["-s", "bun-web-terminal.auth.v1", "-a", `port-${port}`];
+}
+
+function stateDirectory() {
+  if (process.platform !== "linux") throw new Error("Terminal credential storage requires macOS or Linux.");
+  const stateHome = process.env.XDG_STATE_HOME;
+  return join(stateHome && isAbsolute(stateHome) ? stateHome : join(homedir(), ".local", "state"), "bun-web-terminal");
 }
 
 async function security(args: string[], input?: string) {
@@ -39,6 +47,7 @@ async function security(args: string[], input?: string) {
 
 export async function loadCredentials(port: number): Promise<Credentials> {
   const id = identity(port);
+  if (process.platform !== "darwin") return loadFileCredentials(stateDirectory(), port);
   const read = () => security(["find-generic-password", ...id, "-w"]);
   const existing = await read();
   if (existing.code === 0) return decodeCredentials(existing.stdout);
@@ -55,6 +64,8 @@ export async function loadCredentials(port: number): Promise<Credentials> {
 }
 
 export async function resetCredentials(port: number) {
-  const result = await security(["delete-generic-password", ...identity(port)]);
+  const id = identity(port);
+  if (process.platform !== "darwin") return resetFileCredentials(stateDirectory(), port);
+  const result = await security(["delete-generic-password", ...id]);
   if (result.code !== 0 && result.code !== 44) throw new Error("Could not reset terminal credentials in macOS Keychain.");
 }

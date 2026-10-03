@@ -42,7 +42,8 @@ If startup reports a missing `@random/ghostty-web` package or WASM, ensure the s
 ## Sign-in and access
 
 On first startup, the server generates a cryptographically random 256-bit access secret
-and signing key and stores both in macOS Keychain. Later starts reuse them. The
+and signing key and stores both persistently: in macOS Keychain on a Mac, or a
+private user-state file on Linux. Later starts reuse them. The
 printed sign-in links and QR contain it in a URL fragment (`/login#key=…`). The
 sign-in page immediately removes the fragment from the address bar and exchanges
 the secret for a signed, HttpOnly, SameSite=Strict cookie. HTTPS cookies are also
@@ -50,19 +51,29 @@ Secure; direct localhost HTTP uses a separate cookie restricted by the server to
 loopback connections. Phone/Tailscale and localhost require separate initial
 sign-ins. Cookies last up to 30 days and survive Bun restarts and watch reloads.
 
-Credentials use a generic-password item with service `bun-web-terminal.auth.v1`
+On macOS, credentials use a generic-password item with service `bun-web-terminal.auth.v1`
 and account `port-3000` for the default port `4784`, preserving existing sign-ins
 from the old default port. Other configured `PORT` values use `port-<PORT>`.
 Running instances on ports 3000 and 4784 therefore share credentials; do not
 reset authentication for one unless you intend to revoke sign-ins for both.
 macOS may request Keychain access; a locked or inaccessible Keychain stops startup
 rather than silently rotating credentials or writing a plaintext fallback.
-No credential file is stored in the repo. This server now requires macOS.
+On Linux, credentials live in `$XDG_STATE_HOME/bun-web-terminal/port-<PORT>.auth`
+(default `~/.local/state/bun-web-terminal/port-<PORT>.auth`). The default listener
+port `4784` uses `port-3000.auth`, matching the same compatibility mapping as macOS.
+The directory is created with mode `0700`, and files with mode `0600`. These files
+contain both secrets in plaintext (base64 is not encryption); protect them and
+any backups as passwords. Unsafe permissions, symlinks, corrupt files, or storage
+errors stop startup rather than silently generating a replacement. Concurrent
+first starts reuse the same atomically published credentials.
+No credential file is stored in the repo. Keep the same user, port, and Linux
+state directory across restarts to preserve sign-ins. Relative `XDG_STATE_HOME`
+values are ignored, per the XDG specification.
 
 **To revoke all sign-ins:** stop the server, run `bun run auth:reset`, then start
 it again. Use the same `PORT` for the reset command if customized. The next start
 creates new credentials; browsers must use the new sign-in link. Resetting the
-Keychain item alone does not revoke a running server's in-memory credentials.
+stored credentials alone does not revoke a running server's in-memory credentials.
 Running tmux sessions survive either kind of restart. Upgrading from the old
 in-memory authentication requires one final sign-in on the first restart.
 
@@ -81,6 +92,79 @@ possible. HTTPS protects traffic; this authentication adds a separate access
 check. It does not protect a compromised hosting Mac or authenticated browser.
 
 Terminal pages reconnect automatically after network interruptions or a suspended tab. Use the connection indicator in the top-right corner to force a fresh attachment and redraw.
+
+## Always-on Linux service
+
+A systemd **user** service is recommended for a stable Linux host. It restarts
+Bun after failures and preserves the same credentials. Install dependencies
+with `bun install --frozen-lockfile` in this project first, and configure
+Tailscale Serve **before** starting the service:
+
+```sh
+tailscale serve --bg --https=443 4784
+tailscale serve status
+mkdir -p ~/.config/systemd/user
+```
+
+Check existing Serve routes before configuring one; the command sets the root
+route on HTTPS port 443. Do not use Funnel for private tailnet access.
+
+Save this as `~/.config/systemd/user/bun-web-terminal.service`, replacing the
+project path, Bun path, and Tailscale hostname with your own values. `%h` means
+your home directory. Set `SHELL` to an installed shell.
+
+```ini
+[Unit]
+Description=Bun Web Terminal
+
+[Service]
+Type=simple
+WorkingDirectory=%h/devfs/repos/kkrausse/random/bun-web-terminal
+ExecStart=%h/.bun/bin/bun src/server.ts
+Environment=PATH=%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
+Environment=SHELL=/bin/bash
+Environment=HOST=127.0.0.1
+Environment=PORT=4784
+Environment=TERMINAL_PUBLIC_URL=https://YOUR-MACHINE.YOUR-TAILNET.ts.net/sessions
+UMask=0077
+Restart=on-failure
+RestartSec=5
+# Do not kill tmux/session processes in the service cgroup on a Bun restart.
+KillMode=process
+
+[Install]
+WantedBy=default.target
+```
+
+The explicit HTTPS URL keeps remote sign-in configured even if Tailscale is not
+yet running when Bun starts. Keep the default state directory (or explicitly set
+the same `XDG_STATE_HOME` as your manual launch); switching it creates a separate
+set of credentials. `KillMode=process` intentionally leaves tmux children running
+when the service stops. Stop unwanted sessions using tmux or the sessions menu.
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now bun-web-terminal
+systemctl --user status bun-web-terminal
+journalctl --user -u bun-web-terminal -n 60 --no-pager
+```
+
+The journal contains the secret sign-in link/QR: do not share those logs.
+Sign in once using the printed HTTPS link, then bookmark `/sessions`.
+Use `systemctl --user restart bun-web-terminal` after updates. Stop any manually
+running instance on the same port before enabling the service.
+
+To keep the user service running after logout and start it at boot, an
+administrator may need to enable lingering:
+
+```sh
+sudo loginctl enable-linger "$USER"
+```
+
+Bun restarts preserve tmux sessions and browser logins. Machine reboots preserve
+credentials, but terminate running tmux processes. To reset auth, stop the
+service, run `bun run auth:reset` as the same user with the same state directory
+and port, and start the service again.
 
 ## Phone controls
 

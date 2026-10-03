@@ -219,6 +219,7 @@ function loadGhosttyTheme() {
   const fallback = { background: "#282c34", foreground: "#ffffff" };
   const browserFont = process.env.TERMINAL_FONT ?? "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace";
   const scrollSensitivity = parseScrollSensitivity(process.env.TERMINAL_SCROLL_SENSITIVITY);
+  if (!Bun.which("ghostty")) return { terminal: fallback, fontFamily: browserFont, fontSize: 14, scrollSensitivity };
   const defaults = Bun.spawnSync(["ghostty", "+show-config", "--default"], { stdout: "pipe", stderr: "ignore" });
   if (defaults.exitCode !== 0) return { terminal: fallback, fontFamily: browserFont, fontSize: 14, scrollSensitivity };
   const overrides = Bun.spawnSync(["ghostty", "+show-config"], { stdout: "pipe", stderr: "ignore" });

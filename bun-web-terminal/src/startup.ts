@@ -48,8 +48,8 @@ export async function printStartupLink(host: string, port: number, secret: strin
   const localHost = host === "0.0.0.0" ? "127.0.0.1" : host === "::1" ? "[::1]" : host;
   const localUrl = `http://${localHost}:${port}/sessions`;
   console.log(`Web terminal: ${localUrl}`);
-  console.log(`Mac sign-in: ${signInUrl(localUrl, secret)}`);
-  console.log("Sign-in links grant terminal access. Restart Bun to rotate the secret and revoke all sessions.");
+  console.log(`Local sign-in: ${signInUrl(localUrl, secret)}`);
+  console.log("Sign-in links grant terminal access. Credentials survive restarts; to revoke sign-ins, stop Bun, run bun run auth:reset, then start it again.");
   try {
     const url = signInUrl(publicUrl ?? localUrl, secret);
     console.log(publicUrl ? `Phone sign-in (scan below): ${url}` : "QR uses localhost; set TERMINAL_PUBLIC_URL or configure Tailscale Serve to open from your phone.");
