@@ -9,6 +9,8 @@ import { fail, firstLine, type SourceError } from "./errors.ts";
 
 export interface Machine {
   readonly id: string;
+  /** Name shown in list rows instead of `id`, to keep the label column narrow. */
+  readonly short?: string;
   /** ssh alias/host; absent for the local machine. */
   readonly ssh?: string;
   /** Default start directory for new sessions (remote: may start with `~`). */
@@ -21,6 +23,7 @@ export interface Machine {
 
 const MachineSchema = Schema.Struct({
   id: Schema.String,
+  short: Schema.optionalKey(Schema.String),
   ssh: Schema.optionalKey(Schema.String),
   dir: Schema.optionalKey(Schema.String),
   path: Schema.optionalKey(Schema.Array(Schema.String)),

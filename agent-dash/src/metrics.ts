@@ -20,10 +20,10 @@ export function subagentSummary(nodes: readonly AgentNode[], rootId: string, com
   return { total, active, complete };
 }
 
-/** The subagents column, `active / total`; `≥` on the total when the scan was cut short. */
+/** The subagents column, `active/total`; `≥` on the total when the scan was cut short. */
 export function subagentCell(s: Subagents | undefined) {
   if (!s?.total) return "";
-  return `${s.active} / ${s.complete ? "" : "≥"}${s.total}`;
+  return `${s.active}/${s.complete ? "" : "≥"}${s.total}`;
 }
 
 /** The context column: tokens in the window, never a share of a limit that may only be assumed. */
