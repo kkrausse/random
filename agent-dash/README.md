@@ -51,9 +51,11 @@ harness archived it, you archived it here, or it is finished and untouched for 7
 days. Rows are labelled `machine·harness`; the footer lists sources with problems
 (red) and harnesses that aren't there (dim: not installed, unsupported, not running).
 
-OpenCode and Codex rows show **N subagents (M active)**, counting all descendants
-like the session-manager plugin. Counts include finished descendants; `≥N` means
-the bounded history scan was incomplete. Children are not separate top-level rows.
+Rows show **N subagents (M active)**, counting all descendants like the
+session-manager plugin. Counts include finished descendants; `≥N` means the bounded
+history scan was incomplete. Children are not separate top-level rows. For Claude the
+total is the session's subagent transcripts; "active" is only known for background
+sessions (their job state lists what the current turn has running).
 
 Context badges show **N% ctx**, or a token count when the limit is unavailable:
 
@@ -64,8 +66,11 @@ Context badges show **N% ctx**, or a token count when the limit is unavailable:
   connection. No snapshot is available at initial connection until an event arrives;
   receiving events depends on the server's notification/subscription behavior.
   The dashboard does not resume threads to subscribe to usage.
-- **Claude:** currently unavailable in the dashboard's `agents`/job-state feed.
-  Claude can expose it to a status-line script, but no bridge is installed here.
+- **Claude:** the last response's input tokens (fresh, cache-read and cache-write),
+  read from the session transcript, which is how Claude's own status line counts it.
+  The transcript doesn't record the window size, so the limit is assumed: 1M for
+  Claude 5 models and `[1m]` ids (or once usage passes 200k), else 200k. Unavailable
+  between a compaction and the next response.
 
 These are latest-response snapshots, not continuously exact streaming usage or
 lifetime billed tokens. The selected row's footer shows raw tokens and snapshot

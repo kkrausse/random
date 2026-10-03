@@ -143,8 +143,21 @@ Codex takes `last.totalTokens`, never cumulative `total`, from received
 `thread/tokenUsage/updated` events and uses `modelContextWindow` when available.
 The connection keeps snapshots in memory; it does not resume threads or otherwise
 mutate them to acquire a subscription. Initial availability and live event delivery
-depend on the server's notification behavior. Claude's current feed supplies neither
-metric; its status-line context API would need a separate opt-in bridge.
+depend on the server's notification behavior.
+
+Claude has no API for either, so the host loop reads them off disk. For each listed
+session it finds `~/.claude/projects/*/<sessionId>.jsonl`, sends the last line of the
+transcript's tail that is a response's usage or a compaction boundary (only when the
+file's mtime changes), and counts `<sessionId>/subagents/agent-*.jsonl`. Context is
+that response's `input + cache_creation + cache_read` tokens, matching Claude's own
+status line (output tokens are not counted, unlike OpenCode). A compaction boundary
+doesn't decode as usage, so context is unavailable until the next response. The window
+is not recorded anywhere readable, so the limit is a rule in `claude.ts` (1M for
+Claude 5 models and `[1m]` ids, or once usage passes 200k; else 200k) and the one
+place where a percentage rests on an assumption. The exact figure is only handed to a
+status-line script, which would need a per-host opt-in bridge. Subagent total is the
+transcript count (nested ones land in the same folder); active is the job state's
+`fan` entries of kind `agent` without `doneAt`, so it is 0 for interactive sessions.
 
 Only show a percentage when the context limit is known. Missing means unavailable,
 not zero. The footer shows raw tokens and measurement age. Future providers can
