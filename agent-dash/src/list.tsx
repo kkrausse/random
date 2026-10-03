@@ -208,9 +208,11 @@ export function SessionList(props: {
     for (const s of srcs.filter((s) => QUIET.has(s.problem!.kind))) quiet.set(s.problem!.message, [...(quiet.get(s.problem!.message) ?? []), label(s)]);
     return { errors: errors.join(" · "), quiet: [...quiet].map(([msg, who]) => `${who.join(", ")} ${msg}`).join(" · ") };
   });
-  // Rows carry the short label (`short` host name, cut harness name); the footer has the full one.
+  // Rows have separate short host and harness columns; the footer has the full label.
   const host = (s: Session) => props.store.hostShort(s.machine);
-  const labelWidth = createMemo(() => Math.max(0, ...view().list.map((s) => host(s).length + 1 + harnessShort(s.harness).length)) + 1);
+  const hostWidth = createMemo(() => Math.max(0, ...view().list.map((s) => Bun.stringWidth(host(s)))));
+  const harnessWidth = createMemo(() => Math.max(0, ...view().list.map((s) => Bun.stringWidth(harnessShort(s.harness)))));
+  const labelWidth = () => hostWidth() + GAP.length + harnessWidth() + GAP.length;
   const stateCell = (s: Session) => (props.live().has(s.key) ? "●" : s.open ? "" : "view");
   const dims = useTerminalDimensions();
   // Column widths fit the rows on screen. A column no row has anything for takes no space;
@@ -278,8 +280,8 @@ export function SessionList(props: {
                   <text fg={active() && !"needs working failed".includes(st()) ? colors.selected : color()}>{gutter()}</text>
                 </box>
                 <box flexDirection="row" flexGrow={1} flexBasis={0} minWidth={0} overflow="hidden" paddingLeft={1}>
-                  <text wrapMode="none" flexShrink={0} fg={props.store.hostColor(s().machine)}>{host(s())}</text>
-                  <text wrapMode="none" flexShrink={0} fg={providerColor(s().harness)}>{`·${harnessShort(s().harness)}`.padEnd(labelWidth() - host(s()).length)}</text>
+                  <text wrapMode="none" flexShrink={0} fg={props.store.hostColor(s().machine)}>{fit(host(s()), hostWidth()) + GAP}</text>
+                  <text wrapMode="none" flexShrink={0} fg={providerColor(s().harness)}>{fit(harnessShort(s().harness), harnessWidth()) + GAP}</text>
                   <text wrapMode="none" flexShrink={0} fg={active() ? colors.selected : s().open ? colors.text : colors.muted} attributes={active() ? TextAttributes.BOLD : undefined}>
                     {fit(s().title, cols().title)}
                   </text>
