@@ -14,12 +14,16 @@ import { sessionKey, type ContextUsage, type Session, type Status } from "./sess
 const TICK_S = 2;
 
 // A ticker and stdin feed one pipe; each line on it is one record. The record's commands read
-// /dev/null so they can't eat those lines. When the dashboard goes away, writes to the closed
-// stdout end the reader, then the ticker.
+// /dev/null so they can't eat those lines. Nothing kills the pipeline's subshells for us: killing
+// the stream's process only takes the top-level sh (or ssh), and Bun starts children with SIGPIPE
+// ignored, so a write to the dead dashboard's stdout just fails and the loop used to poll on
+// forever as an orphan. So the reader quits when its write fails or the top-level sh ($$) is gone,
+// and the ticker when either of those took the reader.
 const LOOP = `
 J="$HOME/.claude/jobs"; P="$HOME/.claude/projects"; seen=""; seent=""
-{ while :; do echo; sleep ${TICK_S}; done & cat; } | while read -r _; do {
-  echo "@@archive"; cat "${ARCHIVE_FILE}" 2>/dev/null; echo
+{ while kill -0 $$ 2>/dev/null && echo; do sleep ${TICK_S}; done & cat; } | while read -r _; do {
+  kill -0 $$ 2>/dev/null || exit
+  echo "@@archive" || exit; cat "${ARCHIVE_FILE}" 2>/dev/null; echo
   if command -v claude >/dev/null 2>&1; then
     out=$(claude agents --json --all 2>&1); echo "@@claude $?"; printf '%s\\n' "$out"
     next=""

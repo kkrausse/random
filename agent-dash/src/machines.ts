@@ -156,7 +156,11 @@ export const lines = (m: Machine, cmd: readonly string[], input?: (write: ((s: s
       yield* ensureMaster(m);
       const p = yield* Effect.acquireRelease(
         Effect.sync(() => Bun.spawn(on(m, cmd), { cwd: homedir(), stdin: input ? "pipe" : "ignore", stdout: "pipe", stderr: "pipe" })),
-        (p) => Effect.sync(() => p.kill()),
+        (p) =>
+          Effect.sync(() => {
+            if (input && p.stdin) p.stdin.end(); // EOF for whatever of the command still reads it
+            p.kill();
+          }),
       );
       if (input && p.stdin) {
         const stdin = p.stdin;

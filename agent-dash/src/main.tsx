@@ -249,6 +249,11 @@ function App(props: { store: DashStore }) {
     await props.store.stop();
     process.exit(0);
   };
+  // A dashboard whose terminal went away (tab closed, harness killed) would otherwise keep polling
+  // every host with nobody watching.
+  for (const sig of ["SIGHUP", "SIGTERM"] as const) process.on(sig, () => void quit());
+  process.stdin.on("end", () => void quit());
+  process.stdin.on("error", () => void quit());
 
   return (
     <box flexDirection="column" width="100%" height="100%" backgroundColor={colors.bg}>
