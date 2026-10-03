@@ -22,3 +22,29 @@ export function terminalLinkAt(terminal: Terminal, x: number, y: number): string
     if (found && /^(?:https?:\/\/|mailto:|ftp:\/\/|ssh:\/\/|git:\/\/|tel:|magnet:|gemini:\/\/|gopher:\/\/|news:)/i.test(found.text)) return found.text;
   }
 }
+
+// Desktop: Cmd+click (Ctrl+click off macOS) opens the link under the pointer.
+// The whole press/release/click is swallowed at window capture so neither tmux
+// nor a mouse-aware application sees it, and so the wrapper's own asynchronous
+// click handler cannot open the same link a second time.
+export function installLinkClicks(container: HTMLElement, terminal: Terminal) {
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+  let pressed: string | undefined;
+  const swallow = (event: MouseEvent) => { event.preventDefault(); event.stopImmediatePropagation(); };
+  window.addEventListener("mousedown", (event) => {
+    pressed = undefined;
+    if (event.button !== 0 || !(mac ? event.metaKey : event.ctrlKey) || !container.contains(event.target as Node)) return;
+    pressed = terminalLinkAt(terminal, event.clientX, event.clientY);
+    if (pressed) swallow(event);
+  }, { capture: true });
+  window.addEventListener("mouseup", (event) => {
+    if (!pressed || event.button !== 0) return;
+    swallow(event);
+    if (terminalLinkAt(terminal, event.clientX, event.clientY) === pressed) window.open(pressed, "_blank", "noopener,noreferrer");
+  }, { capture: true });
+  window.addEventListener("click", (event) => {
+    if (!pressed) return;
+    pressed = undefined;
+    swallow(event);
+  }, { capture: true });
+}

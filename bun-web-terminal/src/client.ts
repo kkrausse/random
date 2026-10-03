@@ -5,6 +5,7 @@ import { installMobileControls } from "./mobile";
 import { ApplicationClipboard, ClipboardRequests } from "./clipboard";
 import { hasAutomaticSessionName, sessionLabel } from "./session-display";
 import { installTmuxSelection } from "./tmux-selection";
+import { installLinkClicks } from "./links";
 
 type Session = {
   id: string;
@@ -254,6 +255,7 @@ async function startTerminalPage() {
       }[status];
     },
   });
+  installLinkClicks(container, terminal);
   const tmuxSelection = touchPointer ? undefined : installTmuxSelection(
     container, terminal, () => applicationMouse,
     () => { tmuxSelectionActive = true; },

@@ -40,6 +40,49 @@ async function until(check: () => boolean, timeout = 5000) {
   }
 }
 
+test("embedded OSC 8 links survive the tmux attachment and reconnect", async () => {
+  const ghostty = await Ghostty.load(new URL(import.meta.resolve("@random/ghostty-web/ghostty-vt.wasm")).pathname);
+  const socket = `bun-web-terminal-links-${crypto.randomUUID()}`;
+  const manager = new SessionManager(import.meta.dir, socket);
+  const terminals: ReturnType<typeof ghostty.createTerminal>[] = [];
+  const uri = "https://example.com/diagram";
+  const attach = (session: Session) => {
+    const terminal = ghostty.createTerminal(80, 12);
+    terminals.push(terminal);
+    let attachment: Attachment;
+    attachment = manager.attach(session, {
+      send(data) {
+        if (typeof data === "string") return;
+        terminal.write(data);
+        let response: string | null;
+        while ((response = terminal.readResponse()) !== null) attachment.input(new TextEncoder().encode(response));
+        queueMicrotask(() => attachment.acknowledge(data.byteLength));
+      },
+      close() {},
+    }, 80, 12);
+    return { terminal, attachment };
+  };
+  const text = (terminal: ReturnType<typeof ghostty.createTerminal>) =>
+    Array.from({ length: 12 }, (_, y) => (terminal.getLine(y) ?? []).map(cell => String.fromCodePoint(cell.codepoint || 32)).join("")).join("\n");
+  try {
+    const session = manager.create();
+    const first = attach(session);
+    first.attachment.input(new TextEncoder().encode(`'${process.execPath}' '${import.meta.dir}/fixtures/hyperlink.ts'\r`));
+    await until(() => text(first.terminal).includes("Open diagram"));
+    expect(first.terminal.getHyperlinkUri(0, 0)).toBe(uri);
+    expect(first.terminal.getHyperlinkUri(0, 11)).toBe(uri);
+    expect(first.terminal.getHyperlinkUri(0, 12)).toBeNull();
+    first.attachment.close();
+    const second = attach(session);
+    await until(() => text(second.terminal).includes("Open diagram"));
+    expect(second.terminal.getHyperlinkUri(0, 0)).toBe(uri);
+  } finally {
+    manager.dispose();
+    Bun.spawnSync(["tmux", "-L", socket, "kill-server"]);
+    for (const terminal of terminals) terminal.free();
+  }
+});
+
 test("tmux restores a live alternate screen, coalesces resize storms, and survives slow attachments", async () => {
   const ghostty = await Ghostty.load(new URL(import.meta.resolve("@random/ghostty-web/ghostty-vt.wasm")).pathname);
   const socket = `bun-web-terminal-test-${crypto.randomUUID()}`;

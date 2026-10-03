@@ -168,7 +168,9 @@ export class SessionManager {
     // This marks a fresh terminal, never a replay of historical terminal queries.
     peer.send(JSON.stringify({ type: "ready", cols, rows, attachmentId: attachment.id }));
     try {
-      child = Bun.spawn([...this.tmuxCommand(), "attach-session", "-t", session.id], {
+      // Ghostty Web handles OSC 8 links, but tmux does not infer that from
+      // xterm-256color. Advertise it on this client only, not the shared server.
+      child = Bun.spawn([...this.tmuxCommand(), "-T", "hyperlinks", "attach-session", "-t", session.id], {
         env: this.env,
         terminal: { cols, rows, name: "xterm-256color", data(_terminal, data) { flow.push(data); } },
       });
