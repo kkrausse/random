@@ -103,7 +103,7 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
         const { files, text } = await readClipboard();
         if (files.length) pasteFiles(files);
         else if (text) terminal.paste(text);
-        else notice("Clipboard is empty · use your keyboard’s Paste action for files");
+        else showPasteTarget();
       } catch (error) {
         reportPaste(`button failed: ${error}`);
         notice("Paste unavailable · use your keyboard’s Paste action");
@@ -144,6 +144,43 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
   container.addEventListener("focusout", scheduleLayout);
   window.addEventListener("blur", () => { setControl(false); });
   layout();
+
+  // Safari's clipboard API returns nothing for files such as PDFs; only a native
+  // paste into an editable element delivers them. Offer one to tap and paste into.
+  function showPasteTarget() {
+    document.querySelector(".paste-target")?.remove();
+    const target = document.createElement("div");
+    target.className = "paste-target";
+    const field = document.createElement("div");
+    field.contentEditable = "true";
+    field.setAttribute("role", "textbox");
+    field.setAttribute("aria-label", "Paste here");
+    field.dataset.placeholder = "Tap here, then Paste";
+    const close = document.createElement("button");
+    close.type = "button";
+    close.textContent = "×";
+    close.setAttribute("aria-label", "Cancel paste");
+    target.append(field, close);
+    document.body.append(target);
+    const onPaste = (event: ClipboardEvent) => {
+      const data = event.clipboardData;
+      const hasFile = (data?.files.length ?? 0) > 0 || [...(data?.items ?? [])].some(item => item.kind === "file");
+      // Files are uploaded by the page's paste handler; text goes to the terminal, not this field.
+      if (!hasFile) {
+        event.preventDefault();
+        const text = data?.getData("text/plain");
+        if (text) terminal.paste(text);
+      }
+      dismiss();
+    };
+    const dismiss = () => {
+      window.removeEventListener("paste", onPaste, true);
+      target.remove();
+    };
+    window.addEventListener("paste", onPaste, true);
+    close.addEventListener("click", dismiss);
+    field.focus();
+  }
 
   // One clipboard read (a second read would prompt again on iOS). Items carrying
   // a non-text type such as an image are uploaded as files; the rest paste as text.
