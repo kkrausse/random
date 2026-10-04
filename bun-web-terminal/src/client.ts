@@ -203,8 +203,16 @@ async function startTerminalPage() {
     mode: terminal.wasmTerm?.hasMouseTracking() ? "mouse" : terminal.wasmTerm?.isAlternateScreen() ? "alternate" : "history",
   }), theme.scrollSensitivity ?? 0.5);
 
-  container.addEventListener("paste", (event) => {
-    const files = [...(event.clipboardData?.files ?? [])];
+  // On the document: a touch device can paste without the terminal textarea focused.
+  document.addEventListener("paste", (event) => {
+    const data = event.clipboardData;
+    const files = [...(data?.files ?? [])];
+    // Some browsers expose pasted files only as items.
+    if (files.length === 0) for (const item of data?.items ?? []) {
+      const file = item.kind === "file" ? item.getAsFile() : null;
+      if (file) files.push(file);
+    }
+    reportPaste(`event types=[${[...(data?.types ?? [])].join(",")}] files=[${files.map(file => `${file.name}:${file.type}:${file.size}`).join(",")}]`);
     if (files.length === 0) return;
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -280,7 +288,7 @@ async function startTerminalPage() {
     copyToast.dataset.status = "success";
     copyToast.textContent = message;
     copyToastTimer = setTimeout(() => { copyToast.textContent = ""; }, 3000);
-  }, connection, (files) => void pasteFiles(files));
+  }, connection, (files) => void pasteFiles(files), reportPaste);
   terminal.onData((data) => {
     const routed = tmuxSelection?.input(data) ?? data;
     if (!routed) return;
@@ -343,6 +351,10 @@ async function startTerminalPage() {
     clearTimeout(layoutTimer);
   });
 
+  function reportPaste(detail: string) {
+    void fetch("/api/paste-report", { method: "POST", body: detail }).catch(() => {});
+  }
+
   // Files are stored on the server and their paths typed at the cursor.
   async function pasteFiles(files: File[]) {
     try {
@@ -357,6 +369,7 @@ async function startTerminalPage() {
       }));
       terminal.paste(paths.join(" "));
     } catch (error) {
+      reportPaste(`upload failed: ${error}`);
       terminal.write(`\r\n\x1b[38;2;204;102;102m[file paste failed: ${error instanceof Error ? error.message : String(error)}]\x1b[0m\r\n`);
     }
   }

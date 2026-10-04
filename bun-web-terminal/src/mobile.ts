@@ -6,7 +6,7 @@ import { terminalViewport } from "./viewport";
 import { terminalLinkAt } from "./links";
 
 // Leave key encoding, composition, bracketed paste, and mouse reporting to Ghostty.
-export function installMobileControls(container: HTMLElement, terminal: Terminal, notice: (message: string) => void, connection: TerminalConnection, pasteFiles: (files: File[]) => void) {
+export function installMobileControls(container: HTMLElement, terminal: Terminal, notice: (message: string) => void, connection: TerminalConnection, pasteFiles: (files: File[]) => void, reportPaste: (detail: string) => void) {
   const toolbar = document.createElement("div");
   toolbar.className = "terminal-keys";
   toolbar.setAttribute("role", "group");
@@ -104,7 +104,10 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
         if (files.length) pasteFiles(files);
         else if (text) terminal.paste(text);
         else notice("Clipboard is empty · use your keyboard’s Paste action for files");
-      } catch { notice("Paste unavailable · use your keyboard’s Paste action"); }
+      } catch (error) {
+        reportPaste(`button failed: ${error}`);
+        notice("Paste unavailable · use your keyboard’s Paste action");
+      }
       return;
     }
     const ctrlKey = control;
@@ -148,7 +151,9 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
     if (!navigator.clipboard.read) return { files: [], text: await navigator.clipboard.readText() };
     const files: File[] = [];
     let text = "";
-    for (const item of await navigator.clipboard.read()) {
+    const items = await navigator.clipboard.read();
+    reportPaste(`button items=[${items.map(item => item.types.join("+")).join(",")}]`);
+    for (const item of items) {
       const type = item.types.find(type => !type.startsWith("text/"));
       if (type) files.push(new File([await item.getType(type)], `pasted.${type.split("/")[1]!.split(/[+;]/)[0]}`, { type }));
       else if (item.types.includes("text/plain")) text += await (await item.getType("text/plain")).text();

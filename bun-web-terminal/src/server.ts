@@ -78,6 +78,12 @@ const server = Bun.serve<SocketData>({
       const session = sessions.get(url.pathname.slice(14));
       return session ? Response.json(publicSession(session)) : new Response("Session not found", { status: 404 });
     }
+    // What the browser's clipboard offered, so failed pastes can be diagnosed from the journal.
+    if (url.pathname === "/api/paste-report" && request.method === "POST") {
+      if (!isSameOrigin(request)) return new Response("Forbidden", { status: 403 });
+      console.log(`paste report: ${(await request.text()).slice(0, 500).replace(/[\x00-\x1f]/g, " ")}`);
+      return new Response(null, { status: 204 });
+    }
     if (url.pathname.startsWith("/api/sessions/") && url.pathname.endsWith("/attachments") && request.method === "POST") {
       if (!isSameOrigin(request)) return new Response("Forbidden", { status: 403 });
       const sessionId = url.pathname.slice(14, -12);
@@ -172,6 +178,7 @@ async function saveAttachment(request: Request, session: Session) {
   const path = join(directory, attachmentName(request.headers.get("x-filename"), bytes));
   await mkdir(directory, { recursive: true });
   await Bun.write(path, bytes);
+  console.log(`attachment saved: ${path} (${bytes.byteLength} bytes)`);
   return Response.json({ path });
 }
 
