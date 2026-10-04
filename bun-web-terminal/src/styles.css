@@ -32,7 +32,7 @@ body {
 .paste-target { position: fixed; z-index: 20; left: 12px; right: 12px; top: 30%; display: flex; gap: 8px; padding: 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--background); }
 .paste-target [contenteditable] { flex: 1; min-height: 56px; padding: 16px 8px; font-size: 16px; color: var(--foreground); outline: none; -webkit-user-select: text; user-select: text; }
 .paste-target [contenteditable]:empty::before { content: attr(data-placeholder); color: var(--muted); }
-.paste-target button { min-width: 44px; border: 1px solid var(--muted); border-radius: 3px; font-size: 20px; color: var(--foreground); background: var(--background); }
+.paste-target button { min-width: 44px; padding: 0 10px; border: 1px solid var(--muted); border-radius: 3px; font-size: 20px; color: var(--foreground); background: var(--background); }
 .terminal-keys button[aria-pressed="true"] { color: var(--background); background: var(--accent); }
 .terminal-keys button svg { width: 20px; height: 20px; vertical-align: middle; }
 .terminal-keys button:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }

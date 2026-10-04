@@ -145,8 +145,9 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
   window.addEventListener("blur", () => { setControl(false); });
   layout();
 
-  // Safari's clipboard API returns nothing for files such as PDFs; only a native
-  // paste into an editable element delivers them. Offer one to tap and paste into.
+  // Shown when the clipboard API returns nothing. iOS Safari gives a page no
+  // access to a copied file such as a PDF, even through a native paste (the event
+  // arrives with no types), so the field is paired with a file chooser.
   function showPasteTarget() {
     document.querySelector(".paste-target")?.remove();
     const target = document.createElement("div");
@@ -160,7 +161,19 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
     close.type = "button";
     close.textContent = "×";
     close.setAttribute("aria-label", "Cancel paste");
-    target.append(field, close);
+    const picker = document.createElement("input");
+    picker.type = "file";
+    picker.multiple = true;
+    picker.hidden = true;
+    const choose = document.createElement("button");
+    choose.type = "button";
+    choose.textContent = "Choose file";
+    choose.addEventListener("click", () => picker.click());
+    picker.addEventListener("change", () => {
+      if (picker.files?.length) pasteFiles([...picker.files]);
+      dismiss();
+    });
+    target.append(field, choose, close, picker);
     document.body.append(target);
     const onPaste = (event: ClipboardEvent) => {
       const data = event.clipboardData;
@@ -169,7 +182,8 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
       if (!hasFile) {
         event.preventDefault();
         const text = data?.getData("text/plain");
-        if (text) terminal.paste(text);
+        if (!text) { field.dataset.placeholder = "Browser can’t read this clipboard · choose the file"; return; }
+        terminal.paste(text);
       }
       dismiss();
     };
