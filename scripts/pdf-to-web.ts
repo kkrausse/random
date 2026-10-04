@@ -18,7 +18,7 @@ type TextLine = {
 type TextBlock = { type: "text"; bbox: BBox; lines: TextLine[] }
 type ImageBlock = { type: "image"; bbox: BBox; src: string; width: number; height: number }
 type StructuredPage = { blocks: Array<TextBlock | { type: string; bbox?: BBox }> }
-type PageData = { number: number; width: number; height: number; blocks: Array<TextBlock | ImageBlock>; sourcePage: string; notices: string[] }
+type PageData = { number: number; width: number; height: number; blocks: Array<TextBlock | ImageBlock>; sourcePage: string; notices: string[]; alerts: string[] }
 type PageLink = { bbox: BBox; href: string }
 
 const args = Bun.argv.slice(2)
@@ -71,6 +71,10 @@ try {
       const structuredText = page.toStructuredText("preserve-spans,preserve-whitespace,preserve-images")
       let data: StructuredPage
       const notices: string[] = []
+      // Alerts are the subset of notices that mean a reader is certainly missing content.
+      // Only those earn a banner; the conservative "may be absent" notices fire on nearly
+      // every page of a typical report and are shown as a collapsed note instead.
+      const alerts: string[] = []
       let vectorOperations = 0
       let paintedImages = 0
       let complexImages = false
@@ -134,7 +138,7 @@ try {
           const right = Math.min(rendered.getWidth(), Math.ceil((block.bbox.x + block.bbox.w) * scale) - rendered.getX())
           const bottom = Math.min(rendered.getHeight(), Math.ceil((block.bbox.y + block.bbox.h) * scale) - rendered.getY())
           if (right <= left || bottom <= top) {
-            notices.push("An image region lies outside the visible page and could not be rendered.")
+            alerts.push("An image region lies outside the visible page and could not be rendered.")
             continue
           }
           const width = right - left, height = bottom - top
@@ -159,8 +163,19 @@ try {
       }
       if (vectorOperations) notices.push("Vector drawings inside image boundaries are preserved in the figures. Drawings outside those boundaries (including standalone charts or decoration) may be absent from this view.")
       if (complexImages || paintedImages !== blocks.filter(block => block.type === "image").length + backgrounds.size) notices.push("Image layers and masks inside figure crops are preserved; additional image content outside those regions may be absent.")
-      if (!totalText) notices.push("No selectable text was found. OCR is needed for searchable, reflowed text.")
-      blocks.sort((a, b) => a.bbox.y - b.bbox.y || a.bbox.x - b.bbox.x)
+      if (!totalText) alerts.push("No selectable text was found. OCR is needed for searchable, reflowed text.")
+      notices.push(...alerts)
+      // A figure set beside a text column is discussed by that text. In a single column it
+      // reads better after the text it sat next to than dropped in mid-argument at its top edge.
+      const readingY = (block: TextBlock | ImageBlock) => {
+        if (block.type !== "image") return block.bbox.y
+        const beside = blocks.filter(other => other.type === "text" &&
+          (other.bbox.x + other.bbox.w <= block.bbox.x + 4 || other.bbox.x >= block.bbox.x + block.bbox.w - 4) &&
+          other.bbox.y + other.bbox.h / 2 >= block.bbox.y && other.bbox.y + other.bbox.h / 2 <= block.bbox.y + block.bbox.h)
+        return Math.max(block.bbox.y, ...beside.map(other => other.bbox.y + other.bbox.h))
+      }
+      const order = new Map(blocks.map(block => [block, readingY(block)]))
+      blocks.sort((a, b) => order.get(a)! - order.get(b)! || a.bbox.x - b.bbox.x)
 
       pages.push({
         number: index + 1,
@@ -169,6 +184,7 @@ try {
         blocks,
         sourcePage: `assets/page-${String(index + 1).padStart(3, "0")}.jpg`,
         notices,
+        alerts,
       })
 
       console.log(`Processed page ${index + 1}/${document.countPages()}`)
@@ -231,6 +247,7 @@ function renderPage(page: PageData, bodySize: number, repeatedMargins: Set<strin
     .map((block) => block.type === "image" ? renderImage(block, page.number) : renderBlock(block, bodySize))
     .filter(Boolean)
     .join("\n")
+  const quietNotices = page.notices.filter(notice => !page.alerts.includes(notice))
   const sourcePage = includeFullPages ? `<details class="source-page">
     <summary>Original page ${page.number}</summary>
     <p><a href="original.pdf#page=${page.number}">Open this page in the original PDF</a> for full-resolution text and graphics.</p>
@@ -238,8 +255,8 @@ function renderPage(page: PageData, bodySize: number, repeatedMargins: Set<strin
   </details>` : ""
 
   return `<section class="document-page" id="page-${page.number}">
-  <div class="page-marker">Page ${page.number}</div>
-  ${page.notices.map(notice => `<aside class="conversion-notice">${escapeHtml(notice)} <a href="original.pdf#page=${page.number}" target="_blank" rel="noopener">Check page ${page.number} in the original PDF.</a></aside>`).join("\n")}
+  <div class="page-marker">Page ${page.number} · <a href="original.pdf#page=${page.number}" target="_blank" rel="noopener">original</a>${quietNotices.length ? `<details class="conversion-notes"><summary>${quietNotices.length} conversion note${quietNotices.length > 1 ? "s" : ""}</summary><ul>${quietNotices.map(notice => `<li>${escapeHtml(notice)}</li>`).join("")}</ul></details>` : ""}</div>
+  ${page.alerts.map(notice => `<aside class="conversion-notice">${escapeHtml(notice)} <a href="original.pdf#page=${page.number}" target="_blank" rel="noopener">Check page ${page.number} in the original PDF.</a></aside>`).join("\n")}
   <div class="reflowed">${blocks || '<p class="empty-page">No selectable text was found on this page.</p>'}</div>
 ${sourcePage}
 </section>`
@@ -277,15 +294,19 @@ function overlaps(a: BBox, b: BBox) {
 
 function renderBlock(block: TextBlock, bodySize: number) {
   const lines: TextLine[] = []
-  let paragraphBreakBefore = false
+  // Whitespace-only spans mark a paragraph break only when they sit on a visual line of
+  // their own. Word-processor PDFs also emit them at the end (or start) of ordinary lines,
+  // and treating those as breaks splits wrapped sentences apart.
+  let blankLine: TextLine | undefined
   for (const line of block.lines) {
     const text = line.text.replace(/\s+/g, " ")
     if (!text.trim()) {
-      paragraphBreakBefore = lines.length > 0
+      const previous = lines.at(-1)
+      if (previous && !sameVisualLine(previous, line)) blankLine ??= line
       continue
     }
-    lines.push({ ...line, text, paragraphBreakBefore })
-    paragraphBreakBefore = false
+    lines.push({ ...line, text, paragraphBreakBefore: Boolean(blankLine && !sameVisualLine(blankLine, line)) })
+    blankLine = undefined
   }
   if (!lines.length) return ""
   const text = clean(joinLines(lines).map((line) => line.text).join(""))
@@ -309,12 +330,16 @@ function renderBlock(block: TextBlock, bodySize: number) {
   }
 
   const content = renderText(lines)
-  const largestSize = Math.max(...lines.map((line) => line.font.size))
+  // Size by character count: a block with a larger lead-in line above body-size text is
+  // a paragraph with a label, not a heading.
+  const sizes = new Map<number, number>()
+  for (const line of lines) sizes.set(line.font.size, (sizes.get(line.font.size) ?? 0) + line.text.trim().length)
+  const dominantSize = [...sizes].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0]
   const mostlyBold = lines.filter((line) => line.font.weight === "bold").length >= lines.length / 2
-  const heading = text.length < 180 && (largestSize >= bodySize * 1.15 || (mostlyBold && text.length < 100))
+  const heading = text.length < 180 && (dominantSize >= bodySize * 1.15 || (mostlyBold && text.length < 100))
 
   if (heading) {
-    const level = largestSize >= bodySize * 1.75 ? 2 : largestSize >= bodySize * 1.35 ? 3 : 4
+    const level = dominantSize >= bodySize * 1.75 ? 2 : dominantSize >= bodySize * 1.35 ? 3 : 4
     return `<h${level}>${content}</h${level}>`
   }
 
@@ -332,6 +357,10 @@ function renderBlock(block: TextBlock, bodySize: number) {
     return `<p${classes ? ` class="${classes}"` : ""}>${visualLines.map((line) => renderText(line)).join("<br>")}</p>`
   }
   return `<p${classes ? ` class="${classes}"` : ""}>${content}</p>`
+}
+
+function sameVisualLine(a: TextLine, b: TextLine) {
+  return Math.abs(a.bbox.y - b.bbox.y) < Math.max(a.bbox.h, b.bbox.h) * 0.5
 }
 
 function groupVisualLines(lines: TextLine[]) {
@@ -391,7 +420,7 @@ function closeInline(style: string) {
 function joinLines(lines: TextLine[]) {
   const result: Array<Pick<TextLine, "text" | "href" | "font" | "paragraphBreakBefore"> & { breakBefore?: boolean }> = []
   let previous: TextLine | undefined
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
     let text = line.text
     let sameVisualLine = false
     if (previous) {
@@ -407,7 +436,11 @@ function joinLines(lines: TextLine[]) {
       }
     }
     const paragraphBreakBefore = Boolean(line.paragraphBreakBefore || (previous && !sameVisualLine && line.bbox.y - (previous.bbox.y + previous.bbox.h) > Math.max(line.bbox.h, previous.bbox.h) * 0.65))
-    const breakBefore = Boolean(previous && !sameVisualLine && paragraphBreakBefore)
+    // A web link that opens a new line and runs to the end of the block is a citation set on
+    // its own line (title, then source link), not a link that happened to wrap mid-sentence.
+    const ownLineLink = Boolean(previous && !sameVisualLine && line.href && /^https?:/i.test(line.href) && line.href !== previous.href &&
+      lines.slice(index).every(later => later.href === line.href))
+    const breakBefore = Boolean(previous && !sameVisualLine && (paragraphBreakBefore || ownLineLink))
     result.push({ text, href: line.href, font: line.font, breakBefore, paragraphBreakBefore })
     previous = line
   }
@@ -433,45 +466,64 @@ function escapeHtml(value: string) {
 }
 
 function renderDocument(title: string, content: string, pageCount: number) {
+  const alertPages = pages.filter(page => page.alerts.length).length
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#131518">
   <title>${escapeHtml(title)}</title>
   <style>
+    /* Dark by default: these pages are read on a phone, often at night. Figures stay
+       un-inverted (charts and screenshots carry meaning in their colours) and are only
+       dimmed slightly so their white backgrounds do not glare. */
+    :root { color-scheme: dark; --bg: #131518; --text: #d9dce1; --muted: #979da6; --rule: #2b2f36; --link: #7cb7ff; --link-hover: #a9d0ff; --notice-bg: #2c2410; --notice-edge: #d39a1e; --notice-text: #f0dfb4; }
     * { box-sizing: border-box; }
-    body { margin: 0; color: #222; background: white; font: 16px/1.55 system-ui, sans-serif; overflow-wrap: anywhere; }
+    body { margin: 0; color: var(--text); background: var(--bg); font: 17px/1.6 system-ui, sans-serif; overflow-wrap: anywhere; -webkit-text-size-adjust: 100%; }
     header, main { width: min(100% - 32px, 720px); margin: 0 auto; }
-    header { padding: 24px 0 16px; border-bottom: 1px solid #ddd; }
-    header span { margin-left: 8px; color: #666; font-size: 14px; }
+    header { padding: 24px 0 16px; border-bottom: 1px solid var(--rule); color: var(--muted); font-size: 14px; }
+    header strong { color: var(--text); font-size: 16px; }
+    header span { margin-left: 8px; }
+    header p { margin: 8px 0 0; }
     main { padding: 24px 0 64px; }
-    .document-page + .document-page { margin-top: 48px; padding-top: 24px; border-top: 1px solid #ddd; }
-    .page-marker { margin-bottom: 16px; color: #666; font-size: 13px; }
-    h2, h3, h4 { margin: 1.5em 0 .5em; line-height: 1.25; }
-    h2 { font-size: 1.75rem; }
-    h3 { font-size: 1.4rem; }
+    .document-page + .document-page { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--rule); }
+    .page-marker { margin-bottom: 16px; color: var(--muted); font-size: 13px; }
+    .page-marker a, .conversion-notes summary { color: inherit; }
+    .conversion-notes { display: inline; margin-left: 8px; }
+    .conversion-notes summary { display: inline; cursor: pointer; text-decoration: underline dotted; }
+    .conversion-notes ul { margin: 8px 0 0; }
+    h2, h3, h4 { margin: 1.5em 0 .5em; line-height: 1.25; color: #f1f3f5; }
+    h2 { font-size: 1.6rem; }
+    h3 { font-size: 1.3rem; }
     h4 { font-size: 1.1rem; }
     p { margin: 0 0 1em; }
-    a { color: #075ea8; text-decoration-thickness: .08em; text-underline-offset: .12em; }
-    a:hover { color: #003f73; }
+    strong { color: #f1f3f5; }
+    a { color: var(--link); text-decoration-thickness: .08em; text-underline-offset: .12em; }
+    a:hover { color: var(--link-hover); }
     ul, ol { padding-left: 24px; }
     li + li { margin-top: .55em; }
     figure { margin: 24px 0; }
+    figure a { display: block; }
     img { display: block; max-width: 100%; height: auto; }
+    figure img { margin: 0 auto; border-radius: 6px; background: #fff; filter: brightness(.86); }
     .monospace { font-family: monospace; white-space: pre-wrap; }
     .italic { font-style: italic; }
-    .empty-page, summary { color: #666; }
+    .empty-page, summary { color: var(--muted); }
     .source-page { margin-top: 24px; }
-    .source-page img { margin-top: 12px; }
-    .conversion-notice { margin: 12px 0; padding: 12px 16px; background: #fff4d6; border-left: 4px solid #956300; }
+    .source-page img { margin-top: 12px; filter: brightness(.86); }
+    .conversion-notice { margin: 12px 0; padding: 10px 14px; color: var(--notice-text); background: var(--notice-bg); border-left: 4px solid var(--notice-edge); border-radius: 0 6px 6px 0; font-size: 14px; }
     summary { cursor: pointer; }
+    /* On a phone, let figures use the gutter too: chart text is small enough already. */
+    @media (max-width: 600px) { figure { margin: 20px -10px; } }
+    @media print { :root { color-scheme: light; --bg: #fff; --text: #111; --muted: #555; --rule: #ccc; --link: #075ea8; } h2, h3, h4, strong { color: inherit; } figure img, .source-page img { filter: none; } }
   </style>
 </head>
 <body>
   <header><strong>${escapeHtml(title)}</strong><span>${pageCount} pages</span>
     <p><a href="/artifacts/">All artifacts</a> · <a href="original.pdf">Original PDF</a> · <a href="conversion-report.json">Conversion report</a></p>
-    <p>Text and embedded images are reflowed for reading. ${pages.filter(page => page.notices.length).length} page(s) have conversion notices with links to the original PDF for checking graphics.</p>
+    <p>Text and embedded images are reflowed for reading; tap a figure to open it full size. ${alertPages ? `${alertPages} page(s) could not be fully converted and are flagged below. ` : ""}Decoration and drawings outside figures may be missing; each page links to the original.</p>
   </header>
   <main>${content}</main>
 </body>
