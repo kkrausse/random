@@ -1,8 +1,14 @@
 # OpenCode usage dashboard
 
-An OpenCode V2 CLI plugin with a `/usage` dashboard for local session statistics and optional `codex-usage` account allowances.
+An OpenCode V2 CLI plugin with a `/usage` dashboard for local session statistics and ChatGPT/Codex account allowances. No standalone `codex-usage` dependency is needed.
 
-Add this directory to `plugins` in `~/.config/opencode/cli.json`, restart OpenCode, then run `/usage` or choose **Open usage dashboard** from the command palette. `codex-usage` must be on the TUI process's `PATH` to show account allowances; the rest of the dashboard works without it.
+Add this directory to `plugins` in `~/.config/opencode/cli.json`, restart OpenCode, then run `/usage` or choose **Open usage dashboard** from the command palette.
+
+Allowances automatically use all OpenAI OAuth accounts saved in the local OpenCode database (opened read-only). This retains multi-account support without switching the active account. Requests go directly to ChatGPT's usage endpoint; expired OpenCode tokens must be refreshed by using the account in OpenCode.
+
+If no OpenCode OAuth accounts are available, the plugin invokes the standard `codex app-server --stdio` and reads `account/read` and `account/rateLimits/read` over JSON-RPC. Install Codex on the TUI process's `PATH` and run `codex login` with a ChatGPT account. It respects `CODEX_HOME` and `CODEX_BIN`; OpenCode account discovery respects `OPENCODE_DB` and `OPENCODE_BIN`. No model turns are started. The rest of the dashboard works even when allowances are unavailable.
+
+The standalone helper's `accounts.json` is no longer consulted. For a specific Codex login, set `CODEX_HOME`; saved OpenCode OAuth accounts take precedence. With a remote OpenCode server, allowances still describe accounts on the machine running the TUI.
 
 Use `1`–`5`, the clickable period choices, or `t` to select 24 hours, today, the last 7, 14, or 30 calendar days. `m` cycles the chart metric (including estimated spend); `p` toggles all/current project; `r` refreshes; `Esc` returns to the previous session or home. Times use the local timezone. Chart labels mark each bar's time window or calendar date, and grouped bars show their inclusive date range.
 
