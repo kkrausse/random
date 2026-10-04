@@ -204,12 +204,21 @@ async function startTerminalPage() {
   }), theme.scrollSensitivity ?? 0.5);
 
   container.addEventListener("paste", (event) => {
-    const images = [...(event.clipboardData?.files ?? [])].filter((file) => file.type.startsWith("image/"));
-    if (images.length === 0) return;
+    const files = [...(event.clipboardData?.files ?? [])];
+    if (files.length === 0) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    void pasteImages(images);
+    void pasteFiles(files);
   }, { capture: true });
+  container.addEventListener("dragover", (event) => {
+    if (event.dataTransfer?.types.includes("Files")) event.preventDefault();
+  });
+  container.addEventListener("drop", (event) => {
+    const files = [...(event.dataTransfer?.files ?? [])];
+    if (files.length === 0) return;
+    event.preventDefault();
+    void pasteFiles(files);
+  });
 
   const connectionStatus = document.querySelector<HTMLButtonElement>("#connection-status");
   let titleBuffer = "";
@@ -271,7 +280,7 @@ async function startTerminalPage() {
     copyToast.dataset.status = "success";
     copyToast.textContent = message;
     copyToastTimer = setTimeout(() => { copyToast.textContent = ""; }, 3000);
-  }, connection);
+  }, connection, (files) => void pasteFiles(files));
   terminal.onData((data) => {
     const routed = tmuxSelection?.input(data) ?? data;
     if (!routed) return;
@@ -334,20 +343,21 @@ async function startTerminalPage() {
     clearTimeout(layoutTimer);
   });
 
-  async function pasteImages(images: File[]) {
+  // Files are stored on the server and their paths typed at the cursor.
+  async function pasteFiles(files: File[]) {
     try {
-      const paths = await Promise.all(images.map(async (image) => {
+      const paths = await Promise.all(files.map(async (file) => {
         const response = await fetch(`/api/sessions/${id}/attachments`, {
           method: "POST",
-          headers: { "content-type": image.type || "application/octet-stream" },
-          body: image,
+          headers: { "content-type": file.type || "application/octet-stream", "x-filename": encodeURIComponent(file.name) },
+          body: file,
         });
         if (!response.ok) throw new Error(await response.text());
         return ((await response.json()) as { path: string }).path;
       }));
       terminal.paste(paths.join(" "));
     } catch (error) {
-      terminal.write(`\r\n\x1b[38;2;204;102;102m[image paste failed: ${error instanceof Error ? error.message : String(error)}]\x1b[0m\r\n`);
+      terminal.write(`\r\n\x1b[38;2;204;102;102m[file paste failed: ${error instanceof Error ? error.message : String(error)}]\x1b[0m\r\n`);
     }
   }
 

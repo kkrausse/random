@@ -6,7 +6,7 @@ import { terminalViewport } from "./viewport";
 import { terminalLinkAt } from "./links";
 
 // Leave key encoding, composition, bracketed paste, and mouse reporting to Ghostty.
-export function installMobileControls(container: HTMLElement, terminal: Terminal, notice: (message: string) => void, connection: TerminalConnection) {
+export function installMobileControls(container: HTMLElement, terminal: Terminal, notice: (message: string) => void, connection: TerminalConnection, pasteFiles: (files: File[]) => void) {
   const toolbar = document.createElement("div");
   toolbar.className = "terminal-keys";
   toolbar.setAttribute("role", "group");
@@ -99,8 +99,12 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
     if (key === "Control") { setControl(!control); return; }
     if (key === "Paste") {
       setControl(false);
-      try { terminal.paste(await navigator.clipboard.readText()); }
-      catch { notice("Paste unavailable · use your keyboard’s Paste action"); }
+      try {
+        const { files, text } = await readClipboard();
+        if (files.length) pasteFiles(files);
+        else if (text) terminal.paste(text);
+        else notice("Clipboard is empty · use your keyboard’s Paste action for files");
+      } catch { notice("Paste unavailable · use your keyboard’s Paste action"); }
       return;
     }
     const ctrlKey = control;
@@ -137,6 +141,20 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
   container.addEventListener("focusout", scheduleLayout);
   window.addEventListener("blur", () => { setControl(false); });
   layout();
+
+  // One clipboard read (a second read would prompt again on iOS). Items carrying
+  // a non-text type such as an image are uploaded as files; the rest paste as text.
+  async function readClipboard() {
+    if (!navigator.clipboard.read) return { files: [], text: await navigator.clipboard.readText() };
+    const files: File[] = [];
+    let text = "";
+    for (const item of await navigator.clipboard.read()) {
+      const type = item.types.find(type => !type.startsWith("text/"));
+      if (type) files.push(new File([await item.getType(type)], `pasted.${type.split("/")[1]!.split(/[+;]/)[0]}`, { type }));
+      else if (item.types.includes("text/plain")) text += await (await item.getType("text/plain")).text();
+    }
+    return { files, text };
+  }
 
   return {
     input(data: string) {

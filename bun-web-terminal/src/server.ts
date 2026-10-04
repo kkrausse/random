@@ -15,7 +15,7 @@ const host = process.env.HOST ?? "127.0.0.1";
 const port = parsePort(process.env.PORT ?? "4784");
 // Keep existing sign-ins when moving the default listener from 3000 to 4784.
 const credentialPort = port === 4784 ? 3000 : port;
-const attachmentLimit = 20 * 1024 * 1024;
+const attachmentLimit = 200 * 1024 * 1024;
 const dist = process.env.TERMINAL_DIST ?? join(import.meta.dir, "..", "dist");
 const defaultTerminalCwd = join(import.meta.dir, "..", "..");
 const attachmentRoot = join(tmpdir(), "bun-web-terminal");
@@ -101,7 +101,7 @@ const server = Bun.serve<SocketData>({
       const session = sessions.get(url.pathname.slice(14));
       if (!session) return new Response("Session not found", { status: 404 });
       manager.remove(session);
-      void rm(join(attachmentRoot, session.id), { recursive: true, force: true });
+      void rm(attachmentDirectory(session), { recursive: true, force: true });
       return new Response(null, { status: 204 });
     }
 
@@ -163,19 +163,31 @@ void printStartupLink(host, server.port!, auth.secret, publicUrl);
 async function saveAttachment(request: Request, session: Session) {
   const declaredSize = Number(request.headers.get("content-length"));
   if (Number.isFinite(declaredSize) && declaredSize > attachmentLimit) {
-    return new Response("Attachment exceeds 20 MiB", { status: 413 });
+    return new Response("Attachment exceeds 200 MiB", { status: 413 });
   }
 
   const bytes = new Uint8Array(await request.arrayBuffer());
-  if (bytes.byteLength > attachmentLimit) return new Response("Attachment exceeds 20 MiB", { status: 413 });
-  const extension = imageExtension(bytes);
-  if (!extension) return new Response("Only PNG, JPEG, GIF, and WebP images are supported", { status: 415 });
-
-  const directory = join(attachmentRoot, session.id);
-  const path = join(directory, `${crypto.randomUUID()}.${extension}`);
+  if (bytes.byteLength > attachmentLimit) return new Response("Attachment exceeds 200 MiB", { status: 413 });
+  const directory = attachmentDirectory(session);
+  const path = join(directory, attachmentName(request.headers.get("x-filename"), bytes));
   await mkdir(directory, { recursive: true });
   await Bun.write(path, bytes);
   return Response.json({ path });
+}
+
+// tmux ids look like "$3", which a shell would expand inside a pasted path.
+function attachmentDirectory(session: Session) {
+  return join(attachmentRoot, session.id.replace(/[^A-Za-z0-9_-]/g, ""));
+}
+
+// Pasted paths are typed into the shell unquoted, so names keep only shell-safe
+// characters; the random prefix keeps same-named pastes apart.
+function attachmentName(header: string | null, bytes: Uint8Array) {
+  let name = "";
+  try { name = decodeURIComponent(header ?? ""); } catch {}
+  name = name.split(/[\\/]/).pop()!.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[-.]+/, "").slice(-80);
+  const prefix = crypto.randomUUID().slice(0, 8);
+  return name ? `${prefix}-${name}` : `${prefix}.${imageExtension(bytes) ?? "bin"}`;
 }
 
 function imageExtension(bytes: Uint8Array) {
