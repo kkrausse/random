@@ -52,7 +52,8 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
   picker.multiple = true;
   picker.hidden = true;
   picker.addEventListener("change", () => { if (picker.files?.length) pasteFiles([...picker.files]); });
-  toolbar.append(picker);
+  // Outside the toolbar: its row layout is keyed on :first-child/:last-child.
+  document.body.append(picker);
   let control = false;
   const setControl = (value: boolean) => {
     control = value;
