@@ -149,7 +149,6 @@ async function startTerminalPage() {
   const clipboardRequests = new ClipboardRequests(text => applicationClipboard.receive(text));
   const touchPointer = matchMedia("(any-pointer: coarse)").matches;
   let applicationMouse = false;
-  let touchWheel = 0; // Fraction of an application wheel step owed to touch scrolling.
   let tmuxSelectionActive = false;
   let pendingTmuxCopy = false;
   const terminal = new Terminal({
@@ -290,12 +289,10 @@ async function startTerminalPage() {
     copyToastTimer = setTimeout(() => { copyToast.textContent = ""; }, 3000);
   }, connection, (files) => void pasteFiles(files), (lines, x, y) => {
     // tmux scrolls shell history and pagers by exact lines. Mouse-aware
-    // applications only take wheel steps, which usually move three lines.
-    if (!applicationMouse) { touchWheel = 0; connection.scroll(lines); return; }
-    touchWheel += lines / 3;
-    const steps = Math.trunc(touchWheel);
-    touchWheel -= steps;
-    forwardWheelSteps(container.querySelector("canvas") ?? container, steps, { clientX: x, clientY: y });
+    // applications only take wheel steps: send one per line, which tracks the
+    // finger in Claude Code (one line a step) and runs fast in three-line apps.
+    if (!applicationMouse) { connection.scroll(lines); return; }
+    forwardWheelSteps(container.querySelector("canvas") ?? container, lines, { clientX: x, clientY: y });
   });
   terminal.onData((data) => {
     const routed = tmuxSelection?.input(data) ?? data;
