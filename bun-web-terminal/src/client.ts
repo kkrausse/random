@@ -212,7 +212,6 @@ async function startTerminalPage() {
       const file = item.kind === "file" ? item.getAsFile() : null;
       if (file) files.push(file);
     }
-    reportPaste(`event types=[${[...(data?.types ?? [])].join(",")}] files=[${files.map(file => `${file.name}:${file.type}:${file.size}`).join(",")}]`);
     if (files.length === 0) return;
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -288,7 +287,7 @@ async function startTerminalPage() {
     copyToast.dataset.status = "success";
     copyToast.textContent = message;
     copyToastTimer = setTimeout(() => { copyToast.textContent = ""; }, 3000);
-  }, connection, (files) => void pasteFiles(files), reportPaste);
+  }, connection, (files) => void pasteFiles(files));
   terminal.onData((data) => {
     const routed = tmuxSelection?.input(data) ?? data;
     if (!routed) return;
@@ -351,10 +350,6 @@ async function startTerminalPage() {
     clearTimeout(layoutTimer);
   });
 
-  function reportPaste(detail: string) {
-    void fetch("/api/paste-report", { method: "POST", body: detail }).catch(() => {});
-  }
-
   // Files are stored on the server and their paths typed at the cursor.
   async function pasteFiles(files: File[]) {
     try {
@@ -369,7 +364,6 @@ async function startTerminalPage() {
       }));
       terminal.paste(paths.join(" "));
     } catch (error) {
-      reportPaste(`upload failed: ${error}`);
       terminal.write(`\r\n\x1b[38;2;204;102;102m[file paste failed: ${error instanceof Error ? error.message : String(error)}]\x1b[0m\r\n`);
     }
   }

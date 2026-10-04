@@ -6,7 +6,7 @@ import { terminalViewport } from "./viewport";
 import { terminalLinkAt } from "./links";
 
 // Leave key encoding, composition, bracketed paste, and mouse reporting to Ghostty.
-export function installMobileControls(container: HTMLElement, terminal: Terminal, notice: (message: string) => void, connection: TerminalConnection, pasteFiles: (files: File[]) => void, reportPaste: (detail: string) => void) {
+export function installMobileControls(container: HTMLElement, terminal: Terminal, notice: (message: string) => void, connection: TerminalConnection, pasteFiles: (files: File[]) => void) {
   const toolbar = document.createElement("div");
   toolbar.className = "terminal-keys";
   toolbar.setAttribute("role", "group");
@@ -20,7 +20,7 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
     ["Keyboard", "Keyboard"],
     ["Microphone", "Start dictation"],
     ["Escape", "Esc"], ["Control", "Ctrl"], ["ArrowUp", "↑"], ["Enter", "Enter"],
-    ["Paste", "Paste"], ["Copy", "Copy"],
+    ["Paste", "Paste"], ["Attach", "Attach file"],
     ["ArrowLeft", "←"], ["ArrowDown", "↓"], ["ArrowRight", "→"],
   ];
   for (const [index, [key, label]] of keys.entries()) {
@@ -30,14 +30,14 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
     button.textContent = label!;
     button.setAttribute("aria-label", key!.replace("Arrow", "Arrow "));
     button.title = label!;
-    if (key === "Keyboard" || key === "Microphone" || key === "Enter" || key === "Copy" || key === "Paste") {
+    if (key === "Keyboard" || key === "Microphone" || key === "Enter" || key === "Attach" || key === "Paste") {
       // Lucide icons (ISC license; see docs/third-party-notices.md).
       button.innerHTML = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${key === "Keyboard"
         ? '<rect width="20" height="14" x="2" y="5" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M10 13h.01M14 13h.01M18 13h.01M8 17h8"/>'
         : key === "Microphone"
           ? '<path d="M12 19v3m-5 0h10M5 10v2a7 7 0 0 0 14 0v-2"/><rect x="9" y="2" width="6" height="12" rx="3"/>'
-          : key === "Copy"
-            ? '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'
+          : key === "Attach"
+            ? '<path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/>'
             : key === "Paste"
               ? '<rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>'
               : '<path d="m9 10-5 5 5 5"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/>'}</svg>`;
@@ -46,6 +46,13 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
     rows[Math.floor(index / 6)]!.append(button);
   }
   container.after(toolbar);
+  // iOS gives a page nothing for a copied file such as a PDF, so files come through a chooser.
+  const picker = document.createElement("input");
+  picker.type = "file";
+  picker.multiple = true;
+  picker.hidden = true;
+  picker.addEventListener("change", () => { if (picker.files?.length) pasteFiles([...picker.files]); });
+  toolbar.append(picker);
   let control = false;
   const setControl = (value: boolean) => {
     control = value;
@@ -89,25 +96,12 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
       else focus();
       return;
     }
-    if (key === "Copy") {
-      const text = terminal.getSelection();
-      if (!text) { notice("Select text first"); return; }
-      try { await navigator.clipboard.writeText(text); notice("Copied"); }
-      catch { notice("Copy failed · check clipboard permission"); }
-      return;
-    }
+    if (key === "Attach") { setControl(false); picker.value = ""; picker.click(); return; }
     if (key === "Control") { setControl(!control); return; }
     if (key === "Paste") {
       setControl(false);
-      try {
-        const { files, text } = await readClipboard();
-        if (files.length) pasteFiles(files);
-        else if (text) terminal.paste(text);
-        else showPasteTarget();
-      } catch (error) {
-        reportPaste(`button failed: ${error}`);
-        notice("Paste unavailable · use your keyboard’s Paste action");
-      }
+      try { terminal.paste(await navigator.clipboard.readText()); }
+      catch { notice("Paste unavailable · use your keyboard’s Paste action"); }
       return;
     }
     const ctrlKey = control;
@@ -144,73 +138,6 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
   container.addEventListener("focusout", scheduleLayout);
   window.addEventListener("blur", () => { setControl(false); });
   layout();
-
-  // Shown when the clipboard API returns nothing. iOS Safari gives a page no
-  // access to a copied file such as a PDF, even through a native paste (the event
-  // arrives with no types), so the field is paired with a file chooser.
-  function showPasteTarget() {
-    document.querySelector(".paste-target")?.remove();
-    const target = document.createElement("div");
-    target.className = "paste-target";
-    const field = document.createElement("div");
-    field.contentEditable = "true";
-    field.setAttribute("role", "textbox");
-    field.setAttribute("aria-label", "Paste here");
-    field.dataset.placeholder = "Tap here, then Paste";
-    const close = document.createElement("button");
-    close.type = "button";
-    close.textContent = "×";
-    close.setAttribute("aria-label", "Cancel paste");
-    const picker = document.createElement("input");
-    picker.type = "file";
-    picker.multiple = true;
-    picker.hidden = true;
-    const choose = document.createElement("button");
-    choose.type = "button";
-    choose.textContent = "Choose file";
-    choose.addEventListener("click", () => picker.click());
-    picker.addEventListener("change", () => {
-      if (picker.files?.length) pasteFiles([...picker.files]);
-      dismiss();
-    });
-    target.append(field, choose, close, picker);
-    document.body.append(target);
-    const onPaste = (event: ClipboardEvent) => {
-      const data = event.clipboardData;
-      const hasFile = (data?.files.length ?? 0) > 0 || [...(data?.items ?? [])].some(item => item.kind === "file");
-      // Files are uploaded by the page's paste handler; text goes to the terminal, not this field.
-      if (!hasFile) {
-        event.preventDefault();
-        const text = data?.getData("text/plain");
-        if (!text) { field.dataset.placeholder = "Browser can’t read this clipboard · choose the file"; return; }
-        terminal.paste(text);
-      }
-      dismiss();
-    };
-    const dismiss = () => {
-      window.removeEventListener("paste", onPaste, true);
-      target.remove();
-    };
-    window.addEventListener("paste", onPaste, true);
-    close.addEventListener("click", dismiss);
-    field.focus();
-  }
-
-  // One clipboard read (a second read would prompt again on iOS). Items carrying
-  // a non-text type such as an image are uploaded as files; the rest paste as text.
-  async function readClipboard() {
-    if (!navigator.clipboard.read) return { files: [], text: await navigator.clipboard.readText() };
-    const files: File[] = [];
-    let text = "";
-    const items = await navigator.clipboard.read();
-    reportPaste(`button items=[${items.map(item => item.types.join("+")).join(",")}]`);
-    for (const item of items) {
-      const type = item.types.find(type => !type.startsWith("text/"));
-      if (type) files.push(new File([await item.getType(type)], `pasted.${type.split("/")[1]!.split(/[+;]/)[0]}`, { type }));
-      else if (item.types.includes("text/plain")) text += await (await item.getType("text/plain")).text();
-    }
-    return { files, text };
-  }
 
   return {
     input(data: string) {

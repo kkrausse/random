@@ -46,7 +46,7 @@ export function installTerminalTouchControls(container: HTMLElement, terminal: T
         mouse("mousedown", gesture.x, gesture.y);
       } else selectTo(gesture.anchor);
       // Keep keyboard/viewport geometry stable while the finger is down.
-      notice(gesture.application ? "Drag to select in application" : "Drag to select · then tap Copy");
+      notice(gesture.application ? "Drag to select in application" : "Drag to select");
     }, 500);
   }, { capture: true, passive: true });
   container.addEventListener("touchmove", (event) => {
