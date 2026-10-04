@@ -28,7 +28,7 @@ function setup(manual = false, application = false, openLink: (x: number, y: num
   const container = Object.assign(new EventTarget(), { querySelector: () => canvas });
   const selections: number[][] = [];
   const clicks: string[] = [];
-  const wheels: number[] = [];
+  const scrolls: number[] = [];
   const notices: string[] = [];
   const mouseEvents: { type: string; x: number; y: number; buttons: number }[] = [];
   const terminal = {
@@ -44,8 +44,7 @@ function setup(manual = false, application = false, openLink: (x: number, y: num
     const mouse = event as MouseEvent;
     mouseEvents.push({ type, x: mouse.clientX, y: mouse.clientY, buttons: mouse.buttons });
   });
-  canvas.addEventListener("wheel", event => wheels.push((event as WheelEvent).deltaY));
-  installTerminalTouchControls(container as unknown as HTMLElement, terminal as unknown as Terminal, () => manual, message => notices.push(message), openLink);
+  installTerminalTouchControls(container as unknown as HTMLElement, terminal as unknown as Terminal, () => manual, message => notices.push(message), lines => scrolls.push(lines), openLink);
   const touch = (type: string, x = 25, y = 45, count = 1) => {
     const point = { identifier: 1, clientX: x, clientY: y };
     const event = Object.assign(new Event(type, { cancelable: true }), {
@@ -55,7 +54,7 @@ function setup(manual = false, application = false, openLink: (x: number, y: num
     container.dispatchEvent(event);
     return event;
   };
-  return { container, selections, clicks, wheels, notices, touch, mouseEvents, terminal };
+  return { container, selections, clicks, scrolls, notices, touch, mouseEvents, terminal };
 }
 
 test("hold anchors selection, drag extends in either direction, release preserves it and next swipe scrolls", async () => {
@@ -70,12 +69,12 @@ test("hold anchors selection, drag extends in either direction, release preserve
   expect(t.selections.at(-1)).toEqual([1, 1, 22]);
   t.touch("touchend", 15, 25);
   expect(t.clicks).toEqual([]);
-  expect(t.wheels).toEqual([]);
+  expect(t.scrolls).toEqual([]);
   expect(t.notices).toHaveLength(1);
   t.touch("touchstart");
   t.touch("touchmove", 25, 15);
   t.touch("touchend", 25, 15);
-  expect(t.wheels).toEqual([30]);
+  expect(t.scrolls).toEqual([1]);
   expect(t.selections.at(-1)).toEqual([1, 1, 22]);
 });
 
@@ -91,7 +90,7 @@ test("quick taps click only on release; swipes cancel the hold even when paused"
   t.touch("touchend", 25, 15);
   expect(t.selections).toEqual([]);
   expect(t.clicks).toEqual(["down", "up"]);
-  expect(t.wheels).toEqual([30]);
+  expect(t.scrolls).toEqual([1]);
 });
 
 test("link taps open on release without pressing a TUI row; swipes and holds never open links", async () => {
@@ -144,7 +143,7 @@ test("manual Select still works immediately; only touch gestures suppress contex
   t.touch("touchend", 65, 45);
   expect(t.selections.at(-1)).toEqual([2, 2, 5]);
   expect(t.clicks).toEqual([]);
-  expect(t.wheels).toEqual([]);
+  expect(t.scrolls).toEqual([]);
   expect(menu()).toBe(false);
 });
 
@@ -162,11 +161,11 @@ test("hold delegates press, drag and release when the inner application owns the
     { type: "mouseup", x: 75, y: 65, buttons: 0 },
   ]);
   expect(t.selections).toEqual([]);
-  expect(t.wheels).toEqual([]);
+  expect(t.scrolls).toEqual([]);
   t.touch("touchstart");
   t.touch("touchmove", 25, 15);
   t.touch("touchend", 25, 15);
-  expect(t.wheels).toEqual([30]);
+  expect(t.scrolls).toEqual([1]);
   expect(t.mouseEvents).toHaveLength(4);
 });
 

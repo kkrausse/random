@@ -23,6 +23,8 @@ export type Attachment = {
   acknowledge(bytes: number): boolean;
   copySelection(): void;
   cancelSelection(): void;
+  /** Scroll the pane by whole lines; positive is toward newer output. */
+  scroll(lines: number): void;
   close(code?: number, reason?: string): void;
 };
 
@@ -85,7 +87,31 @@ export class SessionManager {
     let mouseTimer: ReturnType<typeof setTimeout> | undefined;
     let mouseTracking: boolean | undefined;
     let selectionTimer: ReturnType<typeof setTimeout> | undefined;
+    let scrollLines = 0;
+    let scrolling = false;
     const command = (args: string[]) => this.command(args);
+    // Touch scrolling asks for exact line counts, which tmux's wheel bindings
+    // (five lines a step) cannot express. Requests arriving while tmux is busy
+    // merge into the next command.
+    const flushScroll = async () => {
+      if (scrolling) return;
+      scrolling = true;
+      try {
+        while (!closed && scrollLines !== 0) {
+          const count = Math.min(Math.abs(scrollLines), 1000);
+          const up = scrollLines < 0;
+          scrollLines = 0;
+          // Pagers without mouse support get cursor keys, as with tmux's own wheel handling.
+          await Bun.spawn([...this.tmuxCommand(), "if-shell", "-F", "-t", session.id,
+            "#{&&:#{alternate_on},#{!:#{pane_in_mode}}}",
+            `send-keys -N ${count} ${up ? "Up" : "Down"}`,
+            up ? `copy-mode -e ; send-keys -X -N ${count} scroll-up` : `send-keys -X -N ${count} scroll-down`],
+          { env: this.env, stdout: "ignore", stderr: "ignore" }).exited;
+        }
+      } catch {
+        // tmux is temporarily unavailable; drop this scroll.
+      } finally { scrolling = false; }
+    };
     // tmux's outer mouse mode is always on for scrolling. Read the pane's
     // application modes separately; serialize queries so slow tmux cannot pile up.
     const reportMouseMode = async () => {
@@ -148,6 +174,11 @@ export class SessionManager {
         clearTimeout(selectionTimer);
         selectionTimer = undefined;
         if (!closed) command(["send-keys", "-t", session.id, "-X", "cancel"]);
+      },
+      scroll(lines) {
+        if (closed) return;
+        scrollLines += lines;
+        void flushScroll();
       },
       close(code = 1000, reason = "Attachment closed") {
         if (closed) return;

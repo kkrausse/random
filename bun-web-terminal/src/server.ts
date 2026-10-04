@@ -144,6 +144,7 @@ const server = Bun.serve<SocketData>({
         if (control?.type === "ping") { socket.send('{"type":"pong"}'); return; }
         if (control?.type === "copy-selection") { attachment.copySelection(); return; }
         if (control?.type === "cancel-selection") { attachment.cancelSelection(); return; }
+        if (control?.type === "scroll" && Number.isInteger(control.lines)) { attachment.scroll(control.lines); return; }
         if (control?.type === "ack" && attachment.acknowledge(control.bytes)) return;
         if (control?.type === "resize") {
           const size = dimensions(control.cols, control.rows);

@@ -6,7 +6,7 @@ import { terminalViewport } from "./viewport";
 import { terminalLinkAt } from "./links";
 
 // Leave key encoding, composition, bracketed paste, and mouse reporting to Ghostty.
-export function installMobileControls(container: HTMLElement, terminal: Terminal, notice: (message: string) => void, connection: TerminalConnection, pasteFiles: (files: File[]) => void) {
+export function installMobileControls(container: HTMLElement, terminal: Terminal, notice: (message: string) => void, connection: TerminalConnection, pasteFiles: (files: File[]) => void, scroll: (lines: number, x: number, y: number) => void) {
   const toolbar = document.createElement("div");
   toolbar.className = "terminal-keys";
   toolbar.setAttribute("role", "group");
@@ -116,7 +116,7 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
     }));
   });
 
-  installTerminalTouchControls(container, terminal, () => false, notice, (x, y) => {
+  installTerminalTouchControls(container, terminal, () => false, notice, scroll, (x, y) => {
     const url = terminalLinkAt(terminal, x, y);
     if (!url) return false;
     window.open(url, "_blank", "noopener,noreferrer");

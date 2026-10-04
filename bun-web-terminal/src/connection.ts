@@ -47,6 +47,7 @@ export class TerminalConnection {
   resize() { if (this.ready) this.control({ type: "resize", ...this.view.size() }); }
   copySelection() { if (this.ready) this.control({ type: "copy-selection" }); }
   cancelSelection() { if (this.ready) this.control({ type: "cancel-selection" }); }
+  scroll(lines: number) { if (this.ready) this.control({ type: "scroll", lines }); }
 
   restore() {
     if (this.stopped) return;

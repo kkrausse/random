@@ -1,6 +1,6 @@
 import { init, Terminal, type ITheme } from "@random/ghostty-web";
 import { TerminalConnection } from "./connection";
-import { installScrolling } from "./scroll";
+import { forwardWheelSteps, installScrolling } from "./scroll";
 import { installMobileControls } from "./mobile";
 import { ApplicationClipboard, ClipboardRequests } from "./clipboard";
 import { hasAutomaticSessionName, sessionLabel } from "./session-display";
@@ -149,6 +149,7 @@ async function startTerminalPage() {
   const clipboardRequests = new ClipboardRequests(text => applicationClipboard.receive(text));
   const touchPointer = matchMedia("(any-pointer: coarse)").matches;
   let applicationMouse = false;
+  let touchWheel = 0; // Fraction of an application wheel step owed to touch scrolling.
   let tmuxSelectionActive = false;
   let pendingTmuxCopy = false;
   const terminal = new Terminal({
@@ -287,7 +288,15 @@ async function startTerminalPage() {
     copyToast.dataset.status = "success";
     copyToast.textContent = message;
     copyToastTimer = setTimeout(() => { copyToast.textContent = ""; }, 3000);
-  }, connection, (files) => void pasteFiles(files));
+  }, connection, (files) => void pasteFiles(files), (lines, x, y) => {
+    // tmux scrolls shell history and pagers by exact lines. Mouse-aware
+    // applications only take wheel steps, which usually move three lines.
+    if (!applicationMouse) { touchWheel = 0; connection.scroll(lines); return; }
+    touchWheel += lines / 3;
+    const steps = Math.trunc(touchWheel);
+    touchWheel -= steps;
+    forwardWheelSteps(container.querySelector("canvas") ?? container, steps, { clientX: x, clientY: y });
+  });
   terminal.onData((data) => {
     const routed = tmuxSelection?.input(data) ?? data;
     if (!routed) return;
