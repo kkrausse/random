@@ -62,12 +62,15 @@ hc-note { display: block; flex: none; max-width: 260px; padding: 8px 10px; font-
 .hc-errors { position: fixed; left: 12px; top: 12px; z-index: 10; max-width: 60vw; white-space: pre-wrap;
   font: 12px ui-monospace, monospace; color: #c92a2a; background: #fff5f5; border: 1px solid #ffa8a8; border-radius: 8px; padding: 8px 10px; }
 
-/* Wireframe kit: optional low-fi primitives so screens stay terse. Unlayered,
-   so they win over Tailwind's preflight; utility classes still override. */
+/* Wireframe kit: optional low-fi primitives so screens stay terse. It sits in
+   Tailwind's own layer order (declared here first so it holds whether or not
+   Tailwind loads): above preflight, below utilities, below any plain <style>. */
+@layer theme, base, components, utilities;
+@layer base { .hc-screen, .hc-screen *, hc-note { box-sizing: border-box; } }
+@layer components {
 .wf-pad { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
 .wf-row { display: flex; flex-direction: row; align-items: center; gap: 8px; }
 .wf-col { display: flex; flex-direction: column; gap: 8px; }
-.wf-grow { flex: 1 1 0; min-height: 0; min-width: 0; }
 .wf-between { justify-content: space-between; }
 .wf-center { align-items: center; justify-content: center; text-align: center; }
 .wf-status { display: flex; justify-content: space-between; padding: 14px 28px 6px; font-size: 13px; font-weight: 600; flex: none; }
@@ -84,7 +87,7 @@ hc-note { display: block; flex: none; max-width: 260px; padding: 8px 10px; font-
 .wf-card { box-sizing: border-box; padding: 12px; border: 1.5px solid #ced4da; border-radius: 12px; background: #fff; }
 .wf-fill { background: #f1f3f5; }
 .wf-list > * { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px; border-bottom: 1px solid #e9ecef; }
-.wf-img { display: flex; align-items: center; justify-content: center; text-align: center; box-sizing: border-box; min-height: 60px; color: #868e96; font-size: 13px;
+.wf-img { display: flex; align-items: center; justify-content: center; text-align: center; box-sizing: border-box; color: #868e96; font-size: 13px;
   border: 1.5px solid #ced4da; border-radius: 8px; background: repeating-linear-gradient(135deg, #f1f3f5 0 10px, #e9ecef 10px 20px); }
 .wf-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1.5px solid #adb5bd; border-radius: 999px; font-size: 13px; background: #fff; }
 .wf-chip.wf-on, .wf-seg > .wf-on { background: #1e1e1e; color: #fff; border-color: #1e1e1e; }
@@ -105,6 +108,8 @@ hc-note { display: block; flex: none; max-width: 260px; padding: 8px 10px; font-
 .wf-dialog { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 72%; background: #fff; border-radius: 16px; padding: 16px;
   display: flex; flex-direction: column; gap: 10px; box-shadow: 0 8px 32px rgba(0,0,0,.25); text-align: center; }
 .wf-dark { background: #1e1e1e; color: #fff; }
+.wf-grow { flex: 1 1 0; min-height: 0; min-width: 0; }
+}
 `
   const style = document.createElement('style')
   style.textContent = STYLES
@@ -203,22 +208,22 @@ hc-note { display: block; flex: none; max-width: 260px; padding: 8px 10px; font-
     }
 
     const edges = []
-    const addEdge = (fromEl, toRef, label, dashed) => {
+    const addEdge = (fromEl, toRef, label, dashed, side) => {
       for (const ref of toRef.split(',').map((s) => s.trim()).filter(Boolean)) {
         const toEl = resolve(ref)
         if (!toEl) errors.push(`${describe(fromEl)} -> ${ref}: no such target`)
-        else edges.push({ fromEl, toEl, label, dashed })
+        else edges.push({ fromEl, toEl, label, dashed, side })
       }
     }
     for (const el of world.querySelectorAll('[data-to], hc-frame[to], hc-note[to]')) {
       const d = el.dataset
-      addEdge(el, d.to || el.getAttribute('to'), d.label || el.getAttribute('label'), 'dashed' in d || el.hasAttribute('dashed'))
+      addEdge(el, d.to || el.getAttribute('to'), d.label || el.getAttribute('label'), 'dashed' in d || el.hasAttribute('dashed'), d.side || el.getAttribute('side'))
     }
     for (const flow of world.querySelectorAll('hc-flow')) {
       const fromRef = flow.getAttribute('from') || ''
       const fromEl = resolve(fromRef)
       if (!fromEl) errors.push(`hc-flow from="${fromRef}": no such source`)
-      else addEdge(fromEl, flow.getAttribute('to') || '', flow.getAttribute('label'), flow.hasAttribute('dashed'))
+      else addEdge(fromEl, flow.getAttribute('to') || '', flow.getAttribute('label'), flow.hasAttribute('dashed'), flow.getAttribute('side'))
     }
     const seen = new Set()
     for (const n of nodes.filter((n) => n.matches('hc-frame'))) {
@@ -240,14 +245,15 @@ hc-note { display: block; flex: none; max-width: 260px; padding: 8px 10px; font-
     }
 
     // Pick the side to leave from by which gap between the two containers is
-    // widest, then run a cubic bezier straight out of / into those sides.
-    function route(S, SC, T, TC, toContainer) {
+    // widest (or the author's side= hint), then run a cubic bezier straight
+    // out of / into those sides.
+    function route(S, SC, T, TC, toContainer, side) {
       let gaps = { right: TC.x - (SC.x + SC.w), left: SC.x - (TC.x + TC.w), down: TC.y - (SC.y + SC.h), up: SC.y - (TC.y + TC.h) }
       if (Math.max(...Object.values(gaps)) < 0) {
         // Same container: fall back to the elements themselves.
         gaps = { right: T.x - (S.x + S.w), left: S.x - (T.x + T.w), down: T.y - (S.y + S.h), up: S.y - (T.y + T.h) }
       }
-      const dir = Object.keys(gaps).reduce((a, b) => (gaps[b] > gaps[a] ? b : a))
+      const dir = side in gaps ? side : Object.keys(gaps).reduce((a, b) => (gaps[b] > gaps[a] ? b : a))
       const scx = S.x + S.w / 2, scy = S.y + S.h / 2, tcx = T.x + T.w / 2, tcy = T.y + T.h / 2
       const inset = 28
       let p1, p2, v
@@ -274,7 +280,7 @@ hc-note { display: block; flex: none; max-width: 260px; padding: 8px 10px; font-
       const geo = edges.map((e) => {
         const S = rectOf(boxOf(e.fromEl)), T = rectOf(boxOf(e.toEl))
         const SC = rectOf(boxOf(nodeOf(e.fromEl))), TC = rectOf(boxOf(nodeOf(e.toEl)))
-        return route(S, SC, T, TC, e.toEl === nodeOf(e.toEl))
+        return route(S, SC, T, TC, e.toEl === nodeOf(e.toEl), e.side)
       })
       const sig = geo.map((g) => g.d).join('|')
       if (sig === lastSig) return
@@ -382,7 +388,9 @@ hc-note { display: block; flex: none; max-width: 260px; padding: 8px 10px; font-
     addEventListener('resize', drawEdges)
 
     // Initial view: #frame=<id> zooms to one frame, else the saved view, else fit.
-    const hashFrame = new URLSearchParams(location.hash.slice(1)).get('frame')
+    const hash = new URLSearchParams(location.hash.slice(1))
+    const hashFrame = hash.get('frame')
+    if (hash.get('hud') === '0') hud.style.display = 'none'
     const target = hashFrame && nodes.find((n) => n.id === hashFrame)
     let saved = null
     try { saved = JSON.parse(sessionStorage.getItem(viewKey)) } catch {}

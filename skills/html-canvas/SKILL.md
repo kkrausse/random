@@ -67,10 +67,10 @@ bun $S/hc.ts bundle doc/flow.html   # doc/flow.bundle.html, runtime inlined, for
 |---|---|
 | `<hc-canvas title device>` | Root. `device` is the default for every frame. |
 | `<hc-row title>` | Left-to-right group of frames; rows stack top to bottom. |
-| `<hc-col>` | Stacks frames vertically inside a row (variants of one screen). |
+| `<hc-col>` | Stacks frames and/or notes vertically inside a row (variants of one screen, a note under its frame). |
 | `<hc-frame id title device w h>` | One screen. `id` is required and shown on the canvas so the user can refer to it. |
-| `<hc-note id to>` | Blue annotation that is not UI; lives in a row like a frame. |
-| `<hc-flow from to label dashed>` | An arrow declared on its own, anywhere inside the canvas. |
+| `<hc-note id to>` | Blue annotation that is not UI; sits in a row or col like a frame, or directly under the canvas for a legend. |
+| `<hc-flow from to label dashed side>` | An arrow declared on its own, anywhere inside the canvas. |
 
 Devices: `phone` 390x844, `phone-sm` 375x667, `tablet` 820x1180, `desktop`
 1280x800, `watch` 198x242, `none` (size to content). `w`/`h` override in px.
@@ -92,8 +92,14 @@ sheets/dialogs anchor to the screen.
   will want to name.
 
 Arrows leave from the side facing the target and curve in; they do not avoid
-obstacles. If one crosses something badly, reorder frames/rows so the flow
-runs left-to-right or top-to-bottom rather than adding ids or offsets.
+obstacles. The side is picked by the widest gap between the two frames, so an
+arrow to the row below leaves sideways unless the frames overlap horizontally.
+When that picks wrong, pin it with `data-side="down"` (`side=` on frames,
+notes and `hc-flow`; `up|down|left|right`) rather than padding the layout with
+spacers. If an arrow still crosses something badly, reorder frames/rows so the
+flow runs left-to-right or top-to-bottom.
+
+`check` names an id-less source by its text (`shoot."ISO 400" -> dial`).
 
 **Layout** is only document order: move a tag to move a screen. `offset="dx,dy"`
 on a frame or note is a manual nudge the *user* makes by dragging its label
@@ -107,7 +113,8 @@ Anything that works in HTML works in a frame. Two levels:
 - **Low-fi (default):** the built-in `wf-` kit keeps screens terse and
   deliberately sketchy. Prefer it unless asked for fidelity.
 - **Higher fidelity:** Tailwind utilities (the scaffold loads the browser
-  build) or a `<style>` block in the file; both override the kit.
+  build) or a `<style>` block in the file; both override the kit, so
+  `wf-btn border-dashed` works. Drop the Tailwind script for an offline file.
 
 Kit classes — layout: `wf-pad` (padded column, gap 12) `wf-row` `wf-col`
 `wf-grow` `wf-between` `wf-center` `wf-divider`; chrome: `wf-status`

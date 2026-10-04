@@ -36,24 +36,32 @@ const SCAFFOLD = `<!doctype html>
 </hc-canvas>
 `
 
-interface Frame { id: string; title: string; tag: string; row: string; ids: string[] }
+interface Frame { id: string; title: string; tag: string; row: string | null; ids: string[]; text: string }
 interface Flow { from: string; to: string; label: string }
+
+const decode = (s: string) => s.replace(/&(amp|lt|gt|quot|nbsp|#39);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', nbsp: ' ', '#39': "'" })[e as string]!)
+const snip = (s: string) => (s = s.replace(/\s+/g, ' ').trim()).length > 28 ? s.slice(0, 27) + '…' : s
 
 async function parse(file: string) {
   const frames: Frame[] = []
   const flows: Flow[] = []
   const errors: string[] = []
-  let row = ''
+  let row: string | null = null
   let cur: Frame | null = null
   let notes = 0
+  // Anonymous sources are named by their text (`shoot."ISO 400"`), filled in
+  // as the element's text chunks stream past.
+  let anon: Flow[] = []
   const addFlows = (from: string, to: string, label: string | null) => {
-    for (const t of to.split(',').map((s) => s.trim()).filter(Boolean)) flows.push({ from, to: t, label: label ?? '' })
+    const added = to.split(',').map((s) => s.trim()).filter(Boolean).map((t) => ({ from, to: t, label: decode(label ?? '') }))
+    flows.push(...added)
+    return added
   }
   const rewriter = new HTMLRewriter()
     .on('hc-row', {
       element(el) {
-        row = el.getAttribute('title') ?? ''
-        el.onEndTag(() => { row = '' })
+        row = decode(el.getAttribute('title') ?? '')
+        el.onEndTag(() => { row = null })
       },
     })
     .on('hc-frame, hc-note', {
@@ -62,7 +70,7 @@ async function parse(file: string) {
         const id = el.getAttribute('id') ?? (tag === 'hc-note' ? `note#${++notes}` : '')
         if (!id) errors.push('hc-frame without an id')
         if (frames.some((f) => f.id === id)) errors.push(`duplicate id "${id}"`)
-        const frame: Frame = { id, title: el.getAttribute('title') ?? '', tag, row, ids: [] }
+        const frame: Frame = { id, title: decode(el.getAttribute('title') ?? ''), tag, row, ids: [], text: '' }
         frames.push(frame)
         cur = frame
         el.onEndTag(() => { cur = null })
@@ -70,6 +78,7 @@ async function parse(file: string) {
         if (to) addFlows(id, to, el.getAttribute('label'))
       },
     })
+    .on('hc-note', { text(t) { if (cur) cur.text += t.text } })
     .on('[data-id]', {
       element(el) {
         const id = el.getAttribute('data-id')!
@@ -82,7 +91,12 @@ async function parse(file: string) {
       element(el) {
         if (!cur) return void errors.push(`data-to="${el.getAttribute('data-to')}" outside any hc-frame`)
         const id = el.getAttribute('data-id')
-        addFlows(`${cur.id}.${id ?? `<${el.tagName}>`}`, el.getAttribute('data-to')!, el.getAttribute('data-label'))
+        const added = addFlows(`${cur.id}.${id ?? ''}`, el.getAttribute('data-to')!, el.getAttribute('data-label'))
+        anon = id ? [] : added
+        el.onEndTag(() => { anon = [] })
+      },
+      text(t) {
+        for (const f of anon) f.from += t.text
       },
     })
     .on('hc-flow', {
@@ -98,7 +112,10 @@ async function parse(file: string) {
 
   const known = new Set(frames.flatMap((f) => [f.id, ...f.ids.map((i) => `${f.id}.${i}`)]))
   for (const f of flows) {
-    if (!f.from.includes('<') && !known.has(f.from)) errors.push(`flow source "${f.from}" does not exist`)
+    const [node, ...rest] = f.from.split('.')
+    const isAnon = rest.length > 0 && !known.has(f.from)
+    if (isAnon) f.from = `${node}.${JSON.stringify(snip(decode(rest.join('.'))))}`
+    else if (!known.has(f.from)) errors.push(`flow source "${f.from}" does not exist`)
     if (!known.has(f.to)) errors.push(`flow target "${f.to}" does not exist (from ${f.from})`)
   }
   if (!html.includes(RUNTIME)) errors.push(`file never loads ${RUNTIME}`)
@@ -107,11 +124,12 @@ async function parse(file: string) {
 
 async function check(file: string) {
   const { frames, flows, errors } = await parse(file)
-  let row: string | null = null
+  let row: string | null | undefined
   for (const f of frames) {
-    if (f.row !== row) console.log(`row ${JSON.stringify((row = f.row))}`)
+    if (f.row !== row) console.log((row = f.row) === null ? '(no row)' : `row ${JSON.stringify(row)}`)
     const ids = f.ids.length ? `  [${f.ids.join(' ')}]` : ''
-    console.log(`  ${f.tag === 'hc-note' ? 'note ' : ''}${f.id}${f.title ? ` ${JSON.stringify(f.title)}` : ''}${ids}`)
+    const text = f.tag === 'hc-note' ? ` ${JSON.stringify(snip(decode(f.text)))}` : ''
+    console.log(`  ${f.tag === 'hc-note' ? 'note ' : ''}${f.id}${f.title ? ` ${JSON.stringify(f.title)}` : ''}${text}${ids}`)
   }
   console.log('flows')
   for (const f of flows) console.log(`  ${f.from} -> ${f.to}${f.label ? `  ${JSON.stringify(f.label)}` : ''}`)
@@ -204,7 +222,7 @@ function findChrome() {
 }
 
 async function shot(file: string, out: string, frame: string | undefined, size: string) {
-  const url = pathToFileURL(file).href + (frame ? `#frame=${frame}` : '')
+  const url = pathToFileURL(file).href + `#hud=0${frame ? `&frame=${frame}` : ''}`
   const proc = Bun.spawn(
     [findChrome(), '--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1',
       `--window-size=${size.replace('x', ',')}`, '--virtual-time-budget=5000', `--screenshot=${out}`, url],
