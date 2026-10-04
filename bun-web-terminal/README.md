@@ -21,7 +21,7 @@ Open the **Mac sign-in** link printed at startup, or scan the QR on your phone
 through Tailscale. After signing in, you can open <http://127.0.0.1:4784/sessions>
 normally. Sessions keep running when the browser disconnects. The effective local Ghostty palette and font are loaded with `ghostty +show-config --default` at startup.
 
-Desktop Ghostty is optional; without it, the app uses a fallback theme. Tailscale is optional for remote access, and the sibling dictation service is optional for voice input. Neither is required for a local terminal.
+Desktop Ghostty is optional. Without the `ghostty` binary (a headless server), the app reads `~/.config/ghostty/config` directly, following `config-file` includes, and resolves `theme` from `~/.config/ghostty/themes/` or the vendored `themes/` directory here; add a theme file there if yours is not vendored. With no config either, it uses a fallback theme. Tailscale is optional for remote access, and the sibling dictation service is optional for voice input. Neither is required for a local terminal.
 
 ## Ghostty dependencies and copying this directory
 

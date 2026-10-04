@@ -6,6 +6,12 @@ former fork; the [license](../../ghostty-web/LICENSE) is preserved with the sour
 The engine is an official Ghostty WASM release artifact; its provenance and
 upstream license are included in `../../ghostty-web/vendor/`.
 
+# Ghostty themes
+
+`../themes/` holds theme files copied unchanged from the set Ghostty bundles,
+which comes from [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes)
+(MIT).
+
 # Dictation references
 
 The append-only cumulative transcript policy follows the local Swift fork of
