@@ -45,6 +45,8 @@
 !ghostty-web/**
 !dictation-server/
 !dictation-server/**
+!dictation-server-linux/
+!dictation-server-linux/**
 !scripts/
 !scripts/**
 node_modules/
