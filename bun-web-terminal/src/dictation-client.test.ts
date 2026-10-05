@@ -20,20 +20,18 @@ async function until(check: () => boolean) {
   expect(check()).toBe(true);
 }
 
-test("records before ready, paces by inference acks, and replays after disconnect without duplicate paste", async () => {
+function harness() {
   const sockets: FakeSocket[] = [];
   const pastes: string[] = [];
   const states: DictationState[] = [];
   const startup: string[] = [];
   const warm: boolean[] = [];
   const submitted: string[] = [];
-  let modules = 0;
-  let microphoneRequests = 0;
-  let microphoneStopped = false;
-  const track = { readyState: "live", enabled: true, stop() { this.readyState = "ended"; microphoneStopped = true; }, addEventListener() {} };
-  let node!: FakeNode;
-  let attachmentListener = () => {};
-  let attachment: { sessionId: string; attachmentId: string } | undefined = { sessionId: "session", attachmentId: "first" };
+  const notices: string[] = [];
+  const counts = { modules: 0, microphoneRequests: 0, microphoneStopped: false };
+  const track = { readyState: "live", enabled: true, stop() { this.readyState = "ended"; counts.microphoneStopped = true; }, addEventListener() {} };
+  const audio: { node?: FakeNode } = {};
+  const terminal = { listener: () => {}, attachment: { sessionId: "session", attachmentId: "first" } as { sessionId: string; attachmentId: string } | undefined };
 
   class FakeSocket {
     static readonly OPEN = 1;
@@ -56,12 +54,12 @@ test("records before ready, paces by inference acks, and replays after disconnec
     port = { onmessage: (_event: { data: any }) => {}, postMessage: (message: string) => {
       if (message === "stop") queueMicrotask(() => this.port.onmessage({ data: { type: "drained" } }));
     }, close() {} };
-    constructor() { node = this; }
+    constructor() { audio.node = this; }
     connect() {}
     disconnect() {}
   }
   class FakeContext {
-    audioWorklet = { addModule: async (_path: string) => { modules++; } };
+    audioWorklet = { addModule: async (_path: string) => { counts.modules++; } };
     onstatechange: (() => void) | null = null;
     state = "running";
     destination = {};
@@ -72,7 +70,7 @@ test("records before ready, paces by inference acks, and replays after disconnec
   }
   replace("isSecureContext", true);
   replace("navigator", { mediaDevices: { getUserMedia: async () => {
-    microphoneRequests++;
+    counts.microphoneRequests++;
     return { getTracks: () => [track], getAudioTracks: () => [track] };
   } } });
   replace("window", { AudioContext: FakeContext, AudioWorkletNode: FakeNode, addEventListener() {} });
@@ -80,21 +78,29 @@ test("records before ready, paces by inference acks, and replays after disconnec
   replace("AudioWorkletNode", FakeNode);
   replace("WebSocket", FakeSocket);
   replace("location", { protocol: "https:", host: "example.test" });
-  replace("document", { addEventListener() {} });
+  const page = { hidden: false, hide: () => {} };
+  replace("document", { get hidden() { return page.hidden; },
+    addEventListener(type: string, listener: () => void) { if (type === "visibilitychange") page.hide = () => { page.hidden = true; listener(); }; } });
 
-  const connection = { get attachment() { return attachment; }, terminalStopped: false,
-    onAttachmentChange(listener: () => void) { attachmentListener = listener; return () => {}; } } as unknown as TerminalConnection;
+  const connection = { get attachment() { return terminal.attachment; }, terminalStopped: false,
+    onAttachmentChange(listener: () => void) { terminal.listener = listener; return () => {}; } } as unknown as TerminalConnection;
   const controller = new DictationController(connection, {
     state: value => states.push(value), startup: text => startup.push(text), warm: active => warm.push(active),
-    preview() {}, notice() {}, clearControl() {}, paste: text => pastes.push(text),
+    preview() {}, notice: text => notices.push(text), clearControl() {}, paste: text => pastes.push(text),
   });
-  expect(modules).toBe(1);
-  expect(microphoneRequests).toBe(0);
+  return { controller, sockets, pastes, states, startup, warm, submitted, notices, counts, track, audio, terminal, page };
+}
+
+test("records before ready, paces by inference acks, and replays after disconnect without duplicate paste", async () => {
+  const { controller, sockets, pastes, states, startup, warm, submitted, counts, track, audio, terminal } = harness();
+  expect(counts.modules).toBe(1);
+  expect(counts.microphoneRequests).toBe(0);
   expect(controller.submitAfterStop(() => submitted.push(pastes.join("")))).toBe(false);
   controller.toggle();
-  await until(() => !!node);
-  expect(modules).toBe(1);
-  expect(microphoneRequests).toBe(1);
+  await until(() => !!audio.node);
+  const node = audio.node!;
+  expect(counts.modules).toBe(1);
+  expect(counts.microphoneRequests).toBe(1);
   expect(startup).toContain("Audio startup…");
   const first = sockets[0]!;
   // 16 frames = 81,920 bytes; only 12 fit in the one-second inference window.
@@ -133,18 +139,49 @@ test("records before ready, paces by inference acks, and replays after disconnec
   expect(states.at(-1)).toBe("idle");
   expect(warm.at(-1)).toBe(true);
   expect(track.enabled).toBe(false);
-  expect(microphoneStopped).toBe(false);
+  expect(counts.microphoneStopped).toBe(false);
 
-  const oldNode = node;
   controller.toggle();
-  await until(() => node !== oldNode);
-  expect(microphoneRequests).toBe(1);
+  await until(() => audio.node !== node);
+  expect(counts.microphoneRequests).toBe(1);
   expect(track.enabled).toBe(true);
   expect(warm.at(-1)).toBe(false);
   expect(controller.submitAfterStop(() => submitted.push("canceled"))).toBe(true);
-  attachment = undefined;
-  attachmentListener();
+  terminal.attachment = undefined;
+  terminal.listener();
   controller.cancel();
-  expect(microphoneStopped).toBe(true);
+  expect(counts.microphoneStopped).toBe(true);
   expect(submitted).toEqual(["hello world"]);
+});
+
+// Reported from a phone: tap, speak, stop while the service was still loading, and nothing came back.
+test("a recording stopped before ready is still transcribed, also when the page is hidden meanwhile", async () => {
+  const { controller, sockets, pastes, states, audio, page } = harness();
+  controller.toggle();
+  await until(() => !!audio.node);
+  for (let i = 0; i < 3; i++) audio.node!.port.onmessage({ data: { type: "audio", bytes: new Uint8Array(5120).buffer } });
+  controller.toggle();
+  await until(() => states.at(-1) === "finishing");
+  page.hide();
+  const socket = sockets[0]!;
+  socket.open();
+  const id = JSON.parse(socket.sent[0] as string).recordingId;
+  expect(socket.sent).toHaveLength(1);
+  socket.emit({ type: "loading", recordingId: id, sequence: 0 });
+  socket.emit({ type: "ready", recordingId: id, sequence: 1 });
+  expect(socket.sent.filter(value => value instanceof Uint8Array)).toHaveLength(3);
+  for (let i = 1; i <= 3; i++) socket.emit({ type: "ack", recordingId: id, sequence: i + 1, bytes: i * 5120 });
+  expect(JSON.parse(socket.sent.at(-1) as string).type).toBe("stop");
+  socket.emit({ type: "final", recordingId: id, sequence: 5, text: "hello world" });
+  socket.emit({ type: "done", recordingId: id, sequence: 6 });
+  expect(pastes).toEqual(["hello world"]);
+  expect(states.at(-1)).toBe("idle");
+});
+
+test("a tap while the microphone is still starting says that nothing was recorded", () => {
+  const { controller, states, notices } = harness();
+  controller.toggle();
+  controller.toggle();
+  expect(states.at(-1)).toBe("idle");
+  expect(notices).toEqual(["Nothing recorded · microphone was still starting"]);
 });

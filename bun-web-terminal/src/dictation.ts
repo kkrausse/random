@@ -45,7 +45,11 @@ export class DictationController {
       else if (!r.socket || r.socket.readyState === WebSocket.CLOSED) this.connect(r);
     });
     document.addEventListener("visibilitychange", () => {
-      if (document.hidden) { this.cancel(); this.discardWarm(); }
+      if (!document.hidden) return;
+      // Hiding the page ends capture. A recording that was already stopped has all
+      // its audio; keep it so the transcript still arrives, replayed if need be.
+      if (!this.recording?.drained) this.cancel();
+      this.discardWarm();
     });
     window.addEventListener("pagehide", () => {
       this.cancel();
@@ -309,7 +313,8 @@ export class DictationController {
   }
 
   private stop(r: Recording) {
-    if (!r.node) { this.cancel(); return; }
+    // No audio graph yet means no audio: say so instead of ending as if recorded.
+    if (!r.node) { this.cancel("Nothing recorded · microphone was still starting"); return; }
     r.stopping = true;
     r.phase = "finishing";
     this.view.state("finishing");
