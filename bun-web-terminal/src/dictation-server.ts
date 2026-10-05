@@ -75,7 +75,7 @@ export class DictationProxy {
       };
       upstream.onerror = () => this.fail("service_error", "Dictation service connection failed");
       upstream.onclose = () => { if (this.phase !== "closed") this.fail("service_closed", "Dictation service disconnected"); };
-    } catch { this.fail("unavailable", "Dictation unavailable · build/configure the Swift service"); }
+    } catch { this.fail("unavailable", "Dictation unavailable · build/configure the dictation service"); }
   }
 
   private send(data: string | Uint8Array) {

@@ -1,7 +1,7 @@
 # Streaming dictation protocol v1
 
 The local service binds to loopback HTTP. WebSocket framing is provided by Vapor
-and WebSocketKit. Each WebSocket represents exactly one recording.
+and WebSocketKit (Swift service) or `websockets` (Linux service). Each WebSocket represents exactly one recording.
 
 ## HTTP
 
@@ -92,7 +92,7 @@ Bun exposes `GET /api/dictation/status` and `WS /api/dictation/stream` under its
 existing same-origin policy. Browser start also includes `sessionId` and
 `attachmentId`; the latter is the UUID received in the terminal socket's `ready`
 event. Bun verifies the current attachment, subscribes to its loss, and strips
-both fields before forwarding start to Swift. Terminal bytes use the separate
+both fields before forwarding start to the service. Terminal bytes use the separate
 terminal socket. Dictation events keep the service schema and order.
 
 The browser status response includes `available`, `state`, `modelId`, `audio`, and

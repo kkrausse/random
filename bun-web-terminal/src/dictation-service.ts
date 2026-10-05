@@ -3,6 +3,13 @@ import { audioFormat, dictationLimits } from "./dictation-protocol";
 
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Managed backends, both speaking protocol v1 with the same launch flags:
+// the Swift/CoreML service on Apple Silicon and the NeMo/CUDA service on Linux.
+function managedExecutable() {
+  if (process.platform === "darwin" && process.arch === "arm64") return join(import.meta.dir, "../../dictation-server/.build/release/dictation-server");
+  if (process.platform === "linux" && process.arch === "x64") return join(import.meta.dir, "../../dictation-server-linux/run.sh");
+}
+
 export class DictationService {
   private child?: Bun.Subprocess;
   private startup?: Promise<string>;
@@ -23,7 +30,7 @@ export class DictationService {
   async ensure(): Promise<string> {
     if (this.stopped) throw new Error("Dictation service stopped");
     if (this.external) return this.url;
-    if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("Dictation requires an Apple Silicon Mac");
+    if (!process.env.DICTATION_EXECUTABLE && !managedExecutable()) throw new Error("Dictation requires an Apple Silicon Mac or an x86-64 Linux host with an NVIDIA GPU");
     if (this.startup) return this.startup;
     const attempt = this.start().catch(error => {
       // An exited child can allow a fresh request before its startup rejects.
@@ -40,7 +47,7 @@ export class DictationService {
     await pause(Math.max(0, this.retryAt - Date.now()));
     if (this.stopped) throw new Error("Dictation service stopped");
     const instanceId = crypto.randomUUID();
-    const executable = process.env.DICTATION_EXECUTABLE ?? join(import.meta.dir, "../../dictation-server/.build/release/dictation-server");
+    const executable = process.env.DICTATION_EXECUTABLE ?? managedExecutable()!;
     const child = Bun.spawn([executable, "--host", "127.0.0.1", "--port", new URL(this.url).port || "80",
       "--instance-id", instanceId, "--parent-pid", String(process.pid),
       ...(process.env.DICTATION_MODEL_DIR ? ["--model-dir", process.env.DICTATION_MODEL_DIR] : [])],
@@ -80,7 +87,7 @@ export class DictationService {
       if (!response.ok || status.version !== 1 || !["loading", "ready", "busy", "error"].includes(status.state)) throw new Error("Invalid service status");
       return { available: status.state !== "error", state: status.state, modelId: status.modelId, audio: audioFormat, limits: dictationLimits };
     } catch {
-      return { available: false, state: "error", message: "Dictation unavailable · check the Swift service build and configuration", audio: audioFormat };
+      return { available: false, state: "error", message: "Dictation unavailable · check the dictation service build and configuration", audio: audioFormat };
     }
   }
 

@@ -189,6 +189,18 @@ Build the sibling Swift service once on the hosting Apple Silicon Mac:
 bun start
 ```
 
+On an x86-64 Linux host with an NVIDIA GPU, set up the Linux service instead. It
+runs the same model and protocol on CUDA; see its
+[README](../dictation-server-linux/README.md):
+
+```sh
+../dictation-server-linux/setup.sh
+bun start
+```
+
+The rest of this section describes the Mac service; the Linux one differs only
+in where its model lives and in loading it on the GPU (about 13 seconds).
+
 The service reuses the cached English Parakeet Unified 1.1-second model from the
 local Swift Hex app, under `~/Library/Application Support/FluidAudio/Models/parakeet-unified-en-0.6b/`.
 It does not download models. See [service setup](../dictation-server/README.md)
@@ -206,7 +218,7 @@ allow microphone access, and speak even if the connection is still loading. Tap
 **Stop** to flush the last word. A tap during microphone startup cancels.
 Starting dictation preserves keyboard visibility and clears one-shot Ctrl.
 Audio comes from the phone; transcription
-runs on the Mac. Only one remote recording can run at once.
+runs on the host. Only one remote recording can run at once.
 
 Whole words are pasted live at the application's current cursor, with the pending
 word previewed above the bar. Finalization releases the tail once. Dictation
@@ -239,14 +251,16 @@ page opens still needs normal microphone startup.
 
 | Environment variable | Default / meaning |
 | --- | --- |
-| `DICTATION_EXECUTABLE` | `../dictation-server/.build/release/dictation-server`, resolved relative to this project |
+| `DICTATION_EXECUTABLE` | `../dictation-server/.build/release/dictation-server` on macOS, `../dictation-server-linux/run.sh` on Linux, resolved relative to this project |
 | `DICTATION_PORT` | `9876`; choose another for independent Bun instances |
 | `DICTATION_MODEL_DIR` | Override the service model cache directory |
+| `DICTATION_LATENCY_MS` | Linux service only: streaming latency, default `1120` |
 | `DICTATION_URL` | Optional loopback HTTP origin, e.g. `http://127.0.0.1:9876`; externally managed mode, so Bun neither spawns nor terminates it |
 
-The Swift service stays on loopback. The existing Tailscale Serve route covers
+The service stays on loopback. The existing Tailscale Serve route covers
 both terminal and dictation WebSockets. Other hosts can use an explicitly
-configured loopback service, while managed mode requires Apple Silicon macOS.
+configured loopback service, while managed mode requires Apple Silicon macOS or
+x86-64 Linux with an NVIDIA GPU.
 
 Diagnostics: `GET /api/dictation/status` reports availability/model state without
 paths or transcripts. Service logs go to Bun's stderr. Missing executable/cache
@@ -288,7 +302,7 @@ Tests use isolated tmux servers and the same Ghostty WASM as the browser. They c
 
 Dictation tests also cover resampling continuity/filtering, transcript divergence,
 Unicode/spacing/control removal, final deduplication, protocol order, attachment
-ownership, cancellation, and proxy forwarding. To verify managed Swift lifecycle
+ownership, cancellation, and proxy forwarding. To verify managed service lifecycle
 with the built executable, run `bun docs/verify-dictation-supervision.ts`. For real
 model/reset/overload checks, run the service's `scripts/verify.ts` as documented
 in its README.

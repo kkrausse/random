@@ -1,5 +1,5 @@
 // Run from bun-web-terminal: bun docs/verify-dictation-supervision.ts
-// Uses a built Swift service, an unused ephemeral port, and no microphone.
+// Uses this platform's built dictation service, an unused ephemeral port, and no microphone.
 import assert from "node:assert/strict";
 import { DictationService } from "../src/dictation-service";
 

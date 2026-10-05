@@ -278,7 +278,7 @@ export class DictationController {
   private pump(r: Recording) {
     const socket = r.socket;
     if (!r.ready || !socket || socket.readyState !== WebSocket.OPEN) return;
-    // Frames are retained even after ack: a fresh Swift decoder needs the whole
+    // Frames are retained even after ack: a fresh service decoder needs the whole
     // recording after a broken connection. Acks are after inference, not WS send.
     let offset = 0;
     for (const chunk of r.chunks) {
