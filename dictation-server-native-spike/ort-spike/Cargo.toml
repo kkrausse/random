@@ -1,0 +1,11 @@
+[package]
+name = "ort-spike"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+# default-features off: the default pulls ort's native-tls downloader, which needs libssl-dev (not installed).
+parakeet-rs = { version = "0.3.8", default-features = false, features = ["cpu", "cuda", "api-28"] }
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "ndarray", "download-binaries", "tls-rustls", "copy-dylibs", "cuda", "api-28"] }
+ndarray = "0.17"
+hound = "3.5"

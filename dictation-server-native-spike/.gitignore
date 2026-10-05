@@ -1,0 +1,7 @@
+target/
+build/
+models/
+*.onnx
+*.onnx.data
+*.gguf
+*.wav

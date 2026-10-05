@@ -1,0 +1,191 @@
+
+## cold start, 5 runs each (launch -> first window transcribed, warm disk)
+# ort cuda fp32, cudnn heuristic
+run 1: launch_to_ready_ms=2669 in_process_ready_ms=2657 loaded_at_ms=2345 first_window_ms=297 warmup_ms=312
+run 2: launch_to_ready_ms=2459 in_process_ready_ms=2446 loaded_at_ms=2150 first_window_ms=283 warmup_ms=297
+run 3: launch_to_ready_ms=2589 in_process_ready_ms=2584 loaded_at_ms=2274 first_window_ms=295 warmup_ms=310
+run 4: launch_to_ready_ms=2470 in_process_ready_ms=2470 loaded_at_ms=2170 first_window_ms=286 warmup_ms=300
+run 5: launch_to_ready_ms=2660 in_process_ready_ms=2650 loaded_at_ms=2289 first_window_ms=346 warmup_ms=361
+# ort cuda fp32, pre-optimised graph, opt 0
+run 1: launch_to_ready_ms=2149 in_process_ready_ms=2144 loaded_at_ms=1849 first_window_ms=281 warmup_ms=295
+run 2: launch_to_ready_ms=2160 in_process_ready_ms=2153 loaded_at_ms=1858 first_window_ms=281 warmup_ms=295
+run 3: launch_to_ready_ms=2190 in_process_ready_ms=2171 loaded_at_ms=1870 first_window_ms=287 warmup_ms=302
+run 4: launch_to_ready_ms=2300 in_process_ready_ms=2293 loaded_at_ms=1875 first_window_ms=403 warmup_ms=418
+run 5: launch_to_ready_ms=2179 in_process_ready_ms=2170 loaded_at_ms=1869 first_window_ms=286 warmup_ms=301
+# ort cuda fp16 encoder, cudnn heuristic
+run 1: launch_to_ready_ms=1880 in_process_ready_ms=1879 loaded_at_ms=1299 first_window_ms=568 warmup_ms=580
+run 2: launch_to_ready_ms=1880 in_process_ready_ms=1877 loaded_at_ms=1326 first_window_ms=540 warmup_ms=552
+run 3: launch_to_ready_ms=1899 in_process_ready_ms=1891 loaded_at_ms=1319 first_window_ms=559 warmup_ms=572
+run 4: launch_to_ready_ms=1880 in_process_ready_ms=1871 loaded_at_ms=1316 first_window_ms=543 warmup_ms=555
+run 5: launch_to_ready_ms=1890 in_process_ready_ms=1879 loaded_at_ms=1328 first_window_ms=538 warmup_ms=551
+# ort cpu fp32, 12 threads
+run 1: launch_to_ready_ms=3750 in_process_ready_ms=3746 loaded_at_ms=3502 first_window_ms=132 warmup_ms=244
+run 2: launch_to_ready_ms=3429 in_process_ready_ms=3426 loaded_at_ms=3229 first_window_ms=102 warmup_ms=197
+run 3: launch_to_ready_ms=3389 in_process_ready_ms=3389 loaded_at_ms=3168 first_window_ms=117 warmup_ms=221
+# transcribe.cpp vulkan F16
+run 1: launch_to_ready_ms=1130 in_process_ready_ms=1122 loaded_at_ms=1063 first_window_ms=33 warmup_ms=60
+run 2: launch_to_ready_ms=959 in_process_ready_ms=954 loaded_at_ms=893 first_window_ms=34 warmup_ms=61
+run 3: launch_to_ready_ms=989 in_process_ready_ms=987 loaded_at_ms=927 first_window_ms=33 warmup_ms=60
+run 4: launch_to_ready_ms=1019 in_process_ready_ms=1019 loaded_at_ms=959 first_window_ms=33 warmup_ms=60
+run 5: launch_to_ready_ms=960 in_process_ready_ms=948 loaded_at_ms=888 first_window_ms=34 warmup_ms=60
+# transcribe.cpp vulkan Q8_0
+run 1: launch_to_ready_ms=2100 in_process_ready_ms=2089 loaded_at_ms=1616 first_window_ms=443 warmup_ms=473
+run 2: launch_to_ready_ms=649 in_process_ready_ms=645 loaded_at_ms=585 first_window_ms=34 warmup_ms=60
+run 3: launch_to_ready_ms=709 in_process_ready_ms=703 loaded_at_ms=642 first_window_ms=35 warmup_ms=61
+run 4: launch_to_ready_ms=660 in_process_ready_ms=657 loaded_at_ms=581 first_window_ms=50 warmup_ms=76
+run 5: launch_to_ready_ms=679 in_process_ready_ms=673 loaded_at_ms=604 first_window_ms=42 warmup_ms=69
+# transcribe.cpp vulkan F32
+run 1: launch_to_ready_ms=5690 in_process_ready_ms=5685 loaded_at_ms=5157 first_window_ms=491 warmup_ms=528
+run 2: launch_to_ready_ms=2850 in_process_ready_ms=2837 loaded_at_ms=2763 first_window_ms=40 warmup_ms=74
+run 3: launch_to_ready_ms=1590 in_process_ready_ms=1581 loaded_at_ms=1509 first_window_ms=39 warmup_ms=72
+# transcribe.cpp cuda F16
+run 1: launch_to_ready_ms=900 in_process_ready_ms=893 loaded_at_ms=766 first_window_ms=80 warmup_ms=127
+run 2: launch_to_ready_ms=910 in_process_ready_ms=900 loaded_at_ms=773 first_window_ms=81 warmup_ms=128
+run 3: launch_to_ready_ms=920 in_process_ready_ms=911 loaded_at_ms=784 first_window_ms=80 warmup_ms=127
+run 4: launch_to_ready_ms=940 in_process_ready_ms=939 loaded_at_ms=812 first_window_ms=80 warmup_ms=127
+run 5: launch_to_ready_ms=949 in_process_ready_ms=936 loaded_at_ms=786 first_window_ms=93 warmup_ms=150
+# transcribe.cpp cpu Q8_0 (prebuilt 'conservative' cpu module)
+run 1: launch_to_ready_ms=1320 in_process_ready_ms=1316 loaded_at_ms=626 first_window_ms=266 warmup_ms=690
+
+## per-chunk streaming time, 1120 ms config (70,7,7), 100 ms feeds, back to back
+# ort cuda fp32 heuristic
+finish_ms=254.9 chunks=23 chunk_first_ms=14.1 chunk_median_ms=25.3 chunk_max_ms=43.3 chunk_times_ms=14,42,42,42,42,42,43,38,43,42,42,25,24,25,25,25,25,25,24,25,24,25,25 second_pass_chunk_median_ms=26.0 second_pass_chunk_max_ms=42.3 VmHWM=938036kB 
+# ort cuda fp16 heuristic
+finish_ms=244.6 chunks=23 chunk_first_ms=13.1 chunk_median_ms=19.3 chunk_max_ms=114.9 chunk_times_ms=13,115,108,107,103,104,112,112,109,106,111,19,15,19,18,18,17,20,16,17,16,19,17 second_pass_chunk_median_ms=16.9 second_pass_chunk_max_ms=139.6 VmHWM=1034800kB 
+# ort cpu fp32 12 threads
+finish_ms=1044.5 chunks=23 chunk_first_ms=101.5 chunk_median_ms=343.4 chunk_max_ms=404.9 chunk_times_ms=102,126,146,168,186,210,298,300,349,325,346,349,391,401,362,341,347,345,405,394,343,340,345 second_pass_chunk_median_ms=325.8 second_pass_chunk_max_ms=383.3 VmHWM=2643688kB 
+# tcpp vulkan F16
+finish_ms=51.9 chunks=23 chunk_first_ms=23.3 chunk_times_ms=23,28,30,35,36,34,37,38,48,47,49,54,43,46,46,47,47,46,44,47,45,48,47 chunk_median_ms=46.0 chunk_max_ms=53.7 second_pass_chunk_median_ms=46.6 second_pass_chunk_max_ms=71.3 VmHWM:	  235076 kB 
+# tcpp vulkan Q8_0
+finish_ms=55.5 chunks=23 chunk_first_ms=22.1 chunk_times_ms=22,27,30,37,34,57,39,41,57,52,54,57,46,51,72,64,50,49,47,50,48,50,51 chunk_median_ms=49.8 chunk_max_ms=71.6 second_pass_chunk_median_ms=47.1 second_pass_chunk_max_ms=50.7 VmHWM:	  230820 kB 
+# tcpp cuda F16
+finish_ms=234.7 chunks=23 chunk_first_ms=29.0 chunk_times_ms=29,43,53,63,75,86,102,154,227,248,261,262,240,240,244,243,244,251,267,265,244,250,242 chunk_median_ms=241.9 chunk_max_ms=266.7 second_pass_chunk_median_ms=225.7 second_pass_chunk_max_ms=366.3 VmHWM:	  361880 kB 
+
+## same, paced in real time (GPU idles between chunks, as in real dictation)
+# ort cuda fp32 heuristic
+finish_ms=258.4 chunks=23 chunk_first_ms=14.3 chunk_median_ms=33.7 chunk_max_ms=45.4 chunk_times_ms=14,43,44,45,45,44,44,40,44,44,45,34,32,33,34,33,35,33,32,34,33,34,34 second_pass_chunk_median_ms=28.1 second_pass_chunk_max_ms=42.2 VmHWM=938116kB 
+# ort cuda fp16 heuristic
+finish_ms=220.3 chunks=23 chunk_first_ms=14.6 chunk_median_ms=21.7 chunk_max_ms=108.8 chunk_times_ms=15,103,103,100,102,104,109,104,103,103,100,21,20,21,21,22,22,21,20,21,21,22,22 second_pass_chunk_median_ms=20.7 second_pass_chunk_max_ms=112.4 VmHWM=1035020kB 
+# tcpp vulkan F16
+finish_ms=62.4 chunks=23 chunk_first_ms=23.8 chunk_times_ms=24,33,35,93,93,93,98,160,173,95,100,98,102,147,106,107,105,173,93,96,94,178,59 chunk_median_ms=97.6 chunk_max_ms=178.0 second_pass_chunk_median_ms=44.5 second_pass_chunk_max_ms=48.7 VmHWM:	  234884 kB 
+
+## low-latency configs
+# ort cuda fp32 (70,2,5) = 560 ms
+final=going along slushy country roads and speaking to damp audiences in draughty schoolrooms day after day for a fortnight. He'll have to put in an appearance at some place of worship on Sunday morning, and he can come to us immediately afterwards.
+chunk_median_ms=22.7
+chunk_max_ms=49.1
+# tcpp vulkan F16 (70,2,5) = 560 ms
+error: stream_begin: invalid argument
+# tcpp vulkan F16 (70,2,4) = 480 ms
+final=going along slushy country roads and speaking to damp audiences in draughty schoolrooms day after day for a fortnight he'll have to put in an appearance at some place of worship on Sunday morning and he can come to us immediately afterwards
+chunk_median_ms=40.8
+chunk_max_ms=45.3
+# tcpp vulkan F16 (70,2,2) = 320 ms
+final=going along slushy country roads and speaking to damp audiences in draughty schoolrooms day after day for a fortnight he'll have to put in an appearance at some place of worship on Sunday morning and he can come to us immediately afterwards
+chunk_median_ms=40.0
+chunk_max_ms=46.4
+
+## transcripts at 1120 ms
+# librispeech-sample
+ort-fp32   final=going along slushy country roads and speaking to damp audiences in draughty schoolrooms day after day for a fortnight. He'll have to put in an appearance at some place of worship on Sunday morning, and he can come to us immediately afterwards.
+ort-fp16   final=going along slushy country roads and speaking to damp audiences in draughty schoolrooms day after day for a fortnight. He'll have to put in an appearance at some place of worship on Sunday morning, and he can come to us immediately afterwards.
+tcpp-vk    final=going along slushy country roads and speaking to damp audiences in draughty schoolrooms day after day for a fortnight. He'll have to put in an appearance at some place of worship on Sunday morning, and he can come to us immediately afterwards
+tcpp-vk-q8 final=going along slushy country roads and speaking to damp audiences in draughty schoolrooms day after day for a fortnight. He'll have to put in an appearance at some place of worship on Sunday morning, and he can come to us immediately afterwards
+tcpp-cuda  final=going along slushy country roads and speaking to damp audiences in draughty schoolrooms day after day for a fortnight. He'll have to put in an appearance at some place of worship on Sunday morning, and he can come to us immediately afterwards
+# jfk
+ort-fp32   final=And so, my fellow Americans, ask not what your country can do for you. Ask what you can do for your country
+ort-fp16   final=And so, my fellow Americans, ask not what your country can do for you. Ask what you can do for your country
+tcpp-vk    final=And so, my fellow Americans, ask not what your country can do for you. Ask what you can do for your country
+tcpp-vk-q8 final=And so, my fellow Americans, ask not what your country can do for you. Ask what you can do for your country
+tcpp-cuda  final=And so, my fellow Americans, ask not what your country can do for you. Ask what you can do for your country
+# dots
+ort-fp32   final=Of course, it was impossible to connect the dots looking forward when I was in college, but it was very, very clear looking backwards 10 years later. Again, you can't connect the dots looking forward. You can only connect them looking backwards. So, you have to trust that the dots will somehow connect in your future. You have to trust in something, your gut, destiny, life, karma, whatever, because believing that the dots will connect down the road will give you the confidence to follow your heart even when it leads you off the well-worn path, and that will make all the difference
+ort-fp16   final=Of course, it was impossible to connect the dots looking forward when I was in college, but it was very, very clear looking backwards 10 years later. Again, you can't connect the dots looking forward. You can only connect them looking backwards. So, you have to trust that the dots will somehow connect in your future. You have to trust in something, your gut, destiny, life, karma, whatever, because believing that the dots will connect down the road will give you the confidence to follow your heart even when it leads you off the well-worn path, and that will make all the difference
+tcpp-vk    final=Of course, it was impossible to connect the dots looking forward when I was in college, but it was very, very clear looking backwards 10 years later. Again, you can't connect the dots looking forward. You can only connect them looking backwards. So, you have to trust that the dots will somehow connect in your future. You have to trust in something, your gut, destiny, life, karma, whatever. Because believing that the dots will connect down the road will give you the confidence to follow your heart even when it leads you off the well-worn path, and that will make all the difference
+tcpp-vk-q8 final=Of course, it was impossible to connect the dots looking forward when I was in college, but it was very, very clear looking backwards 10 years later. Again, you can't connect the dots looking forward. You can only connect them looking backwards. So, you have to trust that the dots will somehow connect in your future. You have to trust in something, your gut, destiny, life, karma, whatever. Because believing that the dots will connect down the road will give you the confidence to follow your heart even when it leads you off the well-worn path, and that will make all the difference
+tcpp-cuda  final=Of course, it was impossible to connect the dots looking forward when I was in college, but it was very, very clear looking backwards 10 years later. Again, you can't connect the dots looking forward. You can only connect them looking backwards. So, you have to trust that the dots will somehow connect in your future. You have to trust in something, your gut, destiny, life, karma, whatever. Because believing that the dots will connect down the road will give you the confidence to follow your heart even when it leads you off the well-worn path, and that will make all the difference
+# product-names
+ort-fp32   final=Welcome to Quirk Quid Quill Inc., where finance meets innovation, explore diverse offerings from the P3 Quattro, a unique investment portfolio quadrant to the O3 Omni, a platform for intricate derivative trading strategies, delve into unconventional bond markets with our B3 bond X and our and experienced non-standard equity trading with E3 equity. Personalize your wealth management with W3RAPZ and anticipate market trends with the O2 outlier are forward-thinking financial forecasting tool. Explore Venture Capital World with U3 Unifund or move your money with the M3 Mover or sophisticated monetary transfer module at CorkQuid Quill Inc., we turn complex finance into creative solutions. Join us in redefining financial services.
+ort-fp16   final=Welcome to Quirk Quid Quill Inc., where finance meets innovation, explore diverse offerings from the P3 Quattro, a unique investment portfolio quadrant to the O3 Omni, a platform for intricate derivative trading strategies, delve into unconventional bond markets with our B3 bond X and our and experienced non-standard equity trading with E3 equity. Personalize your wealth management with W3RAPZ and anticipate market trends with the O2 outlier are forward-thinking financial forecasting tool. Explore Venture Capital World with U3 Unifund or move your money with the M3 Mover or sophisticated monetary transfer module at CorkQuid Quill Inc., we turn complex finance into creative solutions. Join us in redefining financial services.
+tcpp-vk    final=Welcome to Quirk, Quid, Quill, Inc., where finance meets innovation, explore diverse offerings from the P3 Quattro, a unique investment portfolio quadrant to the O3 Omni, a platform for intricate derivative trading strategies, delve into unconventional bond markets with our B3 bond X and our and experience non-standard equity trading with E3 equity. Personalize your wealth management with W3RAPZ and anticipate market trends with the O2 outlier, our forward-thinking financial forecasting tool. Explore Venture Capital World with U3 Unifund or move your money with the M3 Mover or sophisticated monetary transfer module at CorkQuid Quill Inc., we turn complex finance into creative solutions. Join us in redefining financial services
+tcpp-vk-q8 final=Welcome to Quirk, Quid, Quill, Inc., where finance meets innovation, explore diverse offerings from the P3 Quattro, a unique investment portfolio quadrant to the O3 Omni, a platform for intricate derivative trading strategies, delve into unconventional bond markets with our B3 bond X and our and experience non-standard equity trading with E3 equity. Personalize your wealth management with W3RAPZ and anticipate market trends with the O2 outlier, our forward-thinking financial forecasting tool. Explore Venture Capital World with U3 Unifund or move your money with the M3 Mover or sophisticated monetary transfer module at CorkQuid Quill Inc., we turn complex finance into creative solutions. Join us in redefining financial services
+tcpp-cuda  final=Welcome to Quirk, Quid, Quill, Inc., where finance meets innovation, explore diverse offerings from the P3 Quattro, a unique investment portfolio quadrant to the O3 Omni, a platform for intricate derivative trading strategies, delve into unconventional bond markets with our B3 bond X and our and experience non-standard equity trading with E3 equity. Personalize your wealth management with W3RAPZ and anticipate market trends with the O2 outlier, our forward-thinking financial forecasting tool. Explore Venture Capital World with U3 Unifund or move your money with the M3 Mover are sophisticated monetary transfer module at CorkQuid Quill Inc., we turn complex finance into creative solutions. Join us in redefining financial services
+# NeMo (current server engine)
+ready_at_ms=13409
+file=/home/kkrausse/devfs/cache/native-spike/audio/librispeech-sample.wav
+final=going along slushy country roads and speaking to damp audiences in draughty schoolrooms day after day for a fortnight. He'll have to put in an appearance at some place of worship on Sunday morning, and he can come to us immediately afterwards
+chunks=23 chunk_median_ms=27.4 chunk_max_ms=33.2
+file=/home/kkrausse/devfs/cache/native-spike/audio/jfk.wav
+final=And so, my fellow Americans, ask not what your country can do for you. Ask what you can do for your country
+chunks=18 chunk_median_ms=27.1 chunk_max_ms=28.2
+file=/home/kkrausse/devfs/cache/native-spike/audio/dots.wav
+final=Of course, it was impossible to connect the dots looking forward when I was in college, but it was very, very clear looking backwards 10 years later. Again, you can't connect the dots looking forward. You can only connect them looking backwards. So, you have to trust that the dots will somehow connect in your future. You have to trust in something, your gut, destiny, life, karma, whatever. Because believing that the dots will connect down the road will give you the confidence to follow your heart even when it leads you off the well-worn path, and that will make all the difference
+chunks=62 chunk_median_ms=28.1 chunk_max_ms=33.1
+file=/home/kkrausse/devfs/cache/native-spike/audio/product-names.wav
+final=Welcome to Quirk, Quid, Quill, Inc., where finance meets innovation, explore diverse offerings from the P3 Quattro, a unique investment portfolio quadrant to the O3 Omni, a platform for intricate derivative trading strategies, delve into unconventional bond markets with our B3 bond X and our and experience non-standard equity trading with E3 equity. Personalize your wealth management with W3RAPZ and anticipate market trends with the O2 outlier, our forward-thinking financial forecasting tool. Explore Venture Capital World with U3 Unifund or move your money with the M3 Mover are sophisticated monetary transfer module at CorkQuid Quill Inc., we turn complex finance into creative solutions. Join us in redefining financial services
+chunks=99 chunk_median_ms=27.8 chunk_max_ms=31.1
+
+## GPU memory
+# ort cuda fp32 heuristic
+# ort cuda fp32 heuristic, max-workspace 0
+# ort cuda fp16 heuristic
+# tcpp vulkan F16
+# tcpp vulkan Q8_0
+# tcpp cuda F16
+
+## GPU memory
+# ort cuda fp32 heuristic
+total_delta_mib=3418
+844308, /home/kkrausse/devfs/cache/native-spike/target-ort/release/ort-spike, 3418 MiB
+# ort cuda fp32 heuristic, max-workspace 0
+total_delta_mib=3418
+846560, /home/kkrausse/devfs/cache/native-spike/target-ort/release/ort-spike, 3418 MiB
+# ort cuda fp16 heuristic
+total_delta_mib=2382
+848782, /home/kkrausse/devfs/cache/native-spike/target-ort/release/ort-spike, 2382 MiB
+# tcpp vulkan F16
+total_delta_mib=1228
+851574, /home/kkrausse/devfs/cache/native-spike/tcpp-build/tcpp-spike, 1227 MiB
+# tcpp vulkan Q8_0
+total_delta_mib=743
+854023, /home/kkrausse/devfs/cache/native-spike/tcpp-build/tcpp-spike, 742 MiB
+# tcpp cuda F16
+total_delta_mib=1406
+856937, /home/kkrausse/devfs/cache/native-spike/tcpp-build/tcpp-spike, 1406 MiB
+
+## ad hoc runs not in measure-all.sh (copied from the session)
+# NeMo, real-time paced (SPIKE_REALTIME=1 scripts/nemo-reference.py ... librispeech-sample.wav)
+chunks=23 chunk_median_ms=34.0 chunk_max_ms=36.0
+# tcpp vulkan F16, real-time paced, two more runs; then Q8_0; then cuda F16
+chunk_median_ms=99.4 chunk_max_ms=160.3 chunk_times_ms=22,33,37,89,91,146,150,86,104,103,158,102,99,103,160,100,99,99,160,98,96,96,147
+chunk_median_ms=104.5 chunk_max_ms=205.4
+chunk_median_ms=107.0 chunk_max_ms=178.8
+chunk_median_ms=220.0 chunk_max_ms=291.9
+# tcpp vulkan F16 with an empty driver shader cache (__GL_SHADER_DISK_CACHE_PATH=<empty dir>)
+run 1: launch_to_ready_ms=2790 in_process_ready_ms=2785 loaded_at_ms=1004 first_window_ms=1750 warmup_ms=1781
+run 2: launch_to_ready_ms=970 in_process_ready_ms=965 loaded_at_ms=905 first_window_ms=33 warmup_ms=60
+first recording on an empty cache: chunk_times_ms=27,31,34,3727,141,59,41,791,754,55,57,56,43,47,47,47,48,46,44,47,44,46,48
+# tcpp cuda, tcpp-spike/envsweep.sh (F16)
+NONE                             ready_at_ms=2321 chunk_median_ms=219.0 second_pass_chunk_median_ms=221.0
+TRANSCRIBE_CONV_DIRECT_DW        ready_at_ms=2276 chunk_median_ms=221.4 second_pass_chunk_median_ms=222.6
+TRANSCRIBE_CONV_NO_DIRECT_DW     ready_at_ms=2283 chunk_median_ms=225.1 second_pass_chunk_median_ms=226.7
+TRANSCRIBE_CONV_DIRECT_PW        ready_at_ms=2266 chunk_median_ms=219.8 second_pass_chunk_median_ms=221.2
+TRANSCRIBE_CONV_NO_DIRECT_PW     ready_at_ms=2122 chunk_median_ms=205.3 second_pass_chunk_median_ms=204.3
+TRANSCRIBE_NO_FLASH              ready_at_ms=1319 chunk_median_ms=46.2 second_pass_chunk_median_ms=46.3   (final= is EMPTY on F16, F32, Q8_0)
+TRANSCRIBE_FORCE_FLASH           ready_at_ms=2227 chunk_median_ms=222.5 second_pass_chunk_median_ms=220.0
+(ready_at here still used the full 5.6 s warm-up; later runs warm one window only)
+# tcpp cuda F16 --threads 1 / --threads 12
+median=538.3 / median=262.9
+# ort cpu int8, 12 threads
+loaded_at_ms=2471 ready_at_ms=2702 chunk_median_ms=265.2 chunk_max_ms=314.7 VmHWM=848684kB
+# ort cuda fp32 sweeps (ort-spike/sweep.sh, full warm-up)
+[--conv-search default]            enc_sess= 2205 ready= 4611 first_win=  390 chunk1= 171.0 median= 291.3 max= 293.9
+[--conv-search heuristic]          enc_sess= 2114 ready= 2917 first_win=  283 chunk1=  37.8 median=  26.5 max=  43.8
+[--conv-search exhaustive]         enc_sess= 2171 ready= 3003 first_win=  304 chunk1=  38.0 median=  26.0 max=  42.5
+[--conv-search heuristic --nc1d 1] enc_sess= 2086 ready= 3050 first_win=  441 chunk1=  39.6 median=  25.4 max=  53.4
+[--conv-search heuristic --nhwc 1] enc_sess= 2332 ready= 3593 first_win=  516 chunk1=  56.2 median=  30.8 max=  60.0
+[--conv-search heuristic --opt-level 0] enc_sess= 2303 median=  30.7
+[--conv-search heuristic --opt-level 1] enc_sess= 2199 median=  26.0
+[--conv-search heuristic --opt-level 2] enc_sess= 2128 median=  27.2
+[--conv-search heuristic --decoder-provider cpu] median=  31.7
+[--conv-search heuristic --opt-level 0 --model-dir unified-onnx-opt] enc_sess= 1835 / 1772 median=  26.0

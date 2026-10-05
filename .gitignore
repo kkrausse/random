@@ -47,6 +47,8 @@
 !dictation-server/**
 !dictation-server-linux/
 !dictation-server-linux/**
+!dictation-server-native-spike/
+!dictation-server-native-spike/**
 !scripts/
 !scripts/**
 node_modules/
