@@ -7,10 +7,14 @@ and WebSocketKit (Swift service) or `websockets` (Linux service). Each WebSocket
 
 - `GET /healthz`: `{ "instanceId": "…", "version": "1", "status": "alive" }`.
   This is liveness, not model readiness. A supervisor must match its launch ID.
+  The Linux service exits with status 0 after an idle period; a supervisor
+  starts a new one on the next request and must not treat that exit as a failure.
 - `GET /v1/status`: `{ "version": 1, "state": "loading|ready|busy|error",
   "modelId": "parakeet-unified-en-0.6b-streaming-1120ms",
   "audio": { "sampleRate": 16000, "channels": 1, "format": "f32le" },
   "limits": { "frameBytes": 6400, "queueBytes": 128000, "seconds": 300 } }`.
+  `modelId` describes what is running and is informational; the Linux service
+  reports `parakeet-unified-en-0.6b-F16-transcribe.cpp-vulkan-streaming-1120ms`.
 
 ## WebSocket `/v1/stream`
 

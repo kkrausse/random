@@ -190,7 +190,7 @@ bun start
 ```
 
 On an x86-64 Linux host with an NVIDIA GPU, set up the Linux service instead. It
-runs the same model and protocol on CUDA; see its
+runs the same model and protocol with transcribe.cpp on Vulkan; see its
 [README](../dictation-server-linux/README.md):
 
 ```sh
@@ -198,8 +198,10 @@ runs the same model and protocol on CUDA; see its
 bun start
 ```
 
-The rest of this section describes the Mac service; the Linux one differs only
-in where its model lives and in loading it on the GPU (about 13 seconds).
+The rest of this section describes the Mac service. The Linux one differs in
+where its model lives and in not staying resident: it loads in about a second,
+exits after ten idle minutes to free its 1.2 GB of GPU memory
+(`DICTATION_IDLE_MINUTES`), and Bun starts it again on the next mic tap.
 
 The service reuses the cached English Parakeet Unified 1.1-second model from the
 local Swift Hex app, under `~/Library/Application Support/FluidAudio/Models/parakeet-unified-en-0.6b/`.
@@ -215,7 +217,9 @@ take time on a phone, especially on the first permission request.
 
 On your phone, open the terminal through the Tailscale **HTTPS** URL. Tap the mic,
 allow microphone access, and speak even if the connection is still loading. Tap
-**Stop** to flush the last word. A tap during microphone startup cancels.
+**Stop** to flush the last word, also when the service is not ready yet: the
+buffered audio is transcribed as soon as it is. A tap during microphone startup
+cancels with a notice, since nothing has been captured.
 Starting dictation preserves keyboard visibility and clears one-shot Ctrl.
 Audio comes from the phone; transcription
 runs on the host. Only one remote recording can run at once.
@@ -236,7 +240,8 @@ uploads; if the dictation socket drops, a new decoder session replays the entire
 recording. Already inserted text is not pasted again; if the replay changes that
 prefix, automatic insertion stops and the recovery transcript stays visible.
 Temporary terminal disconnection also waits for reattachment, but a permanent
-takeover, navigation, or page suspension cancels capture. Stop waits for buffered
+takeover, navigation, or page suspension cancels capture. A recording that was
+already stopped survives the page being hidden. Stop waits for buffered
 audio and the final transcript (up to five minutes); it cannot preserve capture
 through phone sleep, browser termination, or a page reload. Server-side transport
 queues remain bounded to about two seconds, and the five-minute capture cap is
@@ -254,7 +259,8 @@ page opens still needs normal microphone startup.
 | `DICTATION_EXECUTABLE` | `../dictation-server/.build/release/dictation-server` on macOS, `../dictation-server-linux/run.sh` on Linux, resolved relative to this project |
 | `DICTATION_PORT` | `9876`; choose another for independent Bun instances |
 | `DICTATION_MODEL_DIR` | Override the service model cache directory |
-| `DICTATION_LATENCY_MS` | Linux service only: streaming latency, default `1120` |
+| `DICTATION_LATENCY_MS` | Linux service only: streaming latency, `1120` (default) or `2080` |
+| `DICTATION_IDLE_MINUTES` | Linux service only: exit after this many minutes without a recording, default `10`; `0` keeps it resident |
 | `DICTATION_URL` | Optional loopback HTTP origin, e.g. `http://127.0.0.1:9876`; externally managed mode, so Bun neither spawns nor terminates it |
 
 The service stays on loopback. The existing Tailscale Serve route covers

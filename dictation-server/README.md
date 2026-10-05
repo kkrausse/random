@@ -7,7 +7,8 @@ insertion policy. No desktop microphone, clipboard, terminal, or Hex process API
 is involved.
 
 For x86-64 Linux with an NVIDIA GPU, [`../dictation-server-linux`](../dictation-server-linux/README.md)
-implements the same protocol and options with the same model on NeMo and CUDA.
+implements the same protocol and options with the same model on transcribe.cpp and
+Vulkan. That service exits when idle instead of staying resident.
 
 ## Build and run
 
