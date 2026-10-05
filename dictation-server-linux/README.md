@@ -170,6 +170,14 @@ What that table does not show:
   encoder needs on-disk shape inference before conversion and its own `Cast`
   nodes retargeted; each new window shape then costs ~105 ms once.
 
+Where NeMo's 13–14 s went (warm disk, profiled before the switch): importing
+NeMo 5.1 s (`lightning` 3.2 s and `torchmetrics` 2.1 s, pulled in even for
+inference), importing PyTorch 1.0 s, building the model object ~4 s (2.6 s of it
+random weight init that is immediately overwritten, the rest Hydra/OmegaConf),
+reading the 2.4 GB fp32 checkpoint 1.2 s, copying to the GPU 0.9 s. Skipping the
+init saved about 2 s; a pre-imported idle process was estimated at 4–5 s to
+ready. Neither was pursued once the native runtimes measured ~1 s.
+
 Not measured: word error rate on a test set, and start-up from a cold disk.
 The spike's code and raw output are in git history under
 `dictation-server-native-spike/` (commit `dcfa00e`).
