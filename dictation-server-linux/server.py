@@ -1,11 +1,12 @@
 """Loopback streaming dictation service, protocol v1 (../dictation-server/docs/protocol.md).
 
-Linux/NVIDIA port of the Swift service: NeMo + PyTorch CUDA running
-nvidia/parakeet-unified-en-0.6b in buffered streaming mode. Recording and
-decoder semantics mirror Recording.swift and Decoder.swift.
+Linux/NVIDIA port of the Swift service: transcribe.cpp (ggml) on its Vulkan
+backend running parakeet-unified-en-0.6b in buffered streaming mode, called
+through the library's C ABI with ctypes. Recording and decoder semantics mirror
+Recording.swift and Decoder.swift.
 """
 
-import asyncio
+import ctypes
 import json
 import math
 import os
@@ -13,27 +14,26 @@ import re
 import sys
 import time
 import uuid
+from array import array
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
-import numpy as np
-from websockets.asyncio.server import serve
-from websockets.datastructures import Headers
-from websockets.exceptions import ConnectionClosed
-from websockets.http11 import Response
-
 MODEL = "parakeet-unified-en-0.6b"
+WEIGHTS = f"{MODEL}-F16.gguf"
+# The C ABI is only stable within a release; setup.sh downloads exactly this one.
+LIBRARY_VERSION = "0.3.1"
+CACHE = Path(__file__).parent / ".cache"
 FRAME_LIMIT = 6_400
 QUEUE_LIMIT = 128_000
 SECONDS_LIMIT = 300
 OUTGOING_LIMIT = 255_488
 AUDIO_FORMAT = {"sampleRate": 16000, "channels": 1, "format": "f32le"}
-# Model-card contexts in 80 ms encoder frames: latency ms -> (chunk, right).
-# Left context is always 70 frames (5.6 s), as in training.
-LATENCIES = {2080: (13, 13), 1120: (7, 7), 560: (2, 5), 320: (1, 3), 240: (1, 2), 160: (1, 1)}
-LEFT_FRAMES = 70
-FRAME_SAMPLES = 1280
+# Latency ms -> (chunk ms, right ms). Left context is always 5.6 s, as in training.
+# The model's shorter settings (480, 320 ms) run but lose punctuation and
+# capitalisation, and transcribe.cpp rejects NeMo's 560 ms (70, 2, 5).
+LATENCIES = {2080: (1040, 1040), 1120: (560, 560)}
+LEFT_MS = 5600
 UUID_PATTERN = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
 
 
@@ -48,145 +48,174 @@ def log(message):
 
 
 # --- Model -----------------------------------------------------------------
-# Everything below runs on the single inference thread. Heavy imports stay
-# inside so /healthz answers while torch and NeMo are still loading.
+# transcribe.h and transcribe/parakeet.h at v0.3.1. Every struct with a size
+# query is checked against the loaded library, so a mismatched release fails at
+# load instead of corrupting memory.
 
-def load_engine(directory, latency_ms):
-    import torch
-    from nemo.collections.asr.models import ASRModel
-    from nemo.collections.asr.parts.submodules.rnnt_decoding import RNNTDecodingConfig
-    from nemo.collections.asr.parts.utils.rnnt_utils import batched_hyps_to_hypotheses
-    from nemo.collections.asr.parts.utils.streaming_utils import ContextSize, StreamingBatchedAudioBuffer
-    from nemo.core.connectors.save_restore_connector import SaveRestoreConnector
-    from nemo.utils import logging as nemo_logging
-    from omegaconf import OmegaConf, open_dict
+class Ext(ctypes.Structure):
+    _fields_ = [("size", ctypes.c_uint64), ("kind", ctypes.c_uint32)]
 
-    nemo_logging.setLevel(nemo_logging.ERROR)
-    if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is not available")
-    # Explicit local-only load from the extracted checkpoint: a missing
-    # directory fails rather than downloading.
-    if not (directory / "model_config.yaml").is_file() or not (directory / "model_weights.ckpt").is_file():
-        raise FileNotFoundError(f"No extracted {MODEL} checkpoint in {directory}; run setup.sh")
-    torch.set_grad_enabled(False)
-    torch.set_float32_matmul_precision("high")
-    device = torch.device("cuda")
-    connector = SaveRestoreConnector()
-    connector.model_extracted_dir = str(directory)
-    # Restore on CPU first: restoring straight to CUDA briefly holds two copies of the weights.
-    model = ASRModel.restore_from(str(directory), map_location="cpu", save_restore_connector=connector).to(device)
-    model.freeze()
-    model.eval()
-    model.preprocessor.featurizer.dither = 0.0
-    model.preprocessor.featurizer.pad_to = 0
-    # Stateful chunked decoding needs greedy label-looping, as in NeMo's
-    # speech_to_text_streaming_infer_rnnt.py reference script.
-    decoding = OmegaConf.structured(RNNTDecodingConfig())
-    with open_dict(decoding):
-        decoding.strategy = "greedy_batch"
-        decoding.greedy.loop_labels = True
-        decoding.greedy.preserve_alignments = False
-        decoding.fused_batch_size = -1
-    model.change_decoding_strategy(decoding)
-    chunk, right = LATENCIES[latency_ms]
-    model.encoder.set_default_att_context_size(att_context_size=[LEFT_FRAMES, chunk, right])
-    engine = SimpleNamespace(
-        torch=torch, model=model, device=device, to_hypotheses=batched_hyps_to_hypotheses,
-        computer=model.decoding.decoding.decoding_computer, new_buffer=StreamingBatchedAudioBuffer,
-        context=ContextSize(left=LEFT_FRAMES * FRAME_SAMPLES, chunk=chunk * FRAME_SAMPLES, right=right * FRAME_SAMPLES),
-        stream=None)
-    # Warm cuDNN and the decoder so the first recording is not the slow one.
+
+class BufferedStreamExt(ctypes.Structure):
+    _fields_ = [("ext", Ext), ("left_ms", ctypes.c_int32), ("chunk_ms", ctypes.c_int32), ("right_ms", ctypes.c_int32)]
+
+
+class BackendInitParams(ctypes.Structure):
+    _fields_ = [("struct_size", ctypes.c_uint64), ("artifact_dir", ctypes.c_char_p), ("allowed_backends", ctypes.c_uint32)]
+
+
+class ModelLoadParams(ctypes.Structure):
+    _fields_ = [("struct_size", ctypes.c_uint64), ("backend", ctypes.c_int), ("device", ctypes.c_void_p)]
+
+
+class SessionParams(ctypes.Structure):
+    _fields_ = [("struct_size", ctypes.c_uint64), ("n_threads", ctypes.c_int), ("kv_type", ctypes.c_int),
+                ("n_ctx", ctypes.c_int32)]
+
+
+class StreamParams(ctypes.Structure):
+    _fields_ = [("struct_size", ctypes.c_uint64), ("family", ctypes.POINTER(Ext)), ("commit_policy", ctypes.c_int),
+                ("stable_prefix_agreement_n", ctypes.c_uint32)]
+
+
+class StreamUpdate(ctypes.Structure):
+    _fields_ = [("struct_size", ctypes.c_uint64), ("result_changed", ctypes.c_bool), ("is_final", ctypes.c_bool),
+                ("revision", ctypes.c_int32), ("input_received_ms", ctypes.c_int64),
+                ("audio_committed_ms", ctypes.c_int64), ("buffered_ms", ctypes.c_int64),
+                ("committed_changed", ctypes.c_bool), ("tentative_changed", ctypes.c_bool)]
+
+
+# transcribe_abi_struct ids.
+ABI_STRUCTS = {ModelLoadParams: 0, SessionParams: 1, StreamParams: 3, StreamUpdate: 9, Ext: 12, BackendInitParams: 15}
+BACKEND_VULKAN = 3
+BACKEND_MASK_CPU = 1
+BACKEND_MASK_VULKAN = 4
+
+
+def load_library(directory):
+    path = directory / "libtranscribe.so"
+    if not path.is_file():
+        raise FileNotFoundError(f"No transcribe.cpp {LIBRARY_VERSION} in {directory}; run setup.sh")
+    lib = ctypes.CDLL(str(path))
+    lib.transcribe_version.restype = ctypes.c_char_p
+    lib.transcribe_status_string.restype = ctypes.c_char_p
+    lib.transcribe_model_backend.restype = ctypes.c_char_p
+    lib.transcribe_model_backend.argtypes = [ctypes.c_void_p]
+    lib.transcribe_full_text.restype = ctypes.c_char_p
+    lib.transcribe_full_text.argtypes = [ctypes.c_void_p]
+    lib.transcribe_abi_struct_size.restype = ctypes.c_size_t
+    lib.transcribe_init_backends_ex.argtypes = [ctypes.POINTER(BackendInitParams)]
+    lib.transcribe_model_load_file.argtypes = [ctypes.c_char_p, ctypes.POINTER(ModelLoadParams),
+                                               ctypes.POINTER(ctypes.c_void_p)]
+    lib.transcribe_session_init.argtypes = [ctypes.c_void_p, ctypes.POINTER(SessionParams),
+                                            ctypes.POINTER(ctypes.c_void_p)]
+    lib.transcribe_stream_begin.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(StreamParams)]
+    lib.transcribe_stream_feed.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int,
+                                           ctypes.POINTER(StreamUpdate)]
+    lib.transcribe_stream_finalize.argtypes = [ctypes.c_void_p, ctypes.POINTER(StreamUpdate)]
+    lib.transcribe_stream_reset.argtypes = [ctypes.c_void_p]
+    lib.transcribe_stream_reset.restype = None
+    version = lib.transcribe_version().decode()
+    if version != LIBRARY_VERSION:
+        raise RuntimeError(f"transcribe.cpp {version} in {directory}, expected {LIBRARY_VERSION}")
+    for struct, which in ABI_STRUCTS.items():
+        if lib.transcribe_abi_struct_size(which) != ctypes.sizeof(struct):
+            raise RuntimeError(f"transcribe.cpp ABI mismatch in {struct.__name__}")
+    return lib
+
+
+def check(engine, status, what):
+    if status != 0:
+        raise RuntimeError(f"{what}: {engine.lib.transcribe_status_string(status).decode()}")
+
+
+def load_engine(library, directory, latency_ms):
+    """Runs on the single inference thread, like every other library call."""
+    weights = directory / WEIGHTS
+    if not weights.is_file():
+        raise FileNotFoundError(f"No {WEIGHTS} in {directory}; run setup.sh")
+    lib = load_library(library)
+    chunk_ms, right_ms = LATENCIES[latency_ms]
+    engine = SimpleNamespace(lib=lib, session=ctypes.c_void_p(), chunk_ms=chunk_ms, right_ms=right_ms, backend="")
+    # Register only Vulkan (plus the CPU module ggml needs): probing other backends costs start-up time.
+    init = BackendInitParams()
+    lib.transcribe_backend_init_params_init(ctypes.byref(init))
+    init.artifact_dir = str(library).encode()
+    init.allowed_backends = BACKEND_MASK_CPU | BACKEND_MASK_VULKAN
+    check(engine, lib.transcribe_init_backends_ex(ctypes.byref(init)), "init_backends")
+    # An explicit backend request fails rather than falling back to the CPU.
+    load = ModelLoadParams()
+    lib.transcribe_model_load_params_init(ctypes.byref(load))
+    load.backend = BACKEND_VULKAN
+    model = ctypes.c_void_p()
+    check(engine, lib.transcribe_model_load_file(str(weights).encode(), ctypes.byref(load), ctypes.byref(model)),
+          "model_load_file")
+    engine.backend = lib.transcribe_model_backend(model).decode()
+    params = SessionParams()
+    lib.transcribe_session_params_init(ctypes.byref(params))
+    check(engine, lib.transcribe_session_init(model, ctypes.byref(params), ctypes.byref(engine.session)), "session_init")
+    # One window of silence, so the first recording does not pay for first use.
     reset(engine)
-    feed(engine, np.zeros(engine.context.total(), dtype=np.float32))
+    feed(engine, bytes((chunk_ms + right_ms) * 64))
     finish(engine)
     reset(engine)
     return engine
 
 
 def reset(engine):
-    engine.stream = SimpleNamespace(
-        buffer=engine.new_buffer(batch_size=1, context_samples=engine.context, dtype=engine.torch.float32, device=engine.device),
-        pending=np.zeros(0, dtype=np.float32), state=None, hyps=None,
-        need=engine.context.chunk + engine.context.right)
-
-
-def step(engine, samples, last):
-    """Encode [left | chunk | right], decode only the chunk frames, carry RNN-T state."""
-    torch, stream = engine.torch, engine.stream
-    is_last = torch.tensor([last], device=engine.device)
-    stream.buffer.add_audio_batch_(
-        torch.from_numpy(samples).to(engine.device)[None],
-        audio_lengths=torch.tensor([len(samples)], device=engine.device),
-        is_last_chunk=last, is_last_chunk_batch=is_last)
-    encoded, encoded_length = engine.model(
-        input_signal=stream.buffer.samples, input_signal_length=stream.buffer.context_size_batch.total())
-    left = stream.buffer.context_size.subsample(factor=FRAME_SAMPLES).left
-    context = stream.buffer.context_size_batch.subsample(factor=FRAME_SAMPLES)
-    length = torch.where(is_last, encoded_length - context.left, context.chunk)
-    hyps, stream.state = engine.computer(
-        x=encoded.transpose(1, 2)[:, left:], out_len=length, prev_batched_state=stream.state)
-    if stream.hyps is None:
-        stream.hyps = hyps
-    else:
-        stream.hyps.merge_(hyps)
-    stream.need = engine.context.chunk
+    """Drop any stream and begin a fresh one at the configured context."""
+    lib = engine.lib
+    lib.transcribe_stream_reset(engine.session)
+    ext = BufferedStreamExt()
+    lib.transcribe_parakeet_buffered_stream_ext_init(ctypes.byref(ext))
+    ext.left_ms, ext.chunk_ms, ext.right_ms = LEFT_MS, engine.chunk_ms, engine.right_ms
+    params = StreamParams()
+    lib.transcribe_stream_params_init(ctypes.byref(params))
+    params.family = ctypes.pointer(ext.ext)
+    check(engine, lib.transcribe_stream_begin(engine.session, None, ctypes.byref(params)), "stream_begin")
 
 
 def text(engine):
-    if engine.stream.hyps is None:
-        return ""
-    hypothesis = engine.to_hypotheses(engine.stream.hyps, batch_size=1)[0]
-    return engine.model.tokenizer.ids_to_text(hypothesis.y_sequence.tolist())
+    return engine.lib.transcribe_full_text(engine.session).decode()
 
 
-def feed(engine, samples):
-    """Buffer audio and run every complete chunk. Returns the cumulative text if any ran."""
-    stream = engine.stream
-    stream.pending = np.concatenate((stream.pending, samples))
-    ran = False
-    with engine.torch.inference_mode():
-        while len(stream.pending) >= stream.need:
-            piece, stream.pending = stream.pending[:stream.need], stream.pending[stream.need:]
-            step(engine, piece, False)
-            ran = True
-        return text(engine) if ran else None
+def feed(engine, data):
+    """Hand f32le audio to the library, which encodes [left | chunk | right] for every
+    complete chunk, decodes only the chunk frames and carries the RNN-T state.
+    Returns the cumulative text if it changed."""
+    update = StreamUpdate()
+    engine.lib.transcribe_stream_update_init(ctypes.byref(update))
+    check(engine, engine.lib.transcribe_stream_feed(engine.session, data, len(data) // 4, ctypes.byref(update)),
+          "stream_feed")
+    return text(engine) if update.result_changed else None
 
 
 def finish(engine):
     # 400 ms of trailing silence, then flush the remainder as the last chunk.
-    stream = engine.stream
-    stream.pending = np.concatenate((stream.pending, np.zeros(6400, dtype=np.float32)))
-    with engine.torch.inference_mode():
-        while len(stream.pending) > stream.need:
-            piece, stream.pending = stream.pending[:stream.need], stream.pending[stream.need:]
-            step(engine, piece, False)
-        step(engine, stream.pending, True)
-        return text(engine)
+    feed(engine, bytes(25_600))
+    check(engine, engine.lib.transcribe_stream_finalize(engine.session, None), "stream_finalize")
+    return text(engine)
 
 
 # --- Decoder ownership -----------------------------------------------------
 
-def make_decoder(directory, latency_ms):
-    loop = asyncio.get_running_loop()
-    decoder = SimpleNamespace(state="loading", owner=None, engine=None, loaded=loop.create_future(),
+def make_decoder(options):
+    """Start loading at once on the inference thread; the caller imports the
+    event loop and WebSocket modules meanwhile."""
+    decoder = SimpleNamespace(state="loading", owner=None, engine=None, loaded=None,
                               executor=ThreadPoolExecutor(max_workers=1, thread_name_prefix="inference"))
-
-    def loaded(future):
-        try:
-            decoder.engine = future.result()
-            decoder.state = "ready"
-        except Exception as error:
-            decoder.state = "error"
-            log(f"Model load failed: {type(error).__name__}: {error}")
-        decoder.loaded.set_result(None)
 
     def load():
         start = time.monotonic()
-        engine = load_engine(directory, latency_ms)
-        log(f"Model loaded in {time.monotonic() - start:.1f}s")
-        return engine
+        try:
+            decoder.engine = load_engine(options.library, options.directory, options.latency)
+            decoder.state = "ready"
+            log(f"Model loaded in {time.monotonic() - start:.2f}s ({decoder.engine.backend})")
+        except Exception as error:
+            decoder.state = "error"
+            log(f"Model load failed: {type(error).__name__}: {error}")
 
-    loop.run_in_executor(decoder.executor, load).add_done_callback(loaded)
+    decoder.loaded = decoder.executor.submit(load)
     return decoder
 
 
@@ -199,7 +228,7 @@ async def acquire(decoder, token):
         raise ProtocolFailure("busy")
     decoder.owner = token  # Reserve before any suspension, including model warmup/reset.
     try:
-        await asyncio.shield(decoder.loaded)
+        await asyncio.shield(asyncio.wrap_future(decoder.loaded))
         if decoder.state != "ready":
             raise ProtocolFailure("unavailable")
         await run(decoder, reset)
@@ -232,10 +261,10 @@ def validate_start(value):
 
 
 def decode_audio(data):
-    samples = np.frombuffer(data, dtype="<f4")
-    if not np.isfinite(samples).all():
+    # Any NaN or infinity survives a sum; finite float32 samples cannot overflow a double.
+    if not math.isfinite(sum(array("f", data))):
         raise ProtocolFailure("invalid_audio")
-    return samples
+    return data
 
 
 async def record(socket, decoder):
@@ -371,11 +400,13 @@ async def record(socket, decoder):
 # --- Server ----------------------------------------------------------------
 
 def parse_arguments(arguments):
-    options = {"--latency-ms": os.environ.get("DICTATION_LATENCY_MS", "1120")}
+    options = {"--latency-ms": os.environ.get("DICTATION_LATENCY_MS", "1120"),
+               "--idle-minutes": os.environ.get("DICTATION_IDLE_MINUTES", "10")}
     arguments = list(arguments)
     while arguments:
         key = arguments.pop(0)
-        if key not in ("--host", "--port", "--model-dir", "--instance-id", "--parent-pid", "--latency-ms") or not arguments:
+        if key not in ("--host", "--port", "--model-dir", "--instance-id", "--parent-pid", "--latency-ms",
+                       "--idle-minutes", "--warm-up") or not arguments:
             raise SystemExit("invalid_arguments")
         options[key] = arguments.pop(0)
     host = options.get("--host", "127.0.0.1")
@@ -385,11 +416,33 @@ def parse_arguments(arguments):
     latency = options["--latency-ms"]
     if not latency.isdecimal() or int(latency) not in LATENCIES:
         raise SystemExit(f"invalid_latency: choose one of {sorted(LATENCIES)}")
-    directory = Path(options.get("--model-dir") or Path(__file__).parent / ".cache" / "models" / MODEL).expanduser()
+    try:
+        idle = float(options["--idle-minutes"])
+    except ValueError:
+        idle = -1
+    if not 0 <= idle < math.inf:
+        raise SystemExit("invalid_idle_minutes: minutes without a recording before exiting, 0 to stay resident")
+    directory = Path(options.get("--model-dir") or CACHE / "models").expanduser()
     parent = options.get("--parent-pid")
-    return SimpleNamespace(host=host, port=int(port), latency=int(latency), directory=directory,
+    return SimpleNamespace(host=host, port=int(port), latency=int(latency), idle=idle * 60, directory=directory,
+                           library=CACHE / f"transcribe-native-{LIBRARY_VERSION}", warm_up=options.get("--warm-up"),
                            instance=options.get("--instance-id") or str(uuid.uuid4()).upper(),
                            parent=int(parent) if parent and parent.isdecimal() else None)
+
+
+def warm_up(options, path):
+    """setup.sh: transcribe one f32le file so the driver compiles and caches every
+    Vulkan pipeline now, not during the first recording."""
+    decoder = make_decoder(options)
+    decoder.loaded.result()
+    if decoder.state != "ready":
+        raise SystemExit(1)
+    audio = Path(path).read_bytes()
+    start = time.monotonic()
+    reset(decoder.engine)
+    for offset in range(0, len(audio) - len(audio) % 4, 5120):
+        feed(decoder.engine, audio[offset:offset + 5120])
+    log(f"Warm-up: {len(audio) / 64000:.1f}s of audio in {time.monotonic() - start:.2f}s: {finish(decoder.engine)}")
 
 
 async def watch_parent(parent):
@@ -403,10 +456,25 @@ async def watch_parent(parent):
             os._exit(0)
 
 
-async def main():
-    options = parse_arguments(sys.argv[1:])
-    decoder = make_decoder(options.directory, options.latency)
-    model_id = f"{MODEL}-streaming-{options.latency}ms"
+async def exit_when_idle(server, activity, seconds):
+    """Leave once no recording has been open for `seconds`, which is what returns the
+    GPU memory. Exit status 0 tells a supervisor this was not a failure; it starts a
+    new process on the next request."""
+    while activity.open or time.monotonic() - activity.last < seconds:
+        await asyncio.sleep(min(1, seconds))
+    # Stop listening first: a start that raced with this is refused and retried
+    # against a fresh process, never accepted by one that is about to vanish.
+    server.close(close_connections=False)
+    await asyncio.sleep(0.1)
+    while activity.open:
+        await asyncio.sleep(0.1)
+    log(f"No recording for {seconds / 60:g} min; exiting to release the GPU")
+    os._exit(0)
+
+
+async def main(options, decoder):
+    model_id = f"{MODEL}-F16-transcribe.cpp-vulkan-streaming-{options.latency}ms"
+    activity = SimpleNamespace(open=0, last=time.monotonic())
 
     def respond(status, body):
         data = json.dumps(body).encode()
@@ -425,11 +493,34 @@ async def main():
         if path != "/v1/stream":
             return respond(404, {"error": "not found"})
 
-    async with serve(lambda socket: record(socket, decoder), options.host, options.port, process_request=http,
-                     max_size=FRAME_LIMIT, compression=None, ping_interval=None, server_header=None):
+    async def stream(socket):
+        activity.open += 1
+        try:
+            await record(socket, decoder)
+        finally:
+            activity.open -= 1
+            activity.last = time.monotonic()
+
+    async with serve(stream, options.host, options.port, process_request=http,
+                     max_size=FRAME_LIMIT, compression=None, ping_interval=None, server_header=None) as server:
         log(f"Listening on {options.host}:{options.port} ({model_id})")
-        await (watch_parent(options.parent) if options.parent else asyncio.Future())
+        watchers = [watch_parent(options.parent)] if options.parent else []
+        if options.idle:
+            watchers.append(exit_when_idle(server, activity, options.idle))
+        await asyncio.gather(asyncio.Future(), *watchers)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    options = parse_arguments(sys.argv[1:])
+    if options.warm_up:
+        warm_up(options, options.warm_up)
+        os._exit(0)
+    decoder = make_decoder(options)
+    # Deliberately after the load has started: these imports take about as long as
+    # backend initialisation, and the model is the long pole.
+    import asyncio
+    from websockets.asyncio.server import serve
+    from websockets.datastructures import Headers
+    from websockets.exceptions import ConnectionClosed
+    from websockets.http11 import Response
+    asyncio.run(main(options, decoder))

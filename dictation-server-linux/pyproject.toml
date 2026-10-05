@@ -1,11 +1,9 @@
 [project]
 name = "dictation-server-linux"
-version = "1.0.0"
-description = "Loopback streaming dictation service (protocol v1) on NeMo + PyTorch CUDA"
-requires-python = ">=3.12,<3.13"
+version = "2.0.0"
+description = "Loopback streaming dictation service (protocol v1) on transcribe.cpp + Vulkan"
+requires-python = ">=3.12"
 dependencies = [
-    "nemo_toolkit[asr]>=2.7.3",
-    "torch",
     "websockets>=15",
 ]
 
