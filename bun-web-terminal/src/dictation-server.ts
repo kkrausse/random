@@ -54,7 +54,7 @@ export class DictationProxy {
       if (this.phase === "closed") { upstream.close(); return; }
       this.upstream = upstream;
       const events = new DictationEvents(this.id);
-      upstream.onopen = () => { if (this.phase !== "closed") upstream.send(JSON.stringify(start)); };
+      upstream.send(JSON.stringify(start));
       upstream.onmessage = event => {
         if (this.phase === "closed") return;
         try {

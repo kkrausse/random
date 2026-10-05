@@ -30,7 +30,11 @@ function fixture() {
   const start = { type: "start", version: 1, recordingId: crypto.randomUUID(), sessionId: session.id, attachmentId: attachment.id, ...audioFormat };
   let closed = false;
   const proxy = new DictationProxy({ send(text) { sent.push(JSON.parse(String(text))); }, close() { closed = true; } },
-    new Map([[session.id, session]]), { connect: async () => new WebSocket(`ws://127.0.0.1:${server.port}`) });
+    new Map([[session.id, session]]), { connect: async () => {
+      const socket = new WebSocket(`ws://127.0.0.1:${server.port}`);
+      await new Promise(resolve => { socket.onopen = resolve; });
+      return socket;
+    } });
   disposals.push(() => { proxy.close(); server.stop(true); });
   return { proxy, start, sent, received, attachment, closed: () => closed,
     emit: (type: string, sequence: number, text?: string, bytes?: number) => remote!.send(JSON.stringify({ type, sequence, recordingId: start.recordingId, text, bytes })),

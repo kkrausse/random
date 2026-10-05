@@ -4,7 +4,7 @@ import { audioFormat, dictationLimits } from "./dictation-protocol";
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Managed backends, both speaking protocol v1 with the same launch flags:
-// the Swift/CoreML service on Apple Silicon and the NeMo/CUDA service on Linux.
+// the Swift/CoreML service on Apple Silicon and the transcribe.cpp/Vulkan service on Linux.
 function managedExecutable() {
   if (process.platform === "darwin" && process.arch === "arm64") return join(import.meta.dir, "../../dictation-server/.build/release/dictation-server");
   if (process.platform === "linux" && process.arch === "x64") return join(import.meta.dir, "../../dictation-server-linux/run.sh");
@@ -53,11 +53,13 @@ export class DictationService {
       ...(process.env.DICTATION_MODEL_DIR ? ["--model-dir", process.env.DICTATION_MODEL_DIR] : [])],
     { stdin: "ignore", stdout: "ignore", stderr: "inherit" });
     this.child = child;
-    void child.exited.then(() => {
+    void child.exited.then(code => {
       if (this.child !== child) return;
       this.child = undefined;
       this.startup = undefined;
-      this.retryAt = Date.now() + Math.min(10_000, 500 * 2 ** this.failures++);
+      // Status 0 is the service leaving after its idle period to free the GPU,
+      // not a failure: the next request starts a fresh one without delay.
+      if (code !== 0) this.retryAt = Date.now() + Math.min(10_000, 500 * 2 ** this.failures++);
     });
     try {
       const deadline = Date.now() + 15_000;
@@ -91,9 +93,22 @@ export class DictationService {
     }
   }
 
+  // Resolves with an open socket. A request can reach an idle service that is
+  // already leaving, before its exit is observed here: that connection fails to
+  // open, so wait for the exit and connect once more, to a fresh process.
   async connect() {
-    const url = await this.ensure();
-    return new WebSocket(`${url.replace(/^http/, "ws")}/v1/stream`);
+    for (let retried = false; ; retried = true) {
+      const url = await this.ensure();
+      const child = this.child;
+      const socket = new WebSocket(`${url.replace(/^http/, "ws")}/v1/stream`);
+      const opened = await new Promise<boolean>(resolve => {
+        socket.onopen = () => resolve(true);
+        socket.onerror = socket.onclose = () => resolve(false);
+      });
+      if (opened) return socket;
+      if (retried || !child) throw new Error("Dictation service connection failed");
+      await Promise.race([child.exited, pause(1000)]);
+    }
   }
 
   private async terminate(child: Bun.Subprocess) {
