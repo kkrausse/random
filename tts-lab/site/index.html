@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TTS voice samples</title>
+<style>
+  :root {
+    --bg: #fafaf9; --panel: #ffffff; --text: #1c1917; --muted: #78716c;
+    --line: #e7e5e4; --accent: #0f766e; --accent-soft: #ccfbf1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0c0a09; --panel: #1c1917; --text: #f5f5f4; --muted: #a8a29e;
+      --line: #292524; --accent: #2dd4bf; --accent-soft: #134e4a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 24px 16px 120px;
+  }
+  main { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  h2 { font-size: 1.1rem; margin: 32px 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 12px; font-size: 0.9rem; }
+  blockquote {
+    margin: 16px 0; padding: 12px 16px; background: var(--panel);
+    border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    border-radius: 8px; font-size: 0.95rem;
+  }
+  .tag { color: var(--accent); font-family: ui-monospace, monospace; font-size: 0.85em; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; margin: 10px 0;
+  }
+  .card.picked { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .voice { font-weight: 600; text-transform: capitalize; }
+  .variant { color: var(--muted); font-size: 0.85rem; }
+  .meta { color: var(--muted); font-size: 0.8rem; margin-left: auto; font-variant-numeric: tabular-nums; }
+  audio { width: 100%; margin: 8px 0 6px; height: 36px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .notes { color: var(--muted); font-size: 0.8rem; flex: 1 1 200px; }
+  button {
+    font: inherit; font-size: 0.85rem; padding: 6px 12px; border-radius: 6px;
+    border: 1px solid var(--line); background: transparent; color: var(--text); cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  .picked button.pick { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+  footer {
+    position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel);
+    border-top: 1px solid var(--line); padding: 10px 16px;
+  }
+  footer div { max-width: 760px; margin: 0 auto; display: flex; gap: 12px; align-items: center; }
+  footer span { flex: 1; font-size: 0.9rem; overflow-wrap: anywhere; }
+  footer code { background: var(--accent-soft); padding: 2px 6px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>TTS voice samples</h1>
+  <p class="sub">Same passage through each model, generated locally on diesel2 (RTX 2080 Ti). Listen, then mark one as the default.</p>
+  <blockquote id="passage"></blockquote>
+  <div id="groups"></div>
+</main>
+<footer><div><span id="choice">No default picked yet.</span><button id="copy" hidden>Copy</button></div></footer>
+<script>
+const PASSAGE = "Oh my god, you actually made it! <laugh> I honestly didn't think you'd come. <sigh> It's been a really hard year, and I've missed you more than I know how to say. Wait... <gasp> is that the dog?! Okay, no, you have to stop, that is ridiculous. <chuckle> Anyway. Come inside, before I start crying again.";
+const GROUPS = [
+  { src: "audio/orpheus.json", title: "Orpheus 3B",
+    blurb: "Fixed built-in voices. Emotion comes from the model plus inline tags like <laugh>; the \"plain\" takes have the tags removed." },
+  { src: "audio/chatterbox.json", title: "Chatterbox",
+    blurb: "Voices are cloned from a short reference clip. \"Exaggeration\" is its emotion-intensity dial (0.5 is the default). The Turbo takes are a smaller, faster variant that reads the same inline tags as Orpheus." },
+];
+const KEY = "tts-default";
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+document.getElementById("passage").innerHTML =
+  esc(PASSAGE).replace(/&lt;(\w+)&gt;/g, '<span class="tag">&lt;$1&gt;</span>');
+
+function readPick() { try { return localStorage.getItem(KEY); } catch { return null; } }
+function showPick(file) {
+  document.querySelectorAll(".card").forEach(c => c.classList.toggle("picked", c.dataset.file === file));
+  const card = document.querySelector(".card.picked");
+  document.getElementById("choice").innerHTML = card
+    ? "Default: <code>" + esc(card.dataset.label) + "</code>" : "No default picked yet.";
+  document.getElementById("copy").hidden = !card;
+}
+
+async function load() {
+  const root = document.getElementById("groups");
+  for (const g of GROUPS) {
+    let items = [];
+    try { items = await (await fetch(g.src, { cache: "no-store" })).json(); } catch {}
+    const sec = document.createElement("section");
+    sec.innerHTML = "<h2>" + esc(g.title) + "</h2><p class='sub'>" + esc(g.blurb) + "</p>";
+    if (!items.length) sec.innerHTML += "<p class='sub'>No samples yet.</p>";
+    for (const it of items) {
+      const speed = it.duration_s && it.gen_seconds
+        ? (it.duration_s / it.gen_seconds).toFixed(1) + "× realtime" : "";
+      const label = [it.model, it.voice, it.variant].filter(Boolean).join(" / ");
+      const card = document.createElement("div");
+      card.className = "card";
+      card.dataset.file = it.file;
+      card.dataset.label = label;
+      card.innerHTML =
+        "<div class='head'><span class='voice'>" + esc(it.voice) + "</span>" +
+        "<span class='variant'>" + esc(it.model === "chatterbox-turbo" ? "Turbo, " : "") + esc(it.variant) + "</span>" +
+        "<span class='meta'>" + (it.duration_s ? Number(it.duration_s).toFixed(1) + " s" : "") +
+        (speed ? " · " + speed : "") + "</span></div>" +
+        "<audio controls preload='none' src='audio/" + encodeURIComponent(it.file) + "'></audio>" +
+        "<div class='row'><span class='notes'>" + esc(it.notes) + "</span>" +
+        "<button class='pick'>Make default</button></div>";
+      card.querySelector(".pick").onclick = () => {
+        try { localStorage.setItem(KEY, it.file); } catch {}
+        showPick(it.file);
+      };
+      sec.appendChild(card);
+    }
+    root.appendChild(sec);
+  }
+  // Only one clip plays at a time.
+  document.addEventListener("play", e => {
+    document.querySelectorAll("audio").forEach(a => { if (a !== e.target) a.pause(); });
+  }, true);
+  showPick(readPick());
+}
+document.getElementById("copy").onclick = () => {
+  const card = document.querySelector(".card.picked");
+  if (card) navigator.clipboard?.writeText(card.dataset.label);
+};
+load();
+</script>
+</body>
+</html>

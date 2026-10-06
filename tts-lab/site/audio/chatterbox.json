@@ -1,0 +1,83 @@
+[
+  {
+    "file": "chatterbox-default-ex050.mp3",
+    "model": "chatterbox",
+    "voice": "built-in default",
+    "variant": "exaggeration 0.5",
+    "duration_s": 12.4,
+    "gen_seconds": 6.6,
+    "notes": "built-in default voice; cfg 0.5"
+  },
+  {
+    "file": "chatterbox-default-ex075.mp3",
+    "model": "chatterbox",
+    "voice": "built-in default",
+    "variant": "exaggeration 0.75",
+    "duration_s": 13.76,
+    "gen_seconds": 7.11,
+    "notes": "built-in default voice; cfg 0.4"
+  },
+  {
+    "file": "chatterbox-default-ex100.mp3",
+    "model": "chatterbox",
+    "voice": "built-in default",
+    "variant": "exaggeration 1",
+    "duration_s": 12.12,
+    "gen_seconds": 6.64,
+    "notes": "built-in default voice; cfg 0.3"
+  },
+  {
+    "file": "chatterbox-libri84f-ex075.mp3",
+    "model": "chatterbox",
+    "voice": "LibriTTS-R 84 (female)",
+    "variant": "exaggeration 0.75",
+    "duration_s": 16.32,
+    "gen_seconds": 9.19,
+    "notes": "cloned from LibriTTS-R speaker 84, female; cfg 0.4"
+  },
+  {
+    "file": "chatterbox-libri8842f-ex075.mp3",
+    "model": "chatterbox",
+    "voice": "LibriTTS-R 8842 (female)",
+    "variant": "exaggeration 0.75",
+    "duration_s": 14.56,
+    "gen_seconds": 7.99,
+    "notes": "cloned from LibriTTS-R speaker 8842, female, lower pitch; cfg 0.4"
+  },
+  {
+    "file": "chatterbox-libri174m-ex075.mp3",
+    "model": "chatterbox",
+    "voice": "LibriTTS-R 174 (male)",
+    "variant": "exaggeration 0.75",
+    "duration_s": 17.08,
+    "gen_seconds": 9.2,
+    "notes": "cloned from LibriTTS-R speaker 174, male; cfg 0.4"
+  },
+  {
+    "file": "chatterbox-libri3000m-ex075.mp3",
+    "model": "chatterbox",
+    "voice": "LibriTTS-R 3000 (male)",
+    "variant": "exaggeration 0.75",
+    "duration_s": 17.28,
+    "gen_seconds": 9.42,
+    "notes": "cloned from LibriTTS-R speaker 3000, male, deep; cfg 0.4"
+  },
+  {
+    "file": "chatterbox-turbo-default-tagged.mp3",
+    "model": "chatterbox-turbo",
+    "voice": "built-in default",
+    "variant": "tagged",
+    "duration_s": 24.44,
+    "gen_seconds": 6.63,
+    "notes": "built-in default voice; [laugh] [sigh] [gasp] [chuckle] tags"
+  },
+  {
+    "file": "chatterbox-turbo-libri84f-tagged.mp3",
+    "model": "chatterbox-turbo",
+    "voice": "LibriTTS-R 84 (female)",
+    "variant": "tagged",
+    "duration_s": 23.28,
+    "gen_seconds": 7.18,
+    "notes": "cloned from LibriTTS-R speaker 84, female; [laugh] [sigh] [gasp] [chuckle] tags"
+  }
+]

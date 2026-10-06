@@ -1,0 +1,74 @@
+[
+  {
+    "file": "orpheus-tara-tagged.mp3",
+    "model": "orpheus",
+    "voice": "tara",
+    "variant": "tagged",
+    "duration_s": 27.22,
+    "gen_seconds": 25.98,
+    "notes": "female, built-in voice"
+  },
+  {
+    "file": "orpheus-leah-tagged.mp3",
+    "model": "orpheus",
+    "voice": "leah",
+    "variant": "tagged",
+    "duration_s": 23.21,
+    "gen_seconds": 21.76,
+    "notes": "female, built-in voice"
+  },
+  {
+    "file": "orpheus-jess-tagged.mp3",
+    "model": "orpheus",
+    "voice": "jess",
+    "variant": "tagged",
+    "duration_s": 20.31,
+    "gen_seconds": 18.43,
+    "notes": "female, built-in voice"
+  },
+  {
+    "file": "orpheus-leo-tagged.mp3",
+    "model": "orpheus",
+    "voice": "leo",
+    "variant": "tagged",
+    "duration_s": 18.94,
+    "gen_seconds": 17.15,
+    "notes": "male, built-in voice"
+  },
+  {
+    "file": "orpheus-dan-tagged.mp3",
+    "model": "orpheus",
+    "voice": "dan",
+    "variant": "tagged",
+    "duration_s": 22.36,
+    "gen_seconds": 20.37,
+    "notes": "male, built-in voice"
+  },
+  {
+    "file": "orpheus-zoe-tagged.mp3",
+    "model": "orpheus",
+    "voice": "zoe",
+    "variant": "tagged",
+    "duration_s": 21.42,
+    "gen_seconds": 23.96,
+    "notes": "female, built-in voice"
+  },
+  {
+    "file": "orpheus-tara-plain.mp3",
+    "model": "orpheus",
+    "voice": "tara",
+    "variant": "plain",
+    "duration_s": 20.91,
+    "gen_seconds": 19.94,
+    "notes": "female, built-in voice"
+  },
+  {
+    "file": "orpheus-leo-plain.mp3",
+    "model": "orpheus",
+    "voice": "leo",
+    "variant": "plain",
+    "duration_s": 16.38,
+    "gen_seconds": 14.76,
+    "notes": "male, built-in voice"
+  }
+]

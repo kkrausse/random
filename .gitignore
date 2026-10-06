@@ -70,3 +70,5 @@ scripts/output/
 .netrc
 .npmrc.local
 *.har
+!tts-lab/
+!tts-lab/**
