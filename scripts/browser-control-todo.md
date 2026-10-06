@@ -19,3 +19,12 @@
 - Actual: command was rejected immediately with `Relay is draining for an explicit restart; retry after it completes`.
 - Expected: a session-owned page opens and returns the page title, figure count, and broken-image count.
 - Recovery: no forced restart or polling; verified the deployed article and 34-page content through direct HTTP instead. A later visual comparison should retry after the already-requested restart completes.
+
+## 2026-10-06: Tab stayed protected-ui after 1Password inline menu was dismissed
+
+- Context: session `tidy-panda-515`, relay-owned tab on `developer.apple.com/enroll/duns-lookup/`, filling the D-U-N-S lookup form.
+- Browser Control version: `0.8.2`.
+- Reproduction: `locator.fill()` on the Street Address / Postal Code inputs; 1Password's inline address menu opens on focus.
+- Actual: every later execute on that tab failed with `Execution context was destroyed` and `target/cross-extension-page`; `status` kept showing `protected-ui=true` after the user dismissed the menu, including for a no-focus `page.evaluate`.
+- Expected: automation resumes once the inline menu is dismissed.
+- Recovery: opened a second page with `context.newPage()` and set values via `page.evaluate` plus `input`/`change` events without focusing any field, which never opens the menu. Captured as `scripts/duns-lookup-fill.sh`.
