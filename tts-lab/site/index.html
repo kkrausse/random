@@ -23,7 +23,8 @@
   }
   main { max-width: 760px; margin: 0 auto; }
   h1 { font-size: 1.5rem; margin: 0 0 4px; }
-  h2 { font-size: 1.1rem; margin: 32px 0 4px; }
+  h2 { font-size: 1.2rem; margin: 40px 0 4px; padding-top: 20px; border-top: 1px solid var(--line); }
+  h3 { font-size: 1rem; margin: 20px 0 4px; }
   .sub { color: var(--muted); margin: 0 0 12px; font-size: 0.9rem; }
   blockquote {
     margin: 16px 0; padding: 12px 16px; background: var(--panel);
@@ -61,24 +62,40 @@
 <body>
 <main>
   <h1>TTS voice samples</h1>
-  <p class="sub">Same passage through each model, generated locally on diesel2 (RTX 2080 Ti). Listen, then mark one as the default.</p>
-  <blockquote id="passage"></blockquote>
+  <p class="sub">Each passage through the models, generated locally on diesel2 (RTX 2080 Ti). Listen, then mark one as the default.</p>
   <div id="groups"></div>
 </main>
 <footer><div><span id="choice">No default picked yet.</span><button id="copy" hidden>Copy</button></div></footer>
 <script>
-const PASSAGE = "Oh my god, you actually made it! <laugh> I honestly didn't think you'd come. <sigh> It's been a really hard year, and I've missed you more than I know how to say. Wait... <gasp> is that the dog?! Okay, no, you have to stop, that is ridiculous. <chuckle> Anyway. Come inside, before I start crying again.";
-const GROUPS = [
-  { src: "audio/orpheus.json", title: "Orpheus 3B",
-    blurb: "Fixed built-in voices. Emotion comes from the model plus inline tags like <laugh>; the \"plain\" takes have the tags removed." },
-  { src: "audio/chatterbox.json", title: "Chatterbox",
-    blurb: "Voices are cloned from a short reference clip. \"Exaggeration\" is its emotion-intensity dial (0.5 is the default). The Turbo takes are a smaller, faster variant that reads the same inline tags as Orpheus." },
+const TXT = {
+  range: "Oh my god, you actually made it! <laugh> I honestly didn't think you'd come. <sigh> It's been a really hard year, and I've missed you more than I know how to say. Wait... <gasp> is that the dog?! Okay, no, you have to stop, that is ridiculous. <chuckle> Anyway. Come inside, before I start crying again.",
+  excited: "OH MY GOD! OH MY GOD, WE WON! WE ACTUALLY WON!! <gasp> I can't believe it, I CAN'T BELIEVE IT! AAAAAAH! YES! YES!! YEEESSS!!!",
+  angryCaps: "NO! NO, DON'T YOU DARE WALK AWAY FROM ME!! I asked you for ONE thing. ONE THING! And you looked me right in the eye and LIED about it! <groan> GET OUT! I SAID GET OUT!!!",
+  angry: "No. No, don't you dare walk away from me! I asked you for one thing. One thing! And you looked me right in the eye and lied about it. Do you have any idea what you've done? Get out. I said GET OUT!",
+};
+const ORPHEUS = "Fixed built-in voices. Emotion comes from the model plus inline tags like <laugh>; the \"plain\" takes have the tags removed.";
+const CHATTERBOX = "Voices are cloned from a short reference clip. \"Exaggeration\" is its emotion-intensity dial (0.5 is the default). The Turbo takes are a smaller, faster variant that reads inline tags.";
+const SECTIONS = [
+  { title: "Excited, screaming", text: TXT.excited,
+    blurb: "Orpheus has no excitement or volume control, so this pushes it through the text itself (capitals, stacked exclamation marks, stretched vowels) and a hotter sampling temperature (0.6 is the default).",
+    groups: [{ src: "audio/orpheus-intense.json", passage: "excited", title: "Orpheus 3B" }] },
+  { title: "Angry, yelling (shaped text)", text: TXT.angryCaps,
+    blurb: "Same idea applied to the angry passage.",
+    groups: [{ src: "audio/orpheus-intense.json", passage: "angry-caps", title: "Orpheus 3B" }] },
+  { title: "Angry, yelling (normal text)", text: TXT.angry,
+    blurb: "Written normally, to show what each model does without help.",
+    groups: [
+      { src: "audio/orpheus-angry.json", title: "Orpheus 3B", blurb: "No anger tag exists; a <groan> was added after \"lied about it.\"" },
+      { src: "audio/chatterbox-angry.json", title: "Chatterbox", blurb: "Exaggeration raised to 1.2 on some takes; Turbo takes use its [angry] style tag." }] },
+  { title: "Range of emotions", text: TXT.range, blurb: "",
+    groups: [
+      { src: "audio/orpheus.json", title: "Orpheus 3B", blurb: ORPHEUS },
+      { src: "audio/chatterbox.json", title: "Chatterbox", blurb: CHATTERBOX }] },
 ];
 const KEY = "tts-default";
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-document.getElementById("passage").innerHTML =
-  esc(PASSAGE).replace(/&lt;(\w+)&gt;/g, '<span class="tag">&lt;$1&gt;</span>');
+const tagged = t => esc(t).replace(/&lt;(\w+)&gt;/g, '<span class="tag">&lt;$1&gt;</span>');
 
 function readPick() { try { return localStorage.getItem(KEY); } catch { return null; } }
 function showPick(file) {
@@ -91,16 +108,22 @@ function showPick(file) {
 
 async function load() {
   const root = document.getElementById("groups");
-  for (const g of GROUPS) {
+  for (const sx of SECTIONS) {
+   const head = document.createElement("section");
+   head.innerHTML = "<h2>" + esc(sx.title) + "</h2>" + (sx.blurb ? "<p class='sub'>" + esc(sx.blurb) + "</p>" : "") +
+     "<blockquote>" + tagged(sx.text) + "</blockquote>";
+   root.appendChild(head);
+   for (const g of sx.groups) {
     let items = [];
     try { items = await (await fetch(g.src, { cache: "no-store" })).json(); } catch {}
+    if (g.passage) items = items.filter(it => it.passage === g.passage);
     const sec = document.createElement("section");
-    sec.innerHTML = "<h2>" + esc(g.title) + "</h2><p class='sub'>" + esc(g.blurb) + "</p>";
+    sec.innerHTML = "<h3>" + esc(g.title) + "</h3>" + (g.blurb ? "<p class='sub'>" + esc(g.blurb) + "</p>" : "");
     if (!items.length) sec.innerHTML += "<p class='sub'>No samples yet.</p>";
     for (const it of items) {
       const speed = it.duration_s && it.gen_seconds
         ? (it.duration_s / it.gen_seconds).toFixed(1) + "× realtime" : "";
-      const label = [it.model, it.voice, it.variant].filter(Boolean).join(" / ");
+      const label = [it.model, it.voice, it.passage, it.variant].filter(Boolean).join(" / ");
       const card = document.createElement("div");
       card.className = "card";
       card.dataset.file = it.file;
@@ -120,6 +143,7 @@ async function load() {
       sec.appendChild(card);
     }
     root.appendChild(sec);
+   }
   }
   // Only one clip plays at a time.
   document.addEventListener("play", e => {

@@ -1,0 +1,38 @@
+[
+  {
+    "file": "orpheus-tara-angry.mp3",
+    "model": "orpheus",
+    "voice": "tara",
+    "variant": "wording only, plus <groan>",
+    "duration_s": 19.54,
+    "gen_seconds": 18.96,
+    "notes": ""
+  },
+  {
+    "file": "orpheus-leah-angry.mp3",
+    "model": "orpheus",
+    "voice": "leah",
+    "variant": "wording only, plus <groan>",
+    "duration_s": 16.64,
+    "gen_seconds": 16.53,
+    "notes": ""
+  },
+  {
+    "file": "orpheus-leo-angry.mp3",
+    "model": "orpheus",
+    "voice": "leo",
+    "variant": "wording only, plus <groan>",
+    "duration_s": 11.61,
+    "gen_seconds": 10.84,
+    "notes": ""
+  },
+  {
+    "file": "orpheus-dan-angry.mp3",
+    "model": "orpheus",
+    "voice": "dan",
+    "variant": "wording only, plus <groan>",
+    "duration_s": 15.45,
+    "gen_seconds": 14.48,
+    "notes": ""
+  }
+]

@@ -1,0 +1,65 @@
+[
+  {
+    "file": "chatterbox-default-angry-ex075.mp3",
+    "model": "chatterbox",
+    "voice": "built-in default",
+    "variant": "exaggeration 0.75",
+    "duration_s": 9.32,
+    "gen_seconds": 5.12,
+    "notes": ""
+  },
+  {
+    "file": "chatterbox-default-angry-ex120.mp3",
+    "model": "chatterbox",
+    "voice": "built-in default",
+    "variant": "exaggeration 1.2",
+    "duration_s": 8.12,
+    "gen_seconds": 4.65,
+    "notes": ""
+  },
+  {
+    "file": "chatterbox-libri174m-angry-ex075.mp3",
+    "model": "chatterbox",
+    "voice": "libri174m",
+    "variant": "exaggeration 0.75",
+    "duration_s": 12.12,
+    "gen_seconds": 7.38,
+    "notes": ""
+  },
+  {
+    "file": "chatterbox-libri174m-angry-ex120.mp3",
+    "model": "chatterbox",
+    "voice": "libri174m",
+    "variant": "exaggeration 1.2",
+    "duration_s": 12.68,
+    "gen_seconds": 7.6,
+    "notes": ""
+  },
+  {
+    "file": "chatterbox-libri84f-angry-ex120.mp3",
+    "model": "chatterbox",
+    "voice": "libri84f",
+    "variant": "exaggeration 1.2",
+    "duration_s": 10.6,
+    "gen_seconds": 6.17,
+    "notes": ""
+  },
+  {
+    "file": "chatterbox-turbo-default-angry.mp3",
+    "model": "chatterbox-turbo",
+    "voice": "built-in default",
+    "variant": "[angry] tags",
+    "duration_s": 17.68,
+    "gen_seconds": 4.83,
+    "notes": ""
+  },
+  {
+    "file": "chatterbox-turbo-libri3000m-angry.mp3",
+    "model": "chatterbox-turbo",
+    "voice": "libri3000m",
+    "variant": "[angry] tags",
+    "duration_s": 17.76,
+    "gen_seconds": 5.19,
+    "notes": ""
+  }
+]

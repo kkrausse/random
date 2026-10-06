@@ -1,0 +1,102 @@
+[
+  {
+    "file": "orpheus-tara-excited-t06.mp3",
+    "model": "orpheus",
+    "voice": "tara",
+    "passage": "excited",
+    "variant": "temperature 0.6",
+    "duration_s": 16.98,
+    "gen_seconds": 16.15,
+    "notes": ""
+  },
+  {
+    "file": "orpheus-tara-excited-t09.mp3",
+    "model": "orpheus",
+    "voice": "tara",
+    "passage": "excited",
+    "variant": "temperature 0.9",
+    "duration_s": 12.2,
+    "gen_seconds": 12.35,
+    "notes": ""
+  },
+  {
+    "file": "orpheus-leah-excited-t09.mp3",
+    "model": "orpheus",
+    "voice": "leah",
+    "passage": "excited",
+    "variant": "temperature 0.9",
+    "duration_s": 13.23,
+    "gen_seconds": 13.57,
+    "notes": ""
+  },
+  {
+    "file": "orpheus-zoe-excited-t09.mp3",
+    "model": "orpheus",
+    "voice": "zoe",
+    "passage": "excited",
+    "variant": "temperature 0.9",
+    "duration_s": 11.61,
+    "gen_seconds": 11.3,
+    "notes": ""
+  },
+  {
+    "file": "orpheus-leo-excited-t06.mp3",
+    "model": "orpheus",
+    "voice": "leo",
+    "passage": "excited",
+    "variant": "temperature 0.6",
+    "duration_s": 12.37,
+    "gen_seconds": 11.59,
+    "notes": ""
+  },
+  {
+    "file": "orpheus-leo-excited-t09.mp3",
+    "model": "orpheus",
+    "voice": "leo",
+    "passage": "excited",
+    "variant": "temperature 0.9",
+    "duration_s": 10.84,
+    "gen_seconds": 10.3,
+    "notes": ""
+  },
+  {
+    "file": "orpheus-dan-excited-t09.mp3",
+    "model": "orpheus",
+    "voice": "dan",
+    "passage": "excited",
+    "variant": "temperature 0.9",
+    "duration_s": 11.95,
+    "gen_seconds": 11.27,
+    "notes": ""
+  },
+  {
+    "file": "orpheus-tara-angry-caps-t09.mp3",
+    "model": "orpheus",
+    "voice": "tara",
+    "passage": "angry-caps",
+    "variant": "temperature 0.9",
+    "duration_s": 15.1,
+    "gen_seconds": 15.52,
+    "notes": ""
+  },
+  {
+    "file": "orpheus-leo-angry-caps-t09.mp3",
+    "model": "orpheus",
+    "voice": "leo",
+    "passage": "angry-caps",
+    "variant": "temperature 0.9",
+    "duration_s": 12.63,
+    "gen_seconds": 11.78,
+    "notes": ""
+  },
+  {
+    "file": "orpheus-dan-angry-caps-t09.mp3",
+    "model": "orpheus",
+    "voice": "dan",
+    "passage": "angry-caps",
+    "variant": "temperature 0.9",
+    "duration_s": 12.8,
+    "gen_seconds": 12.35,
+    "notes": ""
+  }
+]
