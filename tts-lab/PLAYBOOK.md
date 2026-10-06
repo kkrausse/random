@@ -85,4 +85,4 @@ Orpheus has no emotion or volume setting. Delivery follows the text:
 
 - Calm (Piper): https://kkrausse.com/artifacts/gromen-bondfire-continuous-20261005/
 - Intense (Orpheus): https://kkrausse.com/artifacts/gromen-bondfire-intense-20261006/
-- Gromen in the first person: https://raspberrypi.guineafowl-truck.ts.net/artifacts/gromen-bondfire-certainty-20261006/ (private, Tailscale only)
+- Gromen in the first person: https://kkrausse.com/artifacts/gromen-bondfire-certainty-20261006/

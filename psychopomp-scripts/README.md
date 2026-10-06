@@ -108,7 +108,7 @@ build. This is the version to keep editing.
   `/home/kkrausse/devfs/repos/kitlangton/psychopomp/.claude/worktrees/gromen-certainty`.
   Not merged into `main`. Exported as `patches/0004-*.patch`.
 - Delivery files: `/home/kkrausse/devfs/repos/kkrausse/reports/gromen-bondfire-certainty-20261006/`
-- Published privately: https://raspberrypi.guineafowl-truck.ts.net/artifacts/gromen-bondfire-certainty-20261006/
+- Published page: https://kkrausse.com/artifacts/gromen-bondfire-certainty-20261006/
 
 Edit `narration/script.json` or `src/main.rs`, then from that worktree:
 
