@@ -67,3 +67,56 @@ uv pip install --python .venv/bin/python piper-tts==1.8.0 onnxruntime==1.23.2
 Large local voice weights and `.venv/` are excluded through `.git/info/exclude`.
 Keep the two model files with this workspace or obtain the same Lessac medium
 voice again before regenerating narration.
+
+## Intense narration version (2026-10-06)
+
+`scenes/gromen-intense/` re-voices the continuous film with Orpheus 3B (voice
+dan, temperature 0.9) from `kkrausse/random/tts-lab`, building from level to
+shouting. It reuses the continuous scene's choreography and only swaps the
+narration and timing.
+
+- Commit `ce60df7` on branch `gromen-intense`, in the worktree
+  `/home/kkrausse/devfs/repos/kitlangton/psychopomp/.claude/worktrees/gromen-intense`.
+  Not merged into the checkout's `main`. Exported as `patches/0003-*.patch`.
+- Delivery files: `/home/kkrausse/devfs/repos/kkrausse/reports/gromen-bondfire-intense-20261006/`
+- Published page: https://kkrausse.com/artifacts/gromen-bondfire-intense-20261006/
+
+To change the performance, edit `narration/script.json` (`say` is what is
+spoken, `lead`/`tail` are shouted around a line and cut out, `takes` sets the
+seed per generation), then from that worktree:
+
+```sh
+TTS_LAB_DIR=/home/kkrausse/devfs/repos/kkrausse/random/tts-lab \
+  $TTS_LAB_DIR/orpheus/.venv/bin/python scenes/gromen-intense/voice.py
+cargo +1.95.0 run -p psychopomp-gromen-intense
+cargo +1.95.0 run --release -- plan render scenes/gromen-intense/continuous.json output/raw.mp4 --theme neutral
+python3 scenes/gromen-intense/package.py   # writes output/gromen-intense-public/
+```
+
+The render takes about five minutes. The default `cargo` on PATH (1.75) is too
+old for this workspace, hence `+1.95.0`. Unused audition takes are kept in
+`scenes/gromen-intense/narration/takes/` (gitignored).
+
+## First-person Gromen version (2026-10-06)
+
+`scenes/gromen-certainty/`: the narrator speaks as Gromen (phrases from the
+Oct 2 Tree Rings issue), bondholders blow up in the finale, China's surplus
+flows into gold. It has its own copy of the choreography and a one-command
+build. This is the version to keep editing.
+
+- Commit `7977c10` on branch `gromen-certainty` (built on `gromen-intense`), worktree
+  `/home/kkrausse/devfs/repos/kitlangton/psychopomp/.claude/worktrees/gromen-certainty`.
+  Not merged into `main`. Exported as `patches/0004-*.patch`.
+- Delivery files: `/home/kkrausse/devfs/repos/kkrausse/reports/gromen-bondfire-certainty-20261006/`
+- Published privately: https://raspberrypi.guineafowl-truck.ts.net/artifacts/gromen-bondfire-certainty-20261006/
+
+Edit `narration/script.json` or `src/main.rs`, then from that worktree:
+
+```sh
+export CARGO_TARGET_DIR=/home/kkrausse/devfs/repos/kitlangton/psychopomp/target
+scenes/gromen-certainty/build.sh --voice --stills      # ~1-3 min check
+scenes/gromen-certainty/build.sh --voice --publish     # ~8 min, private; add --public for kkrausse.com
+```
+
+The full playbook (costs, rules that keep it fast, writing for intensity) is
+`../tts-lab/PLAYBOOK.md`.
