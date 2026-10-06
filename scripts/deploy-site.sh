@@ -10,4 +10,6 @@ rsync -avz --rsync-path="sudo rsync" \
   "$SCRIPT_DIR/site/index.html" \
   "$HOST:$REMOTE_ROOT/index.html"
 
+bash "$SCRIPT_DIR/deploy-theme.sh"
+
 echo "==> Done."

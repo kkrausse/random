@@ -51,6 +51,10 @@ test("default private, explicit public, file landing page, and removal stay sepa
   result = run("--public", source, "notes");
   expect(result.exitCode).toBe(0);
   expect(result.stdout.toString()).toContain("Published (public): https://public.example/artifacts/notes/notes%20%26%20more.txt");
+  expect(readFileSync(join(publicRoot, "artifacts/notes/index.html"), "utf8")).toContain('href="/theme.css"');
+  expect(readFileSync(join(publicRoot, "artifacts/index.html"), "utf8")).toContain('data-site-theme');
+  expect(readFileSync(join(publicRoot, "theme.css"), "utf8")).toContain("color-scheme: dark");
+  expect(readFileSync(join(privateRoot, "artifacts/notes/index.html"), "utf8")).not.toContain('data-site-theme');
   expect(run("--remove", "notes").exitCode).toBe(0);
   expect(readFileSync(join(privateRoot, "index.html"), "utf8")).toContain("No artifacts published yet.");
   expect(readFileSync(join(publicRoot, "artifacts/notes/notes & more.txt"), "utf8")).toBe("hello");
@@ -79,6 +83,22 @@ test("existing HTML pages are preserved", () => {
   writeFileSync(join(source, "index.html"), "my existing page");
   expect(run(source).exitCode).toBe(0);
   expect(readFileSync(join(privateRoot, "artifacts/site/index.html"), "utf8")).toBe("my existing page");
+});
+
+test("public theme preserves content and timestamps and is idempotent", () => {
+  const { dir } = fixture();
+  const page = join(dir, "index.html");
+  writeFileSync(page, '<!doctype html><HEAD><title>Test</title></HEAD><body><p>Keep me</p></body>');
+  utimesSync(page, 100, 200);
+  const theme = () => Bun.spawnSync(["python3", join(import.meta.dir, "theme-pages.py"), dir]);
+  expect(theme().exitCode).toBe(0);
+  const themed = readFileSync(page, "utf8");
+  expect(themed).toContain('<p>Keep me</p>');
+  expect(themed).toContain('data-site-theme');
+  expect(theme().exitCode).toBe(0);
+  expect(readFileSync(page, "utf8")).toBe(themed);
+  const timestamp = Bun.spawnSync(["python3", "-c", "import os,sys; print(os.stat(sys.argv[1]).st_mtime)", page]);
+  expect(timestamp.stdout.toString().trim()).toBe("200.0");
 });
 
 test("index sorts by publish timestamp with source-mtime fallback and deterministic ties", () => {

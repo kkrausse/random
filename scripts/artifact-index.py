@@ -24,6 +24,7 @@ def render(root, visibility):
         items.append(f'<li><a href="/artifacts/{name}/">{html.escape(name)}</a>'
                      f'<time datetime="{date.isoformat()}">{date:%Y-%m-%d %H:%M UTC}</time></li>')
     listing = '<ul>' + '\n'.join(items) + '</ul>' if items else '<p>No artifacts published yet.</p>'
+    theme = '<link rel="stylesheet" href="/theme.css" data-site-theme>' if visibility == 'public' else ''
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -32,7 +33,7 @@ body {{ max-width: 42rem; margin: 3rem auto; padding: 0 1.25rem; font: 1rem/1.5 
 h1 {{ font-size: 1.6rem; }} ul {{ list-style: none; padding: 0; }}
 li {{ padding: .85rem 0; border-bottom: 1px solid #ddd; overflow-wrap: anywhere; }}
 time {{ display: block; font-size: .8rem; color: #666; }}
-</style></head><body><main><h1>{title}</h1>
+</style>{theme}</head><body><main><h1>{title}</h1>
 <p>Newest published first. Republishing moves an artifact to the top.</p>
 {listing}</main></body></html>'''
 

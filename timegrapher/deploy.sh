@@ -17,4 +17,6 @@ rsync -avz --delete --rsync-path="sudo rsync" \
 
 ssh "$HOST" "sudo chmod -R a+rX '$REMOTE_DIR'"
 
+bash "$SCRIPT_DIR/../scripts/deploy-theme.sh"
+
 echo "==> Done."

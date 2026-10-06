@@ -124,6 +124,8 @@ rsync -avz --rsync-path="sudo rsync" "$WORK_DIR/index.html" "$HOST:$REMOTE_ROOT/
 if [[ "$VISIBILITY" == private ]]; then
   # The private homepage and /artifacts/ share the same generated shelf.
   rsync -avz --rsync-path="sudo rsync" "$WORK_DIR/index.html" "$HOST:$WEB_ROOT/index.html"
+else
+  bash "$SCRIPT_DIR/deploy-theme.sh"
 fi
 if [[ -z "$SOURCE_DIR" ]]; then
   echo "Index: ${BASE_URL%/}/artifacts/"

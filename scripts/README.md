@@ -71,6 +71,12 @@ Deploy the homepage at `kkrausse.com`:
 ./deploy-site.sh
 ```
 
+The public site uses the shared dark, monospace theme in `site/theme.css`.
+Homepage, public-artifact, mortgage-calculator, and timegrapher deployments
+refresh it automatically. To update only the theme, run `bash deploy-theme.sh`.
+The theme adds a stylesheet link to published HTML, preserving its content,
+media, and timestamps; source artifact files and private pages are unchanged.
+
 Deploy any generated web artifact **privately** under `/artifacts/<directory-name>/`:
 
 ```sh
@@ -80,7 +86,7 @@ Deploy any generated web artifact **privately** under `/artifacts/<directory-nam
 The artifact can be **any file or folder**; HTML is not required. Single files
 return a direct link to the original file. Folders without `index.html` get
 generated file listings (including nested folders), without modifying the source.
-Existing HTML pages are preserved. Browsers preview supported formats and download
+Existing HTML content is preserved (public copies receive the shared theme). Browsers preview supported formats and download
 others. An optional second argument overrides its URL
 slug. Single files with spaces in their names need an explicit valid slug.
 Each deployment prints the final URL and rebuilds the artifact index, **newest

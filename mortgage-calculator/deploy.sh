@@ -13,4 +13,6 @@ ssh "$HOST" "sudo mkdir -p '$REMOTE_DIR'"
 echo "==> Syncing dist/ to $HOST:$REMOTE_DIR..."
 rsync -avz --delete --rsync-path="sudo rsync" dist/ "$HOST:$REMOTE_DIR/"
 
+bash "$(dirname -- "${BASH_SOURCE[0]}")/../scripts/deploy-theme.sh"
+
 echo "==> Done."
