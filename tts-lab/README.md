@@ -10,6 +10,9 @@ goal. Two models are set up, each with a reusable `generate.py`:
 
 Measured on an RTX 2080 Ti (11 GB).
 
+Making or editing a narrated video with this? Read [PLAYBOOK.md](PLAYBOOK.md) first:
+it is the fast path from a script edit to a published link.
+
 ## Layout
 
 Code lives here. The heavy parts (Python environments, model weights, the
