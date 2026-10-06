@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Speak text with the default voice. See say.py for options.
+here=$(cd "$(dirname "$0")" && pwd)
+export TTS_LAB_HOME=${TTS_LAB_HOME:-$here}
+exec "$TTS_LAB_HOME/orpheus/.venv/bin/python" "$here/say.py" "$@"

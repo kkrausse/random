@@ -1,8 +1,8 @@
-.venv/
+.venv
 .uv-cache/
 .uv-python/
-models/
-hf-cache/
+models
+hf-cache
 __pycache__/
 *.gguf
 *.wav

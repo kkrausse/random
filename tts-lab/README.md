@@ -50,6 +50,21 @@ Chatterbox downloads its own on first run.
 
 ## Use
 
+`./say` speaks text with the chosen default (Orpheus, voice dan, temperature
+0.9). Long text is split by sentence and joined, so it works for voiceovers:
+
+```sh
+./say "GET OUT! I said GET OUT!!" out.mp3
+./say --file script.txt voiceover.mp3
+./say --voice tara --temperature 0.6 "Calmer line. <sigh>" out.mp3
+```
+
+Orpheus has no emotion or volume setting. Intensity comes from the text
+(capitals, stacked exclamation marks, stretched vowels) and from temperature;
+0.9 is livelier than the 0.6 default but garbles some voices (tara did).
+
+The per-model scripts underneath:
+
 ```sh
 $TTS_LAB_HOME/orpheus/.venv/bin/python orpheus/generate.py \
   --voice tara --text "You made it! <laugh> Come inside." --out out.mp3
