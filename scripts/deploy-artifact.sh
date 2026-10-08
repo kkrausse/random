@@ -3,13 +3,19 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 VISIBILITY=private
+TUNNEL=0
 if [[ "${1:-}" == --private || "${1:-}" == --public ]]; then
   VISIBILITY="${1#--}"
   shift
+elif [[ "${1:-}" == --tunnel ]]; then
+  # Same public shelf as --public, linked through the opentunnel hostname.
+  VISIBILITY=public
+  TUNNEL=1
+  shift
 fi
 if [[ $# -lt 1 || $# -gt 2 ]]; then
-  echo "Usage: $0 [--private|--public] <artifact-directory-or-file> [url-slug]" >&2
-  echo "       $0 [--private|--public] --remove <url-slug>" >&2
+  echo "Usage: $0 [--private|--public|--tunnel] <artifact-directory-or-file> [url-slug]" >&2
+  echo "       $0 [--private|--public|--tunnel] --remove <url-slug>" >&2
   exit 1
 fi
 
@@ -24,6 +30,14 @@ if [[ "$VISIBILITY" == private ]]; then
 else
   WEB_ROOT="${DEPLOY_WEB_ROOT:-/var/www/html}"
   BASE_URL="${DEPLOY_PUBLIC_URL:-https://kkrausse.com}"
+  if [[ "$TUNNEL" == 1 ]]; then
+    BASE_URL="${DEPLOY_TUNNEL_URL:-}"
+    if [[ -z "$BASE_URL" ]]; then
+      # Hostname assigned by setup-opentunnel.sh; it lives with the tunnel identity.
+      TUNNEL_HOST="$(ssh "$HOST" 'cat "${XDG_DATA_HOME:-$HOME/.local/share}/opentunnel/default/tunnel.json"' | python3 -c 'import json,sys; print(json.load(sys.stdin)["hostname"])')"
+      BASE_URL="https://$TUNNEL_HOST"
+    fi
+  fi
 fi
 # Paths are interpolated into remote shell commands: only allow safe absolute paths.
 if [[ ! "$WEB_ROOT" =~ ^/[a-zA-Z0-9/._-]+$ || "$WEB_ROOT" == *'/../'* || "$WEB_ROOT" == */.. ]]; then
