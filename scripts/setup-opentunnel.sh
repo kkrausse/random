@@ -1,27 +1,32 @@
 #!/usr/bin/env bash
-# One-time (re-runnable) setup of the opentunnel front door for public
-# artifacts: a loopback-only nginx server on the deploy host, and an opentunnel
-# route pointing its hostname at that server. Prints the public URL.
+# One-time (re-runnable) setup of the opentunnel shelf on this machine: a
+# loopback-only static server for the tunnel artifacts, run as a systemd user
+# service, and an opentunnel route pointing its hostname at that server.
+# Re-run after moving this checkout: the service runs tunnel-server.ts in place.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-HOST="${DEPLOY_HOST:-lrpi}"
+export PATH="$HOME/.local/bin:$PATH"
+UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 
-echo "==> Installing nginx server for the tunnel on $HOST..."
-rsync -avz --rsync-path="sudo rsync" --chmod=F644 \
-  "$SCRIPT_DIR/site/opentunnel-artifacts.nginx.conf" \
-  "$HOST:/etc/nginx/conf.d/opentunnel-artifacts.conf"
-ssh "$HOST" 'sudo nginx -t && sudo systemctl reload nginx'
+echo "==> Installing tunnel-artifacts.service..."
+mkdir -p "$UNIT_DIR"
+cat > "$UNIT_DIR/tunnel-artifacts.service" <<UNIT
+[Unit]
+Description=Static server for opentunnel artifacts (127.0.0.1:8081)
+
+[Service]
+ExecStart=$(command -v bun) run $SCRIPT_DIR/tunnel-server.ts
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+UNIT
+systemctl --user daemon-reload
+systemctl --user enable tunnel-artifacts.service
+systemctl --user restart tunnel-artifacts.service
 
 echo "==> Installing opentunnel and routing it to 127.0.0.1:8081..."
-ssh "$HOST" 'bash -s' <<'REMOTE'
-set -euo pipefail
-export PATH="$HOME/.local/bin:$PATH"
 command -v opentunnel >/dev/null || curl -fsSL https://opentunnel.xyz/install | sh
-# The service is a systemd user unit; linger keeps it running across reboots
-# without anyone logged in.
-sudo loginctl enable-linger "$(id -un)"
-export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 opentunnel route add @ 127.0.0.1:8081
 opentunnel status
-REMOTE

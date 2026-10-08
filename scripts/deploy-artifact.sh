@@ -3,14 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 VISIBILITY=private
-TUNNEL=0
-if [[ "${1:-}" == --private || "${1:-}" == --public ]]; then
+if [[ "${1:-}" == --private || "${1:-}" == --public || "${1:-}" == --tunnel ]]; then
   VISIBILITY="${1#--}"
-  shift
-elif [[ "${1:-}" == --tunnel ]]; then
-  # Same public shelf as --public, linked through the opentunnel hostname.
-  VISIBILITY=public
-  TUNNEL=1
   shift
 fi
 if [[ $# -lt 1 || $# -gt 2 ]]; then
@@ -20,7 +14,26 @@ if [[ $# -lt 1 || $# -gt 2 ]]; then
 fi
 
 HOST="${DEPLOY_HOST:-lrpi}"
-if [[ "$VISIBILITY" == private ]]; then
+# The private and public shelves live on $HOST; the tunnel shelf is served from
+# this machine (see setup-opentunnel.sh), so its "remote" commands run locally.
+TARGET="$HOST"
+DEST="$HOST:"
+SUDO="sudo "
+RSYNC_REMOTE=(--rsync-path="sudo rsync")
+remote() { ssh "$HOST" "$1"; }
+if [[ "$VISIBILITY" == tunnel ]]; then
+  WEB_ROOT="${DEPLOY_TUNNEL_ROOT:-$HOME/devfs/tunnel-artifacts}"
+  BASE_URL="${DEPLOY_TUNNEL_URL:-}"
+  if [[ -z "$BASE_URL" ]]; then
+    BASE_URL="https://$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["hostname"])' \
+      "${XDG_DATA_HOME:-$HOME/.local/share}/opentunnel/default/tunnel.json")"
+  fi
+  TARGET=localhost
+  DEST=""
+  SUDO=""
+  RSYNC_REMOTE=()
+  remote() { bash -c "$1"; }
+elif [[ "$VISIBILITY" == private ]]; then
   WEB_ROOT="${DEPLOY_PRIVATE_ROOT:-/srv/private-artifacts}"
   BASE_URL="${DEPLOY_PRIVATE_URL:-}"
   if [[ -z "$BASE_URL" ]]; then
@@ -30,14 +43,6 @@ if [[ "$VISIBILITY" == private ]]; then
 else
   WEB_ROOT="${DEPLOY_WEB_ROOT:-/var/www/html}"
   BASE_URL="${DEPLOY_PUBLIC_URL:-https://kkrausse.com}"
-  if [[ "$TUNNEL" == 1 ]]; then
-    BASE_URL="${DEPLOY_TUNNEL_URL:-}"
-    if [[ -z "$BASE_URL" ]]; then
-      # Hostname assigned by setup-opentunnel.sh; it lives with the tunnel identity.
-      TUNNEL_HOST="$(ssh "$HOST" 'cat "${XDG_DATA_HOME:-$HOME/.local/share}/opentunnel/default/tunnel.json"' | python3 -c 'import json,sys; print(json.load(sys.stdin)["hostname"])')"
-      BASE_URL="https://$TUNNEL_HOST"
-    fi
-  fi
 fi
 # Paths are interpolated into remote shell commands: only allow safe absolute paths.
 if [[ ! "$WEB_ROOT" =~ ^/[a-zA-Z0-9/._-]+$ || "$WEB_ROOT" == *'/../'* || "$WEB_ROOT" == */.. ]]; then
@@ -120,25 +125,25 @@ if [[ ! "$SLUG" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
 fi
 
 if [[ -z "$SOURCE_DIR" ]]; then
-  echo "==> Removing $VISIBILITY artifact from $HOST:$REMOTE_ROOT/$SLUG..."
-  ssh "$HOST" "sudo rm -rf -- '$REMOTE_ROOT/$SLUG'"
+  echo "==> Removing $VISIBILITY artifact from $TARGET:$REMOTE_ROOT/$SLUG..."
+  remote "${SUDO}rm -rf -- '$REMOTE_ROOT/$SLUG'"
 else
-  echo "==> Deploying $VISIBILITY artifact to $HOST:$REMOTE_ROOT/$SLUG..."
-  ssh "$HOST" "sudo mkdir -p '$REMOTE_ROOT/$SLUG'"
-  rsync -avz --delete --rsync-path="sudo rsync" \
-    "$SOURCE_DIR/" "$HOST:$REMOTE_ROOT/$SLUG/"
+  echo "==> Deploying $VISIBILITY artifact to $TARGET:$REMOTE_ROOT/$SLUG..."
+  remote "${SUDO}mkdir -p '$REMOTE_ROOT/$SLUG'"
+  rsync -avz --delete "${RSYNC_REMOTE[@]}" \
+    "$SOURCE_DIR/" "$DEST$REMOTE_ROOT/$SLUG/"
   # rsync preserves source mtimes; record server publish time separately.
-  ssh "$HOST" "sudo chmod -R u=rwX,go=rX '$REMOTE_ROOT/$SLUG' && sudo touch '$REMOTE_ROOT/$SLUG/.published-at'"
+  remote "${SUDO}chmod -R u=rwX,go=rX '$REMOTE_ROOT/$SLUG' && ${SUDO}touch '$REMOTE_ROOT/$SLUG/.published-at'"
 fi
 
-ssh "$HOST" "python3 - '$REMOTE_ROOT' '$VISIBILITY'" \
+remote "mkdir -p '$REMOTE_ROOT' 2>/dev/null; python3 - '$REMOTE_ROOT' '$VISIBILITY'" \
   < "$SCRIPT_DIR/artifact-index.py" > "$WORK_DIR/index.html"
 chmod 0644 "$WORK_DIR/index.html"
-rsync -avz --rsync-path="sudo rsync" "$WORK_DIR/index.html" "$HOST:$REMOTE_ROOT/index.html"
+rsync -avz "${RSYNC_REMOTE[@]}" "$WORK_DIR/index.html" "$DEST$REMOTE_ROOT/index.html"
 if [[ "$VISIBILITY" == private ]]; then
   # The private homepage and /artifacts/ share the same generated shelf.
-  rsync -avz --rsync-path="sudo rsync" "$WORK_DIR/index.html" "$HOST:$WEB_ROOT/index.html"
-else
+  rsync -avz "${RSYNC_REMOTE[@]}" "$WORK_DIR/index.html" "$DEST$WEB_ROOT/index.html"
+elif [[ "$VISIBILITY" == public ]]; then
   bash "$SCRIPT_DIR/deploy-theme.sh"
 fi
 if [[ -z "$SOURCE_DIR" ]]; then

@@ -102,19 +102,22 @@ mtime. Published dates are displayed in UTC.
 Private shelf: `https://<pi-hostname>.<tailnet>.ts.net/`.
 Public shelf: <https://kkrausse.com/artifacts/>.
 
-`--tunnel` publishes to the same public shelf but prints a link through
-[opentunnel](https://opentunnel.xyz) instead of kkrausse.com, so the relay in
-front of the Pi cannot read the traffic:
+`--tunnel` publishes to a third shelf that is served from this machine (not
+the Pi) through [opentunnel](https://opentunnel.xyz). TLS terminates here, so
+the relay in front cannot read the traffic:
 
 ```bash
 ./deploy-artifact.sh --tunnel output/report
+./deploy-artifact.sh --tunnel --remove report
 ```
 
-Run `./setup-opentunnel.sh` once first. It installs a loopback-only nginx
-server on the Pi (`site/opentunnel-artifacts.nginx.conf`, serving only
-`/artifacts/` and `/theme.css`), installs the `opentunnel` CLI there, and routes
-the tunnel hostname to it. The hostname is public (it appears in certificate
-transparency logs) and is lost for good if the tunnel is deleted.
+Run `./setup-opentunnel.sh` once first. It installs the `opentunnel` CLI,
+starts `tunnel-server.ts` as the `tunnel-artifacts` systemd user service
+(loopback only, serving just `~/devfs/tunnel-artifacts/artifacts/`), and routes
+the tunnel hostname to it. Links only work while this machine is up. The
+hostname is public (it appears in certificate transparency logs), the shelf has
+a listing at `/artifacts/`, and the hostname is lost for good if the tunnel is
+deleted.
 
 Remove a deployed artifact and update the listing with:
 
