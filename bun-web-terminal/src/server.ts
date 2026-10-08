@@ -16,7 +16,6 @@ const host = process.env.HOST ?? "127.0.0.1";
 const port = parsePort(process.env.PORT ?? "4784");
 // Keep existing sign-ins when moving the default listener from 3000 to 4784.
 const credentialPort = port === 4784 ? 3000 : port;
-const attachmentLimit = 200 * 1024 * 1024;
 const dist = process.env.TERMINAL_DIST ?? join(import.meta.dir, "..", "dist");
 const defaultTerminalCwd = join(import.meta.dir, "..", "..");
 const attachmentRoot = join(tmpdir(), "bun-web-terminal");
@@ -40,6 +39,8 @@ process.once("SIGINT", () => { void shutdown(); });
 const server = Bun.serve<SocketData>({
   hostname: host,
   port,
+  // Attachments have no size limit; Bun's default would turn away anything over 128 MB.
+  maxRequestBodySize: Number.MAX_SAFE_INTEGER,
   async fetch(request, server) {
     const denied = await auth.guard(request, server.requestIP(request)?.address);
     if (denied) return denied;
@@ -162,19 +163,27 @@ const server = Bun.serve<SocketData>({
 
 void printStartupLink(host, server.port!, auth.secret, publicUrl);
 
+// Written as it arrives, so a large video is never held in memory.
 async function saveAttachment(request: Request, session: Session) {
-  const declaredSize = Number(request.headers.get("content-length"));
-  if (Number.isFinite(declaredSize) && declaredSize > attachmentLimit) {
-    return new Response("Attachment exceeds 200 MiB", { status: 413 });
-  }
-
-  const bytes = new Uint8Array(await request.arrayBuffer());
-  if (bytes.byteLength > attachmentLimit) return new Response("Attachment exceeds 200 MiB", { status: 413 });
   const directory = attachmentDirectory(session);
-  const path = join(directory, attachmentName(request.headers.get("x-filename"), bytes));
   await mkdir(directory, { recursive: true });
-  await Bun.write(path, bytes);
-  console.log(`attachment saved: ${path} (${bytes.byteLength} bytes)`);
+  const reader = (request.body ?? new Blob().stream()).getReader();
+  const first = await reader.read();
+  const path = join(directory, attachmentName(request.headers.get("x-filename"), first.value ?? new Uint8Array()));
+  const writer = Bun.file(path).writer();
+  let size = 0;
+  try {
+    for (let chunk = first; !chunk.done; chunk = await reader.read()) {
+      size += chunk.value.byteLength;
+      writer.write(chunk.value);
+      await writer.flush();
+    }
+    await writer.end();
+  } catch (error) {
+    await rm(path, { force: true });
+    throw error;
+  }
+  console.log(`attachment saved: ${path} (${size} bytes)`);
   return Response.json({ path });
 }
 
