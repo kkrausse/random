@@ -101,6 +101,7 @@ mtime. Published dates are displayed in UTC.
 
 Private shelf: `https://<pi-hostname>.<tailnet>.ts.net/`.
 Public shelf: <https://kkrausse.com/artifacts/>.
+Tunnel shelf: <https://zu4tgfuxau5n.opentunnel.xyz/artifacts/> (served from diesel2, set up 2026-10-08).
 
 `--tunnel` publishes to a third shelf that is served from this machine (not
 the Pi) through [opentunnel](https://opentunnel.xyz). TLS terminates here, so
