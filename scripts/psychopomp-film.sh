@@ -38,11 +38,13 @@ if [[ $# -eq 0 || "$1" == -h || "$1" == --help ]]; then
   sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
   echo
   echo "Scenes with a build.sh:"
-  # A scene present in several worktrees is listed once, at the copy that runs.
+  # A scene present in several worktrees is listed once, at the copy that runs:
+  # the worktree named after it if there is one.
   declare -A found=()
   for root in "${roots[@]}"; do
     for build in "$root"/scenes/*/build.sh; do
-      [[ -x "$build" ]] && found["$(basename -- "$(dirname -- "$build")")"]="$root"
+      name="$(basename -- "$(dirname -- "$build")")"
+      [[ -x "$build" && "$(basename -- "${found[$name]:-}")" != "$name" ]] && found["$name"]="$root"
     done
   done
   for name in $(printf '%s\n' "${!found[@]}" | sort); do
@@ -53,10 +55,13 @@ fi
 
 scene="$1"
 shift
-# The last match wins, so a worktree's copy is preferred over one merged to main.
+# A worktree named after the scene is where that scene is edited, so it wins;
+# otherwise the last match, preferring any worktree over the main checkout.
 build=""
 for root in "${roots[@]}"; do
-  [[ -x "$root/scenes/$scene/build.sh" ]] && build="$root/scenes/$scene/build.sh"
+  [[ -x "$root/scenes/$scene/build.sh" ]] || continue
+  build="$root/scenes/$scene/build.sh"
+  [[ "$(basename -- "$root")" == "$scene" ]] && break
 done
 [[ -n "$build" ]] || { echo "No scenes/$scene/build.sh in $PSYCHOPOMP_DIR or its worktrees (run without arguments to list)." >&2; exit 1; }
 
