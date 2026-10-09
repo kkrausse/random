@@ -120,3 +120,36 @@ scenes/gromen-certainty/build.sh --voice --publish     # ~8 min, private; add --
 
 The full playbook (costs, rules that keep it fast, writing for intensity) is
 `../tts-lab/PLAYBOOK.md`.
+
+## The Only Exit, from a YouTube video (2026-10-08)
+
+`scenes/gromen-inflate/`: a third-person, AI-narrated summary in our own words
+of Luke Gromen's FFTT Q&A video "Does the Administration believe they can
+inflate US debt to sustainability?" (recorded 2026-10-07,
+https://www.youtube.com/watch?v=INgvg03agP8). Ten cues, about 91 s: the true
+interest yardstick, 2020 to 2022 as proof, the four exits, Japan against the
+USA, the strong-dollar doom loop, gold/silver/bitcoin. This is the scene to
+copy for the next video.
+
+- Commits `4ac0b17` and `bdf0f02` on branch `gromen-inflate` (built on
+  `gromen-certainty`), worktree
+  `/home/kkrausse/devfs/repos/kitlangton/psychopomp/.claude/worktrees/gromen-inflate`.
+  Not merged into `main`. Exported as `patches/0005-*.patch` and `0006-*.patch`.
+- Delivery files: `/home/kkrausse/devfs/repos/kkrausse/reports/gromen-inflate-20261008/`
+- Published page (opentunnel shelf): https://zu4tgfuxau5n.opentunnel.xyz/artifacts/gromen-inflate-20261008/
+- Transcript of the source video (local only, not published):
+  `/home/kkrausse/devfs/repos/kkrausse/research_notes/gromen-2026-10-07-inflate-debt-transcript.txt`
+
+From a link to a published film, using the two scripts in `../scripts/`:
+
+```sh
+../scripts/yt-transcript.ts 'https://www.youtube.com/watch?v=<id>'      # transcript path
+# write narration/script.json and src/main.rs for a new scene, then:
+../scripts/psychopomp-film.sh <scene> --voice --stills                  # check
+../scripts/psychopomp-film.sh <scene> --voice --publish --tunnel        # ship to opentunnel
+```
+
+`build.sh --publish` takes `--private` (default), `--public` or `--tunnel`.
+Keep one Orpheus take under about 30 s of speech: the seven calm lines as a
+single 47 s take lost a sentence near the end on every seed, and splitting it
+in two fixed that.
