@@ -1,0 +1,65 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">
+<title>@@TITLE@@</title>
+<style>
+:root{--bg:#0d0f12;--fg:#e8eaed;--dim:#6b7280;--line:#1e2329;--acc:#7aa2f7}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:18px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:760px;margin:0 auto;padding:24px 16px 96px}
+h1{font-size:1.5rem;line-height:1.25;margin:0 0 4px}.sub{color:var(--dim);font-size:.9rem;margin:0 0 20px}.sub a{color:var(--acc)}
+section{display:grid;grid-template-columns:3.2rem 1fr;gap:12px;padding:18px 0 18px 10px;border-bottom:1px solid var(--line);border-left:3px solid transparent}
+.ts{color:var(--acc);font:.8rem/2.2 ui-monospace,monospace;text-decoration:none;cursor:pointer}
+p{margin:0}.en{color:var(--fg)}.it{margin-top:8px;color:var(--dim);font-style:italic;font-size:.88rem;line-height:1.5}
+body.noit .it{display:none}
+section.on{border-left-color:var(--acc)}
+section.on .en span{opacity:.5}section.on .en span.said{opacity:1}
+section.on .it span.said{color:#c3c8d0}section.on span.now{color:var(--acc)!important;opacity:1!important}
+#bar{position:fixed;left:0;right:0;bottom:0;height:48px;display:flex;align-items:center;gap:14px;padding:0 16px;background:#14171c;border-top:1px solid var(--line);font-size:.85rem;color:var(--dim)}
+#pp{width:34px;height:34px;border-radius:50%;border:0;background:var(--acc);color:#0d0f12;font-size:15px;cursor:pointer}
+#clock{font-family:ui-monospace,monospace;color:var(--fg);min-width:6.5em}
+#bar label{white-space:nowrap}#au{width:2px;height:34px;background:transparent}#rate{background:none;border:1px solid var(--line);border-radius:6px;color:var(--fg);font:inherit;padding:4px 8px;cursor:pointer;min-width:3.6em}#seek{flex:1;min-width:60px;accent-color:var(--acc)}
+@media(max-width:520px){#bar{gap:8px;padding:0 10px}#clock{min-width:0}}
+</style></head><body><main>
+<h1>@@TITLE@@</h1>
+<p class="sub">@@BYLINE@@ · <a href="@@URL@@">YouTube</a><br>English translation on top; raw auto-captions in the original language (uncorrected) faded below. Press play at the bottom for the original audio: the original lights up word by word as it is spoken, the English follows approximately. Tap a timestamp to jump there. Space plays/pauses; ← and → skip 10 seconds.</p>
+@@ROWS@@
+</main>
+<div id="bar"><button id="pp" aria-label="Play">▶</button><video id="au" src="audio.m4a" preload="metadata" playsinline></video><button id="rate" title="Playback speed">1×</button><span id="clock">0:00</span><input type="range" id="seek" min="0" max="@@DUR@@" step="1" value="0" aria-label="Seek"><label><input type="checkbox" id="follow" checked> follow</label><label><input type="checkbox" id="tog" checked> original</label></div>
+<script>
+const secs=[...document.querySelectorAll('section')].map(el=>({el,t:+el.dataset.t,en:[...el.querySelectorAll('.en span')],it:[...el.querySelectorAll('.it span')].map(s=>[+s.dataset.t,s])}));
+let DUR=@@DUR@@;secs.forEach((s,i)=>s.end=i+1<secs.length?secs[i+1].t:DUR);
+let cur=null;const au=document.getElementById('au'),pp=document.getElementById('pp'),seek=document.getElementById('seek');
+const fmt=t=>Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0');
+function mark(spans,n){spans.forEach((s,i)=>{s.classList.toggle('said',i<n);s.classList.toggle('now',i===n-1)})}
+function render(t){
+  document.getElementById('clock').textContent=fmt(t)+' / '+fmt(DUR);
+  if(document.activeElement!==seek)seek.value=t;
+  let s=null;for(const x of secs){if(x.t<=t)s=x;else break}
+  if(s!==cur){
+    if(cur){cur.el.classList.remove('on');mark(cur.en,0);mark(cur.it.map(x=>x[1]),0)}
+    cur=s;if(s){s.el.classList.add('on');if(document.getElementById('follow').checked)s.el.scrollIntoView({block:'center',behavior:'smooth'})}
+  }
+  if(!s)return;
+  mark(s.it.map(x=>x[1]),s.it.filter(x=>x[0]<=t).length);
+  mark(s.en,Math.ceil(s.en.length*Math.min(1,(t-s.t)/(s.end-s.t))));
+}
+au.onloadedmetadata=()=>{DUR=au.duration;seek.max=DUR;secs[secs.length-1].end=DUR;render(au.currentTime)};
+let timer=null;
+au.onplay=()=>{pp.textContent='❚❚';clearInterval(timer);timer=setInterval(()=>render(au.currentTime),100)};
+au.onpause=()=>{pp.textContent='▶';clearInterval(timer)};
+const rate=document.getElementById('rate'),RATES=[1,1.25,1.5,1.75,2];
+rate.onclick=()=>{au.playbackRate=RATES.find(r=>r>au.playbackRate+.01)||1};
+au.onratechange=()=>{rate.textContent=(+au.playbackRate.toFixed(2))+'×'};
+au.onseeked=()=>render(au.currentTime);
+pp.onclick=()=>au.paused?au.play():au.pause();
+seek.oninput=()=>{au.currentTime=+seek.value;render(+seek.value)};seek.onchange=()=>seek.blur();
+document.querySelectorAll('.ts').forEach(a=>a.onclick=e=>{e.preventDefault();au.currentTime=+a.parentNode.dataset.t;au.play()});
+document.getElementById('tog').onchange=e=>document.body.classList.toggle('noit',!e.target.checked);
+document.querySelectorAll('#bar button,#bar input[type=checkbox]').forEach(el=>el.addEventListener('click',()=>el.blur()));
+document.addEventListener('keydown',e=>{
+  if(e.ctrlKey||e.metaKey||e.altKey||/^(INPUT|BUTTON|TEXTAREA|SELECT)$/.test(e.target.tagName))return;
+  if(e.code==='Space'){e.preventDefault();au.paused?au.play():au.pause()}
+  else if(e.code==='ArrowLeft'||e.code==='ArrowRight'){e.preventDefault();au.currentTime=Math.max(0,Math.min(DUR,au.currentTime+(e.code==='ArrowLeft'?-10:10)))}
+});
+const m=location.hash.match(/^#t=(\d+)/);if(m){au.currentTime=+m[1];render(+m[1])}
+// test hook for scripts/check.ts: start muted just before the second passage
+if(location.hash==='#autoplay'){au.currentTime=Math.max(0,secs[1].t-5);au.muted=true;au.play()}
+</script></body></html>
