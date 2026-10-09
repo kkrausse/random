@@ -1,13 +1,15 @@
----
-name: synced-transcript-page
-description: Turn a foreign-language YouTube video into a dark-mode reading page on the opentunnel shelf - English translation on top, faded original captions below, the original audio playing with word-by-word highlighting. Use when asked to download, translate and post a YouTube video as a readable or listenable page.
----
-
 # Synced transcript page
+
+Notes, template and scripts for turning a foreign-language YouTube video into
+a dark-mode reading page on the opentunnel shelf: English translation on top,
+faded original captions below, the original audio playing with word-by-word
+highlighting. Not a skill; read this when asked to do it again.
 
 Output: one page plus `audio.m4a`, published with `deploy-artifact.sh --tunnel`.
 Worked example: https://zu4tgfuxau5n.opentunnel.xyz/artifacts/antirez-automatic-programming/
-(antirez, Italian, 23 min, built 2026-10-08).
+(antirez, Italian, 23 min, built 2026-10-08). Its captions and translation are
+not in this repo; the published `index.html` on the shelf
+(`~/devfs/tunnel-artifacts/artifacts/antirez-automatic-programming/`) holds both.
 
 ## What the page is
 
@@ -28,7 +30,7 @@ Things the user rejected, do not bring back:
 
 ## Steps
 
-All paths below are relative to this skill directory. Use a work dir outside
+All paths below are relative to this directory. Use a work dir outside
 the repo (the job tmp dir); captions, translation and audio are per-video and
 are not committed.
 
@@ -58,7 +60,7 @@ are not committed.
    bun scripts/build.ts page --captions <work>/captions.json3 --en <work>/en.json \
      --title "<English title>" --byline "<Author> · <original title>" \
      --url "https://www.youtube.com/watch?v=<id>" --lang <lang> --out <work>/site
-   ../../scripts/deploy-artifact.sh --tunnel <work>/site <slug>
+   ../scripts/deploy-artifact.sh --tunnel <work>/site <slug>
    bun scripts/check.ts "<published-url>#autoplay" <work>/shot.png
    ```
 
