@@ -4,6 +4,38 @@ These scripts use [Bun](https://bun.sh/). Install dependencies with `bun install
 
 Local audio transcription: `./transcribe-local/transcribe-local /path/to/audio.mp3`
 
+## YouTube video to narrated explainer film
+
+Two scripts cover the path from a YouTube link to a published
+[psychopomp](https://github.com/kitlangton/psychopomp) film.
+
+```sh
+./yt-transcript.ts 'https://www.youtube.com/watch?v=INgvg03agP8'      # prints the transcript path
+./psychopomp-film.sh                                                   # list buildable scenes
+./psychopomp-film.sh gromen-inflate --voice --stills                   # quick check: voice + one PNG per cue
+./psychopomp-film.sh gromen-inflate --voice --publish --tunnel         # render and publish on the opentunnel shelf
+```
+
+`yt-transcript.ts` pulls YouTube's captions through `uvx yt-dlp` (no install, no
+audio download) and writes a timestamped text file, by default to
+`output/transcripts/<video-id>.txt`. It prefers the `en-orig` track; the plain
+`en` track is sometimes a re-translation with words run together.
+
+`psychopomp-film.sh <scene> [flags]` runs `scenes/<scene>/build.sh` from the
+permanent psychopomp checkout at `~/devfs/repos/kitlangton/psychopomp`, looking
+through its git worktrees as well, with one shared cargo build cache. The flags
+are the scene's own: `--voice`, `--stills`, `--publish`, and with `--publish`
+one of `--tunnel` or `--public` (private Tailscale shelf otherwise).
+
+The step in between is writing: read the transcript, write a short narration
+in your own words (about ten lines, 75 to 90 seconds) into
+`scenes/<scene>/narration/script.json`, and draw the diagram in
+`scenes/<scene>/src/main.rs` with every beat keyed to a cue id. Start a new
+film by copying `scenes/gromen-inflate/` on a new worktree branch.
+`../psychopomp-scripts/README.md` records where each film lives and
+`../tts-lab/PLAYBOOK.md` has the rules that keep an edit-to-published cycle at
+about ten minutes.
+
 ## PDF to responsive web page
 
 ### Convert and publish in one command
