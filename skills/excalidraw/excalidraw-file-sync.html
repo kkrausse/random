@@ -220,6 +220,7 @@
   .fileitem:hover { background: var(--surface-2); border-color: var(--line); }
   .fileitem .p { color: var(--muted); }
   .fileitem .n { color: var(--ink); font-weight: 500; }
+  .fileitem .t { color: var(--muted); margin-left: auto; padding-left: 12px; white-space: nowrap; }
   .fileitem.current { background: var(--accent-soft); border-color: var(--accent); }
   .fileitem.current .n, .fileitem.current .p { color: var(--accent); }
   .empty { font-size: 12.5px; color: var(--muted); padding: 4px 0; margin: 0; }
@@ -672,13 +673,15 @@
 
   // Depth-limited so granting a big repo doesn't turn one click into a crawl.
   async function scan(dir, prefix, depth, out) {
-    if (depth > 4 || out.length >= 300) return out;
+    if (depth > 4 || out.length >= 2000) return out;
     for await (var entry of dir.values()) {
       if (SKIP[entry.name]) continue;
       if (entry.kind === "directory" && entry.name.charAt(0) === ".") continue;
       var rel = prefix ? prefix + "/" + entry.name : entry.name;
       if (entry.kind === "file") {
-        if (/\.excalidraw(\.json)?$/i.test(entry.name)) out.push(rel);
+        if (/\.excalidraw(\.json)?$/i.test(entry.name)) {
+          out.push({ rel: rel, mtime: (await entry.getFile()).lastModified });
+        }
       } else {
         await scan(entry, rel, depth + 1, out);
       }
@@ -704,6 +707,15 @@
     });
   }
 
+  function ago(ms) {
+    var s = Math.max(0, (Date.now() - ms) / 1000);
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.floor(s / 60) + "m ago";
+    if (s < 86400) return Math.floor(s / 3600) + "h ago";
+    if (s < 30 * 86400) return Math.floor(s / 86400) + "d ago";
+    return new Date(ms).toISOString().slice(0, 10);
+  }
+
   function renderFileList(files) {
     ui.fileList.innerHTML = "";
     if (!files.length) {
@@ -713,13 +725,16 @@
       ui.fileList.appendChild(empty);
       return;
     }
-    files.sort().forEach(function (rel) {
+    // Newest first, so whatever an agent just wrote is at the top.
+    files.slice().sort(function (a, b) { return b.mtime - a.mtime; }).forEach(function (f) {
+      var rel = f.rel;
       var b = document.createElement("button");
       b.className = "fileitem";
       b.type = "button";
       b.dataset.rel = rel;
       b.innerHTML = "<span class='p'>" + esc(rel.replace(/[^/]+$/, "")) + "</span>" +
-                    "<span class='n'>" + esc(rel.split("/").pop()) + "</span>";
+                    "<span class='n'>" + esc(rel.split("/").pop()) + "</span>" +
+                    "<span class='t'>" + esc(ago(f.mtime)) + "</span>";
       b.addEventListener("click", function () {
         openFromFolder(rel, false).catch(function (e) { say("Can't open " + rel + ": " + e.message, true); });
       });
@@ -730,7 +745,8 @@
 
   async function attachFolder(dir, announce) {
     dirHandle = dir;
-    if (ROOT) await remember("root:" + dir.name, ROOT);
+    var abs = dirAbs(dir);
+    if (abs) await remember("root:" + dir.name, abs);
     await remember("dir", dir);
     ui.folderName.textContent = dir.name || "selected folder";
     ui.folderRow.hidden = false;
@@ -762,6 +778,26 @@
   // ?root=<absolute folder path> seeds the copy-path root so it is never asked for.
   var ROOT = new URLSearchParams(location.search).get("root");
 
+  // The granted folder is often an ancestor of ?root= (grant ~/work once, links
+  // point anywhere below it). The API never reveals a handle's path, so match
+  // the folder's name against ROOT's segments, last occurrence wins.
+  function rootSplit(dir) {
+    if (!ROOT) return null;
+    var segs = ROOT.replace(/\/+$/, "").split("/");
+    var i = segs.lastIndexOf(dir.name);
+    return i === -1 ? null : { abs: segs.slice(0, i + 1).join("/"), below: segs.slice(i + 1) };
+  }
+  function dirAbs(dir) { var r = rootSplit(dir); return r ? r.abs : null; }
+  // ?file= is relative to ?root=; turn it into a path relative to the granted folder.
+  function wantedRel(dir) {
+    if (!WANTED) return null;
+    if (!ROOT) return WANTED;
+    var r = rootSplit(dir);
+    // No match: don't guess, or ?file= would be created in the wrong folder.
+    if (!r) { say(dir.name + " isn't " + ROOT + " or above it \u2014 open that folder or a parent", true); return null; }
+    return r.below.concat([WANTED]).join("/");
+  }
+
   // A published artifact always runs in a cross-origin frame, and Chrome will
   // not open a file picker in one. Running the page from disk is the fix --
   // file:// is a secure context and every picker works there.
@@ -782,7 +818,7 @@
     window.showDirectoryPicker({ mode: "readwrite" })
       .then(ensureWrite)
       .then(function (d) { return attachFolder(d, true); })
-      .then(function () { if (WANTED) return openFromFolder(WANTED, true); })
+      .then(function () { var t = wantedRel(dirHandle); if (t) return openFromFolder(t, true); })
       .catch(pickerFailed);
   });
 
@@ -858,8 +894,8 @@
       if (dir) {
         await ensureWrite(dir);
         await attachFolder(dir, true);
-        var target = WANTED || await recall("rel");
-        if (target) await openFromFolder(target, !!WANTED);
+        var w = wantedRel(dir), target = w || await recall("rel");
+        if (target) await openFromFolder(target, target === w);
         return;
       }
       var f = await recall("file");
@@ -937,15 +973,16 @@
       ui.folderRow.hidden = false;
       if (await perm(dir) === "granted") {
         await attachFolder(dir, false);
-        var target = WANTED || await recall("rel");
+        var w = wantedRel(dir), target = w || await recall("rel");
         if (target) {
-          try { return await openFromFolder(target, !!WANTED); }
+          try { return await openFromFolder(target, target === w); }
           catch (e) { say("Couldn't open " + target + ": " + e.message, true); }
         }
         return;
       }
       ui.reconnect.hidden = false;
-      ui.reconnect.textContent = "Reconnect " + dir.name + (WANTED ? " \u2192 " + WANTED : "");
+      var w2 = wantedRel(dir);
+      ui.reconnect.textContent = "Reconnect " + dir.name + (w2 ? " \u2192 " + w2 : "");
       say("Chrome needs one click to hand back access to " + dir.name);
       return;
     }
@@ -956,7 +993,7 @@
       ui.reconnect.hidden = false;
       ui.reconnect.textContent = "Reconnect " + last.name;
     }
-    if (WANTED) say("Open the folder holding " + WANTED + " once, then this link goes straight there");
+    if (WANTED) say("Open " + (ROOT || "the folder holding " + WANTED) + ", or any folder above it, once \u2014 then links like this go straight there");
   }
   boot().catch(function (e) {
     ui.note.classList.add("block");
