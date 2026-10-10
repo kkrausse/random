@@ -100,6 +100,30 @@ backoff (backoff applies to non-zero exits only). `DICTATION_EXECUTABLE`,
 documented there; `DICTATION_LATENCY_MS` and `DICTATION_IDLE_MINUTES` are
 inherited by the service from Bun's environment.
 
+## Standalone on the tailnet
+
+To serve clients other than the web terminal (the Hex fork's remote backend on a
+Mac), run the service under its own unit and let Bun connect to it instead of
+spawning it:
+
+```sh
+cp dictation-server.service ~/.config/systemd/user/
+systemctl --user enable --now dictation-server.service
+sudo tailscale serve --bg --https=9876 9876      # wss://<machine>.<tailnet>.ts.net:9876/v1/stream
+```
+
+and give `bun-web-terminal.service` `Environment=DICTATION_URL=http://127.0.0.1:9876`
+(a drop-in in `bun-web-terminal.service.d/` does it), then restart it.
+
+The unit passes `--idle-minutes 0`: nothing restarts a standalone service after
+an idle exit, so it stays resident and holds its 1.2 GB of GPU memory. The
+service still binds loopback only; Tailscale Serve terminates TLS and is the
+only access control, so every device the tailnet policy lets reach this machine
+can transcribe. There is still one decoder: a recording from the web terminal
+and one from the Mac at the same moment gives the second `busy`.
+`bun scripts/verify.ts https://<machine>.<tailnet>.ts.net:9876` passes through
+the Serve route.
+
 ## Verification
 
 ```sh

@@ -1,0 +1,13 @@
+[Unit]
+Description=Streaming dictation service (Parakeet Unified, loopback :9876)
+
+[Service]
+Type=simple
+WorkingDirectory=%h/devfs/repos/kkrausse/random/dictation-server-linux
+# Resident: nothing restarts it after an idle exit when it runs standalone.
+ExecStart=%h/devfs/repos/kkrausse/random/dictation-server-linux/run.sh --port 9876 --idle-minutes 0
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
