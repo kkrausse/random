@@ -116,6 +116,9 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
     }));
   });
 
+  // An editable container makes iOS treat a long press as text editing: caret,
+  // callout and keyboard. Input goes through the terminal's own textarea.
+  if (matchMedia("(any-pointer: coarse)").matches) container.removeAttribute("contenteditable");
   installTerminalTouchControls(container, terminal, () => false, notice, scroll, (x, y) => {
     const url = terminalLinkAt(terminal, x, y);
     if (!url) return false;

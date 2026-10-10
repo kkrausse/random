@@ -10,6 +10,14 @@ export function installTerminalTouchControls(container: HTMLElement, terminal: T
   let pixels = 0; // Finger travel not yet amounting to a whole line.
   let samples: { at: number; y: number }[] = [];
   let fling = 0; // Identifies the running coast; 0 when idle.
+  // iOS focuses an editable ancestor when a long press lifts, which would raise
+  // the keyboard after every selection. Undo that unless it was already up.
+  let unfocusUntil = 0;
+  const holdFocus = () => { unfocusUntil = document.activeElement === terminal.textarea ? 0 : Infinity; };
+  const releaseFocus = () => { if (unfocusUntil) unfocusUntil = performance.now() + 600; };
+  container.addEventListener("focusin", () => {
+    if (performance.now() < unfocusUntil) (document.activeElement as HTMLElement | null)?.blur();
+  });
   let flings = 0;
   const nextFrame = (callback: () => void) => typeof requestAnimationFrame === "function" ? requestAnimationFrame(callback) : setTimeout(callback, 16);
   const scrollBy = (distance: number, x: number, y: number) => {
@@ -42,6 +50,7 @@ export function installTerminalTouchControls(container: HTMLElement, terminal: T
   }));
   const cancel = () => {
     clearHold();
+    if (gesture?.selecting) releaseFocus();
     // Balance an application press even on multi-touch, suspension or touchcancel.
     if (gesture?.application) mouse("mouseup", gesture.lastX, gesture.lastY);
     gesture = undefined;
@@ -76,6 +85,7 @@ export function installTerminalTouchControls(container: HTMLElement, terminal: T
       holdTimer = undefined;
       if (!gesture) return;
       gesture.selecting = true;
+      holdFocus();
       gesture.application = !!terminal.wasmTerm?.hasMouseTracking();
       if (gesture.application) {
         // Use Ghostty's normal mouse encoding and the same inner-pane mode as desktop.
