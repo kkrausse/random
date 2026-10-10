@@ -1,36 +1,36 @@
 {
- "name": "ggml-s8",
- "url": "http://127.0.0.1:8791/?model=s8&clip=all&runs=10&auto=1",
+ "name": "t4-s8-l5",
+ "url": "http://127.0.0.1:8791/?model=s8&clip=l5&runs=3&auto=1",
  "chromeArgs": [
   "--enable-dawn-features=vulkan_enable_f16_on_nvidia"
  ],
  "machineAtStart": {
-  "loadavg": "2.82 3.71 3.36 8/2038 1826617",
-  "cpuPressure": "some avg10=0.04 avg60=0.66 avg300=1.33 total=10223239617"
+  "loadavg": "3.56 4.20 3.60 13/1978 738570",
+  "cpuPressure": "some avg10=0.56 avg60=1.36 avg300=1.39 total=10208862380"
  },
  "chrome": "154.0.8037.97",
  "error": null,
  "memory": {
-  "gpuProcessGpuMibAfterLoad": 198,
-  "gpuProcessGpuMibPeak": 303,
-  "rendererRssMibAfterLoad": 212,
-  "rendererRssMibPeak": 314,
+  "gpuProcessGpuMibAfterLoad": 199,
+  "gpuProcessGpuMibPeak": 246,
+  "rendererRssMibAfterLoad": 213,
+  "rendererRssMibPeak": 420,
   "gpuProcessRssMibAfterLoad": 295,
-  "gpuProcessRssMibPeak": 322
+  "gpuProcessRssMibPeak": 328
  },
  "pids": {
-  "gpu": 1826540,
+  "gpu": 738208,
   "renderers": [
-   1826618,
-   1826588,
-   1826578
+   738637,
+   738422,
+   738367
   ]
  },
  "page": {
   "config": {
    "model": "s8",
-   "clip": "all",
-   "runs": 10,
+   "clip": "l5",
+   "runs": 3,
    "threads": 1,
    "store": "opfs",
    "f16": true,
@@ -50,127 +50,49 @@
   "crossOriginIsolated": true,
   "clips": [
    {
-    "clip": "a07",
-    "seconds": 7,
+    "clip": "l5",
+    "seconds": 265.8,
     "firstInPage": true,
     "firstRunMs": {
-     "pre": 7.8,
-     "enc": 181.2,
-     "dec": 66.7,
-     "total": 255.6
+     "pre": 172.9,
+     "enc": 724.7,
+     "dec": 582.6,
+     "total": 1480.2
     },
-    "startToFirstTranscriptMs": 3253,
-    "decSteps": 41,
-    "text": "going along slushy country roads and speaking to damp audiences in drafty schoolrooms day after day for a fortnight.",
-    "matchesNative": true,
+    "startToFirstTranscriptMs": 4473,
+    "decSteps": 1434,
+    "text": "Welcome to Quirk Quid Quill Inc. where finance meets innovation. Explore diverse offerings from the P three Quatro, a unique investment portfolio quadrant to the O three Omni, a platform for intricate derivative trading strategies. Delve into unconventional bond markets with our B three Bond X and our and experience non standard equity trading with E three equity. Personalize your wealth management with W three Wrap Z and anticipate market trends with the O two outlier our forward thinking financial forecasting tool. Explore Venture Capital World with U three Unifund or move your money with the M three mover, our sophisticated monetary transfer module. At CorkidQuill Inc. we turn complex finance into creative solutions. Join us in redefining financial services. Going along slushy country roads and speaking to damp audiences in drafty schoolrooms day after day for a fortnight. He'll have to put in an appearance at some place of worship on Sunday morning and he can come to us immediately afterwards. Welcome to Quirk Quid Quill Inc. where finance meets innovation, explore diverse offerings from the P three Quatre a unique investment portfolio Quadrant to the O three Omni, a platform for intricate derivative trading strategies. Delve into unconventional bond markets with our B three Bond X and experience non standard equity trading with E three equity. Personalize your wealth management with W three Wrap Z and anticipate market trends with the O two outlier, our forward thinking financial forecasting tool. Explore venture capital world with U three Unifund or move your money with the M three Mover, our sophisticated monetary transfer module. At Cork Quid Quill Inc. We turn complex finance into creative solutions. Join us in redefining financial services. Going along slushy country roads and speaking to damp audiences in drafty schoolrooms day after day for a fortnight. Welcome to Quirk Quid Quill Inc. where finance meets innovation. Explore diverse offerings from the P three Quatre, a unique investment portfolio quadrant to the O three Omni, a platform for intricate derivative trading strategies. Delve into unconventional bond markets with our B three Bond X and our and experience non standard equity trading with E three equity, personalize your wealth management with W three Wrap Z and anticipate market trends with the O two outlier, our forward thinking financial forecasting tool. Explore venture capital world with U three unifund or move your money with the M three Mover, our sophisticated monetary transfer module. At Cork Quid Quill Inc. we turn complex finance into creative solutions. Join us in redefining financial services. Going along slushy country roads and speaking to damp audiences in drafty schoolrooms day after day for a fortnight. He'll have to put in an appearance at some place of worship on Sunday morning, and he can come to us immediately afterwards. Welcome to Quirk Quid Quill Inc. where finance meets innovation. Explore our diverse offerings from the P three Quatro, a unique investment portfolio quadrant to the O three Omni, a platform for intricate derivative trading strategies. Delve into unconventional bond markets with our B three Bond X and experience non standard equity trading with E three equity. Personalize your wealth management with W three Wrap Z and anticipate market trends with the O two Outlier our forward thinking financial forecasting tool. Explore Venture Capital World with U three Unifund or move your money with the M three mover, our sophisticated monetary transfer module at Cork Quid Quill Inc. we turn complex finance into creative solutions. Join us in redefining financial services going along slushy country roads and speaking to damp audiences in drafty schoolrooms day after day for a fortnight.",
+    "matchesNative": false,
     "hasReference": true,
-    "warmRuns": 10,
+    "wordDiff": {
+     "differing": 3,
+     "words": 604
+    },
+    "warmRuns": 3,
     "preMs": {
-     "median": 3.1,
-     "worst": 3.7,
-     "best": 3
+     "median": 151.4,
+     "worst": 153.2,
+     "best": 142.7
     },
     "encMs": {
-     "median": 29.9,
-     "worst": 32.7,
-     "best": 22.9
+     "median": 519.7,
+     "worst": 521.2,
+     "best": 518.4
     },
     "decMs": {
-     "median": 14.2,
-     "worst": 15.7,
-     "best": 13.6
+     "median": 461.5,
+     "worst": 475.3,
+     "best": 455.8
     },
     "totalMs": {
-     "median": 47.4,
-     "worst": 51.1,
-     "best": 39.8
+     "median": 1131.3,
+     "worst": 1137.7,
+     "best": 1130.2
     },
-    "xRealTime": 147.7,
+    "xRealTime": 234.9,
     "textStable": true,
-    "wasmHeapMb": 39,
-    "wasmHeapUsedMb": 20.8
-   },
-   {
-    "clip": "a14",
-    "seconds": 13.69,
-    "firstInPage": false,
-    "firstRunMs": {
-     "pre": 6.8,
-     "enc": 42.6,
-     "dec": 31.8,
-     "total": 81.2
-    },
-    "startToFirstTranscriptMs": null,
-    "decSteps": 84,
-    "text": "going along slushy country roads and speaking to damp audiences in draughty schoolrooms day after day for a fortnight. He'll have to put in an appearance at some place of worship on Sunday morning, and he can come to us immediately afterwards",
-    "matchesNative": true,
-    "hasReference": true,
-    "warmRuns": 10,
-    "preMs": {
-     "median": 5.9,
-     "worst": 6.3,
-     "best": 5.8
-    },
-    "encMs": {
-     "median": 29.7,
-     "worst": 30.7,
-     "best": 29
-    },
-    "decMs": {
-     "median": 27.6,
-     "worst": 29.8,
-     "best": 26.2
-    },
-    "totalMs": {
-     "median": 63.3,
-     "worst": 65.5,
-     "best": 61.2
-    },
-    "xRealTime": 216.3,
-    "textStable": true,
-    "wasmHeapMb": 46,
-    "wasmHeapUsedMb": 21.8
-   },
-   {
-    "clip": "a56",
-    "seconds": 56.1,
-    "firstInPage": false,
-    "firstRunMs": {
-     "pre": 27.9,
-     "enc": 110.9,
-     "dec": 123.5,
-     "total": 262.3
-    },
-    "startToFirstTranscriptMs": null,
-    "decSteps": 292,
-    "text": "Welcome to Quirk Quid Quill Inc. where finance meets innovation, explore diverse offerings from the P three Quatro a unique investment portfolio quadrant to the O three Omni, a platform for intricate derivative trading strategies. Delve into unconventional bond markets with our B three Bond X and our and experience non standard equity trading with E three equity, personalize your wealth management with W three Wrap Z and anticipate market trends with the O two outlier, our forward thinking financial forecasting tool. Explore venture capital world with U three unifund or move your money with the M three mover, our sophisticated monetary transfer module. At Cork Quid Quill Inc. we turn complex finance into creative solutions. Join us in redefining financial services.",
-    "matchesNative": true,
-    "hasReference": true,
-    "warmRuns": 10,
-    "preMs": {
-     "median": 25.8,
-     "worst": 27.2,
-     "best": 23.6
-    },
-    "encMs": {
-     "median": 94.2,
-     "worst": 98.4,
-     "best": 92.9
-    },
-    "decMs": {
-     "median": 95.5,
-     "worst": 98.1,
-     "best": 94.4
-    },
-    "totalMs": {
-     "median": 215.9,
-     "worst": 220.2,
-     "best": 210.9
-    },
-    "xRealTime": 259.9,
-    "textStable": true,
-    "wasmHeapMb": 67,
-    "wasmHeapUsedMb": 27.5
+    "wasmHeapMb": 115,
+    "wasmHeapUsedMb": 36.5
    }
   ],
   "adapter": {
@@ -260,8 +182,8 @@
   "jspi": true,
   "shaderF16Used": true,
   "load": {
-   "fetchMs": 633,
-   "loadMs": 315,
+   "fetchMs": 582,
+   "loadMs": 365,
    "from": "network, streamed to OPFS",
    "fileMb": 129.1,
    "wasmHeapMb": 32,
@@ -269,9 +191,9 @@
    "backend": "WebGPU: WebGPU"
   },
   "session": {
-   "totalMs": 315
+   "totalMs": 365
   },
-  "startToLoadedMs": 1591
+  "startToLoadedMs": 1470
  },
  "steps": [
   {
@@ -279,102 +201,68 @@
    "name": "start: 110M, Q8_0 (8-bit weights), flash=off, store=opfs, jspi"
   },
   {
-   "t": 640,
+   "t": 520,
    "name": "WASM module ready",
-   "ms": 38.7,
+   "ms": 47.2,
    "detail": "heap 32 MB; JSPI available"
   },
   {
-   "t": 640,
+   "t": 520,
    "name": "adapter: nvidia turing NVIDIA GeForce RTX 2080 Ti; shader-f16 present; fallback=false"
   },
   {
-   "t": 641,
+   "t": 520,
    "name": "adapter limits: binding 2048 MiB, buffer 4096 MiB, 1024 invocations/workgroup, workgroup storage 49152 B, 16 storage buffers/stage",
    "detail": "all at or above the WebGPU spec defaults, which is all this page needs"
   },
   {
-   "t": 641,
+   "t": 521,
    "name": "device probe ok: binding 1024 MiB, buffer 1024 MiB, 256 invocations",
    "detail": "requested {\"maxStorageBufferBindingSize\":1073741824,\"maxBufferSize\":1073741824,\"maxComputeInvocationsPerWorkgroup\":256,\"maxComputeWorkgroupSizeX\":256} shader-f16"
   },
   {
-   "t": 641,
+   "t": 521,
    "name": "shader path: f16"
   },
   {
-   "t": 1591,
+   "t": 1470,
    "name": "model file ready (network, streamed to OPFS)",
-   "ms": 633.2,
+   "ms": 582.3,
    "detail": "129 MB"
   },
   {
-   "t": 1591,
+   "t": 1470,
    "name": "model loaded on WebGPU: WebGPU",
-   "ms": 314.9,
+   "ms": 365.1,
    "detail": "WASM heap 32 MB, 9.9 MB in use"
   },
   {
-   "t": 3253,
-   "name": "a07 (7.0 s) first run (cold)",
-   "ms": 255.6,
-   "detail": "mel 7.8 ms, encoder 181 ms, decode 66.7 ms, heap 39 MB (20.8 in use)"
+   "t": 4473,
+   "name": "l5 (4.4 min) first run (cold)",
+   "ms": 1480.2,
+   "detail": "mel 173 ms, encoder 725 ms, decode 583 ms, heap 115 MB (36.5 in use)"
   },
   {
-   "t": 3253,
-   "name": "a07 transcript matches the reference",
-   "detail": "going along slushy country roads and speaking to damp audiences in drafty schoolrooms day ..."
+   "t": 4477,
+   "name": "l5 transcript (chunked encoding): 3 of 604 words differ from the native build's chunked transcript",
+   "detail": "Welcome to Quirk Quid Quill Inc. where finance meets innovation. Explore diverse offerings..."
   },
   {
-   "t": 3774,
-   "name": "a07 warm x10",
-   "ms": 47.4,
-   "detail": "total median/worst 47.4 / 51.1 ms; encoder 29.9 / 32.7 ms; mel 3.1 ms; decode 14.2 ms; 147.7x real time; text stable=true"
+   "t": 9127,
+   "name": "l5 warm x3",
+   "ms": 1131.3,
+   "detail": "total median/worst 1131.3 / 1137.7 ms; encoder 519.7 / 521.2 ms; mel 151.4 ms; decode 461.5 ms; 234.9x real time; text stable=true"
   },
   {
-   "t": 3863,
-   "name": "a14 (13.7 s) first run",
-   "ms": 81.2,
-   "detail": "mel 6.8 ms, encoder 42.6 ms, decode 31.8 ms, heap 46 MB (21.8 in use)"
-  },
-  {
-   "t": 3863,
-   "name": "a14 transcript matches the reference",
-   "detail": "going along slushy country roads and speaking to damp audiences in draughty schoolrooms da..."
-  },
-  {
-   "t": 4575,
-   "name": "a14 warm x10",
-   "ms": 63.3,
-   "detail": "total median/worst 63.3 / 65.5 ms; encoder 29.7 / 30.7 ms; mel 5.9 ms; decode 27.6 ms; 216.3x real time; text stable=true"
-  },
-  {
-   "t": 4863,
-   "name": "a56 (56.1 s) first run",
-   "ms": 262.3,
-   "detail": "mel 27.9 ms, encoder 111 ms, decode 124 ms, heap 56 MB (27.5 in use)"
-  },
-  {
-   "t": 4863,
-   "name": "a56 transcript matches the reference",
-   "detail": "Welcome to Quirk Quid Quill Inc. where finance meets innovation, explore diverse offerings..."
-  },
-  {
-   "t": 7297,
-   "name": "a56 warm x10",
-   "ms": 215.9,
-   "detail": "total median/worst 215.9 / 220.2 ms; encoder 94.2 / 98.4 ms; mel 25.8 ms; decode 95.5 ms; 259.9x real time; text stable=true"
-  },
-  {
-   "t": 7298,
+   "t": 9128,
    "name": "done",
-   "ms": 7297.7
+   "ms": 9127.8
   }
  ],
  "console": [],
  "machineAtEnd": {
-  "loadavg": "2.78 3.67 3.35 1/2049 1834535",
-  "cpuPressure": "some avg10=0.51 avg60=0.70 avg300=1.33 total=10223341206"
+  "loadavg": "3.16 4.09 3.58 1/2029 747215",
+  "cpuPressure": "some avg10=0.53 avg60=1.26 avg300=1.37 total=10208962797"
  },
  "chromeGpu": {
   "devices": [

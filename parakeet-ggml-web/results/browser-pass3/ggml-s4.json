@@ -1,34 +1,34 @@
 {
- "name": "ggml-q4",
- "url": "http://127.0.0.1:8791/?model=q4&clip=all&runs=10&auto=1",
+ "name": "ggml-s4",
+ "url": "http://127.0.0.1:8791/?model=s4&clip=all&runs=10&auto=1",
  "chromeArgs": [
   "--enable-dawn-features=vulkan_enable_f16_on_nvidia"
  ],
  "machineAtStart": {
-  "loadavg": "3.55 3.78 3.39 15/2027 1862398",
-  "cpuPressure": "some avg10=0.57 avg60=0.72 avg300=1.27 total=10223767993"
+  "loadavg": "2.91 3.16 3.55 8/1983 2188494",
+  "cpuPressure": "some avg10=0.69 avg60=0.79 avg300=0.71 total=10172460982"
  },
  "chrome": "154.0.8037.97",
  "error": null,
  "memory": {
-  "gpuProcessGpuMibAfterLoad": 501,
-  "gpuProcessGpuMibPeak": 590,
-  "rendererRssMibAfterLoad": 245,
-  "rendererRssMibPeak": 332,
-  "gpuProcessRssMibAfterLoad": 301,
-  "gpuProcessRssMibPeak": 340
+  "gpuProcessGpuMibAfterLoad": 151,
+  "gpuProcessGpuMibPeak": 217,
+  "rendererRssMibAfterLoad": 210,
+  "rendererRssMibPeak": 315,
+  "gpuProcessRssMibAfterLoad": 294,
+  "gpuProcessRssMibPeak": 323
  },
  "pids": {
-  "gpu": 1862035,
+  "gpu": 2188118,
   "renderers": [
-   1862483,
-   1862243,
-   1862197
+   2188549,
+   2188342,
+   2188290
   ]
  },
  "page": {
   "config": {
-   "model": "q4",
+   "model": "s4",
    "clip": "all",
    "runs": 10,
    "threads": 1,
@@ -41,10 +41,10 @@
    "env": {}
   },
   "model": {
-   "label": "0.6b v2, Q4_0 (4-bit weights)",
-   "file": "parakeet-tdt-0.6b-v2-Q4_0.gguf",
-   "mb": 438,
-   "family": "0.6b"
+   "label": "110M, Q4_0 (4-bit weights)",
+   "file": "parakeet-tdt_ctc-110m-Q4_0.gguf",
+   "mb": 81,
+   "family": "110m"
   },
   "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
   "crossOriginIsolated": true,
@@ -54,123 +54,120 @@
     "seconds": 7,
     "firstInPage": true,
     "firstRunMs": {
-     "pre": 7.5,
-     "enc": 187.4,
-     "dec": 78.8,
-     "total": 273.8
+     "pre": 10.3,
+     "enc": 145.8,
+     "dec": 55.2,
+     "total": 211.3
     },
-    "startToFirstTranscriptMs": 4980,
-    "decSteps": 47,
-    "text": "going along slushy country roads and speaking to damp audiences in drafty schoolrooms day after day for a fortnight.",
-    "matchesNative": true,
-    "hasReference": true,
+    "startToFirstTranscriptMs": 2694,
+    "decSteps": 41,
+    "text": "going along slushy country roads and speaking to damp audiences in drafty schoolrooms day after day for a fortnight,",
+    "matchesNative": false,
     "warmRuns": 10,
     "preMs": {
-     "median": 3.7,
-     "worst": 4.3,
-     "best": 3.6
+     "median": 3.9,
+     "worst": 4.5,
+     "best": 3.9
     },
     "encMs": {
-     "median": 49.4,
-     "worst": 67.5,
-     "best": 48.5
+     "median": 24.4,
+     "worst": 30.9,
+     "best": 22
     },
     "decMs": {
-     "median": 33.2,
-     "worst": 38.7,
-     "best": 31.4
+     "median": 14.9,
+     "worst": 17.1,
+     "best": 14.1
     },
     "totalMs": {
-     "median": 87.2,
-     "worst": 104.3,
-     "best": 83.8
+     "median": 43.1,
+     "worst": 50.3,
+     "best": 41.3
     },
-    "xRealTime": 80.3,
+    "xRealTime": 162.4,
     "textStable": true,
-    "wasmHeapMb": 46,
-    "wasmHeapUsedMb": 26.2
+    "wasmHeapMb": 40,
+    "wasmHeapUsedMb": 20.8
    },
    {
     "clip": "a14",
     "seconds": 13.69,
     "firstInPage": false,
     "firstRunMs": {
-     "pre": 7.3,
-     "enc": 81.9,
-     "dec": 60.1,
-     "total": 149.3
+     "pre": 14,
+     "enc": 34.8,
+     "dec": 37.7,
+     "total": 86.5
     },
     "startToFirstTranscriptMs": null,
-    "decSteps": 90,
-    "text": "going along slushy country roads and speaking to damp audiences in drafty schoolrooms day after day for a fortnight. He'll have to put in an appearance at some place of worship on Sunday morning, and he can come to us immediately afterwards.",
-    "matchesNative": true,
-    "hasReference": true,
+    "decSteps": 85,
+    "text": "going along slushy country roads and speaking to damp audiences in draughty schoolrooms day after day for a fortnight. He'll have to put in an appearance at some place of worship on Sunday morning, and he can come to us immediately afterwards,",
+    "matchesNative": false,
     "warmRuns": 10,
     "preMs": {
-     "median": 6.8,
-     "worst": 7,
-     "best": 6.6
+     "median": 8.3,
+     "worst": 8.7,
+     "best": 7.9
     },
     "encMs": {
-     "median": 77.9,
-     "worst": 81.5,
-     "best": 77.4
+     "median": 27.7,
+     "worst": 30.3,
+     "best": 27.5
     },
     "decMs": {
-     "median": 57.5,
-     "worst": 62.4,
-     "best": 55.3
+     "median": 30.2,
+     "worst": 31.5,
+     "best": 26.8
     },
     "totalMs": {
-     "median": 142.5,
-     "worst": 147.9,
-     "best": 139.5
+     "median": 66.4,
+     "worst": 68.4,
+     "best": 63.1
     },
-    "xRealTime": 96.1,
+    "xRealTime": 206.2,
     "textStable": true,
-    "wasmHeapMb": 55,
-    "wasmHeapUsedMb": 27.8
+    "wasmHeapMb": 48,
+    "wasmHeapUsedMb": 21.8
    },
    {
     "clip": "a56",
     "seconds": 56.1,
     "firstInPage": false,
     "firstRunMs": {
-     "pre": 30.5,
-     "enc": 447.3,
-     "dec": 211.8,
-     "total": 689.7
+     "pre": 39.8,
+     "enc": 116,
+     "dec": 126,
+     "total": 281.8
     },
     "startToFirstTranscriptMs": null,
-    "decSteps": 312,
-    "text": "Welcome to QuirkQuidQuill Inc., where finance meets innovation. Explore diverse offerings from the P3 Quattro, a unique investment portfolio quadrant, to the O3 Omni, a platform for intricate derivative trading strategies. Delve into unconventional bond markets with our B3 Bond X and experience non-standard equity trading with E3Equity. Personalize your wealth management with W3 RAPZ and anticipate market trends with the O2 Outlier, our forward-thinking financial forecasting tool. Explore venture capital world with U3Unifund or move your money with the M3 Mover, our sophisticated monetary transfer module. At QuirkQuidQuill Inc., we turn complex finance into creative solutions. Join us in redefining financial services.",
+    "decSteps": 294,
+    "text": "Welcome to Quirk Quid Quill Inc, where finance meets innovation, explore diverse offerings from the P three Quatro, a unique investment portfolio quadrant to the O three Omni, a platform for intricate derivative trading strategies. Delve into unconventional bond markets with our B three Bond X and our and experience non standard equity trading with E three equity, personalize your wealth management with W three Wrap Z, and anticipate market trends with the O two outlier, our forward thinking financial forecasting tool. Explore venture capital world with U three Unifund or move your money with the M three mover, our sophisticated monetary transfer module. At Cork Quid Quill Inc, we turn complex finance into creative solutions. Join us in redefining financial services.",
     "matchesNative": false,
-    "hasReference": true,
     "warmRuns": 10,
     "preMs": {
-     "median": 28,
-     "worst": 29.1,
-     "best": 27.3
+     "median": 32.2,
+     "worst": 34.1,
+     "best": 31.7
     },
     "encMs": {
-     "median": 424.4,
-     "worst": 427.2,
-     "best": 423.2
+     "median": 101.6,
+     "worst": 103,
+     "best": 100.1
     },
     "decMs": {
-     "median": 193.4,
-     "worst": 211.3,
-     "best": 187.8
+     "median": 103.9,
+     "worst": 107.2,
+     "best": 98.2
     },
     "totalMs": {
-     "median": 646.2,
-     "worst": 666.6,
-     "best": 639.6
+     "median": 238,
+     "worst": 242.6,
+     "best": 230.3
     },
-    "xRealTime": 86.8,
+    "xRealTime": 235.7,
     "textStable": true,
-    "wasmHeapMb": 96,
-    "wasmHeapUsedMb": 37.4
+    "wasmHeapMb": 68,
+    "wasmHeapUsedMb": 27.5
    }
   ],
   "adapter": {
@@ -260,121 +257,121 @@
   "jspi": true,
   "shaderF16Used": true,
   "load": {
-   "fetchMs": 1954,
-   "loadMs": 829,
+   "fetchMs": 370,
+   "loadMs": 288,
    "from": "network, streamed to OPFS",
-   "fileMb": 437.5,
+   "fileMb": 81.3,
    "wasmHeapMb": 32,
-   "wasmHeapUsedMb": 14.6,
+   "wasmHeapUsedMb": 9.9,
    "backend": "WebGPU: WebGPU"
   },
   "session": {
-   "totalMs": 829
+   "totalMs": 288
   },
-  "startToLoadedMs": 3300
+  "startToLoadedMs": 1077
  },
  "steps": [
   {
    "t": 0,
-   "name": "start: 0.6b v2, Q4_0 (4-bit weights), flash=off, store=opfs, jspi"
+   "name": "start: 110M, Q4_0 (4-bit weights), flash=off, store=opfs, jspi"
   },
   {
-   "t": 514,
+   "t": 417,
    "name": "WASM module ready",
-   "ms": 44.5,
+   "ms": 39.4,
    "detail": "heap 32 MB; JSPI available"
   },
   {
-   "t": 514,
+   "t": 417,
    "name": "adapter: nvidia turing NVIDIA GeForce RTX 2080 Ti; shader-f16 present; fallback=false"
   },
   {
-   "t": 514,
+   "t": 417,
    "name": "adapter limits: binding 2048 MiB, buffer 4096 MiB, 1024 invocations/workgroup, workgroup storage 49152 B, 16 storage buffers/stage",
    "detail": "all at or above the WebGPU spec defaults, which is all this page needs"
   },
   {
-   "t": 514,
+   "t": 417,
    "name": "device probe ok: binding 1024 MiB, buffer 1024 MiB, 256 invocations",
    "detail": "requested {\"maxStorageBufferBindingSize\":1073741824,\"maxBufferSize\":1073741824,\"maxComputeInvocationsPerWorkgroup\":256,\"maxComputeWorkgroupSizeX\":256} shader-f16"
   },
   {
-   "t": 514,
+   "t": 417,
    "name": "shader path: f16"
   },
   {
-   "t": 3300,
+   "t": 1077,
    "name": "model file ready (network, streamed to OPFS)",
-   "ms": 1954.3,
-   "detail": "438 MB"
+   "ms": 370.4,
+   "detail": "81 MB"
   },
   {
-   "t": 3300,
+   "t": 1077,
    "name": "model loaded on WebGPU: WebGPU",
-   "ms": 828.9,
-   "detail": "WASM heap 32 MB, 14.6 MB in use"
+   "ms": 287.6,
+   "detail": "WASM heap 32 MB, 9.9 MB in use"
   },
   {
-   "t": 4979,
+   "t": 2694,
    "name": "a07 (7.0 s) first run (cold)",
-   "ms": 273.8,
-   "detail": "mel 7.5 ms, encoder 187 ms, decode 78.8 ms, heap 46 MB (26.2 in use)"
+   "ms": 211.3,
+   "detail": "mel 10.3 ms, encoder 146 ms, decode 55.2 ms, heap 40 MB (20.8 in use)"
   },
   {
-   "t": 4980,
-   "name": "a07 transcript matches the reference",
+   "t": 2694,
+   "name": "a07 transcript DIFFERS from the reference",
    "detail": "going along slushy country roads and speaking to damp audiences in drafty schoolrooms day ..."
   },
   {
-   "t": 5988,
+   "t": 3204,
    "name": "a07 warm x10",
-   "ms": 87.2,
-   "detail": "total median/worst 87.2 / 104.3 ms; encoder 49.4 / 67.5 ms; mel 3.7 ms; decode 33.2 ms; 80.3x real time; text stable=true"
+   "ms": 43.1,
+   "detail": "total median/worst 43.1 / 50.3 ms; encoder 24.4 / 30.9 ms; mel 3.9 ms; decode 14.9 ms; 162.4x real time; text stable=true"
   },
   {
-   "t": 6146,
+   "t": 3303,
    "name": "a14 (13.7 s) first run",
-   "ms": 149.3,
-   "detail": "mel 7.3 ms, encoder 81.9 ms, decode 60.1 ms, heap 55 MB (27.8 in use)"
+   "ms": 86.5,
+   "detail": "mel 14 ms, encoder 34.8 ms, decode 37.7 ms, heap 48 MB (21.8 in use)"
   },
   {
-   "t": 6146,
-   "name": "a14 transcript matches the reference",
-   "detail": "going along slushy country roads and speaking to damp audiences in drafty schoolrooms day ..."
+   "t": 3303,
+   "name": "a14 transcript DIFFERS from the reference",
+   "detail": "going along slushy country roads and speaking to damp audiences in draughty schoolrooms da..."
   },
   {
-   "t": 7735,
+   "t": 4049,
    "name": "a14 warm x10",
-   "ms": 142.5,
-   "detail": "total median/worst 142.5 / 147.9 ms; encoder 77.9 / 81.5 ms; mel 6.8 ms; decode 57.5 ms; 96.1x real time; text stable=true"
+   "ms": 66.4,
+   "detail": "total median/worst 66.4 / 68.4 ms; encoder 27.7 / 30.3 ms; mel 8.3 ms; decode 30.2 ms; 206.2x real time; text stable=true"
   },
   {
-   "t": 8449,
+   "t": 4354,
    "name": "a56 (56.1 s) first run",
-   "ms": 689.7,
-   "detail": "mel 30.5 ms, encoder 447 ms, decode 212 ms, heap 80 MB (37.4 in use)"
+   "ms": 281.8,
+   "detail": "mel 39.8 ms, encoder 116 ms, decode 126 ms, heap 57 MB (27.5 in use)"
   },
   {
-   "t": 8449,
+   "t": 4354,
    "name": "a56 transcript DIFFERS from the reference",
-   "detail": "Welcome to QuirkQuidQuill Inc., where finance meets innovation. Explore diverse offerings ..."
+   "detail": "Welcome to Quirk Quid Quill Inc, where finance meets innovation, explore diverse offerings..."
   },
   {
-   "t": 15660,
+   "t": 7017,
    "name": "a56 warm x10",
-   "ms": 646.2,
-   "detail": "total median/worst 646.2 / 666.6 ms; encoder 424.4 / 427.2 ms; mel 28 ms; decode 193.4 ms; 86.8x real time; text stable=true"
+   "ms": 238,
+   "detail": "total median/worst 238 / 242.6 ms; encoder 101.6 / 103 ms; mel 32.2 ms; decode 103.9 ms; 235.7x real time; text stable=true"
   },
   {
-   "t": 15660,
+   "t": 7018,
    "name": "done",
-   "ms": 15660.4
+   "ms": 7017.6
   }
  ],
  "console": [],
  "machineAtEnd": {
-  "loadavg": "3.96 3.87 3.43 5/2086 1877686",
-  "cpuPressure": "some avg10=0.45 avg60=0.73 avg300=1.25 total=10223984222"
+  "loadavg": "2.75 3.12 3.53 4/2016 2194787",
+  "cpuPressure": "some avg10=0.72 avg60=0.81 avg300=0.72 total=10172535082"
  },
  "chromeGpu": {
   "devices": [
