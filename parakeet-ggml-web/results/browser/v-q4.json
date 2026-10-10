@@ -1,40 +1,42 @@
 {
- "name": "published-q4-stock",
- "url": "https://raspberrypi.guineafowl-truck.ts.net/artifacts/parakeet-ggml-browser/?model=q4&clip=a07&runs=3&auto=1",
- "chromeArgs": [],
+ "name": "v-q4",
+ "url": "http://127.0.0.1:8791/?model=q4&clip=a56&runs=1&verbose=1&auto=1",
+ "chromeArgs": [
+  "--enable-dawn-features=vulkan_enable_f16_on_nvidia"
+ ],
  "machineAtStart": {
-  "loadavg": "3.73 4.76 4.36 10/1970 2819070",
-  "cpuPressure": "some avg10=1.52 avg60=1.32 avg300=1.82 total=10116859604"
+  "loadavg": "4.69 3.95 3.70 14/1987 2234193",
+  "cpuPressure": "some avg10=2.13 avg60=1.18 avg300=1.24 total=10101381330"
  },
  "chrome": "154.0.8037.97",
  "error": null,
  "memory": {
-  "gpuProcessGpuMibAfterLoad": 500,
-  "gpuProcessGpuMibPeak": 541,
-  "rendererRssMibAfterLoad": 214,
-  "rendererRssMibPeak": 321,
+  "gpuProcessGpuMibAfterLoad": 506,
+  "gpuProcessGpuMibPeak": 743,
+  "rendererRssMibAfterLoad": 215,
+  "rendererRssMibPeak": 364,
   "gpuProcessRssMibAfterLoad": 300,
-  "gpuProcessRssMibPeak": 327
+  "gpuProcessRssMibPeak": 335
  },
  "pids": {
-  "gpu": 2818847,
+  "gpu": 2233853,
   "renderers": [
-   2818974,
-   2818976,
-   2818935
+   2234277,
+   2234051,
+   2233998
   ]
  },
  "page": {
   "config": {
    "model": "q4",
-   "clip": "a07",
-   "runs": 3,
+   "clip": "a56",
+   "runs": 1,
    "threads": 1,
    "store": "opfs",
    "f16": true,
    "flash": false,
    "variant": "jspi",
-   "verbose": false,
+   "verbose": true,
    "base": "models/",
    "env": {}
   },
@@ -45,47 +47,47 @@
    "family": "0.6b"
   },
   "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
-  "crossOriginIsolated": false,
+  "crossOriginIsolated": true,
   "clips": [
    {
-    "clip": "a07",
-    "seconds": 7,
+    "clip": "a56",
+    "seconds": 56.1,
     "firstInPage": true,
     "firstRunMs": {
-     "pre": 12.9,
-     "enc": 199.8,
-     "dec": 88.3,
-     "total": 301
+     "pre": 105.2,
+     "enc": 604.9,
+     "dec": 353.1,
+     "total": 1063.2
     },
-    "startToFirstTranscriptMs": 10907,
-    "decSteps": 47,
-    "text": "going along slushy country roads and speaking to damp audiences in drafty schoolrooms day after day for a fortnight.",
-    "matchesNative": true,
-    "warmRuns": 3,
+    "startToFirstTranscriptMs": 5499,
+    "decSteps": 312,
+    "text": "Welcome to QuirkQuidQuill Inc., where finance meets innovation. Explore diverse offerings from the P3 Quattro, a unique investment portfolio quadrant, to the O3 Omni, a platform for intricate derivative trading strategies. Delve into unconventional bond markets with our B3 Bond X and experience non-standard equity trading with E3Equity. Personalize your wealth management with W3 RAPZ and anticipate market trends with the O2 Outlier, our forward-thinking financial forecasting tool. Explore venture capital world with U3Unifund or move your money with the M3 Mover, our sophisticated monetary transfer module. At QuirkQuidQuill Inc., we turn complex finance into creative solutions. Join us in redefining financial services.",
+    "matchesNative": false,
+    "warmRuns": 1,
     "preMs": {
-     "median": 5.9,
-     "worst": 6.3,
-     "best": 5.8
+     "median": 49.6,
+     "worst": 49.6,
+     "best": 49.6
     },
     "encMs": {
-     "median": 56.5,
-     "worst": 66.6,
-     "best": 54.4
+     "median": 433.9,
+     "worst": 433.9,
+     "best": 433.9
     },
     "decMs": {
-     "median": 45.2,
-     "worst": 45.5,
-     "best": 44.4
+     "median": 307.9,
+     "worst": 307.9,
+     "best": 307.9
     },
     "totalMs": {
-     "median": 108.3,
-     "worst": 117.7,
-     "best": 104.6
+     "median": 791.4,
+     "worst": 791.4,
+     "best": 791.4
     },
-    "xRealTime": 64.6,
+    "xRealTime": 70.9,
     "textStable": true,
-    "wasmHeapMb": 38,
-    "wasmHeapUsedMb": 16
+    "wasmHeapMb": 67,
+    "wasmHeapUsedMb": 25.6
    }
   ],
   "adapter": {
@@ -95,7 +97,7 @@
    "device": "0x1e07",
    "description": "NVIDIA GeForce RTX 2080 Ti",
    "isFallbackAdapter": false,
-   "shaderF16": false,
+   "shaderF16": true,
    "features": [
     "bgra8unorm-storage",
     "chromium-experimental-multi-draw-indirect",
@@ -112,6 +114,7 @@
     "indirect-first-instance",
     "primitive-index",
     "rg11b10ufloat-renderable",
+    "shader-f16",
     "subgroup-size-control",
     "subgroups",
     "texture-component-swizzle",
@@ -126,10 +129,10 @@
    "maxStorageBufferBindingSizeMb": 2048
   },
   "jspi": true,
-  "shaderF16Used": false,
+  "shaderF16Used": true,
   "load": {
-   "fetchMs": 8022,
-   "loadMs": 875,
+   "fetchMs": 1923,
+   "loadMs": 833,
    "from": "network, streamed to OPFS",
    "fileMb": 437.5,
    "wasmHeapMb": 32,
@@ -137,9 +140,9 @@
    "backend": "WebGPU: WebGPU"
   },
   "session": {
-   "totalMs": 875
+   "totalMs": 833
   },
-  "startToLoadedMs": 9190
+  "startToLoadedMs": 3014
  },
  "steps": [
   {
@@ -147,58 +150,74 @@
    "name": "start: 0.6b v2, Q4_0 (4-bit weights), flash=off, store=opfs, jspi"
   },
   {
-   "t": 292,
+   "t": 256,
    "name": "WASM module ready",
-   "ms": 105.7,
+   "ms": 44.7,
    "detail": "heap 32 MB; JSPI available"
   },
   {
-   "t": 292,
-   "name": "adapter: nvidia turing NVIDIA GeForce RTX 2080 Ti; shader-f16 ABSENT; fallback=false"
+   "t": 256,
+   "name": "adapter: nvidia turing NVIDIA GeForce RTX 2080 Ti; shader-f16 present; fallback=false"
   },
   {
-   "t": 292,
-   "name": "shader path: f32 only (adapter has no shader-f16)"
+   "t": 256,
+   "name": "shader path: f16"
   },
   {
-   "t": 9190,
+   "t": 3014,
    "name": "model file ready (network, streamed to OPFS)",
-   "ms": 8021.7,
+   "ms": 1923.1,
    "detail": "438 MB"
   },
   {
-   "t": 9190,
+   "t": 3014,
    "name": "model loaded on WebGPU: WebGPU",
-   "ms": 874.5,
+   "ms": 832.7,
    "detail": "WASM heap 32 MB, 14.6 MB in use"
   },
   {
-   "t": 10907,
-   "name": "a07 (7.0 s) first run (cold)",
-   "ms": 301,
-   "detail": "mel 12.9 ms, encoder 200 ms, decode 88.3 ms, heap 38 MB (16 in use)"
+   "t": 3014,
+   "name": "library log: ggml_webgpu: adapter_info: vendor_id: 0 | vendor: nvidia | architecture: turing | device_id: 0 | name: 0x1e07 | device_desc: NVIDIA GeForce RTX 2080 Ti\nparakeet: using gpu backend: WebGPU"
   },
   {
-   "t": 10907,
-   "name": "a07 transcript matches the reference",
-   "detail": "going along slushy country roads and speaking to damp audiences in drafty schoolrooms day ..."
+   "t": 5499,
+   "name": "library: decoder: 377 iters, 312 tokens, T_enc=702  enc_proj=62.1 ms  pred=240.6 ms  joint=44.1 ms  conf=4.2 ms  total=351.0 ms  per_iter=755 us"
   },
   {
-   "t": 11369,
-   "name": "a07 warm x3",
-   "ms": 108.3,
-   "detail": "total median/worst 108.3 / 117.7 ms; encoder 56.5 / 66.6 ms; mel 5.9 ms; decode 45.2 ms; 64.6x real time; text stable=true"
+   "t": 5499,
+   "name": "a56 (56.1 s) first run (cold)",
+   "ms": 1063.2,
+   "detail": "mel 105 ms, encoder 605 ms, decode 353 ms, heap 67 MB (25.6 in use)"
   },
   {
-   "t": 11370,
+   "t": 5499,
+   "name": "a56 transcript DIFFERS from the reference",
+   "detail": "Welcome to QuirkQuidQuill Inc., where finance meets innovation. Explore diverse offerings ..."
+  },
+  {
+   "t": 6311,
+   "name": "library: decoder: 377 iters, 312 tokens, T_enc=702  enc_proj=36.2 ms  pred=232.0 ms  joint=42.3 ms  conf=3.9 ms  total=314.5 ms  per_iter=728 us"
+  },
+  {
+   "t": 7108,
+   "name": "library: decoder: 377 iters, 312 tokens, T_enc=702  enc_proj=35.0 ms  pred=227.3 ms  joint=41.4 ms  conf=3.5 ms  total=307.2 ms  per_iter=713 us"
+  },
+  {
+   "t": 7108,
+   "name": "a56 warm x1",
+   "ms": 791.4,
+   "detail": "total median/worst 791.4 / 791.4 ms; encoder 433.9 / 433.9 ms; mel 49.6 ms; decode 307.9 ms; 70.9x real time; text stable=true"
+  },
+  {
+   "t": 7111,
    "name": "done",
-   "ms": 11369.6
+   "ms": 7111.3
   }
  ],
  "console": [],
  "machineAtEnd": {
-  "loadavg": "3.85 4.73 4.36 2/2010 2830627",
-  "cpuPressure": "some avg10=2.28 avg60=1.62 avg300=1.87 total=10117266153"
+  "loadavg": "4.50 3.93 3.70 3/2045 2241147",
+  "cpuPressure": "some avg10=1.74 avg60=1.25 avg300=1.25 total=10101533555"
  },
  "chromeGpu": {
   "devices": [

@@ -1,34 +1,35 @@
 {
- "name": "published-q4-stock",
- "url": "https://raspberrypi.guineafowl-truck.ts.net/artifacts/parakeet-ggml-browser/?model=q4&clip=a07&runs=3&auto=1",
+ "name": "trim-s8",
+ "url": "http://127.0.0.1:8791/?model=s8&clip=a56&runs=2&trim=1&auto=1",
  "chromeArgs": [],
  "machineAtStart": {
-  "loadavg": "3.73 4.76 4.36 10/1970 2819070",
-  "cpuPressure": "some avg10=1.52 avg60=1.32 avg300=1.82 total=10116859604"
+  "loadavg": "3.69 3.87 3.65 8/1985 2021631",
+  "cpuPressure": "some avg10=2.79 avg60=1.76 avg300=1.61 total=10098412630"
  },
  "chrome": "154.0.8037.97",
  "error": null,
  "memory": {
-  "gpuProcessGpuMibAfterLoad": 500,
-  "gpuProcessGpuMibPeak": 541,
+  "gpuProcessGpuMibAfterLoad": 199,
+  "gpuProcessGpuMibPeak": 351,
   "rendererRssMibAfterLoad": 214,
-  "rendererRssMibPeak": 321,
-  "gpuProcessRssMibAfterLoad": 300,
-  "gpuProcessRssMibPeak": 327
+  "rendererRssMibPeak": 351,
+  "gpuProcessRssMibAfterLoad": 296,
+  "gpuProcessRssMibPeak": 316,
+  "gpuProcessGpuMibAfterTrim": 347
  },
  "pids": {
-  "gpu": 2818847,
+  "gpu": 2021385,
   "renderers": [
-   2818974,
-   2818976,
-   2818935
+   2021651,
+   2021537,
+   2021503
   ]
  },
  "page": {
   "config": {
-   "model": "q4",
-   "clip": "a07",
-   "runs": 3,
+   "model": "s8",
+   "clip": "a56",
+   "runs": 2,
    "threads": 1,
    "store": "opfs",
    "f16": true,
@@ -39,53 +40,53 @@
    "env": {}
   },
   "model": {
-   "label": "0.6b v2, Q4_0 (4-bit weights)",
-   "file": "parakeet-tdt-0.6b-v2-Q4_0.gguf",
-   "mb": 438,
-   "family": "0.6b"
+   "label": "110M, Q8_0 (8-bit weights)",
+   "file": "parakeet-tdt_ctc-110m-Q8_0.gguf",
+   "mb": 129,
+   "family": "110m"
   },
   "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
-  "crossOriginIsolated": false,
+  "crossOriginIsolated": true,
   "clips": [
    {
-    "clip": "a07",
-    "seconds": 7,
+    "clip": "a56",
+    "seconds": 56.1,
     "firstInPage": true,
     "firstRunMs": {
-     "pre": 12.9,
-     "enc": 199.8,
-     "dec": 88.3,
-     "total": 301
+     "pre": 99.4,
+     "enc": 285.5,
+     "dec": 220.9,
+     "total": 605.7
     },
-    "startToFirstTranscriptMs": 10907,
-    "decSteps": 47,
-    "text": "going along slushy country roads and speaking to damp audiences in drafty schoolrooms day after day for a fortnight.",
+    "startToFirstTranscriptMs": 3350,
+    "decSteps": 292,
+    "text": "Welcome to Quirk Quid Quill Inc. where finance meets innovation, explore diverse offerings from the P three Quatro a unique investment portfolio quadrant to the O three Omni, a platform for intricate derivative trading strategies. Delve into unconventional bond markets with our B three Bond X and our and experience non standard equity trading with E three equity, personalize your wealth management with W three Wrap Z and anticipate market trends with the O two outlier, our forward thinking financial forecasting tool. Explore venture capital world with U three unifund or move your money with the M three mover, our sophisticated monetary transfer module. At Cork Quid Quill Inc. we turn complex finance into creative solutions. Join us in redefining financial services.",
     "matchesNative": true,
-    "warmRuns": 3,
+    "warmRuns": 2,
     "preMs": {
-     "median": 5.9,
-     "worst": 6.3,
-     "best": 5.8
+     "median": 46.7,
+     "worst": 48.4,
+     "best": 45
     },
     "encMs": {
-     "median": 56.5,
-     "worst": 66.6,
-     "best": 54.4
+     "median": 114.1,
+     "worst": 114.8,
+     "best": 113.4
     },
     "decMs": {
-     "median": 45.2,
-     "worst": 45.5,
-     "best": 44.4
+     "median": 166.8,
+     "worst": 173.1,
+     "best": 160.4
     },
     "totalMs": {
-     "median": 108.3,
-     "worst": 117.7,
-     "best": 104.6
+     "median": 327.5,
+     "worst": 336.3,
+     "best": 318.8
     },
-    "xRealTime": 64.6,
+    "xRealTime": 171.3,
     "textStable": true,
-    "wasmHeapMb": 38,
-    "wasmHeapUsedMb": 16
+    "wasmHeapMb": 55,
+    "wasmHeapUsedMb": 15.7
    }
   ],
   "adapter": {
@@ -128,77 +129,81 @@
   "jspi": true,
   "shaderF16Used": false,
   "load": {
-   "fetchMs": 8022,
-   "loadMs": 875,
+   "fetchMs": 531,
+   "loadMs": 349,
    "from": "network, streamed to OPFS",
-   "fileMb": 437.5,
+   "fileMb": 129.1,
    "wasmHeapMb": 32,
-   "wasmHeapUsedMb": 14.6,
+   "wasmHeapUsedMb": 9.9,
    "backend": "WebGPU: WebGPU"
   },
   "session": {
-   "totalMs": 875
+   "totalMs": 349
   },
-  "startToLoadedMs": 9190
+  "startToLoadedMs": 1298
  },
  "steps": [
   {
    "t": 0,
-   "name": "start: 0.6b v2, Q4_0 (4-bit weights), flash=off, store=opfs, jspi"
+   "name": "start: 110M, Q8_0 (8-bit weights), flash=off, store=opfs, jspi"
   },
   {
-   "t": 292,
+   "t": 417,
    "name": "WASM module ready",
-   "ms": 105.7,
+   "ms": 38,
    "detail": "heap 32 MB; JSPI available"
   },
   {
-   "t": 292,
+   "t": 417,
    "name": "adapter: nvidia turing NVIDIA GeForce RTX 2080 Ti; shader-f16 ABSENT; fallback=false"
   },
   {
-   "t": 292,
+   "t": 417,
    "name": "shader path: f32 only (adapter has no shader-f16)"
   },
   {
-   "t": 9190,
+   "t": 1298,
    "name": "model file ready (network, streamed to OPFS)",
-   "ms": 8021.7,
-   "detail": "438 MB"
+   "ms": 530.6,
+   "detail": "129 MB"
   },
   {
-   "t": 9190,
+   "t": 1298,
    "name": "model loaded on WebGPU: WebGPU",
-   "ms": 874.5,
-   "detail": "WASM heap 32 MB, 14.6 MB in use"
+   "ms": 348.8,
+   "detail": "WASM heap 32 MB, 9.9 MB in use"
   },
   {
-   "t": 10907,
-   "name": "a07 (7.0 s) first run (cold)",
-   "ms": 301,
-   "detail": "mel 12.9 ms, encoder 200 ms, decode 88.3 ms, heap 38 MB (16 in use)"
+   "t": 3350,
+   "name": "a56 (56.1 s) first run (cold)",
+   "ms": 605.7,
+   "detail": "mel 99.4 ms, encoder 285 ms, decode 221 ms, heap 55 MB (15.7 in use)"
   },
   {
-   "t": 10907,
-   "name": "a07 transcript matches the reference",
-   "detail": "going along slushy country roads and speaking to damp audiences in drafty schoolrooms day ..."
+   "t": 3350,
+   "name": "a56 transcript matches the reference",
+   "detail": "Welcome to Quirk Quid Quill Inc. where finance meets innovation, explore diverse offerings..."
   },
   {
-   "t": 11369,
-   "name": "a07 warm x3",
-   "ms": 108.3,
-   "detail": "total median/worst 108.3 / 117.7 ms; encoder 56.5 / 66.6 ms; mel 5.9 ms; decode 45.2 ms; 64.6x real time; text stable=true"
+   "t": 4370,
+   "name": "a56 warm x2",
+   "ms": 327.5,
+   "detail": "total median/worst 327.5 / 336.3 ms; encoder 114.1 / 114.8 ms; mel 46.7 ms; decode 166.8 ms; 171.3x real time; text stable=true"
   },
   {
-   "t": 11370,
+   "t": 4373,
+   "name": "released the GPU compute buffer kept between runs (trim=1)"
+  },
+  {
+   "t": 6473,
    "name": "done",
-   "ms": 11369.6
+   "ms": 6473
   }
  ],
  "console": [],
  "machineAtEnd": {
-  "loadavg": "3.85 4.73 4.36 2/2010 2830627",
-  "cpuPressure": "some avg10=2.28 avg60=1.62 avg300=1.87 total=10117266153"
+  "loadavg": "3.48 3.82 3.64 2/2013 2027632",
+  "cpuPressure": "some avg10=1.57 avg60=1.63 avg300=1.59 total=10098485225"
  },
  "chromeGpu": {
   "devices": [
