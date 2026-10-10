@@ -4,7 +4,6 @@ import { forwardWheelSteps, installScrolling } from "./scroll";
 import { installMobileControls } from "./mobile";
 import { ApplicationClipboard, ClipboardRequests } from "./clipboard";
 import { hasAutomaticSessionName, sessionLabel } from "./session-display";
-import { installTmuxSelection } from "./tmux-selection";
 import { installLinkClicks } from "./links";
 
 type Session = {
@@ -13,10 +12,8 @@ type Session = {
   title: string;
   command: string;
   cwd: string;
-  status: "running" | "exited";
   clients: number;
   createdAt: string;
-  exitCode: number | null;
 };
 
 type LocalTheme = {
@@ -80,16 +77,15 @@ function renderSessions(container: HTMLElement, sessions: Session[]) {
   }
 
   container.innerHTML = sessions
-    .sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)))
+    // Numbered sessions in order, then any created by name outside the browser.
+    .sort((a, b) => (Number.parseInt(a.id, 10) || Infinity) - (Number.parseInt(b.id, 10) || Infinity) || a.id.localeCompare(b.id))
     .map((session) => {
-      const automatic = hasAutomaticSessionName(session.name);
+      const automatic = hasAutomaticSessionName(session);
       const label = sessionLabel(session);
       const context = [!automatic ? session.command : "", session.cwd].filter(Boolean).join(" · ");
-      const detail = session.status === "running"
-        ? `${session.clients} ${session.clients === 1 ? "connection" : "connections"}`
-        : `exited${session.exitCode === null ? "" : ` ${session.exitCode}`}`;
+      const detail = `${session.clients} ${session.clients === 1 ? "connection" : "connections"}`;
       return `<a class="session" href="/terminal/${session.id}">
-        <span class="session-icon" aria-hidden="true">${iconSvg(iconKind(session.title || session.name))}<span class="status ${session.status}"></span></span>
+        <span class="session-icon" aria-hidden="true">${iconSvg(iconKind(session.title || session.command || session.name))}<span class="status running"></span></span>
         <span class="session-main"><strong><span class="session-id">${escapeHtml(session.id)}</span> ${escapeHtml(label)}</strong>${context ? `<span class="session-context" title="${escapeHtml(context)}">${escapeHtml(context)}</span>` : ""}<small>${detail} · ${relativeTime(session.createdAt)}</small></span>
         <button class="rename" data-rename="${session.id}" data-name="${automatic ? "" : escapeHtml(session.name)}" aria-label="Rename ${escapeHtml(session.id)} ${escapeHtml(label)}">Rename</button>
         <button class="delete" data-delete="${session.id}" aria-label="Remove ${escapeHtml(session.id)} ${escapeHtml(label)}">×</button>
@@ -115,7 +111,7 @@ async function startTerminalPage() {
       if (!response.ok) return;
       const session = await response.json() as Session;
       processLabel = session.command || "Shell";
-      namedLabel = hasAutomaticSessionName(session.name) ? "" : session.name;
+      namedLabel = hasAutomaticSessionName(session) ? "" : session.name;
       renderTitle();
     } catch {
       // Keep the last title while the server or network is temporarily unavailable.
@@ -147,17 +143,18 @@ async function startTerminalPage() {
   );
   copyApplication.addEventListener("click", () => { void applicationClipboard.copy(); });
   const clipboardRequests = new ClipboardRequests(text => applicationClipboard.receive(text));
-  const touchPointer = matchMedia("(any-pointer: coarse)").matches;
-  let applicationMouse = false;
-  let tmuxSelectionActive = false;
-  let pendingTmuxCopy = false;
+  // Set while the session was restored inside a full-screen application: zmx
+  // only restores the screen in use, so the shell's screen is still missing.
+  let primaryMissing = false;
   const terminal = new Terminal({
     cursorBlink: true,
     fontFamily: theme.fontFamily,
     fontSize: theme.fontSize,
     scrollback: 10_000,
-    selectOnDrag: false, // Desktop shell drags belong to tmux copy mode.
-    copyOnSelect: false, // Only applies to Ghostty Web's local (Shift/touch) selection.
+    // A drag selects text unless the application tracks the mouse (Shift
+    // overrides); Cmd+C copies the selection.
+    selectOnDrag: false,
+    copyOnSelect: false,
     onClipboardWrite(success) {
       if (!copyToast) return;
       clearTimeout(copyToastTimer);
@@ -180,14 +177,6 @@ async function startTerminalPage() {
   container.dataset.renderer = "webgl";
   fitTerminal();
   if (!matchMedia("(any-pointer: coarse)").matches) terminal.focus();
-  container.addEventListener("keydown", (event) => {
-    if (event.metaKey && event.code === "KeyC" && tmuxSelectionActive && !terminal.hasSelection()) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      pendingTmuxCopy = true;
-      connection.copySelection();
-    }
-  }, { capture: true });
   terminal.onTitleChange(updateTitle);
   // Ctrl+Tab / Ctrl+Shift+Tab switch browser tabs. The emulator would encode
   // these and preventDefault them, so stop them at window capture before they
@@ -235,10 +224,7 @@ async function startTerminalPage() {
     reset() {
       clipboardRequests.reset();
       applicationClipboard.reset();
-      tmuxSelectionActive = false;
-      pendingTmuxCopy = false;
-      applicationMouse = false;
-      terminal.options.selectOnDrag = false;
+      primaryMissing = false;
       titleBuffer = "";
       titleDecoder.decode();
       terminal.scrollToBottom();
@@ -248,19 +234,17 @@ async function startTerminalPage() {
       clipboardRequests.write(data);
       inspectTitles(titleDecoder.decode(data, { stream: true }));
       terminal.write(data);
+      // The application left its full screen: fetch the shell's screen and
+      // scrollback, which the session only hands over once it is in use.
+      if (primaryMissing && !terminal.wasmTerm?.isAlternateScreen()) {
+        primaryMissing = false;
+        connection.restoreSession();
+      }
     },
-    mouseMode(tracking) {
-      applicationMouse = tracking;
-      // Keep the existing phone touch selection behavior; desktop shell drags
-      // now use tmux's copy mode instead of a separate browser buffer.
-      terminal.options.selectOnDrag = touchPointer && !tracking;
-    },
-    selection(text) {
-      if (!pendingTmuxCopy || !tmuxSelectionActive) return;
-      pendingTmuxCopy = false;
-      void navigator.clipboard.writeText(text).then(
-        () => notice("Copied"), () => notice("Copy failed · Try again"),
-      );
+    restored() {
+      primaryMissing = !!terminal.wasmTerm?.isAlternateScreen();
+      // A snapshot holds no images, so have a full-screen application repaint.
+      if (primaryMissing) connection.redraw();
     },
     status(status) {
       if (!connectionStatus) return;
@@ -272,15 +256,6 @@ async function startTerminalPage() {
     },
   });
   installLinkClicks(container, terminal);
-  const tmuxSelection = touchPointer ? undefined : installTmuxSelection(
-    container, terminal, () => applicationMouse,
-    () => { tmuxSelectionActive = true; },
-    () => {
-      if (tmuxSelectionActive) connection.cancelSelection();
-      tmuxSelectionActive = false;
-      pendingTmuxCopy = false;
-    },
-  );
   const mobile = installMobileControls(container, terminal, (message) => {
     if (!copyToast) return;
     clearTimeout(copyToastTimer);
@@ -288,21 +263,16 @@ async function startTerminalPage() {
     copyToast.textContent = message;
     copyToastTimer = setTimeout(() => { copyToast.textContent = ""; }, 3000);
   }, connection, (files) => void pasteFiles(files), (lines, x, y) => {
-    // tmux scrolls shell history and pagers by exact lines. Mouse-aware
-    // applications only take wheel steps: send one per line, which tracks the
-    // finger in Claude Code (one line a step) and runs fast in three-line apps.
-    if (!applicationMouse) { connection.scroll(lines); return; }
-    forwardWheelSteps(container.querySelector("canvas") ?? container, lines, { clientX: x, clientY: y });
+    // Shell history is the browser's own scrollback and moves by exact lines.
+    // Applications only take wheel steps: one per line, which tracks the
+    // finger in Claude Code (one line a step) and runs fast in three-line apps;
+    // a pager without mouse support gets one cursor key per line.
+    if (terminal.wasmTerm?.hasMouseTracking() || terminal.wasmTerm?.isAlternateScreen()) {
+      forwardWheelSteps(container.querySelector("canvas") ?? container, lines, { clientX: x, clientY: y });
+    } else terminal.scrollLines(lines);
   });
   terminal.onData((data) => {
-    const routed = tmuxSelection?.input(data) ?? data;
-    if (!routed) return;
-    if (tmuxSelectionActive && !/^\x1b\[<\d+;\d+;\d+[Mm]$/.test(routed)) {
-      connection.cancelSelection();
-      tmuxSelectionActive = false;
-      pendingTmuxCopy = false;
-    }
-    const input = mobile.input(routed);
+    const input = mobile.input(data);
     if (input) connection.input(input);
   });
   terminal.onResize(() => connection.resize());

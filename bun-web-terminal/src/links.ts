@@ -24,9 +24,9 @@ export function terminalLinkAt(terminal: Terminal, x: number, y: number): string
 }
 
 // Desktop: Cmd+click (Ctrl+click off macOS) opens the link under the pointer.
-// The whole press/release/click is swallowed at window capture so neither tmux
-// nor a mouse-aware application sees it, and so the wrapper's own asynchronous
-// click handler cannot open the same link a second time.
+// The whole press/release/click is swallowed at window capture so neither a
+// mouse-aware application nor the selection sees it, and so the wrapper's own
+// asynchronous click handler cannot open the same link a second time.
 export function installLinkClicks(container: HTMLElement, terminal: Terminal) {
   const mac = /Mac|iPhone|iPad/.test(navigator.platform);
   let pressed: string | undefined;

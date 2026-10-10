@@ -1,35 +1,26 @@
-import { expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Ghostty } from "@random/ghostty-web/ghostty";
 import { SessionManager, type Attachment, type Session } from "./sessions";
 import { ClipboardRequests } from "./clipboard";
 
-test("application OSC 52 crosses the real tmux attachment into the browser clipboard parser", async () => {
-  const socket = `bun-web-terminal-clipboard-${crypto.randomUUID()}`;
-  const manager = new SessionManager(import.meta.dir, socket);
-  const received: string[] = [];
-  const parser = new ClipboardRequests(text => received.push(text));
-  let attachment: Attachment | undefined;
-  try {
-    const session = manager.create();
-    // Enable application clipboard forwarding only on this isolated test server.
-    expect(Bun.spawnSync(["tmux", "-L", socket, "set-option", "-s", "set-clipboard", "on"]).exitCode).toBe(0);
-    attachment = manager.attach(session, {
-      send(data) {
-        if (typeof data === "string") return;
-        parser.write(data);
-        queueMicrotask(() => attachment?.acknowledge(data.byteLength));
-      },
-      close() {},
-    }, 100, 30);
-    await Bun.sleep(300);
-    const text = "OpenCode application copy 🌍\nsecond line";
-    attachment.input(new TextEncoder().encode(`printf '\\033]52;c;${Buffer.from(text).toString("base64")}\\007'\r`));
-    await until(() => received.length > 0);
-    expect(received).toEqual([text]);
-  } finally {
-    manager.dispose();
-    Bun.spawnSync(["tmux", "-L", socket, "kill-server"]);
-  }
+// Each test gets its own zmx socket directory, so no real session is touched.
+let dir: string;
+let manager: SessionManager;
+const shell = process.env.SHELL;
+const zmx = (...args: string[]) => Bun.spawnSync(["zmx", ...args], { env: { ...process.env, ZMX_DIR: dir, ZMX_SESSION: undefined } });
+beforeEach(async () => {
+  dir = mkdtempSync(join(tmpdir(), "bwt-zmx-"));
+  process.env.SHELL = "/bin/sh";
+  manager = await SessionManager.open(import.meta.dir, dir);
+});
+afterEach(() => {
+  manager.dispose();
+  for (const name of zmx("list", "--short").stdout.toString().split("\n").filter(Boolean)) zmx("kill", name);
+  rmSync(dir, { recursive: true, force: true });
+  process.env.SHELL = shell;
 });
 
 async function until(check: () => boolean, timeout = 5000) {
@@ -40,234 +31,144 @@ async function until(check: () => boolean, timeout = 5000) {
   }
 }
 
-test("embedded OSC 8 links survive the tmux attachment and reconnect", async () => {
+// The browser's side of an attachment: the same Ghostty engine, reset on "ready".
+async function browser(session: Session, cols = 100, rows = 30, acknowledge = true, extra: (data: Uint8Array) => void = () => {}) {
   const ghostty = await Ghostty.load(new URL(import.meta.resolve("@random/ghostty-web/ghostty-vt.wasm")).pathname);
-  const socket = `bun-web-terminal-links-${crypto.randomUUID()}`;
-  const manager = new SessionManager(import.meta.dir, socket);
-  const terminals: ReturnType<typeof ghostty.createTerminal>[] = [];
-  const uri = "https://example.com/diagram";
-  const attach = (session: Session) => {
-    const terminal = ghostty.createTerminal(80, 12);
-    terminals.push(terminal);
-    let attachment: Attachment;
-    attachment = manager.attach(session, {
-      send(data) {
-        if (typeof data === "string") return;
-        terminal.write(data);
-        let response: string | null;
-        while ((response = terminal.readResponse()) !== null) attachment.input(new TextEncoder().encode(response));
-        queueMicrotask(() => attachment.acknowledge(data.byteLength));
-      },
-      close() {},
-    }, 80, 12);
-    return { terminal, attachment };
+  const terminal = ghostty.createTerminal(cols, rows);
+  let closeCode = 0;
+  let restores = 0;
+  const attachment: Attachment = manager.attach(session, {
+    send(data) {
+      if (typeof data === "string") {
+        if (JSON.parse(data).type === "ready") { restores++; terminal.write("\x1bc"); }
+        return;
+      }
+      extra(data);
+      terminal.write(data);
+      let response: string | null;
+      while ((response = terminal.readResponse()) !== null) attachment.input(new TextEncoder().encode(response));
+      if (acknowledge) queueMicrotask(() => attachment.acknowledge(data.byteLength));
+    },
+    close(code) { closeCode = code; terminal.free(); },
+  }, cols, rows);
+  return {
+    terminal, attachment,
+    text: () => closeCode ? "" : Array.from({ length: rows }, (_, y) => (terminal.getLine(y) ?? []).map(cell => String.fromCodePoint(cell.codepoint || 32)).join("")).join("\n"),
+    input: (value: string) => attachment.input(new TextEncoder().encode(value)),
+    closed: () => closeCode,
+    restores: () => restores,
   };
-  const text = (terminal: ReturnType<typeof ghostty.createTerminal>) =>
-    Array.from({ length: 12 }, (_, y) => (terminal.getLine(y) ?? []).map(cell => String.fromCodePoint(cell.codepoint || 32)).join("")).join("\n");
-  try {
-    const session = manager.create();
-    const first = attach(session);
-    first.attachment.input(new TextEncoder().encode(`'${process.execPath}' '${import.meta.dir}/fixtures/hyperlink.ts'\r`));
-    await until(() => text(first.terminal).includes("Open diagram"));
-    expect(first.terminal.getHyperlinkUri(0, 0)).toBe(uri);
-    expect(first.terminal.getHyperlinkUri(0, 11)).toBe(uri);
-    expect(first.terminal.getHyperlinkUri(0, 12)).toBeNull();
-    first.attachment.close();
-    const second = attach(session);
-    await until(() => text(second.terminal).includes("Open diagram"));
-    expect(second.terminal.getHyperlinkUri(0, 0)).toBe(uri);
-  } finally {
-    manager.dispose();
-    Bun.spawnSync(["tmux", "-L", socket, "kill-server"]);
-    for (const terminal of terminals) terminal.free();
-  }
+}
+
+test("application OSC 52 crosses the zmx attachment into the browser clipboard parser", async () => {
+  const received: string[] = [];
+  const parser = new ClipboardRequests(text => received.push(text));
+  const tab = await browser(await manager.create(), 100, 30, true, data => parser.write(data));
+  const text = "OpenCode application copy 🌍\nsecond line";
+  tab.input(`printf '\\033]52;c;${Buffer.from(text).toString("base64")}\\007'\r`);
+  await until(() => received.length > 0);
+  expect(received).toEqual([text]);
 });
 
-test("tmux restores a live alternate screen, coalesces resize storms, and survives slow attachments", async () => {
-  const ghostty = await Ghostty.load(new URL(import.meta.resolve("@random/ghostty-web/ghostty-vt.wasm")).pathname);
-  const socket = `bun-web-terminal-test-${crypto.randomUUID()}`;
-  let manager = new SessionManager(import.meta.dir, socket);
-  const terminals: ReturnType<typeof ghostty.createTerminal>[] = [];
-  function attach(session: Session, cols = 100, rows = 30, acknowledge = true) {
-    const terminal = ghostty.createTerminal(cols, rows);
-    terminals.push(terminal);
-    let attachment: Attachment;
-    let closeCode = 0;
-    let mouseTracking: boolean | undefined;
-    attachment = manager.attach(session, {
-      send(data) {
-        if (typeof data === "string") {
-          const message = JSON.parse(data);
-          if (message.type === "mouse-mode") mouseTracking = message.tracking;
-          return;
-        }
-        terminal.write(data);
-        let response: string | null;
-        while ((response = terminal.readResponse()) !== null) attachment.input(new TextEncoder().encode(response));
-        if (acknowledge) queueMicrotask(() => attachment.acknowledge(data.byteLength));
-      },
-      close(code) { closeCode = code; },
-    }, cols, rows);
-    return {
-      terminal, attachment,
-      text: () => Array.from({ length: rows }, (_, y) => (terminal.getLine(y) ?? []).map(cell => String.fromCodePoint(cell.codepoint || 32)).join("")).join("\n"),
-      input: (value: string) => attachment.input(new TextEncoder().encode(value)),
-      closed: () => closeCode,
-      mouseTracking: () => mouseTracking,
-    };
-  }
-  try {
-    const session = manager.create();
-    const first = attach(session);
-    await Bun.sleep(300);
-    await until(() => first.mouseTracking() === false);
-    // The outer terminal still tracks mice for tmux scrolling at a plain shell.
-    expect(first.terminal.hasMouseTracking()).toBe(true);
-    first.input(`'${process.execPath}' '${import.meta.dir}/fixtures/tui.ts'\r`);
-    await until(() => first.text().includes("ATTACHMENT-FIXTURE count=0"));
-    await until(() => first.mouseTracking() === true);
-    first.input("+");
-    await until(() => first.text().includes("count=1"));
-    manager.dispose();
-    expect(first.closed()).toBe(1001);
-    manager = new SessionManager(import.meta.dir, socket);
-    const restored = manager.sessions.get(session.id)!;
-    expect(restored.name).toBe(session.name);
-    expect(restored.createdAt).toEqual(session.createdAt);
-    const second = attach(restored);
-    await until(() => second.text().includes("ATTACHMENT-FIXTURE count=1"));
-    await until(() => second.mouseTracking() === true);
-    for (let i = 0; i < 300; i++) second.attachment.resize(80 + i % 40, 24 + i % 10);
-    second.terminal.resize(110, 28);
-    second.attachment.resize(110, 28);
-    await until(() => second.text().includes("size=110x28"));
-    expect(second.text()).toContain("resizes=1");
+// zmx 0.8.1's snapshot carries the text but not the link, so a reattached
+// terminal only regains link targets when the application repaints them.
+test("embedded OSC 8 links cross the zmx attachment unchanged", async () => {
+  const uri = "https://example.com/diagram";
+  const tab = await browser(await manager.create(), 80, 12);
+  tab.input(`'${process.execPath}' '${import.meta.dir}/fixtures/hyperlink.ts'\r`);
+  await until(() => tab.text().includes("Open diagram"));
+  expect(tab.terminal.getHyperlinkUri(0, 0)).toBe(uri);
+  expect(tab.terminal.getHyperlinkUri(0, 11)).toBe(uri);
+  expect(tab.terminal.getHyperlinkUri(0, 12)).toBeNull();
+});
 
-    const slow = attach(restored, 110, 28, false);
-    expect(second.closed()).toBe(4002);
-    await until(() => slow.text().includes("count=1"));
-    slow.input("f");
-    await until(() => slow.closed() === 1013, 12_000);
-    expect(restored.title).toContain("bun");
-    const recovered = attach(restored, 110, 28);
-    await until(() => recovered.text().includes("ATTACHMENT-FIXTURE count=1"));
-    recovered.input("+");
-    await until(() => recovered.text().includes("count=2"));
-    recovered.input("q");
-    await until(() => recovered.mouseTracking() === false);
-    manager.remove(restored);
-    expect(recovered.closed()).toBe(4004);
-    expect(manager.sessions.size).toBe(0);
-  } finally {
-    manager.dispose();
-    Bun.spawnSync(["tmux", "-L", socket, "kill-server"]);
-    for (const terminal of terminals) terminal.free();
-  }
-}, 25_000);
+test("zmx restores a live alternate screen, coalesces resize storms, nudges a redraw, and survives slow attachments", async () => {
+  const session = await manager.create();
+  const first = await browser(session);
+  await until(() => first.restores() === 1);
+  // Nothing sits between the application and the browser's emulator any more.
+  expect(first.terminal.hasMouseTracking()).toBe(false);
+  first.input(`'${process.execPath}' '${import.meta.dir}/fixtures/tui.ts'\r`);
+  await until(() => first.text().includes("ATTACHMENT-FIXTURE count=0"));
+  await until(() => first.terminal.hasMouseTracking());
+  expect(first.terminal.isAlternateScreen()).toBe(true);
+  // The detach key of zmx's own client is the application's to handle here.
+  first.input("\x1c+");
+  await until(() => first.text().includes("count=1"));
+  manager.dispose();
+  expect(first.closed()).toBe(1001);
+  manager = await SessionManager.open(import.meta.dir, dir);
+  const restored = manager.sessions.get(session.id)!;
+  expect(restored.name).toBe(session.name);
+  expect(restored.createdAt).toEqual(session.createdAt);
+  expect(restored.command).toBe("bun");
+  const second = await browser(restored);
+  await until(() => second.text().includes("ATTACHMENT-FIXTURE count=1"));
+  expect(second.terminal.hasMouseTracking()).toBe(true);
+  expect(second.terminal.isAlternateScreen()).toBe(true);
+  const resizes = () => Number(second.text().match(/resizes=(\d+)/)?.[1]);
+  await until(() => second.text().includes("size=100x30"));
+  await Bun.sleep(200);
+  const before = resizes();
+  second.attachment.redraw();
+  await until(() => second.text().includes("size=100x29"));
+  await until(() => second.text().includes("size=100x30"));
+  expect(resizes()).toBe(before + 2);
+  for (let i = 0; i < 300; i++) second.attachment.resize(80 + i % 40, 24 + i % 10);
+  second.terminal.resize(110, 28);
+  second.attachment.resize(110, 28);
+  await until(() => second.text().includes("size=110x28"));
+  expect(resizes()).toBe(before + 3);
 
-test("discovers standard tmux sessions and tracks renames and external removal", async () => {
-  const socket = `bun-web-terminal-test-${crypto.randomUUID()}`;
-  const tmux = (...args: string[]) => Bun.spawnSync(["tmux", "-L", socket, "-f", "/dev/null", ...args]);
-  let manager: SessionManager | undefined;
+  const slow = await browser(restored, 110, 28, false);
+  expect(second.closed()).toBe(4002);
+  await until(() => slow.text().includes("count=1"));
+  slow.input("f");
+  await until(() => slow.closed() === 1013, 15_000);
+  const recovered = await browser(restored, 110, 28);
+  await until(() => recovered.text().includes("ATTACHMENT-FIXTURE count=1"));
+  recovered.input("+");
+  await until(() => recovered.text().includes("count=2"));
+  recovered.input("q");
+  await until(() => !recovered.terminal.hasMouseTracking());
+  await manager.remove(restored);
+  expect(recovered.closed()).toBe(4004);
+  expect(manager.sessions.size).toBe(0);
+}, 40_000);
+
+test("discovers existing zmx sessions and tracks renames and external removal", async () => {
+  // zmx creates a session from an attached client, which needs a terminal.
+  const client = Bun.spawn(["zmx", "attach", "existing", "sleep", "60"], {
+    env: { ...process.env, ZMX_DIR: dir, ZMX_SESSION: undefined }, terminal: { cols: 80, rows: 24, data() {} },
+  });
   try {
-    const result = tmux("new-session", "-d", "-P", "-F", "#{session_id}", "-s", "existing", "sleep 60");
-    expect(result.exitCode).toBe(0);
-    const id = result.stdout.toString().trim();
-    manager = new SessionManager(import.meta.dir, socket);
-    expect(manager.sessions.get(id)?.name).toBe("existing");
-    const prefix = tmux("show-options", "-gv", "prefix").stdout.toString();
-    const created = manager.create();
-    expect(created.name).toMatch(/^\d+$/);
+    await until(() => { void manager.refresh(); return manager.sessions.has("existing"); });
+    await until(() => manager.sessions.get("existing")?.command === "sleep");
+    const created = await manager.create("phone");
+    expect(created.id).toBe("1-phone");
+    expect(created.name).toBe("1-phone");
     expect(created.cwd).toBe(import.meta.dir);
-    await until(() => manager!.sessions.get(id)?.command === "sleep");
-    const pane = tmux("display-message", "-p", "-t", created.id, "#{pane_pid}").stdout.toString();
-    manager.rename(created, "My terminal");
-    expect(manager.sessions.get(created.id)?.name).toBe("My terminal");
-    expect(tmux("display-message", "-p", "-t", created.id, "#{pane_pid}").stdout.toString()).toBe(pane);
-    expect(() => manager!.rename(created, "existing")).toThrow();
-    for (const name of ["", "  ", "bad.name", "bad:name", "bad\nname", "x".repeat(129)]) {
-      expect(() => manager!.rename(created, name)).toThrow();
+    expect((await manager.create()).id).toBe("2");
+    const pid = () => zmx("list").stdout.toString().match(/name=1-phone\tpid=(\d+)/)?.[1];
+    const before = pid();
+    expect(before).toBeDefined();
+    await manager.rename(created, "My terminal: 2.0");
+    expect(manager.sessions.get("1-phone")?.name).toBe("My terminal: 2.0");
+    await manager.refresh();
+    expect(manager.sessions.get("1-phone")?.name).toBe("My terminal: 2.0");
+    expect(pid()).toBe(before);
+    for (const name of ["", "  ", "bad\nname", "x".repeat(129)]) {
+      expect(manager.rename(created, name)).rejects.toThrow();
     }
-    expect(created.name).toBe("My terminal");
-    expect(tmux("show-options", "-gv", "prefix").stdout.toString()).toBe(prefix);
-    tmux("rename-session", "-t", id, "renamed");
-    await until(() => manager!.sessions.get(id)?.name === "renamed");
-    manager.remove(created);
-    tmux("kill-session", "-t", id);
-    await until(() => manager!.sessions.size === 0);
+    expect(created.name).toBe("My terminal: 2.0");
+    zmx("set", "existing", "label=renamed");
+    await manager.refresh();
+    expect(manager.sessions.get("existing")?.name).toBe("renamed");
+    await manager.remove(created);
+    await manager.remove(manager.sessions.get("2")!);
+    zmx("kill", "existing");
+    await until(() => { void manager.refresh(); return manager.sessions.size === 0; });
   } finally {
-    manager?.dispose();
-    tmux("kill-server");
-  }
-});
-
-test("tmux handles shell mouse drag selection on an isolated attachment", async () => {
-  const ghostty = await Ghostty.load(new URL(import.meta.resolve("@random/ghostty-web/ghostty-vt.wasm")).pathname);
-  const terminal = ghostty.createTerminal(80, 12);
-  const socket = `bun-web-terminal-selection-${crypto.randomUUID()}`;
-  const manager = new SessionManager(import.meta.dir, socket);
-  const tmux = (...args: string[]) => Bun.spawnSync(["tmux", "-L", socket, "-f", "/dev/null", ...args]);
-  let attachment: Attachment | undefined;
-  let selected = "";
-  const clipboardWrites: string[] = [];
-  const clipboard = new ClipboardRequests(text => clipboardWrites.push(text));
-  try {
-    const previousShell = process.env.SHELL;
-    process.env.SHELL = '/bin/sh';
-    let session: Session;
-    try { session = manager.create(); }
-    finally { process.env.SHELL = previousShell; }
-    expect(tmux('set-option', '-s', 'set-clipboard', 'on').exitCode).toBe(0);
-    attachment = manager.attach(session, {
-      send(data) {
-        if (data instanceof Uint8Array) {
-          clipboard.write(data);
-          terminal.write(data);
-          let response: string | null;
-          while ((response = terminal.readResponse()) !== null) attachment?.input(new TextEncoder().encode(response));
-          queueMicrotask(() => attachment?.acknowledge(data.byteLength));
-        }
-        else {
-          const message = JSON.parse(data);
-          if (message.type === "selection") selected = message.text;
-        }
-      },
-      close() {},
-    }, 80, 12);
-    await Bun.sleep(300);
-    expect(terminal.hasMouseTracking()).toBe(true);
-    tmux('send-keys', '-t', session.id, "i=1; while [ $i -le 60 ]; do printf 'LINE-%03d\\n' $i; i=$((i+1)); done", 'Enter');
-    await until(() => tmux('capture-pane', '-p', '-t', session.id).stdout.toString().includes('LINE-060'));
-    const mouse = (button: number, col: number, row: number, release = false) =>
-      attachment!.input(new TextEncoder().encode(`\x1b[<${button};${col};${row}${release ? 'm' : 'M'}`));
-    mouse(0, 1, 7);
-    await Bun.sleep(50);
-    mouse(32, 5, 2);
-    await until(() => tmux('display-message', '-p', '-t', session.id, '#{pane_mode}').stdout.toString().trim() === 'copy-mode');
-    expect(terminal.hasMouseTracking()).toBe(true);
-    expect(tmux('display-message', '-p', '-t', session.id, '#{selection_present}').stdout.toString().trim()).toBe('1');
-    for (let i = 0; i < 10; i++) mouse(64, 1, 1);
-    await until(() => Number(tmux('display-message', '-p', '-t', session.id, '#{scroll_position}').stdout.toString()) > 30);
-    // Browser release is consumed. Selection remains highlighted, but neither
-    // tmux's paste buffer nor the browser clipboard is changed yet.
-    const bufferBeforeCopy = tmux('show-buffer').stdout.toString();
-    expect(selected).toBe('');
-    expect(clipboardWrites).toEqual([]);
-    expect(tmux('show-buffer').stdout.toString()).toBe(bufferBeforeCopy);
-    expect(tmux('display-message', '-p', '-t', session.id, '#{selection_present}').stdout.toString().trim()).toBe('1');
-    // Only the explicit Cmd+C control copies without canceling the highlight.
-    attachment.copySelection();
-    await until(() => selected.includes('LINE-002'));
-    expect(selected).toContain('LINE-040');
-    expect(tmux('show-buffer').stdout.toString()).toBe(selected);
-    expect(tmux('display-message', '-p', '-t', session.id, '#{pane_mode}').stdout.toString().trim()).toBe('copy-mode');
-    expect(tmux('display-message', '-p', '-t', session.id, '#{selection_present}').stdout.toString().trim()).toBe('1');
-    expect(terminal.hasMouseTracking()).toBe(true);
-    attachment.cancelSelection();
-    expect(tmux('display-message', '-p', '-t', session.id, '#{pane_mode}').stdout.toString().trim()).toBe('');
-  } finally {
-    manager.dispose();
-    tmux('kill-server');
-    terminal.free();
+    client.kill();
   }
 });

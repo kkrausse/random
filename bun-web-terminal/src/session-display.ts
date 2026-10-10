@@ -1,12 +1,14 @@
 export type DisplaySession = {
+  id: string;
   name: string;
   command: string;
 };
 
-export function hasAutomaticSessionName(name: string) {
-  return /^\d+$/.test(name) || /^web-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name);
+// A session nobody renamed is called by its id.
+export function hasAutomaticSessionName(session: Pick<DisplaySession, "id" | "name">) {
+  return session.name === session.id;
 }
 
 export function sessionLabel(session: DisplaySession) {
-  return hasAutomaticSessionName(session.name) ? session.command || "Shell" : session.name;
+  return hasAutomaticSessionName(session) ? session.command || "Shell" : session.name;
 }

@@ -28,7 +28,7 @@ const auth = new TerminalAuth(port, publicUrl, await loadCredentials(credentialP
 
 await buildClient();
 const theme = loadGhosttyTheme();
-const manager = new SessionManager(process.env.TERMINAL_CWD ?? defaultTerminalCwd);
+const manager = await SessionManager.open(process.env.TERMINAL_CWD ?? defaultTerminalCwd);
 const sessions = manager.sessions;
 const dictation = new DictationService();
 process.once("exit", () => manager.dispose());
@@ -57,9 +57,9 @@ const server = Bun.serve<SocketData>({
 
     if (url.pathname.startsWith("/ws/")) {
       if (!isSameOrigin(request)) return new Response("Forbidden", { status: 403 });
+      // A session that is gone is reported over the socket (4004), so a
+      // reconnecting tab shows it as closed instead of retrying forever.
       const sessionId = url.pathname.slice(4);
-      const session = sessions.get(sessionId);
-      if (!session) return new Response("Session not found", { status: 404 });
       const size = dimensions(Number(url.searchParams.get("cols")), Number(url.searchParams.get("rows")));
       if (!size) return new Response("Invalid terminal dimensions", { status: 400 });
       return server.upgrade(request, { data: { kind: "terminal", sessionId, ...size } }) ? undefined : new Response("Upgrade failed", { status: 400 });
@@ -73,7 +73,7 @@ const server = Bun.serve<SocketData>({
       try {
         label = (await request.json() as { label?: unknown })?.label;
       } catch {}
-      const session = manager.create(typeof label === "string" ? label : isMobileDevice(request) ? "phone" : undefined);
+      const session = await manager.create(typeof label === "string" ? label : isMobileDevice(request) ? "phone" : undefined);
       return Response.json(publicSession(session), { status: 201 });
     }
     if (url.pathname.startsWith("/api/sessions/") && request.method === "GET") {
@@ -93,7 +93,7 @@ const server = Bun.serve<SocketData>({
       if (!session) return new Response("Session not found", { status: 404 });
       try {
         const body = await request.json();
-        return Response.json(publicSession(manager.rename(session, body?.name)));
+        return Response.json(publicSession(await manager.rename(session, body?.name)));
       } catch (error) {
         return new Response(error instanceof Error ? error.message : "Could not rename session", { status: 400 });
       }
@@ -102,7 +102,7 @@ const server = Bun.serve<SocketData>({
       if (!isSameOrigin(request)) return new Response("Forbidden", { status: 403 });
       const session = sessions.get(url.pathname.slice(14));
       if (!session) return new Response("Session not found", { status: 404 });
-      manager.remove(session);
+      await manager.remove(session);
       void rm(attachmentDirectory(session), { recursive: true, force: true });
       return new Response(null, { status: 204 });
     }
@@ -114,7 +114,7 @@ const server = Bun.serve<SocketData>({
     if (url.pathname === "/ghostty-vt.wasm") return serveFile(join(dist, "ghostty-vt.wasm"), "application/wasm");
     if (url.pathname === "/" ) return Response.redirect(new URL("/sessions", url), 302);
     if (url.pathname === "/sessions/new" && request.method === "GET") {
-      const session = manager.create(isMobileDevice(request) ? "phone" : undefined);
+      const session = await manager.create(isMobileDevice(request) ? "phone" : undefined);
       return Response.redirect(new URL(`/terminal/${session.id}`, url), 303);
     }
     if (url.pathname === "/sessions") return html(sessionsPage());
@@ -143,9 +143,8 @@ const server = Bun.serve<SocketData>({
       try {
         const control = JSON.parse(message);
         if (control?.type === "ping") { socket.send('{"type":"pong"}'); return; }
-        if (control?.type === "copy-selection") { attachment.copySelection(); return; }
-        if (control?.type === "cancel-selection") { attachment.cancelSelection(); return; }
-        if (control?.type === "scroll" && Number.isInteger(control.lines)) { attachment.scroll(control.lines); return; }
+        if (control?.type === "redraw") { attachment.redraw(); return; }
+        if (control?.type === "restore") { attachment.restore(); return; }
         if (control?.type === "ack" && attachment.acknowledge(control.bytes)) return;
         if (control?.type === "resize") {
           const size = dimensions(control.cols, control.rows);
@@ -187,9 +186,8 @@ async function saveAttachment(request: Request, session: Session) {
   return Response.json({ path });
 }
 
-// tmux ids look like "$3", which a shell would expand inside a pasted path.
 function attachmentDirectory(session: Session) {
-  return join(attachmentRoot, session.id.replace(/[^A-Za-z0-9_-]/g, ""));
+  return join(attachmentRoot, session.id);
 }
 
 // Pasted paths are typed into the shell unquoted, so names keep only shell-safe
@@ -217,10 +215,8 @@ function publicSession(session: Session) {
     title: session.title,
     command: session.command,
     cwd: session.cwd,
-    status: session.status,
     clients: session.attachment ? 1 : 0,
     createdAt: session.createdAt.toISOString(),
-    exitCode: session.exitCode,
   };
 }
 
@@ -356,7 +352,7 @@ function document(title: string, bodyClass: string, content: string) {
 }
 
 function sessionsPage() {
-  return document("Sessions", "sessions-page", `<main class="sessions-shell"><header class="sessions-header"><div><span class="eyebrow">localhost · bun pty</span><h1>Sessions</h1></div><a id="create-session" href="/sessions/new">+ New shell</a></header><section id="session-list" aria-live="polite"></section></main>`);
+  return document("Sessions", "sessions-page", `<main class="sessions-shell"><header class="sessions-header"><div><span class="eyebrow">localhost · zmx</span><h1>Sessions</h1></div><a id="create-session" href="/sessions/new">+ New shell</a></header><section id="session-list" aria-live="polite"></section></main>`);
 }
 
 function terminalPage(session: Session) {

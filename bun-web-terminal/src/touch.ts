@@ -1,6 +1,6 @@
 import type { Terminal } from "@random/ghostty-web";
 
-// Long presses follow desktop drag routing; the Select toolbar forces local selection.
+// Long presses follow desktop drag routing: local selection, or the application's mouse.
 // Swipes report whole lines through `scroll` (positive is toward newer output):
 // the text follows the finger one line per line height, then coasts on release.
 export function installTerminalTouchControls(container: HTMLElement, terminal: Terminal, selecting: () => boolean, notice: (message: string) => void, scroll: (lines: number, x: number, y: number) => void, openLink: (x: number, y: number) => boolean = () => false) {
@@ -76,7 +76,7 @@ export function installTerminalTouchControls(container: HTMLElement, terminal: T
       holdTimer = undefined;
       if (!gesture) return;
       gesture.selecting = true;
-      gesture.application = !terminal.options.selectOnDrag && !!terminal.wasmTerm?.hasMouseTracking();
+      gesture.application = !!terminal.wasmTerm?.hasMouseTracking();
       if (gesture.application) {
         // Use Ghostty's normal mouse encoding and the same inner-pane mode as desktop.
         mouse("mousedown", gesture.x, gesture.y);

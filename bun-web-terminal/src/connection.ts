@@ -3,9 +3,9 @@ type TerminalView = {
   size(): { cols: number; rows: number };
   reset(): void;
   write(data: Uint8Array): void;
+  /** The session's saved state has been written; live output follows. */
+  restored(): void;
   status(status: Status): void;
-  mouseMode(tracking: boolean): void;
-  selection(text: string): void;
 };
 
 // Binary messages are terminal bytes; text messages are protocol controls.
@@ -18,6 +18,7 @@ export class TerminalConnection {
   private attempt = 0;
   private stopped = false;
   private ready = false;
+  private restoring = 0;
   private encoder = new TextEncoder();
   private attachmentId?: string;
   private attachmentListeners = new Set<() => void>();
@@ -43,9 +44,9 @@ export class TerminalConnection {
   }
 
   resize() { if (this.ready) this.control({ type: "resize", ...this.view.size() }); }
-  copySelection() { if (this.ready) this.control({ type: "copy-selection" }); }
-  cancelSelection() { if (this.ready) this.control({ type: "cancel-selection" }); }
-  scroll(lines: number) { if (this.ready) this.control({ type: "scroll", lines }); }
+  redraw() { if (this.ready) this.control({ type: "redraw" }); }
+  /** Start again from the session's saved state, on the same connection. */
+  restoreSession() { if (this.ready) this.control({ type: "restore" }); }
 
   restore() {
     if (this.stopped) return;
@@ -84,6 +85,8 @@ export class TerminalConnection {
         if (message.type === "ready") {
           clearTimeout(this.connectTimeout);
           this.attempt = 0;
+          // Sent on attaching and again whenever the server restores the
+          // terminal from the session: what follows replaces all local state.
           // Keep the WASM instance: ghostty-web.reset() leaves some input/mouse
           // helpers pointing at the freed instance. RIS resets it in place.
           this.view.reset();
@@ -93,10 +96,8 @@ export class TerminalConnection {
           this.view.status("connected");
           this.resize();
           this.ping();
-        } else if (message.type === "mouse-mode" && typeof message.tracking === "boolean") {
-          this.view.mouseMode(message.tracking);
-        } else if (message.type === "selection" && typeof message.text === "string") {
-          this.view.selection(message.text);
+          this.restoring = Number(message.snapshot) || 0;
+          if (!this.restoring) this.view.restored();
         } else if (message.type === "pong") {
           clearTimeout(this.pongTimeout);
           this.pongTimeout = undefined;
@@ -109,6 +110,7 @@ export class TerminalConnection {
       const data = new Uint8Array(event.data);
       this.view.write(data);
       this.control({ type: "ack", bytes: data.byteLength });
+      if (this.restoring > 0 && (this.restoring -= data.byteLength) <= 0) this.view.restored();
     };
     socket.onclose = (event) => {
       if (socket !== this.socket) return;

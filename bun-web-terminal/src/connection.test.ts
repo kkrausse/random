@@ -32,16 +32,16 @@ function fixture() {
   class Socket {
     static OPEN = 1;
     readyState = 0;
-    onmessage?: (event: { data: string }) => void;
+    onmessage?: (event: { data: string | ArrayBuffer }) => void;
     onclose?: (event: { code: number }) => void;
     onerror?: () => void;
     constructor() { sockets.push(this); }
     send(data: string) { sent.push(data); }
     // Model a dead network: closing never delivers a close event.
     close() { this.readyState = 2; }
-    ready() {
+    ready(snapshot = 0) {
       this.readyState = 1;
-      this.onmessage?.({ data: JSON.stringify({ type: "ready", attachmentId: "attachment" }) });
+      this.onmessage?.({ data: JSON.stringify({ type: "ready", attachmentId: "attachment", snapshot }) });
     }
   }
   replace("WebSocket", Socket);
@@ -49,9 +49,9 @@ function fixture() {
   replace("navigator", { onLine: true });
   replace("location", { protocol: "http:", host: "localhost" });
   const statuses: string[] = [];
-  const selections: string[] = [];
+  let restores = 0;
   const connection = new TerminalConnection("session", {
-    size: () => ({ cols: 80, rows: 24 }), reset() {}, write() {}, mouseMode() {}, selection: text => selections.push(text),
+    size: () => ({ cols: 80, rows: 24 }), reset() {}, write() {}, restored() { restores++; },
     status: (value) => statuses.push(value),
   });
   cleanups.push(() => connection.dispose());
@@ -61,7 +61,7 @@ function fixture() {
     timers.delete(entry![0]);
     entry![1].callback();
   }
-  return { connection, sockets, statuses, selections, sent, fire, timers };
+  return { connection, sockets, statuses, restores: () => restores, sent, fire, timers };
 }
 
 test("stalled handshake retries without waiting for socket close", () => {
@@ -103,18 +103,4 @@ test("manual refresh cancels pending automatic retries", () => {
   f.connection.refresh();
   expect([...f.timers.values()].map((timer) => timer.delay)).toEqual([8_000]);
   expect(f.sockets).toHaveLength(2);
-});
-
-test("copy requires an explicit control on the attached socket and returns the selected text", () => {
-  const f = fixture();
-  f.connection.copySelection();
-  expect(f.sent).toEqual([]);
-  f.sockets[0]!.ready();
-  f.connection.copySelection();
-  f.connection.cancelSelection();
-  expect(f.sent.slice(-2).map(data => JSON.parse(data))).toEqual([
-    { type: "copy-selection" }, { type: "cancel-selection" },
-  ]);
-  f.sockets[0]!.onmessage?.({ data: JSON.stringify({ type: "selection", text: "tmux history" }) });
-  expect(f.selections).toEqual(["tmux history"]);
 });

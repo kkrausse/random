@@ -33,8 +33,7 @@ function setup(manual = false, application = false, openLink: (x: number, y: num
   const mouseEvents: { type: string; x: number; y: number; buttons: number }[] = [];
   const terminal = {
     cols: 20, rows: 10,
-    options: { selectOnDrag: !application },
-    wasmTerm: { hasMouseTracking: () => true }, // tmux tracks the mouse even at a shell.
+    wasmTerm: { hasMouseTracking: () => application },
     renderer: { getMetrics: () => ({ width: 10, height: 20 }) },
     select: (...args: number[]) => selections.push(args),
   };
@@ -184,9 +183,8 @@ test("canceling an application drag releases its mouse button exactly once", asy
   }
 });
 
-test("without outer mouse tracking a hold still selects locally", async () => {
-  const t = setup(false, true);
-  t.terminal.wasmTerm.hasMouseTracking = () => false;
+test("without application mouse tracking a hold selects locally", async () => {
+  const t = setup();
   t.touch("touchstart");
   await Bun.sleep(550);
   t.touch("touchend");

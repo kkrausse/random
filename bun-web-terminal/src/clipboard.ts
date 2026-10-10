@@ -1,5 +1,5 @@
 // Observe OSC 52 without modifying the bytes delivered to the terminal emulator.
-// tmux emits ordinary OSC sequences to its attached terminal (not DCS wrappers).
+// Applications' sequences arrive as they wrote them (zmx does not rewrite output).
 export class ClipboardRequests {
   private state: "text" | "escape" | "osc" | "end" = "text";
   private payload = "";

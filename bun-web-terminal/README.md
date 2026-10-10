@@ -1,10 +1,12 @@
 # Bun Web Terminal
 
-A loopback-only web terminal using tmux for session state, Bun's native PTY API for attachments, and the local [ghostty-web](../ghostty-web/README.md) browser wrapper around official Ghostty WASM, rendered with WebGL2.
+A loopback-only web terminal using [zmx](https://github.com/neurosnap/zmx) to keep sessions alive, and the local [ghostty-web](../ghostty-web/README.md) browser wrapper around official Ghostty WASM, rendered with WebGL2.
+
+zmx only does persistence: one small daemon per session holds the PTY and passes the application's bytes through unchanged. The browser's Ghostty is the only terminal emulator, so scrollback, selection and mouse handling all happen in the page, and sequences such as Kitty graphics reach it as the application wrote them.
 
 ## Quick start
 
-Requires Git, Bun 1.3.5 or newer, tmux 3.3 or newer on macOS or Linux, and a browser with WebGL2. On macOS, install tmux with `brew install tmux`. On Linux, set `SHELL` to an installed shell if needed (the fallback is `/bin/zsh`).
+Requires Git, Bun 1.3.5 or newer, zmx on macOS or Linux (developed against 0.8.1), and a browser with WebGL2. Install zmx with `brew install neurosnap/tap/zmx` or put a [release binary](https://zmx.sh) on `PATH` (for example `~/.local/bin/zmx`); the server refuses to start without it. On Linux, set `SHELL` to an installed shell if needed (the fallback is `/bin/zsh`).
 
 From a fresh clone:
 
@@ -74,7 +76,7 @@ values are ignored, per the XDG specification.
 it again. Use the same `PORT` for the reset command if customized. The next start
 creates new credentials; browsers must use the new sign-in link. Resetting the
 stored credentials alone does not revoke a running server's in-memory credentials.
-Running tmux sessions survive either kind of restart. Upgrading from the old
+Running sessions survive either kind of restart. Upgrading from the old
 in-memory authentication requires one final sign-in on the first restart.
 
 All application pages, assets, APIs, terminal WebSockets, and dictation WebSockets
@@ -121,7 +123,7 @@ Description=Bun Web Terminal
 Type=simple
 WorkingDirectory=%h/devfs/repos/kkrausse/random/bun-web-terminal
 ExecStart=%h/.bun/bin/bun src/server.ts
-Environment=PATH=%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=%h/.bun/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=SHELL=/bin/bash
 Environment=HOST=127.0.0.1
 Environment=PORT=4784
@@ -129,7 +131,7 @@ Environment=TERMINAL_PUBLIC_URL=https://YOUR-MACHINE.YOUR-TAILNET.ts.net/session
 UMask=0077
 Restart=on-failure
 RestartSec=5
-# Do not kill tmux/session processes in the service cgroup on a Bun restart.
+# Do not kill the zmx session daemons in the service cgroup on a Bun restart.
 KillMode=process
 
 [Install]
@@ -139,8 +141,13 @@ WantedBy=default.target
 The explicit HTTPS URL keeps remote sign-in configured even if Tailscale is not
 yet running when Bun starts. Keep the default state directory (or explicitly set
 the same `XDG_STATE_HOME` as your manual launch); switching it creates a separate
-set of credentials. `KillMode=process` intentionally leaves tmux children running
-when the service stops. Stop unwanted sessions using tmux or the sessions menu.
+set of credentials. `PATH` must include the directory holding `zmx`.
+`KillMode=process` intentionally leaves the zmx session daemons running when the
+service stops. Stop unwanted sessions with `zmx kill <name>` or the sessions menu.
+A user service has `XDG_RUNTIME_DIR` set, so its sessions live in the same socket
+directory (`zmx version` prints it) as the ones you start from a login shell. If
+you launch the server some other way and `zmx list` does not show its sessions,
+set the same `ZMX_DIR` for both.
 
 ```sh
 systemctl --user daemon-reload
@@ -161,24 +168,24 @@ administrator may need to enable lingering:
 sudo loginctl enable-linger "$USER"
 ```
 
-Bun restarts preserve tmux sessions and browser logins. Machine reboots preserve
-credentials, but terminate running tmux processes. To reset auth, stop the
+Bun restarts preserve sessions and browser logins. Machine reboots preserve
+credentials, but end the sessions. To reset auth, stop the
 service, run `bun run auth:reset` as the same user with the same state directory
 and port, and start the service again.
 
 ## Phone controls
 
-- Tap the terminal to click in a mouse-aware application. The click is sent only when you lift your finger without dragging. Swipe vertically to scroll the application or tmux history. The text follows your finger: one line per line height of travel, independent of the desktop wheel sensitivity, and a flick keeps coasting and slows down like a web page (touch again to stop it). Shell history and pagers move by exact lines through tmux; mouse-aware applications only accept wheel steps, so they get one step per line of travel: 1:1 in Claude Code, faster in applications that move several lines per step. A small movement threshold distinguishes taps from drags.
+- Tap the terminal to click in a mouse-aware application. The click is sent only when you lift your finger without dragging. Swipe vertically to scroll the application or the shell's history. The text follows your finger: one line per line height of travel, independent of the desktop wheel sensitivity, and a flick keeps coasting and slows down like a web page (touch again to stop it). Shell history is the page's own scrollback and moves by exact lines without asking the server; mouse-aware applications only accept wheel steps, so they get one step per line of travel: 1:1 in Claude Code, faster in applications that move several lines per step. A full-screen application without mouse support gets one cursor key per line. A small movement threshold distinguishes taps from drags.
 - Tap a link once to open it in a new tab without sending a click to the application or opening the keyboard. Explicit terminal hyperlinks work across multiple rows; plain URLs are joined across terminal soft wraps, not arbitrary hard line breaks. Swipes and long presses never open links.
 - A two-row extra-keys bar appears on touch devices and narrow windows: **keyboard icon**, **microphone icon**, **Esc**, **Enter**, one-shot **Ctrl**, arrows, and **Paste**/**Attach** icons. Buttons have equal widths within each row; the bottom row is inset from the sides. Tap **Ctrl**, then a letter (for example **C** to interrupt or **U** to clear the shell input). The keyboard icon explicitly opens/closes the software keyboard; terminal taps and extra keys leave keyboard focus alone. Touch devices do not autofocus on page load.
 - Hold a finger still on terminal text for half a second, then drag to select. Like desktop dragging, this sends mouse press/drag/release to mouse-aware applications such as OpenCode, which handle their own selection and copying. At the shell or in applications without mouse support, it highlights locally. The next swipe scrolls normally. Moving before the hold completes scrolls instead of selecting.
 - **Paste** uses the browser clipboard and the terminal's bracketed-paste handling. It needs HTTPS (or localhost) and browser clipboard permission; use the phone keyboard's paste action if access is unavailable. Pasting or dropping files of any type and size uploads them to `$TMPDIR/bun-web-terminal/<session>/` and types the saved paths at the cursor; the files are deleted when the session is removed. iOS gives a page nothing for a copied file such as a PDF, so on a phone use the **Attach** (paperclip) key to choose files instead.
-- The terminal fits the visible viewport above the software keyboard and sends the updated dimensions to tmux. The existing engine handles mobile text/composition input with autocorrect and capitalization disabled.
+- The terminal fits the visible viewport above the software keyboard and sends the updated dimensions to the session. The existing engine handles mobile text/composition input with autocorrect and capitalization disabled.
 - The keys bar leaves a 22px bottom gap (half a button height), or the device's bottom safe-area inset if larger.
 
 For a phone check, open the Tailscale HTTPS URL below, try swiping inside a mouse-aware application, open/close the keyboard and rotate the phone, then try **Ctrl+C**, selection/copy, and paste. Actual software-keyboard behavior should be checked on the target phone; desktop touch-event simulation cannot fully reproduce it.
 
-Compact light-blue notices in the top-right show connection status and confirm successful browser clipboard writes with a brief “Copied” toast. Application copy actions (including OpenCode) are handled through OSC 52. If iOS blocks the automatic write, tap the persistent **Tap to copy** button in the top-right to copy the exact application-selected text. No terminal highlighting is needed. The button retains the latest request until copied or the terminal reconnects/leaves the page. Clipboard access requires HTTPS (or localhost). tmux must have `set-clipboard on` and clipboard support for the attached terminal (`xterm-256color`); `external` ignores application copy requests.
+Compact light-blue notices in the top-right show connection status and confirm successful browser clipboard writes with a brief “Copied” toast. Application copy actions (including OpenCode) are handled through OSC 52. If iOS blocks the automatic write, tap the persistent **Tap to copy** button in the top-right to copy the exact application-selected text. No terminal highlighting is needed. The button retains the latest request until copied or the terminal reconnects/leaves the page. Clipboard access requires HTTPS (or localhost).
 
 ## Streaming dictation
 
@@ -280,22 +287,22 @@ and [third-party notices](docs/third-party-notices.md).
 ## Session behavior
 
 - The sessions menu and terminal tab favicon recognize Emacs (including `emacsclient`) and show its bundled logo, and recognize OpenCode (including `opencode2` and `OC | …` titles) with a text `OC` badge.
-- Sessions created from a phone or tablet browser (detected via user-agent) are named `web-<uuid>-phone`; API clients can pass `{"label":"phone"}` for the same suffix.
+- Sessions created from a phone or tablet browser (detected via user-agent) get a `-phone` suffix on their id (`3-phone`); API clients can pass `{"label":"phone"}` for the same suffix.
 
-- **Rename** in the sessions menu changes the tmux session name. Names are separate from the short tmux ID used for URLs and attachments, so renaming preserves links and running processes. Names must be unique on the tmux server and contain 1–128 characters without dots, colons, or control characters.
+- **Rename** in the sessions menu sets the session's `label` in zmx; it does not change the session's id, so links and running processes are unaffected. Names take 1–128 characters without control characters. zmx label values only hold letters, digits, `-`, `.` and `_`, so other bytes are stored as `_` plus two hex digits (`My terminal` is `label=My_20terminal` in `zmx list`).
 
-- Uses your standard tmux server and configuration. Existing sessions appear automatically; new browser-created sessions are named `web-<uuid>`, with their status bar hidden and mouse support enabled. Global options and key bindings are left to your tmux configuration.
-- Refreshing or reconnecting attaches a fresh PTY to the same running application. tmux redraws the current screen and negotiates terminal modes; the browser never replays a truncated output log or historical terminal queries.
-- One tab per Bun instance controls a session at a time. Opening it elsewhere detaches the previous tab, which shows **Take over** instead of repeatedly reconnecting. Native tmux clients can remain attached alongside the browser.
-- Sessions survive browser disconnections, Bun shutdowns, and code reloads. Startup discovers existing sessions, and the list refreshes every two seconds. Terminal URLs use tmux session IDs, so renaming a session keeps its URL working while the tmux server lives. Removing a session in the browser kills that tmux session. Machine reboots or killing tmux still end the processes.
-- Sessions created by the older isolated-server version are not automatically migrated; that older running Bun process still ends them on shutdown.
-- Resizing settles for 150 ms in the browser and is coalesced again at the PTY. Output is delivered in batches of at most 32 KiB, with at most 128 KiB awaiting browser acknowledgment and 512 KiB queued. A stalled attachment is dropped and restored from tmux rather than accumulating unlimited work.
-- Scrolling runs at 50% sensitivity and accumulates fractional trackpad deltas. Shell history and copy-mode bindings follow your tmux configuration; with mouse support enabled, scrolling up enters copy mode. Applications with mouse support receive normalized wheel input.
-- **Cmd+click** a link (Ctrl+click off macOS) to open it in a new tab; the click is not sent to tmux or the application. This covers plain URLs and explicit OSC 8 hyperlinks, such as the labelled links Claude Code and OpenCode print. The browser attachment advertises tmux's `hyperlinks` feature for itself only (tmux 3.4 or newer), since tmux otherwise drops OSC 8 for an `xterm-256color` client. An application decides for itself whether to emit OSC 8; inside tmux some need `FORCE_HYPERLINK=1`.
+- Sessions are ordinary zmx sessions in zmx's default socket directory, named by a short number (`1`, `2`, `3-phone`). `zmx list` shows them, and `zmx attach 3` opens the same terminal in a native one (ctrl+\ detaches that client; `ZMX_NO_DETACH_KEY=1` turns the key off). Sessions you start yourself with `zmx attach <name>` appear in the menu too, provided the name is made of letters, digits, `-`, `.` and `_`. Each runs a login `$SHELL` in `TERMINAL_CWD` with `TERM=xterm-256color` and `COLORTERM=truecolor`.
+- Refreshing or reconnecting resets the browser terminal and restores it from the session: zmx sends its copy of the scrollback (up to 10,000 lines, about 0.7 MB for a full buffer of ordinary shell output) and the visible screen, with colours, cursor, title and modes; historical output and terminal queries are never replayed. Two things a snapshot does not carry are images and the targets of OSC 8 links; text and plain URLs are kept. While a full-screen application is running, zmx restores only that application's screen: the browser asks the application to repaint (a one-row resize and back), and fetches the shell's screen and scrollback when the application exits.
+- One tab per Bun instance controls a session at a time. Opening it elsewhere detaches the previous tab, which shows **Take over** instead of repeatedly reconnecting. Native `zmx attach` clients can stay attached alongside the browser. zmx sizes a session by the client that typed last; a browser tab that attaches while another client holds the size takes it over at once at a shell or any application with bracketed paste on (it sends an empty paste), and otherwise at its first key press.
+- Sessions survive browser disconnections, Bun shutdowns, and code reloads. Startup discovers existing sessions, and the list refreshes every two seconds. Removing a session in the browser kills it. A session ends when its shell exits (the tab shows **Disconnected**), and machine reboots end all of them.
+- **Migrating from the tmux version:** sessions that were running in tmux are not picked up. They keep running in tmux (`tmux ls`, `tmux attach -t <name>`) until you close them; start new ones from the sessions menu.
+- Resizing settles for 150 ms in the browser and is coalesced again on the server. Output is sent as it arrives on an idle connection and in batches of at most 32 KiB every 8 ms under sustained output, with at most 128 KiB awaiting browser acknowledgment and 2 MiB queued. When an application prints faster than the browser can take it, the queue is dropped and the terminal restored from the session on the same connection, so the newest output shows up without the backlog; a browser that stops acknowledging for 10 seconds is disconnected and reconnects.
+- Scrolling runs at 50% sensitivity and accumulates fractional trackpad deltas. At a shell the wheel scrolls the page's own scrollback; typing returns to the bottom. Applications with mouse support receive normalized wheel input, and full-screen applications without it receive cursor keys.
+- **Cmd+click** a link (Ctrl+click off macOS) to open it in a new tab; the click is not sent to the application. This covers plain URLs and explicit OSC 8 hyperlinks, such as the labelled links Claude Code and OpenCode print. An application decides for itself whether to emit OSC 8; some need `FORCE_HYPERLINK=1` under `TERM=xterm-256color`. A labelled link printed before the last reconnect has lost its target until the application prints it again.
 - **Ctrl+V** reaches the application, including Emacs. Use **Cmd+V** on macOS or **Ctrl+Shift+V** on other platforms to paste.
-- Desktop shell drags select in tmux copy mode, including lines from before the browser connected. Holding a drag at the top or bottom scrolls tmux history and extends the selection. The tmux highlight stays after release without copying; **Cmd+C** explicitly copies the selected text to the browser clipboard and tmux's paste buffer. Typing returns to the shell. Mouse-aware applications still receive clicks and drags. Hold **Shift** while dragging for Ghostty Web's local selection instead. Phone touch selection retains its local selection. The server checks the inner pane's mouse modes every 150 ms, so switching may take a moment.
+- Dragging selects text in the page, across the scrollback: holding the drag at the top or bottom edge scrolls and extends the selection. Nothing is copied on release; **Cmd+C** copies the selection to the browser clipboard. Applications that track the mouse receive clicks and drags instead; hold **Shift** while dragging to select locally anyway.
 
-The browser terminal and tmux negotiate their own capabilities; programs inside tmux use your configured `default-terminal`. Ghostty-web remains the rendering/input engine, so engine-specific keyboard or rendering limitations can still be investigated independently.
+Applications talk to Ghostty-web directly, so terminal queries are answered by the browser and engine-specific keyboard or rendering limits are the ones that apply.
 
 ## Development and stress checks
 
@@ -304,7 +311,7 @@ bun run typecheck
 bun run test
 ```
 
-Tests use isolated tmux servers and the same Ghostty WASM as the browser. They cover live application state across SessionManager shutdown/recreation, existing-session discovery, renames/removal, alternate-screen reattachment, 300 coalesced resize requests, tab takeover, output acknowledgments/stalls, and fractional scrolling.
+Tests use an isolated zmx socket directory (`ZMX_DIR`) per test and the same Ghostty WASM as the browser. They cover live application state across SessionManager shutdown/recreation, existing-session discovery, renames/removal, alternate-screen reattachment, the redraw request after a reattachment, 300 coalesced resize requests, tab takeover, output acknowledgments/stalls, and fractional scrolling.
 
 Dictation tests also cover resampling continuity/filtering, transcript divergence,
 Unicode/spacing/control removal, final deduplication, protocol order, attachment
@@ -313,13 +320,13 @@ with the built executable, run `bun docs/verify-dictation-supervision.ts`. For r
 model/reset/overload checks, run the service's `scripts/verify.ts` as documented
 in its README.
 
-To test alongside a manually used instance on port 4784, use a separate port **and build directory**:
+To test alongside a manually used instance on port 4784, use a separate port, build directory **and zmx socket directory**:
 
 ```sh
-PORT=3107 TERMINAL_DIST="$(mktemp -d)" bun start
+PORT=3107 TERMINAL_DIST="$(mktemp -d)" ZMX_DIR="$(mktemp -d)" bun start
 ```
 
-Open the printed Mac sign-in link, start `btop`, repeatedly resize the window, then click the connection indicator and reload the page. Confirm that btop remains usable and the same process survives. Open the same session URL in another tab to check takeover. Test shell history scrolling and application scrolling separately. Restart Bun or edit source under `dev` (`--watch`), sign in with the new link, and confirm that the same running application is available. Parallel app instances share the standard tmux sessions.
+Open the printed Mac sign-in link, start `btop`, repeatedly resize the window, then click the connection indicator and reload the page. Confirm that btop remains usable and the same process survives. Open the same session URL in another tab to check takeover. Test shell history scrolling and application scrolling separately. Restart Bun or edit source under `dev` (`--watch`), sign in with the new link, and confirm that the same running application is available. App instances with the same `ZMX_DIR` share their sessions.
 
 To expose it only to devices permitted by your tailnet policy, keep the app bound to its default loopback address and run Tailscale Serve in another terminal:
 
@@ -346,6 +353,7 @@ Environment variables:
 - `TERMINAL_CWD`: shell working directory, default is this repository's parent directory
 - `TERMINAL_FONT`: browser terminal font stack, default `ui-monospace, SFMono-Regular, Menlo, Monaco, monospace`
 - `TERMINAL_SCROLL_SENSITIVITY`: wheel scroll multiplier, default `0.5` (was `0.35`)
+- `ZMX_DIR`: zmx socket directory, default zmx's own (`$XDG_RUNTIME_DIR/zmx`, see `zmx version`); use a separate directory for parallel test instances
 - `TERMINAL_DIST`: client build output directory, default `dist`; use a separate directory for parallel test instances
 - `SHELL`: shell executable, default `/bin/zsh`
 

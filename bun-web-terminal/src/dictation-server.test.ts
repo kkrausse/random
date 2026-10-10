@@ -22,7 +22,7 @@ function fixture() {
   });
   const sent: any[] = [];
   const listeners = new Set<() => void>();
-  const attachment: Attachment = { id: crypto.randomUUID(), input() {}, resize() {}, acknowledge: () => true, copySelection() {}, cancelSelection() {}, scroll() {},
+  const attachment: Attachment = { id: crypto.randomUUID(), input() {}, resize() {}, acknowledge: () => true, redraw() {}, restore() {},
     onClose(callback) { listeners.add(callback); return () => { listeners.delete(callback); }; },
     close() { for (const listener of listeners) listener(); },
   };
