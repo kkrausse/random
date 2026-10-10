@@ -22,6 +22,13 @@ export interface ITerminalOptions {
   selectOnDrag?: boolean; // Prefer local selection; Alt bypasses it (default: false)
   copyOnSelect?: boolean; // Automatically copy mouse selections (default: true)
   onClipboardWrite?: (success: boolean) => void; // Reports completed local clipboard writes
+  /**
+   * Whether plain Ctrl+V pastes (default: true). Set false for a tty-faithful
+   * terminal: Ctrl+V is then encoded like any other key (0x16 literal-next, or
+   * its Kitty keyboard form when the program enabled that), and paste stays on
+   * Cmd+V, Ctrl+Shift+V and the browser's native paste event.
+   */
+  ctrlVPaste?: boolean;
 
   /**
    * Paint backend. 'webgl' uses the GPU renderer (glyph atlas + instanced

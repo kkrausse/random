@@ -270,7 +270,8 @@ export class GhosttyTerminal {
   isAlternateScreen(): boolean { return this.terminalNumber(6) !== 0; }
   hasBracketedPaste(): boolean { return this.getMode(2004); }
   hasFocusEvents(): boolean { return this.getMode(1004); }
-  hasMouseTracking(): boolean { return this.terminalNumber(11) !== 0; }
+  // MOUSE_TRACKING writes a one-byte bool; a wider read picks up stale scratch bytes.
+  hasMouseTracking(): boolean { return this.terminalNumber(11, 1) !== 0; }
   getMode(mode: number, isAnsi = false): boolean {
     this.alive();
     if (!Number.isInteger(mode) || mode < 0 || mode > 32767) throw new RangeError('Invalid mode number');

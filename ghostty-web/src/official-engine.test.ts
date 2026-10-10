@@ -206,3 +206,25 @@ test('bulk rows agree with native per-cell getters across pages, style reuse and
     }
   } finally { t.free(); }
 });
+
+// hasMouseTracking read a one-byte bool as four bytes, so leftover scratch
+// bytes made it report tracking that the program had turned off (or never on).
+test('mouse tracking reads false before it is enabled and after it is disabled', () => {
+  const t = ghostty.createTerminal(20, 3);
+  try {
+    expect(t.hasMouseTracking()).toBe(false);
+    t.write('\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h');
+    expect(t.hasMouseTracking()).toBe(true);
+    t.write('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l');
+    expect(t.hasMouseTracking()).toBe(false);
+    // Unrelated reads leave wide values in the shared scratch buffer.
+    t.getScrollbackLength(); t.getColors();
+    expect(t.hasMouseTracking()).toBe(false);
+    for (const mode of [9, 1000, 1002, 1003]) {
+      t.write(`\x1b[?${mode}h`);
+      expect(t.hasMouseTracking()).toBe(true);
+      t.write(`\x1b[?${mode}l`);
+      expect(t.hasMouseTracking()).toBe(false);
+    }
+  } finally { t.free(); }
+});
