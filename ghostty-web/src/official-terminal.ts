@@ -66,6 +66,9 @@ export class GhosttyTerminal {
       check(e.ghostty_terminal_set(this.handle, 1, this.callback.index));
       a.view.setUint32(this.scratch, config?.scrollbackLimit ?? 10000, true);
       check(e.ghostty_terminal_set(this.handle, 28, this.scratch));
+      // The line limit alone governs: the default byte limit (10,000 bytes,
+      // about one page) would cap history at a few hundred lines.
+      check(e.ghostty_terminal_set(this.handle, 27, 0));
       // Preserve the browser bridge's Unicode grapheme-clustering default,
       // including across RIS, using the official mode-default API.
       a.view.setUint16(this.scratch, 2027, true);

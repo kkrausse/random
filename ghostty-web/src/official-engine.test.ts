@@ -220,3 +220,15 @@ test('mouse tracking is read as the one-byte bool it is', () => {
     expect(t.hasMouseTracking()).toBe(true);
   } finally { t.free(); }
 });
+
+test('scrollback keeps about the configured number of lines, also after RIS', () => {
+  const t = ghostty.createTerminal(80, 24, { scrollbackLimit: 5000 });
+  try {
+    for (const reset of ['', '\x1bc']) {
+      t.write(reset);
+      for (let i = 0; i < 12000; i++) t.write(`\x1b[3${i % 7 + 1}mline ${i} of ordinary shell output\x1b[0m\r\n`);
+      expect(t.getScrollbackLength()).toBeGreaterThan(4000);
+      expect(t.getScrollbackLength()).toBeLessThan(6500);
+    }
+  } finally { t.free(); }
+});
