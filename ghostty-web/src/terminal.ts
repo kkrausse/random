@@ -55,6 +55,33 @@ export class Terminal implements ITerminalCore {
   private imeOverlay?: ImeOverlay;
   private originalPosition?: string;
   private forwardFocus = () => this.textarea?.focus({ preventScroll: true });
+  // Focus as the program sees it (DEC 1004): the terminal element or anything
+  // inside it holds focus in a focused window. Tracked even while the mode is
+  // off so a report is only ever sent for a real change.
+  private hasFocus = false;
+  private setFocus(focused: boolean): void {
+    if (focused === this.hasFocus) return;
+    this.hasFocus = focused;
+    if (this.isDisposed || !this.wasmTerm?.hasFocusEvents()) return;
+    this.dataEmitter.fire(focused ? '\x1b[I' : '\x1b[O');
+  }
+  private ownsActiveElement(): boolean {
+    return !!this.element && this.element.contains(document.activeElement);
+  }
+  private handleFocusIn = (): void => {
+    // Some browsers move focus inside a background window; that only counts
+    // once the window itself is focused (handleWindowFocus).
+    if (document.hasFocus?.() === false) return;
+    this.setFocus(true);
+  };
+  private handleFocusOut = (event: FocusEvent): void => {
+    // Focus moving between the element and its own textarea is not a blur.
+    const next = event.relatedTarget;
+    if (next && this.element?.contains(next as Node)) return;
+    this.setFocus(false);
+  };
+  private handleWindowBlur = (): void => this.setFocus(false);
+  private handleWindowFocus = (): void => this.setFocus(this.ownsActiveElement());
 
   // Buffer API (xterm.js compatibility)
   public readonly buffer: IBufferNamespace;
@@ -160,6 +187,7 @@ export class Terminal implements ITerminalCore {
       disableStdin: options.disableStdin ?? false,
       selectOnDrag: options.selectOnDrag ?? false,
       copyOnSelect: options.copyOnSelect ?? true,
+      ctrlVPaste: options.ctrlVPaste ?? true,
       onClipboardWrite: options.onClipboardWrite ?? (() => {}),
       smoothScrollDuration: options.smoothScrollDuration ?? 100, // Default: 100ms smooth scroll
       rendererType: options.rendererType ?? 'canvas',
@@ -371,6 +399,11 @@ export class Terminal implements ITerminalCore {
         parent.style.position = 'relative';
       }
       parent.addEventListener('focus', this.forwardFocus);
+      parent.addEventListener('focusin', this.handleFocusIn);
+      parent.addEventListener('focusout', this.handleFocusOut);
+      window.addEventListener('blur', this.handleWindowBlur);
+      window.addEventListener('focus', this.handleWindowFocus);
+      this.hasFocus = document.hasFocus?.() !== false && this.ownsActiveElement();
       // Prevent actual content editing - we handle input ourselves
       parent.addEventListener('beforeinput', (e) => {
         if (e.target === parent) {
@@ -505,7 +538,8 @@ export class Terminal implements ITerminalCore {
         },
         this.textarea,
         mouseConfig,
-        (encoder) => this.wasmTerm?.syncKeyEncoder(encoder)
+        (encoder) => this.wasmTerm?.syncKeyEncoder(encoder),
+        () => this.options.ctrlVPaste
       );
 
       // Create selection manager (pass textarea for context menu positioning)
@@ -1283,6 +1317,10 @@ export class Terminal implements ITerminalCore {
     this.imeOverlay = undefined;
     if (this.element) {
       this.element.removeEventListener('focus', this.forwardFocus);
+      this.element.removeEventListener('focusin', this.handleFocusIn);
+      this.element.removeEventListener('focusout', this.handleFocusOut);
+      window.removeEventListener('blur', this.handleWindowBlur);
+      window.removeEventListener('focus', this.handleWindowFocus);
       if (this.originalPosition !== undefined) {
         this.element.style.position = this.originalPosition;
         this.originalPosition = undefined;

@@ -7,7 +7,7 @@ import { Ghostty } from './ghostty';
 import { InputHandler } from './input-handler';
 import { Key, KeyAction, Mods } from './types';
 
-async function nativeInput() {
+async function nativeInput(ctrlVPaste?: () => boolean) {
   const ghostty = await Ghostty.load();
   const terminal = ghostty.createTerminal(20, 5);
   const container = document.createElement('div');
@@ -16,7 +16,7 @@ async function nativeInput() {
   const data: string[] = [];
   const input = new InputHandler(ghostty, container, text => data.push(text), () => {},
     undefined, undefined, mode => terminal.getMode(mode), undefined, textarea,
-    undefined, encoder => terminal.syncKeyEncoder(encoder));
+    undefined, encoder => terminal.syncKeyEncoder(encoder), ctrlVPaste);
   return {
     terminal, data, textarea,
     key(code: string, key: string, options: KeyboardEventInit = {}, type = 'keydown') {
@@ -66,6 +66,35 @@ describe('native terminal keyboard mode transitions', () => {
       h.key('KeyA', 'A', { shiftKey: true });
       h.key('KeyA', 'A', { shiftKey: true }, 'keyup');
       expect(h.data).toEqual(['A']);
+    } finally { h.dispose(); }
+  });
+
+  // An embedder running real TUIs had to intercept Ctrl+V itself: the handler
+  // always left it to the browser as paste, so ^V never reached the program.
+  test('ctrlVPaste off encodes Ctrl+V and keeps Cmd+V and Ctrl+Shift+V for paste', async () => {
+    let paste = false;
+    const h = await nativeInput(() => paste);
+    try {
+      const down = h.key('KeyV', 'v', { ctrlKey: true });
+      h.key('KeyV', 'v', { ctrlKey: true }, 'keyup');
+      expect(h.data).toEqual(['\x16']);
+      expect(down.defaultPrevented).toBe(true);
+      h.terminal.write('\x1b[>1u');
+      h.key('KeyV', 'v', { ctrlKey: true });
+      h.key('KeyV', 'v', { ctrlKey: true }, 'keyup');
+      expect(h.data).toEqual(['\x16', '\x1b[118;5u']);
+      h.terminal.write('\x1b[<u');
+      h.data.length = 0;
+      for (const mods of [{ metaKey: true }, { ctrlKey: true, shiftKey: true }]) {
+        expect(h.key('KeyV', 'v', mods).defaultPrevented).toBe(false);
+        expect(h.key('KeyV', 'v', mods, 'keyup').defaultPrevented).toBe(false);
+      }
+      expect(h.data).toEqual([]);
+      // The option is read per key, so it can change at runtime.
+      paste = true;
+      expect(h.key('KeyV', 'v', { ctrlKey: true }).defaultPrevented).toBe(false);
+      h.key('KeyV', 'v', { ctrlKey: true }, 'keyup');
+      expect(h.data).toEqual([]);
     } finally { h.dispose(); }
   });
 
@@ -323,6 +352,52 @@ describe('InputHandler', () => {
       expect(dataReceived).toHaveLength(3);
       input.handleWheel({ ...mouse, deltaY: -1, preventDefault() {} });
       expect(dataReceived).toHaveLength(4);
+      handler.dispose();
+    });
+
+    // With any-motion tracking a hover was reported as button 32, which a
+    // program reads as a left-button drag; "no button" is 3, so 35.
+    test('motion with no button held reports button 35, held buttons keep their code', () => {
+      let sgr = true;
+      const handler = new InputHandler(
+        ghostty,
+        container as any,
+        (data) => dataReceived.push(data),
+        () => {},
+        undefined,
+        undefined,
+        (mode) => mode === 1003,
+        undefined,
+        undefined,
+        {
+          hasMouseTracking: () => true,
+          hasSgrMouseMode: () => sgr,
+          getCellDimensions: () => ({ width: 10, height: 20 }),
+          getCanvasOffset: () => ({ left: 0, top: 0 }),
+        }
+      );
+      const mouse = { button: 0, clientX: 25, clientY: 25, altKey: false, shiftKey: false };
+      const input = handler as any;
+      input.handleMouseMove(mouse);
+      input.handleMouseMove({ ...mouse, ctrlKey: true });
+      expect(dataReceived).toEqual(['\x1b[<35;3;2M', '\x1b[<51;3;2M']);
+      dataReceived.length = 0;
+      for (const [button, code] of [[0, 32], [1, 33], [2, 34]]) {
+        input.handleMouseDown({ ...mouse, button });
+        input.handleMouseMove(mouse);
+        input.handleMouseUp({ ...mouse, button });
+        expect(dataReceived[1]).toBe(`\x1b[<${code};3;2M`);
+        dataReceived.length = 0;
+      }
+      input.handleMouseMove(mouse);
+      expect(dataReceived).toEqual(['\x1b[<35;3;2M']);
+      // Legacy encoding offsets every field by 32.
+      sgr = false;
+      dataReceived.length = 0;
+      input.handleMouseMove(mouse);
+      input.handleMouseDown(mouse);
+      input.handleMouseMove(mouse);
+      expect(dataReceived).toEqual(['\x1b[MC#"', '\x1b[M #"', '\x1b[M@#"']);
       handler.dispose();
     });
 

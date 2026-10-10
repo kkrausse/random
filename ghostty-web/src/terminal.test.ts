@@ -1606,6 +1606,55 @@ describe('Terminal Modes', () => {
     term.dispose();
   });
 
+  // Mode 1004 was tracked but never acted on, so every embedder had to
+  // produce the focus reports itself.
+  test('reports focus changes through onData only while mode 1004 is set', async () => {
+    if (typeof document === 'undefined') return;
+    const term = await createIsolatedTerminal({ cols: 80, rows: 24 });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    term.open(container);
+    const data: string[] = [];
+    term.onData((chunk) => data.push(chunk));
+
+    // Mode off: focus is tracked silently.
+    outside.focus();
+    term.focus();
+    expect(data).toEqual([]);
+
+    // Turning the mode on while focused is not a focus change.
+    term.write('\x1b[?1004h');
+    expect(data).toEqual([]);
+
+    outside.focus();
+    expect(data).toEqual(['\x1b[O']);
+    term.focus();
+    expect(data).toEqual(['\x1b[O', '\x1b[I']);
+
+    // Refocusing, and focus moving within the terminal, change nothing.
+    term.focus();
+    container.focus();
+    expect(data).toEqual(['\x1b[O', '\x1b[I']);
+
+    // The window losing and regaining focus counts; repeats do not.
+    window.dispatchEvent(new Event('blur'));
+    window.dispatchEvent(new Event('blur'));
+    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('focus'));
+    expect(data).toEqual(['\x1b[O', '\x1b[I', '\x1b[O', '\x1b[I']);
+
+    term.write('\x1b[?1004l');
+    outside.focus();
+    term.focus();
+    expect(data).toHaveLength(4);
+
+    term.dispose();
+    container.remove();
+    outside.remove();
+  });
+
   test('should detect mouse tracking modes', async () => {
     if (typeof document === 'undefined') return;
     const term = await createIsolatedTerminal({ cols: 80, rows: 24 });

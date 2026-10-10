@@ -239,6 +239,8 @@ export class InputHandler {
    * @param onCopy - Optional callback to handle copy (Cmd+C/Ctrl+C with selection)
    * @param inputElement - Optional input element for beforeinput events
    * @param mouseConfig - Optional mouse tracking configuration
+   * @param syncEncoder - Optional hook syncing the key encoder with terminal state
+   * @param ctrlVPaste - Whether plain Ctrl+V pastes instead of being encoded (default: true)
    */
   constructor(
     ghostty: Ghostty,
@@ -251,7 +253,8 @@ export class InputHandler {
     onCopy?: () => boolean,
     inputElement?: HTMLElement,
     mouseConfig?: MouseTrackingConfig,
-    private syncEncoder?: (encoder: KeyEncoder) => void
+    private syncEncoder?: (encoder: KeyEncoder) => void,
+    private ctrlVPaste: () => boolean = () => true
   ) {
     this.encoder = ghostty.createKeyEncoder();
     this.container = container;
@@ -300,7 +303,7 @@ export class InputHandler {
       this.releaseHeldText(event.code);
       const accepted = this.pressedKeys.delete(event.code);
       if (!accepted || this.isDisposed || this.isComposing || event.isComposing || event.metaKey ||
-        (event.ctrlKey && event.code === 'KeyV')) return;
+        this.isPasteShortcut(event)) return;
       this.encodeKey(event, KeyAction.RELEASE);
     };
     this.container.addEventListener('keyup', this.keyupListener);
@@ -416,8 +419,8 @@ export class InputHandler {
       }
     }
 
-    // Allow Ctrl+V and Cmd+V to trigger paste event (don't preventDefault)
-    if ((event.ctrlKey || event.metaKey) && event.code === 'KeyV') {
+    // Allow paste shortcuts to trigger the paste event (don't preventDefault)
+    if (this.isPasteShortcut(event)) {
       // Let the browser's native paste event fire
       return;
     }
@@ -447,6 +450,18 @@ export class InputHandler {
     }
 
     this.encodeKey(event, event.repeat ? KeyAction.REPEAT : KeyAction.PRESS);
+  }
+
+  /**
+   * Whether this key belongs to the browser's paste rather than the program.
+   * Cmd+V and Ctrl+Shift+V always paste. Plain Ctrl+V is the tty's
+   * literal-next key (and a binding in Emacs, vim, ...), so it only pastes
+   * while the ctrlVPaste option is on.
+   */
+  private isPasteShortcut(event: KeyboardEvent): boolean {
+    if (event.code !== 'KeyV') return false;
+    if (event.metaKey) return true;
+    return event.ctrlKey && (event.shiftKey || this.ctrlVPaste());
   }
 
   private holdText(event: KeyboardEvent): void {
@@ -858,13 +873,16 @@ export class InputHandler {
     const cell = this.pixelToCell(event);
     if (!cell) return;
 
-    // Determine which button to report (or 32 for motion with no button)
+    // Motion flag (32) plus the held button. With no button held the code is
+    // 3 ("no button"), i.e. 35: a bare 32 would read as a left-button drag.
     let button = 32; // Motion flag
     if (this.mouseButtonsPressed & 1)
       button += 0; // Left
     else if (this.mouseButtonsPressed & 2)
       button += 1; // Middle
-    else if (this.mouseButtonsPressed & 4) button += 2; // Right
+    else if (this.mouseButtonsPressed & 4)
+      button += 2; // Right
+    else button += 3; // No button
 
     this.sendMouseEvent(button, cell.col, cell.row, false, event);
   }
