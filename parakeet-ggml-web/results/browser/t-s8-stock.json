@@ -1,27 +1,27 @@
 {
- "name": "published-default-stock",
- "url": "https://raspberrypi.guineafowl-truck.ts.net/artifacts/parakeet-ggml-browser/?clip=all&runs=5&auto=1",
+ "name": "t-s8-stock",
+ "url": "http://127.0.0.1:8791/?model=s8&clip=all&runs=5&auto=1",
  "chromeArgs": [],
  "machineAtStart": {
-  "loadavg": "2.33 3.66 3.66 6/1955 551995",
-  "cpuPressure": "some avg10=0.03 avg60=0.28 avg300=0.92 total=10141316629"
+  "loadavg": "2.78 2.75 3.23 8/1976 3944155",
+  "cpuPressure": "some avg10=0.65 avg60=0.84 avg300=0.52 total=10128600546"
  },
  "chrome": "154.0.8037.97",
  "error": null,
  "memory": {
   "gpuProcessGpuMibAfterLoad": 199,
-  "gpuProcessGpuMibPeak": 266,
-  "rendererRssMibAfterLoad": 220,
-  "rendererRssMibPeak": 300,
-  "gpuProcessRssMibAfterLoad": 307,
-  "gpuProcessRssMibPeak": 335
+  "gpuProcessGpuMibPeak": 351,
+  "rendererRssMibAfterLoad": 212,
+  "rendererRssMibPeak": 297,
+  "gpuProcessRssMibAfterLoad": 296,
+  "gpuProcessRssMibPeak": 337
  },
  "pids": {
-  "gpu": 551924,
+  "gpu": 3944083,
   "renderers": [
-   551972,
-   551974,
-   551963
+   3944157,
+   3944132,
+   3944123
   ]
  },
  "page": {
@@ -45,44 +45,44 @@
    "family": "110m"
   },
   "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
-  "crossOriginIsolated": false,
+  "crossOriginIsolated": true,
   "clips": [
    {
     "clip": "a07",
     "seconds": 7,
     "firstInPage": true,
     "firstRunMs": {
-     "pre": 13.9,
-     "enc": 313.6,
-     "dec": 56.6,
-     "total": 384.1
+     "pre": 12.8,
+     "enc": 190,
+     "dec": 68.3,
+     "total": 271.1
     },
-    "startToFirstTranscriptMs": 5202,
+    "startToFirstTranscriptMs": 3112,
     "decSteps": 41,
     "text": "going along slushy country roads and speaking to damp audiences in drafty schoolrooms day after day for a fortnight.",
     "matchesNative": true,
     "warmRuns": 5,
     "preMs": {
-     "median": 6.3,
-     "worst": 6.9,
-     "best": 6
+     "median": 5.7,
+     "worst": 6.3,
+     "best": 5.6
     },
     "encMs": {
-     "median": 31.7,
-     "worst": 32.8,
+     "median": 30.8,
+     "worst": 33.6,
      "best": 30.7
     },
     "decMs": {
-     "median": 26.8,
-     "worst": 28,
-     "best": 24.1
+     "median": 25.3,
+     "worst": 28.9,
+     "best": 23.3
     },
     "totalMs": {
-     "median": 64.9,
-     "worst": 66.6,
-     "best": 61.7
+     "median": 63.7,
+     "worst": 65.9,
+     "best": 60.2
     },
-    "xRealTime": 107.9,
+    "xRealTime": 109.9,
     "textStable": true,
     "wasmHeapMb": 32,
     "wasmHeapUsedMb": 10.6
@@ -92,10 +92,10 @@
     "seconds": 13.69,
     "firstInPage": false,
     "firstRunMs": {
-     "pre": 13,
-     "enc": 40.9,
-     "dec": 48.3,
-     "total": 102.2
+     "pre": 12.2,
+     "enc": 38.3,
+     "dec": 47.1,
+     "total": 97.5
     },
     "startToFirstTranscriptMs": null,
     "decSteps": 84,
@@ -103,26 +103,26 @@
     "matchesNative": true,
     "warmRuns": 5,
     "preMs": {
-     "median": 11.6,
-     "worst": 12,
-     "best": 11.5
+     "median": 10.7,
+     "worst": 11.1,
+     "best": 10.7
     },
     "encMs": {
-     "median": 38.9,
-     "worst": 39.6,
-     "best": 38.6
+     "median": 36.2,
+     "worst": 37.6,
+     "best": 35.5
     },
     "decMs": {
-     "median": 46.2,
-     "worst": 49.3,
+     "median": 46.3,
+     "worst": 46.9,
      "best": 43.6
     },
     "totalMs": {
-     "median": 96.9,
-     "worst": 99.4,
-     "best": 94.9
+     "median": 93.1,
+     "worst": 95.3,
+     "best": 89.7
     },
-    "xRealTime": 141.3,
+    "xRealTime": 147,
     "textStable": true,
     "wasmHeapMb": 32,
     "wasmHeapUsedMb": 11.3
@@ -132,10 +132,10 @@
     "seconds": 56.1,
     "firstInPage": false,
     "firstRunMs": {
-     "pre": 56.3,
-     "enc": 167.7,
-     "dec": 168.4,
-     "total": 392.4
+     "pre": 52.6,
+     "enc": 143.3,
+     "dec": 178.4,
+     "total": 374.4
     },
     "startToFirstTranscriptMs": null,
     "decSteps": 292,
@@ -143,26 +143,26 @@
     "matchesNative": true,
     "warmRuns": 5,
     "preMs": {
-     "median": 49.5,
-     "worst": 51.3,
-     "best": 48.3
+     "median": 44.6,
+     "worst": 47.2,
+     "best": 44.4
     },
     "encMs": {
-     "median": 107.3,
-     "worst": 132.5,
-     "best": 105.7
+     "median": 105.1,
+     "worst": 106.1,
+     "best": 103.9
     },
     "decMs": {
-     "median": 172.3,
-     "worst": 182.2,
-     "best": 167.5
+     "median": 166.4,
+     "worst": 172.7,
+     "best": 157.4
     },
     "totalMs": {
-     "median": 330.7,
-     "worst": 360.1,
-     "best": 322.5
+     "median": 319,
+     "worst": 322.2,
+     "best": 310.5
     },
-    "xRealTime": 169.7,
+    "xRealTime": 175.9,
     "textStable": true,
     "wasmHeapMb": 55,
     "wasmHeapUsedMb": 15.7
@@ -241,19 +241,14 @@
    },
    "deviceProbe": "ok: binding 1024 MiB, buffer 1024 MiB, 256 invocations",
    "deviceError": null,
-   "probeErrors": [],
-   "plan": {
-    "limits": "",
-    "f16": false
-   },
    "maxBufferSizeMb": 4096,
    "maxStorageBufferBindingSizeMb": 2048
   },
   "jspi": true,
   "shaderF16Used": false,
   "load": {
-   "fetchMs": 2376,
-   "loadMs": 387,
+   "fetchMs": 557,
+   "loadMs": 314,
    "from": "network, streamed to OPFS",
    "fileMb": 129.1,
    "wasmHeapMb": 32,
@@ -261,9 +256,9 @@
    "backend": "WebGPU: WebGPU"
   },
   "session": {
-   "totalMs": 387
+   "totalMs": 314
   },
-  "startToLoadedMs": 3400
+  "startToLoadedMs": 1435
  },
  "steps": [
   {
@@ -271,102 +266,102 @@
    "name": "start: 110M, Q8_0 (8-bit weights), flash=off, store=opfs, jspi"
   },
   {
-   "t": 633,
+   "t": 561,
    "name": "WASM module ready",
-   "ms": 98.7,
+   "ms": 34.9,
    "detail": "heap 32 MB; JSPI available"
   },
   {
-   "t": 634,
+   "t": 562,
    "name": "adapter: nvidia turing NVIDIA GeForce RTX 2080 Ti; shader-f16 ABSENT; fallback=false"
   },
   {
-   "t": 634,
+   "t": 562,
    "name": "adapter limits: binding 2048 MiB, buffer 4096 MiB, 1024 invocations/workgroup, workgroup storage 49152 B, 16 storage buffers/stage",
    "detail": "all at or above the WebGPU spec defaults, which is all this page needs"
   },
   {
-   "t": 634,
+   "t": 562,
    "name": "device probe ok: binding 1024 MiB, buffer 1024 MiB, 256 invocations",
    "detail": "requested {\"maxStorageBufferBindingSize\":1073741824,\"maxBufferSize\":1073741824,\"maxComputeInvocationsPerWorkgroup\":256,\"maxComputeWorkgroupSizeX\":256} no features"
   },
   {
-   "t": 634,
+   "t": 562,
    "name": "shader path: f32 only (adapter has no shader-f16)"
   },
   {
-   "t": 3399,
+   "t": 1435,
    "name": "model file ready (network, streamed to OPFS)",
-   "ms": 2376.2,
+   "ms": 556.6,
    "detail": "129 MB"
   },
   {
-   "t": 3400,
+   "t": 1435,
    "name": "model loaded on WebGPU: WebGPU",
-   "ms": 387.3,
+   "ms": 314.3,
    "detail": "WASM heap 32 MB, 9.9 MB in use"
   },
   {
-   "t": 5202,
+   "t": 3112,
    "name": "a07 (7.0 s) first run (cold)",
-   "ms": 384.1,
-   "detail": "mel 13.9 ms, encoder 314 ms, decode 56.6 ms, heap 32 MB (10.6 in use)"
+   "ms": 271.1,
+   "detail": "mel 12.8 ms, encoder 190 ms, decode 68.3 ms, heap 32 MB (10.6 in use)"
   },
   {
-   "t": 5202,
+   "t": 3112,
    "name": "a07 transcript matches the reference",
    "detail": "going along slushy country roads and speaking to damp audiences in drafty schoolrooms day ..."
   },
   {
-   "t": 5598,
+   "t": 3503,
    "name": "a07 warm x5",
-   "ms": 64.9,
-   "detail": "total median/worst 64.9 / 66.6 ms; encoder 31.7 / 32.8 ms; mel 6.3 ms; decode 26.8 ms; 107.9x real time; text stable=true"
+   "ms": 63.7,
+   "detail": "total median/worst 63.7 / 65.9 ms; encoder 30.8 / 33.6 ms; mel 5.7 ms; decode 25.3 ms; 109.9x real time; text stable=true"
   },
   {
-   "t": 5725,
+   "t": 3609,
    "name": "a14 (13.7 s) first run",
-   "ms": 102.2,
-   "detail": "mel 13 ms, encoder 40.9 ms, decode 48.3 ms, heap 32 MB (11.3 in use)"
+   "ms": 97.5,
+   "detail": "mel 12.2 ms, encoder 38.3 ms, decode 47.1 ms, heap 32 MB (11.3 in use)"
   },
   {
-   "t": 5725,
+   "t": 3609,
    "name": "a14 transcript matches the reference",
    "detail": "going along slushy country roads and speaking to damp audiences in draughty schoolrooms da..."
   },
   {
-   "t": 6318,
+   "t": 4181,
    "name": "a14 warm x5",
-   "ms": 96.9,
-   "detail": "total median/worst 96.9 / 99.4 ms; encoder 38.9 / 39.6 ms; mel 11.6 ms; decode 46.2 ms; 141.3x real time; text stable=true"
+   "ms": 93.1,
+   "detail": "total median/worst 93.1 / 95.3 ms; encoder 36.2 / 37.6 ms; mel 10.7 ms; decode 46.3 ms; 147x real time; text stable=true"
   },
   {
-   "t": 6792,
+   "t": 4576,
    "name": "a56 (56.1 s) first run",
-   "ms": 392.4,
-   "detail": "mel 56.3 ms, encoder 168 ms, decode 168 ms, heap 55 MB (15.7 in use)"
+   "ms": 374.4,
+   "detail": "mel 52.6 ms, encoder 143 ms, decode 178 ms, heap 55 MB (15.7 in use)"
   },
   {
-   "t": 6792,
+   "t": 4576,
    "name": "a56 transcript matches the reference",
    "detail": "Welcome to Quirk Quid Quill Inc. where finance meets innovation, explore diverse offerings..."
   },
   {
-   "t": 8864,
+   "t": 6526,
    "name": "a56 warm x5",
-   "ms": 330.7,
-   "detail": "total median/worst 330.7 / 360.1 ms; encoder 107.3 / 132.5 ms; mel 49.5 ms; decode 172.3 ms; 169.7x real time; text stable=true"
+   "ms": 319,
+   "detail": "total median/worst 319 / 322.2 ms; encoder 105.1 / 106.1 ms; mel 44.6 ms; decode 166.4 ms; 175.9x real time; text stable=true"
   },
   {
-   "t": 8864,
+   "t": 6527,
    "name": "done",
-   "ms": 8864.2
+   "ms": 6526.7
   }
  ],
  "console": [],
  "machineAtEnd": {
-  "loadavg": "2.71 3.70 3.67 4/2028 560485",
-  "cpuPressure": "some avg10=1.08 avg60=0.54 avg300=0.96 total=10141536165"
+  "loadavg": "2.64 2.72 3.22 5/2037 3950313",
+  "cpuPressure": "some avg10=0.75 avg60=0.85 avg300=0.53 total=10128681664"
  },
  "chromeGpu": {
   "devices": [
