@@ -4,12 +4,14 @@ export class OutputFlow {
   static readonly frameBytes = 32 * 1024;
   static readonly windowBytes = 128 * 1024;
   static readonly queueBytes = 512 * 1024;
+  static readonly batchMs = 8;
   private chunks: Uint8Array[] = [];
   private queued = 0;
   private outstanding = 0;
   private timer?: ReturnType<typeof setTimeout>;
   private deadline?: ReturnType<typeof setTimeout>;
   private disposed = false;
+  private sentAt = -Infinity;
 
   constructor(private send: (data: Uint8Array) => void, private stalled: () => void) {}
 
@@ -37,8 +39,13 @@ export class OutputFlow {
     return true;
   }
 
+  // An idle connection sends at once, so a keystroke's echo is never held
+  // back. Only output following a send within the batch interval is coalesced.
   private schedule() {
-    if (!this.disposed && !this.timer) this.timer = setTimeout(() => this.flush(), 8);
+    if (this.disposed || this.timer) return;
+    const wait = OutputFlow.batchMs - (performance.now() - this.sentAt);
+    if (wait <= 0) this.flush();
+    else this.timer = setTimeout(() => this.flush(), wait);
   }
 
   private flush() {
@@ -59,6 +66,7 @@ export class OutputFlow {
       this.queued -= bytes;
       this.outstanding += bytes;
       this.watchProgress();
+      this.sentAt = performance.now();
       this.send(data);
     }
   }

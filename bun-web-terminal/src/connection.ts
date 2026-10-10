@@ -15,8 +15,6 @@ export class TerminalConnection {
   private heartbeat: ReturnType<typeof setInterval>;
   private pongTimeout?: ReturnType<typeof setTimeout>;
   private connectTimeout?: ReturnType<typeof setTimeout>;
-  private frame?: number;
-  private queue: Uint8Array[] = [];
   private attempt = 0;
   private stopped = false;
   private ready = false;
@@ -106,8 +104,11 @@ export class TerminalConnection {
         return;
       }
       if (!this.ready) return;
-      this.queue.push(new Uint8Array(event.data));
-      this.scheduleWrite();
+      // Parse on arrival: waiting for an animation frame would add up to a
+      // frame of delay to every echo, and the renderer paints on its own frame.
+      const data = new Uint8Array(event.data);
+      this.view.write(data);
+      this.control({ type: "ack", bytes: data.byteLength });
     };
     socket.onclose = (event) => {
       if (socket !== this.socket) return;
@@ -129,22 +130,6 @@ export class TerminalConnection {
     this.retry = setTimeout(() => this.connect(), Math.min(5_000, 250 * 2 ** this.attempt++));
   }
 
-  private scheduleWrite() {
-    if (this.frame !== undefined) return;
-    this.frame = requestAnimationFrame(() => {
-      this.frame = undefined;
-      const started = performance.now();
-      let bytes = 0;
-      while (this.queue.length && performance.now() - started < 8) {
-        const chunk = this.queue.shift()!;
-        this.view.write(chunk);
-        bytes += chunk.byteLength;
-      }
-      if (bytes) this.control({ type: "ack", bytes });
-      if (this.queue.length) this.scheduleWrite();
-    });
-  }
-
   private ping() {
     if (this.pongTimeout || this.socket?.readyState !== WebSocket.OPEN) return;
     const socket = this.socket;
@@ -164,9 +149,6 @@ export class TerminalConnection {
     clearTimeout(this.connectTimeout);
     clearTimeout(this.pongTimeout);
     this.pongTimeout = undefined;
-    if (this.frame !== undefined) cancelAnimationFrame(this.frame);
-    this.frame = undefined;
-    this.queue = [];
   }
 
   suspend() {
