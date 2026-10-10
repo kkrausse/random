@@ -206,3 +206,17 @@ test('bulk rows agree with native per-cell getters across pages, style reuse and
     }
   } finally { t.free(); }
 });
+
+test('mouse tracking is read as the one-byte bool it is', () => {
+  const t = ghostty.createTerminal(20, 3);
+  try {
+    // A fresh terminal's scratch still holds the scrollback limit just written.
+    expect(t.hasMouseTracking()).toBe(false);
+    for (let i = 0; i < 400; i++) t.write(`${i}\r\n`);
+    expect(t.getScrollbackLength()).toBeGreaterThan(255);
+    expect(t.hasMouseTracking()).toBe(false);
+    t.write('\x1b[?1000h');
+    expect(t.getScrollbackLength()).toBeGreaterThan(255);
+    expect(t.hasMouseTracking()).toBe(true);
+  } finally { t.free(); }
+});
