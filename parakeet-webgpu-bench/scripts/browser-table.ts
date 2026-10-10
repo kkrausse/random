@@ -5,6 +5,7 @@ const dir = `${import.meta.dir}/../results/browser`;
 const mw = (s?: { median: number; worst: number }) => (s ? `${Math.round(s.median)} / ${Math.round(s.worst)}` : "");
 const timing: string[] = [], load: string[] = [], failed: string[] = [];
 for (const f of readdirSync(dir).sort()) {
+  if (f.startsWith("published-")) continue; // single-clip checks of the published copy
   if (f.endsWith(".jsonl")) {
     const recs = readFileSync(`${dir}/${f}`, "utf8").trim().split("\n").map((l) => JSON.parse(l));
     const l = recs.find((r) => r.record === "load"), a = recs.filter((r) => r.record === "audio");
@@ -19,7 +20,7 @@ for (const f of readdirSync(dir).sort()) {
     const cell = (i: number) => (c[i]?.totalMs ? `${mw(c[i].encMs)} | ${mw(c[i].totalMs)}` : " | ");
     timing.push(`| ${name} | ${cell(0)} | ${cell(1)} | ${cell(2)} | ${c[2]?.xRealTime ? Math.round(c[2].xRealTime) : ""} | ${c.every((x: any) => x.matchesNative && x.textStable !== false) ? "same" : c.map((x: any) => (x.matchesNative ? "same" : "differs")).join(", ")} |`);
     const m = r.memory;
-    load.push(`| ${name} | ${(p.session.ms.encoder / 1000).toFixed(1)} s | ${Math.round(c[0].firstRunMs.total)} ms (${Math.round(c[0].firstRunMs.enc)}) | ${m.gpuProcessGpuMibAfterLoad} / ${m.gpuProcessGpuMibPeak} MiB | ${m.rendererRssMibPeak} MiB (after load ${m.rendererRssMibAfterLoad}) | ${m.gpuProcessRssMibPeak} MiB |`);
+    load.push(`| ${name} | ${(p.session.ms.encoder / 1000).toFixed(1)} s (fetch ${(p.fetch.totalMs / 1000).toFixed(1)} s) | ${Math.round(c[0].firstRunMs.total)} ms (${Math.round(c[0].firstRunMs.enc)}) | ${m.gpuProcessGpuMibAfterLoad} / ${m.gpuProcessGpuMibPeak} MiB | ${m.rendererRssMibPeak} MiB (after load ${m.rendererRssMibAfterLoad}) | ${m.gpuProcessRssMibPeak} MiB |`);
   }
 }
 console.log("| Row | 7.0 s enc | 7.0 s total | 13.7 s enc | 13.7 s total | 56.1 s enc | 56.1 s total | x real time, 56 s | Transcripts vs native |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |");

@@ -2,7 +2,8 @@
 
 How fast does NVIDIA Parakeet 0.6b run through a native (non-browser) WebGPU runtime on diesel2
 (RTX 2080 Ti, driver 580, 12 cores), compared with what `../dictation-server-linux` uses today
-(transcribe.cpp 0.3.1, ggml, Vulkan)? Measured 2026-10-09. Benchmark code only.
+(transcribe.cpp 0.3.1, ggml, Vulkan)? Measured 2026-10-09. Benchmark code only. The same model in
+an actual browser (Chrome, onnxruntime-web) is in [In the browser](#in-the-browser), added the next day.
 
 Short answer: ONNX Runtime's WebGPU provider (Dawn on Vulkan) works and really runs on the GPU, at
 40–100x real time depending on clip length. transcribe.cpp on Vulkan is 2–3x faster on the
@@ -143,6 +144,136 @@ the service's usual text. Burn's encoder output matches ORT CPU to 2e-4 absolute
 - Not measured: word error rate, a streaming loop on ORT WebGPU, cold-disk start, the WebGPU EP's
   options (graph capture, buffer cache modes, layout), wgpu directly without Burn.
 
+## In the browser
+
+Added 2026-10-10: the same model in real Chrome 154 on this machine, through `onnxruntime-web`
+1.30.0 (npm has no 1.28), from a static page in `web/`. Headed Chrome on its own Xvfb display,
+WebGPU on Vulkan. Same three clips, one discarded warm-up, 10 warm runs, median / worst in ms.
+Every `session.run()` resolves to CPU tensors, so the times include the read-back.
+
+Short answer: it works and it is on the 2080 Ti. The fp32 encoder is 20–80% slower than native
+ONNX Runtime WebGPU measured in the same window (90 vs 50 ms for 7 s, 314 vs 262 ms for 56 s) and
+the whole transcribe is 30–60% slower, at 40–63x real time. It costs far more memory than native:
+the renderer keeps 2.4 GB (fp16) or 4.4 GB (fp32) of RSS on top of the GPU memory, where the
+native process holds 0.4 GB. The fp16 encoder does not load in stock Chrome on this driver. All
+on WASM, the int8 export runs at 3x real time on one thread and 7–8x on four.
+
+| Runtime | 7.0 s enc | 7.0 s total | 13.7 s enc | 13.7 s total | 56.1 s enc | 56.1 s total | x real time, 56 s |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **Chrome, ORT-web WebGPU, fp32 encoder, decoder on WASM** | 90 / 145 | 173 / 263 | 108 / 149 | 262 / 296 | 314 / 339 | 897 / 1037 | 63 |
+| native ORT 1.28 WebGPU fp32, rerun in the same window | 50 / 59 | 110 / 118 | 66 / 68 | 171 / 197 | 262 / 264 | 679 / 772 | 83 |
+| native ORT 1.28 WebGPU fp32, table above (9 Oct) | 71 / 75 | 174 / 189 | 91 / 98 | 221 / 266 | 265 / 270 | 671 / 781 | 84 |
+| **Chrome, same, fp16 encoder** (needs a Chrome flag here, see below) | 67 / 113 | 145 / 210 | 95 / 127 | 225 / 248 | 232 / 240 | 753 / 830 | 75 |
+| native ORT 1.28 WebGPU fp16, rerun in the same window | 48 / 52 | 97 / 100 | 56 / 58 | 151 / 159 | 208 / 211 | 653 / 938 | 86 |
+| native ORT 1.28 WebGPU fp16, table above | 58 / 105 | 144 / 176 | 66 / 69 | 157 / 172 | 208 / 211 | 557 / 713 | 101 |
+| **Chrome, fp32, decoder on WebGPU too** | 68 / 76 | 558 / 638 | 81 / 109 | 902 / 939 | 337 / 363 | 3793 / 3994 | 15 |
+| native, fp32, decoder on WebGPU, table above | 46 / 47 | 427 / 445 | 63 / 64 | 749 / 772 | 261 / 265 | 2862 / 2978 | 20 |
+| Chrome, fp32, ORT-web's older JS WebGPU provider (JSEP build) | 103 / 151 | 222 / 369 | 96 / 103 | 235 / 266 | 280 / 285 | 809 / 949 | 69 |
+| **Chrome, all WASM, fp32, 12 threads** | 734 / 806 | 821 / 995 | 1328 / 1554 | 1500 / 1724 | 8578 / 13377 | 9487 / 14395 | 6 |
+| native ORT 1.28 CPU fp32, 12 cores, table above | 432 / 497 | 494 / 554 | 1006 / 1311 | 1173 / 1523 | 4890 / 5250 | 5473 / 6021 | 10 |
+| Chrome, all WASM, int8, 12 threads | 933 / 1066 | 1074 / 1184 | 2072 / 2495 | 2258 / 2703 | 7684 / 8067 | 8252 / 8535 | 7 |
+| Chrome, all WASM, int8, 4 threads (ORT-web's default) | 913 / 1075 | 989 / 1133 | 1652 / 1750 | 1780 / 1878 | 6300 / 7311 | 6619 / 7630 | 8 |
+| **Chrome, all WASM, int8, 1 thread** (what a page without COOP/COEP headers gets) | 2083 / 2192 | 2232 / 2327 | 4200 / 4522 | 4435 / 4734 | 20223 / 20937 | 21084 / 21694 | 3 |
+| Chrome, int8 encoder asked to run on WebGPU | 3746 / 3955 | 3814 / 4038 | 5065 / 5215 | 5186 / 5339 | 12318 / 14624 | 12683 / 15054 | 4 |
+
+| Runtime | Encoder session creation | Model fetch (localhost) | First 7 s transcribe (encoder part) | GPU memory after load / peak | RSS peak | Chrome GPU process RSS peak |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Chrome WebGPU fp32 | 6.7 s | 7.3 s | 661 ms (544) | 2423 / 2771 MiB | renderer 4375 MiB | 1734 MiB |
+| native ORT WebGPU fp32, same window | 17.8 s (4.0 s on 9 Oct) | | 366 ms (320) | 2376 / 2721 MiB | 369 MiB | |
+| Chrome WebGPU fp16 | 3.9 s | 1.6 s | 497 ms (403) | 1245 / 1544 MiB | renderer 2657 MiB | 1045 MiB |
+| native ORT WebGPU fp16, same window | 8.5 s (2.8 s on 9 Oct) | | 432 ms (386) | 1196 / 1494 MiB | 377 MiB | |
+| Chrome WebGPU fp32, decoder on WebGPU | 5.4 s | 4.5 s | 1021 ms (398) | 2464 / 2810 MiB | renderer 4357 MiB | 1784 MiB |
+| Chrome JSEP fp32 | 4.9 s | 4.1 s | 1797 ms (1672) | 866 / 2984 MiB | renderer 5365 MiB | 2653 MiB |
+| Chrome WASM fp32, 12 threads | 5.1 s | 3.0 s | 1205 ms (1081) | none | renderer 5860 MiB | 255 MiB |
+| Chrome WASM int8, 4 threads | 4.7 s | 0.9 s | 2014 ms (1906) | none | renderer 2354 MiB | 255 MiB |
+| Chrome WASM int8, 1 thread | 3.6 s | 0.9 s | 2086 ms (1972) | none | renderer 2341 MiB | 255 MiB |
+| Chrome int8 on WebGPU | 4.7 s | 1.0 s | 3963 ms (3861) | 104 / 1352 MiB | renderer 2406 MiB | 1127 MiB |
+
+GPU memory is what `nvidia-smi` charges to Chrome's GPU process; RSS is from `/proc`. Each row is a
+new Chrome with an empty profile, so "first" has no Chrome shader cache (NVIDIA's own driver cache
+in `~/.cache/nvidia` was warm). Page start to first transcript of the 7 s clip, files served from
+localhost: 16.7 s fp32, 8.0 s fp16, 7.7–9.5 s int8 on WASM. The native session-creation times of
+this window are 3–4x the 9 October ones: weights were being read from disk again, not a regression.
+
+### What was really in use
+
+- **Adapter**: `navigator.gpu.requestAdapter()` reports vendor `nvidia`, architecture `turing`,
+  and with `--enable-webgpu-developer-features` device `0x1e07`, "NVIDIA GeForce RTX 2080 Ti",
+  `isFallbackAdapter` false. `chrome://gpu` data: `ANGLE (NVIDIA, Vulkan 1.4.312 (NVIDIA GeForce RTX
+  2080 Ti), NVIDIA-580.178.4.0)`, WebGPU and Vulkan enabled. Chrome's GPU process holds 2.4 GB
+  (fp32) or 1.2 GB (fp16) in `nvidia-smi`, the same as the native process. Not SwiftShader or llvmpipe.
+- **Chrome flags** that were needed: `--enable-unsafe-webgpu --ignore-gpu-blocklist
+  --enable-features=Vulkan --use-angle=vulkan`. Linux WebGPU is not on by default in Chrome 154.
+- **`shader-f16` is absent in stock Chrome on this driver.** Dawn gates f16 on NVIDIA Vulkan
+  drivers older than 615.71 (this box has 580.178), and the fp16 encoder then fails at session
+  creation with `ERROR_CODE: 1, ERROR_MESSAGE: shader_helper.cc:416 GenerateSourceCode Program
+  Transpose requires f16 but the device does not support it.` The fp16 row was run with
+  `--enable-dawn-features=vulkan_enable_f16_on_nvidia`; with it the feature appears and the
+  transcripts are right. Native ORT 1.28 ships an older Dawn without that gate.
+- **Runtime build**: `ort.webgpu.min.mjs` with `ort-wasm-simd-threaded.asyncify.wasm`, which is
+  the C++ WebGPU provider compiled to WASM (the same provider as native). The JSEP row is the
+  older provider written in JS (`ort.all.min.mjs`); warm speed is about the same, its first run
+  is 3x slower.
+- **Decoder + joint** on WASM, 4 threads: 1.1–1.4 ms per token step against 0.8–1.1 native. On
+  WebGPU it is about 9 ms per step. On the 56 s clip the fp32 browser row is 218 ms behind native:
+  96 ms of that is the decoder, 77 ms the mel front end, 52 ms the encoder.
+- **Mel front end** is JS (`web/src/mel.ts`), 10–25 ms for 7 s and 80–150 ms for 56 s, against
+  7 and 63 ms for `nemo128.onnx` native. onnxruntime-web cannot run `nemo128.onnx`: `Could not
+  find an implementation for Cast(13) node with name 'node_Cast_6'` (a cast to float64). The JS
+  version matches the dumped native features to 6e-6 (`bun web/check-mel.ts`).
+- **int8 on WebGPU** is not a GPU run: the quantized operators have no WebGPU kernels, the
+  encoder is slower than plain WASM and GPU memory stays near zero until the first run.
+- **WASM threads** need `crossOriginIsolated`. `web/serve.ts` sends COOP/COEP; the published copy
+  cannot (tailscale serve, no custom headers) and runs one thread unless the page's opt-in service
+  worker is turned on.
+- The 2.4 GB fp32 weights do not fit a JS `ArrayBuffer` in Chrome (`RangeError: Array buffer
+  allocation failed`); the page reads files above 2 GB into a `WebAssembly.Memory` buffer.
+
+### Transcripts in the browser
+
+fp32 and fp16, on WebGPU (both builds), WASM and with the decoder on WebGPU: identical to the
+native text on all three clips, stable over the warm runs. The int8 export is identical on the
+7 s and 13.7 s clips and differs on the 56 s clip in five places (four on WebGPU), all in the
+product names: "Quirk Quid Quill Inc.", "E3." for "E3 Equity.", "RAP Z", "U3 Unifund",
+"QuirkQuid Quill Inc."
+
+### Phone page
+
+`https://raspberrypi.guineafowl-truck.ts.net/artifacts/parakeet-webgpu-browser/` (tailnet only,
+https). Models are served from the same place: the shelf is a plain directory on the Pi behind
+`tailscale serve` with 2.6 TB free and no size limit, so nothing is fetched from Hugging Face. It
+opens idle with three one-tap configurations, smallest first: int8 all on WASM (631 MB), fp16 with
+the encoder on WebGPU (1.25 GB), fp32 with the encoder on WebGPU (2.4 GB); each runs the 7 s clip
+with 3 warm runs. Every finished step is written to the page and to `localStorage`, and a reload
+lists earlier runs with the last step each one reached. Model files go to Cache Storage when the
+quota allows, so a second attempt does not download again.
+
+Checked from Chrome on diesel2 against the published link: int8 on WASM (one thread, 7 s clip in
+2.1 s, renderer 2.3 GB RSS) and fp16 on WebGPU with the Dawn flag (encoder 61 ms) both load, run
+and give the native transcript; the threads button turns `crossOriginIsolated` on. **Nothing was
+run on a phone.** The desktop numbers that bear on it: the smallest configuration peaks at 2.3 GB
+of renderer memory, and fp16 needs `shader-f16`.
+
+### Browser: not measured, and caveats
+
+- **Load.** A first pass ran with 20–35 runnable tasks on the 12 cores and is kept in
+  `results/browser/pass1-loaded/` (fp32 encoder 138 ms at 7 s there). The tables are from a second
+  pass at 01:28–01:45 with load average 8–9 falling to 4 and CPU pressure under 5%
+  (`results/browser/machine-load.txt`), except "int8 on WebGPU", which is from the end of the first
+  pass when it was already quiet. The int8 12- and 4-thread rows started quiet but something else
+  began during them; 12 threads slower than 4 is that, or oversubscription. Other Chrome instances
+  were using the GPU lightly throughout.
+- The native rows were rerun in that window so each browser row has a neighbour under the same
+  load; they came out faster at 7 s than on 9 October (50 vs 71 ms), so compare with those.
+- onnxruntime-web 1.30.0 against native ORT 1.28: two versions apart.
+- `performance.measureUserAgentSpecificMemory()` resolved before the end of the run in six of the
+  nine rows (1.3–5.4 GB, in each JSON) and not in the fp32, fp16 and JSEP WebGPU rows.
+  `performance.memory` JS heap is in each JSON too but excludes WASM memory, so RSS is the number
+  to read.
+- Not measured: any phone, Safari or Firefox; a Chrome with a warm shader cache (second visit);
+  node placement in the browser; a streaming loop; WASM with more than 4 GB (the fp32 model fits,
+  renderer 5.9 GB); `parakeet.js`; word error rate of int8 beyond the three clips.
+
 ## Layout
 
 - `ort-bench/`: Rust, `ort` 2.0.0-rc.13 with the `webgpu` feature. Its prebuilt ONNX Runtime 1.28
@@ -153,6 +284,12 @@ the service's usual text. Burn's encoder output matches ORT CPU to 2e-4 absolute
   bindings and the libraries in that directory's `.cache` (read-only).
 - `scripts/live.ts`: client timings against the running service. `scripts/placement.ts`: node
   placement from a verbose ORT log. `scripts/table.ts`: the tables above from `results/`.
+- `web/`: the browser page (bun + TypeScript, no framework). `src/main.ts` and `src/mel.ts` are the
+  page, `build.ts` writes `web/dist/` (page, onnxruntime-web files, clips, hard links to the models
+  in `cache/`), `serve.ts` serves it with COOP/COEP, `drive.ts` runs one configuration in Chrome on
+  Xvfb and writes `results/browser/<name>.json`, `bench.sh` runs the rows. `sw.js` is the opt-in
+  service worker that gives a header-less host cross-origin isolation.
+  `scripts/browser-table.ts` prints the browser tables.
 - `cache` is a symlink to `~/devfs/cache/parakeet-webgpu-bench` (models, audio, build output; 15 GB).
 
 ## Rerun
@@ -200,6 +337,32 @@ bun scripts/placement.ts cache/logs/verbose.err cache/logs/prof_*.json
 # the service
 bun scripts/live.ts http://127.0.0.1:9876 10 cache/audio/a07.f32 cache/audio/a14.f32
 bun ../dictation-server-linux/scripts/measure.ts 19877
+```
+
+### Browser rows
+
+```sh
+cd parakeet-webgpu-bench
+# once: int8 export and the mel filterbank for the JS front end
+mkdir -p cache/onnx-tdt-v2-int8
+for f in encoder-model.int8.onnx decoder_joint-model.int8.onnx; do
+  curl -L -o cache/onnx-tdt-v2-int8/$f https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/main/$f; done
+uv run --no-project --python 3.12 --with onnx --with numpy scripts/mel-filterbank.py cache/onnx-tdt-v2
+
+cd web && bun install && bun build.ts
+tmux new -d -s pkb-serve 'bun serve.ts 8787'       # http://127.0.0.1:8787/ with COOP/COEP
+./bench.sh                                          # every row; waits up to QUIET_WAIT s for CPU pressure under QUIET %
+QUIET=5 QUIET_WAIT=300 ./bench.sh native-ort-webgpu-fp32 chrome-webgpu-fp32
+bun ../scripts/browser-table.ts
+
+# one configuration (query string is the page's; add --chrome-arg ARG for extra Chrome flags)
+bun drive.ts try "model=fp16&enc=webgpu&dec=wasm&clip=a07&runs=3&cache=0" --chrome-arg --enable-dawn-features=vulkan_enable_f16_on_nvidia
+# page parameters: model=int8|fp16|fp32  clip=a07|a14|a56|all  enc=webgpu|wasm  dec=wasm|webgpu
+#                  rt=webgpu|jsep  runs=N  threads=N  cache=0|1  auto=1  base=<models url>
+
+# publish for the phone (private tailnet shelf; 4.3 GB the first time) and check it
+~/devfs/repos/kkrausse/random/scripts/deploy-artifact.sh dist parakeet-webgpu-browser
+bun drive.ts published-int8-wasm "model=int8&clip=a07&runs=3" --url https://raspberrypi.guineafowl-truck.ts.net/artifacts/parakeet-webgpu-browser/
 ```
 
 The dictation service was running the whole time (idle, 1.2 GB of GPU memory) and was not
