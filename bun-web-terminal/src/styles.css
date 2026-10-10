@@ -39,7 +39,10 @@ body {
 .dictation-preview:empty { display: none; }
 @media (any-pointer: coarse), (max-width: 600px) {
   .terminal-keys { display: flex; padding-bottom: max(22px, env(safe-area-inset-bottom)); }
-  #terminal { touch-action: pinch-zoom; }
+  /* The terminal draws its own selection; a long press must not start the
+     browser's, which tints the whole canvas. The textarea stays selectable. */
+  #terminal { touch-action: pinch-zoom; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+  #terminal textarea { -webkit-user-select: text; user-select: text; }
   .terminal-notices { top: calc(env(safe-area-inset-top) + 4px); right: 4px; }
 }
 
