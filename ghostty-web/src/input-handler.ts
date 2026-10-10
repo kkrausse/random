@@ -188,7 +188,21 @@ export class InputHandler {
   private keydownListener: ((e: KeyboardEvent) => void) | null = null;
   private keyupListener: ((e: KeyboardEvent) => void) | null = null;
   private pressedKeys = new Set<string>();
-  private clearPressedKeys = () => this.pressedKeys.clear();
+  private clearPressedKeys = () => {
+    this.pressedKeys.clear();
+    this.releaseHeldText();
+  };
+  // macOS shows its press-and-hold accent picker (and stops key repeat) for
+  // whatever editable element has focus; preventDefault on keydown does not
+  // stop it because the OS input context sees the key before the page does.
+  // A read-only textarea has no input context, so the textarea is read-only
+  // for exactly as long as a plain text key is down. Keydown still fires, so
+  // typing and repeat are unaffected; IME and dead keys never get here.
+  private suppressPressAndHold =
+    typeof navigator !== 'undefined' &&
+    /Mac/.test(navigator.platform ?? '') &&
+    !navigator.maxTouchPoints;
+  private heldText = new Set<string>();
   private keypressListener: ((e: KeyboardEvent) => void) | null = null;
   private pasteListener: ((e: ClipboardEvent) => void) | null = null;
   private beforeInputListener: ((e: InputEvent) => void) | null = null;
@@ -283,6 +297,7 @@ export class InputHandler {
     this.keydownListener = this.handleKeyDown.bind(this);
     this.container.addEventListener('keydown', this.keydownListener);
     this.keyupListener = (event) => {
+      this.releaseHeldText(event.code);
       const accepted = this.pressedKeys.delete(event.code);
       if (!accepted || this.isDisposed || this.isComposing || event.isComposing || event.metaKey ||
         (event.ctrlKey && event.code === 'KeyV')) return;
@@ -384,6 +399,8 @@ export class InputHandler {
       return;
     }
 
+    this.holdText(event);
+
     // Emit onKey event first (before any processing)
     if (this.onKeyCallback) {
       this.onKeyCallback({ key: event.key, domEvent: event });
@@ -430,6 +447,23 @@ export class InputHandler {
     }
 
     this.encodeKey(event, event.repeat ? KeyAction.REPEAT : KeyAction.PRESS);
+  }
+
+  private holdText(event: KeyboardEvent): void {
+    if (!this.suppressPressAndHold || !(this.inputElement instanceof HTMLTextAreaElement)) return;
+    // Keyup is not delivered for keys released while Command is down.
+    if (event.metaKey) return this.releaseHeldText();
+    if (event.ctrlKey || event.altKey || !this.isPrintableCharacter(event)) return;
+    this.heldText.add(event.code);
+    this.inputElement.readOnly = true;
+  }
+
+  private releaseHeldText(code?: string): void {
+    if (code === undefined) this.heldText.clear();
+    else if (!this.heldText.delete(code)) return;
+    if (this.heldText.size === 0 && this.inputElement instanceof HTMLTextAreaElement) {
+      this.inputElement.readOnly = false;
+    }
   }
 
   private encodeKey(event: KeyboardEvent, action: KeyAction): void {
@@ -601,7 +635,7 @@ export class InputHandler {
   private handleCompositionStart(_event: CompositionEvent): void {
     if (this.isDisposed) return;
     this.isComposing = true;
-    this.pressedKeys.clear();
+    this.clearPressedKeys();
   }
 
   /**
@@ -992,7 +1026,7 @@ export class InputHandler {
       this.container.removeEventListener('keyup', this.keyupListener);
       this.keyupListener = null;
     }
-    this.pressedKeys.clear();
+    this.clearPressedKeys();
     this.container.removeEventListener('blur', this.clearPressedKeys, true);
 
     if (this.keypressListener) {
