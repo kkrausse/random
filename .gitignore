@@ -72,3 +72,5 @@ scripts/output/
 *.har
 !tts-lab/
 !tts-lab/**
+!parakeet-webgpu-bench/
+!parakeet-webgpu-bench/**
