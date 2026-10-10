@@ -74,3 +74,5 @@ scripts/output/
 !tts-lab/**
 !parakeet-webgpu-bench/
 !parakeet-webgpu-bench/**
+!parakeet-ggml-web/
+!parakeet-ggml-web/**
