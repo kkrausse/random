@@ -57,7 +57,8 @@ struct ContentView: View {
                 }
 
                 Section {
-                    Stepper("Parallel transfers: \(model.parallelism)", value: $model.parallelism, in: 1...20)
+                    Stepper("Parallel uploads: \(model.parallelism)", value: $model.parallelism, in: 1...20)
+                    Stepper("iCloud downloads at once: \(model.cloudDownloads)", value: $model.cloudDownloads, in: 1...8)
                     Stepper("Staging limit: \(model.stagingLimitGB) GB", value: $model.stagingLimitGB, in: 2...128, step: 2)
                     Toggle("File into year/month folders", isOn: $model.organizeByDate)
                     Toggle("Mirror albums as folders", isOn: $model.linkAlbums)
@@ -65,7 +66,7 @@ struct ContentView: View {
                 } header: {
                     Text("4. Options")
                 } footer: {
-                    Text("Optional. Start with 2–4 parallel transfers on a Raspberry Pi. Staging includes originals retained by paused or failed runs; PicSync also preserves 2 GB of free iPhone storage. Transfer changes apply to new syncs and the next time a paused or failed sync resumes.\n\nYear/month folders are created as by-date/2026/06 inside the folder from step 2. Mirroring albums adds albums/<name> folders there for each of your own albums; their entries are hard links, so a photo in several albums is still stored once. PicSync remembers which photos it has backed up to this share and skips them without exporting; re-checking asks the server about each one again.")
+                    Text("Optional. Parallel uploads is how many files are sent to the server at once; start with 2–4 on a Raspberry Pi. Originals that are only in iCloud are downloaded by a separate pool and then join the upload queue, so they never take an upload slot while downloading. Staging includes originals retained by paused or failed runs; PicSync also preserves 2 GB of free iPhone storage. Transfer changes apply to new syncs and the next time a paused or failed sync resumes.\n\nYear/month folders are created as by-date/2026/06 inside the folder from step 2. Mirroring albums adds albums/<name> folders there for each of your own albums; their entries are hard links, so a photo in several albums is still stored once. PicSync remembers which photos it has backed up to this share and skips them without exporting; re-checking asks the server about each one again.")
                 }
 
                 Section {
@@ -643,7 +644,10 @@ private struct RunDetailView: View {
                 ProgressView(value: currentRun.itemCount == 0 ? 0 : Double(finishedCount) / Double(currentRun.itemCount))
                 LabeledContent("Assets", value: "\(finishedCount) / \(currentRun.itemCount)")
                 LabeledContent("State", value: currentRun.state.displayName)
-                LabeledContent("Active workers", value: "\(currentRun.activeWorkerCount ?? 0)")
+                LabeledContent("Active upload workers", value: "\(currentRun.activeWorkerCount ?? 0)")
+                if let waiting = model.cloudQueueByRun[currentRun.id], waiting > 0 {
+                    LabeledContent("Waiting for iCloud download", value: "\(waiting)")
+                }
                 if currentRun.state.isResumable {
                     LabeledContent("Next resume limit", value: "\(model.parallelism)")
                 }

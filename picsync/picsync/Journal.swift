@@ -124,15 +124,27 @@ actor SyncStore {
         }
     }
     /// Claim and persist together, so workers never hold a stale whole-run queue.
-    /// `cloudFirst` is the download lane's order; other workers take iCloud-only items only once nothing else is queued.
-    func claimNext(_ runID: UUID, cloudFirst: Bool = false) throws -> AssetTransfer? {
+    /// The download pool's queue: originals a worker found to be in iCloud only.
+    func claimCloud(_ runID: UUID) throws -> AssetTransfer? {
+        try db().transaction {
+            guard var transfer = try transfers(for: runID, state: .queuedCloud, limit: 1).first else { return nil }
+            transfer.state = .exporting
+            try putTransfer(transfer)
+            return transfer
+        }
+    }
+    /// Whether any item could still turn out to need an iCloud download.
+    func hasUnclassified(_ runID: UUID) throws -> Bool {
+        try db().query("SELECT 1 FROM transfers WHERE runID=? AND state IN ('queued','exporting') LIMIT 1", [.text(runID.uuidString)]) { _ in true }.first ?? false
+    }
+    func cloudQueueCount(_ runID: UUID) throws -> Int {
+        try db().query("SELECT COUNT(*) FROM transfers WHERE runID=? AND state='queuedCloud'", [.text(runID.uuidString)]) { Int(sqlite3_column_int64($0, 0)) }.first ?? 0
+    }
+    func claimNext(_ runID: UUID) throws -> AssetTransfer? {
         try db().transaction {
             // Separate equality lookups avoid sorting all queued rows on every claim.
-            var next = try transfers(for: runID, state: .staged, limit: 1).first
-            for state in cloudFirst ? [AssetTransferState.queuedCloud, .queued] : [.queued, .queuedCloud] where next == nil {
-                next = try transfers(for: runID, state: state, limit: 1).first
-            }
-            guard var transfer = next else { return nil }
+            let staged = try transfers(for: runID, state: .staged, limit: 1).first
+            guard var transfer = try staged ?? transfers(for: runID, state: .queued, limit: 1).first else { return nil }
             transfer.state = transfer.state == .staged ? .deduplicating : .exporting
             try putTransfer(transfer)
             return transfer

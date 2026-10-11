@@ -21,6 +21,7 @@ actor SyncCoordinator {
     private var runtimes = [UUID: TransferRuntime]()
     private var budgets = [UUID: StagingBudget]()
     private var ensuredDirectories = [UUID: Set<String>]()
+    private var activeDownloaders = [UUID: Int]()
     private let stagingRoot: URL
 
     /// Without a custom `stage`, exports come from the Photos library in two lanes: originals already on
@@ -90,7 +91,7 @@ actor SyncCoordinator {
         try await store.deleteRun(runID)
     }
 
-    func run(_ runID: UUID, profile: ServerProfile, password: String?, parallelism: Int, stagingLimit: Int64 = 8 * 1_024 * 1_024 * 1_024) async throws {
+    func run(_ runID: UUID, profile: ServerProfile, password: String?, parallelism: Int, stagingLimit: Int64 = 8 * 1_024 * 1_024 * 1_024, cloudDownloads: Int = 3) async throws {
         guard activeRuns.isEmpty else { return }
         activeRuns.insert(runID)
         pausedRuns.remove(runID)
@@ -100,6 +101,7 @@ actor SyncCoordinator {
             runtimes[runID] = nil
             budgets[runID] = nil
             ensuredDirectories[runID] = nil
+            activeDownloaders[runID] = nil
         }
         guard var run = try await store.run(runID) else { return }
         runtimes[runID] = TransferRuntime()
@@ -146,30 +148,86 @@ actor SyncCoordinator {
         #endif
         workerCounts[runID] = workerCount
         try await updateWorkerCount(runID)
-        // Downloading from iCloud and uploading to the server use different links, so the download lane
-        // works through iCloud-only originals while the other workers keep the upload busy with local ones.
-        let cloudWorkers = stageFromCloud == nil ? 0 : min(workerCount, 2) - (workerCount == 2 ? 1 : 0)
+        // The workers are sized to saturate the server. Downloading from iCloud uses a different link,
+        // so it gets its own pool which only stages originals; the workers then upload them like any other.
+        let downloaderCount = stageFromCloud == nil ? 0 : min(max(cloudDownloads, 1), 8)
+        activeDownloaders[runID] = downloaderCount
         await withTaskGroup(of: Void.self) { group in
-            for index in 0..<workerCount {
+            for _ in 0..<workerCount {
                 group.addTask {
-                    await self.work(runID: runID, profile: profile, password: password, cloudLane: index < cloudWorkers)
+                    await self.work(runID: runID, profile: profile, password: password)
                     await self.workerFinished(runID)
                 }
+            }
+            for _ in 0..<downloaderCount {
+                group.addTask { await self.download(runID: runID) }
             }
         }
         try await finish(runID)
     }
 
-    private func work(runID: UUID, profile: ServerProfile, password: String?, cloudLane: Bool) async {
+    /// Pulls iCloud-only originals onto the phone and leaves them staged for the upload workers.
+    private func download(runID: UUID) async {
+        defer { activeDownloaders[runID] = max((activeDownloaders[runID] ?? 1) - 1, 0) }
+        guard let stageFromCloud, let runtime = runtimes[runID], let budget = budgets[runID] else { return }
+        while !isPaused(runID) {
+            do {
+                guard var transfer = try await store.claimCloud(runID) else {
+                    // Workers may still be discovering that queued originals are in iCloud.
+                    guard try await store.hasUnclassified(runID) else { return }
+                    try await Task.sleep(for: .milliseconds(500))
+                    continue
+                }
+                do {
+                    try runtime.check()
+                    runtime.update(transfer.id, filename: "Photo item", phase: "Downloading original from iCloud")
+                    let resources = try await stageFromCloud(transfer.localIdentifier, runID, transfer.id, budget, runtime)
+                    guard !resources.isEmpty else { throw PicSyncError.sourceUnavailable }
+                    budget.beginDraining(transfer.id)
+                    transfer.manifest = resources
+                    transfer.fingerprint = ContentHasher.assetFingerprint(resources)
+                    transfer.state = .staged; transfer.updatedAt = Date(); try await store.save(transfer: transfer)
+                    runtime.remove(transfer.id)
+                } catch {
+                    #if DEBUG
+                    AppLog.write("[Sync] iCloud download failed transfer=\(transfer.id.uuidString) error=\(String(reflecting: error))")
+                    #endif
+                    transfer.state = isPaused(runID) ? transfer.requeuedState : .failed
+                    transfer.attempts += 1; transfer.errorMessage = error.localizedDescription; transfer.updatedAt = Date()
+                    try await store.save(transfer: transfer)
+                    runtime.remove(transfer.id)
+                    // Several downloads can outrun the staging budget; that fails one item, not the run.
+                    if !isPaused(runID), TransferFailurePolicy.isDestinationWide(error), !Self.isStagingLimit(error) {
+                        try await stopRun(runID, reason: error.localizedDescription)
+                    }
+                }
+            } catch {
+                if !isPaused(runID) { try? await stopRun(runID, reason: error.localizedDescription) }
+                return
+            }
+        }
+    }
+    private static func isStagingLimit(_ error: Error) -> Bool {
+        if case TransferError.stagingLimit = error { return true }
+        return false
+    }
+
+    private func work(runID: UUID, profile: ServerProfile, password: String?) async {
         let remote = makeRemote()
         do {
             try await connect(remote, runID: runID, profile: profile, password: password)
-            while !isPaused(runID), let transfer = try await store.claimNext(runID, cloudFirst: cloudLane) {
+            while !isPaused(runID) {
+                guard let transfer = try await store.claimNext(runID) else {
+                    // Nothing to upload right now, but the download pool may still stage more.
+                    guard (activeDownloaders[runID] ?? 0) > 0 else { break }
+                    try await Task.sleep(for: .milliseconds(500))
+                    continue
+                }
                 // The claim is durable. Even a pause between claim and processing is recovered.
                 var attempt = 0
                 while true {
                     do {
-                        try await process(transfer, runID: runID, remote: remote, destination: profile.ledgerDestination, cloudLane: cloudLane)
+                        try await process(transfer, runID: runID, remote: remote, destination: profile.ledgerDestination)
                         break
                     } catch {
                         if isPaused(runID) { break }
@@ -212,7 +270,7 @@ actor SyncCoordinator {
         }
     }
 
-    private func process(_ original: AssetTransfer, runID: UUID, remote: any RemoteFileService, destination: String, cloudLane: Bool) async throws {
+    private func process(_ original: AssetTransfer, runID: UUID, remote: any RemoteFileService, destination: String) async throws {
         guard let runtime = runtimes[runID], let budget = budgets[runID] else { throw TransferError.paused }
         var transfer = try await store.transfer(original.id) ?? original
         var lockedFingerprint: String?
@@ -238,9 +296,9 @@ actor SyncCoordinator {
                 let previous = transfer.manifest
                 let staged: [ResourceManifest]
                 do {
-                    staged = try await stageOriginal(transfer, runID: runID, budget: budget, runtime: runtime, cloudLane: cloudLane)
+                    staged = try await stageOriginal(transfer, runID: runID, budget: budget, runtime: runtime)
                 } catch is NeedsNetworkError {
-                    // Not a failure: hand it to the download lane and take the next local item.
+                    // Not a failure: hand it to the download pool and take the next local item.
                     transfer.needsNetwork = true
                     transfer.state = .queuedCloud; transfer.updatedAt = Date(); try await store.save(transfer: transfer)
                     return
@@ -353,34 +411,21 @@ actor SyncCoordinator {
         }
     }
 
-    private func stageOriginal(_ transfer: AssetTransfer, runID: UUID, budget: StagingBudget, runtime: TransferRuntime, cloudLane: Bool) async throws -> [ResourceManifest] {
-        guard let stageFromCloud else {
-            return try await export(transfer, with: stage, lane: "export", waiting: "Waiting for its turn to export", runID: runID, budget: budget, runtime: runtime)
-        }
-        if transfer.needsNetwork != true {
-            do {
-                return try await export(transfer, with: stage, lane: "export", waiting: "Waiting for its turn to export", runID: runID, budget: budget, runtime: runtime)
-            } catch is NeedsNetworkError {
-                guard cloudLane else { throw NeedsNetworkError() }
-            }
-        }
-        return try await export(transfer, with: stageFromCloud, lane: "cloud", waiting: "Waiting for its turn to download from iCloud", runID: runID, budget: budget, runtime: runtime)
-    }
-
-    private func export(_ transfer: AssetTransfer, with stage: Stage, lane: String, waiting: String, runID: UUID, budget: StagingBudget, runtime: TransferRuntime) async throws -> [ResourceManifest] {
-        // Serialize exports within a lane, not uploads, so partially exported videos cannot exhaust
-        // the budget while every worker waits for another exporter to release space.
-        runtime.update(transfer.id, filename: transfer.manifest.first?.filename ?? "Photo item", phase: waiting)
-        await exportGate.acquire(lane)
+    /// Exports an original that is on the device. One that is only in iCloud throws `NeedsNetworkError`.
+    private func stageOriginal(_ transfer: AssetTransfer, runID: UUID, budget: StagingBudget, runtime: TransferRuntime) async throws -> [ResourceManifest] {
+        // Serialize exports, not uploads, so partially exported videos cannot exhaust the
+        // budget while every worker waits for another exporter to release space.
+        runtime.update(transfer.id, filename: transfer.manifest.first?.filename ?? "Photo item", phase: "Waiting for its turn to export")
+        await exportGate.acquire("export")
         do {
             try runtime.check()
             let resources = try await stage(transfer.localIdentifier, runID, transfer.id, budget, runtime)
             guard !resources.isEmpty else { throw PicSyncError.sourceUnavailable }
             budget.beginDraining(transfer.id)
-            await exportGate.release(lane)
+            await exportGate.release("export")
             return resources
         } catch {
-            await exportGate.release(lane)
+            await exportGate.release("export")
             throw error
         }
     }
@@ -630,6 +675,11 @@ func withConnectionTestTimeout<T: Sendable>(
     var stagingLimitGB: Int {
         didSet { UserDefaults.standard.set(stagingLimitGB, forKey: "stagingLimitGB") }
     }
+    /// iCloud downloads running at once, separate from the upload workers.
+    var cloudDownloads: Int {
+        didSet { UserDefaults.standard.set(cloudDownloads, forKey: "cloudDownloads") }
+    }
+    private(set) var cloudQueueByRun = [UUID: Int]()
     var organizeByDate: Bool {
         didSet { UserDefaults.standard.set(organizeByDate, forKey: "organizeByDate") }
     }
@@ -650,6 +700,8 @@ func withConnectionTestTimeout<T: Sendable>(
         parallelism = (1...20).contains(savedParallelism) ? savedParallelism : 2
         let savedLimit = UserDefaults.standard.integer(forKey: "stagingLimitGB")
         stagingLimitGB = (2...128).contains(savedLimit) ? savedLimit : 8
+        let savedDownloads = UserDefaults.standard.integer(forKey: "cloudDownloads")
+        cloudDownloads = (1...8).contains(savedDownloads) ? savedDownloads : 3
         organizeByDate = UserDefaults.standard.object(forKey: "organizeByDate") as? Bool ?? true
         linkAlbums = UserDefaults.standard.object(forKey: "linkAlbums") as? Bool ?? true
     }
@@ -879,7 +931,10 @@ func withConnectionTestTimeout<T: Sendable>(
         }
     }
     func loadTransfers(runID: UUID) async {
-        do { transferItemsByRun[runID] = try await store.transfers(for: runID, state: .failed, limit: 5) }
+        do {
+            transferItemsByRun[runID] = try await store.transfers(for: runID, state: .failed, limit: 5)
+            cloudQueueByRun[runID] = try await store.cloudQueueCount(runID)
+        }
         catch { show(error) }
     }
     func transfers(for runID: UUID) -> [AssetTransfer] { transferItemsByRun[runID] ?? [] }
@@ -898,7 +953,7 @@ func withConnectionTestTimeout<T: Sendable>(
         AppLog.write("[Sync] resume button run=\(runID.uuidString) profile=\(profile.id.uuidString)")
         #endif
         do {
-            try await coordinator.run(runID, profile: profile, password: password, parallelism: parallelism, stagingLimit: Int64(stagingLimitGB) * 1_024 * 1_024 * 1_024)
+            try await coordinator.run(runID, profile: profile, password: password, parallelism: parallelism, stagingLimit: Int64(stagingLimitGB) * 1_024 * 1_024 * 1_024, cloudDownloads: cloudDownloads)
             await refresh()
             await loadTransfers(runID: runID)
         } catch {
