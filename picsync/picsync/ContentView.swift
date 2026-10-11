@@ -2,6 +2,7 @@ import PhotosUI
 import SwiftUI
 
 private enum SyncSource: Equatable {
+    case library(PhotoAlbum)
     case album(PhotoAlbum)
     case photos([String])
 }
@@ -48,7 +49,8 @@ struct ContentView: View {
                 }
 
                 Section {
-                    FormRow(value: albumLabel, placeholder: "Choose an album") { isChoosingAlbum = true }
+                    FormRow(value: libraryLabel, placeholder: "Entire library", action: chooseLibrary)
+                    FormRow(value: albumLabel, placeholder: "Or choose an album") { isChoosingAlbum = true }
                     FormRow(value: photosLabel, placeholder: "Or pick individual photos", action: pickPhotos)
                 } header: {
                     Text("3. Photos")
@@ -150,6 +152,11 @@ struct ContentView: View {
         return model.hasSavedPassword ? "Signed in as \(profile.username)" : "Password needs to be entered"
     }
 
+    private var libraryLabel: String? {
+        guard case .library(let library) = source else { return nil }
+        return "Entire library (\(library.count) items)"
+    }
+
     private var albumLabel: String? {
         guard case .album(let album) = source else { return nil }
         return "\(album.title) (\(album.count) items)"
@@ -178,6 +185,15 @@ struct ContentView: View {
         }
     }
 
+    private func chooseLibrary() {
+        Task {
+            do {
+                try await PhotoLibraryService().requestAuthorization()
+                source = .library(try PhotoLibraryService().entireLibrary())
+            } catch { model.show(error) }
+        }
+    }
+
     private func pickPhotos() {
         Task {
             do {
@@ -195,7 +211,7 @@ struct ContentView: View {
             do {
                 let run: SyncRun
                 switch source {
-                case .album(let album): run = try await model.createAlbumRun(album, destinationPath: folder, parallelism: model.parallelism)
+                case .library(let album), .album(let album): run = try await model.createAlbumRun(album, destinationPath: folder, parallelism: model.parallelism)
                 case .photos(let identifiers): run = try await model.createRun(identifiers: identifiers, destinationPath: folder, parallelism: model.parallelism)
                 }
                 self.source = nil

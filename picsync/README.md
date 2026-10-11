@@ -8,7 +8,7 @@ The home screen is a single form, filled in top to bottom:
 
 1. **Server**: select a saved server or add one (address, port, user, password, optional domain/workgroup). **Connect and Save** signs in before saving.
 2. **Share and folder**: choose a server share, browse or create folders, and select **Use This Folder**. The folder is remembered per server share.
-3. **Photos**: choose an album, or pick individual photos.
+3. **Photos**: the entire library (everything except hidden and recently deleted items), an album, or individually picked photos.
 4. **Options**: optionally adjust parallel transfers and the staging limit.
 5. **Start Sync**.
 

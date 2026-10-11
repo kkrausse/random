@@ -81,6 +81,13 @@ struct PhotoLibraryService {
         return collections(from: user, isSmartAlbum: false) + collections(from: smart, isSmartAlbum: true)
     }
 
+    /// The Recents smart album: everything in the library except hidden and recently deleted items.
+    func entireLibrary() throws -> PhotoAlbum {
+        let result = PHAssetCollection.fetchAssetCollections(with: .smartAlbum, subtype: .smartAlbumUserLibrary, options: nil)
+        guard let collection = result.firstObject else { throw PicSyncError.sourceUnavailable }
+        return PhotoAlbum(id: collection.localIdentifier, title: "Entire Library", count: PHAsset.fetchAssets(in: collection, options: nil).count, isSmartAlbum: true, isCloudShared: false)
+    }
+
     func assetIdentifiers(forAlbumID id: String) throws -> [String] {
         let collections = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [id], options: nil)
         guard let collection = collections.firstObject else { throw PicSyncError.sourceUnavailable }
