@@ -296,6 +296,9 @@ actor SyncCoordinator {
                 let previous = transfer.manifest
                 let staged: [ResourceManifest]
                 do {
+                    // Finding out by attempting the export would hold the single export slot for every
+                    // iCloud-only item, starving the originals that are ready to upload.
+                    if stageFromCloud != nil, PhotoLibraryService().originalsAreLocal(transfer.localIdentifier) == false { throw NeedsNetworkError() }
                     staged = try await stageOriginal(transfer, runID: runID, budget: budget, runtime: runtime)
                 } catch is NeedsNetworkError {
                     // Not a failure: hand it to the download pool and take the next local item.

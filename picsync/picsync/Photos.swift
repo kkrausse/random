@@ -75,6 +75,20 @@ struct PhotoLibraryService {
         guard !containsCloudSharedAsset else { throw PicSyncError.sharedAlbumOriginalUnavailable }
     }
 
+    /// Whether every original of the asset is on this device; nil when Photos does not say.
+    /// PhotoKit only exposes this through the undocumented `locallyAvailable` key, so the caller
+    /// must treat it as a hint and still cope with an export that needs the network.
+    func originalsAreLocal(_ localIdentifier: String) -> Bool? {
+        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject else { return nil }
+        var allLocal = true
+        for resource in PHAssetResource.assetResources(for: asset) where PhotoResourceSelector.includes(type: resource.type) {
+            guard resource.responds(to: NSSelectorFromString("locallyAvailable")),
+                  let isLocal = resource.value(forKey: "locallyAvailable") as? Bool else { return nil }
+            if !isLocal { allLocal = false }
+        }
+        return allLocal
+    }
+
     func dateFolders(for localIdentifiers: [String]) -> [String: String] {
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: localIdentifiers, options: nil)
         var folders = [String: String](minimumCapacity: assets.count)
