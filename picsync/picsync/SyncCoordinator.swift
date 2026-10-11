@@ -295,18 +295,28 @@ actor SyncCoordinator {
                     if transfer.subfolder != nil { try await ensureDirectory(directory, runID: runID, remote: remote) }
                     final = try await availableName(resource.filename, hash: resource.sha256, directory: directory, runID: runID, remote: remote)
                 }
-                let temporary = resource.temporaryPath ?? join(remoteDirectory(final), ".picsync-\(transfer.id.uuidString)-\(index).partial")
-                resource.finalPath = final; resource.temporaryPath = temporary; transfer.manifest[index] = resource
-                try await store.save(transfer: transfer)
+                var temporary = resource.temporaryPath ?? join(remoteDirectory(final), ".picsync-\(transfer.id.uuidString)-\(index).partial")
                 let file = URL(fileURLWithPath: resource.stagingPath)
-                runtime.update(transfer.id, filename: resource.filename, phase: "Checking partial upload")
-                let offset = try await resumableOffset(resource: resource, remote: remote, runtime: runtime)
                 let id = transfer.id, name = resource.filename, size = resource.byteCount
-                runtime.update(id, filename: name, phase: "Uploading", bytes: offset, total: size)
-                if offset < size || size == 0 {
-                    try await remote.upload(file: file, to: temporary, offset: offset) { bytes in
-                        try runtime.check()
-                        runtime.update(id, filename: name, phase: "Uploading", bytes: bytes, total: size)
+                for attempt in 0...1 {
+                    resource.finalPath = final; resource.temporaryPath = temporary; transfer.manifest[index] = resource
+                    try await store.save(transfer: transfer)
+                    do {
+                        runtime.update(id, filename: name, phase: "Checking partial upload")
+                        let offset = try await resumableOffset(resource: resource, remote: remote, runtime: runtime)
+                        runtime.update(id, filename: name, phase: "Uploading", bytes: offset, total: size)
+                        if offset < size || size == 0 {
+                            try await remote.upload(file: file, to: temporary, offset: offset) { bytes in
+                                try runtime.check()
+                                runtime.update(id, filename: name, phase: "Uploading", bytes: bytes, total: size)
+                            }
+                        }
+                        break
+                    } catch let error as ErrorResponse where error.header.status == 0xC0000043 && attempt == 0 {
+                        // Sharing violation: a connection that died mid-upload (the app was killed) can keep
+                        // its partial open on the server for minutes. Leave that file and start a new one.
+                        AppLog.write("[Sync] partial is still open on the server, starting over transfer=\(id.uuidString) partial=\(temporary)")
+                        temporary = join(remoteDirectory(final), ".picsync-\(id.uuidString)-\(index)-\(UUID().uuidString.prefix(8)).partial")
                     }
                 }
                 guard (try await remote.stat(path: temporary))?.byteCount == resource.byteCount else { throw CocoaError(.fileReadCorruptFile) }
