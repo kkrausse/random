@@ -10,6 +10,7 @@ actor SyncCoordinator {
     private let store: SyncStore
     typealias Stage = @Sendable (String, UUID, UUID, StagingBudget, TransferRuntime) async throws -> [ResourceManifest]
     private let stage: Stage
+    private let stageFromCloud: Stage?
     private let makeRemote: @Sendable () -> any RemoteFileService
     private let fingerprintGate = FingerprintGate()
     private let recordDirectoryGate = FingerprintGate()
@@ -22,13 +23,24 @@ actor SyncCoordinator {
     private var ensuredDirectories = [UUID: Set<String>]()
     private let stagingRoot: URL
 
-    init(store: SyncStore, stagingRoot: URL? = nil, makeRemote: @escaping @Sendable () -> any RemoteFileService = { SMBRemoteFileService() }, stage: @escaping Stage = { identifier, runID, transferID, budget, runtime in
-        let asset = try PhotoLibraryService().asset(for: identifier)
-        return try await PhotoResourceExporter().stage(asset: asset, runID: runID, transferID: transferID, budget: budget, runtime: runtime)
-    }) {
+    /// Without a custom `stage`, exports come from the Photos library in two lanes: originals already on
+    /// the device, and originals that have to be downloaded from iCloud first.
+    init(store: SyncStore, stagingRoot: URL? = nil, makeRemote: @escaping @Sendable () -> any RemoteFileService = { SMBRemoteFileService() }, stage: Stage? = nil) {
         self.store = store
         self.makeRemote = makeRemote
-        self.stage = stage
+        if let stage {
+            self.stage = stage
+            stageFromCloud = nil
+        } else {
+            self.stage = { identifier, runID, transferID, budget, runtime in
+                let asset = try PhotoLibraryService().asset(for: identifier)
+                return try await PhotoResourceExporter().stage(asset: asset, runID: runID, transferID: transferID, budget: budget, runtime: runtime, allowNetwork: false)
+            }
+            stageFromCloud = { identifier, runID, transferID, budget, runtime in
+                let asset = try PhotoLibraryService().asset(for: identifier)
+                return try await PhotoResourceExporter().stage(asset: asset, runID: runID, transferID: transferID, budget: budget, runtime: runtime, allowNetwork: true)
+            }
+        }
         self.stagingRoot = stagingRoot ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Transfers", isDirectory: true)
     }
 
@@ -134,10 +146,13 @@ actor SyncCoordinator {
         #endif
         workerCounts[runID] = workerCount
         try await updateWorkerCount(runID)
+        // Downloading from iCloud and uploading to the server use different links, so the download lane
+        // works through iCloud-only originals while the other workers keep the upload busy with local ones.
+        let cloudWorkers = stageFromCloud == nil ? 0 : min(workerCount, 2) - (workerCount == 2 ? 1 : 0)
         await withTaskGroup(of: Void.self) { group in
-            for _ in 0..<workerCount {
+            for index in 0..<workerCount {
                 group.addTask {
-                    await self.work(runID: runID, profile: profile, password: password)
+                    await self.work(runID: runID, profile: profile, password: password, cloudLane: index < cloudWorkers)
                     await self.workerFinished(runID)
                 }
             }
@@ -145,16 +160,16 @@ actor SyncCoordinator {
         try await finish(runID)
     }
 
-    private func work(runID: UUID, profile: ServerProfile, password: String?) async {
+    private func work(runID: UUID, profile: ServerProfile, password: String?, cloudLane: Bool) async {
         let remote = makeRemote()
         do {
             try await connect(remote, runID: runID, profile: profile, password: password)
-            while !isPaused(runID), let transfer = try await store.claimNext(runID) {
+            while !isPaused(runID), let transfer = try await store.claimNext(runID, cloudFirst: cloudLane) {
                 // The claim is durable. Even a pause between claim and processing is recovered.
                 var attempt = 0
                 while true {
                     do {
-                        try await process(transfer, runID: runID, remote: remote, destination: profile.ledgerDestination)
+                        try await process(transfer, runID: runID, remote: remote, destination: profile.ledgerDestination, cloudLane: cloudLane)
                         break
                     } catch {
                         if isPaused(runID) { break }
@@ -197,7 +212,7 @@ actor SyncCoordinator {
         }
     }
 
-    private func process(_ original: AssetTransfer, runID: UUID, remote: any RemoteFileService, destination: String) async throws {
+    private func process(_ original: AssetTransfer, runID: UUID, remote: any RemoteFileService, destination: String, cloudLane: Bool) async throws {
         guard let runtime = runtimes[runID], let budget = budgets[runID] else { throw TransferError.paused }
         var transfer = try await store.transfer(original.id) ?? original
         var lockedFingerprint: String?
@@ -221,7 +236,15 @@ actor SyncCoordinator {
             if try await !SyncStore.hasValidStaging(transfer.manifest, runtime: runtime) {
                 transfer.state = .exporting; transfer.updatedAt = Date(); try await store.save(transfer: transfer)
                 let previous = transfer.manifest
-                let staged = try await stageOriginal(transfer, runID: runID, budget: budget, runtime: runtime)
+                let staged: [ResourceManifest]
+                do {
+                    staged = try await stageOriginal(transfer, runID: runID, budget: budget, runtime: runtime, cloudLane: cloudLane)
+                } catch is NeedsNetworkError {
+                    // Not a failure: hand it to the download lane and take the next local item.
+                    transfer.needsNetwork = true
+                    transfer.state = .queuedCloud; transfer.updatedAt = Date(); try await store.save(transfer: transfer)
+                    return
+                }
                 transfer.manifest = staged.map { resource in
                     var resource = resource
                     if let old = previous.first(where: { $0.role == resource.role && $0.sha256 == resource.sha256 && $0.filename == resource.filename }) {
@@ -313,27 +336,41 @@ actor SyncCoordinator {
             let paths = transfer.manifest.compactMap(\.finalPath).joined(separator: ",")
             AppLog.write("[Sync] asset failed transfer=\(transfer.id.uuidString) state=\(transfer.state.rawValue) paths=\(paths) error=\(String(reflecting: error))")
             #endif
-            transfer.state = isPaused(runID) ? (transfer.manifest.isEmpty ? .queued : .staged) : .failed
+            transfer.state = isPaused(runID) ? transfer.requeuedState : .failed
             transfer.attempts += 1; transfer.errorMessage = error.localizedDescription; transfer.updatedAt = Date()
             try await store.save(transfer: transfer)
             throw error
         }
     }
 
-    private func stageOriginal(_ transfer: AssetTransfer, runID: UUID, budget: StagingBudget, runtime: TransferRuntime) async throws -> [ResourceManifest] {
-        // Serialize exports, not uploads, so partially exported videos cannot exhaust the
-        // budget while every worker waits for another exporter to release space.
-        runtime.update(transfer.id, filename: transfer.manifest.first?.filename ?? "Photo item", phase: "Waiting for its turn to export")
-        await exportGate.acquire("export")
+    private func stageOriginal(_ transfer: AssetTransfer, runID: UUID, budget: StagingBudget, runtime: TransferRuntime, cloudLane: Bool) async throws -> [ResourceManifest] {
+        guard let stageFromCloud else {
+            return try await export(transfer, with: stage, lane: "export", waiting: "Waiting for its turn to export", runID: runID, budget: budget, runtime: runtime)
+        }
+        if transfer.needsNetwork != true {
+            do {
+                return try await export(transfer, with: stage, lane: "export", waiting: "Waiting for its turn to export", runID: runID, budget: budget, runtime: runtime)
+            } catch is NeedsNetworkError {
+                guard cloudLane else { throw NeedsNetworkError() }
+            }
+        }
+        return try await export(transfer, with: stageFromCloud, lane: "cloud", waiting: "Waiting for its turn to download from iCloud", runID: runID, budget: budget, runtime: runtime)
+    }
+
+    private func export(_ transfer: AssetTransfer, with stage: Stage, lane: String, waiting: String, runID: UUID, budget: StagingBudget, runtime: TransferRuntime) async throws -> [ResourceManifest] {
+        // Serialize exports within a lane, not uploads, so partially exported videos cannot exhaust
+        // the budget while every worker waits for another exporter to release space.
+        runtime.update(transfer.id, filename: transfer.manifest.first?.filename ?? "Photo item", phase: waiting)
+        await exportGate.acquire(lane)
         do {
             try runtime.check()
             let resources = try await stage(transfer.localIdentifier, runID, transfer.id, budget, runtime)
             guard !resources.isEmpty else { throw PicSyncError.sourceUnavailable }
             budget.beginDraining(transfer.id)
-            await exportGate.release("export")
+            await exportGate.release(lane)
             return resources
         } catch {
-            await exportGate.release("export")
+            await exportGate.release(lane)
             throw error
         }
     }

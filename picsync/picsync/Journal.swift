@@ -110,7 +110,7 @@ actor SyncStore {
         return try db().query("SELECT payload FROM transfers WHERE runID=? AND id>? \(state == nil ? "" : "AND state=?") ORDER BY id LIMIT ?", values) { try SQLiteDatabase.decode(AssetTransfer.self, from: $0) }
     }
     func hasPending(_ runID: UUID) throws -> Bool {
-        try db().query("SELECT 1 FROM transfers WHERE runID=? AND state IN ('queued','staged','exporting','deduplicating','uploading','committing','indexing') LIMIT 1", [.text(runID.uuidString)]) { _ in true }.first ?? false
+        try db().query("SELECT 1 FROM transfers WHERE runID=? AND state IN ('queued','queuedCloud','staged','exporting','deduplicating','uploading','committing','indexing') LIMIT 1", [.text(runID.uuidString)]) { _ in true }.first ?? false
     }
     func transfer(_ id: UUID) throws -> AssetTransfer? {
         try db().query("SELECT payload FROM transfers WHERE id=?", [.text(id.uuidString)]) { try SQLiteDatabase.decode(AssetTransfer.self, from: $0) }.first
@@ -124,12 +124,16 @@ actor SyncStore {
         }
     }
     /// Claim and persist together, so workers never hold a stale whole-run queue.
-    func claimNext(_ runID: UUID) throws -> AssetTransfer? {
+    /// `cloudFirst` is the download lane's order; other workers take iCloud-only items only once nothing else is queued.
+    func claimNext(_ runID: UUID, cloudFirst: Bool = false) throws -> AssetTransfer? {
         try db().transaction {
             // Separate equality lookups avoid sorting all queued rows on every claim.
-            let staged = try transfers(for: runID, state: .staged, limit: 1).first
-            guard var transfer = try staged ?? transfers(for: runID, state: .queued, limit: 1).first else { return nil }
-            transfer.state = transfer.state == .queued ? .exporting : .deduplicating
+            var next = try transfers(for: runID, state: .staged, limit: 1).first
+            for state in cloudFirst ? [AssetTransferState.queuedCloud, .queued] : [.queued, .queuedCloud] where next == nil {
+                next = try transfers(for: runID, state: state, limit: 1).first
+            }
+            guard var transfer = next else { return nil }
+            transfer.state = transfer.state == .staged ? .deduplicating : .exporting
             try putTransfer(transfer)
             return transfer
         }
@@ -234,7 +238,7 @@ actor SyncStore {
             if batch.isEmpty { break }
             try db().transaction {
                 for var transfer in batch {
-                    transfer.state = transfer.manifest.isEmpty ? .queued : .staged
+                    transfer.state = transfer.requeuedState
                     transfer.errorMessage = nil
                     transfer.updatedAt = Date()
                     try putTransfer(transfer)
@@ -251,7 +255,7 @@ actor SyncStore {
             if batch.isEmpty { break }
             try db().transaction {
                 for var transfer in batch {
-                    transfer.state = transfer.manifest.isEmpty ? .queued : .staged
+                    transfer.state = transfer.requeuedState
                     try putTransfer(transfer)
                 }
             }
@@ -270,7 +274,7 @@ actor SyncStore {
                 if batch.isEmpty { break }
                 for var transfer in batch {
                     // Hash validation happens lazily in the worker, not during app startup.
-                    transfer.state = transfer.manifest.isEmpty ? .queued : .staged
+                    transfer.state = transfer.requeuedState
                     try putTransfer(transfer)
                 }
             }

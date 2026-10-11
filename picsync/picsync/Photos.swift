@@ -143,7 +143,8 @@ struct PhotoLibraryService {
 struct PhotoResourceExporter {
     private let manager = PHAssetResourceManager.default()
 
-    func stage(asset: PHAsset, runID: UUID, transferID: UUID, budget: StagingBudget, runtime: TransferRuntime) async throws -> [ResourceManifest] {
+    /// With `allowNetwork` false, an original that is only in iCloud throws `NeedsNetworkError` instead of downloading.
+    func stage(asset: PHAsset, runID: UUID, transferID: UUID, budget: StagingBudget, runtime: TransferRuntime, allowNetwork: Bool = true) async throws -> [ResourceManifest] {
         let resources = PHAssetResource.assetResources(for: asset).filter { PhotoResourceSelector.includes(type: $0.type) }
         guard !resources.isEmpty else { throw PicSyncError.sourceUnavailable }
         let directory = budget.root.appendingPathComponent(runID.uuidString).appendingPathComponent(transferID.uuidString)
@@ -160,8 +161,8 @@ struct PhotoResourceExporter {
                 let filename = SafeFilename.make(resource.originalFilename, fallback: fallback)
                 let localURL = directory.appendingPathComponent("\(index)-\(UUID().uuidString).\(URL(fileURLWithPath: filename).pathExtension)")
                 let temporaryURL = localURL.appendingPathExtension("partial")
-                runtime.update(transferID, filename: filename, phase: "Exporting original")
-                try await export(resource, to: temporaryURL, budget: budget, runtime: runtime)
+                runtime.update(transferID, filename: filename, phase: allowNetwork ? "Downloading original from iCloud" : "Exporting original")
+                try await export(resource, to: temporaryURL, budget: budget, runtime: runtime, allowNetwork: allowNetwork)
                 try FileManager.default.moveItem(at: temporaryURL, to: localURL)
                 runtime.update(transferID, filename: filename, phase: "Hashing original")
                 let hash = try await ContentHasher.hashAsync(file: localURL, check: { try runtime.check() })
@@ -170,14 +171,16 @@ struct PhotoResourceExporter {
             }
         } catch {
             try? budget.remove(directory)
+            // Any Photos failure without network access is retried by the download lane, which reports real errors.
+            if !allowNetwork, (error as NSError).domain == PHPhotosErrorDomain { throw NeedsNetworkError() }
             throw error
         }
         return manifests
     }
 
-    private func export(_ resource: PHAssetResource, to url: URL, budget: StagingBudget, runtime: TransferRuntime) async throws {
+    private func export(_ resource: PHAssetResource, to url: URL, budget: StagingBudget, runtime: TransferRuntime, allowNetwork: Bool) async throws {
         let options = PHAssetResourceRequestOptions()
-        options.isNetworkAccessAllowed = true
+        options.isNetworkAccessAllowed = allowNetwork
         let writer = try PhotoExportWriter(url: url, budget: budget, runtime: runtime, manager: manager)
         let pauseHandler = runtime.onPause { writer.cancel() }
         defer { runtime.removePauseHandler(pauseHandler) }

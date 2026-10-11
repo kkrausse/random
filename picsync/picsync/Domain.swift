@@ -138,7 +138,8 @@ enum SyncRunState: String, Codable, Sendable {
     var tint: Color { self == .completed ? .green : self == .completedWithErrors ? .orange : self == .cancelled ? .red : .blue }
 }
 
-enum AssetTransferState: String, Codable, Sendable { case queued, exporting, staged, deduplicating, uploading, committing, indexing, completed, skippedDuplicate, failed, cancelled }
+/// `queuedCloud` is a queued item whose original turned out to be in iCloud only; it waits for the download lane.
+enum AssetTransferState: String, Codable, Sendable { case queued, queuedCloud, exporting, staged, deduplicating, uploading, committing, indexing, completed, skippedDuplicate, failed, cancelled }
 
 extension AssetTransferState {
     var isTerminal: Bool { self == .completed || self == .skippedDuplicate || self == .failed || self == .cancelled }
@@ -168,7 +169,15 @@ struct AssetTransfer: Codable, Identifiable, Sendable, Equatable {
     var subfolder: String? = nil
     /// Album folder names this item still has to be hard-linked into, below "albums" in the run's destination.
     var albums: [String]? = nil
+    /// Set once an export without network access showed the original is not on this device.
+    var needsNetwork: Bool? = nil
+
+    /// Where an interrupted or retried item goes back to.
+    var requeuedState: AssetTransferState { manifest.isEmpty ? (needsNetwork == true ? .queuedCloud : .queued) : .staged }
 }
+
+/// The original is in iCloud only and this attempt was not allowed to download it.
+struct NeedsNetworkError: Error {}
 
 struct SyncRun: Codable, Identifiable, Sendable, Equatable, Hashable {
     var id: UUID
