@@ -341,6 +341,10 @@ private actor MemoryRemote: RemoteFileService {
     }
     func disconnect() {}
     func createDirectory(path: String) {}
+    func hardLink(from: String, to: String) throws {
+        guard let data = files[from] else { throw CocoaError(.fileNoSuchFile) }
+        files[to] = data
+    }
     func listShares() -> [String] { ["Photos"] }
     func listDirectory(path: String) -> [RemoteItem] { [] }
     func stat(path: String) -> RemoteItem? { files[path].map { RemoteItem(name: path, path: path, byteCount: Int64($0.count), isDirectory: false) } }

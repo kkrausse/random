@@ -166,6 +166,8 @@ struct AssetTransfer: Codable, Identifiable, Sendable, Equatable {
     var updatedAt: Date
     /// Folder below the run's destination that this item is filed into, such as "by-date/2026/06".
     var subfolder: String? = nil
+    /// Album folder names this item still has to be hard-linked into, below "albums" in the run's destination.
+    var albums: [String]? = nil
 }
 
 struct SyncRun: Codable, Identifiable, Sendable, Equatable, Hashable {

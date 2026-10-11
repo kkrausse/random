@@ -46,6 +46,7 @@ actor SyncStore {
         // per-destination checklist that lets a repeat sync skip an item without exporting it.
         try db.execute("CREATE TABLE IF NOT EXISTS fingerprints (identifier TEXT PRIMARY KEY, fingerprint TEXT NOT NULL) WITHOUT ROWID")
         try db.execute("CREATE TABLE IF NOT EXISTS backedUp (destination TEXT NOT NULL, identifier TEXT NOT NULL, PRIMARY KEY(destination, identifier)) WITHOUT ROWID")
+        try db.execute("CREATE TABLE IF NOT EXISTS albumLinks (destination TEXT NOT NULL, identifier TEXT NOT NULL, album TEXT NOT NULL, PRIMARY KEY(destination, identifier, album)) WITHOUT ROWID")
         database = db
         do {
             try db.transaction {
@@ -163,6 +164,18 @@ actor SyncStore {
     }
     func markBackedUp(_ identifier: String, destination: String) throws {
         try db().execute("INSERT OR IGNORE INTO backedUp VALUES (?,?)", [.text(destination), .text(identifier)])
+    }
+    /// Album folders each identifier is already linked into, for one album root on one share.
+    func linkedAlbums(destination: String) throws -> [String: Set<String>] {
+        var linked = [String: Set<String>]()
+        let rows = try db().query("SELECT identifier, album FROM albumLinks WHERE destination=?", [.text(destination)]) {
+            (String(cString: sqlite3_column_text($0, 0)), String(cString: sqlite3_column_text($0, 1)))
+        }
+        for (identifier, album) in rows { linked[identifier, default: []].insert(album) }
+        return linked
+    }
+    func markLinked(_ identifier: String, album: String, destination: String) throws {
+        try db().execute("INSERT OR IGNORE INTO albumLinks VALUES (?,?,?)", [.text(destination), .text(identifier), .text(album)])
     }
     /// One-time: runs finished before the checklist existed still count.
     private func seedLedger() throws {

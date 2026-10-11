@@ -82,6 +82,24 @@ struct PhotoLibraryService {
         return folders
     }
 
+    /// Folder names of the user's own albums each identifier belongs to. Smart albums and Shared Albums are left out.
+    func albumFolders(for localIdentifiers: [String]) -> [String: [String]] {
+        let wanted = Set(localIdentifiers)
+        var folders = [String: [String]]()
+        PHAssetCollection.fetchAssetCollections(with: .album, subtype: .any, options: nil).enumerateObjects { collection, _, _ in
+            guard collection.assetCollectionSubtype != .albumCloudShared else { return }
+            let title = SafeFilename.make(collection.localizedTitle ?? "", fallback: "Untitled Album")
+            // SMB servers reject or mangle names ending in a dot.
+            let name = String(title.reversed().drop { $0 == "." || $0 == " " }.reversed())
+            guard !name.isEmpty else { return }
+            PHAsset.fetchAssets(in: collection, options: nil).enumerateObjects { asset, _, _ in
+                guard wanted.contains(asset.localIdentifier), folders[asset.localIdentifier]?.contains(name) != true else { return }
+                folders[asset.localIdentifier, default: []].append(name)
+            }
+        }
+        return folders
+    }
+
     func albums() throws -> [PhotoAlbum] {
         let user = PHAssetCollection.fetchAssetCollections(with: .album, subtype: .any, options: nil)
         let smart = PHAssetCollection.fetchAssetCollections(with: .smartAlbum, subtype: .any, options: nil)

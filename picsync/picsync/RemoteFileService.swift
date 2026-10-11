@@ -21,6 +21,7 @@ protocol RemoteFileService: Sendable {
     func upload(file: URL, to path: String, offset: Int64, progress: @escaping @Sendable (Int64) throws -> Void) async throws
     func hash(path: String, prefixBytes: Int64?, check: @escaping @Sendable () throws -> Void) async throws -> String
     func rename(from: String, to: String) async throws
+    func hardLink(from: String, to: String) async throws
     func delete(path: String) async throws
 }
 
