@@ -15,4 +15,5 @@ Local transfer-reliability patches:
 - File-handle uploads accept a resume offset. Existing files are opened without truncation, their length must match the requested offset, and concurrent writers/deleters are excluded while the handle is open. PicSync verifies the remote prefix before using this API.
 - Upload progress callbacks can throw to checkpoint a paused transfer, and upload loops check task cancellation.
 - `hardLink(from:to:)` adds a second name for a file with SMB2 `FILE_LINK_INFORMATION`, mirroring `move`.
+- Connections are pinned to a wired Ethernet interface when one has a usable path, and `interfaceDescription` reports the interface in use.
 - Each SMB request has a 30-second deadline. Expiry cancels the underlying connection rather than leaving workers waiting indefinitely.

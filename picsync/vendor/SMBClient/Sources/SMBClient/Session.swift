@@ -32,6 +32,8 @@ public class Session {
     self.init(Connection(host: host, port: port))
   }
 
+  public var interfaceDescription: String { connection.interfaceDescription }
+
   private init(_ connection: Connection) {
     self.connection = connection
     onDisconnected = { _ in }

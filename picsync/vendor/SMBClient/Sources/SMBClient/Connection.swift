@@ -1,6 +1,36 @@
 import Foundation
 import Network
 
+/// iOS can route a LAN connection over Wi-Fi while an Ethernet adapter is attached. When a wired
+/// interface has a usable path, connections are pinned to it; otherwise the system chooses.
+enum WiredPath {
+  private static let lock = NSLock()
+  private static var isSatisfied = false
+  private static var hasFirstUpdate = false
+  private static let firstUpdate = DispatchSemaphore(value: 0)
+  private static let monitor: NWPathMonitor = {
+    let monitor = NWPathMonitor(requiredInterfaceType: .wiredEthernet)
+    monitor.pathUpdateHandler = { path in
+      let isFirst = lock.withLock {
+        isSatisfied = path.status == .satisfied
+        defer { hasFirstUpdate = true }
+        return !hasFirstUpdate
+      }
+      if isFirst { firstUpdate.signal() }
+    }
+    monitor.start(queue: .global(qos: .utility))
+    return monitor
+  }()
+
+  static func parameters() -> NWParameters {
+    _ = monitor
+    if !lock.withLock({ hasFirstUpdate }) { _ = firstUpdate.wait(timeout: .now() + 0.5) }
+    let parameters = NWParameters.tcp
+    if lock.withLock({ isSatisfied }) { parameters.requiredInterfaceType = .wiredEthernet }
+    return parameters
+  }
+}
+
 public class Connection {
   let host: String
   var onDisconnected: (Error) -> Void
@@ -20,7 +50,7 @@ public class Connection {
       host: NWEndpoint.Host(host),
       port: NWEndpoint.Port(integerLiteral: 445)
     )
-    connection = NWConnection(to: endpoint, using: .tcp)
+    connection = NWConnection(to: endpoint, using: WiredPath.parameters())
     onDisconnected = { _ in }
   }
 
@@ -30,8 +60,14 @@ public class Connection {
       host: NWEndpoint.Host(host),
       port: NWEndpoint.Port(rawValue: UInt16(port))!
     )
-    connection = NWConnection(to: endpoint, using: .tcp)
+    connection = NWConnection(to: endpoint, using: WiredPath.parameters())
     onDisconnected = { _ in }
+  }
+
+  /// The interface the connection ended up on, such as "wiredEthernet en5".
+  public var interfaceDescription: String {
+    guard let interface = connection.currentPath?.availableInterfaces.first else { return "unknown" }
+    return "\(interface.type) \(interface.name)"
   }
 
   public func connect() async throws {

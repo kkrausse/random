@@ -35,6 +35,7 @@ actor SMBRemoteFileService: RemoteFileService {
         #endif
         do {
             try await client.login(username: profile.username, password: password, domain: profile.domain)
+            AppLog.write("[SMB] connected via \(client.session.interfaceDescription)")
             if !profile.share.isEmpty {
             #if DEBUG
             AppLog.write("[SMB] opening share=\(profile.share)")
