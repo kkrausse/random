@@ -290,6 +290,25 @@ private struct DiagnosticsView: View {
     }
 }
 
+private struct TransferItemRow: View {
+    let item: TransferRuntime.Item
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(item.filename).lineLimit(1)
+            Text(item.phase).font(.caption).foregroundStyle(.secondary)
+            if item.total > 0 {
+                ProgressView(value: Double(item.bytes), total: Double(item.total))
+                Text("\(ByteCountFormatter.string(fromByteCount: item.bytes, countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: item.total, countStyle: .file))")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if item.isDownload, item.bytes > 0 {
+                Text("\(ByteCountFormatter.string(fromByteCount: item.bytes, countStyle: .file)) received")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
 private struct RunRow: View {
     let run: SyncRun
 
@@ -645,9 +664,6 @@ private struct RunDetailView: View {
                 LabeledContent("Assets", value: "\(finishedCount) / \(currentRun.itemCount)")
                 LabeledContent("State", value: currentRun.state.displayName)
                 LabeledContent("Active upload workers", value: "\(currentRun.activeWorkerCount ?? 0)")
-                if let waiting = model.cloudQueueByRun[currentRun.id], waiting > 0 {
-                    LabeledContent("Waiting for iCloud download", value: "\(waiting)")
-                }
                 if currentRun.state.isResumable {
                     LabeledContent("Next resume limit", value: "\(model.parallelism)")
                 }
@@ -662,19 +678,22 @@ private struct RunDetailView: View {
                     Text(reason).foregroundStyle(.orange).textSelection(.enabled)
                 }
             }
-            if let progress = model.progressByRun[currentRun.id], !progress.items.isEmpty {
-                Section("Active Transfers") {
-                    LabeledContent("Upload speed", value: "\(ByteCountFormatter.string(fromByteCount: Int64(progress.bytesPerSecond), countStyle: .file))/s")
-                    ForEach(progress.items) { item in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(item.filename).lineLimit(1)
-                            Text(item.phase).font(.caption).foregroundStyle(.secondary)
-                            if item.total > 0 {
-                                ProgressView(value: Double(item.bytes), total: Double(item.total))
-                                Text("\(ByteCountFormatter.string(fromByteCount: item.bytes, countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: item.total, countStyle: .file))")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
+            if let progress = model.progressByRun[currentRun.id] {
+                let uploads = progress.items.filter { !$0.isDownload }, downloads = progress.items.filter(\.isDownload)
+                let waiting = model.cloudQueueByRun[currentRun.id] ?? 0
+                if !uploads.isEmpty {
+                    Section("Uploading to Server") {
+                        LabeledContent("Upload speed", value: "\(ByteCountFormatter.string(fromByteCount: Int64(progress.bytesPerSecond), countStyle: .file))/s")
+                        LabeledContent("Workers busy", value: "\(uploads.count) of \(currentRun.parallelism)")
+                        ForEach(uploads) { TransferItemRow(item: $0) }
+                    }
+                }
+                if !downloads.isEmpty || waiting > 0 {
+                    Section("Downloading from iCloud") {
+                        LabeledContent("Download speed", value: "\(ByteCountFormatter.string(fromByteCount: Int64(progress.downloadBytesPerSecond), countStyle: .file))/s")
+                        LabeledContent("Downloading now", value: "\(downloads.count)")
+                        LabeledContent("Waiting to download", value: "\(waiting)")
+                        ForEach(downloads) { TransferItemRow(item: $0) }
                     }
                 }
             }

@@ -22,10 +22,13 @@ final class TransferRuntime: @unchecked Sendable {
         var phase: String
         var bytes: Int64 = 0
         var total: Int64 = 0
+        /// Coming down from iCloud rather than going up to the server.
+        var isDownload = false
     }
     struct Snapshot: Sendable {
         var items: [Item]
         var bytesPerSecond: Double
+        var downloadBytesPerSecond: Double
     }
     private let lock = NSLock()
     private var paused = false
@@ -34,6 +37,9 @@ final class TransferRuntime: @unchecked Sendable {
     private var sampledBytes: Int64 = 0
     private var sampledAt = Date()
     private var speed = 0.0
+    private var downloaded: Int64 = 0
+    private var sampledDownloaded: Int64 = 0
+    private var downloadSpeed = 0.0
     private var pauseHandlers = [UUID: @Sendable () -> Void]()
 
     func pause() {
@@ -57,12 +63,18 @@ final class TransferRuntime: @unchecked Sendable {
     }
     func removePauseHandler(_ id: UUID) { _ = lock.withLock { pauseHandlers.removeValue(forKey: id) } }
     func check() throws { if lock.withLock({ paused }) || Task.isCancelled { throw TransferError.paused } }
-    func update(_ id: UUID, filename: String, phase: String, bytes: Int64 = 0, total: Int64 = 0) {
+    func addDownloaded(_ bytes: Int64, for id: UUID) {
+        lock.withLock {
+            downloaded += bytes
+            items[id]?.bytes += bytes
+        }
+    }
+    func update(_ id: UUID, filename: String, phase: String, bytes: Int64 = 0, total: Int64 = 0, download: Bool = false) {
         lock.withLock {
             if phase == "Uploading", let previous = items[id], previous.phase == phase, previous.filename == filename {
                 sent += max(0, bytes - previous.bytes)
             }
-            items[id] = Item(id: id, filename: filename, phase: phase, bytes: bytes, total: total)
+            items[id] = Item(id: id, filename: filename, phase: phase, bytes: bytes, total: total, isDownload: download)
         }
     }
     func remove(_ id: UUID) { _ = lock.withLock { items.removeValue(forKey: id) } }
@@ -72,9 +84,11 @@ final class TransferRuntime: @unchecked Sendable {
             if seconds >= 0.5 {
                 speed = Double(sent - sampledBytes) / seconds
                 sampledBytes = sent
+                downloadSpeed = Double(downloaded - sampledDownloaded) / seconds
+                sampledDownloaded = downloaded
                 sampledAt = now
             }
-            return Snapshot(items: items.values.sorted { $0.id.uuidString < $1.id.uuidString }, bytesPerSecond: speed)
+            return Snapshot(items: items.values.sorted { $0.id.uuidString < $1.id.uuidString }, bytesPerSecond: speed, downloadBytesPerSecond: downloadSpeed)
         }
     }
 }

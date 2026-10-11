@@ -180,7 +180,7 @@ actor SyncCoordinator {
                 }
                 do {
                     try runtime.check()
-                    runtime.update(transfer.id, filename: "Photo item", phase: "Downloading original from iCloud")
+                    runtime.update(transfer.id, filename: "Photo item", phase: "Downloading original from iCloud", download: true)
                     let resources = try await stageFromCloud(transfer.localIdentifier, runID, transfer.id, budget, runtime)
                     guard !resources.isEmpty else { throw PicSyncError.sourceUnavailable }
                     budget.beginDraining(transfer.id)

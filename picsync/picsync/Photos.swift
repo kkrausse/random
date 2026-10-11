@@ -175,10 +175,10 @@ struct PhotoResourceExporter {
                 let filename = SafeFilename.make(resource.originalFilename, fallback: fallback)
                 let localURL = directory.appendingPathComponent("\(index)-\(UUID().uuidString).\(URL(fileURLWithPath: filename).pathExtension)")
                 let temporaryURL = localURL.appendingPathExtension("partial")
-                runtime.update(transferID, filename: filename, phase: allowNetwork ? "Downloading original from iCloud" : "Exporting original")
-                try await export(resource, to: temporaryURL, budget: budget, runtime: runtime, allowNetwork: allowNetwork)
+                runtime.update(transferID, filename: filename, phase: allowNetwork ? "Downloading original from iCloud" : "Exporting original", download: allowNetwork)
+                try await export(resource, to: temporaryURL, budget: budget, runtime: runtime, downloadID: allowNetwork ? transferID : nil)
                 try FileManager.default.moveItem(at: temporaryURL, to: localURL)
-                runtime.update(transferID, filename: filename, phase: "Hashing original")
+                runtime.update(transferID, filename: filename, phase: "Hashing original", download: allowNetwork)
                 let hash = try await ContentHasher.hashAsync(file: localURL, check: { try runtime.check() })
                 let size = try localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize.map(Int64.init) ?? 0
                 manifests.append(ResourceManifest(role: role, filename: filename, stagingPath: localURL.path, byteCount: size, sha256: hash, finalPath: nil, temporaryPath: nil))
@@ -192,10 +192,11 @@ struct PhotoResourceExporter {
         return manifests
     }
 
-    private func export(_ resource: PHAssetResource, to url: URL, budget: StagingBudget, runtime: TransferRuntime, allowNetwork: Bool) async throws {
+    /// `downloadID` allows network access and reports received bytes as that transfer's iCloud download.
+    private func export(_ resource: PHAssetResource, to url: URL, budget: StagingBudget, runtime: TransferRuntime, downloadID: UUID?) async throws {
         let options = PHAssetResourceRequestOptions()
-        options.isNetworkAccessAllowed = allowNetwork
-        let writer = try PhotoExportWriter(url: url, budget: budget, runtime: runtime, manager: manager)
+        options.isNetworkAccessAllowed = downloadID != nil
+        let writer = try PhotoExportWriter(url: url, budget: budget, runtime: runtime, manager: manager, downloadID: downloadID)
         let pauseHandler = runtime.onPause { writer.cancel() }
         defer { runtime.removePauseHandler(pauseHandler) }
         try await withTaskCancellationHandler {
@@ -225,13 +226,14 @@ private final class PhotoExportWriter: @unchecked Sendable {
     private let budget: StagingBudget
     private let runtime: TransferRuntime
     private let manager: PHAssetResourceManager
+    private let downloadID: UUID?
     private var request: PHAssetResourceDataRequestID?
     private var failure: Error?
 
-    init(url: URL, budget: StagingBudget, runtime: TransferRuntime, manager: PHAssetResourceManager) throws {
+    init(url: URL, budget: StagingBudget, runtime: TransferRuntime, manager: PHAssetResourceManager, downloadID: UUID?) throws {
         guard FileManager.default.createFile(atPath: url.path, contents: nil) else { throw CocoaError(.fileWriteUnknown) }
         handle = try FileHandle(forWritingTo: url)
-        self.budget = budget; self.runtime = runtime; self.manager = manager
+        self.budget = budget; self.runtime = runtime; self.manager = manager; self.downloadID = downloadID
     }
     func setRequest(_ id: PHAssetResourceDataRequestID) {
         let cancel = lock.withLock { request = id; return failure != nil }
@@ -255,6 +257,7 @@ private final class PhotoExportWriter: @unchecked Sendable {
                     budget.release(max(0, Int64(data.count) - written))
                     throw error
                 }
+                if let downloadID { runtime.addDownloaded(Int64(data.count), for: downloadID) }
                 return nil
             } catch {
                 failure = error
