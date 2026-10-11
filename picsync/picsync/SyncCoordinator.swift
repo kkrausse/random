@@ -149,9 +149,10 @@ actor SyncCoordinator {
         #endif
         workerCounts[runID] = workerCount
         try await updateWorkerCount(runID)
-        // One export stream reads from the Photos library at roughly half a gigabit, so a few run at once;
-        // a custom stage keeps the strictly serial behaviour.
-        exportSlots[runID] = ExportSlots(stageFromCloud == nil ? 1 : min(workerCount, 4))
+        // One export stream reads from the Photos library at roughly half a gigabit, so every worker
+        // exports for itself. Each still holds only its own item, so staging use is bounded by the
+        // worker count either way. A custom stage keeps the strictly serial behaviour.
+        exportSlots[runID] = ExportSlots(stageFromCloud == nil ? 1 : workerCount)
         // The workers are sized to saturate the server. Downloading from iCloud uses a different link,
         // so it gets its own pool which only stages originals; the workers then upload them like any other.
         let downloaderCount = stageFromCloud == nil ? 0 : min(max(cloudDownloads, 1), 8)
