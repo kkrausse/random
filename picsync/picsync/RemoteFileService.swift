@@ -123,6 +123,7 @@ actor SMBRemoteFileService: RemoteFileService {
     }
 
     func rename(from: String, to: String) async throws { try await connectedClient().rename(from: from, to: to) }
+    func hardLink(from: String, to: String) async throws { try await connectedClient().hardLink(from: from, to: to) }
     func delete(path: String) async throws {
         let client = try connectedClient()
         if let item = try await stat(path: path) { if item.isDirectory { try await client.deleteDirectory(path: path) } else { try await client.deleteFile(path: path) } }

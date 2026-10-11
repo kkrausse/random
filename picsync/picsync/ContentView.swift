@@ -106,11 +106,18 @@ struct ContentView: View {
                     } label: {
                         Label("Diagnostics Log", systemImage: "doc.text.magnifyingglass")
                     }
+                    Button {
+                        Task { model.errorMessage = await model.testHardLinks() }
+                    } label: {
+                        Label("Test Hard Links on Server", systemImage: "link")
+                    }
+                    .disabled(model.profile == nil)
                 }
             }
             .navigationTitle("PicSync")
             .task {
                 await model.load()
+                if ProcessInfo.processInfo.arguments.contains("--test-hard-links") { model.errorMessage = await model.testHardLinks() }
                 while !Task.isCancelled {
                     await model.refresh()
                     try? await Task.sleep(for: .seconds(1))

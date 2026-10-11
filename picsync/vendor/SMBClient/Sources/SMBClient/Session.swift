@@ -581,6 +581,38 @@ public class Session {
     _ = try await send(createRequest, setInfoRequest, closeRequest)
   }
 
+  public func hardLink(from: String, to: String) async throws {
+    let createRequest = Create.Request(
+      messageId: messageId.next(),
+      treeId: treeId,
+      sessionId: sessionId,
+      desiredAccess: [.readAttributes, .synchronize],
+      fileAttributes: [.normal],
+      shareAccess: [.read, .write, .delete],
+      createDisposition: .open,
+      createOptions: [],
+      name: from
+    )
+    let setInfoRequest = SetInfo.Request(
+      headerFlags: [.relatedOperations],
+      messageId: messageId.next(),
+      treeId: treeId,
+      sessionId: sessionId,
+      fileId: temporaryUUID,
+      infoType: .file,
+      fileInformation: FileLinkInformation(fileName: to.precomposedStringWithCanonicalMapping)
+    )
+    let closeRequest = Close.Request(
+      headerFlags: [.relatedOperations],
+      messageId: messageId.next(),
+      treeId: treeId,
+      sessionId: sessionId,
+      fileId: temporaryUUID
+    )
+
+    _ = try await send(createRequest, setInfoRequest, closeRequest)
+  }
+
   @discardableResult
   public func echo() async throws -> Echo.Response {
     let request = Echo.Request(

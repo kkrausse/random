@@ -710,6 +710,33 @@ func withConnectionTestTimeout<T: Sendable>(
             throw SMBShareError(share: profile.share, underlying: error)
         }
     }
+    /// Uploads a small file and adds a second name for it. Both are left in `.picsync/linktest`
+    /// so the link count can be inspected on the server.
+    func testHardLinks() async -> String {
+        guard let profile, !profile.share.isEmpty else { return "Choose a server and share first." }
+        let remote = SMBRemoteFileService()
+        let original = ".picsync/linktest/original.txt", linked = ".picsync/linktest/linked.txt"
+        let local = FileManager.default.temporaryDirectory.appendingPathComponent("picsync-linktest-\(UUID().uuidString).txt")
+        defer { try? FileManager.default.removeItem(at: local) }
+        let result: String
+        do {
+            guard let credential = try CredentialStore.password(profileID: profile.id), !credential.isEmpty else { throw PicSyncError.passwordRequired }
+            let content = Data("PicSync hard link test \(Date().ISO8601Format())\n".utf8)
+            try content.write(to: local)
+            try await remote.connect(profile: profile, password: credential)
+            try await remote.createDirectory(path: ".picsync/linktest")
+            for path in [original, linked] where try await remote.stat(path: path) != nil { try await remote.delete(path: path) }
+            try await remote.upload(file: local, to: original, offset: 0) { _ in }
+            try await remote.hardLink(from: original, to: linked)
+            let readBack = try await remote.read(path: linked)
+            result = readBack == content ? "Hard link created on \(profile.share) and read back correctly." : "Hard link was created but its content does not match."
+        } catch {
+            result = "Hard link test failed: \(String(reflecting: error))"
+        }
+        await remote.disconnect()
+        AppLog.write("[LinkTest] \(result)")
+        return result
+    }
     func remoteDirectory(path: String) async throws -> [RemoteItem] {
         guard let browserService else { throw URLError(.notConnectedToInternet) }
         do { return try await browserService.listDirectory(path: path) }
