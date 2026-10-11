@@ -79,14 +79,17 @@ struct PhotoLibraryService {
     /// PhotoKit only exposes this through the undocumented `locallyAvailable` key, so the caller
     /// must treat it as a hint and still cope with an export that needs the network.
     func originalsAreLocal(_ localIdentifier: String) -> Bool? {
-        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject else { return nil }
-        var allLocal = true
-        for resource in PHAssetResource.assetResources(for: asset) where PhotoResourceSelector.includes(type: resource.type) {
-            guard resource.responds(to: NSSelectorFromString("locallyAvailable")),
-                  let isLocal = resource.value(forKey: "locallyAvailable") as? Bool else { return nil }
-            if !isLocal { allLocal = false }
+        // Workers call this for tens of thousands of items in a tight loop; drain PhotoKit's objects each time.
+        autoreleasepool {
+            guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject else { return nil }
+            var allLocal = true
+            for resource in PHAssetResource.assetResources(for: asset) where PhotoResourceSelector.includes(type: resource.type) {
+                guard resource.responds(to: NSSelectorFromString("locallyAvailable")),
+                      let isLocal = resource.value(forKey: "locallyAvailable") as? Bool else { return nil }
+                if !isLocal { allLocal = false }
+            }
+            return allLocal
         }
-        return allLocal
     }
 
     func dateFolders(for localIdentifiers: [String]) -> [String: String] {
@@ -288,13 +291,18 @@ enum ContentHasher {
         while true {
             try check()
             guard remaining > 0 else { break }
-            let data = try handle.read(upToCount: Int(min(Int64(chunkSize), remaining))) ?? Data()
-            guard !data.isEmpty else {
+            // Each chunk is released before the next is read. Without the pool, chunks of every file
+            // being hashed stay alive until its task ends, which is the whole file for a large video.
+            let count = try autoreleasepool { () throws -> Int in
+                let data = try handle.read(upToCount: Int(min(Int64(chunkSize), remaining))) ?? Data()
+                hasher.update(data: data)
+                return data.count
+            }
+            guard count > 0 else {
                 if prefixBytes != nil { throw CocoaError(.fileReadCorruptFile) }
                 break
             }
-            hasher.update(data: data)
-            remaining -= Int64(data.count)
+            remaining -= Int64(count)
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }

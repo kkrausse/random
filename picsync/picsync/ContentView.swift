@@ -664,6 +664,7 @@ private struct RunDetailView: View {
                 LabeledContent("Assets", value: "\(finishedCount) / \(currentRun.itemCount)")
                 LabeledContent("State", value: currentRun.state.displayName)
                 LabeledContent("Active upload workers", value: "\(currentRun.activeWorkerCount ?? 0)")
+                LabeledContent("App memory", value: "\(model.memoryMB) MB")
                 if currentRun.state.isResumable {
                     LabeledContent("Next resume limit", value: "\(model.parallelism)")
                 }

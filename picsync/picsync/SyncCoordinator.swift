@@ -712,6 +712,8 @@ func withConnectionTestTimeout<T: Sendable>(
         didSet { UserDefaults.standard.set(cloudDownloads, forKey: "cloudDownloads") }
     }
     private(set) var cloudQueueByRun = [UUID: Int]()
+    private(set) var memoryMB = 0
+    private var refreshCount = 0
     var organizeByDate: Bool {
         didSet { UserDefaults.standard.set(organizeByDate, forKey: "organizeByDate") }
     }
@@ -755,6 +757,10 @@ func withConnectionTestTimeout<T: Sendable>(
         }
     }
     func refresh() async {
+        memoryMB = AppMemory.megabytes
+        refreshCount += 1
+        // A memory kill leaves no trace in the app, so keep a trail while a sync runs.
+        if !activeRunIDs.isEmpty, refreshCount % 5 == 0 { AppLog.write("[Memory] footprint=\(memoryMB) MB") }
         do {
             runs = try await store.runs()
             for run in runs { progressByRun[run.id] = await coordinator.progress(run.id) }
