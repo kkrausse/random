@@ -323,6 +323,7 @@ actor SyncCoordinator {
     private func stageOriginal(_ transfer: AssetTransfer, runID: UUID, budget: StagingBudget, runtime: TransferRuntime) async throws -> [ResourceManifest] {
         // Serialize exports, not uploads, so partially exported videos cannot exhaust the
         // budget while every worker waits for another exporter to release space.
+        runtime.update(transfer.id, filename: transfer.manifest.first?.filename ?? "Photo item", phase: "Waiting for its turn to export")
         await exportGate.acquire("export")
         do {
             try runtime.check()
