@@ -59,10 +59,12 @@ struct ContentView: View {
                 Section {
                     Stepper("Parallel transfers: \(model.parallelism)", value: $model.parallelism, in: 1...20)
                     Stepper("Staging limit: \(model.stagingLimitGB) GB", value: $model.stagingLimitGB, in: 2...128, step: 2)
+                    Toggle("File into year/month folders", isOn: $model.organizeByDate)
+                    Toggle("Re-check photos already backed up", isOn: $model.recheckBackedUp)
                 } header: {
                     Text("4. Options")
                 } footer: {
-                    Text("Optional. Start with 2–4 parallel transfers on a Raspberry Pi. Staging includes originals retained by paused or failed runs; PicSync also preserves 2 GB of free iPhone storage. Changes apply to new syncs and the next time a paused or failed sync resumes.")
+                    Text("Optional. Start with 2–4 parallel transfers on a Raspberry Pi. Staging includes originals retained by paused or failed runs; PicSync also preserves 2 GB of free iPhone storage. Transfer changes apply to new syncs and the next time a paused or failed sync resumes.\n\nYear/month folders are created as by-date/2026/06 inside the folder from step 2. PicSync remembers which photos it has backed up to this share and skips them without exporting; re-checking asks the server about each one again.")
                 }
 
                 Section {
@@ -215,6 +217,7 @@ struct ContentView: View {
                 case .photos(let identifiers): run = try await model.createRun(identifiers: identifiers, destinationPath: folder, parallelism: model.parallelism)
                 }
                 self.source = nil
+                model.recheckBackedUp = false
                 startedRun = run
                 Task { await model.resume(runID: run.id) }
             } catch { model.show(error) }
@@ -284,7 +287,7 @@ private struct RunRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(run.sourceLabel).font(.headline)
-            Text("\(run.completedCount) complete, \(run.skippedCount) duplicates, \(run.failedCount) failed")
+            Text("\(run.completedCount) copied, \(run.skippedCount) already backed up, \(run.failedCount) failed")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Text(run.state.displayName).font(.caption).foregroundStyle(run.state.tint)
@@ -637,7 +640,7 @@ private struct RunDetailView: View {
                     LabeledContent("Next resume limit", value: "\(model.parallelism)")
                 }
                 LabeledContent("Copied", value: "\(currentRun.completedCount)")
-                LabeledContent("Skipped duplicates", value: "\(currentRun.skippedCount)")
+                LabeledContent("Already backed up", value: "\(currentRun.skippedCount)")
                 LabeledContent("Failed", value: "\(currentRun.failedCount)")
                 LabeledContent("Copied or already managed", value: ByteCountFormatter.string(fromByteCount: currentRun.completedBytes, countStyle: .file))
                 LabeledContent("Bytes discovered so far", value: ByteCountFormatter.string(fromByteCount: currentRun.totalBytes, countStyle: .file))

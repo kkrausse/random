@@ -40,6 +40,9 @@ The home screen shows the saved server, share, password-storage status, and the 
 - A missing `.picsync` directory is expected on a fresh destination and is not an error.
 - A valid content record skips an already-managed duplicate.
 - Deduplication is share-wide: choosing another folder on the same share does not create another copy of content already managed elsewhere on that share.
+- The phone keeps a checklist of photos it has confirmed on each server share (`backedUp` in the journal). A new sync leaves those out of the queue without exporting them; they count as "already backed up". The **Re-check photos already backed up** option ignores the checklist for one sync.
+- The phone also caches each photo's fingerprint (`fingerprints`). Only originals are uploaded and originals never change, so a re-check, or a first sync to a different share, asks the server for the content record instead of exporting and hashing again. Both tables are seeded once from runs finished before they existed.
+- With **File into year/month folders** on (the default), each photo is uploaded to `by-date/<year>/<month>` below the chosen folder, from its capture date in the phone's time zone; photos without one go to `by-date/unknown`. Content already managed elsewhere on the share stays where it is.
 - Filename collisions receive deterministic hash suffixes; existing media is never intentionally overwritten.
 - Work intent, transfer checkpoints, and progress counters live **on the iPhone** in `Application Support/PicSync/journal.sqlite`. The Pi retains per-object JSON manifests; it does not need the phone database to verify finished media.
 - Existing `journal.json` data migrates automatically in a transaction. The original JSON is retained untouched; a committed migration marker prevents re-importing deleted or updated runs. Keep the SQLite database, WAL, and SHM together when copying a live app container.

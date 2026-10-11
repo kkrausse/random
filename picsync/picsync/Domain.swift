@@ -16,6 +16,17 @@ struct ServerProfile: Codable, Identifiable, Equatable, Sendable {
     func isSameServer(as other: ServerProfile) -> Bool {
         host == other.host && port == other.port && username == other.username && domain == other.domain
     }
+
+    /// The content index is share-wide, so "already backed up" is remembered per server share.
+    var ledgerDestination: String { "\(host.lowercased()):\(port)/\(share.lowercased())" }
+}
+
+enum DateFolder {
+    static func path(for date: Date?, calendar: Calendar = .current) -> String {
+        guard let date else { return "by-date/unknown" }
+        let parts = calendar.dateComponents([.year, .month], from: date)
+        return String(format: "by-date/%04d/%02d", parts.year ?? 0, parts.month ?? 0)
+    }
 }
 
 struct ServerProfileDraft: Equatable {
@@ -153,6 +164,8 @@ struct AssetTransfer: Codable, Identifiable, Sendable, Equatable {
     var attempts: Int
     var errorMessage: String?
     var updatedAt: Date
+    /// Folder below the run's destination that this item is filed into, such as "by-date/2026/06".
+    var subfolder: String? = nil
 }
 
 struct SyncRun: Codable, Identifiable, Sendable, Equatable, Hashable {

@@ -19,6 +19,7 @@ actor SyncCoordinator {
     private var workerCounts = [UUID: Int]()
     private var runtimes = [UUID: TransferRuntime]()
     private var budgets = [UUID: StagingBudget]()
+    private var ensuredDirectories = [UUID: Set<String>]()
     private let stagingRoot: URL
 
     init(store: SyncStore, stagingRoot: URL? = nil, makeRemote: @escaping @Sendable () -> any RemoteFileService = { SMBRemoteFileService() }, stage: @escaping Stage = { identifier, runID, transferID, budget, runtime in
@@ -31,13 +32,17 @@ actor SyncCoordinator {
         self.stagingRoot = stagingRoot ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Transfers", isDirectory: true)
     }
 
-    func createRun(itemIdentifiers: [String], profile: ServerProfile, destinationPath: String, parallelism: Int, sourceLabel: String = "Selected Photos") async throws -> SyncRun {
+    /// `subfolders` files an identifier below the destination; `skipBackedUp` trusts the on-phone checklist
+    /// and leaves items it already covers out of the queue entirely.
+    func createRun(itemIdentifiers: [String], profile: ServerProfile, destinationPath: String, parallelism: Int, sourceLabel: String = "Selected Photos", subfolders: [String: String] = [:], skipBackedUp: Bool = false) async throws -> SyncRun {
         let now = Date()
         let run = SyncRun(id: UUID(), sourceLabel: sourceLabel, assetIdentifiers: itemIdentifiers, profileID: profile.id, share: profile.share, destinationPath: RemotePath.normalize(destinationPath), parallelism: min(max(parallelism, 1), 20), activeWorkerCount: 0, state: .preparing, createdAt: now, updatedAt: now, completedBytes: 0, totalBytes: 0, completedCount: 0, skippedCount: 0, failedCount: 0)
-        let transfers = itemIdentifiers.map { AssetTransfer(id: UUID(), runID: run.id, localIdentifier: $0, state: .queued, manifest: [], fingerprint: nil, attempts: 0, errorMessage: nil, updatedAt: now) }
-        try await store.save(run: run, transfers: transfers)
-        AppLog.write("[Sync] created run=\(run.id.uuidString) source=\(sourceLabel) items=\(itemIdentifiers.count) destination=\(run.destinationPath)")
-        return run
+        let backedUp = skipBackedUp ? try await store.backedUpIdentifiers(destination: profile.ledgerDestination) : []
+        let pending = backedUp.isEmpty ? itemIdentifiers : itemIdentifiers.filter { !backedUp.contains($0) }
+        let transfers = pending.map { AssetTransfer(id: UUID(), runID: run.id, localIdentifier: $0, state: .queued, manifest: [], fingerprint: nil, attempts: 0, errorMessage: nil, updatedAt: now, subfolder: subfolders[$0]) }
+        try await store.save(run: run, transfers: transfers, alreadyBackedUp: itemIdentifiers.count - pending.count)
+        AppLog.write("[Sync] created run=\(run.id.uuidString) source=\(sourceLabel) items=\(itemIdentifiers.count) alreadyBackedUp=\(itemIdentifiers.count - pending.count) destination=\(run.destinationPath)")
+        return try await store.run(run.id) ?? run
     }
 
     func pause(_ runID: UUID) async throws {
@@ -75,6 +80,7 @@ actor SyncCoordinator {
             workerCounts[runID] = nil
             runtimes[runID] = nil
             budgets[runID] = nil
+            ensuredDirectories[runID] = nil
         }
         guard var run = try await store.run(runID) else { return }
         runtimes[runID] = TransferRuntime()
@@ -141,7 +147,7 @@ actor SyncCoordinator {
                 var attempt = 0
                 while true {
                     do {
-                        try await process(transfer, runID: runID, remote: remote)
+                        try await process(transfer, runID: runID, remote: remote, destination: profile.ledgerDestination)
                         break
                     } catch {
                         if isPaused(runID) { break }
@@ -184,13 +190,25 @@ actor SyncCoordinator {
         }
     }
 
-    private func process(_ original: AssetTransfer, runID: UUID, remote: any RemoteFileService) async throws {
+    private func process(_ original: AssetTransfer, runID: UUID, remote: any RemoteFileService, destination: String) async throws {
         guard let runtime = runtimes[runID], let budget = budgets[runID] else { throw TransferError.paused }
         var transfer = try await store.transfer(original.id) ?? original
         var lockedFingerprint: String?
         defer { budget.endDraining(transfer.id) }
         do {
             try runtime.check()
+            // A fingerprint remembered from an earlier sync answers the duplicate question without exporting.
+            if transfer.manifest.isEmpty, let known = try await store.knownFingerprint(transfer.localIdentifier) {
+                runtime.update(transfer.id, filename: "Photo item", phase: "Checking server index")
+                if try await isValidContentRecord(path: ".picsync/objects/\(known.prefix(2))/\(known).json", fingerprint: known, remote: remote) {
+                    transfer.fingerprint = known
+                    transfer.state = .skippedDuplicate
+                    transfer.updatedAt = Date()
+                    try await store.save(transfer: transfer)
+                    try await store.markBackedUp(transfer.localIdentifier, destination: destination)
+                    return
+                }
+            }
             runtime.update(transfer.id, filename: transfer.manifest.first?.filename ?? "Photo item", phase: "Checking staged original")
             if try await !SyncStore.hasValidStaging(transfer.manifest, runtime: runtime) {
                 transfer.state = .exporting; transfer.updatedAt = Date(); try await store.save(transfer: transfer)
@@ -209,6 +227,7 @@ actor SyncCoordinator {
             }
             budget.beginDraining(transfer.id)
             guard let fingerprint = transfer.fingerprint else { throw PicSyncError.sourceUnavailable }
+            try await store.recordFingerprint(fingerprint, identifier: transfer.localIdentifier)
             await fingerprintGate.acquire(fingerprint)
             lockedFingerprint = fingerprint
             try runtime.check()
@@ -217,6 +236,7 @@ actor SyncCoordinator {
                 transfer.state = .skippedDuplicate
                 transfer.updatedAt = Date()
                 try await store.save(transfer: transfer)
+                try await store.markBackedUp(transfer.localIdentifier, destination: destination)
                 cleanupStaging(for: transfer, budget: budget)
                 await fingerprintGate.release(fingerprint)
                 return
@@ -239,7 +259,9 @@ actor SyncCoordinator {
                 if let existing = resource.finalPath {
                     final = existing
                 } else {
-                    final = try await availableName(resource.filename, hash: resource.sha256, directory: runDestination(runID), runID: runID, remote: remote)
+                    let directory = join(try await runDestination(runID), transfer.subfolder ?? "")
+                    if transfer.subfolder != nil { try await ensureDirectory(directory, runID: runID, remote: remote) }
+                    final = try await availableName(resource.filename, hash: resource.sha256, directory: directory, runID: runID, remote: remote)
                 }
                 let temporary = resource.temporaryPath ?? join(remoteDirectory(final), ".picsync-\(transfer.id.uuidString)-\(index).partial")
                 resource.finalPath = final; resource.temporaryPath = temporary; transfer.manifest[index] = resource
@@ -271,6 +293,7 @@ actor SyncCoordinator {
             transfer.state = .indexing; transfer.updatedAt = Date(); try await store.save(transfer: transfer)
             try await commitContentRecord(for: transfer, runID: runID, remote: remote)
             transfer.state = .completed; transfer.updatedAt = Date(); try await store.save(transfer: transfer)
+            try await store.markBackedUp(transfer.localIdentifier, destination: destination)
             cleanupStaging(for: transfer, budget: budget)
             await fingerprintGate.release(fingerprint)
             return
@@ -327,6 +350,19 @@ actor SyncCoordinator {
         try await store.setActiveWorkerCount(workerCounts[runID] ?? 0, for: runID)
     }
     private func runDestination(_ runID: UUID) async throws -> String { try await store.run(runID).map { RemotePath.normalize("\($0.destinationPath)/") } ?? "" }
+    /// Date folders are shared by every worker; create each once per run instead of once per photo.
+    private func ensureDirectory(_ path: String, runID: UUID, remote: any RemoteFileService) async throws {
+        guard ensuredDirectories[runID]?.contains(path) != true else { return }
+        await recordDirectoryGate.acquire("directory:\(path)")
+        do {
+            try await remote.createDirectory(path: path)
+            await recordDirectoryGate.release("directory:\(path)")
+        } catch {
+            await recordDirectoryGate.release("directory:\(path)")
+            throw error
+        }
+        ensuredDirectories[runID, default: []].insert(path)
+    }
     private func availableName(_ name: String, hash: String, directory: String, runID: UUID, remote: any RemoteFileService) async throws -> String {
         let candidates = [join(directory, name)] + (0...32).map { join(directory, SafeFilename.collisionName(for: name, hash: hash, attempt: $0)) }
         for candidate in candidates {
@@ -504,6 +540,11 @@ func withConnectionTestTimeout<T: Sendable>(
     var stagingLimitGB: Int {
         didSet { UserDefaults.standard.set(stagingLimitGB, forKey: "stagingLimitGB") }
     }
+    var organizeByDate: Bool {
+        didSet { UserDefaults.standard.set(organizeByDate, forKey: "organizeByDate") }
+    }
+    /// Ignore the on-phone checklist for the next sync and ask the server about every photo again.
+    var recheckBackedUp = false
     private(set) var progressByRun = [UUID: TransferRuntime.Snapshot]()
     var isShowingError: Bool { errorMessage != nil }
     private static func folderKey(_ profileID: UUID) -> String { "destinationFolder.\(profileID.uuidString)" }
@@ -516,6 +557,7 @@ func withConnectionTestTimeout<T: Sendable>(
         parallelism = (1...20).contains(savedParallelism) ? savedParallelism : 2
         let savedLimit = UserDefaults.standard.integer(forKey: "stagingLimitGB")
         stagingLimitGB = (2...128).contains(savedLimit) ? savedLimit : 8
+        organizeByDate = UserDefaults.standard.object(forKey: "organizeByDate") as? Bool ?? true
     }
 
     func load() async {
@@ -682,8 +724,22 @@ func withConnectionTestTimeout<T: Sendable>(
         let path = [parentPath, name].filter { !$0.isEmpty }.joined(separator: "/")
         try await browserService.createDirectory(path: path)
     }
-    func createRun(identifiers: [String], destinationPath: String, parallelism: Int) async throws -> SyncRun { guard let profile else { throw PicSyncError.invalidServerAddress }; guard !identifiers.isEmpty else { throw PicSyncError.sourceUnavailable }; try PhotoLibraryService().validateOriginalAvailability(for: identifiers); let run = try await coordinator.createRun(itemIdentifiers: identifiers, profile: profile, destinationPath: destinationPath, parallelism: parallelism); runs = try await store.runs(); return run }
-    func createAlbumRun(_ album: PhotoAlbum, destinationPath: String, parallelism: Int) async throws -> SyncRun { guard let profile else { throw PicSyncError.invalidServerAddress }; guard !album.isCloudShared else { throw PicSyncError.sharedAlbumOriginalUnavailable }; let identifiers = try PhotoLibraryService().assetIdentifiers(forAlbumID: album.id); guard !identifiers.isEmpty else { throw PicSyncError.sourceUnavailable }; try PhotoLibraryService().validateOriginalAvailability(for: identifiers); let run = try await coordinator.createRun(itemIdentifiers: identifiers, profile: profile, destinationPath: destinationPath, parallelism: parallelism, sourceLabel: album.title); runs = try await store.runs(); return run }
+    func createRun(identifiers: [String], destinationPath: String, parallelism: Int) async throws -> SyncRun {
+        try await makeRun(identifiers: identifiers, sourceLabel: "Selected Photos", destinationPath: destinationPath, parallelism: parallelism)
+    }
+    func createAlbumRun(_ album: PhotoAlbum, destinationPath: String, parallelism: Int) async throws -> SyncRun {
+        guard !album.isCloudShared else { throw PicSyncError.sharedAlbumOriginalUnavailable }
+        return try await makeRun(identifiers: try PhotoLibraryService().assetIdentifiers(forAlbumID: album.id), sourceLabel: album.title, destinationPath: destinationPath, parallelism: parallelism)
+    }
+    private func makeRun(identifiers: [String], sourceLabel: String, destinationPath: String, parallelism: Int) async throws -> SyncRun {
+        guard let profile else { throw PicSyncError.invalidServerAddress }
+        guard !identifiers.isEmpty else { throw PicSyncError.sourceUnavailable }
+        try PhotoLibraryService().validateOriginalAvailability(for: identifiers)
+        let subfolders = organizeByDate ? PhotoLibraryService().dateFolders(for: identifiers) : [:]
+        let run = try await coordinator.createRun(itemIdentifiers: identifiers, profile: profile, destinationPath: destinationPath, parallelism: parallelism, sourceLabel: sourceLabel, subfolders: subfolders, skipBackedUp: !recheckBackedUp)
+        runs = try await store.runs()
+        return run
+    }
     func pause(runID: UUID) async {
         if let index = runs.firstIndex(where: { $0.id == runID }) { runs[index].state = .pausing }
         do { try await coordinator.pause(runID); runs = try await store.runs() } catch { show(error) }

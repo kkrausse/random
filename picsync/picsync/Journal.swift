@@ -42,6 +42,10 @@ actor SyncStore {
         try db.execute("CREATE INDEX IF NOT EXISTS transfers_queue ON transfers(runID, state, id)")
         try db.execute("CREATE INDEX IF NOT EXISTS transfers_recovery ON transfers(state)")
         try db.execute("CREATE TABLE IF NOT EXISTS paths (runID TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE, path TEXT NOT NULL COLLATE NOCASE, PRIMARY KEY(runID,path))")
+        // Originals never change, so an asset's fingerprint is cached forever; backedUp is the
+        // per-destination checklist that lets a repeat sync skip an item without exporting it.
+        try db.execute("CREATE TABLE IF NOT EXISTS fingerprints (identifier TEXT PRIMARY KEY, fingerprint TEXT NOT NULL) WITHOUT ROWID")
+        try db.execute("CREATE TABLE IF NOT EXISTS backedUp (destination TEXT NOT NULL, identifier TEXT NOT NULL, PRIMARY KEY(destination, identifier)) WITHOUT ROWID")
         database = db
         do {
             try db.transaction {
@@ -60,6 +64,13 @@ actor SyncStore {
             }
             // The legacy JSON is retained untouched. Migration and its marker commit together.
             try recoverInterruptedRuns()
+            try db.transaction {
+                let seeded = try db.query("SELECT value FROM settings WHERE key='ledgerSeeded'") { _ in true }.first ?? false
+                if !seeded {
+                    try seedLedger()
+                    try db.execute("INSERT INTO settings VALUES ('ledgerSeeded', '1')")
+                }
+            }
         } catch {
             database = nil
             throw error
@@ -130,10 +141,46 @@ actor SyncStore {
         guard try profiles().contains(where: { $0.id == id }) else { return }
         try db().execute("INSERT INTO settings VALUES ('activeProfile',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [.text(id.uuidString)])
     }
-    func save(run: SyncRun, transfers: [AssetTransfer]? = nil) throws {
+    /// `alreadyBackedUp` counts selected items which got no transfer row because the checklist covers them.
+    func save(run: SyncRun, transfers: [AssetTransfer]? = nil, alreadyBackedUp: Int = 0) throws {
         try db().transaction {
             try putRun(run)
             if let transfers { for transfer in transfers { try putTransfer(transfer) } }
+            if alreadyBackedUp > 0 {
+                try db().execute("UPDATE runs SET skipped=skipped+? WHERE id=?", [.integer(Int64(alreadyBackedUp)), .text(run.id.uuidString)])
+            }
+        }
+    }
+
+    func backedUpIdentifiers(destination: String) throws -> Set<String> {
+        Set(try db().query("SELECT identifier FROM backedUp WHERE destination=?", [.text(destination)]) { String(cString: sqlite3_column_text($0, 0)) })
+    }
+    func knownFingerprint(_ identifier: String) throws -> String? {
+        try db().query("SELECT fingerprint FROM fingerprints WHERE identifier=?", [.text(identifier)]) { String(cString: sqlite3_column_text($0, 0)) }.first
+    }
+    func recordFingerprint(_ fingerprint: String, identifier: String) throws {
+        try db().execute("INSERT INTO fingerprints VALUES (?,?) ON CONFLICT(identifier) DO UPDATE SET fingerprint=excluded.fingerprint", [.text(identifier), .text(fingerprint)])
+    }
+    func markBackedUp(_ identifier: String, destination: String) throws {
+        try db().execute("INSERT OR IGNORE INTO backedUp VALUES (?,?)", [.text(destination), .text(identifier)])
+    }
+    /// One-time: runs finished before the checklist existed still count.
+    private func seedLedger() throws {
+        let destinations = Dictionary(try profiles().map { ($0.id, $0.ledgerDestination) }, uniquingKeysWith: { first, _ in first })
+        for run in try runs() {
+            for state in [AssetTransferState.completed, .skippedDuplicate] {
+                var after = ""
+                while true {
+                    let batch = try transfers(for: run.id, state: state, limit: 500, after: after)
+                    guard let last = batch.last else { break }
+                    after = last.id.uuidString
+                    for transfer in batch {
+                        guard let fingerprint = transfer.fingerprint else { continue }
+                        try recordFingerprint(fingerprint, identifier: transfer.localIdentifier)
+                        if let destination = destinations[run.profileID] { try markBackedUp(transfer.localIdentifier, destination: destination) }
+                    }
+                }
+            }
         }
     }
     private func putRun(_ original: SyncRun) throws {

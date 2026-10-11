@@ -75,6 +75,13 @@ struct PhotoLibraryService {
         guard !containsCloudSharedAsset else { throw PicSyncError.sharedAlbumOriginalUnavailable }
     }
 
+    func dateFolders(for localIdentifiers: [String]) -> [String: String] {
+        let assets = PHAsset.fetchAssets(withLocalIdentifiers: localIdentifiers, options: nil)
+        var folders = [String: String](minimumCapacity: assets.count)
+        assets.enumerateObjects { asset, _, _ in folders[asset.localIdentifier] = DateFolder.path(for: asset.creationDate) }
+        return folders
+    }
+
     func albums() throws -> [PhotoAlbum] {
         let user = PHAssetCollection.fetchAssetCollections(with: .album, subtype: .any, options: nil)
         let smart = PHAssetCollection.fetchAssetCollections(with: .smartAlbum, subtype: .any, options: nil)
