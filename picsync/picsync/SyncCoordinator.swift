@@ -478,7 +478,11 @@ func withConnectionTestTimeout<T: Sendable>(
     private var browserService: SMBRemoteFileService?
     private var browserPassword: String?
     private var hasLoaded = false
-    var profile: ServerProfile?
+    var profile: ServerProfile? {
+        didSet { destinationFolder = profile.flatMap { UserDefaults.standard.string(forKey: Self.folderKey($0.id)) } }
+    }
+    /// Upload folder inside the active profile's share; nil until one has been chosen, "" for the share root.
+    private(set) var destinationFolder: String?
     var profiles: [ServerProfile] = []
     var runs: [SyncRun] = []
     var errorMessage: String?
@@ -494,7 +498,6 @@ func withConnectionTestTimeout<T: Sendable>(
         }
     }
     private(set) var transferItemsByRun = [UUID: [AssetTransfer]]()
-    var presentsPhotoSelection = false
     var parallelism: Int {
         didSet { UserDefaults.standard.set(parallelism, forKey: "parallelism") }
     }
@@ -503,6 +506,7 @@ func withConnectionTestTimeout<T: Sendable>(
     }
     private(set) var progressByRun = [UUID: TransferRuntime.Snapshot]()
     var isShowingError: Bool { errorMessage != nil }
+    private static func folderKey(_ profileID: UUID) -> String { "destinationFolder.\(profileID.uuidString)" }
 
     init() {
         let store = SyncStore()
@@ -597,7 +601,7 @@ func withConnectionTestTimeout<T: Sendable>(
             await remote.disconnect()
             browserPassword = credential
             connectionVerified = true
-            connectionStatus = "Connected as \(candidate.username). Choose a share and upload folder."
+            connectionStatus = "Connected as \(candidate.username)."
             return shares
         } catch {
             await remote.disconnect()
@@ -605,31 +609,50 @@ func withConnectionTestTimeout<T: Sendable>(
             throw error
         }
     }
-    func openShare(_ share: String, draft: ServerProfileDraft, password: String, editing previousProfile: ServerProfile?) async throws {
-        await browserService?.disconnect()
-        var candidate = try draft.profile(reusing: previousProfile?.id)
-        candidate.share = share
-        let sameServer = previousProfile.map {
-            $0.host == candidate.host && $0.port == candidate.port && $0.username == candidate.username && $0.domain == candidate.domain
-        } ?? false
-        let storedCredential = sameServer ? try previousProfile.flatMap { try CredentialStore.password(profileID: $0.id) } : nil
-        let credential = password.isEmpty ? (browserPassword ?? storedCredential) : password
+    func shares(of profile: ServerProfile) async throws -> [String] {
+        let credential = try CredentialStore.password(profileID: profile.id)
         guard let credential, !credential.isEmpty else { throw PicSyncError.passwordRequired }
+        var server = profile
+        server.share = ""
+        let connectionProfile = server
         let remote = SMBRemoteFileService()
         do {
-            try await remote.connect(profile: candidate, password: credential)
-            browserPassword = credential
-            connectionVerified = true
-            connectionStatus = "Connected as \(candidate.username). Choose an upload folder."
-            browserService = remote
-        }
-        catch {
-            #if DEBUG
-            AppLog.write("[SMB] failed share=\(share) error=\(String(reflecting: error))")
-            #endif
+            let shares = try await withConnectionTestTimeout {
+                try await remote.connect(profile: connectionProfile, password: credential)
+                return try await remote.listShares()
+            }
             await remote.disconnect()
-            throw SMBShareError(share: share, underlying: error)
+            return shares
+        } catch {
+            await remote.disconnect()
+            throw error
         }
+    }
+    /// Runs resume against their profile's share, so picking a different share never rewrites a profile that already has one.
+    func useDestination(share: String, folder: String) async throws {
+        guard var target = profile else { throw PicSyncError.invalidServerAddress }
+        if target.share != share {
+            let password = try CredentialStore.password(profileID: target.id)
+            let now = Date()
+            if let sibling = profiles.first(where: { $0.isSameServer(as: target) && $0.share == share && $0.requiresSigning == target.requiresSigning }) {
+                target = sibling
+            } else if target.share.isEmpty {
+                target.share = share
+            } else {
+                target.id = UUID()
+                target.share = share
+                target.createdAt = now
+            }
+            target.updatedAt = now
+            if let password { try CredentialStore.save(password, profileID: target.id) }
+            try await store.save(profile: target)
+            try await store.selectProfile(target.id)
+            profile = target
+            profiles = try await store.profiles()
+        }
+        let folder = RemotePath.normalize(folder)
+        UserDefaults.standard.set(folder, forKey: Self.folderKey(target.id))
+        destinationFolder = folder
     }
     func openShare(profile: ServerProfile) async throws {
         let credential = try CredentialStore.password(profileID: profile.id)

@@ -12,6 +12,10 @@ struct ServerProfile: Codable, Identifiable, Equatable, Sendable {
     var requiresSigning: Bool
     var createdAt: Date
     var updatedAt: Date
+
+    func isSameServer(as other: ServerProfile) -> Bool {
+        host == other.host && port == other.port && username == other.username && domain == other.domain
+    }
 }
 
 struct ServerProfileDraft: Equatable {

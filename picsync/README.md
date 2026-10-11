@@ -4,12 +4,13 @@ PicSync is an iPhone and iPad app for copying selected Photos originals to an SM
 
 ## Current workflow
 
-1. On the home screen, choose **Upload Destination**, then select a saved destination or add one.
-2. Enter the server address, port, user, password, and optional domain/workgroup for a new destination.
-3. Select **Select Share**, choose a server share, and save the destination.
-4. Choose individual Photos or **Sync an Entire Album**.
-5. In the sync review, browse or create folders and select **Use This Folder**.
-6. Start the sync.
+The home screen is a single form, filled in top to bottom:
+
+1. **Server**: select a saved server or add one (address, port, user, password, optional domain/workgroup). **Connect and Save** signs in before saving.
+2. **Share and folder**: choose a server share, browse or create folders, and select **Use This Folder**. The folder is remembered per server share.
+3. **Photos**: choose an album, or pick individual photos.
+4. **Options**: optionally adjust parallel transfers and the staging limit.
+5. **Start Sync**.
 
 The home screen shows the saved server, share, password-storage status, and the default worker count for new runs.
 

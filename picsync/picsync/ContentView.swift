@@ -1,69 +1,84 @@
 import PhotosUI
 import SwiftUI
 
+private enum SyncSource: Equatable {
+    case album(PhotoAlbum)
+    case photos([String])
+}
+
 struct ContentView: View {
     @State private var model = AppModel()
+    @State private var source: SyncSource?
+    @State private var isChoosingServer = false
+    @State private var isChoosingDestination = false
+    @State private var isChoosingAlbum = false
+    @State private var isPickingPhotos = false
+    @State private var shares = [String]()
+    @State private var isLoadingShares = false
+    @State private var isStarting = false
+    @State private var startedRun: SyncRun?
+
+    private var destinationLabel: String? {
+        guard let profile = model.profile, !profile.share.isEmpty, let folder = model.destinationFolder else { return nil }
+        return folder.isEmpty ? "\(profile.share)/" : "\(profile.share)/\(folder)"
+    }
+
+    private var missingSteps: [String] {
+        var missing = [String]()
+        if model.profile == nil { missing.append("a server") }
+        if destinationLabel == nil { missing.append("a share and folder") }
+        if source == nil { missing.append("photos") }
+        return missing
+    }
 
     var body: some View {
         NavigationStack {
-            List {
+            Form {
                 Section {
-                    NavigationLink {
-                        DestinationsView(model: model)
-                    } label: {
-                        Label(model.profile == nil ? "Choose Upload Destination" : "Upload Destination", systemImage: "externaldrive.connected.to.line.below")
-                    }
-
-                    NavigationLink {
-                        PhotoSelectionView(model: model)
-                    } label: {
-                        Label("Choose Photos", systemImage: "photo.on.rectangle.angled")
-                    }
-                    .disabled(model.profile == nil)
+                    FormRow(value: model.profile?.host, detail: serverDetail, placeholder: "Choose a server") { isChoosingServer = true }
                 } header: {
-                    Text("New Sync")
-                } footer: {
-                    Text("PicSync exports original Photos resources to a folder you control. Keep the app open while a transfer is running; background completion is best effort.")
+                    Text("1. Server")
                 }
 
-                Section("Saved Destination") {
-                    if let profile = model.profile {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(profile.host).font(.headline)
-                            Text("\\\(profile.share)")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            Text(model.hasSavedPassword ? "Password saved securely in Keychain" : "Password needs to be entered")
-                                .font(.caption)
-                                .foregroundStyle(model.hasSavedPassword ? Color.secondary : Color.orange)
-                        }
-                    } else {
-                        Text("No upload destination saved.").foregroundStyle(.secondary)
-                    }
+                Section {
+                    FormRow(value: destinationLabel, placeholder: "Choose a share and folder", isBusy: isLoadingShares, action: chooseDestination)
+                        .disabled(model.profile == nil || isLoadingShares)
+                } header: {
+                    Text("2. Share and folder")
                 }
 
-                Section("Transfer Settings") {
+                Section {
+                    FormRow(value: albumLabel, placeholder: "Choose an album") { isChoosingAlbum = true }
+                    FormRow(value: photosLabel, placeholder: "Or pick individual photos", action: pickPhotos)
+                } header: {
+                    Text("3. Photos")
+                }
+
+                Section {
                     Stepper("Parallel transfers: \(model.parallelism)", value: $model.parallelism, in: 1...20)
                     Stepper("Staging limit: \(model.stagingLimitGB) GB", value: $model.stagingLimitGB, in: 2...128, step: 2)
-                    Text("Staging includes originals retained by paused or failed runs. PicSync also preserves 2 GB of free iPhone storage. Start with 2–4 workers on a Raspberry Pi.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    Text("Applied to new syncs and the next time a paused or failed sync resumes. Running workers are unchanged until you pause.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("4. Options")
+                } footer: {
+                    Text("Optional. Start with 2–4 parallel transfers on a Raspberry Pi. Staging includes originals retained by paused or failed runs; PicSync also preserves 2 GB of free iPhone storage. Changes apply to new syncs and the next time a paused or failed sync resumes.")
                 }
 
-                Section("Support") {
-                    NavigationLink {
-                        DiagnosticsView()
-                    } label: {
-                        Label("Diagnostics Log", systemImage: "doc.text.magnifyingglass")
+                Section {
+                    Button(action: start) {
+                        Text(isStarting ? "Starting..." : "Start Sync").frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                    .disabled(isStarting || !missingSteps.isEmpty || !model.activeRunIDs.isEmpty)
+                } footer: {
+                    Text(startFooter)
                 }
 
                 Section("Recent Runs") {
                     if model.runs.isEmpty {
-                        ContentUnavailableView("No Syncs Yet", systemImage: "arrow.triangle.2.circlepath", description: Text("Choose a server and photos to create your first sync."))
+                        Text("No syncs yet.").foregroundStyle(.secondary)
                     } else {
                         ForEach(model.runs) { run in
                             NavigationLink {
@@ -80,6 +95,14 @@ struct ContentView: View {
                         }
                     }
                 }
+
+                Section("Support") {
+                    NavigationLink {
+                        DiagnosticsView()
+                    } label: {
+                        Label("Diagnostics Log", systemImage: "doc.text.magnifyingglass")
+                    }
+                }
             }
             .navigationTitle("PicSync")
             .task {
@@ -89,8 +112,30 @@ struct ContentView: View {
                     try? await Task.sleep(for: .seconds(1))
                 }
             }
-            .navigationDestination(isPresented: $model.presentsPhotoSelection) {
-                PhotoSelectionView(model: model)
+            .navigationDestination(isPresented: $isChoosingServer) {
+                ServersView(model: model, isChoosingServer: $isChoosingServer)
+            }
+            .navigationDestination(isPresented: $isChoosingDestination) {
+                ShareListView(model: model, shares: shares, isChoosingDestination: $isChoosingDestination)
+            }
+            .navigationDestination(isPresented: $isChoosingAlbum) {
+                AlbumPickerView(model: model) {
+                    source = .album($0)
+                    isChoosingAlbum = false
+                }
+            }
+            .navigationDestination(item: $startedRun) { RunDetailView(model: model, run: $0) }
+            .sheet(isPresented: $isPickingPhotos) {
+                PhotoPickerView { result in
+                    isPickingPhotos = false
+                    switch result {
+                    case .success(let identifiers):
+                        source = .photos(identifiers)
+                        AppLog.write("[Photos] picker returned identifiers=\(identifiers.count)")
+                    case .failure(let error):
+                        model.show(error)
+                    }
+                }
             }
         }
         .alert("PicSync", isPresented: Binding(get: { model.isShowingError }, set: { if !$0 { model.errorMessage = nil } })) {
@@ -98,6 +143,95 @@ struct ContentView: View {
         } message: {
             Text(model.errorMessage ?? "")
         }
+    }
+
+    private var serverDetail: String? {
+        guard let profile = model.profile else { return nil }
+        return model.hasSavedPassword ? "Signed in as \(profile.username)" : "Password needs to be entered"
+    }
+
+    private var albumLabel: String? {
+        guard case .album(let album) = source else { return nil }
+        return "\(album.title) (\(album.count) items)"
+    }
+
+    private var photosLabel: String? {
+        guard case .photos(let identifiers) = source else { return nil }
+        return "\(identifiers.count) selected"
+    }
+
+    private var startFooter: String {
+        if !model.activeRunIDs.isEmpty { return "Another sync is running. Wait for it to finish or pause it first." }
+        if !missingSteps.isEmpty { return "Still needed: \(missingSteps.formatted(.list(type: .and)))." }
+        return "PicSync exports original Photos resources. Keep the app open while a transfer is running; background completion is best effort."
+    }
+
+    private func chooseDestination() {
+        guard let profile = model.profile else { return }
+        Task {
+            isLoadingShares = true
+            defer { isLoadingShares = false }
+            do {
+                shares = try await model.shares(of: profile)
+                isChoosingDestination = true
+            } catch { model.show(error) }
+        }
+    }
+
+    private func pickPhotos() {
+        Task {
+            do {
+                try await PhotoLibraryService().requestAuthorization()
+                isPickingPhotos = true
+            } catch { model.show(error) }
+        }
+    }
+
+    private func start() {
+        guard let source, let folder = model.destinationFolder else { return }
+        Task {
+            isStarting = true
+            defer { isStarting = false }
+            do {
+                let run: SyncRun
+                switch source {
+                case .album(let album): run = try await model.createAlbumRun(album, destinationPath: folder, parallelism: model.parallelism)
+                case .photos(let identifiers): run = try await model.createRun(identifiers: identifiers, destinationPath: folder, parallelism: model.parallelism)
+                }
+                self.source = nil
+                startedRun = run
+                Task { await model.resume(runID: run.id) }
+            } catch { model.show(error) }
+        }
+    }
+}
+
+private struct FormRow: View {
+    let value: String?
+    var detail: String?
+    let placeholder: String
+    var isBusy = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(value ?? placeholder).foregroundStyle(value == nil ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+                    if let detail {
+                        Text(detail).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                if isBusy {
+                    ProgressView()
+                } else {
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -128,62 +262,6 @@ private struct DiagnosticsView: View {
     }
 }
 
-private struct DestinationsView: View {
-    @Bindable var model: AppModel
-
-    var body: some View {
-        List {
-            if model.profiles.isEmpty {
-                ContentUnavailableView("No Destinations", systemImage: "externaldrive.badge.plus", description: Text("Add an SMB server and upload folder."))
-            } else {
-                Section {
-                    ForEach(model.profiles) { profile in
-                        HStack(spacing: 12) {
-                            Button {
-                                Task { await model.selectProfile(profile) }
-                            } label: {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(profile.displayName).foregroundStyle(.primary)
-                                        Text("\\\(profile.share)")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    if model.profile?.id == profile.id {
-                                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.tint)
-                                    }
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-
-                            NavigationLink {
-                                ServerProfileView(model: model, profile: profile)
-                            } label: {
-                                Image(systemName: "pencil").accessibilityLabel("Edit \(profile.displayName)")
-                            }
-                            .fixedSize()
-                        }
-                    }
-                } footer: {
-                    Text("Tap a destination to use it for new syncs. Existing runs keep their original destination.")
-                }
-            }
-        }
-        .navigationTitle("Destinations")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink {
-                    ServerProfileView(model: model, profile: nil)
-                } label: {
-                    Label("Add Destination", systemImage: "plus")
-                }
-            }
-        }
-    }
-}
-
 private struct RunRow: View {
     let run: SyncRun
 
@@ -198,20 +276,84 @@ private struct RunRow: View {
     }
 }
 
+private struct ServersView: View {
+    @Bindable var model: AppModel
+    @Binding var isChoosingServer: Bool
+
+    /// Profiles are stored per share, so the same server can appear several times; list each server once.
+    private var servers: [ServerProfile] {
+        var servers = [ServerProfile]()
+        for profile in model.profiles where !servers.contains(where: { $0.isSameServer(as: profile) }) {
+            servers.append(model.profile.flatMap { $0.isSameServer(as: profile) ? $0 : nil } ?? profile)
+        }
+        return servers
+    }
+
+    var body: some View {
+        List {
+            if model.profiles.isEmpty {
+                ContentUnavailableView("No Servers", systemImage: "externaldrive.badge.plus", description: Text("Add an SMB server to upload to."))
+            } else {
+                Section {
+                    ForEach(servers) { server in
+                        HStack(spacing: 12) {
+                            Button {
+                                Task {
+                                    await model.selectProfile(server)
+                                    isChoosingServer = false
+                                }
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(server.host).foregroundStyle(.primary)
+                                        Text(server.username)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if model.profile?.id == server.id {
+                                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.tint)
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+
+                            NavigationLink {
+                                ServerProfileView(model: model, profile: server) { isChoosingServer = false }
+                            } label: {
+                                Image(systemName: "pencil").accessibilityLabel("Edit \(server.host)")
+                            }
+                            .fixedSize()
+                        }
+                    }
+                }
+            }
+            Section {
+                NavigationLink {
+                    ServerProfileView(model: model, profile: nil) { isChoosingServer = false }
+                } label: {
+                    Label("Add Server", systemImage: "plus")
+                }
+            }
+        }
+        .navigationTitle("Server")
+    }
+}
+
 private struct ServerProfileView: View {
-    @Environment(\.dismiss) private var dismiss
     @Bindable var model: AppModel
     let profile: ServerProfile?
+    let onSaved: () -> Void
     @State private var draft: ServerProfileDraft
     @State private var password = ""
     @State private var hasSavedPassword = false
-    @State private var shares = [String]()
-    @State private var isBrowsingShares = false
     @State private var didPrepareEditor = false
 
-    init(model: AppModel, profile: ServerProfile?) {
+    init(model: AppModel, profile: ServerProfile?, onSaved: @escaping () -> Void) {
         self.model = model
         self.profile = profile
+        self.onSaved = onSaved
         _draft = State(initialValue: ServerProfileDraft(profile))
     }
 
@@ -221,7 +363,7 @@ private struct ServerProfileView: View {
 
     var body: some View {
         Form {
-            Section("Connection") {
+            Section {
                 TextField("Server or smb:// URL", text: $draft.host)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -236,24 +378,12 @@ private struct ServerProfileView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                TextField("Domain or workgroup", text: $draft.domain)
+                TextField("Domain or workgroup (optional)", text: $draft.domain)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-            }
-            Section("Destination") {
-                LabeledContent("Share", value: draft.share.isEmpty ? "Not selected" : draft.share)
-                Button(model.isTestingConnection ? "Connecting..." : "Select Share") {
-                    Task {
-                        do {
-                            shares = try await model.testConnection(draft: draft, password: password, editing: profile)
-                            isBrowsingShares = true
-                        } catch {
-                            model.show(error)
-                        }
-                    }
-                }
-                .disabled(!draft.isValid || model.isTestingConnection)
                 Toggle("Require SMB signing", isOn: $draft.requiresSigning)
+            } footer: {
+                Text("Passwords are saved only in the iOS Keychain. URLs containing a password are rejected.")
             }
             Section {
                 if let status = model.connectionStatus {
@@ -261,22 +391,23 @@ private struct ServerProfileView: View {
                         .foregroundStyle(model.connectionVerified ? .green : .red)
                 }
 
-                Button("Save Destination") {
+                Button(model.isTestingConnection ? "Connecting..." : "Connect and Save") {
                     Task {
                         do {
+                            _ = try await model.testConnection(draft: draft, password: password, editing: profile)
                             try await model.saveProfile(draft: draft, password: password, editing: profile)
-                            dismiss()
+                            onSaved()
                         } catch {
                             model.show(error)
                         }
                     }
                 }
-                .disabled(!draft.isValid || !model.connectionVerified || draft.share.isEmpty)
+                .disabled(!draft.isValid || model.isTestingConnection)
             } footer: {
-                Text("Folders are selected separately for each sync. Passwords are saved only in the iOS Keychain. URLs containing a password are rejected.")
+                Text("PicSync signs in to check the details before saving. You choose the share and folder in the next step.")
             }
         }
-        .navigationTitle(profile == nil ? "Add Destination" : "Edit Destination")
+        .navigationTitle(profile == nil ? "Add Server" : "Edit Server")
         .task {
             guard !didPrepareEditor else { return }
             didPrepareEditor = true
@@ -285,27 +416,57 @@ private struct ServerProfileView: View {
         }
         .onChange(of: connectionFields) { _, _ in model.resetConnectionVerification() }
         .onChange(of: password) { _, _ in model.resetConnectionVerification() }
-        .navigationDestination(isPresented: $isBrowsingShares) {
-            ShareBrowserView(draft: $draft, shares: shares, isBrowsingShares: $isBrowsingShares)
-        }
     }
 }
 
-private struct ShareBrowserView: View {
-    @Binding var draft: ServerProfileDraft
+private struct ShareListView: View {
+    @Bindable var model: AppModel
     let shares: [String]
-    @Binding var isBrowsingShares: Bool
+    @Binding var isChoosingDestination: Bool
+    @State private var openingShare: String?
+    @State private var openedShare: String?
 
     var body: some View {
         List(shares, id: \.self) { share in
             Button {
-                draft.share = share
-                isBrowsingShares = false
+                open(share)
             } label: {
-                Label(share, systemImage: "externaldrive")
+                HStack {
+                    Label(share, systemImage: "externaldrive")
+                    Spacer()
+                    if openingShare == share {
+                        ProgressView()
+                    } else if model.profile?.share == share {
+                        Image(systemName: "checkmark").foregroundStyle(.tint)
+                    }
+                }
+            }
+            .disabled(openingShare != nil)
+        }
+        .overlay { if shares.isEmpty { ContentUnavailableView("No Shares", systemImage: "externaldrive", description: Text("This server did not list any shares for your account.")) } }
+        .navigationTitle("Choose Share")
+        .navigationDestination(item: $openedShare) { share in
+            FolderBrowserView(model: model, share: share, path: "", isBrowsingFolder: $isChoosingDestination) { path in
+                Task {
+                    do { try await model.useDestination(share: share, folder: path) }
+                    catch { model.show(error) }
+                }
             }
         }
-        .navigationTitle("Choose Share")
+    }
+
+    private func open(_ share: String) {
+        guard var target = model.profile else { return }
+        target.share = share
+        let shareProfile = target
+        Task {
+            openingShare = share
+            defer { openingShare = nil }
+            do {
+                try await model.openShare(profile: shareProfile)
+                openedShare = share
+            } catch { model.show(error) }
+        }
     }
 }
 
@@ -374,76 +535,6 @@ private struct FolderBrowserView: View {
     }
 }
 
-private struct PhotoSelectionView: View {
-    @Bindable var model: AppModel
-    @State private var selection = [String]()
-    @State private var isCreatingRun = false
-    @State private var hasPhotoAccess = false
-    @State private var isPickingPhotos = false
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "photo.stack")
-                .font(.system(size: 48))
-                .foregroundStyle(.tint)
-            Text("Choose Photos")
-                .font(.title2.weight(.semibold))
-            Text("Select the photos and videos to copy. PicSync will request the original resources from your library when the sync starts.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal)
-            Button {
-                isPickingPhotos = true
-            } label: {
-                Label(selection.isEmpty ? "Select Photos" : "\(selection.count) Selected", systemImage: "plus.rectangle.on.rectangle")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .padding(.horizontal)
-            .disabled(!hasPhotoAccess)
-
-            NavigationLink {
-                AlbumPickerView(model: model)
-            } label: {
-                Label("Sync an Entire Album", systemImage: "rectangle.stack")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .padding(.horizontal)
-
-            if !selection.isEmpty {
-                Button("Review Sync") { isCreatingRun = true }
-                    .buttonStyle(.bordered)
-            }
-            Spacer()
-        }
-        .padding(.top, 36)
-        .navigationTitle("Source")
-        .navigationDestination(isPresented: $isCreatingRun) {
-            SyncReviewView(model: model, selectedIdentifiers: selection)
-        }
-        .sheet(isPresented: $isPickingPhotos) {
-            PhotoPickerView { result in
-                isPickingPhotos = false
-                switch result {
-                case .success(let identifiers):
-                    selection = identifiers
-                    AppLog.write("[Photos] picker returned identifiers=\(identifiers.count)")
-                case .failure(let error):
-                    model.show(error)
-                }
-            }
-        }
-        .task {
-            do {
-                try await PhotoLibraryService().requestAuthorization()
-                hasPhotoAccess = true
-                AppLog.write("[Photos] library access ready for individual selection")
-            } catch { model.show(error) }
-        }
-    }
-}
-
 private struct PhotoPickerView: UIViewControllerRepresentable {
     let completion: (Result<[String], Error>) -> Void
 
@@ -480,24 +571,23 @@ private struct PhotoPickerView: UIViewControllerRepresentable {
 
 private struct AlbumPickerView: View {
     @Bindable var model: AppModel
+    let onSelect: (PhotoAlbum) -> Void
     @State private var albums = [PhotoAlbum]()
-    @State private var selectedAlbum: PhotoAlbum?
 
     var body: some View {
         List(albums) { album in
-            Button { selectedAlbum = album } label: {
+            Button { onSelect(album) } label: {
                 HStack {
                     Image(systemName: album.isSmartAlbum ? "sparkles" : "rectangle.stack")
                     VStack(alignment: .leading) {
                         Text(album.title).foregroundStyle(.primary)
-                        Text(album.isCloudShared ? "Shared Album - reduced copies only" : "\(album.count) items")
+                        Text(album.isCloudShared ? "Shared Album - reduced copies only, cannot be synced" : "\(album.count) items")
                             .font(.caption)
                             .foregroundStyle(album.isCloudShared ? .orange : .secondary)
                     }
-                    Spacer()
-                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                 }
             }
+            .disabled(album.isCloudShared)
             .accessibilityLabel("\(album.title), \(album.count) items")
         }
         .overlay { if albums.isEmpty { ContentUnavailableView("No Albums", systemImage: "rectangle.stack", description: Text("Allow Photos access to browse your albums.")) } }
@@ -506,144 +596,6 @@ private struct AlbumPickerView: View {
             do {
                 try await PhotoLibraryService().requestAuthorization()
                 albums = try PhotoLibraryService().albums()
-            } catch { model.show(error) }
-        }
-        .navigationDestination(item: $selectedAlbum) { AlbumReviewView(model: model, album: $0) }
-    }
-}
-
-private struct AlbumReviewView: View {
-    @Bindable var model: AppModel
-    let album: PhotoAlbum
-    @State private var run: SyncRun?
-    @State private var isStarting = false
-    @State private var destinationPath = ""
-    @State private var hasSelectedFolder = false
-    @State private var isBrowsingFolder = false
-
-    var body: some View {
-        Form {
-            Section("Source") {
-                LabeledContent("Album", value: album.title)
-                LabeledContent("Snapshot", value: "\(album.count) current items")
-                if album.isCloudShared {
-                    Text("Apple Shared Albums contain reduced copies: photos are limited to about 2048 pixels and videos to 720p. PicSync cannot recover the originals from this album. Add the original files to your personal library first.")
-                        .font(.footnote)
-                        .foregroundStyle(.orange)
-                } else {
-                    Text("The album is snapshotted when you start. Later album changes do not alter this sync.").font(.footnote).foregroundStyle(.secondary)
-                }
-            }
-            destinationSection
-            Section("Transfer") { LabeledContent("Parallel transfers", value: "\(model.parallelism)") }
-            Section {
-                Button(isStarting ? "Starting..." : "Start Album Sync") {
-                    Task {
-                        isStarting = true
-                        defer { isStarting = false }
-                        do {
-                            let createdRun = try await model.createAlbumRun(album, destinationPath: destinationPath, parallelism: model.parallelism)
-                            run = createdRun
-                            Task { await model.resume(runID: createdRun.id) }
-                        } catch { model.show(error) }
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isStarting || !hasSelectedFolder || album.isCloudShared)
-            }
-        }
-        .navigationTitle("Review Album")
-        .navigationDestination(item: $run) { RunDetailView(model: model, run: $0) }
-        .navigationDestination(isPresented: $isBrowsingFolder) {
-            FolderBrowserView(model: model, share: model.profile?.share ?? "", path: "", isBrowsingFolder: $isBrowsingFolder) {
-                destinationPath = $0
-                hasSelectedFolder = true
-            }
-        }
-    }
-
-    @ViewBuilder private var destinationSection: some View {
-        if let profile = model.profile {
-            Section("Destination") {
-                LabeledContent("Server", value: profile.host)
-                LabeledContent("Share", value: profile.share)
-                LabeledContent("Folder", value: hasSelectedFolder ? (destinationPath.isEmpty ? "/" : "/\(destinationPath)") : "Not selected")
-                Button(hasSelectedFolder ? "Change Folder" : "Select Folder") { openFolderBrowser(profile) }
-            }
-        }
-    }
-
-    private func openFolderBrowser(_ profile: ServerProfile) {
-        Task {
-            do {
-                try await model.openShare(profile: profile)
-                isBrowsingFolder = true
-            } catch { model.show(error) }
-        }
-    }
-}
-
-private struct SyncReviewView: View {
-    @Bindable var model: AppModel
-    let selectedIdentifiers: [String]
-    @State private var run: SyncRun?
-    @State private var isStarting = false
-    @State private var destinationPath = ""
-    @State private var hasSelectedFolder = false
-    @State private var isBrowsingFolder = false
-
-    var body: some View {
-        Form {
-            Section("Source") {
-                LabeledContent("Selected items", value: "\(selectedIdentifiers.count)")
-                Text("Original PhotoKit resources, including Live Photo and RAW companions when available.")
-                    .font(.footnote).foregroundStyle(.secondary)
-            }
-            if let profile = model.profile {
-                Section("Destination") {
-                    LabeledContent("Server", value: profile.host)
-                    LabeledContent("Share", value: profile.share)
-                    LabeledContent("Folder", value: hasSelectedFolder ? (destinationPath.isEmpty ? "/" : "/\(destinationPath)") : "Not selected")
-                    Button(hasSelectedFolder ? "Change Folder" : "Select Folder") { openFolderBrowser(profile) }
-                }
-            }
-            Section("Transfer") {
-                LabeledContent("Parallel transfers", value: "\(model.parallelism)")
-                Text("iCloud-only originals need internet access. Keep PicSync active while syncing.")
-                    .font(.footnote).foregroundStyle(.secondary)
-            }
-            Section {
-                Button(isStarting ? "Starting..." : "Start Sync") {
-                    Task {
-                        isStarting = true
-                        defer { isStarting = false }
-                        do {
-                            let createdRun = try await model.createRun(identifiers: selectedIdentifiers, destinationPath: destinationPath, parallelism: model.parallelism)
-                            run = createdRun
-                            Task { await model.resume(runID: createdRun.id) }
-                        }
-                        catch { model.show(error) }
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isStarting || !hasSelectedFolder)
-            }
-        }
-        .navigationTitle("Review Sync")
-        .navigationDestination(item: $run) { RunDetailView(model: model, run: $0) }
-        .navigationDestination(isPresented: $isBrowsingFolder) {
-            FolderBrowserView(model: model, share: model.profile?.share ?? "", path: "", isBrowsingFolder: $isBrowsingFolder) {
-                destinationPath = $0
-                hasSelectedFolder = true
-            }
-        }
-    }
-
-    private func openFolderBrowser(_ profile: ServerProfile) {
-        Task {
-            do {
-                try await model.openShare(profile: profile)
-                isBrowsingFolder = true
             } catch { model.show(error) }
         }
     }
