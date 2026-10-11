@@ -14,7 +14,7 @@ actor SyncCoordinator {
     private let makeRemote: @Sendable () -> any RemoteFileService
     private let fingerprintGate = FingerprintGate()
     private let recordDirectoryGate = FingerprintGate()
-    private let exportGate = FingerprintGate()
+    private var exportSlots = [UUID: ExportSlots]()
     private var pausedRuns = Set<UUID>()
     private var activeRuns = Set<UUID>()
     private var workerCounts = [UUID: Int]()
@@ -102,6 +102,7 @@ actor SyncCoordinator {
             budgets[runID] = nil
             ensuredDirectories[runID] = nil
             activeDownloaders[runID] = nil
+            exportSlots[runID] = nil
         }
         guard var run = try await store.run(runID) else { return }
         runtimes[runID] = TransferRuntime()
@@ -148,6 +149,9 @@ actor SyncCoordinator {
         #endif
         workerCounts[runID] = workerCount
         try await updateWorkerCount(runID)
+        // One export stream reads from the Photos library at roughly half a gigabit, so a few run at once;
+        // a custom stage keeps the strictly serial behaviour.
+        exportSlots[runID] = ExportSlots(stageFromCloud == nil ? 1 : min(workerCount, 4))
         // The workers are sized to saturate the server. Downloading from iCloud uses a different link,
         // so it gets its own pool which only stages originals; the workers then upload them like any other.
         let downloaderCount = stageFromCloud == nil ? 0 : min(max(cloudDownloads, 1), 8)
@@ -305,6 +309,13 @@ actor SyncCoordinator {
                     transfer.needsNetwork = true
                     transfer.state = .queuedCloud; transfer.updatedAt = Date(); try await store.save(transfer: transfer)
                     return
+                } catch TransferError.stagingLimit where stageFromCloud != nil && transfer.attempts < 3 {
+                    // Several exports at once can fill staging between them. Give the space back and
+                    // try again shortly instead of stopping the run.
+                    transfer.attempts += 1
+                    transfer.state = transfer.requeuedState; transfer.updatedAt = Date(); try await store.save(transfer: transfer)
+                    try await Task.sleep(for: .seconds(2))
+                    return
                 }
                 transfer.manifest = staged.map { resource in
                     var resource = resource
@@ -416,19 +427,20 @@ actor SyncCoordinator {
 
     /// Exports an original that is on the device. One that is only in iCloud throws `NeedsNetworkError`.
     private func stageOriginal(_ transfer: AssetTransfer, runID: UUID, budget: StagingBudget, runtime: TransferRuntime) async throws -> [ResourceManifest] {
-        // Serialize exports, not uploads, so partially exported videos cannot exhaust the
+        // Limit exports, not uploads, so partially exported videos cannot exhaust the
         // budget while every worker waits for another exporter to release space.
+        guard let slots = exportSlots[runID] else { throw TransferError.paused }
         runtime.update(transfer.id, filename: transfer.manifest.first?.filename ?? "Photo item", phase: "Waiting for its turn to export")
-        await exportGate.acquire("export")
+        await slots.acquire()
         do {
             try runtime.check()
             let resources = try await stage(transfer.localIdentifier, runID, transfer.id, budget, runtime)
             guard !resources.isEmpty else { throw PicSyncError.sourceUnavailable }
             budget.beginDraining(transfer.id)
-            await exportGate.release("export")
+            await slots.release()
             return resources
         } catch {
-            await exportGate.release("export")
+            await slots.release()
             throw error
         }
     }
@@ -594,6 +606,22 @@ actor SyncCoordinator {
                 }
             }
         }
+    }
+}
+
+/// A counting semaphore for concurrent exports from the Photos library.
+actor ExportSlots {
+    private var available: Int
+    private var waiters = [CheckedContinuation<Void, Never>]()
+    init(_ count: Int) { available = max(count, 1) }
+
+    func acquire() async {
+        if available > 0 { available -= 1; return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func release() {
+        if waiters.isEmpty { available += 1 } else { waiters.removeFirst().resume() }
     }
 }
 
