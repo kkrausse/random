@@ -20,7 +20,7 @@ async function until(check: () => boolean) {
   expect(check()).toBe(true);
 }
 
-function harness() {
+function harness(contextState = "running") {
   const sockets: FakeSocket[] = [];
   const pastes: string[] = [];
   const states: DictationState[] = [];
@@ -28,7 +28,7 @@ function harness() {
   const warm: boolean[] = [];
   const submitted: string[] = [];
   const notices: string[] = [];
-  const counts = { modules: 0, microphoneRequests: 0, microphoneStopped: false };
+  const counts = { modules: 0, microphoneRequests: 0, microphoneStopped: false, resumes: 0, contextState, contexts: 0 };
   const track = { readyState: "live", enabled: true, stop() { this.readyState = "ended"; counts.microphoneStopped = true; }, addEventListener() {} };
   const audio: { node?: FakeNode } = {};
   const terminal = { listener: () => {}, attachment: { sessionId: "session", attachmentId: "first" } as { sessionId: string; attachmentId: string } | undefined };
@@ -61,12 +61,13 @@ function harness() {
   class FakeContext {
     audioWorklet = { addModule: async (_path: string) => { counts.modules++; } };
     onstatechange: (() => void) | null = null;
-    state = "running";
+    state = counts.contextState;
     destination = {};
     // Graph setup must not wait for this promise; some mobile browsers settle it late.
-    resume = () => new Promise<void>(() => {});
+    resume = () => { counts.resumes++; return new Promise<void>(() => {}); };
     close = async () => {};
     createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+    constructor() { counts.contexts++; }
   }
   replace("isSecureContext", true);
   replace("navigator", { mediaDevices: { getUserMedia: async () => {
@@ -184,4 +185,22 @@ test("a tap while the microphone is still starting says that nothing was recorde
   controller.toggle();
   expect(states.at(-1)).toBe("idle");
   expect(notices).toEqual(["Nothing recorded · microphone was still starting"]);
+});
+
+test("a context left suspended by the permission prompt is resumed, then replaced if still silent", async () => {
+  const { controller, states, counts, audio } = harness("suspended");
+  controller.toggle();
+  await until(() => !!audio.node);
+  // Once in the tap, once more after the microphone was granted.
+  expect(counts.resumes).toBe(2);
+  const first = audio.node!;
+  const contexts = counts.contexts;
+  await new Promise(resolve => setTimeout(resolve, 1_500));
+  await until(() => audio.node !== first);
+  expect(counts.contexts).toBe(contexts + 1);
+  first.port.onmessage({ data: { type: "audio", bytes: new ArrayBuffer(4) } });
+  expect(states.at(-1)).toBe("loading");
+  audio.node!.port.onmessage({ data: { type: "audio", bytes: new ArrayBuffer(4) } });
+  expect(states.at(-1)).toBe("waiting");
+  controller.cancel();
 });
