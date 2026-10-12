@@ -15,7 +15,7 @@ type View = {
 type Recording = {
   id: string; attachmentId: string; sessionId: string; phase: DictationState;
   context: AudioContext; stream?: MediaStream; node?: AudioWorkletNode; source?: MediaStreamAudioSourceNode;
-  socket?: WebSocket; timer?: ReturnType<typeof setTimeout>; retry?: ReturnType<typeof setTimeout>;
+  socket?: WebSocket; timer?: ReturnType<typeof setTimeout>; retry?: ReturnType<typeof setTimeout>; silent?: ReturnType<typeof setTimeout>;
   transcript: TranscriptPipeline; chunks: Uint8Array[]; bytes: number;
   submit?: () => void;
   sent: number; acknowledged: number; ready: boolean; capturing: boolean; drained: boolean; stopping: boolean; stopSent: boolean; attempts: number;
@@ -26,6 +26,7 @@ type Recording = {
 const maximumBytes = dictationLimits.seconds * 64_000;
 const inFlightBytes = 64_000; // below the two-second queues at both server boundaries
 const warmMicMs = 30_000;
+const silentStartMs = 1_500;
 
 export class DictationController {
   private recording?: Recording;
@@ -172,41 +173,78 @@ export class DictationController {
       await Promise.all([microphone, module]);
       if (this.recording !== r) return;
       this.view.startup("Audio startup…");
-      const node = r.node = new AudioWorkletNode(r.context, "dictation", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
-      node.onprocessorerror = () => { if (this.recording === r) this.error(new Error("Microphone processor failed")); };
-      node.port.onmessage = ({ data }) => {
-        if (this.recording !== r) return;
-        try {
-          if (data.type === "error") throw new Error(data.message);
-          if (data.type === "audio") {
-            if (!r.capturing) {
-              r.capturing = true;
-              r.phase = r.ready ? "recording" : "waiting";
-              this.view.state(r.phase);
-              this.deadline(r, 300_000, "Recording reached the five-minute limit");
-            }
-            const bytes = new Uint8Array(data.bytes);
-            const kept = bytes.subarray(0, Math.max(0, maximumBytes - r.bytes));
-            if (kept.byteLength) { r.chunks.push(kept); r.bytes += kept.byteLength; }
-            node.port.postMessage("ack");
-            this.pump(r);
-            if (kept.byteLength < bytes.byteLength && !r.stopping) this.stop(r);
+      this.graph(r);
+      // The permission prompt can leave a context that was resumed in the tap
+      // suspended or interrupted (iOS), and nothing restarts it: no audio ever
+      // arrives. An open microphone lets resume() work outside the gesture.
+      this.run(r);
+      r.silent = setTimeout(() => { void this.restartAudio(r); }, silentStartMs);
+      if (r.stopping) r.node?.port.postMessage("stop");
+    } catch (error) { if (this.recording === r) this.error(error); }
+  }
+
+  private graph(r: Recording) {
+    const node = r.node = new AudioWorkletNode(r.context, "dictation", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+    node.onprocessorerror = () => { if (this.recording === r && r.node === node) this.error(new Error("Microphone processor failed")); };
+    node.port.onmessage = ({ data }) => {
+      if (this.recording !== r || r.node !== node) return;
+      try {
+        if (data.type === "error") throw new Error(data.message);
+        if (data.type === "audio") {
+          if (!r.capturing) {
+            r.capturing = true;
+            r.phase = r.ready ? "recording" : "waiting";
+            this.view.state(r.phase);
+            this.deadline(r, 300_000, "Recording reached the five-minute limit");
           }
-          if (data.type === "drained") {
-            r.drained = true;
-            if (r.stopping) this.keepWarm(r);
-            this.releaseAudio(r);
-            this.pump(r);
-          }
-        } catch (error) { this.error(error); }
-      };
-      r.source = r.context.createMediaStreamSource(r.stream!);
-      r.source.connect(node);
-      node.connect(r.context.destination);
-      r.context.onstatechange = () => {
-        if (this.recording === r && r.capturing && !r.stopping && r.context.state !== "running") this.cancel("Dictation stopped · audio suspended");
-      };
-      if (r.stopping) node.port.postMessage("stop");
+          const bytes = new Uint8Array(data.bytes);
+          const kept = bytes.subarray(0, Math.max(0, maximumBytes - r.bytes));
+          if (kept.byteLength) { r.chunks.push(kept); r.bytes += kept.byteLength; }
+          node.port.postMessage("ack");
+          this.pump(r);
+          if (kept.byteLength < bytes.byteLength && !r.stopping) this.stop(r);
+        }
+        if (data.type === "drained") {
+          r.drained = true;
+          if (r.stopping) this.keepWarm(r);
+          this.releaseAudio(r);
+          this.pump(r);
+        }
+      } catch (error) { this.error(error); }
+    };
+    r.source = r.context.createMediaStreamSource(r.stream!);
+    r.source.connect(node);
+    node.connect(r.context.destination);
+    const context = r.context;
+    context.onstatechange = () => {
+      if (this.recording !== r || r.context !== context || context.state === "running") return;
+      if (r.capturing && !r.stopping) this.cancel("Dictation stopped · audio suspended");
+      else this.run(r);
+    };
+  }
+
+  private run(r: Recording) {
+    if (r.context.state !== "running") void r.context.resume().catch(() => {});
+  }
+
+  // Still no audio after the graph was built: do what a second tap does and
+  // start over on a fresh context, keeping the microphone that was granted.
+  private async restartAudio(r: Recording) {
+    if (this.recording !== r || r.capturing || r.stopping || !r.node) return;
+    try {
+      const stale = r.context;
+      r.source?.disconnect();
+      r.node.disconnect();
+      r.node.port.close();
+      r.node = undefined;
+      stale.onstatechange = null;
+      void stale.close().catch(() => {});
+      const context = r.context = new AudioContext();
+      void context.resume().catch(() => {});
+      await context.audioWorklet.addModule("/audio-worklet.js");
+      if (this.recording !== r || r.context !== context) return;
+      this.graph(r);
+      this.run(r);
     } catch (error) { if (this.recording === r) this.error(error); }
   }
 
@@ -341,6 +379,7 @@ export class DictationController {
     this.recording = undefined;
     clearTimeout(r.timer);
     clearTimeout(r.retry);
+    clearTimeout(r.silent);
     r.socket?.close();
     this.releaseAudio(r);
     if (state === "error") this.discardWarm();
