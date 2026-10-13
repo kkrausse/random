@@ -49,6 +49,8 @@
 !dictation-server-native-spike/**
 !scripts/
 !scripts/**
+!wisp-relay/
+!wisp-relay/**
 node_modules/
 # Converted PDFs are third-party content; they are published from here, not checked in.
 scripts/output/
