@@ -1,0 +1,2 @@
+Fastest that still passes every check, judged without ears from the numbers and a Whisper word check: Kokoro-82M (about 40x realtime, 1.2 GB, built-in voices only). To keep the cloned libri3000m voice instead: F5-TTS at 16 steps (7x) or Chatterbox Turbo (2.9x), against Chatterbox's 1.5x.
+I cannot hear these. Every sample below spoke the right words at a plausible pace; whether a voice is pleasant, lisps or distracts is yours to judge.

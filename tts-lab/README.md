@@ -10,6 +10,21 @@ goal. Two models are set up, each with a reusable `generate.py`:
 
 Measured on an RTX 2080 Ti (11 GB).
 
+Faster options for long calm narration, measured on one 172-word passage
+(`narration/`, numbers in `narration/results.json` and `parallel.json`):
+
+| Model | Voices | Speed | VRAM | Speak a long file |
+| --- | --- | --- | --- | --- |
+| Kokoro-82M | built in (`af_heart`, `am_michael`, `bm_george`, ...) | ~40x realtime (3x on CPU) | 1.2 GB | `kokoro/say.py` |
+| F5-TTS v1 | cloned from a clip plus its words (`f5/refs.json`) | ~3.2x (7x at `--nfe 16`) | 2.2 GB | `f5/say.py` |
+| Piper | one .onnx per voice, CPU | ~5.6x (high), ~30x (medium) | none | `piper/say.py` |
+| Chatterbox Turbo | cloned from a clip | ~2.9x | 3.6 GB | `chatterbox/say.py --turbo` |
+
+For comparison on the same passage: Chatterbox 1.5x, Orpheus 1.05x (1.4x on
+the Q4_K_M quant, `./say --model`). Every `say.py` splits text by the same
+rule (`narrate.py`) and prints the same `[3/14] 17.2s  first words` line per
+piece on stderr.
+
 Making or editing a narrated video with this? Read [PLAYBOOK.md](PLAYBOOK.md) first:
 it is the fast path from a script edit to a published link.
 
@@ -46,6 +61,39 @@ uv pip install --python $TTS_LAB_HOME/orpheus/.venv/bin/python -r orpheus/requir
 # Chatterbox (Python 3.11)
 uv venv --python 3.11 $TTS_LAB_HOME/chatterbox/.venv
 uv pip install --python $TTS_LAB_HOME/chatterbox/.venv/bin/python -r chatterbox/requirements.txt
+```
+
+```sh
+# Kokoro (Python 3.12). transformers 5 does not import with torch 2.6.
+uv venv --python 3.12 $TTS_LAB_HOME/kokoro/.venv
+uv pip install --python $TTS_LAB_HOME/kokoro/.venv/bin/python "kokoro>=0.9.4" "transformers<5" \
+  soundfile pyloudnorm torch==2.6.0 --extra-index-url https://download.pytorch.org/whl/cu124 \
+  --index-strategy unsafe-best-match \
+  "en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
+
+# F5-TTS (Python 3.11). Its old `datasets` needs pyarrow below 21.
+uv venv --python 3.11 $TTS_LAB_HOME/f5/.venv
+uv pip install --python $TTS_LAB_HOME/f5/.venv/bin/python f5-tts pyloudnorm "pyarrow<21" \
+  torch==2.6.0 torchaudio==2.6.0 --extra-index-url https://download.pytorch.org/whl/cu124 \
+  --index-strategy unsafe-best-match
+
+# Piper (Python 3.12, CPU), and its voices
+uv venv --python 3.12 $TTS_LAB_HOME/piper/.venv
+uv pip install --python $TTS_LAB_HOME/piper/.venv/bin/python piper-tts soundfile pyloudnorm numpy
+$TTS_LAB_HOME/piper/.venv/bin/python -m piper.download_voices en_US-ryan-high en_US-lessac-high \
+  en_GB-alan-medium --data-dir $TTS_LAB_HOME/piper/voices
+```
+
+These three were installed with exactly these commands on 2026-10-12. Kokoro
+and F5 fetch their weights into `$TTS_LAB_HOME/hf-cache` on first run.
+
+```sh
+# speak a long text file (run from this directory)
+$TTS_LAB_HOME/kokoro/.venv/bin/python kokoro/say.py --file script.txt --voice am_michael out.wav
+$TTS_LAB_HOME/f5/.venv/bin/python f5/say.py --file script.txt --ref chatterbox/refs/libri3000m.flac out.wav
+$TTS_LAB_HOME/piper/.venv/bin/python piper/say.py --file script.txt --voice en_US-ryan-high out.wav
+$TTS_LAB_HOME/chatterbox/.venv/bin/python chatterbox/say.py --turbo --file script.txt \
+  --ref chatterbox/refs/libri3000m.flac out.wav
 ```
 
 The Orpheus weights are fetched with the command in `orpheus/README.md`;

@@ -28,5 +28,215 @@
   "longest_silence_s": 0.28,
   "wer": 0.006,
   "transcript": "Because, you know, at the start this software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years there's been a collapse in creative capacity at the big companies in the ability to turn out great petals. Once every new version was a celebration for users, there was real thought, the right people behind it. For a while now that hasn't been so. Small teams on the other hand can do this. And so this is one of the topics. It isn't that the software industry is finished because there's reverse engineering. There are the legal protections. And there's the fact that anyway the algorithms hidden inside software that aren't known are by now zero. It's not as if we're in 85 folks and the other things I said. So, well, let's reason about things and give them a weight that's significant. Yes, but in proportion to what's actually true."
+ },
+ "CB-3000m": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 60.5,
+  "words_per_s": 2.83,
+  "rms_db": -20.5,
+  "longest_silence_s": 0.84,
+  "wer": 0.006,
+  "transcript": "Because, you know, at the start, this software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years, there's been a collapse in creative capacity at the big companies in the ability to turn out great products. Once, every new version was a celebration for users, there was real thought, the right people behind it. For a while now, that hasn't been so. Small teams, on the other hand, can do this. And so this is one of the topics. It isn't that the software industry is finished because there's reverse engineering. There are the legal protections. And there's the fact that anyway, the algorithms hidden inside software that aren't known are by now zero. It's not as if we're an 85 folks, and the other things I said. So, well, let's reason about things and give them a weight that's significant, yes, but in proportion to what's actually true."
+ },
+ "CT-3000m": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 57.8,
+  "words_per_s": 2.96,
+  "rms_db": -21.0,
+  "longest_silence_s": 0.66,
+  "wer": 0.018,
+  "transcript": "Because, you know, at the start this software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years there's been a collapse in creative capacity at the big companies in the ability to turn out great products. Once every new version was a celebration for users, there was real thought the right people behind it. For a while now, that hasn't been so. Small teams, on the other hand, can do this. And so, this is one of the topics. It isn't that the software industry is finished because there is reverse engineering. There are the legal protections, and there's the fact that anyway the algorithms hidden inside software that aren't known are by now zero, it's not as if we're in 85 folks, and the other things I said. So, well, let's reason about things and give them a way that's significant, yes, but in proportion to what's actually true."
+ },
+ "F-174m": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 68.8,
+  "words_per_s": 2.49,
+  "rms_db": -21.5,
+  "longest_silence_s": 1.06,
+  "wer": 0.0,
+  "transcript": "Because, you know, at the start this software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years, there's been a collapse in creative capacity at the big companies in the ability to turn out great products. Once, every new version was a celebration for users, there was real thought, the right people behind it. For a while now that hasn't been so. Small teams, on the other hand, can do this. And so this is one of the topics. It isn't that the software industry is finished, because there's reverse engineering. There are the legal protections. And there's the fact that anyway the algorithms hidden inside software that aren't known are by now zero. It's not as if we're in 85, folks. And the other things I said. So, well, let's reason about things and give them a weight that's significant, yes, but in proportion to what's actually true."
+ },
+ "F-3000m": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 65.3,
+  "words_per_s": 2.62,
+  "rms_db": -20.5,
+  "longest_silence_s": 0.78,
+  "wer": 0.0,
+  "transcript": "Because, you know, at the start this software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years there's been a collapse in creative capacity at the big companies in the ability to turn out great products. Once, every new version was a celebration for users. There was real thought, the right people behind it. For a while now that hasn't been so. Small teams, on the other hand, can do this. And so this is one of the topics. It isn't that the software industry is finished because there's reverse engineering. There are the legal protections. And there's the fact that anyway the algorithms hidden inside software that aren't known are by now zero. It's not as if we're in 85, folks. And the other things I said. So, well, let's reason about things and give them a weight that's significant, yes, but in proportion to what's actually true."
+ },
+ "F-3000m-16": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 65.3,
+  "words_per_s": 2.62,
+  "rms_db": -20.5,
+  "longest_silence_s": 0.76,
+  "wer": 0.0,
+  "transcript": "Because, you know, at the start this software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years there's been a collapse in creative capacity at the big companies in the ability to turn out great products. Once, every new version was a celebration for users. There was real thought, the right people behind it. For a while now that hasn't been so. Small teams, on the other hand, can do this. And so this is one of the topics. It isn't that the software industry is finished because there's reverse engineering. There are the legal protections. And there's the fact that anyway the algorithms hidden inside software that aren't known are by now zero. It's not as if we're in 85, folks. And the other things I said. So, well, let's reason about things and give them a weight that's significant, yes, but in proportion to what's actually true."
+ },
+ "F-84f": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 62.5,
+  "words_per_s": 2.74,
+  "rms_db": -20.7,
+  "longest_silence_s": 0.84,
+  "wer": 0.0,
+  "transcript": "Because, you know, at the start this software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years there's been a collapse in creative capacity at the big companies in the ability to turn out great products. Once, every new version was a celebration for users, there was real thought, the right people behind it. For a while now that hasn't been so. Small teams on the other hand can do this. And so this is one of the topics. It isn't that the software industry is finished, because there's reverse engineering. There are the legal protections. And there's the fact that anyway the algorithms hidden inside software that aren't known are by now zero. It's not as if we're in 85, folks, and the other things I said. So, well, let's reason about things and give them a weight that's significant, yes, but in proportion to what's actually true."
+ },
+ "K-george": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 70.1,
+  "words_per_s": 2.44,
+  "rms_db": -20.4,
+  "longest_silence_s": 1.08,
+  "wer": 0.012,
+  "transcript": "Because, you know, at the start this software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years, there's been a collapse in creative capacity at the big companies in the ability to turn out great products. Once every new version was a celebration for users, there was real thought the right people behind it. For a while now, that hasn't been so. Small teams, on the other hand, can do this. And so this is one of the topics. It isn't that the software industry is finished because there's reverse engineering. There are the legal protections. And there's the fact that anyway the algorithms hidden inside software that aren't known are by now zero. It's not as if we are in 85 folks and the other things I said. So well, let's reason about things and give them a weight that's significant, yes, but in proportion to what's actually true."
+ },
+ "K-heart": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 63.1,
+  "words_per_s": 2.71,
+  "rms_db": -21.8,
+  "longest_silence_s": 1.08,
+  "wer": 0.012,
+  "transcript": "Because, you know, at the start this software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years, there's been a collapse in creative capacity at the big companies, in the ability to turn out great products. Once every new version was a celebration for users, there was real thought, the right people behind it. For a while now, that hasn't been so. Small teams, on the other hand, can do this. And so this is one of the topics. It isn't that the software industry is finished because there's reverse engineering. There are the legal protections. And there's the fact that any way the algorithms hidden inside software that aren't known are by now zero. It's not as if we're in 85, folks, and the other things I said. So, well, let's reason about things and give them a weight that's significant, yes, but in proportion to what's actually true."
+ },
+ "K-michael": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 70.2,
+  "words_per_s": 2.44,
+  "rms_db": -24.0,
+  "longest_silence_s": 1.34,
+  "wer": 0.012,
+  "transcript": "Because, you know, at the start this software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years, there's been a collapse in creative capacity at the big companies, in the ability to turn out great products. Once every new version was a celebration for users, there was real thought, the right people behind it. For a while now, that hasn't been so. Small teams, on the other hand, can do this. And so this is one of the topics. It isn't that the software industry is finished because there's reverse engineering. There are the legal protections. And there's the fact that any way the algorithms hidden inside software that aren't known are by now zero. It's not as if we're in 85, folks, and the other things I said. So, well, let's reason about things and give them a weight that's significant, yes, but in proportion to what's actually true."
+ },
+ "K-michael-cpu": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 70.2,
+  "words_per_s": 2.44,
+  "rms_db": -23.9,
+  "longest_silence_s": 1.34,
+  "wer": 0.012,
+  "transcript": "Because, you know, at the start this software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years, there's been a collapse in creative capacity at the big companies, in the ability to turn out great products. Once every new version was a celebration for users, there was real thought, the right people behind it. For a while now, that hasn't been so. Small teams, on the other hand, can do this. And so this is one of the topics. It isn't that the software industry is finished because there's reverse engineering. There are the legal protections. And there's the fact that any way the algorithms hidden inside software that aren't known are by now zero. It's not as if we're in 85, folks, and the other things I said. So, well, let's reason about things and give them a weight that's significant, yes, but in proportion to what's actually true."
+ },
+ "O-dan-06": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 70.2,
+  "words_per_s": 2.44,
+  "rms_db": -21.8,
+  "longest_silence_s": 0.8,
+  "wer": 0.0,
+  "transcript": "Because, you know, at the start, this software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years, there's been a collapse in creative capacity at the big companies in the ability to turn out great products. Once, every new version was a celebration for users. There was real thought, the right people behind it. For a while now, that hasn't been so. Small teams, on the other hand, can do this. And so this is one of the topics. It isn't that the software industry is finished because there's reverse engineering. There are the legal protections. And there's the fact that anyway the algorithms hidden inside software that aren't known are by now zero. It's not as if we're in 85 folks and the other things I said. So, well, let's reason about things and give them a weight that's significant, yes, but in proportion to what's actually true."
+ },
+ "O-dan-09": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 71.2,
+  "words_per_s": 2.4,
+  "rms_db": -21.6,
+  "longest_silence_s": 0.86,
+  "wer": 0.0,
+  "transcript": "Because, you know, at the start, this software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years, there's been a collapse in creative capacity at the big companies in the ability to turn out great products. Once, every new version was a celebration for users. There was real thought, the right people behind it. For a while now, that hasn't been so. Small teams, on the other hand, can do this. And so this is one of the topics. It isn't that the software industry is finished, because there's reverse engineering. There are the legal protections. And there's the fact that anyway the algorithms hidden inside software that aren't known are by now zero. It's not as if we're in 85 folks and the other things I said. So, well, let's reason about things and give them a weight that's significant, yes, but in proportion to what's actually true."
+ },
+ "O-jess-06": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 62.5,
+  "words_per_s": 2.74,
+  "rms_db": -22.1,
+  "longest_silence_s": 1.12,
+  "wer": 0.006,
+  "transcript": "Because, you know, at the start, the software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years, there's been a collapse in creative capacity at the big companies in the ability to turn out great products. Once every new version was a celebration for users, there was real thought, the right people behind it. For a while now, that hasn't been so. Small teams, on the other hand, can do this. And so this is one of the topics. It isn't that the software industry is finished because there's reverse engineering, There are the legal protections. And there's the fact that anyway the algorithms hidden inside software that aren't known are by now zero. It's not as if we're in 85 folks and the other things I said. So, well, let's reason about things and give them a weight that's significant, yes, but in proportion to what's actually true."
+ },
+ "O-leah-06": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 68.2,
+  "words_per_s": 2.51,
+  "rms_db": -25.9,
+  "longest_silence_s": 1.88,
+  "wer": 0.006,
+  "transcript": "Because, you know, at the start, this software is the product of enlightened teens where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years, there's been a collapse in creative capacity at the big companies in the ability to turn out great products. Once, every new version was a celebration for users. There was real thought, the right people behind it. For a while now, that hasn't been so. Small teams, on the other hand, can do this. And so this is one of the topics. It isn't that the software industry is finished because there's reverse engineering. There are the legal protections. And there's the fact that anyway the algorithms hidden inside software that aren't known are by now zero. It's not as if we're in 85 folks and the other things I said. So, well, let's reason about things and give them a weight that's significant, yes, but in proportion to what's actually true."
+ },
+ "O-leo-06": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 61.0,
+  "words_per_s": 2.8,
+  "rms_db": -20.9,
+  "longest_silence_s": 0.88,
+  "wer": 0.018,
+  "transcript": "Because, you know, at the start, this software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years, there's been a collapse in creative capacity at the big companies and the ability to turn out great products. Once, every new version was a celebration for users. There was real thought, the right people behind it. For a while now, that hasn't been so. Small teams, on the other hand, can do this. And so, this is one of the topics. It isn't that the software industry is finished because there's reverse engineering. There are the legal protections. There's the fact that anyway the algorithms hidden inside software that aren't known are by now zero. It's not as if we're in 85 folks and the other things I said. So, well, let's reason about things and give them a way that's significant, yes, but in proportion to what's actually true."
+ },
+ "O-leo-06-q4": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 62.6,
+  "words_per_s": 2.73,
+  "rms_db": -20.9,
+  "longest_silence_s": 1.08,
+  "wer": 0.035,
+  "transcript": "Because, you know, at the start, this software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years, there's been a collapse in creative capacity at the big companies and the ability to turn out great products. Once every new version was a celebration for users, there was real thought, the right people behind it. For a while now, that hasn't been so. Small teams, on the other hand, can do this. And so, this is one of the topics. It isn't that the software industry is finished because there's reverse engineering. There are illegal protections. And there's the fact that any way the algorithms hidden inside software that aren't known are by now zero. It's not as if we're in 85 folks and the other things I said. So, well, let's reason about things and give them a way that's significant. Yes, but in proportion to what's actually true."
+ },
+ "O-leo-09": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 59.2,
+  "words_per_s": 2.89,
+  "rms_db": -21.7,
+  "longest_silence_s": 0.84,
+  "wer": 0.047,
+  "transcript": "Because, you know, at the start this software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years there has been a collapse in creative capacity at the big companies and the ability to turn out great products. Once, every new version was a celebration for users. It was, real thought, the right people behind it. For a while, Mal, that hasn't been so. Small teams, on the other hand, can do this. And so, this is one of the topics. It isn't that the software industry is finished because there is reverse engineering. There are the legal protections. And there's the fact that, anyway, the algorithms hidden inside software that aren't known are by now zero. It's not as if we're in 85, folks, and the other things I said. So, well, let's reason about things and give them a way that's significant, yes, but in proportion to what's actually true."
+ },
+ "O-mia-06": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 62.7,
+  "words_per_s": 2.73,
+  "rms_db": -29.6,
+  "longest_silence_s": 1.1,
+  "wer": 0.018,
+  "transcript": "Because, you know, at the start the software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years, there's been a collapse in creative capacity at the big companies in the ability to turn out great products. Once every new version was a celebration for users, there was real thought, the right people behind it. For a while now, that hasn't been so. Small teams, on the other hand, can do this. And so this is one of the topics. It isn't that the software industry is finished because there's reverse engineering. There are the legal protections. And there's the fact that any way the algorithms hidden inside software that aren't known are by now zero. It's not as if we're in 85 folks, and the other things I said. So, well, let's reason about things and give them a weight that's significant, yes, but in proportion to what's actually true."
+ },
+ "O-tara-06": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 69.1,
+  "words_per_s": 2.47,
+  "rms_db": -28.6,
+  "longest_silence_s": 1.98,
+  "wer": 0.006,
+  "transcript": "Because, you know, at the start, the software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years, there's been a collapse in creative capacity at the big companies in the ability to turn out great products. Once, every new version was a celebration for users. There was real thought. The right people behind it. For a while now, that hasn't been so. Small teams, on the other hand, can do this. And so this is one of the topics. It isn't that the software industry is finished because there's reverse engineering. There are the legal protections. And there's the fact that anyway the algorithms hidden inside software that aren't known are by now zero. It's not as if we're in 85 folks and the other things I said. So, well, let's reason about things and give them a weight that's significant, yes, but in proportion to what's actually true."
+ },
+ "O-zac-06": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 73.9,
+  "words_per_s": 2.31,
+  "rms_db": -22.5,
+  "longest_silence_s": 1.86,
+  "wer": 0.006,
+  "transcript": "Because, you know, at the start, this software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years, there's been a collapse in creative capacity at the big companies and the ability to turn out great products. Once, every new version was a celebration for users. There was real thought. The right people behind it. For a while now, that hasn't been so... small teams, on the other hand, can do this. And so, this is one of the topics. It isn't that the software industry is finished because there's reverse engineering. There are the legal protections. And there's the fact that anyway the algorithms hidden inside software that aren't known are by now zero. It's not as if we're in 85 folks and the other things I said. So, well, let's reason about things and give them a weight that's significant. Yes, but in proportion to what's actually true."
+ },
+ "O-zoe-06": {
+  "ok": true,
+  "bad": [],
+  "duration_s": 82.4,
+  "words_per_s": 2.08,
+  "rms_db": -19.7,
+  "longest_silence_s": 0.88,
+  "wer": 0.0,
+  "transcript": "Because, you know, at the start, this software is the product of enlightened teams where there's a lot of talent. Then the company grows and starts to become less able to carry it forward. Especially in recent years, there's been a collapse in creative capacity at the big companies. in the ability to turn out great products. Once every new version was a celebration for users. There was real thought, the right people behind it. For a while now, that hasn't been so. Small teams, on the other hand, can do this. And so this is one of the topics. It isn't that the software industry is finished because there's reverse engineering. There are the legal protections. And there's the fact that anyway, the algorithms hidden inside software that aren't known are by now zero. It's not as if we're in 85 folks. And the other things I said, So, well, let's reason about things and give them a weight that's significant, yes, but in proportion to what's actually true."
  }
 }

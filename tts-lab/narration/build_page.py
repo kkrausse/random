@@ -89,7 +89,9 @@ def main():
                    f"<td>{'<br>'.join(par) or 'not tried'}</td></tr>")
     out.append("</table></div><p class=sub>Speed is the median over that model's rows below; each row shows its own. "
                "VRAM is the process's peak in nvidia-smi. \"Several at once\" is that many separate processes "
-               "speaking the passage together.</p>")
+               "speaking the passage together; other programs held about 1.7 GB of the 11 GB while this ran. Three Chatterbox "
+               "processes (4.2 GB each) cannot fit and were not tried. Not in the table: F5-TTS at 16 steps ran at "
+               "7.0x, and Orpheus on the smaller Q4_K_M quant at 1.4x in 3.9 GB (two at once: 1.9x total).</p>")
 
     for model in ORDER:
         if model not in by_model:

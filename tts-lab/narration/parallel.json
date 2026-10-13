@@ -1,0 +1,67 @@
+{
+ "CT-3000m": {
+  "3": {
+   "error": "ocess 1142291 has 1.20 GiB memory in use. Process 4067780 has 479.16 MiB memory in use. Including non-PyTorch memory, this process has 3.17 GiB memory in use. Process 457914 has 2.79 GiB memory in use. Process 457915 has 2.80 GiB memory in use. Of the allocated memory 2.96 GiB is allocated by PyTorch, and 20.42 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)\n"
+  },
+  "2": {
+   "each_x": [
+    2.48,
+    2.46
+   ],
+   "total_x": 4.91,
+   "vram_mb_total": 7216
+  }
+ },
+ "K-michael": {
+  "3": {
+   "each_x": [
+    22.29,
+    22.5,
+    22.9
+   ],
+   "total_x": 66.83,
+   "vram_mb_total": 3792
+  }
+ },
+ "P-ryan": {
+  "3": {
+   "each_x": [
+    1.49,
+    1.47,
+    1.48
+   ],
+   "total_x": 4.42,
+   "vram_mb_total": 0
+  }
+ },
+ "CB-3000m": {
+  "2": {
+   "each_x": [
+    1.22,
+    1.22
+   ],
+   "total_x": 2.43,
+   "vram_mb_total": 8344
+  }
+ },
+ "F-3000m": {
+  "2": {
+   "each_x": [
+    1.73,
+    1.73
+   ],
+   "total_x": 3.46,
+   "vram_mb_total": 3912
+  }
+ },
+ "O-leo-06-q4": {
+  "2": {
+   "each_x": [
+    0.94,
+    0.94
+   ],
+   "total_x": 1.88,
+   "vram_mb_total": 7872
+  }
+ }
+}
