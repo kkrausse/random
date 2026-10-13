@@ -12,7 +12,9 @@ set -eu
 
 HOST="${PALMA_SERVER_HOST:-your-pi}"
 VERSION="${OPENCODE_VERSION:-2.0.27}"
-ADDRESS="100.64.0.10"
+# The checked-in address is a placeholder; pass the Pi's real Tailscale IPv4.
+UNIT_ADDRESS="100.64.0.10"
+ADDRESS="${PALMA_SERVER_ADDRESS:-$UNIT_ADDRESS}"
 LIVE_ROOT="/home/pi/deploys/palma2-opencode"
 LIVE_UNIT="palma2-opencode"
 LIVE_PORT="41137"
@@ -33,6 +35,7 @@ ssh "$HOST" "mkdir -p '$ROOT'"
 rsync -a --delete --exclude workdir --exclude state --exclude cli --exclude .git server/runtime/ "$HOST:$ROOT/"
 # The checked-in unit describes the live service; staging is the same unit with its own root, port, and name.
 sed -e "s#$LIVE_ROOT/#$ROOT/#g" \
+  -e "s#--hostname $UNIT_ADDRESS#--hostname $ADDRESS#" \
   -e "s#--port $LIVE_PORT#--port $PORT#" \
   -e "s#^SyslogIdentifier=.*#SyslogIdentifier=$UNIT#" \
   -e "s#^Description=.*#Description=Palma 2 OpenCode reading server ($UNIT)#" \

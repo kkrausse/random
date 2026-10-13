@@ -127,6 +127,7 @@ The tested host is the `pi` user on `raspberrypi.example.ts.net`. It needs:
 - `git`, `curl`, `openssl`, `rsync`, and SSH access
 - Bun (the deploy script installs the pinned OpenCode CLI with it)
 - An SSH alias named `your-pi`, unless `PALMA_SERVER_HOST` is supplied
+- `PALMA_SERVER_ADDRESS` set to the Pi's real Tailscale IPv4; the checked-in `100.64.0.10` is a placeholder
 
 The server binary is private to the deployment, so it does not share a version with any other OpenCode install on the Pi:
 
