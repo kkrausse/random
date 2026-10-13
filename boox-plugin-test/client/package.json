@@ -1,0 +1,22 @@
+{
+  "name": "reading-context-client",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check": "bunx tsc",
+    "build:android": "bun run build-android.ts",
+    "verify": "bun run scripts/verify.ts",
+    "verify:bridge": "bun run scripts/verify-bridge.ts"
+  },
+  "dependencies": {
+    "@opencode/client": "2.0.27"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "esbuild": "0.25.10",
+    "typescript": "latest"
+  }
+}

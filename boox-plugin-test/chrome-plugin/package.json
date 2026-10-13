@@ -18,6 +18,7 @@
   "dependencies": {
     "markdown-it": "^15.0.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "reading-context-client": "workspace:*"
   }
 }

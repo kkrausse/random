@@ -1,20 +1,13 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "default_agent": "build",
+  "autoupdate": false,
   "permission": {
-    "edit": "deny",
-    "bash": "deny",
+    "*": "deny",
+    "read": "allow",
+    "glob": "allow",
+    "grep": "allow",
     "webfetch": "allow",
-    "websearch": "allow",
-    "doom_loop": "deny",
-    "external_directory": "deny"
-  },
-  "tools": {
-    "write": false,
-    "edit": false,
-    "patch": false,
-    "bash": false,
-    "webfetch": true,
-    "websearch": true
+    "websearch": "allow"
   }
 }
