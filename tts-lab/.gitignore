@@ -8,3 +8,4 @@ __pycache__/
 *.wav
 site/audio/*.mp3
 chatterbox/work/
+narration/site/

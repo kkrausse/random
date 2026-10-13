@@ -12,10 +12,12 @@ Tags: <laugh> <chuckle> <sigh> <cough> <sniffle> <groan> <yawn> <gasp>.
 import argparse
 import re
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "orpheus"))
 import generate as g  # noqa: E402  (must come before numpy/torch: fixes LD_LIBRARY_PATH)
+import narrate  # noqa: E402
 import numpy as np  # noqa: E402
 
 DEFAULT_VOICE = "dan"
@@ -52,6 +54,8 @@ def main():
     ap.add_argument("--voice", default=DEFAULT_VOICE, choices=g.VOICES)
     ap.add_argument("--temperature", type=float, default=DEFAULT_TEMPERATURE)
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--model", default=str(g.DEFAULT_MODEL), help="GGUF file, e.g. a smaller quant")
+    ap.add_argument("--stats", help="write load/generation timings to this JSON file")
     a = ap.parse_args()
 
     text = Path(a.file).read_text() if a.file else a.text if a.text else sys.stdin.read()
@@ -59,7 +63,9 @@ def main():
     if not parts:
         sys.exit("no text to speak")
 
-    llm, snac = g.load_llm(), g.load_snac()
+    t0 = time.perf_counter()
+    llm, snac = g.load_llm(a.model), g.load_snac()
+    load_seconds, t0 = time.perf_counter() - t0, time.perf_counter()
     gap = np.zeros(int(g.SAMPLE_RATE * GAP_SECONDS), dtype=np.float32)
     audio = []
     for i, part in enumerate(parts, 1):
@@ -72,7 +78,11 @@ def main():
         note = "" if hit_eos else "  (never finished cleanly; check this part)"
         print(f"[{i}/{len(parts)}] {len(clip) / g.SAMPLE_RATE:.1f}s{note}  {part[:60]}", file=sys.stderr)
         audio += [clip, gap]
+    gen_seconds = time.perf_counter() - t0
     g.write_audio(np.concatenate(audio[:-1]), a.out)
+    if a.stats:
+        narrate.write_stats(a.stats, load_seconds, gen_seconds,
+                            len(np.concatenate(audio[:-1])) / g.SAMPLE_RATE, len(parts))
     print(a.out)
 
 

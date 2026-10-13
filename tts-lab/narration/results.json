@@ -1,0 +1,83 @@
+{
+ "P-ryan": {
+  "model": "Piper (CPU)",
+  "voice": "en_US-ryan-high",
+  "settings": "defaults",
+  "load_s": 1.81,
+  "gen_s": 9.09,
+  "audio_s": 50.72,
+  "pieces": 11,
+  "x_realtime": 5.58,
+  "wall_s": 12.8,
+  "vram_mb": 0,
+  "pieces_log": [
+   "[1/11] 5.5s  Because, you know, at the start this software is the product",
+   "[2/11] 3.8s  Then the company grows and starts to become less able to car",
+   "[3/11] 7.3s  Especially in recent years there's been a collapse in creati",
+   "[4/11] 5.0s  Once, every new version was a celebration for users; there w",
+   "[5/11] 1.8s  For a while now that hasn't been so.",
+   "[6/11] 2.4s  Small teams, on the other hand, can do this.",
+   "[7/11] 1.8s  And so this is one of the topics.",
+   "[8/11] 3.9s  It isn't that the software industry is finished because ther",
+   "[9/11] 1.6s  There are the legal protections.",
+   "[10/11] 8.6s  And there's the fact that anyway the algorithms hidden insid",
+   "[11/11] 6.7s  So, well, let's reason about things and give them a weight t"
+  ],
+  "tries": 1,
+  "seed": null
+ },
+ "P-lessac": {
+  "model": "Piper (CPU)",
+  "voice": "en_US-lessac-high",
+  "settings": "defaults",
+  "load_s": 2.19,
+  "gen_s": 9.74,
+  "audio_s": 54.93,
+  "pieces": 11,
+  "x_realtime": 5.64,
+  "wall_s": 12.9,
+  "vram_mb": 0,
+  "pieces_log": [
+   "[1/11] 5.9s  Because, you know, at the start this software is the product",
+   "[2/11] 3.9s  Then the company grows and starts to become less able to car",
+   "[3/11] 7.3s  Especially in recent years there's been a collapse in creati",
+   "[4/11] 6.3s  Once, every new version was a celebration for users; there w",
+   "[5/11] 2.1s  For a while now that hasn't been so.",
+   "[6/11] 2.9s  Small teams, on the other hand, can do this.",
+   "[7/11] 2.0s  And so this is one of the topics.",
+   "[8/11] 3.9s  It isn't that the software industry is finished because ther",
+   "[9/11] 1.7s  There are the legal protections.",
+   "[10/11] 9.1s  And there's the fact that anyway the algorithms hidden insid",
+   "[11/11] 7.3s  So, well, let's reason about things and give them a weight t"
+  ],
+  "tries": 1,
+  "seed": null
+ },
+ "P-alan": {
+  "model": "Piper (CPU)",
+  "voice": "en_GB-alan-medium",
+  "settings": "defaults",
+  "load_s": 1.92,
+  "gen_s": 2.02,
+  "audio_s": 64.81,
+  "pieces": 11,
+  "x_realtime": 32.02,
+  "wall_s": 5.3,
+  "vram_mb": 0,
+  "pieces_log": [
+   "[1/11] 6.5s  Because, you know, at the start this software is the product",
+   "[2/11] 4.9s  Then the company grows and starts to become less able to car",
+   "[3/11] 9.2s  Especially in recent years there's been a collapse in creati",
+   "[4/11] 6.9s  Once, every new version was a celebration for users; there w",
+   "[5/11] 2.5s  For a while now that hasn't been so.",
+   "[6/11] 3.4s  Small teams, on the other hand, can do this.",
+   "[7/11] 2.3s  And so this is one of the topics.",
+   "[8/11] 5.3s  It isn't that the software industry is finished because ther",
+   "[9/11] 2.2s  There are the legal protections.",
+   "[10/11] 10.9s  And there's the fact that anyway the algorithms hidden insid",
+   "[11/11] 8.1s  So, well, let's reason about things and give them a weight t"
+  ],
+  "tries": 1,
+  "seed": null
+ }
+}
