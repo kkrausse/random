@@ -49,6 +49,8 @@
 !dictation-server-native-spike/**
 !scripts/
 !scripts/**
+!agent-studio-diag/
+!agent-studio-diag/**
 node_modules/
 # Converted PDFs are third-party content; they are published from here, not checked in.
 scripts/output/
