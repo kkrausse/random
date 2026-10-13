@@ -140,7 +140,6 @@ public class MainActivity extends Activity {
     }
 
     private final ExecutorService network = Executors.newSingleThreadExecutor();
-    private final ExecutorService eventNetwork = Executors.newSingleThreadExecutor();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable streamTextRefresh = () -> {
         streamTextRefreshScheduled = false;
@@ -161,12 +160,16 @@ public class MainActivity extends Activity {
     private float scrollTouchDownY;
     private int scrollTouchSlop;
     private Markwon markwon;
-    private OpenCodeClient.EventStream eventStream;
+    private OpenCodeClient openCode;
+    private String subscriptionId;
     private int eventStreamGeneration;
     private boolean streamTextRefreshScheduled;
+    // The assistant message being streamed. Until it completes, its text exists only in events.
     private String streamingMessageId;
-    private boolean streamingStartedAtBoundary;
-    private final StringBuilder streamingText = new StringBuilder();
+    private String streamingText = "";
+    private boolean streamingFromStart = true;
+    // The prompt just sent, until the server reports the run it started as finished.
+    private String pendingMessageId;
     private TextView streamingMessageView;
     private View streamingLoadingView;
     private boolean messagesLoading;
@@ -175,6 +178,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        openCode = new OpenCodeClient(this);
         markwon = Markwon.create(this);
         scrollTouchSlop = ViewConfiguration.get(this).getScaledTouchSlop();
         acceptSharedText(getIntent());
@@ -255,8 +259,9 @@ public class MainActivity extends Activity {
         addTopBar("CHAT");
         followChatBottom = true;
         streamingMessageId = null;
-        streamingStartedAtBoundary = false;
-        streamingText.setLength(0);
+        streamingText = "";
+        streamingFromStart = true;
+        pendingMessageId = null;
         streamingMessageView = null;
         streamingLoadingView = null;
         transcript = new LinearLayout(this);
@@ -439,8 +444,9 @@ public class MainActivity extends Activity {
             statusView.setText("Testing connection...");
             network.execute(() -> {
                 try {
-                    client().health();
-                    runOnUiThread(() -> statusView.setText("Connected. New chats will use "
+                    String version = client().checkConnection();
+                    runOnUiThread(() -> statusView.setText("Connected to OpenCode " + version
+                            + ". New chats will use "
                             + selectedModelDescription(preferences) + "."));
                 } catch (Exception error) {
                     showError(error);
@@ -468,28 +474,17 @@ public class MainActivity extends Activity {
                 OpenCodeClient client = client();
                 List<OpenCodeClient.Model> models = client.listModels();
                 List<OpenCodeClient.Session> sessions = client.listSessions();
-                client.loadUsage(sessions);
-                long input = 0;
-                long output = 0;
-                long reasoning = 0;
-                long cacheRead = 0;
-                long cacheWrite = 0;
-                double cost = 0;
+                OpenCodeClient.Usage total = new OpenCodeClient.Usage(0, 0, 0, 0, 0, 0);
                 for (OpenCodeClient.Session session : sessions) {
-                    input += session.inputTokens;
-                    output += session.outputTokens;
-                    reasoning += session.reasoningTokens;
-                    cacheRead += session.cacheReadTokens;
-                    cacheWrite += session.cacheWriteTokens;
-                    cost += session.cost;
+                    total = total.plus(session.usage);
                 }
                 String usageText = "READING CHAT USAGE (LATEST " + sessions.size() + ")"
-                        + "\nTokens in: " + formatNumber(input)
-                        + "\nTokens out: " + formatNumber(output)
-                        + "\nReasoning: " + formatNumber(reasoning)
-                        + "\nCache read: " + formatNumber(cacheRead)
-                        + "\nCache write: " + formatNumber(cacheWrite)
-                        + String.format(java.util.Locale.US, "\nCost: $%.4f", cost);
+                        + "\nTokens in: " + formatNumber(total.input)
+                        + "\nTokens out: " + formatNumber(total.output)
+                        + "\nReasoning: " + formatNumber(total.reasoning)
+                        + "\nCache read: " + formatNumber(total.cacheRead)
+                        + "\nCache write: " + formatNumber(total.cacheWrite)
+                        + String.format(java.util.Locale.US, "\nCost: $%.4f", total.cost);
                 runOnUiThread(() -> {
                     availableModels.clear();
                     availableModels.addAll(models);
@@ -529,17 +524,19 @@ public class MainActivity extends Activity {
             try {
                 OpenCodeClient client = client();
                 SharedPreferences preferences = getSharedPreferences(SETTINGS, MODE_PRIVATE);
-                sessionId = client.createSession();
+                // The model belongs to the session, so it is chosen here, not with the prompt.
+                String created = client.createSession(
+                        preferences.getString(MODEL_PROVIDER_KEY, DEFAULT_MODEL_PROVIDER),
+                        preferences.getString(MODEL_ID_KEY, DEFAULT_MODEL_ID),
+                        preferences.getString(MODEL_VARIANT_KEY, DEFAULT_MODEL_VARIANT)).id;
                 runOnUiThread(() -> {
+                    sessionId = created;
                     showChat();
+                    // showChat queued the event subscription ahead of this on the same thread,
+                    // so the stream is connected before the prompt goes out.
                     network.execute(() -> {
                         try {
-                            OpenCodeClient.EventStream stream = eventStream;
-                            if (stream != null) {
-                                stream.awaitConnected(5_000);
-                            }
-                            sendMessage(client, prompt);
-                            runOnUiThread(this::loadMessages);
+                            sendPrompt(client, created, prompt, false);
                         } catch (Exception error) {
                             showError(error);
                         }
@@ -554,25 +551,36 @@ public class MainActivity extends Activity {
 
     private void sendFollowUp(String text) {
         statusView.setText("Sending...");
+        String session = sessionId;
         network.execute(() -> {
             try {
-                sendMessage(client(), text);
-                runOnUiThread(() -> {
-                    polling = true;
-                    loadMessages();
-                });
+                sendPrompt(client(), session, text, true);
             } catch (Exception error) {
                 showError(error);
             }
         });
     }
 
-    private void sendMessage(OpenCodeClient client, String text) throws Exception {
-        SharedPreferences preferences = getSharedPreferences(SETTINGS, MODE_PRIVATE);
-        client.sendMessage(sessionId, text,
-                preferences.getString(MODEL_PROVIDER_KEY, DEFAULT_MODEL_PROVIDER),
-                preferences.getString(MODEL_ID_KEY, DEFAULT_MODEL_ID),
-                preferences.getString(MODEL_VARIANT_KEY, DEFAULT_MODEL_VARIANT));
+    private void sendPrompt(OpenCodeClient client, String session, String text,
+            boolean existingChat) throws Exception {
+        if (existingChat) {
+            // A chat keeps the model it was created with. If the reader has picked another one
+            // in Settings since, move the chat to it before the prompt.
+            SharedPreferences preferences = getSharedPreferences(SETTINGS, MODE_PRIVATE);
+            String provider = preferences.getString(MODEL_PROVIDER_KEY, DEFAULT_MODEL_PROVIDER);
+            String model = preferences.getString(MODEL_ID_KEY, DEFAULT_MODEL_ID);
+            String variant = preferences.getString(MODEL_VARIANT_KEY, DEFAULT_MODEL_VARIANT);
+            if (!client.getSession(session).usesModel(provider, model, variant)) {
+                client.setModel(session, provider, model, variant);
+            }
+        }
+        String messageId = client.sendPrompt(session, text);
+        runOnUiThread(() -> {
+            if (polling && session.equals(sessionId)) {
+                pendingMessageId = messageId;
+                loadMessages();
+            }
+        });
     }
 
     private void loadMessages() {
@@ -586,15 +594,17 @@ public class MainActivity extends Activity {
         messagesLoading = true;
         messagesDirty = false;
         String requestedSession = sessionId;
+        String requestedPending = pendingMessageId;
         int requestedGeneration = eventStreamGeneration;
         network.execute(() -> {
             try {
-                List<OpenCodeClient.Message> messages = client().listMessages(requestedSession);
+                OpenCodeClient.Conversation conversation = client().loadConversation(
+                        requestedSession, requestedPending);
                 runOnUiThread(() -> {
                     messagesLoading = false;
                     if (polling && requestedSession.equals(sessionId)
                             && requestedGeneration == eventStreamGeneration) {
-                        renderMessages(messages);
+                        renderConversation(conversation);
                     }
                     if (messagesDirty) {
                         loadMessages();
@@ -615,7 +625,7 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void renderMessages(List<OpenCodeClient.Message> messages) {
+    private void renderConversation(OpenCodeClient.Conversation conversation) {
         if (transcript == null) {
             return;
         }
@@ -623,57 +633,58 @@ public class MainActivity extends Activity {
         transcript.removeAllViews();
         streamingMessageView = null;
         streamingLoadingView = null;
-        boolean waiting = messages.isEmpty();
-        long input = 0;
-        long output = 0;
-        long reasoning = 0;
-        long cacheRead = 0;
-        long cacheWrite = 0;
-        double cost = 0;
-        for (OpenCodeClient.Message message : messages) {
-            input += message.inputTokens;
-            output += message.outputTokens;
-            reasoning += message.reasoningTokens;
-            cacheRead += message.cacheReadTokens;
-            cacheWrite += message.cacheWriteTokens;
-            cost += message.cost;
-            String text = message.text;
-            if (message.id.equals(streamingMessageId)) {
-                String streamed = streamingText.toString();
-                if (!streamingStartedAtBoundary) {
-                    text = message.text.endsWith(streamed) ? message.text : message.text + streamed;
-                    streamingText.setLength(0);
-                    streamingText.append(text);
-                    streamingStartedAtBoundary = true;
-                } else {
-                    text = streamed;
-                }
+        if (!conversation.busy) {
+            streamingMessageId = null;
+            streamingText = "";
+            pendingMessageId = null;
+        }
+        boolean streamingShown = false;
+        for (OpenCodeClient.Message message : conversation.messages) {
+            // While a message is being written the server has none of its text; the events do.
+            boolean streaming = !message.complete && message.id.equals(streamingMessageId);
+            String text = streaming ? streamingDisplayText() : message.text;
+            if (text.isEmpty() && !message.error.isEmpty()) {
+                text = "Error: " + message.error;
             }
-            waiting = "YOU".equals(message.role) || !message.complete;
-            if (text.isEmpty() && message.complete) {
+            // One assistant message is one provider step; tool-only steps have no text.
+            if (text.isEmpty() && !streaming) {
                 continue;
             }
             TextView view = addMessage(message.role, text.isEmpty() ? "Thinking..." : text);
-            if (message.id.equals(streamingMessageId)) {
+            if (streaming) {
                 streamingMessageView = view;
+                streamingShown = true;
             }
         }
-        if (waiting) {
+        if (streamingMessageId != null && !streamingShown) {
+            String text = streamingDisplayText();
+            streamingMessageView = addMessage("OPENCODE", text.isEmpty() ? "Thinking..." : text);
+        }
+        if (conversation.busy) {
             streamingLoadingView = addLoadingIndicator();
+            if (streamingMessageId == null) {
+                statusView.setText("OpenCode is working...");
+            }
+        } else {
+            statusView.setText(conversation.error);
         }
-        statusView.setText("");
-        if (sessionUsageView != null) {
-            sessionUsageView.setText("SESSION USAGE"
-                    + "\nInput: " + formatNumber(input)
-                    + "  Output: " + formatNumber(output)
-                    + "  Reasoning: " + formatNumber(reasoning)
-                    + "\nCache read: " + formatNumber(cacheRead)
-                    + "  Cache write: " + formatNumber(cacheWrite)
-                    + String.format(java.util.Locale.US, "  Cost: $%.4f", cost));
-        }
+        showSessionUsage(conversation.session.usage);
         if (scrollToBottom) {
             scrollChatToBottom();
         }
+    }
+
+    private void showSessionUsage(OpenCodeClient.Usage usage) {
+        if (sessionUsageView == null) {
+            return;
+        }
+        sessionUsageView.setText("SESSION USAGE"
+                + "\nInput: " + formatNumber(usage.input)
+                + "  Output: " + formatNumber(usage.output)
+                + "  Reasoning: " + formatNumber(usage.reasoning)
+                + "\nCache read: " + formatNumber(usage.cacheRead)
+                + "  Cache write: " + formatNumber(usage.cacheWrite)
+                + String.format(java.util.Locale.US, "  Cost: $%.4f", usage.cost));
     }
 
     private String readingPrompt(String question) {
@@ -1224,12 +1235,14 @@ public class MainActivity extends Activity {
                 + "\nBOOX APP FREEZE: Check manually in BOOX app settings");
     }
 
+    /** The bridge, pointed at the saved connection settings. */
     private OpenCodeClient client() {
         SharedPreferences preferences = getSharedPreferences(SETTINGS, MODE_PRIVATE);
-        return new OpenCodeClient(
+        openCode.setConnection(
                 preferences.getString(SERVER_KEY, DEFAULT_SERVER),
                 preferences.getString(TOKEN_KEY, ""),
                 preferences.getString(DIRECTORY_KEY, DEFAULT_DIRECTORY));
+        return openCode;
     }
 
     private void setButtonsEnabled(boolean enabled) {
@@ -1418,43 +1431,71 @@ public class MainActivity extends Activity {
         return -1;
     }
 
-    private void handleStreamEvent(OpenCodeClient.StreamEvent event) {
-        switch (event.type) {
-            case "message.updated":
-                beginStreamingMessage(event.messageId, true);
-                statusView.setText("OpenCode is working...");
-                break;
-            case "message.part.updated":
-                beginStreamingMessage(event.messageId, true);
-                streamingText.setLength(0);
-                streamingText.append(event.text);
-                renderStreamingText();
-                break;
-            case "message.part.delta":
-                if (!event.messageId.equals(streamingMessageId)) {
-                    beginStreamingMessage(event.messageId, false);
+    private void handleStreamEvent(JSONObject event) {
+        String messageId = event.optString("messageId");
+        switch (event.optString("kind")) {
+            case "connected":
+                if (event.optBoolean("reconnected")) {
+                    // Events may have been missed while the stream was down.
                     loadMessages();
                 }
-                streamingText.append(event.text);
+                break;
+            case "disconnected":
+                statusView.setText("Reconnecting to OpenCode...");
+                break;
+            case "busy":
+                statusView.setText("OpenCode is working...");
+                break;
+            case "message":
+                beginStreamingMessage(messageId);
+                statusView.setText("OpenCode is working...");
+                // Picks up the prompt this step answers, now that the server has stored it.
+                loadMessages();
+                break;
+            case "reasoning":
+                statusView.setText("Thinking...");
+                break;
+            case "text.delta":
+                beginStreamingMessage(messageId);
+                streamingText = event.optString("text");
+                streamingFromStart = event.optBoolean("fromStart", true);
                 if (!streamTextRefreshScheduled) {
                     streamTextRefreshScheduled = true;
                     handler.postDelayed(streamTextRefresh, 40);
                 }
                 break;
-            case "message.reasoning":
-                statusView.setText("Thinking...");
-                break;
-            case "message.tool":
-                statusView.setText(event.text.isEmpty() ? "Using a tool..." : "Using " + event.text + "...");
-                break;
-            case "session.status":
-                statusView.setText("retry".equals(event.text) ? "Retrying..." : "OpenCode is working...");
-                break;
-            case "session.idle":
-            case "session.error":
+            case "text.done":
+                beginStreamingMessage(messageId);
+                streamingText = event.optString("text");
+                streamingFromStart = true;
                 renderStreamingText();
-                streamingMessageId = null;
-                streamingText.setLength(0);
+                break;
+            case "tool":
+                if ("started".equals(event.optString("status"))) {
+                    String tool = event.optString("tool");
+                    statusView.setText(tool.isEmpty() ? "Using a tool..." : "Using " + tool + "...");
+                } else {
+                    statusView.setText("OpenCode is working...");
+                }
+                break;
+            case "retry":
+                statusView.setText("Retrying...");
+                break;
+            case "blocked":
+                statusView.setText("OpenCode is waiting: " + event.optString("message"));
+                break;
+            case "usage":
+                showSessionUsage(OpenCodeClient.Usage.fromJson(event.optJSONObject("usage")));
+                break;
+            case "idle":
+                renderStreamingText();
+                pendingMessageId = null;
+                loadMessages();
+                break;
+            case "error":
+                renderStreamingText();
+                pendingMessageId = null;
+                statusView.setText(event.optString("message"));
                 loadMessages();
                 break;
             default:
@@ -1462,13 +1503,13 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void beginStreamingMessage(String messageId, boolean startedAtBoundary) {
+    private void beginStreamingMessage(String messageId) {
         if (messageId.isEmpty() || messageId.equals(streamingMessageId)) {
             return;
         }
         streamingMessageId = messageId;
-        streamingStartedAtBoundary = startedAtBoundary;
-        streamingText.setLength(0);
+        streamingText = "";
+        streamingFromStart = true;
         if (transcript == null) {
             return;
         }
@@ -1480,11 +1521,18 @@ public class MainActivity extends Activity {
         scrollChatToBottom();
     }
 
+    /** What the events have delivered of the message being written. */
+    private String streamingDisplayText() {
+        // Joining a chat mid-answer loses the beginning until the server sends the whole text.
+        return streamingFromStart || streamingText.isEmpty()
+                ? streamingText : "[...] " + streamingText;
+    }
+
     private void renderStreamingText() {
         if (streamingMessageView == null) {
             return;
         }
-        String text = streamingText.toString();
+        String text = streamingDisplayText();
         markwon.setMarkdown(streamingMessageView, text.isEmpty() ? "Thinking..." : text);
         statusView.setText(text.isEmpty() ? "Thinking..." : "Responding...");
         scrollChatToBottom();
@@ -1506,25 +1554,40 @@ public class MainActivity extends Activity {
             return;
         }
         int generation = ++eventStreamGeneration;
-        OpenCodeClient.EventStream stream = client().eventStream(sessionId, event ->
+        String subscription = "chat-" + generation;
+        String session = sessionId;
+        subscriptionId = subscription;
+        OpenCodeClient client = client();
+        OpenCodeClient.EventListener listener = new OpenCodeClient.EventListener() {
+            @Override
+            public void onSessionEvent(JSONObject event) {
                 handler.post(() -> {
                     if (polling && generation == eventStreamGeneration) {
                         handleStreamEvent(event);
                     }
-                }));
-        eventStream = stream;
-        eventNetwork.execute(() -> {
+                });
+            }
+
+            @Override
+            public void onSubscriptionLost(String message) {
+                // The WebView behind the bridge went away. A new subscription brings it back.
+                handler.postDelayed(() -> {
+                    if (polling && generation == eventStreamGeneration) {
+                        startEventStream();
+                        loadMessages();
+                    }
+                }, 1_000);
+            }
+        };
+        network.execute(() -> {
             try {
-                stream.run();
+                client.subscribe(subscription, session, listener);
             } catch (Exception error) {
-                if (polling && generation == eventStreamGeneration) {
-                    handler.postDelayed(() -> {
-                        if (polling && generation == eventStreamGeneration) {
-                            startEventStream();
-                            loadMessages();
-                        }
-                    }, 1_000);
-                }
+                runOnUiThread(() -> {
+                    if (polling && generation == eventStreamGeneration) {
+                        showError(error);
+                    }
+                });
             }
         });
     }
@@ -1533,10 +1596,16 @@ public class MainActivity extends Activity {
         eventStreamGeneration++;
         streamTextRefreshScheduled = false;
         handler.removeCallbacks(streamTextRefresh);
-        OpenCodeClient.EventStream stream = eventStream;
-        eventStream = null;
-        if (stream != null) {
-            stream.close();
+        String subscription = subscriptionId;
+        subscriptionId = null;
+        if (subscription != null && !network.isShutdown()) {
+            network.execute(() -> {
+                try {
+                    openCode.unsubscribe(subscription);
+                } catch (Exception ignored) {
+                    // The subscription is already detached on this side.
+                }
+            });
         }
     }
 
@@ -1590,7 +1659,7 @@ public class MainActivity extends Activity {
         stopEventStream();
         handler.removeCallbacksAndMessages(null);
         network.shutdownNow();
-        eventNetwork.shutdownNow();
+        openCode.destroy();
         super.onDestroy();
     }
 }
