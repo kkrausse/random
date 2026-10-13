@@ -10,6 +10,9 @@ def apply(root):
     for path in pathlib.Path(root).rglob("*.html"):
         if path.is_symlink():
             continue
+        # Demos are self-styled pages; only their generated shelf index is themed.
+        if path.relative_to(root).parts[0] == "demos":
+            continue
         content = path.read_text()
         if 'data-site-theme' in content:
             continue

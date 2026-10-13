@@ -131,8 +131,17 @@ mtime. Published dates are displayed in UTC.
 ./deploy-artifact.sh --public output/report
 ```
 
+`--demo` publishes to a second public shelf, <https://kkrausse.com/demos/>, for
+self-styled pages meant to be linked from elsewhere. Demo pages do not receive
+the shared theme (only the shelf listing does). `--demo --remove <slug>` removes one.
+
+```sh
+./deploy-artifact.sh --demo output/film antirez-worse-short-film
+```
+
 Private shelf: `https://<pi-hostname>.<tailnet>.ts.net/`.
 Public shelf: <https://kkrausse.com/artifacts/>.
+Demo shelf: <https://kkrausse.com/demos/>.
 Tunnel shelf: <https://zu4tgfuxau5n.opentunnel.xyz/artifacts/> (served from diesel2, set up 2026-10-08).
 
 `--tunnel` publishes to a third shelf that is served from this machine (not

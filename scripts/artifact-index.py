@@ -6,7 +6,7 @@ import re
 import sys
 
 
-def render(root, visibility):
+def render(root, visibility, shelf="artifacts"):
     artifacts = []
     for path in pathlib.Path(root).iterdir():
         if not path.is_dir() or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", path.name):
@@ -17,13 +17,14 @@ def render(root, visibility):
         timestamp = (marker if marker.exists() else path / "index.html").stat().st_mtime
         artifacts.append((timestamp, path.name))
     artifacts.sort(key=lambda item: (-item[0], item[1]))
-    title = "Private artifacts" if visibility == "private" else "Artifacts"
+    noun = "demo" if shelf == "demos" else "artifact"
+    title = "Private artifacts" if visibility == "private" else noun.capitalize() + "s"
     items = []
     for timestamp, name in artifacts:
         date = datetime.datetime.fromtimestamp(timestamp, datetime.timezone.utc)
-        items.append(f'<li><a href="/artifacts/{name}/">{html.escape(name)}</a>'
+        items.append(f'<li><a href="/{shelf}/{name}/">{html.escape(name)}</a>'
                      f'<time datetime="{date.isoformat()}">{date:%Y-%m-%d %H:%M UTC}</time></li>')
-    listing = '<ul>' + '\n'.join(items) + '</ul>' if items else '<p>No artifacts published yet.</p>'
+    listing = '<ul>' + '\n'.join(items) + '</ul>' if items else f'<p>No {noun}s published yet.</p>'
     theme = '<link rel="stylesheet" href="/theme.css" data-site-theme>' if visibility == 'public' else ''
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -34,9 +35,9 @@ h1 {{ font-size: 1.6rem; }} ul {{ list-style: none; padding: 0; }}
 li {{ padding: .85rem 0; border-bottom: 1px solid #ddd; overflow-wrap: anywhere; }}
 time {{ display: block; font-size: .8rem; color: #666; }}
 </style>{theme}</head><body><main><h1>{title}</h1>
-<p>Newest published first. Republishing moves an artifact to the top.</p>
+<p>Newest published first. Republishing moves {"a demo" if noun == "demo" else "an artifact"} to the top.</p>
 {listing}</main></body></html>'''
 
 
 if __name__ == "__main__":
-    print(render(sys.argv[1], sys.argv[2]))
+    print(render(*sys.argv[1:4]))
