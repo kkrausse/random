@@ -1,16 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import MarkdownIt from "markdown-it";
-import { OpenCodeClient } from "./api";
-import type { SessionEvent, SessionUsage } from "./api";
+import type { Message, Model, ModelRef, Session, SessionEvent, Usage } from "reading-context-client";
+import { newChatModel, openCodeClient } from "./api";
 import {
   DEFAULT_SETTINGS,
   buildHighlightPrompt,
   buildPrompt,
   readingPromptFromText
 } from "./common";
-import type { Capture, Message, Model, ModelRef, PromptPreset, Settings } from "./common";
+import type { Capture, PromptPreset, Settings } from "./common";
 import { clearDiagnostics, readDiagnostics, recordDiagnostic } from "./diagnostics";
 
 type Screen = "capture" | "sessions" | "chat" | "settings";
@@ -25,16 +25,6 @@ markdown.renderer.rules.link_open = (tokens, index, options, env, renderer) => {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
-}
-
-function serverErrorMessage(error: unknown): string {
-  if (typeof error === "string") return error;
-  if (!error || typeof error !== "object") return "Unknown server error";
-  const value = error as Record<string, unknown>;
-  if (typeof value.message === "string") return value.message;
-  if (value.data !== undefined) return serverErrorMessage(value.data);
-  if (value.error !== undefined) return serverErrorMessage(value.error);
-  return typeof value.name === "string" ? value.name : "Unknown server error";
 }
 
 function hasSelectionInside(element: HTMLElement | null) {
@@ -75,7 +65,7 @@ function MarkdownContent({ text }: { text: string }) {
 
 function modelLabel(model?: ModelRef) {
   if (!model) return "";
-  return `${model.providerID}/${model.id}${model.variant ? ` (${model.variant})` : ""}`;
+  return `${model.providerId}/${model.modelId}${model.variant ? ` (${model.variant})` : ""}`;
 }
 
 function ReadingPromptMessage({ text }: { text: string }) {
@@ -96,11 +86,12 @@ function ReadingPromptMessage({ text }: { text: string }) {
 }
 
 function MessageView({ message }: { message: Message }) {
-  return <article className={`message ${message.role === "OpenCode" ? "assistant" : "user"}`}>
-    <div className="message-meta"><span className="role eyebrow">{message.role}</span>
-      {message.role === "OpenCode" && message.model && <span className="message-model">{modelLabel(message.model)}</span>}
+  const assistant = message.role === "assistant";
+  return <article className={`message ${message.role}`}>
+    <div className="message-meta"><span className="role eyebrow">{assistant ? "OpenCode" : "You"}</span>
+      {assistant && message.model && <span className="message-model">{modelLabel(message.model)}</span>}
     </div>
-    {message.role === "OpenCode"
+    {assistant
       ? <MarkdownContent text={message.text} />
       : <ReadingPromptMessage text={message.text} />}
   </article>;
@@ -129,10 +120,9 @@ function CaptureScreen({ settings, capture, onOpenChat, onBrowse }: {
       promptLength: nextQuestion.length
     });
     try {
-      const client = new OpenCodeClient(settings);
-      const sessionId = await client.createSession();
-      void recordDiagnostic("chat-create-success", { sessionId });
-      onOpenChat(sessionId, buildPrompt(settings.messageTemplate, capture, nextQuestion));
+      const session = await openCodeClient(settings).createSession({ model: newChatModel(settings) });
+      void recordDiagnostic("chat-create-success", { sessionId: session.id });
+      onOpenChat(session.id, buildPrompt(settings.messageTemplate, capture, nextQuestion));
     } catch (error) {
       void recordDiagnostic("chat-create-error", { message: errorMessage(error) });
       setSubmitting(false);
@@ -165,12 +155,12 @@ function CaptureScreen({ settings, capture, onOpenChat, onBrowse }: {
 }
 
 function SessionsScreen({ settings, onOpen }: { settings: Settings; onOpen: (id: string) => void }) {
-  const [sessions, setSessions] = useState<Awaited<ReturnType<OpenCodeClient["sessions"]>>>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [status, setStatus] = useState("Loading...");
 
   useEffect(() => {
     let active = true;
-    new OpenCodeClient(settings).sessions().then((result) => {
+    openCodeClient(settings).listSessions().then((result) => {
       if (!active) return;
       setSessions(result);
       setStatus(result.length ? "" : "No chats yet.");
@@ -184,13 +174,13 @@ function SessionsScreen({ settings, onOpen }: { settings: Settings; onOpen: (id:
     <div>{sessions.map((session) =>
       <button className="session" key={session.id} onClick={() => onOpen(session.id)}>
         <strong>{session.title || "Untitled reading chat"}</strong>
-        <span className="session-meta"><time>{session.time?.updated ? new Date(session.time.updated).toLocaleString() : "Unknown date"}</time>
+        <span className="session-meta"><time>{session.updated ? new Date(session.updated).toLocaleString() : "Unknown date"}</time>
           {session.model && <span>{modelLabel(session.model)}</span>}</span>
       </button>)}</div>
   </>;
 }
 
-function Usage({ usage }: { usage: SessionUsage | null }) {
+function UsageFooter({ usage }: { usage: Usage | null }) {
   if (!usage) return <footer className="chat-usage">Usage unavailable</footer>;
   const compact = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 });
   const exact = new Intl.NumberFormat();
@@ -219,34 +209,29 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [streaming, setStreaming] = useState<{ id: string; text: string; model?: ModelRef } | null>(null);
-  const [usage, setUsage] = useState<SessionUsage | null>(null);
+  const [usage, setUsage] = useState<Usage | null>(null);
   const [status, setStatus] = useState("Loading...");
   const [reply, setReply] = useState("");
   const [waiting, setWaiting] = useState(Boolean(initialPrompt));
-  const streamReady = useRef<Promise<void>>(Promise.resolve());
-  const refreshRef = useRef<(expecting: boolean) => Promise<void>>(async () => {});
+  const client = useMemo(() => openCodeClient(settings), [settings]);
+  const streamReady = useRef<Promise<unknown>>(Promise.resolve());
+  const refreshRef = useRef<() => Promise<void>>(async () => {});
   const onPromptSentRef = useRef(onPromptSent);
-  const messagesRef = useRef(messages);
-  const waitingRef = useRef(waiting);
   const streamingModels = useRef(new Map<string, ModelRef>());
+  // The prompt most recently queued: until the server turns it into a message, the chat is busy.
+  const pendingPrompt = useRef<string | undefined>(undefined);
   const pinnedToBottom = useRef(true);
   onPromptSentRef.current = onPromptSent;
-  messagesRef.current = messages;
-  waitingRef.current = waiting;
 
-  const refreshMessages = async (expecting: boolean) => {
+  const refreshMessages = async () => {
     try {
-      const client = new OpenCodeClient(settings);
-      const [nextMessages, nextUsage] = await Promise.all([
-        client.messages(sessionId),
-        client.sessionUsage(sessionId).catch(() => null)
-      ]);
-      setMessages(nextMessages);
-      setUsage(nextUsage);
-      const last = nextMessages.at(-1);
-      const nextWaiting = last ? last.role === "You" || !last.complete : expecting;
-      setWaiting(nextWaiting);
-      setStatus(nextWaiting ? "OpenCode is working..." : "");
+      const conversation = await client.loadConversation(sessionId, { pendingMessageId: pendingPrompt.current });
+      // A tool-only step has no text to show.
+      setMessages(conversation.messages.filter((message) => message.text || !message.complete));
+      setUsage(conversation.session.usage);
+      setWaiting(conversation.busy);
+      setStatus(conversation.busy ? "OpenCode is working..."
+        : conversation.error ? `OpenCode error: ${conversation.error}` : "");
     } catch (error) {
       setStatus(errorMessage(error));
     }
@@ -291,119 +276,77 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
   }, [messages, streaming?.text, capture]);
 
   useEffect(() => {
-    let stopped = false;
-    let controller: AbortController | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let markReady = () => {};
-    streamReady.current = new Promise<void>((resolve) => { markReady = resolve; });
-
     const handleEvent = (event: SessionEvent) => {
-      const properties = event.properties;
-      const eventSessionId = properties?.sessionID || properties?.info?.sessionID
-        || properties?.part?.sessionID;
-      if (!properties || eventSessionId !== sessionId) return;
-      const messageId = properties.info?.id || properties.part?.messageID || properties.messageID || "";
-      switch (event.type) {
-        case "message.updated": {
-          const info = properties.info;
-          if (info?.role === "assistant" && info.providerID && info.modelID) {
-            const model = {
-              providerID: info.providerID,
-              id: info.modelID,
-              ...(info.variant ? { variant: info.variant } : {})
-            };
-            streamingModels.current.set(messageId, model);
-            setStreaming((current) => current?.id === messageId ? { ...current, model } : current);
-          }
+      switch (event.kind) {
+        case "connected":
+          void recordDiagnostic("event-stream-open", { sessionId });
+          // Events may have been missed while disconnected; the server has the canonical messages.
+          if (event.reconnected) void refreshRef.current();
           break;
-        }
-        case "message.part.updated": {
-          const part = properties.part;
-          if (!part) break;
-          if (part.type === "reasoning") setStatus("Thinking...");
-          if (part.type === "tool") {
-            setStatus(part.tool ? `Using ${part.tool}...` : "Using a tool...");
-          }
-          const knownAssistant = streamingModels.current.has(messageId)
-            || messagesRef.current.some((message) => message.id === messageId && message.role === "OpenCode");
-          if (part.type !== "text" || !knownAssistant) break;
+        case "disconnected":
+          void recordDiagnostic("event-stream-error", { message: event.message });
+          setStatus("Reconnecting to OpenCode...");
+          setStreaming(null);
+          break;
+        case "busy":
+          setWaiting(true);
+          setStatus("OpenCode is working...");
+          break;
+        case "message":
+          // A new step: pull in the step that just finished so its text stays on screen.
+          if (streamingModels.current.size) void refreshRef.current();
+          streamingModels.current.set(event.messageId, event.model);
+          setStreaming((current) => current?.id === event.messageId ? { ...current, model: event.model } : current);
+          break;
+        case "reasoning":
+          setStatus("Thinking...");
+          break;
+        case "tool":
+          if (event.status === "started") setStatus(event.tool ? `Using ${event.tool}...` : "Using a tool...");
+          break;
+        case "text.delta":
+        case "text.done":
           setStreaming({
-            id: messageId,
-            text: part.text || "",
-            model: streamingModels.current.get(messageId)
-              || messagesRef.current.find((message) => message.id === messageId)?.model
+            id: event.messageId,
+            text: event.text,
+            model: streamingModels.current.get(event.messageId)
           });
           setWaiting(true);
           setStatus("Responding...");
           break;
-        }
-        case "message.part.delta": {
-          if (properties.field !== "text" || !properties.delta) break;
-          const knownAssistant = streamingModels.current.has(messageId)
-            || messagesRef.current.some((message) => message.id === messageId && message.role === "OpenCode");
-          if (!knownAssistant) break;
-          setStreaming((current) => ({
-            id: messageId,
-            text: (current?.id === messageId
-              ? current.text
-              : messagesRef.current.find((message) => message.id === messageId)?.text || "")
-              + properties.delta,
-            model: current?.id === messageId
-              ? current.model
-              : streamingModels.current.get(messageId)
-                || messagesRef.current.find((message) => message.id === messageId)?.model
-          }));
-          setWaiting(true);
-          setStatus("Responding...");
+        case "retry":
+          setStatus("Retrying...");
           break;
-        }
-        case "session.status":
-          if (properties.status?.type === "retry") setStatus("Retrying...");
-          else if (properties.status?.type === "busy") setStatus("OpenCode is working...");
+        case "blocked":
+          setStatus(event.message);
           break;
-        case "session.idle":
-          void refreshRef.current(false).finally(() => {
+        case "usage":
+          setUsage(event.usage);
+          break;
+        case "idle":
+          void refreshRef.current().finally(() => {
             setStreaming(null);
             setWaiting(false);
             setStatus("");
           });
           break;
-        case "session.error": {
-          const message = serverErrorMessage(properties.error);
-          void recordDiagnostic("session-error", { sessionId, message });
-          void refreshRef.current(false).finally(() => {
+        case "error":
+          void recordDiagnostic("session-error", { sessionId, message: event.message });
+          void refreshRef.current().finally(() => {
             setStreaming(null);
             setWaiting(false);
-            setStatus(`OpenCode error: ${message}`);
+            setStatus(`OpenCode error: ${event.message}`);
           });
           break;
-        }
       }
     };
 
-    const connect = () => {
-      if (stopped) return;
-      controller = new AbortController();
-      void new OpenCodeClient(settings).streamEvents(controller.signal, handleEvent, () => {
-        void recordDiagnostic("event-stream-open", { sessionId });
-        markReady();
-      }).catch(async (error) => {
-        if (stopped || controller?.signal.aborted) return;
-        await recordDiagnostic("event-stream-error", { message: errorMessage(error) });
-        setStatus("Reconnecting to OpenCode...");
-        setStreaming(null);
-        await refreshRef.current(waitingRef.current);
-        reconnectTimer = setTimeout(connect, 1000);
-      });
-    };
-    connect();
-    if (!initialPrompt) void refreshRef.current(false);
-    return () => {
-      stopped = true;
-      controller?.abort();
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-    };
-  }, [sessionId, settings]);
+    // The subscription reconnects by itself until it is closed.
+    const subscription = client.subscribe(sessionId, handleEvent);
+    streamReady.current = subscription.ready;
+    if (!initialPrompt) void refreshRef.current();
+    return () => subscription.close();
+  }, [sessionId, client]);
 
   useEffect(() => {
     if (!initialPrompt || initialPrompt.sessionId !== sessionId) return;
@@ -415,12 +358,13 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
     void Promise.race([
       streamReady.current,
       new Promise<void>((resolve) => setTimeout(resolve, 5000))
-    ]).then(() => new OpenCodeClient(settings).sendMessage(sessionId, initialPrompt.text))
-      .then(() => {
+    ]).then(() => client.sendPrompt(sessionId, initialPrompt.text))
+      .then((queued) => {
+        pendingPrompt.current = queued.messageId;
         if (!active) return;
         void recordDiagnostic("initial-prompt-accepted", { sessionId });
         onPromptSentRef.current();
-        return refreshRef.current(true);
+        return refreshRef.current();
       }).catch((error) => {
         if (!active) return;
         void recordDiagnostic("initial-prompt-error", { sessionId, message: errorMessage(error) });
@@ -428,7 +372,7 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
         setStatus(errorMessage(error));
       });
     return () => { active = false; };
-  }, [initialPrompt, sessionId, settings]);
+  }, [initialPrompt, sessionId, client]);
 
   const sendReply = async (override?: string) => {
     const text = (override || reply).trim();
@@ -443,12 +387,13 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
     });
     try {
       await Promise.race([streamReady.current, new Promise<void>((resolve) => setTimeout(resolve, 5000))]);
-      await new OpenCodeClient(settings).sendMessage(sessionId,
+      const queued = await client.sendPrompt(sessionId,
         selectedCapture ? buildHighlightPrompt(selectedCapture.highlight, text) : text);
+      pendingPrompt.current = queued.messageId;
       void recordDiagnostic("reply-prompt-accepted", { sessionId });
       setReply("");
       if (selectedCapture) onClearCapture(selectedCapture);
-      await refreshMessages(true);
+      await refreshMessages();
     } catch (error) {
       void recordDiagnostic("reply-prompt-error", { sessionId, message: errorMessage(error) });
       setWaiting(false);
@@ -459,10 +404,10 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
   const stopExecution = async () => {
     setStatus("Stopping...");
     try {
-      await new OpenCodeClient(settings).interruptSession(sessionId);
+      await client.interrupt(sessionId);
       setStreaming(null);
       setWaiting(false);
-      await refreshMessages(false);
+      await refreshMessages();
     } catch (error) {
       setStatus(errorMessage(error));
     }
@@ -473,9 +418,10 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
     const index = visibleMessages.findIndex((message) => message.id === streaming.id);
     const streamedMessage: Message = {
       id: streaming.id,
-      role: "OpenCode",
+      role: "assistant",
       text: streaming.text,
       complete: false,
+      created: 0,
       model: streaming.model
     };
     if (index >= 0) visibleMessages[index] = streamedMessage;
@@ -510,7 +456,7 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
           ? <button className="secondary" onClick={() => void stopExecution()}>Stop</button>
           : <button className="secondary context-control" onClick={onNewChat}>New chat</button>}
       </div>
-      <Usage usage={usage} />
+      <UsageFooter usage={usage} />
     </div>
   </>;
 }
@@ -566,7 +512,7 @@ function SettingsScreen({ settings, onSave }: { settings: Settings; onSave: (set
       if (requestPermission && !await ensureServerPermission(draft.serverUrl)) {
         throw new Error("Server access was not granted.");
       }
-      const nextModels = await new OpenCodeClient(draft).models();
+      const nextModels = await openCodeClient(draft).listModels();
       setModels(nextModels);
       setStatus(nextModels.length ? "" : "No active models found.");
     } catch (error) {

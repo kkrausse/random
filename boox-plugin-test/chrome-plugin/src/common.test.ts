@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import {
   buildHighlightPrompt,
   buildPrompt,
-  messageFromJson,
   readingPromptFromText,
   xmlEscape
 } from "./common";
@@ -19,26 +18,6 @@ test("buildPrompt fills and escapes structured source fields", () => {
 test("buildPrompt leaves plain templates unescaped", () => {
   assert.equal(buildPrompt("{{highlight}}: {{question}}", { highlight: "A & B" }, "why?"),
     "A & B: why?");
-});
-
-test("messageFromJson joins assistant text parts", () => {
-  assert.deepEqual(messageFromJson({
-    info: {
-      id: "message-1",
-      role: "assistant",
-      providerID: "openai",
-      modelID: "gpt-5",
-      variant: "high",
-      time: { completed: 1 }
-    },
-    parts: [{ type: "text", text: "Hello " }, { type: "tool" }, { type: "text", text: "world" }]
-  }), {
-    id: "message-1",
-    role: "OpenCode",
-    text: "Hello world",
-    complete: true,
-    model: { providerID: "openai", id: "gpt-5", variant: "high" }
-  });
 });
 
 test("xmlEscape escapes boundary-changing characters", () => {

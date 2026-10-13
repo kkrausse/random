@@ -22,53 +22,12 @@ export interface Capture {
   capturedAt: number;
 }
 
-export interface Model {
-  name: string;
-  providerId: string;
-  modelId: string;
-  variants: string[];
-}
-
-export interface ModelRef {
-  id: string;
-  providerID: string;
-  variant?: string;
-}
-
-export interface Message {
-  id: string;
-  role: "You" | "OpenCode";
-  text: string;
-  complete: boolean;
-  model?: ModelRef;
-}
-
 export interface ReadingPrompt {
   question: string;
   highlight: string;
   surroundingContext: string;
   pageTitle: string;
   pageUrl: string;
-}
-
-interface ApiModel {
-  name?: string;
-  id: string;
-  providerID: string;
-  status?: string;
-  variants?: Record<string, unknown>;
-}
-
-interface ApiMessage {
-  info: {
-    id: string;
-    role: "user" | "assistant";
-    time: { completed?: number };
-    providerID?: string;
-    modelID?: string;
-    variant?: string;
-  };
-  parts: Array<{ type: string; text?: string }>;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -164,33 +123,4 @@ export function readingPromptFromText(prompt: string): ReadingPrompt | null {
     pageUrl: elementText(prompt, "page_url")
   };
   return result.question || result.highlight || result.surroundingContext ? result : null;
-}
-
-export function modelFromJson(value: ApiModel): Model {
-  return {
-    name: value.name || value.id,
-    providerId: value.providerID,
-    modelId: value.id,
-    variants: Object.keys(value.variants || {})
-  };
-}
-
-export function messageFromJson(value: ApiMessage): Message | null {
-  const text = value.parts
-    .filter((part) => part.type === "text")
-    .map((part) => part.text || "").join("");
-  if (value.info.role === "user") {
-    return { id: value.info.id, role: "You", text, complete: true };
-  }
-  const complete = Boolean(value.info.time.completed);
-  const model = value.info.providerID && value.info.modelID
-    ? {
-        providerID: value.info.providerID,
-        id: value.info.modelID,
-        ...(value.info.variant ? { variant: value.info.variant } : {})
-      }
-    : undefined;
-  return text || !complete
-    ? { id: value.info.id, role: "OpenCode", text, complete, model }
-    : null;
 }
