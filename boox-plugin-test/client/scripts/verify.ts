@@ -43,7 +43,8 @@ try {
   });
   const model = { providerId: MOCK_MODEL.providerID, modelId: MOCK_MODEL.id, variant: "high" };
 
-  check("checkConnection", Boolean((await client.checkConnection()).version));
+  const connection = await client.checkConnection();
+  check("checkConnection", Boolean(connection.version), connection);
   const wrong = await createReadingClient({ ...config, password: "wrong" }).checkConnection()
     .then(() => "", (error: Error) => error.message);
   check("wrong password is a readable 401", wrong.includes("HTTP 401"), wrong);

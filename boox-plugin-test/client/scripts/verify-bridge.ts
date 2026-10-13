@@ -1,6 +1,6 @@
 // Runs the built Android bundle (app/src/main/assets/reading-client.js) in headless Chrome against
-// the throwaway mock-backed server. The page is navigated to the server's own origin and the bundle
-// is injected there, which is what the app's WebView does with loadDataWithBaseURL, and
+// the throwaway mock-backed server. The page lives at the server's own origin and carries the bundle
+// in an inline script, which is what the app's WebView gets from loadDataWithBaseURL, and
 // window.AndroidHost is stubbed with the three callbacks the app provides.
 //
 //   bun run build:android && bun run verify:bridge
@@ -113,9 +113,11 @@ try {
   await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
   let nextId = 0;
   const waiting = new Map<number, (message: any) => void>();
+  const listeners = new Map<string, (params: any) => void>();
   socket.onmessage = (message) => {
     const data = JSON.parse(String(message.data));
     if (data.id) waiting.get(data.id)?.(data);
+    else listeners.get(data.method)?.(data.params);
   };
   const send = (method: string, params: Record<string, unknown> = {}) => new Promise<any>((resolve, reject) => {
     const id = ++nextId;
@@ -123,15 +125,25 @@ try {
     socket.send(JSON.stringify({ id, method, params }));
   });
 
-  // Any URL on the server gives the page the server's origin; the 401 body itself is irrelevant.
+  // Answer the page load ourselves with a document that carries the bundle in an inline classic
+  // <script>, under the server's URL. That is what WebView.loadDataWithBaseURL(serverUrl, html, ...)
+  // does: the server's origin without the server's own web UI or its Content-Security-Policy.
+  const pageUrl = `${server.baseUrl}/reading-context-bridge`;
+  const html = `<!doctype html><title>bridge</title><script>${bundle}</script>`;
+  listeners.set("Fetch.requestPaused", (params) => void send("Fetch.fulfillRequest", {
+    requestId: params.requestId,
+    responseCode: 200,
+    responseHeaders: [{ name: "content-type", value: "text/html; charset=utf-8" }],
+    body: Buffer.from(html).toString("base64")
+  }));
   await send("Page.enable");
-  await send("Page.navigate", { url: `${server.baseUrl}/reading-context-bridge` });
+  await send("Fetch.enable", { patterns: [{ urlPattern: pageUrl }] });
+  await send("Page.navigate", { url: pageUrl });
   await sleep(500);
-  const origin = await send("Runtime.evaluate", { expression: "location.origin", returnByValue: true });
-  check("page origin is the server", origin.result.value === server.baseUrl, origin.result.value);
-
-  const loaded = await send("Runtime.evaluate", { expression: `${bundle}\n;typeof window.ReadingBridge.call`, returnByValue: true });
-  check("bundle loads as a classic script", loaded.result?.value === "function", loaded.exceptionDetails?.exception?.description);
+  await send("Fetch.disable");
+  const loaded = await send("Runtime.evaluate", { expression: "typeof window.ReadingBridge?.call + ' ' + location.origin", returnByValue: true });
+  check("bundle loads from an inline classic script on the server origin",
+    loaded.result?.value === `function ${server.baseUrl}`, loaded.result?.value);
 
   const config = { baseUrl: server.baseUrl, password: server.password, directory: server.directory };
   const model = { providerId: MOCK_MODEL.providerID, modelId: MOCK_MODEL.id, variant: "low" };

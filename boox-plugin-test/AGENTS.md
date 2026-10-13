@@ -1,6 +1,10 @@
 ./README.md has build / install instructions
 commit after you finish a code change
-The production server uses regular OpenCode `1.18.13`, not OpenCode V2. Use the installed `@opencode-ai/sdk@1.18.13` generated types for its API contract. `./docs/opencode-v2-openapi.json` describes only the retired beta server and is retained for migration history; do not use it for current client work.
+The production server is OpenCode Server v2 (`@opencode/cli`, version pinned in `server/deploy.sh`). All OpenCode access goes through the shared client in `./client` (`reading-context-client`, over the official `@opencode/client` pinned to the same version); do not add direct HTTP calls to the Chrome extension or the Android app. `./client/README.md` documents its API and the Android WebView bridge contract. Use the `@opencode/client` types, or the running server's `/openapi.json`, for the API contract.
+After changing `client/src` or the `@opencode/client` pin, run `cd client && bun run check && bun run build:android` and commit the rebuilt `app/src/main/assets/reading-client.js` with the change.
+Never test against a real model or the real server. `cd client && bun run verify` and `bun run verify:bridge` start a throwaway local server with isolated data and a fake provider; `bun run scripts/dev-server.ts` keeps one running for manual work.
+In v2 a bare `opencode` command talks to a per-user background service. To address the reading server, pass `--server <url>` with `OPENCODE_SERVER_PASSWORD` set.
+`server/runtime/opencode.json` is deny-by-default (`"*": "deny"` first, then allows; the last matching rule wins). Keep it that way: v2 agents otherwise start with every tool allowed.
 
 ## Palma 2 device-test preflight
 

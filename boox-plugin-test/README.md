@@ -1,6 +1,6 @@
 # Reading Context
 
-Android reading assistant for a BOOX Palma 2. It captures a highlight plus surrounding context from Kindle, Substack, or Google Chrome, sends that context to a dedicated OpenCode `1.18.13` server over Tailscale, and provides persistent reading chats on the device.
+Android reading assistant for a BOOX Palma 2. It captures a highlight plus surrounding context from Kindle, Substack, or Google Chrome, sends that context to a dedicated OpenCode Server v2 (`@opencode/cli` `2.0.27`) over Tailscale, and provides persistent reading chats on the device.
 
 ## Architecture
 
@@ -8,10 +8,18 @@ Android reading assistant for a BOOX Palma 2. It captures a highlight plus surro
 Kindle, Substack, or Google Chrome on Palma 2
   -> Android accessibility service
   -> Reading Context Android app
+  -> shared TypeScript client (client/, in a hidden WebView)
   -> HTTP Basic over Tailscale
-  -> OpenCode 1.18.13 on Raspberry Pi
+  -> OpenCode Server v2 on Raspberry Pi
   -> configured model provider
+
+Desktop Chrome page
+  -> Chrome extension side panel
+  -> the same shared TypeScript client
+  -> the same server and chats
 ```
+
+Both front ends talk to OpenCode only through `client/`, a small normalized layer over the official `@opencode/client`. The extension imports it; the Android app ships it as one bundled script (`app/src/main/assets/reading-client.js`) and calls it across a JavaScript bridge. The API and the bridge contract are in `client/README.md`.
 
 The deployed components are intentionally isolated:
 
@@ -53,14 +61,17 @@ Kindle, Substack, and Google Chrome (`com.android.chrome`, not BOOX NeoBrowser) 
 
 Kindle retains copied selections as annotations. Automatic deletion is intentionally not attempted because Copy closes and invalidates the selection toolbar before its accessible `Delete Highlight` action can run. See `progress_20260801_113544.md` for tested alternatives.
 
-Follow-on work: investigate a generic, explicitly triggered capture for other apps, and migrate the server/client contract to OpenCode V2 separately. Neither is implemented by the Chrome integration; the deployed server and client still use regular OpenCode `1.18.13`.
+Follow-on work: investigate a generic, explicitly triggered capture for other apps.
 
 ## Repository Layout
 
 ```text
 app/                                  Android application
+app/src/main/assets/reading-client.js Built shared client for the Android WebView
+client/                               Shared OpenCode v2 client, Android bridge, mock harness
 chrome-plugin/                        Chrome extension (Manifest V3)
-server/deploy.sh                      Repeatable Pi deployment
+package.json                          bun workspace: client + chrome-plugin
+server/deploy.sh                      Repeatable Pi deployment (live or staging)
 server/palma2-opencode.service        systemd unit
 server/runtime/opencode.json          Checked-in OpenCode policy
 server/runtime/AGENTS.md               Reading-assistant instructions
@@ -74,19 +85,22 @@ The remote deployment becomes:
   .gitignore
   AGENTS.md
   opencode.json
+  cli/                 pinned @opencode/cli install
   workdir/
   state/
     server.env
-    share/opencode/
+    share/opencode/    sessions, credentials, logs (XDG_DATA_HOME)
+    state/             XDG_STATE_HOME
+    cache/             XDG_CACHE_HOME
 ```
 
-`opencode.json`, `AGENTS.md`, and `.gitignore` are copied from `server/runtime/` and committed into a Git repository on the Pi. `workdir/` and `state/` are excluded from that repository.
+`opencode.json`, `AGENTS.md`, and `.gitignore` are copied from `server/runtime/` and committed into a Git repository on the Pi. `cli/`, `workdir/`, and `state/` are excluded from that repository.
 
 ## Server Policy
 
 OpenCode starts with `workdir/` as its location. It discovers the parent `opencode.json` and `AGENTS.md`, but relative mutations cannot escape the active location.
 
-The checked-in server policy allows only:
+The checked-in server policy is deny-by-default and allows only:
 
 - `read`
 - `glob`
@@ -94,7 +108,13 @@ The checked-in server policy allows only:
 - `webfetch`
 - `websearch`
 
-This denies shell commands, file edits, subagents, skills, and interactive questions. The reading instructions also tell the model to treat book text as quoted context rather than instructions.
+```json
+"permission": { "*": "deny", "read": "allow", "glob": "allow", "grep": "allow", "webfetch": "allow", "websearch": "allow" }
+```
+
+OpenCode v2 turns this into an ordered rule list where the last matching rule wins, so `"*": "deny"` must stay the first key. Its built-in agents start from "allow everything", which is why the policy denies by default instead of naming what to forbid: a v1-style file that only denied `edit` and `bash` left the model with the `question`, `skill`, `subagent`, and `execute` tools under v2. With this policy the model is offered exactly the five tools above; `cd client && bun run verify` asserts that against a fake provider. The reading instructions also tell the model to treat book text as quoted context rather than instructions.
+
+`autoupdate` is off in the same file so the pinned server does not replace itself.
 
 Changes to `server/runtime/` do nothing until `./server/deploy.sh` is run.
 
@@ -105,23 +125,16 @@ The tested host is the `pi` user on `raspberrypi.example.ts.net`. It needs:
 - Tailscale connected with IPv4 `100.64.0.10`
 - Passwordless `sudo` for systemd installation and control
 - `git`, `curl`, `openssl`, `rsync`, and SSH access
-- Bun and the regular OpenCode ARM64 package
+- Bun (the deploy script installs the pinned OpenCode CLI with it)
 - An SSH alias named `your-pi`, unless `PALMA_SERVER_HOST` is supplied
 
-The current native binary is:
+The server binary is private to the deployment, so it does not share a version with any other OpenCode install on the Pi:
 
 ```text
-/home/pi/.bun/bin/opencode
+/home/pi/deploys/palma2-opencode/cli/node_modules/.bin/opencode
 ```
 
-The deployment is pinned to `1.18.13` by `server/deploy.sh`.
-
-Install the pinned package with Bun when needed:
-
-```sh
-ssh your-pi '/home/pi/.bun/bin/bun install -g --trust opencode-ai@1.18.13'
-ssh your-pi '/home/pi/.bun/bin/opencode --version'
-```
+`server/deploy.sh` installs `@opencode/cli` there, pinned to `2.0.27` unless `OPENCODE_VERSION` is set, and refuses to continue if the installed binary reports another version.
 
 ## Server Deployment
 
@@ -140,14 +153,42 @@ PALMA_SERVER_HOST=pi@raspberrypi.example.ts.net ./server/deploy.sh
 The script performs these operations:
 
 1. Creates `/home/pi/deploys/palma2-opencode`.
-2. Synchronizes checked-in runtime files while preserving `.git/`, `workdir/`, and `state/`.
-3. Creates the workdir and isolated OpenCode data directory.
+2. Synchronizes checked-in runtime files while preserving `.git/`, `cli/`, `workdir/`, and `state/`.
+3. Creates the workdir and isolated OpenCode data directories.
 4. Generates `state/server.env` with mode `0600` on first deployment.
 5. Seeds a private `auth.json` from the Pi user's existing OpenCode data only when no isolated copy exists.
-6. Initializes the deployment root as a Git repository and commits runtime configuration.
-7. Installs and enables `palma2-opencode.service`.
-8. Restarts the service.
-9. Polls the authenticated `/global/health` and `/session` endpoints before returning success.
+6. Installs the pinned `@opencode/cli` into `cli/` and checks its version.
+7. Initializes the deployment root as a Git repository and commits runtime configuration.
+8. Stops `palma2-opencode.service` and writes `/home/pi/palma2-opencode-before-v2-<timestamp>.tgz`, a tarball of `state/` as it was.
+9. Installs, enables, and restarts `palma2-opencode.service`.
+10. Polls the authenticated `/api/info` and `/api/session` endpoints, then prints the v1 history migration status (`/api/experimental/migration/v1`) and how many chats the server lists for the workdir.
+
+The first v2 start on a state directory written by OpenCode `1.18` migrates the old session history. The migration status is one of `required`, `running` (with progress), `completed`, or `error`. Step 8's tarball is the way back: stop the service, restore `state/` from it, and redeploy the previous server.
+
+### Staging
+
+```sh
+STAGING=1 ./server/deploy.sh
+```
+
+Staging runs the same server from a copy of the live data, to try a version or the history migration first. It differs from a live deploy in these ways and never stops, restarts, or reconfigures the live service:
+
+| | Live | Staging |
+| --- | --- | --- |
+| Deployment root | `/home/pi/deploys/palma2-opencode` | `/home/pi/deploys/palma2-opencode-staging` |
+| systemd unit | `palma2-opencode.service` (enabled at boot) | `palma2-opencode-staging.service` (started, not enabled) |
+| Port | `41137` | `41138` |
+| State | kept in place, tarball taken first | copied from live on the first run |
+
+The state copy is taken while live keeps running; SQLite databases are copied through a `VACUUM INTO` snapshot so the copy is consistent. Later staging runs keep the staging state; `STAGING_REFRESH=1 STAGING=1 ./server/deploy.sh` discards it and copies live again. The copy includes `server.env`, so staging has the live password.
+
+Migrated chats keep the directory they were created in. To look at them on staging, point a client at port `41138` but leave its workspace directory at the live `/home/pi/deploys/palma2-opencode/workdir`; the deploy output reports the chat count for that directory. New chats created that way are governed by the policy file in the live root, not the staging one.
+
+Remove staging when done:
+
+```sh
+ssh your-pi 'sudo systemctl stop palma2-opencode-staging.service; sudo rm -f /etc/systemd/system/palma2-opencode-staging.service; sudo systemctl daemon-reload; rm -rf /home/pi/deploys/palma2-opencode-staging'
+```
 
 The HTTP password is stable across normal deploys and restarts because it lives in `state/server.env`. It is not printed by the deploy script or committed to Git.
 
@@ -183,10 +224,10 @@ ssh your-pi 'tail -f /home/pi/deploys/palma2-opencode/state/share/opencode/log/o
 Run an authenticated health check from the Pi without displaying the password:
 
 ```sh
-ssh your-pi '. /home/pi/deploys/palma2-opencode/state/server.env; curl --fail --user "opencode:$OPENCODE_SERVER_PASSWORD" http://100.64.0.10:41137/global/health'
+ssh your-pi '. /home/pi/deploys/palma2-opencode/state/server.env; curl --fail --user "opencode:$OPENCODE_SERVER_PASSWORD" http://100.64.0.10:41137/api/info'
 ```
 
-An unauthenticated request returning `401 Unauthorized` with `WWW-Authenticate: Basic` proves the server is reachable but does not prove the password works.
+An unauthenticated `/api/...` request returning `401 Unauthorized` proves the server is reachable but does not prove the password works. Paths outside `/api` answer with OpenCode's own web UI shell without authentication, so do not use `/` as a health check.
 
 ## Debug Latest Session Usage
 
@@ -203,30 +244,29 @@ SESSION_ID=$(curl --fail --silent --get --user "opencode:$PASSWORD" \
   --data-urlencode 'limit=1' \
   --data-urlencode 'order=desc' \
   --data-urlencode "directory=$DIRECTORY" \
-  "$BASE_URL/session" | jq -r '.[0].id')
+  "$BASE_URL/api/session" | jq -r '.data[0].id')
 
 printf 'Latest session: %s\n' "$SESSION_ID"
 
 curl --fail --silent --user "opencode:$PASSWORD" \
-  "$BASE_URL/session/$SESSION_ID" \
-  | jq '{id, title, time}'
+  "$BASE_URL/api/session/$SESSION_ID" \
+  | jq '.data | {id, title, model, cost, tokens, outcome, time}'
 
 curl --fail --silent --get --user "opencode:$PASSWORD" \
   --data-urlencode 'limit=50' \
   --data-urlencode 'order=asc' \
-  "$BASE_URL/session/$SESSION_ID/message" \
-  | jq '[.[] | {
-      role: .info.role,
-      id: .info.id,
-      provider: .info.providerID,
-      model: .info.modelID,
-      cost: .info.cost,
-      tokens: .info.tokens,
-      tools: [.parts[]? | select(.type == "tool") | .tool]
+  "$BASE_URL/api/session/$SESSION_ID/message" \
+  | jq '[.data[] | select(.type == "assistant") | {
+      id,
+      model,
+      finish,
+      cost,
+      tokens,
+      tools: [.content[]? | select(.type == "tool") | .name]
     }]'
 ```
 
-Regular OpenCode session rows do not contain cumulative usage. Sum `info.tokens` and `info.cost` across assistant messages. Multiple assistant entries usually indicate an agent loop: for example, one step requests web searches and a later step receives the search results and writes the answer. `cache.read` records provider-reported reused context and is separate from the captured page-context estimate shown by the Chrome extension.
+A v2 session row carries its own cumulative `cost` and `tokens`, which is what both front ends display. The total also includes the server's title generation, so it can be larger than the sum over assistant messages. Multiple assistant entries usually indicate an agent loop: for example, one step requests web searches and a later step receives the search results and writes the answer. `cache.read` records provider-reported reused context and is separate from the captured page-context estimate shown by the Chrome extension.
 
 ## Authentication
 
@@ -242,7 +282,7 @@ Read it when configuring the Android app:
 ssh your-pi "sed -n 's/^OPENCODE_SERVER_PASSWORD=//p' /home/pi/deploys/palma2-opencode/state/server.env"
 ```
 
-The Android app stores the password in its private SharedPreferences and sends `Authorization: Basic base64(opencode:<password>)`. It is not stored in this repository.
+The Android app stores the password in its private SharedPreferences; the shared client sends `Authorization: Basic base64(opencode:<password>)` on every request. It is not stored in this repository.
 
 To rotate the password:
 
@@ -258,40 +298,39 @@ After rotation, update `SERVER PASSWORD` in the app's `SETTINGS` screen.
 
 Provider credentials are server-side and separate from the HTTP server password. The isolated deployment keeps its provider credentials under `state/share/opencode/`.
 
-Connect the canonical CLI to the running production server:
+Point the deployment's own CLI at the running production server. In v2 a bare `opencode` talks to a per-user background service, not to this server, so always pass `--server`:
 
 ```sh
 ssh -t your-pi '
   set -a
   . /home/pi/deploys/palma2-opencode/state/server.env
   set +a
-  /home/pi/.bun/bin/opencode attach \
-    http://100.64.0.10:41137 \
-    --dir /home/pi/deploys/palma2-opencode/workdir
+  cd /home/pi/deploys/palma2-opencode/workdir
+  /home/pi/deploys/palma2-opencode/cli/node_modules/.bin/opencode \
+    --server http://100.64.0.10:41137
 '
 ```
 
-Run `/connect` in the attached TUI to update credentials on the production
-server. Do not run bare `opencode` or `opencode auth login` for this purpose;
-those commands can use the Pi user's separate default data directory.
+The CLI reads the server password from `OPENCODE_SERVER_PASSWORD`. Connect or update provider credentials from the TUI it opens. Do not run a bare `opencode` or `opencode auth` for this purpose; those use the Pi user's separate default data.
 
-In the TUI:
-
-1. Run `/connect`.
-2. Select OpenAI or the intended provider.
-3. Complete the offered browser or headless OAuth flow.
-4. Run `/models` and record the exact provider and model IDs.
-5. Run `/variants` and verify that `high` exists for that model.
-
-Do not guess model identifiers. The requested GPT-5.6 Luna High model has not yet been resolved against this server's catalog.
-
-Inspect enabled models and the current default after connection:
+List the models the server offers for the workdir, without the TUI:
 
 ```sh
-ssh your-pi '. /home/pi/deploys/palma2-opencode/state/server.env; curl --silent --get --user "opencode:$OPENCODE_SERVER_PASSWORD" --data-urlencode "directory=/home/pi/deploys/palma2-opencode/workdir" http://100.64.0.10:41137/config/providers'
+ssh your-pi '
+  set -a; . /home/pi/deploys/palma2-opencode/state/server.env; set +a
+  cd /home/pi/deploys/palma2-opencode/workdir
+  /home/pi/deploys/palma2-opencode/cli/node_modules/.bin/opencode models --server http://100.64.0.10:41137
+'
 ```
 
-If the reading app must always use a specific variant, pass the exact `providerID`, `modelID`, and `variant` in each prompt after confirming them from the server catalog.
+or over HTTP, with variants:
+
+```sh
+ssh your-pi '. /home/pi/deploys/palma2-opencode/state/server.env; curl --silent --get --user "opencode:$OPENCODE_SERVER_PASSWORD" --data-urlencode "location[directory]=/home/pi/deploys/palma2-opencode/workdir" http://100.64.0.10:41137/api/model' \
+  | jq -r '.data[] | select(.status == "active" and .enabled) | "\(.providerID)/\(.id)  variants: \(.variants | map(.id) | join(","))"'
+```
+
+Do not guess model identifiers; pick them from this list. In v2 the model is a property of the chat: both front ends set the model and variant chosen in their settings when a chat is created, and follow-up messages keep that chat's model.
 
 ## Server Persistence
 
@@ -301,7 +340,7 @@ OpenCode state is redirected with `XDG_DATA_HOME` to:
 /home/pi/deploys/palma2-opencode/state/share/opencode/
 ```
 
-This contains session history, SQLite data, logs, and provider state. The HTTP password is adjacent at `state/server.env`. Deployment preserves the entire `state/` directory.
+This contains session history, SQLite data, logs, and provider state. `XDG_STATE_HOME` and `XDG_CACHE_HOME` point at `state/state` and `state/cache`, and the HTTP password is adjacent at `state/server.env`. Deployment preserves the entire `state/` directory. OpenCode's global configuration directory is not redirected: the Pi user's `~/.config/opencode`, if present, still applies on top of the checked-in policy.
 
 Back up the server while it is stopped:
 
@@ -316,24 +355,27 @@ Do not edit or delete the SQLite database while the service is running. Back up 
 
 ## OpenCode API Usage
 
-The Android client currently uses these regular OpenCode endpoints:
+Neither front end issues HTTP requests itself. Both call the shared client in `client/`, which wraps the official `@opencode/client` (pinned in `client/package.json` to the server's version) and uses these OpenCode v2 endpoints:
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
-| `GET` | `/global/health` | Test settings |
-| `GET` | `/config/providers` | List available models |
-| `POST` | `/session` | Create a reading chat at the configured location |
-| `GET` | `/session` | List recent chats |
-| `POST` | `/session/{id}/prompt_async` | Send initial and follow-up messages |
-| `GET` | `/session/{id}/message` | Load conversation messages |
-| `POST` | `/session/{id}/abort` | Stop a response |
-| `GET` | `/event` | Stream server events |
+| `GET` | `/api/info` | Test settings |
+| `GET` | `/api/model` | List available models |
+| `POST` | `/api/session` | Create a reading chat at the configured location, with its model |
+| `GET` | `/api/session` | List recent chats with their cost and token totals |
+| `GET` | `/api/session/{id}` | One chat's model and totals |
+| `GET` | `/api/session/active` | Which chats the server is working on |
+| `POST` | `/api/session/{id}/model` | Change a chat's model |
+| `POST` | `/api/session/{id}/prompt` | Send initial and follow-up messages |
+| `GET` | `/api/session/{id}/message` | Load conversation messages |
+| `POST` | `/api/session/{id}/interrupt` | Stop a response |
+| `GET` | `/api/event` | Stream server events |
 
-Responses update from OpenCode's authenticated server-sent event stream. The app reconnects after transient stream interruptions and reloads the session to recover any events missed while disconnected.
+The running server publishes its full contract at `/openapi.json` (authenticated); no copy is kept in this repository.
 
-Responses are direct JSON values rather than `{ "data": ... }` envelopes. Messages contain `info` and `parts`; assistant provider, model, token, and cost fields are under `info`. SSE events use `{ "type", "properties" }`, incremental text arrives as `message.part.delta`, completion is signaled by `session.idle`, and failures use `session.error`.
+Differences from OpenCode `1.18` that shaped the client: the model is set on the session rather than sent with each prompt; messages are one flat typed list (`user`, `assistant`, `idle`, ...) with assistant text in `content[]`; a session carries its own `cost` and `tokens`; and `/api/event` is a single stream for every location, with granular events such as `session.text.delta`, `session.tool.called`, and `session.execution.succeeded`. The shared client filters that stream by session, reduces it to a handful of event kinds, reconnects after interruptions, and tells the UI to reload the conversation to recover anything missed while disconnected.
 
-After upgrading OpenCode, verify health, model loading, session creation, prompting, message parsing, interruption, event streaming, and session listing before relying on the reader.
+After upgrading OpenCode, run `cd client && bun run verify && bun run build:android && bun run verify:bridge`. These exercise connection, model loading, session creation, prompting, streaming, message parsing, interruption, event reconnection, session listing, and the tool policy against a throwaway local server with a fake provider; no real model is involved. See `client/README.md`.
 
 ## Android Prerequisites
 
@@ -355,7 +397,7 @@ On the Palma 2, USB debugging is under `Settings -> More Settings -> USB Debug M
 The Palma and Raspberry Pi must both be connected to the same Tailscale network. A basic reachability check from the device is:
 
 ```sh
-"$ADB" shell 'printf "GET /global/health HTTP/1.0\r\nHost: raspberrypi.example.ts.net\r\n\r\n" | toybox nc -w 5 raspberrypi.example.ts.net 41137 | head -1'
+"$ADB" shell 'printf "GET /api/info HTTP/1.0\r\nHost: raspberrypi.example.ts.net\r\n\r\n" | toybox nc -w 5 raspberrypi.example.ts.net 41137 | head -1'
 ```
 
 `HTTP/1.1 401 Unauthorized` is expected for this unauthenticated connectivity test.
@@ -387,13 +429,13 @@ Before installing on an existing device, confirm the APK uses `dev.kkrausse.kind
 
 ## Chrome Extension
 
-`chrome-plugin/` is a separate desktop Chrome extension; Android Chrome uses the accessibility-service source profile described above, not this extension. The extension is a Bun-built TypeScript and React Manifest V3 extension that connects to the same server and workspace as the Android app. React is limited to the side panel; the background and content scripts remain plain TypeScript. Sessions are shared through OpenCode, while the Chrome model, template, prompt presets, and credentials are stored separately in `chrome.storage.local`.
+`chrome-plugin/` is a separate desktop Chrome extension; Android Chrome uses the accessibility-service source profile described above, not this extension. The extension is a Bun-built TypeScript and React Manifest V3 extension that connects to the same server and workspace as the Android app, through the same shared client (`client/`). React is limited to the side panel; the background and content scripts remain plain TypeScript. Sessions are shared through OpenCode, while the Chrome model, template, prompt presets, and credentials are stored separately in `chrome.storage.local`.
 
 Install it for development:
 
 1. Open `chrome://extensions`.
 2. Enable Developer mode.
-3. Run `cd chrome-plugin && bun install && bun run build` from the repository root.
+3. Run `bun install && cd chrome-plugin && bun run build` from the repository root. `bun install` covers the whole workspace, including the shared client.
 4. Choose `Load unpacked` and select this repository's `chrome-plugin/dist/` directory.
 5. Open the extension side panel, enter the server password under `Settings`, then press `Save and test`.
 
@@ -401,7 +443,7 @@ After changing extension code, rerun `bun run build`, click the extension's relo
 
 Open the extension side panel and highlight text on a normal website. Each selection automatically updates `Ask the page` with the highlighted passage, page title and URL, and up to 5,000 words from the nearest readable `article` or `main` region. Clearing the page selection also removes the pending highlight from the side panel and its next prompt. If no readable region exists, the extension falls back to body text. Choose a quick question or write a custom one to start a shared OpenCode chat.
 
-In chat history, reading prompts show the question and highlighted passage in a compact card, with the full page context available from `View page context`. Each OpenCode response shows the exact provider, model ID, and variant reported with that assistant message. OpenCode responses render as Markdown and update directly from the authenticated `/event` stream. If text is selected inside a streaming response, that message's DOM remains stable while incoming text buffers; rendering catches up when the selection clears. If the volatile stream disconnects, the extension reconnects and reloads canonical messages to recover missed events. A `Stop` action interrupts a stalled server execution and restores the composer. A compact footer sums input, output, reasoning, cache read/write, and USD cost across the session's assistant messages. New messages, streamed response text, and new inline highlights automatically scroll into view while the chat remains pinned to the bottom. Scrolling away or selecting text suspends auto-scroll; manually reaching the bottom pins the chat to updates again. The persistent header remains available while prompts and responses are loading, so `New`, `Chats`, and `Settings` can be opened at any time without discarding the current capture. If a conversation is open, a new selection appears in the shared composer. The compact quick-question buttons and normal `Send` action automatically include that highlight. The adjacent `New chat` action opens the normal new-chat form with the latest highlight and its freshly captured page context. From other screens, selecting text opens `New`, including when the capture came from another tab.
+In chat history, reading prompts show the question and highlighted passage in a compact card, with the full page context available from `View page context`. Each OpenCode response shows the exact provider, model ID, and variant reported with that assistant message. OpenCode responses render as Markdown and update directly from the server's authenticated event stream. If text is selected inside a streaming response, that message's DOM remains stable while incoming text buffers; rendering catches up when the selection clears. If the volatile stream disconnects, the shared client reconnects and the extension reloads canonical messages to recover missed events. A `Stop` action interrupts a stalled server execution and restores the composer. A compact footer shows the server's running totals for the chat: input, output, reasoning, cache read/write, and USD cost, updated while a response streams. New messages, streamed response text, and new inline highlights automatically scroll into view while the chat remains pinned to the bottom. Scrolling away or selecting text suspends auto-scroll; manually reaching the bottom pins the chat to updates again. The persistent header remains available while prompts and responses are loading, so `New`, `Chats`, and `Settings` can be opened at any time without discarding the current capture. If a conversation is open, a new selection appears in the shared composer. The compact quick-question buttons and normal `Send` action automatically include that highlight. The adjacent `New chat` action opens the normal new-chat form with the latest highlight and its freshly captured page context. From other screens, selecting text opens `New`, including when the capture came from another tab.
 
 The checked-in host permission covers the default Tailscale server. If the server URL is changed, Chrome asks for access to the new origin when loading models or saving settings.
 
@@ -412,6 +454,7 @@ Extension and API failures are retained as a bounded local diagnostics log. Open
 Run the extension's local checks with:
 
 ```sh
+bun install
 cd chrome-plugin
 bun test
 bun run check
@@ -432,7 +475,7 @@ Open `SETTINGS` in Reading Context and configure:
 | Message template | Surrounding context, highlight, then question |
 | Pre-filled prompts | Explain terms, why it matters, historical context |
 
-The model list is loaded from the server's active catalog. The message template is literal text with `{{highlight}}`, `{{surrounding_context}}`, and `{{question}}` placeholders. The built-in template wraps source material and instructions in XML-style elements. The surrounding context is chronological and retains the latest 5,000 words. Existing custom templates using `{{previous_page}}` and `{{current_page}}` continue to work, while former built-in templates upgrade automatically. In chat history, structured prompts show the question and highlight immediately and keep surrounding context collapsed behind an expandable button. Pre-filled prompt labels and text can be edited, added, removed, and reordered directly in Settings. Press `SAVE AND TEST` to persist all settings. Existing chats retain their original model and messages; these selections apply to new chats.
+The model list is loaded from the server's active catalog. The message template is literal text with `{{highlight}}`, `{{surrounding_context}}`, and `{{question}}` placeholders. The built-in template wraps source material and instructions in XML-style elements. The surrounding context is chronological and retains the latest 5,000 words. Existing custom templates using `{{previous_page}}` and `{{current_page}}` continue to work, while former built-in templates upgrade automatically. In chat history, structured prompts show the question and highlight immediately and keep surrounding context collapsed behind an expandable button. Pre-filled prompt labels and text can be edited, added, removed, and reordered directly in Settings. Press `SAVE AND TEST` to persist all settings. Existing chats retain their original model and messages; the model and variant are fixed when a chat is created, so these selections apply to new chats.
 
 The manifest allows cleartext traffic because the endpoint is HTTP over Tailscale. Do not point the app at an untrusted cleartext network endpoint.
 
@@ -495,11 +538,11 @@ ssh your-pi 'sudo systemctl status palma2-opencode.service --no-pager -l'
 ssh your-pi 'sudo journalctl -u palma2-opencode.service -n 100 --no-pager'
 ```
 
-Common causes are a missing native binary after upgrade, a changed Tailscale IP, a missing `workdir/`, or an invalid `opencode.json`.
+Common causes are a missing binary under `cli/` after a failed install, a changed Tailscale IP, a missing `workdir/`, or an invalid `opencode.json`.
 
 ### Server answers but no model is available
 
-Inspect `/config/providers` and reconnect the provider through the TUI attached to the production server.
+List the models as shown under **Model Setup** and reconnect the provider through the CLI pointed at the production server. A list that is empty only right after a restart fills in within a couple of seconds.
 
 ### Chats disappear
 
@@ -533,13 +576,15 @@ These files contain book prose. Keep them local and remove or gate diagnostic pe
 
 ## Upgrade Procedure
 
-1. Back up `state/`.
-2. Update the pinned regular OpenCode version in `server/deploy.sh`.
-3. Confirm `/home/pi/.bun/bin/opencode` reports that version.
-4. Run `./server/deploy.sh` to reinstall and restart the service.
-5. Verify authenticated health and model catalog endpoints.
-6. Build and lint the Android app against any changed API contract.
-7. Install the APK with `adb install -r`.
+The server, the official client library, and the bundled Android script move together.
+
+1. Set the new version as the `OPENCODE_VERSION` default in `server/deploy.sh` and as the exact `@opencode/client` version in `client/package.json`, then run `bun install`.
+2. Run `cd client && bun run check && OPENCODE_BIN=<new opencode binary> bun run verify`. Fix anything the new contract broke in `client/src`.
+3. Run `bun run build:android && OPENCODE_BIN=<new opencode binary> bun run verify:bridge` and commit the rebuilt `app/src/main/assets/reading-client.js`.
+4. Run `bun test`, `bun run check`, and `bun run build` in `chrome-plugin/`.
+5. Run `STAGING=1 ./server/deploy.sh` and check the staging server on port `41138`.
+6. Run `./server/deploy.sh`. It backs up `state/` before restarting.
+7. Build and lint the Android app, install the APK with `adb install -r`, and reload the Chrome extension.
 8. Test capture, a new session, a reply, and prior-session loading.
 
 Keep production pinned to a known-good OpenCode version and validate API compatibility before upgrading.
