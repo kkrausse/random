@@ -378,6 +378,18 @@ Differences from OpenCode `1.18` that shaped the client: the model is set on the
 
 After upgrading OpenCode, run `cd client && bun run verify && bun run build:android && bun run verify:bridge`. These exercise connection, model loading, session creation, prompting, streaming, message parsing, interruption, event reconnection, session listing, and the tool policy against a throwaway local server with a fake provider; no real model is involved. See `client/README.md`.
 
+## Android OpenCode Bridge
+
+`OpenCodeClient.java` is not an HTTP client. It owns one Android System WebView that is never shown, loads `assets/reading-client.js` into it with the server URL as the page's base URL (so the script's `fetch` calls are same-origin), and passes calls and events across the contract in `client/README.md`. The native screens are unchanged.
+
+- Calls block and belong on a background thread (`MainActivity` uses its single `network` executor); a call from the main thread throws rather than deadlocking. The WebView is only touched on the main thread.
+- One page serves one set of connection settings. Saving a different server URL, password, or directory discards the WebView and loads a new one on the next call.
+- The model is set when a chat is created. A follow-up in an older chat switches that chat to the model currently chosen in Settings before sending.
+- A missing or disabled System WebView, a script the WebView cannot run, and a renderer that dies all show as a readable message in the app's status line, and the next call starts a fresh WebView. `adb logcat -s ReadingBridge` shows page loads, script errors, and why a WebView was dropped.
+- Safe Browsing is turned off for this WebView: its only host is the reader's own server.
+
+On a device, check the WebView version (`adb shell dumpsys webviewupdate | head -4`); the bundle is ES2020 and needs streaming `fetch`. Do not run this WebView on an Android emulator without hardware acceleration: on the API 33 `google_apis` image under `-accel off`, WebView 109's renderer crashes at startup on any page.
+
 ## Android Prerequisites
 
 The Android SDK is installed without Android Studio:

@@ -41,7 +41,7 @@ import java.util.concurrent.atomic.AtomicLong;
 final class OpenCodeClient {
     private static final String TAG = "ReadingBridge";
     private static final String BUNDLE_ASSET = "reading-client.js";
-    private static final long PAGE_TIMEOUT_MS = 20_000;
+    private static final long PAGE_TIMEOUT_MS = 30_000;
     // The shared client gives up on a request after 120 seconds.
     private static final long CALL_TIMEOUT_MS = 130_000;
     private static final long SUBSCRIBE_READY_MS = 5_000;
@@ -437,6 +437,7 @@ final class OpenCodeClient {
         }
         discardPage("The OpenCode connection settings changed.");
         Page created = new Page(target);
+        Log.d(TAG, "Loading the client for " + target.baseUrl);
         try {
             created.view = createView(created);
             // The document's origin must be the server so the client's fetch calls are
@@ -466,6 +467,9 @@ final class OpenCodeClient {
     private WebView createView(Page owner) {
         WebView view = new WebView(context);
         view.getSettings().setJavaScriptEnabled(true);
+        // The only host this page talks to is the reader's own server. Safe Browsing would check
+        // it through Google Play services first, which a BOOX may not have.
+        view.getSettings().setSafeBrowsingEnabled(false);
         view.addJavascriptInterface(owner, "AndroidHost");
         view.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -481,6 +485,7 @@ final class OpenCodeClient {
         view.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView finished, String url) {
+                Log.d(TAG, "Page finished: " + url);
                 if (page != owner || owner.configureSent) {
                     return;
                 }
@@ -512,6 +517,7 @@ final class OpenCodeClient {
         CompletableFuture<String> configured = new CompletableFuture<>();
         configured.whenComplete((result, error) -> {
             if (error == null) {
+                Log.d(TAG, "Client configured for " + target.config.baseUrl);
                 target.ready.complete(null);
             } else {
                 main.post(() -> {
@@ -553,6 +559,7 @@ final class OpenCodeClient {
         if (old == null) {
             return;
         }
+        Log.w(TAG, "Dropping the WebView: " + message);
         if (old.view != null) {
             old.view.destroy();
             old.view = null;
