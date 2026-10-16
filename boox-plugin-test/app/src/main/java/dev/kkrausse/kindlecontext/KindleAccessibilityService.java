@@ -9,6 +9,7 @@ import android.content.SharedPreferences;
 import android.graphics.Rect;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.text.Spanned;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
@@ -74,16 +75,25 @@ public class KindleAccessibilityService extends AccessibilityService {
             new ReadingSource(CHROME_PACKAGE, "Chrome", "Copy", true, true));
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Runnable settledCapture = this::captureCurrentTree;
     private final Runnable textPoll = new Runnable() {
         @Override
         public void run() {
-            if (activeSource() != null) {
+            // Browsers report page changes as events (see settledCapture); polling them only
+            // repeated a full page walk every TEXT_POLL_MS.
+            ReadingSource source = activeSource();
+            if (source != null && !source.webContent) {
                 captureCurrentTree();
             }
             mainHandler.postDelayed(this, TEXT_POLL_MS);
         }
     };
 
+    // Full accessibility-tree dumps for debugging capture; slow on long pages and they store prose.
+    private static final boolean WRITE_TREE_DIAGNOSTICS = false;
+    private static final long BUTTON_DEBOUNCE_MS = 1_500;
+    private static final long SETTLE_CAPTURE_MS = 800;
+    private long lastButtonClick;
     private AccessibilityButtonController accessibilityButtonController;
     private AccessibilityButtonController.AccessibilityButtonCallback accessibilityButtonCallback;
     private AccessibilityNodeInfo pendingCopyAction;
@@ -97,17 +107,32 @@ public class KindleAccessibilityService extends AccessibilityService {
     @Override
     protected void onServiceConnected() {
         migrateCapturedProse();
+        // Android can connect the same service instance again (for example after the capture setup
+        // is updated). Without this, every connection added another click handler and text poll,
+        // so one K press ran the whole capture several times.
+        if (accessibilityButtonController != null && accessibilityButtonCallback != null) {
+            accessibilityButtonController.unregisterAccessibilityButtonCallback(accessibilityButtonCallback);
+        }
+        mainHandler.removeCallbacks(textPoll);
         accessibilityButtonController = getAccessibilityButtonController();
         accessibilityButtonCallback = new AccessibilityButtonController.AccessibilityButtonCallback() {
             @Override
             public void onClicked(AccessibilityButtonController controller) {
-                AccessibilityNodeInfo root = getRootInActiveWindow();
+                long now = SystemClock.elapsedRealtime();
+                if (now - lastButtonClick < BUTTON_DEBOUNCE_MS) {
+                    return;
+                }
+                lastButtonClick = now;
+                AccessibilityNodeInfo root = readingRoot();
                 ReadingSource source = sourceFor(root == null ? null : root.getPackageName());
                 if (source == null) {
                     Log.i(TAG, "No capturable foreground app");
                     return;
                 }
-                dumpCurrentTree();
+                if (WRITE_TREE_DIAGNOSTICS) {
+                    dumpCurrentTree();
+                }
+                mainHandler.removeCallbacks(settledCapture);
                 captureCurrentTree(source, root);
                 captureSelectedText(source, root);
                 if (!copySelection(source, root)) {
@@ -134,19 +159,25 @@ public class KindleAccessibilityService extends AccessibilityService {
             return;
         }
 
-        String eventDescription = AccessibilityEvent.eventTypeToString(event.getEventType())
-                + " class=" + event.getClassName()
-                + " text=" + event.getText()
-                + " description=" + event.getContentDescription();
-        Log.i(TAG, eventDescription);
         cacheCopyAction(event, source);
         cacheSourceMetadata(event, source);
-        appendEventDump(event);
-        getSharedPreferences(PREFS, MODE_PRIVATE)
-                .edit()
-                .putString(EVENT_KEY, eventDescription)
-                .apply();
-        captureCurrentTree();
+        if (WRITE_TREE_DIAGNOSTICS) {
+            String eventDescription = AccessibilityEvent.eventTypeToString(event.getEventType())
+                    + " class=" + event.getClassName()
+                    + " text=" + event.getText()
+                    + " description=" + event.getContentDescription();
+            Log.i(TAG, eventDescription);
+            appendEventDump(event);
+            getSharedPreferences(PREFS, MODE_PRIVATE)
+                    .edit()
+                    .putString(EVENT_KEY, eventDescription)
+                    .apply();
+        }
+        // Chrome sends a stream of events while a page loads or scrolls, and walking its tree
+        // (thousands of nodes, each fetched from Chrome) on every one made Chrome crawl. Capture
+        // once the page has been still for a moment instead.
+        mainHandler.removeCallbacks(settledCapture);
+        mainHandler.postDelayed(settledCapture, SETTLE_CAPTURE_MS);
     }
 
     @Override
@@ -347,7 +378,7 @@ public class KindleAccessibilityService extends AccessibilityService {
     }
 
     private void dumpCurrentTree() {
-        AccessibilityNodeInfo root = getRootInActiveWindow();
+        AccessibilityNodeInfo root = readingRoot();
         ReadingSource source = sourceFor(root == null ? null : root.getPackageName());
         if (source == null) {
             return;
@@ -459,7 +490,7 @@ public class KindleAccessibilityService extends AccessibilityService {
     }
 
     private void captureCurrentTree() {
-        AccessibilityNodeInfo root = getRootInActiveWindow();
+        AccessibilityNodeInfo root = readingRoot();
         ReadingSource source = sourceFor(root == null ? null : root.getPackageName());
         if (source != null) {
             captureCurrentTree(source, root);
@@ -712,8 +743,29 @@ public class KindleAccessibilityService extends AccessibilityService {
         }
     }
 
+    /**
+     * The reader app's window. Usually the active window, but a BOOX overlay (E-Ink center, the
+     * floating button's own window) can briefly hold focus above it.
+     */
+    private AccessibilityNodeInfo readingRoot() {
+        AccessibilityNodeInfo active = getRootInActiveWindow();
+        if (active != null && sourceFor(active.getPackageName()) != null) {
+            return active;
+        }
+        for (AccessibilityWindowInfo window : getWindows()) {
+            if (window.getType() != AccessibilityWindowInfo.TYPE_APPLICATION) {
+                continue;
+            }
+            AccessibilityNodeInfo root = window.getRoot();
+            if (root != null && sourceFor(root.getPackageName()) != null) {
+                return root;
+            }
+        }
+        return active;
+    }
+
     private ReadingSource activeSource() {
-        AccessibilityNodeInfo root = getRootInActiveWindow();
+        AccessibilityNodeInfo root = readingRoot();
         return sourceFor(root == null ? null : root.getPackageName());
     }
 
