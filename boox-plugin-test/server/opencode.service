@@ -1,0 +1,19 @@
+[Unit]
+Description=OpenCode server (the Pi's one OpenCode: CLI, Palma reading app, Chrome extension)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi
+# Address, port and password come from `opencode service set` (~/.config/opencode/service.json),
+# so the CLI on the Pi finds this server instead of starting its own.
+ExecStart=/home/pi/.bun/bin/opencode serve --service
+Environment=OPENCODE_DISABLE_AUTOUPDATE=1
+Restart=on-failure
+RestartSec=3
+SyslogIdentifier=opencode
+
+[Install]
+WantedBy=multi-user.target

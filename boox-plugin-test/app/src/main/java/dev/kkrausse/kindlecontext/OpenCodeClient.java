@@ -91,6 +91,7 @@ final class OpenCodeClient {
     static final class Session {
         final String id;
         final String title;
+        final long created;
         final long updated;
         /** Empty when the session has no model yet. */
         final String providerId;
@@ -103,6 +104,7 @@ final class OpenCodeClient {
             id = value.getString("id");
             String name = value.optString("title");
             title = name.isEmpty() ? "Untitled reading chat" : name;
+            created = value.optLong("created");
             updated = value.optLong("updated");
             JSONObject model = value.optJSONObject("model");
             providerId = model == null ? "" : model.optString("providerId");

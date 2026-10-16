@@ -308,7 +308,7 @@ public class MainActivity extends Activity {
                     statusView.setText(sessions.isEmpty() ? "No chats yet." : "");
                     DateFormat format = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT);
                     for (OpenCodeClient.Session session : sessions) {
-                        Button item = button(session.title + "\n" + format.format(new Date(session.updated)));
+                        Button item = button(session.title + "\n" + format.format(new Date(session.created)));
                         item.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
                         item.setOnClickListener(v -> {
                             sessionId = session.id;
