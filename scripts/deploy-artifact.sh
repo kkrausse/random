@@ -3,13 +3,20 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 VISIBILITY=private
+# Shelf directory under the web root. --demo is the public site's second shelf,
+# for self-styled pages meant to be linked from elsewhere.
+SHELF=artifacts
 if [[ "${1:-}" == --private || "${1:-}" == --public || "${1:-}" == --tunnel ]]; then
   VISIBILITY="${1#--}"
   shift
+elif [[ "${1:-}" == --demo ]]; then
+  VISIBILITY=public
+  SHELF=demos
+  shift
 fi
 if [[ $# -lt 1 || $# -gt 2 ]]; then
-  echo "Usage: $0 [--private|--public|--tunnel] <artifact-directory-or-file> [url-slug]" >&2
-  echo "       $0 [--private|--public|--tunnel] --remove <url-slug>" >&2
+  echo "Usage: $0 [--private|--public|--demo|--tunnel] <artifact-directory-or-file> [url-slug]" >&2
+  echo "       $0 [--private|--public|--demo|--tunnel] --remove <url-slug>" >&2
   exit 1
 fi
 
@@ -53,7 +60,7 @@ if [[ "$VISIBILITY" == private && ( "$WEB_ROOT" == /var/www || "$WEB_ROOT" == /v
   echo "Private artifacts must be outside /var/www." >&2
   exit 1
 fi
-REMOTE_ROOT="$WEB_ROOT/artifacts"
+REMOTE_ROOT="$WEB_ROOT/$SHELF"
 SOURCE_DIR=""
 FILE_URL=""
 WORK_DIR="$(mktemp -d)"
@@ -136,7 +143,7 @@ else
   remote "${SUDO}chmod -R u=rwX,go=rX '$REMOTE_ROOT/$SLUG' && ${SUDO}touch '$REMOTE_ROOT/$SLUG/.published-at'"
 fi
 
-remote "mkdir -p '$REMOTE_ROOT' 2>/dev/null; python3 - '$REMOTE_ROOT' '$VISIBILITY'" \
+remote "mkdir -p '$REMOTE_ROOT' 2>/dev/null; python3 - '$REMOTE_ROOT' '$VISIBILITY' '$SHELF'" \
   < "$SCRIPT_DIR/artifact-index.py" > "$WORK_DIR/index.html"
 chmod 0644 "$WORK_DIR/index.html"
 rsync -avz "${RSYNC_REMOTE[@]}" "$WORK_DIR/index.html" "$DEST$REMOTE_ROOT/index.html"
@@ -147,7 +154,7 @@ elif [[ "$VISIBILITY" == public ]]; then
   bash "$SCRIPT_DIR/deploy-theme.sh"
 fi
 if [[ -z "$SOURCE_DIR" ]]; then
-  echo "Index: ${BASE_URL%/}/artifacts/"
+  echo "Index: ${BASE_URL%/}/$SHELF/"
 else
-  echo "Published ($VISIBILITY): ${BASE_URL%/}/artifacts/$SLUG/$FILE_URL"
+  echo "Published ($VISIBILITY): ${BASE_URL%/}/$SHELF/$SLUG/$FILE_URL"
 fi
