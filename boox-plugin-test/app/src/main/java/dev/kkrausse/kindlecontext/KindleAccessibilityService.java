@@ -94,10 +94,6 @@ public class KindleAccessibilityService extends AccessibilityService {
     private static final long BUTTON_DEBOUNCE_MS = 1_500;
     private static final long SETTLE_CAPTURE_MS = 800;
     private long lastButtonClick;
-    // When the page last changed, and when it was last read, so K can skip re-reading a page that
-    // the settled capture already has.
-    private long lastPageChange;
-    private long lastTreeCapture;
     private AccessibilityButtonController accessibilityButtonController;
     private AccessibilityButtonController.AccessibilityButtonCallback accessibilityButtonCallback;
     private AccessibilityNodeInfo pendingCopyAction;
@@ -148,10 +144,7 @@ public class KindleAccessibilityService extends AccessibilityService {
                 }
                 mainHandler.removeCallbacks(settledCapture);
                 long started = SystemClock.elapsedRealtime();
-                boolean fresh = source.webContent && lastTreeCapture > lastPageChange;
-                if (!fresh) {
-                    captureCurrentTree(source, root);
-                }
+                captureCurrentTree(source, root);
                 long read = SystemClock.elapsedRealtime();
                 // Chrome never reports selection offsets, and the walk cost a full page pass.
                 if (!source.webContent) {
@@ -159,7 +152,7 @@ public class KindleAccessibilityService extends AccessibilityService {
                 }
                 boolean copied = copySelection(source, root);
                 Log.i(TAG, "K over " + source.label + ": "
-                        + (fresh ? "page already read" : "read page in " + (read - started) + " ms")
+                        + "read page in " + (read - started) + " ms"
                         + ", copy " + (copied ? "sent" : "unavailable") + " after "
                         + (SystemClock.elapsedRealtime() - started) + " ms");
                 if (!copied) {
@@ -200,14 +193,10 @@ public class KindleAccessibilityService extends AccessibilityService {
                     .putString(EVENT_KEY, eventDescription)
                     .apply();
         }
-        // Chrome sends a stream of events while a page loads or scrolls, and walking its tree
-        // (thousands of nodes, each fetched from Chrome) on every one made Chrome crawl. Capture
-        // once the page has been still for a moment instead.
-        int type = event.getEventType();
-        if (type == AccessibilityEvent.TYPE_VIEW_SCROLLED
-                || type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
-                || type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            lastPageChange = SystemClock.elapsedRealtime();
+        // Browsers send a stream of events while a page loads or scrolls; they are read only when
+        // K is pressed. Other readers are captured once a page turn settles, which builds the
+        // earlier-pages history.
+        if (!source.webContent) {
             mainHandler.removeCallbacks(settledCapture);
             mainHandler.postDelayed(settledCapture, SETTLE_CAPTURE_MS);
         }
@@ -396,6 +385,13 @@ public class KindleAccessibilityService extends AccessibilityService {
         if (matches && node.isClickable()) {
             return node;
         }
+        // Copy is a native toolbar button, never part of the page. Searching a browser's page for
+        // it walked thousands of nodes on every accessibility event and blocked the main thread
+        // (and the reading app, which shares it) for seconds.
+        if (node.getClassName() != null
+                && "android.webkit.WebView".contentEquals(node.getClassName())) {
+            return null;
+        }
 
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfo child = node.getChild(i);
@@ -542,7 +538,6 @@ public class KindleAccessibilityService extends AccessibilityService {
             return;
         }
 
-        lastTreeCapture = SystemClock.elapsedRealtime();
         prepareSource(source);
         String document = source.webContent ? browserLocation(root) : "";
         SharedPreferences preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
