@@ -163,7 +163,12 @@ public class MainActivity extends Activity {
     private OpenCodeClient openCode;
     private String subscriptionId;
     private int eventStreamGeneration;
+    // Each redraw is a visible e-ink refresh, so streamed text is repainted at most this often.
+    private static final long STREAM_REFRESH_MS = 700;
     private boolean streamTextRefreshScheduled;
+    /** What the transcript currently shows, to skip rebuilding it when nothing changed. */
+    private String renderedConversation = "";
+    private long streamEventStart;
     // The assistant message being streamed. Until it completes, its text exists only in events.
     private String streamingMessageId;
     private String streamingText = "";
@@ -680,6 +685,20 @@ public class MainActivity extends Activity {
             return;
         }
         boolean scrollToBottom = followChatBottom;
+        StringBuilder signature = new StringBuilder(conversation.busy + "|" + streamingMessageId);
+        for (OpenCodeClient.Message message : conversation.messages) {
+            signature.append('|').append(message.id).append(message.complete).append(message.text.length())
+                    .append(message.error);
+        }
+        if (signature.toString().equals(renderedConversation) && transcript.getChildCount() > 0) {
+            if (!conversation.busy) {
+                statusView.setText(conversation.error);
+            }
+            showSessionUsage(conversation.session.usage);
+            return;
+        }
+        renderedConversation = signature.toString();
+        android.util.Log.d("ReadingChat", "rebuild transcript, " + conversation.messages.size() + " messages");
         transcript.removeAllViews();
         streamingMessageView = null;
         streamingLoadingView = null;
@@ -1487,6 +1506,14 @@ public class MainActivity extends Activity {
     }
 
     private void handleStreamEvent(JSONObject event) {
+        String kind = event.optString("kind");
+        long now = android.os.SystemClock.elapsedRealtime();
+        if ("busy".equals(kind) || streamEventStart == 0) {
+            streamEventStart = now;
+        }
+        if (!"text.delta".equals(kind)) {
+            android.util.Log.d("ReadingChat", kind + " +" + (now - streamEventStart) + "ms");
+        }
         String messageId = event.optString("messageId");
         switch (event.optString("kind")) {
             case "connected":
@@ -1505,7 +1532,9 @@ public class MainActivity extends Activity {
                 beginStreamingMessage(messageId);
                 statusView.setText("OpenCode is working...");
                 // Picks up the prompt this step answers, now that the server has stored it.
-                loadMessages();
+                if (pendingMessageId != null) {
+                    loadMessages();
+                }
                 break;
             case "reasoning":
                 statusView.setText("Thinking...");
@@ -1516,7 +1545,7 @@ public class MainActivity extends Activity {
                 streamingFromStart = event.optBoolean("fromStart", true);
                 if (!streamTextRefreshScheduled) {
                     streamTextRefreshScheduled = true;
-                    handler.postDelayed(streamTextRefresh, 40);
+                    handler.postDelayed(streamTextRefresh, STREAM_REFRESH_MS);
                 }
                 break;
             case "text.done":
