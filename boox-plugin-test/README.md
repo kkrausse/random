@@ -1,6 +1,6 @@
 # Reading Context
 
-Android reading assistant for a BOOX Palma 2. It captures a highlight plus surrounding context from Kindle, Substack, or Google Chrome, sends that context to a dedicated OpenCode Server v2 (`@opencode/cli` `2.0.27`) over Tailscale, and provides persistent reading chats on the device.
+Android reading assistant for a BOOX Palma 2. It captures a highlight plus surrounding context from Kindle, Substack, or Google Chrome, sends that context to the Raspberry Pi's OpenCode Server v2 (`@opencode/cli` `2.0.27`) over Tailscale, and provides persistent reading chats on the device.
 
 ## Architecture
 
@@ -21,7 +21,7 @@ Desktop Chrome page
 
 Both front ends talk to OpenCode only through `client/`, a small normalized layer over the official `@opencode/client`. The extension imports it; the Android app ships it as one bundled script (`app/src/main/assets/reading-client.js`) and calls it across a JavaScript bridge. The API and the bridge contract are in `client/README.md`.
 
-The deployed components are intentionally isolated:
+The deployed components:
 
 | Component | Value |
 | --- | --- |
@@ -33,11 +33,12 @@ The deployed components are intentionally isolated:
 | Tailscale IPv4 | `100.64.0.10` |
 | Server port | `41137` |
 | Server URL | `http://raspberrypi.example.ts.net:41137` |
-| systemd service | `palma2-opencode.service` |
+| systemd service | `opencode.service` |
+| OpenCode binary | `/home/pi/.bun/bin/opencode` |
 | Deployment root | `/home/pi/deploys/palma2-opencode` |
-| OpenCode location | `/home/pi/deploys/palma2-opencode/workdir` |
+| OpenCode location (reading folder) | `/home/pi/deploys/palma2-opencode/workdir` |
 
-Port `41137`, the service name, and the deployment root distinguish this instance from other OpenCode processes on the Pi. The service binds only to the Pi's Tailscale address, not its LAN address or every interface.
+The Pi runs one OpenCode v2 server for everything. `opencode.service` runs `opencode serve --service` as `pi` with OpenCode's default data directories (`~/.local/share/opencode`); its address, port, and password are pinned with `opencode service set hostname|port|password` (stored in `~/.config/opencode/service.json`). A plain `opencode` on the Pi therefore attaches to that same server, so the CLI, the Palma app, and the Chrome extension share one server, database, and set of provider logins. Other machines use `opencode --server http://raspberrypi.example.ts.net:41137` with `OPENCODE_SERVER_PASSWORD` set. The server binds only to the Pi's Tailscale address, not its LAN address or every interface.
 
 Plain HTTP is intentional because traffic is carried inside Tailscale. OpenCode still requires HTTP Basic authentication.
 
@@ -51,7 +52,7 @@ Plain HTTP is intentional because traffic is carried inside Tailscale. OpenCode 
 6. Choose a prompt template or enter a custom question.
 7. The app creates an OpenCode session and sends the configured surrounding-context window, the highlight, and the question. The default context limit is 2,000 words.
 8. The chat screen streams response updates from OpenCode's event endpoint, accepts follow-up messages, and shows current-session token, cache, and cost totals below the return button.
-9. Use `CHATS` to reopen sessions stored by the server or the source-app button to return to the app captured most recently. Return uses that app's launcher, so exact tab or reading-position restoration depends on the source app.
+9. Use `CHATS` (which lists each chat with the date it started) to reopen sessions stored by the server or the source-app button to return to the app captured most recently. Return uses that app's launcher, so exact tab or reading-position restoration depends on the source app.
 
 The initial prompt identifies the source app and includes the title and author when the reader exposes them, then combines captured snapshots into one chronological surrounding-context section without page labels. Kindle metadata comes from the selected library cover; Substack metadata comes from article title, byline, and heading semantics. A changed snapshot must share at least 12 consecutive words with the prior snapshot before earlier pages are retained; otherwise it starts a new context chain and clears stale metadata. This prevents text from another book in the same reader app from leaking into the prompt when the reader does not expose a stable book identifier. Kindle library screens are excluded from prose capture. The prompt uses XML-style boundaries to separate source material from the reader's instructions. Captured text is escaped so it cannot close or alter those boundaries. By default, the app sends at most 2,000 words and centers the highlighted passage in that window, splitting the remaining budget between earlier and later text. Highlight matching ignores case, punctuation, and whitespace differences. The compact capture preview uses a separate whitespace-collapsed 30-word window so it can show and bold the matched passage, with the number of omitted words reported on either side; the full configured window retains its paragraph formatting and is still sent to the model. If the highlight still cannot be matched in the accessibility prose, the exact copied highlight remains in its separate prompt field, the latest captured words are used as surrounding context, and the preview displays a warning. The limit is configurable in Android Settings. The question remains last.
 
@@ -71,13 +72,14 @@ app/src/main/assets/reading-client.js Built shared client for the Android WebVie
 client/                               Shared OpenCode v2 client, Android bridge, mock harness
 chrome-plugin/                        Chrome extension (Manifest V3)
 package.json                          bun workspace: client + chrome-plugin
-server/deploy.sh                      Repeatable Pi deployment (live or staging)
-server/palma2-opencode.service        systemd unit
-server/runtime/opencode.json          Checked-in OpenCode policy
-server/runtime/AGENTS.md               Reading-assistant instructions
+server/deploy.sh                      Repeatable Pi deployment
+server/opencode.service               systemd unit for the Pi's one OpenCode server
+server/import-v1-history.ts           One-off import of 1.18 chats into v2 (already run)
+server/runtime/opencode.json          Reading-folder OpenCode policy
+server/runtime/AGENTS.md              Reading-assistant instructions
 ```
 
-The remote deployment becomes:
+The remote deployment root holds only the reading folder and its policy:
 
 ```text
 /home/pi/deploys/palma2-opencode/
@@ -85,22 +87,19 @@ The remote deployment becomes:
   .gitignore
   AGENTS.md
   opencode.json
-  cli/                 pinned @opencode/cli install
   workdir/
   state/
-    server.env
-    share/opencode/    sessions, credentials, logs (XDG_DATA_HOME)
-    state/             XDG_STATE_HOME
-    cache/             XDG_CACHE_HOME
+    server.env                   HTTP password
+    share/opencode/pre-v2/       retired 1.18 data, kept as a backup
 ```
 
-`opencode.json`, `AGENTS.md`, and `.gitignore` are copied from `server/runtime/` and committed into a Git repository on the Pi. `cli/`, `workdir/`, and `state/` are excluded from that repository.
+`opencode.json`, `AGENTS.md`, and `.gitignore` are copied from `server/runtime/` and committed into a Git repository on the Pi. `workdir/` and `state/` are excluded from that repository. Sessions, provider logins, and logs live in the Pi user's default OpenCode data (`~/.local/share/opencode`), shared with every other OpenCode use on the Pi.
 
 ## Server Policy
 
-OpenCode starts with `workdir/` as its location. It discovers the parent `opencode.json` and `AGENTS.md`, but relative mutations cannot escape the active location.
+Reading chats are created with `workdir/` as their location. v2 applies the parent `opencode.json` and `AGENTS.md` to sessions in that folder, on top of the Pi user's global OpenCode config; sessions elsewhere on the server are not affected by it.
 
-The checked-in server policy is deny-by-default and allows only:
+The checked-in reading-folder policy is deny-by-default and allows only:
 
 - `read`
 - `glob`
@@ -114,7 +113,7 @@ The checked-in server policy is deny-by-default and allows only:
 
 OpenCode v2 turns this into an ordered rule list where the last matching rule wins, so `"*": "deny"` must stay the first key. Its built-in agents start from "allow everything", which is why the policy denies by default instead of naming what to forbid: a v1-style file that only denied `edit` and `bash` left the model with the `question`, `skill`, `subagent`, and `execute` tools under v2. With this policy the model is offered exactly the five tools above; `cd client && bun run verify` asserts that against a fake provider. The reading instructions also tell the model to treat book text as quoted context rather than instructions.
 
-`autoupdate` is off in the same file so the pinned server does not replace itself.
+`autoupdate` is off in the same file, and `opencode.service` sets `OPENCODE_DISABLE_AUTOUPDATE=1`, so the pinned server does not replace itself.
 
 Changes to `server/runtime/` do nothing until `./server/deploy.sh` is run.
 
@@ -125,101 +124,77 @@ The tested host is the `pi` user on `raspberrypi.example.ts.net`. It needs:
 - Tailscale connected with IPv4 `100.64.0.10`
 - Passwordless `sudo` for systemd installation and control
 - `git`, `curl`, `openssl`, `rsync`, and SSH access
-- Bun (the deploy script installs the pinned OpenCode CLI with it)
+- Bun at `/home/pi/.bun/bin/bun` (the deploy script installs the pinned OpenCode CLI with it)
 - An SSH alias named `your-pi`, unless `PALMA_SERVER_HOST` is supplied
 - `PALMA_SERVER_ADDRESS` set to the Pi's real Tailscale IPv4; the checked-in `100.64.0.10` is a placeholder
 
-The server binary is private to the deployment, so it does not share a version with any other OpenCode install on the Pi:
+The only OpenCode install on the Pi is the global Bun one:
 
 ```text
-/home/pi/deploys/palma2-opencode/cli/node_modules/.bin/opencode
+/home/pi/.bun/bin/opencode
 ```
 
-`server/deploy.sh` installs `@opencode/cli` there, pinned to `2.0.27` unless `OPENCODE_VERSION` is set, and refuses to continue if the installed binary reports another version.
+`server/deploy.sh` installs it with `bun add -g @opencode/cli@2.0.27` (or `OPENCODE_VERSION` if set) and refuses to continue if the installed binary reports another version. Do not add a second OpenCode install on the Pi; a plain `opencode` there is expected to be this one and to attach to `opencode.service`.
 
 ## Server Deployment
 
 Deploy from the repository root:
 
 ```sh
-./server/deploy.sh
-```
-
-Use another SSH target without editing the script:
-
-```sh
-PALMA_SERVER_HOST=pi@raspberrypi.example.ts.net ./server/deploy.sh
+PALMA_SERVER_HOST=your-pi PALMA_SERVER_ADDRESS=100.64.0.10 ./server/deploy.sh
 ```
 
 The script performs these operations:
 
-1. Creates `/home/pi/deploys/palma2-opencode`.
-2. Synchronizes checked-in runtime files while preserving `.git/`, `cli/`, `workdir/`, and `state/`.
-3. Creates the workdir and isolated OpenCode data directories.
-4. Generates `state/server.env` with mode `0600` on first deployment.
-5. Seeds a private `auth.json` from the Pi user's existing OpenCode data only when no isolated copy exists.
-6. Installs the pinned `@opencode/cli` into `cli/` and checks its version.
-7. Initializes the deployment root as a Git repository and commits runtime configuration.
-8. Stops `palma2-opencode.service` and writes `/home/pi/palma2-opencode-before-v2-<timestamp>.tgz`, a tarball of `state/` as it was.
-9. Installs, enables, and restarts `palma2-opencode.service`.
-10. Polls the authenticated `/api/info` and `/api/session` endpoints, then prints the v1 history migration status (`/api/experimental/migration/v1`) and how many chats the server lists for the workdir.
-
-The first v2 start on a state directory written by OpenCode `1.18` migrates the old session history. The migration status is one of `required`, `running` (with progress), `completed`, or `error`. Step 8's tarball is the way back: stop the service, restore `state/` from it, and redeploy the previous server.
-
-### Staging
-
-```sh
-STAGING=1 ./server/deploy.sh
-```
-
-Staging runs the same server from a copy of the live data, to try a version or the history migration first. It differs from a live deploy in these ways and never stops, restarts, or reconfigures the live service:
-
-| | Live | Staging |
-| --- | --- | --- |
-| Deployment root | `/home/pi/deploys/palma2-opencode` | `/home/pi/deploys/palma2-opencode-staging` |
-| systemd unit | `palma2-opencode.service` (enabled at boot) | `palma2-opencode-staging.service` (started, not enabled) |
-| Port | `41137` | `41138` |
-| State | kept in place, tarball taken first | copied from live on the first run |
-
-The state copy is taken while live keeps running; SQLite databases are copied through a `VACUUM INTO` snapshot so the copy is consistent. Later staging runs keep the staging state; `STAGING_REFRESH=1 STAGING=1 ./server/deploy.sh` discards it and copies live again. The copy includes `server.env`, so staging has the live password.
-
-Migrated chats keep the directory they were created in. To look at them on staging, point a client at port `41138` but leave its workspace directory at the live `/home/pi/deploys/palma2-opencode/workdir`; the deploy output reports the chat count for that directory. New chats created that way are governed by the policy file in the live root, not the staging one.
-
-Remove staging when done:
-
-```sh
-ssh your-pi 'sudo systemctl stop palma2-opencode-staging.service; sudo rm -f /etc/systemd/system/palma2-opencode-staging.service; sudo systemctl daemon-reload; rm -rf /home/pi/deploys/palma2-opencode-staging'
-```
+1. Creates `/home/pi/deploys/palma2-opencode/workdir` and `state/`.
+2. Synchronizes the checked-in `server/runtime/` files while preserving `.git/`, `workdir/`, and `state/`.
+3. Generates `state/server.env` with mode `0600` on first deployment.
+4. Installs the pinned `@opencode/cli` globally with Bun and checks its version.
+5. Initializes the deployment root as a Git repository and commits the runtime configuration.
+6. Pins the server with `opencode service set hostname <address>`, `port 41137`, and `password <state/server.env password>`.
+7. Installs, enables, and restarts `opencode.service`.
+8. Polls the authenticated `/api/info` endpoint, printing the service journal if it does not come up.
 
 The HTTP password is stable across normal deploys and restarts because it lives in `state/server.env`. It is not printed by the deploy script or committed to Git.
+
+### Migration history and rollback
+
+The reading server used to be a separate OpenCode `1.18` instance with its own data. On 2026-10-15 it was folded into the single v2 server. v2 refused to upgrade the old Palma database in place (it had previously been the retired v2 beta's database: "Previous V2 database contains V1-only session history"), so the old data was moved to `state/share/opencode/pre-v2/` and the 168 reading chats were imported into the running server with `server/import-v1-history.ts`. The import carries user and assistant text, titles, and usage totals; tool calls and reasoning were not carried over.
+
+Backups taken before the switch:
+
+- `/home/pi/palma2-opencode-before-v2-20261015-191236.tgz` (the old reading deployment)
+- `/home/pi/opencode-personal-before-v2-20261015-191959.tgz` (the Pi user's own OpenCode data)
+
+Rolling back means stopping `opencode.service`, restoring the relevant tarball, and running the previous server version from the commit history.
 
 ## Service Operation
 
 Check status and the listener:
 
 ```sh
-ssh your-pi 'sudo systemctl status palma2-opencode.service --no-pager'
+ssh your-pi 'sudo systemctl status opencode.service --no-pager'
 ssh your-pi 'ss -ltn | grep 41137'
 ```
 
 Restart, stop, or start the server:
 
 ```sh
-ssh your-pi 'sudo systemctl restart palma2-opencode.service'
-ssh your-pi 'sudo systemctl stop palma2-opencode.service'
-ssh your-pi 'sudo systemctl start palma2-opencode.service'
+ssh your-pi 'sudo systemctl restart opencode.service'
+ssh your-pi 'sudo systemctl stop opencode.service'
+ssh your-pi 'sudo systemctl start opencode.service'
 ```
 
 Follow service logs:
 
 ```sh
-ssh your-pi 'sudo journalctl -u palma2-opencode.service -f'
+ssh your-pi 'sudo journalctl -u opencode.service -f'
 ```
 
 Inspect OpenCode's application log:
 
 ```sh
-ssh your-pi 'tail -f /home/pi/deploys/palma2-opencode/state/share/opencode/log/opencode.log'
+ssh your-pi 'tail -f /home/pi/.local/share/opencode/log/opencode.log'
 ```
 
 Run an authenticated health check from the Pi without displaying the password:
@@ -271,13 +246,13 @@ A v2 session row carries its own cumulative `cost` and `tokens`, which is what b
 
 ## Authentication
 
-OpenCode requires a server password. The username is always `opencode`; the generated password is stored only at:
+OpenCode requires a server password. The username is always `opencode`; the generated password is stored at:
 
 ```text
 /home/pi/deploys/palma2-opencode/state/server.env
 ```
 
-Read it when configuring the Android app:
+and pinned into the server with `opencode service set password`. Read it when configuring the Android app or the Chrome extension:
 
 ```sh
 ssh your-pi "sed -n 's/^OPENCODE_SERVER_PASSWORD=//p' /home/pi/deploys/palma2-opencode/state/server.env"
@@ -285,43 +260,37 @@ ssh your-pi "sed -n 's/^OPENCODE_SERVER_PASSWORD=//p' /home/pi/deploys/palma2-op
 
 The Android app stores the password in its private SharedPreferences; the shared client sends `Authorization: Basic base64(opencode:<password>)` on every request. It is not stored in this repository.
 
+This password unlocks the whole server, not just reading chats: outside the reading folder the server has full shell access as `pi`.
+
 To rotate the password:
 
 ```sh
-ssh your-pi 'sudo systemctl stop palma2-opencode.service'
 ssh your-pi 'umask 077; printf "OPENCODE_SERVER_PASSWORD=%s\n" "$(openssl rand -hex 24)" > /home/pi/deploys/palma2-opencode/state/server.env'
-ssh your-pi 'sudo systemctl start palma2-opencode.service'
+PALMA_SERVER_HOST=your-pi PALMA_SERVER_ADDRESS=100.64.0.10 ./server/deploy.sh
 ```
 
-After rotation, update `SERVER PASSWORD` in the app's `SETTINGS` screen.
+The deploy pins the new password and restarts the server. After rotation, update `SERVER PASSWORD` in the app's `SETTINGS` screen and in the Chrome extension.
 
 ## Model Setup
 
-Provider credentials are server-side and separate from the HTTP server password. The isolated deployment keeps its provider credentials under `state/share/opencode/`.
+Provider logins are server-side and separate from the HTTP server password. Neither the Android app nor the Chrome extension manages them: they live in the Pi user's default OpenCode data and are shared by every use of the server. The apps only list the models the server offers.
 
-Point the deployment's own CLI at the running production server. In v2 a bare `opencode` talks to a per-user background service, not to this server, so always pass `--server`:
+Connect or update a provider from the Pi's CLI, which attaches to the running server:
 
 ```sh
-ssh -t your-pi '
-  set -a
-  . /home/pi/deploys/palma2-opencode/state/server.env
-  set +a
-  cd /home/pi/deploys/palma2-opencode/workdir
-  /home/pi/deploys/palma2-opencode/cli/node_modules/.bin/opencode \
-    --server http://100.64.0.10:41137
-'
+ssh -t your-pi 'cd /home/pi/deploys/palma2-opencode/workdir && /home/pi/.bun/bin/opencode'
 ```
 
-The CLI reads the server password from `OPENCODE_SERVER_PASSWORD`. Connect or update provider credentials from the TUI it opens. Do not run a bare `opencode` or `opencode auth` for this purpose; those use the Pi user's separate default data.
+From another machine, point a v2 CLI at the server instead:
+
+```sh
+OPENCODE_SERVER_PASSWORD=<password> opencode --server http://raspberrypi.example.ts.net:41137
+```
 
 List the models the server offers for the workdir, without the TUI:
 
 ```sh
-ssh your-pi '
-  set -a; . /home/pi/deploys/palma2-opencode/state/server.env; set +a
-  cd /home/pi/deploys/palma2-opencode/workdir
-  /home/pi/deploys/palma2-opencode/cli/node_modules/.bin/opencode models --server http://100.64.0.10:41137
-'
+ssh your-pi 'cd /home/pi/deploys/palma2-opencode/workdir && /home/pi/.bun/bin/opencode models'
 ```
 
 or over HTTP, with variants:
@@ -335,24 +304,24 @@ Do not guess model identifiers; pick them from this list. In v2 the model is a p
 
 ## Server Persistence
 
-OpenCode state is redirected with `XDG_DATA_HOME` to:
+The server uses OpenCode's default data directory:
 
 ```text
-/home/pi/deploys/palma2-opencode/state/share/opencode/
+/home/pi/.local/share/opencode/
 ```
 
-This contains session history, SQLite data, logs, and provider state. `XDG_STATE_HOME` and `XDG_CACHE_HOME` point at `state/state` and `state/cache`, and the HTTP password is adjacent at `state/server.env`. Deployment preserves the entire `state/` directory. OpenCode's global configuration directory is not redirected: the Pi user's `~/.config/opencode`, if present, still applies on top of the checked-in policy.
+This contains session history (reading chats and every other OpenCode session on the Pi), SQLite data, logs, and provider logins. Deployment does not touch it. The deployment's `state/` holds only `server.env` and the retired 1.18 data under `state/share/opencode/pre-v2/`.
 
 Back up the server while it is stopped:
 
 ```sh
-ssh your-pi 'sudo systemctl stop palma2-opencode.service'
-ssh your-pi 'tar -C /home/pi/deploys/palma2-opencode -czf /home/pi/palma2-opencode-state.tgz state'
-ssh your-pi 'sudo systemctl start palma2-opencode.service'
-scp your-pi:/home/pi/palma2-opencode-state.tgz .
+ssh your-pi 'sudo systemctl stop opencode.service'
+ssh your-pi 'tar -C /home/pi/.local/share -czf /home/pi/opencode-data.tgz opencode'
+ssh your-pi 'sudo systemctl start opencode.service'
+scp your-pi:/home/pi/opencode-data.tgz .
 ```
 
-Do not edit or delete the SQLite database while the service is running. Back up `state/` before database recovery or migration work.
+Do not edit or delete the SQLite database while the service is running.
 
 ## OpenCode API Usage
 
@@ -438,7 +407,7 @@ If multiple devices are connected, pass the target serial (or set `ANDROID_SERIA
 
 The script uses `ADB`, `adb` from `PATH`, or the SDK location under `ANDROID_HOME`. It builds the APK at `app/build/outputs/apk/debug/app-debug.apk`, installs it with `-r` to preserve captured context and connection preferences, and launches the app.
 
-Before installing on an existing device, confirm the APK uses `dev.kkrausse.kindlecontext` and matches the installed app's signing certificate. A different application ID creates a second Reading Context icon and accessibility shortcut; a different certificate cannot update in place. Do not uninstall the existing app to resolve either mismatch. After an install, verify BOOX App Freeze remains off for Reading Context (see below).
+Before installing on an existing device, confirm the APK uses `dev.kkrausse.kindlecontext` and matches the installed app's signing certificate. A different application ID creates a second Reading Context icon and accessibility shortcut; a different certificate cannot update in place. Signed debug builds must use the same debug keystore as the installed app (the Mac's `~/.config/.android/debug.keystore`); with any other key `adb install -r` is refused. Never uninstall the existing app to resolve either mismatch. After an install, verify BOOX App Freeze remains off for Reading Context (see below).
 
 ## Chrome Extension
 
@@ -488,7 +457,7 @@ Open `SETTINGS` in Reading Context and configure:
 | Message template | Surrounding context, highlight, then question |
 | Pre-filled prompts | Explain terms, why it matters, historical context |
 
-The model list is loaded from the server's active catalog. The message template is literal text with `{{highlight}}`, `{{surrounding_context}}`, and `{{question}}` placeholders. The built-in template wraps source material and instructions in XML-style elements. The surrounding context is chronological and retains the latest 5,000 words. Existing custom templates using `{{previous_page}}` and `{{current_page}}` continue to work, while former built-in templates upgrade automatically. In chat history, structured prompts show the question and highlight immediately and keep surrounding context collapsed behind an expandable button. Pre-filled prompt labels and text can be edited, added, removed, and reordered directly in Settings. Press `SAVE AND TEST` to persist all settings. Existing chats retain their original model and messages; the model and variant are fixed when a chat is created, so these selections apply to new chats.
+The model list is loaded from the server's active catalog; provider logins are managed on the server (see **Model Setup**), not in the app. Picking a model or variant saves it immediately, and Settings says when the saved model is not offered by the server. The message template is literal text with `{{highlight}}`, `{{surrounding_context}}`, and `{{question}}` placeholders. The built-in template wraps source material and instructions in XML-style elements. The surrounding context is chronological and retains the latest 5,000 words. Existing custom templates using `{{previous_page}}` and `{{current_page}}` continue to work, while former built-in templates upgrade automatically. In chat history, structured prompts show the question and highlight immediately and keep surrounding context collapsed behind an expandable button. Pre-filled prompt labels and text can be edited, added, removed, and reordered directly in Settings. Press `SAVE AND TEST` to persist the other settings and test the connection. Existing chats retain their original model and messages; the model and variant are fixed when a chat is created, so these selections apply to new chats.
 
 The manifest allows cleartext traffic because the endpoint is HTTP over Tailscale. Do not point the app at an untrusted cleartext network endpoint.
 
@@ -547,19 +516,19 @@ Verify Tailscale on both devices, resolve `raspberrypi.example.ts.net`, check th
 Run:
 
 ```sh
-ssh your-pi 'sudo systemctl status palma2-opencode.service --no-pager -l'
-ssh your-pi 'sudo journalctl -u palma2-opencode.service -n 100 --no-pager'
+ssh your-pi 'sudo systemctl status opencode.service --no-pager -l'
+ssh your-pi 'sudo journalctl -u opencode.service -n 100 --no-pager'
 ```
 
-Common causes are a missing binary under `cli/` after a failed install, a changed Tailscale IP, a missing `workdir/`, or an invalid `opencode.json`.
+Common causes are a missing `/home/pi/.bun/bin/opencode` after a failed install, a stale address in `~/.config/opencode/service.json`, a changed Tailscale IP, a missing `workdir/`, or an invalid `opencode.json`.
 
 ### Server answers but no model is available
 
-List the models as shown under **Model Setup** and reconnect the provider through the CLI pointed at the production server. A list that is empty only right after a restart fills in within a couple of seconds.
+List the models as shown under **Model Setup** and reconnect the provider from the Pi's `opencode` CLI. A list that is empty only right after a restart fills in within a couple of seconds.
 
 ### Chats disappear
 
-Confirm systemd still sets `XDG_DATA_HOME=/home/pi/deploys/palma2-opencode/state/share` and that the service is not using the Pi user's default OpenCode database.
+Confirm the app's workspace directory is still `/home/pi/deploys/palma2-opencode/workdir` (chats are listed per directory) and that `opencode.service` runs as `pi` with the default data directory, `/home/pi/.local/share/opencode`. Chats from before 2026-10-15 are the imported copies; their originals are in `state/share/opencode/pre-v2/`.
 
 ### Accessibility capture problems
 
@@ -595,8 +564,8 @@ The server, the official client library, and the bundled Android script move tog
 2. Run `cd client && bun run check && OPENCODE_BIN=<new opencode binary> bun run verify`. Fix anything the new contract broke in `client/src`.
 3. Run `bun run build:android && OPENCODE_BIN=<new opencode binary> bun run verify:bridge` and commit the rebuilt `app/src/main/assets/reading-client.js`.
 4. Run `bun test`, `bun run check`, and `bun run build` in `chrome-plugin/`.
-5. Run `STAGING=1 ./server/deploy.sh` and check the staging server on port `41138`.
-6. Run `./server/deploy.sh`. It backs up `state/` before restarting.
+5. Back up `/home/pi/.local/share/opencode` as shown under **Server Persistence**.
+6. Run `./server/deploy.sh` (with `PALMA_SERVER_HOST` and `PALMA_SERVER_ADDRESS`).
 7. Build and lint the Android app, install the APK with `adb install -r`, and reload the Chrome extension.
 8. Test capture, a new session, a reply, and prior-session loading.
 
@@ -607,7 +576,7 @@ Keep production pinned to a known-good OpenCode version and validate API compati
 - The server listens only on its Tailscale IPv4 address.
 - HTTP Basic protects the API; Tailscale protects transport confidentiality.
 - The HTTP password and provider credentials are never checked into Git.
-- The agent cannot run shell commands or edit files under the checked-in policy.
+- In the reading folder the agent cannot run shell commands or edit files under the checked-in policy. The server itself is shared and unrestricted elsewhere: the password in the Palma app or Chrome extension unlocks full shell access as `pi` outside the reading folder.
 - Captured book text is sent to the configured model provider and stored in OpenCode session history.
 - Android stores recent captured context and the server password in private app storage.
 - Accessibility diagnostic files may contain substantial copyrighted or sensitive text.
@@ -627,7 +596,7 @@ Uninstalling removes private captures and connection preferences. It does not af
 Stop and disable the Pi service without deleting history:
 
 ```sh
-ssh your-pi 'sudo systemctl disable --now palma2-opencode.service'
+ssh your-pi 'sudo systemctl disable --now opencode.service'
 ```
 
-The deployment root and `state/` remain until deliberately archived or removed.
+This also stops the CLI's shared server on the Pi. The deployment root, `state/`, and `/home/pi/.local/share/opencode` remain until deliberately archived or removed.
