@@ -56,33 +56,30 @@ public class KindleAccessibilityService extends AccessibilityService {
         final String label;
         final String copyAction;
         final boolean cacheTransientCopy;
-        final boolean webContent;
 
         ReadingSource(String packageName, String label, String copyAction,
-                boolean cacheTransientCopy, boolean webContent) {
+                boolean cacheTransientCopy) {
             this.packageName = packageName;
             this.label = label;
             this.copyAction = copyAction;
             this.cacheTransientCopy = cacheTransientCopy;
-            this.webContent = webContent;
         }
     }
 
     // Adding another reader should only require a source profile unless its UI needs a new strategy.
     private static final List<ReadingSource> READING_SOURCES = List.of(
-            new ReadingSource(KINDLE_PACKAGE, "Kindle", "Copy", false, false),
-            new ReadingSource(SUBSTACK_PACKAGE, "Substack", "Copy", true, false),
-            new ReadingSource(CHROME_PACKAGE, "Chrome", "Copy", true, true));
+            new ReadingSource(KINDLE_PACKAGE, "Kindle", "Copy", false),
+            new ReadingSource(SUBSTACK_PACKAGE, "Substack", "Copy", true),
+            // Chrome has its own path, captureChrome; only K reads it.
+            new ReadingSource(CHROME_PACKAGE, "Chrome", "Copy", true));
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable settledCapture = this::captureCurrentTree;
     private final Runnable textPoll = new Runnable() {
         @Override
         public void run() {
-            // Browsers report page changes as events (see settledCapture); polling them only
-            // repeated a full page walk every TEXT_POLL_MS.
             ReadingSource source = activeSource();
-            if (source != null && !source.webContent) {
+            if (source != null && !CHROME_PACKAGE.equals(source.packageName)) {
                 captureCurrentTree();
             }
             mainHandler.postDelayed(this, TEXT_POLL_MS);
@@ -143,19 +140,13 @@ public class KindleAccessibilityService extends AccessibilityService {
                     dumpCurrentTree();
                 }
                 mainHandler.removeCallbacks(settledCapture);
-                long started = SystemClock.elapsedRealtime();
-                captureCurrentTree(source, root);
-                long read = SystemClock.elapsedRealtime();
-                // Chrome never reports selection offsets, and the walk cost a full page pass.
-                if (!source.webContent) {
-                    captureSelectedText(source, root);
+                if (CHROME_PACKAGE.equals(source.packageName)) {
+                    captureChrome(source, root);
+                    return;
                 }
-                boolean copied = copySelection(source, root);
-                Log.i(TAG, "K over " + source.label + ": "
-                        + "read page in " + (read - started) + " ms"
-                        + ", copy " + (copied ? "sent" : "unavailable") + " after "
-                        + (SystemClock.elapsedRealtime() - started) + " ms");
-                if (!copied) {
+                captureCurrentTree(source, root);
+                captureSelectedText(source, root);
+                if (!copySelection(source, root)) {
                     openCaptureActivity(false);
                 }
             }
@@ -179,6 +170,20 @@ public class KindleAccessibilityService extends AccessibilityService {
             return;
         }
 
+        if (CHROME_PACKAGE.equals(source.packageName)) {
+            // Chrome's selection toolbar can close when K is pressed, so remember its Copy button
+            // when it appears. Look only near the event's source: it is the toolbar, and a page
+            // element's subtree can be thousands of nodes.
+            AccessibilityNodeInfo eventSource = event.getSource();
+            AccessibilityNodeInfo copy = eventSource == null ? null
+                    : findAction(eventSource, source.copyAction, 3);
+            if (copy != null) {
+                clearPendingCopyAction();
+                pendingCopyAction = AccessibilityNodeInfo.obtain(copy);
+                pendingCopyPackage = CHROME_PACKAGE;
+            }
+            return;
+        }
         cacheCopyAction(event, source);
         cacheSourceMetadata(event, source);
         if (WRITE_TREE_DIAGNOSTICS) {
@@ -193,13 +198,9 @@ public class KindleAccessibilityService extends AccessibilityService {
                     .putString(EVENT_KEY, eventDescription)
                     .apply();
         }
-        // Browsers send a stream of events while a page loads or scrolls; they are read only when
-        // K is pressed. Other readers are captured once a page turn settles, which builds the
-        // earlier-pages history.
-        if (!source.webContent) {
-            mainHandler.removeCallbacks(settledCapture);
-            mainHandler.postDelayed(settledCapture, SETTLE_CAPTURE_MS);
-        }
+        // Captured once a page turn settles, which builds the earlier-pages history.
+        mainHandler.removeCallbacks(settledCapture);
+        mainHandler.postDelayed(settledCapture, SETTLE_CAPTURE_MS);
     }
 
     @Override
@@ -215,9 +216,10 @@ public class KindleAccessibilityService extends AccessibilityService {
         if (onScreen) {
             addText(node.getText(), pieces, false);
             addText(node.getContentDescription(), pieces, true);
-        } else if (pruneOffscreen && !nodeBounds.isEmpty()) {
+        } else if (pruneOffscreen) {
             // A web element's box contains its children, so nothing below an off-screen element is
-            // visible. Every child fetch is a round trip into the browser.
+            // visible. Chrome reports off-screen elements with empty bounds. Every child fetch is a
+            // round trip into the browser (2.7 s for a 3,300-node page when Chrome had not cached it).
             return count;
         }
 
@@ -378,6 +380,10 @@ public class KindleAccessibilityService extends AccessibilityService {
     }
 
     private AccessibilityNodeInfo findAction(AccessibilityNodeInfo node, String name) {
+        return findAction(node, name, Integer.MAX_VALUE);
+    }
+
+    private AccessibilityNodeInfo findAction(AccessibilityNodeInfo node, String name, int depth) {
         CharSequence description = node.getContentDescription();
         CharSequence text = node.getText();
         boolean matches = description != null && name.equalsIgnoreCase(description.toString())
@@ -388,7 +394,7 @@ public class KindleAccessibilityService extends AccessibilityService {
         // Copy is a native toolbar button, never part of the page. Searching a browser's page for
         // it walked thousands of nodes on every accessibility event and blocked the main thread
         // (and the reading app, which shares it) for seconds.
-        if (node.getClassName() != null
+        if (depth == 0 || node.getClassName() != null
                 && "android.webkit.WebView".contentEquals(node.getClassName())) {
             return null;
         }
@@ -396,7 +402,7 @@ public class KindleAccessibilityService extends AccessibilityService {
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfo child = node.getChild(i);
             if (child != null) {
-                AccessibilityNodeInfo result = findAction(child, name);
+                AccessibilityNodeInfo result = findAction(child, name, depth - 1);
                 if (result != null) {
                     return result;
                 }
@@ -524,6 +530,76 @@ public class KindleAccessibilityService extends AccessibilityService {
         }
     }
 
+    /**
+     * Chrome, on K only: press Chrome's own Copy for the highlight (the app reads the clipboard),
+     * then take the URL, the page title and the text on screen. Chrome does not report where a
+     * selection is, so the highlight can only come from Copy.
+     */
+    private void captureChrome(ReadingSource chrome, AccessibilityNodeInfo root) {
+        long started = SystemClock.elapsedRealtime();
+        prepareSource(chrome);
+        boolean copied = pressChromeCopy();
+        String url = browserLocation(root);
+        AccessibilityNodeInfo page = findWebView(root);
+        String title = "";
+        Set<String> pieces = new LinkedHashSet<>();
+        int nodes = 0;
+        if (page != null) {
+            // Chrome puts the page title on the web view's root node.
+            CharSequence pageTitle = page.getText() != null ? page.getText() : page.getContentDescription();
+            title = pageTitle == null ? "" : pageTitle.toString().trim();
+            nodes = collectText(page, pieces, screenBounds(), true);
+        }
+        String text = String.join("\n\n", pieces).trim();
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putString(SOURCE_DOCUMENT_KEY, url)
+                .putString(SOURCE_TITLE_KEY, plausibleMetadata(title) ? title : "")
+                .putString(SOURCE_AUTHOR_KEY, "")
+                .putString(CURRENT_TEXT_KEY, text)
+                .putString(PREVIOUS_TEXT_KEY, "")
+                .putString(HISTORY_TEXT_KEY, "[]")
+                .putString(SELECTED_TEXT_KEY, "")
+                .apply();
+        Log.i(TAG, "K over Chrome: copy " + (copied ? "pressed" : "not available") + ", "
+                + text.length() + " characters from " + nodes + " nodes in "
+                + (SystemClock.elapsedRealtime() - started) + " ms");
+        if (copied) {
+            mainHandler.postDelayed(() -> openCaptureActivity(true), COPY_SETTLE_MS);
+        } else {
+            openCaptureActivity(false);
+        }
+    }
+
+    private boolean pressChromeCopy() {
+        AccessibilityNodeInfo copy = null;
+        for (AccessibilityWindowInfo window : getWindows()) {
+            AccessibilityNodeInfo windowRoot = window.getRoot();
+            CharSequence pkg = windowRoot == null ? null : windowRoot.getPackageName();
+            if (pkg != null && (CHROME_PACKAGE.contentEquals(pkg) || "android".contentEquals(pkg))) {
+                copy = findAction(windowRoot, "Copy");
+                if (copy != null) {
+                    break;
+                }
+            }
+        }
+        if (copy == null && CHROME_PACKAGE.equals(pendingCopyPackage)) {
+            copy = pendingCopyAction;
+        }
+        if (copy == null) {
+            return false;
+        }
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        clipboard.clearPrimaryClip();
+        boolean pressed = copy.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+        clearPendingCopyAction();
+        return pressed;
+    }
+
+    private Rect screenBounds() {
+        return new Rect(0, 0, getResources().getDisplayMetrics().widthPixels,
+                getResources().getDisplayMetrics().heightPixels);
+    }
+
     private void captureCurrentTree() {
         AccessibilityNodeInfo root = readingRoot();
         ReadingSource source = sourceFor(root == null ? null : root.getPackageName());
@@ -533,45 +609,19 @@ public class KindleAccessibilityService extends AccessibilityService {
     }
 
     private void captureCurrentTree(ReadingSource source, AccessibilityNodeInfo root) {
-        if (source == null || KINDLE_PACKAGE.equals(source.packageName)
+        if (source == null || CHROME_PACKAGE.equals(source.packageName)
+                || KINDLE_PACKAGE.equals(source.packageName)
                 && !containsViewId(root, "/reader_view_bookmark_container")) {
             return;
         }
 
         prepareSource(source);
-        String document = source.webContent ? browserLocation(root) : "";
         SharedPreferences preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
-        String previousDocument = preferences.getString(SOURCE_DOCUMENT_KEY, "");
-        boolean newDocument = !document.isEmpty() && !previousDocument.isEmpty()
-                && !document.equals(previousDocument);
-        if (newDocument) {
-            clearContext(preferences.edit()).apply();
-        }
-        if (!document.isEmpty()) {
-            preferences.edit().putString(SOURCE_DOCUMENT_KEY, document).apply();
-        }
         Set<String> pieces = new LinkedHashSet<>();
-        Rect screenBounds = new Rect(0, 0,
-                getResources().getDisplayMetrics().widthPixels,
-                getResources().getDisplayMetrics().heightPixels);
-        AccessibilityNodeInfo content = source.webContent ? findWebView(root) : root;
-        if (content == null) {
-            Log.i(TAG, source.label + " has no readable web content");
-            return;
-        }
         long walkStarted = SystemClock.elapsedRealtime();
-        int nodeCount = collectText(content, pieces, screenBounds, source.webContent);
+        int nodeCount = collectText(root, pieces, screenBounds(), false);
         MetadataCandidate metadata = new MetadataCandidate();
-        if (source.webContent) {
-            // Chrome puts the page title on the web view's root node.
-            CharSequence pageTitle = content.getText() != null
-                    ? content.getText() : content.getContentDescription();
-            String title = pageTitle == null ? "" : pageTitle.toString().trim();
-            if (plausibleMetadata(title)) {
-                metadata.title = title;
-            }
-        }
-        collectMetadata(content, source, metadata, screenBounds);
+        collectMetadata(root, source, metadata);
         String text = String.join("\n\n", pieces).trim();
         if (!looksLikeProse(text)) {
             Log.i(TAG, "No " + source.label + " prose; inspected " + text.length()
@@ -665,15 +715,7 @@ public class KindleAccessibilityService extends AccessibilityService {
     }
 
     private void collectMetadata(AccessibilityNodeInfo node, ReadingSource source,
-            MetadataCandidate candidate, Rect screenBounds) {
-        if (source.webContent) {
-            // Same reason as collectText: only look at what is on screen.
-            Rect bounds = new Rect();
-            node.getBoundsInScreen(bounds);
-            if (!bounds.isEmpty() && !Rect.intersects(screenBounds, bounds)) {
-                return;
-            }
-        }
+            MetadataCandidate candidate) {
         CharSequence nodeText = node.getText();
         String text = nodeText == null ? "" : nodeText.toString().trim();
         String viewId = node.getViewIdResourceName();
@@ -687,10 +729,6 @@ public class KindleAccessibilityService extends AccessibilityService {
                 && (id.contains("author") || id.contains("byline"))) {
             candidate.author = text.replaceFirst("(?i)^by\\s+", "");
         }
-        if (source.webContent && candidate.title.isEmpty() && plausibleMetadata(text)
-                && node.isHeading()) {
-            candidate.title = text;
-        }
         if (SUBSTACK_PACKAGE.equals(source.packageName)) {
             if (plausibleMetadata(text) && node.isHeading()
                     && text.length() > candidate.title.length()) {
@@ -703,7 +741,7 @@ public class KindleAccessibilityService extends AccessibilityService {
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfo child = node.getChild(i);
             if (child != null) {
-                collectMetadata(child, source, candidate, screenBounds);
+                collectMetadata(child, source, candidate);
             }
         }
     }
