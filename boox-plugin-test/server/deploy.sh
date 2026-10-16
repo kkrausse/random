@@ -40,6 +40,7 @@ sed -e "s#$LIVE_ROOT/#$ROOT/#g" \
   -e "s#^SyslogIdentifier=.*#SyslogIdentifier=$UNIT#" \
   -e "s#^Description=.*#Description=Palma 2 OpenCode reading server ($UNIT)#" \
   server/palma2-opencode.service | ssh "$HOST" "cat > '/tmp/$UNIT.service'"
+scp -q server/set-aside-beta-history.ts "$HOST:/tmp/set-aside-beta-history.ts"
 
 ssh "$HOST" "set -eu
 mkdir -p '$ROOT/workdir'
@@ -95,6 +96,8 @@ if [ '$ROOT' = '$LIVE_ROOT' ]; then
   stamp=\$(date +%Y%m%d-%H%M%S)
   tar -C '$ROOT' -czf \"/home/pi/palma2-opencode-before-v2-\$stamp.tgz\" state
 fi
+
+[ ! -f '$ROOT/state/share/opencode/opencode.db' ] || '$BUN' /tmp/set-aside-beta-history.ts '$ROOT/state/share/opencode/opencode.db'
 
 sudo install -m 0644 '/tmp/$UNIT.service' '/etc/systemd/system/$UNIT.service'
 sudo systemctl daemon-reload
