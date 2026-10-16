@@ -355,6 +355,18 @@ public class MainActivity extends Activity {
         loadingModels.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         modelSpinner.setAdapter(loadingModels);
         setVariantChoices(variantSpinner, availableVariants, null, "");
+        // A picked model or variant is saved at once. Spinners also report the selections the
+        // code makes while filling them, so only a selection that follows a touch is saved.
+        boolean[] modelTouched = {false};
+        boolean[] variantTouched = {false};
+        modelSpinner.setOnTouchListener((v, event) -> {
+            modelTouched[0] = true;
+            return false;
+        });
+        variantSpinner.setOnTouchListener((v, event) -> {
+            variantTouched[0] = true;
+            return false;
+        });
         modelSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
@@ -362,12 +374,44 @@ public class MainActivity extends Activity {
                     return;
                 }
                 OpenCodeClient.Model selected = availableModels.get(position);
-                String preferred = selected.providerId.equals(preferences.getString(
+                boolean saved = selected.providerId.equals(preferences.getString(
                         MODEL_PROVIDER_KEY, DEFAULT_MODEL_PROVIDER))
                         && selected.modelId.equals(preferences.getString(
-                        MODEL_ID_KEY, DEFAULT_MODEL_ID))
+                        MODEL_ID_KEY, DEFAULT_MODEL_ID));
+                String preferred = saved
                         ? preferences.getString(MODEL_VARIANT_KEY, DEFAULT_MODEL_VARIANT) : "";
+                if (modelTouched[0] && !saved) {
+                    preferences.edit()
+                            .putString(MODEL_PROVIDER_KEY, selected.providerId)
+                            .putString(MODEL_ID_KEY, selected.modelId)
+                            .putString(MODEL_VARIANT_KEY, "")
+                            .apply();
+                    statusView.setText("New chats will use " + selectedModelDescription(preferences) + ".");
+                }
                 setVariantChoices(variantSpinner, availableVariants, selected, preferred);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+        variantSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (!variantTouched[0] || position >= availableVariants.size()) {
+                    return;
+                }
+                int modelPosition = modelSpinner.getSelectedItemPosition();
+                if (modelPosition < 0 || modelPosition >= availableModels.size()) {
+                    return;
+                }
+                OpenCodeClient.Model selected = availableModels.get(modelPosition);
+                preferences.edit()
+                        .putString(MODEL_PROVIDER_KEY, selected.providerId)
+                        .putString(MODEL_ID_KEY, selected.modelId)
+                        .putString(MODEL_VARIANT_KEY, availableVariants.get(position))
+                        .apply();
+                statusView.setText("New chats will use " + selectedModelDescription(preferences) + ".");
             }
 
             @Override
@@ -500,6 +544,12 @@ public class MainActivity extends Activity {
                     int selected = findSelectedModel(models, preferences);
                     if (selected >= 0) {
                         modelSpinner.setSelection(selected);
+                    }
+                    if (!models.isEmpty() && !isSavedModel(models.get(Math.max(selected, 0)), preferences)) {
+                        statusView.setText("The saved model "
+                                + preferences.getString(MODEL_PROVIDER_KEY, DEFAULT_MODEL_PROVIDER) + "/"
+                                + preferences.getString(MODEL_ID_KEY, DEFAULT_MODEL_ID)
+                                + " is not on this server. Pick one above.");
                     }
                     usage.setText(usageText);
                 });
@@ -1115,6 +1165,11 @@ public class MainActivity extends Activity {
         spinner.setAdapter(adapter);
         int selected = choices.indexOf(preferred);
         spinner.setSelection(Math.max(selected, 0));
+    }
+
+    private boolean isSavedModel(OpenCodeClient.Model model, SharedPreferences preferences) {
+        return model.providerId.equals(preferences.getString(MODEL_PROVIDER_KEY, DEFAULT_MODEL_PROVIDER))
+                && model.modelId.equals(preferences.getString(MODEL_ID_KEY, DEFAULT_MODEL_ID));
     }
 
     private int findSelectedModel(List<OpenCodeClient.Model> models,
