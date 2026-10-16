@@ -94,6 +94,10 @@ public class KindleAccessibilityService extends AccessibilityService {
     private static final long BUTTON_DEBOUNCE_MS = 1_500;
     private static final long SETTLE_CAPTURE_MS = 800;
     private long lastButtonClick;
+    // When the page last changed, and when it was last read, so K can skip re-reading a page that
+    // the settled capture already has.
+    private long lastPageChange;
+    private long lastTreeCapture;
     private AccessibilityButtonController accessibilityButtonController;
     private AccessibilityButtonController.AccessibilityButtonCallback accessibilityButtonCallback;
     private AccessibilityNodeInfo pendingCopyAction;
@@ -126,16 +130,39 @@ public class KindleAccessibilityService extends AccessibilityService {
                 AccessibilityNodeInfo root = readingRoot();
                 ReadingSource source = sourceFor(root == null ? null : root.getPackageName());
                 if (source == null) {
-                    Log.i(TAG, "No capturable foreground app");
+                    StringBuilder windows = new StringBuilder();
+                    for (AccessibilityWindowInfo window : getWindows()) {
+                        AccessibilityNodeInfo windowRoot = window.getRoot();
+                        windows.append(" [type=").append(window.getType())
+                                .append(" active=").append(window.isActive())
+                                .append(" focused=").append(window.isFocused())
+                                .append(" pkg=").append(windowRoot == null ? "no-root" : windowRoot.getPackageName())
+                                .append(']');
+                    }
+                    Log.i(TAG, "No capturable foreground app; active root="
+                            + (root == null ? "null" : root.getPackageName()) + " windows:" + windows);
                     return;
                 }
                 if (WRITE_TREE_DIAGNOSTICS) {
                     dumpCurrentTree();
                 }
                 mainHandler.removeCallbacks(settledCapture);
-                captureCurrentTree(source, root);
-                captureSelectedText(source, root);
-                if (!copySelection(source, root)) {
+                long started = SystemClock.elapsedRealtime();
+                boolean fresh = source.webContent && lastTreeCapture > lastPageChange;
+                if (!fresh) {
+                    captureCurrentTree(source, root);
+                }
+                long read = SystemClock.elapsedRealtime();
+                // Chrome never reports selection offsets, and the walk cost a full page pass.
+                if (!source.webContent) {
+                    captureSelectedText(source, root);
+                }
+                boolean copied = copySelection(source, root);
+                Log.i(TAG, "K over " + source.label + ": "
+                        + (fresh ? "page already read" : "read page in " + (read - started) + " ms")
+                        + ", copy " + (copied ? "sent" : "unavailable") + " after "
+                        + (SystemClock.elapsedRealtime() - started) + " ms");
+                if (!copied) {
                     openCaptureActivity(false);
                 }
             }
@@ -176,27 +203,39 @@ public class KindleAccessibilityService extends AccessibilityService {
         // Chrome sends a stream of events while a page loads or scrolls, and walking its tree
         // (thousands of nodes, each fetched from Chrome) on every one made Chrome crawl. Capture
         // once the page has been still for a moment instead.
-        mainHandler.removeCallbacks(settledCapture);
-        mainHandler.postDelayed(settledCapture, SETTLE_CAPTURE_MS);
+        int type = event.getEventType();
+        if (type == AccessibilityEvent.TYPE_VIEW_SCROLLED
+                || type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+                || type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            lastPageChange = SystemClock.elapsedRealtime();
+            mainHandler.removeCallbacks(settledCapture);
+            mainHandler.postDelayed(settledCapture, SETTLE_CAPTURE_MS);
+        }
     }
 
     @Override
     public void onInterrupt() {
     }
 
-    private int collectText(AccessibilityNodeInfo node, Set<String> pieces, Rect screenBounds) {
+    private int collectText(AccessibilityNodeInfo node, Set<String> pieces, Rect screenBounds,
+            boolean pruneOffscreen) {
         int count = 1;
         Rect nodeBounds = new Rect();
         node.getBoundsInScreen(nodeBounds);
-        if (!nodeBounds.isEmpty() && Rect.intersects(screenBounds, nodeBounds)) {
+        boolean onScreen = !nodeBounds.isEmpty() && Rect.intersects(screenBounds, nodeBounds);
+        if (onScreen) {
             addText(node.getText(), pieces, false);
             addText(node.getContentDescription(), pieces, true);
+        } else if (pruneOffscreen && !nodeBounds.isEmpty()) {
+            // A web element's box contains its children, so nothing below an off-screen element is
+            // visible. Every child fetch is a round trip into the browser.
+            return count;
         }
 
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfo child = node.getChild(i);
             if (child != null) {
-                count += collectText(child, pieces, screenBounds);
+                count += collectText(child, pieces, screenBounds, pruneOffscreen);
             }
         }
         return count;
@@ -503,6 +542,7 @@ public class KindleAccessibilityService extends AccessibilityService {
             return;
         }
 
+        lastTreeCapture = SystemClock.elapsedRealtime();
         prepareSource(source);
         String document = source.webContent ? browserLocation(root) : "";
         SharedPreferences preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
@@ -524,9 +564,19 @@ public class KindleAccessibilityService extends AccessibilityService {
             Log.i(TAG, source.label + " has no readable web content");
             return;
         }
-        int nodeCount = collectText(content, pieces, screenBounds);
+        long walkStarted = SystemClock.elapsedRealtime();
+        int nodeCount = collectText(content, pieces, screenBounds, source.webContent);
         MetadataCandidate metadata = new MetadataCandidate();
-        collectMetadata(content, source, metadata);
+        if (source.webContent) {
+            // Chrome puts the page title on the web view's root node.
+            CharSequence pageTitle = content.getText() != null
+                    ? content.getText() : content.getContentDescription();
+            String title = pageTitle == null ? "" : pageTitle.toString().trim();
+            if (plausibleMetadata(title)) {
+                metadata.title = title;
+            }
+        }
+        collectMetadata(content, source, metadata, screenBounds);
         String text = String.join("\n\n", pieces).trim();
         if (!looksLikeProse(text)) {
             Log.i(TAG, "No " + source.label + " prose; inspected " + text.length()
@@ -569,7 +619,8 @@ public class KindleAccessibilityService extends AccessibilityService {
                 .putString(CURRENT_TEXT_KEY, text)
                 .apply();
         saveMetadata(preferences, metadata, !continuous || !looksLikeProse(current));
-        Log.i(TAG, "Captured " + text.length() + " characters from " + nodeCount + " nodes");
+        Log.i(TAG, "Captured " + text.length() + " characters from " + nodeCount + " nodes in "
+                + (SystemClock.elapsedRealtime() - walkStarted) + " ms");
     }
 
     private AccessibilityNodeInfo findWebView(AccessibilityNodeInfo node) {
@@ -589,21 +640,14 @@ public class KindleAccessibilityService extends AccessibilityService {
         return null;
     }
 
-    private String browserLocation(AccessibilityNodeInfo node) {
-        String viewId = node.getViewIdResourceName();
-        CharSequence text = node.getText();
-        if (viewId != null && viewId.equals(CHROME_PACKAGE + ":id/url_bar")
-                && text != null) {
-            String location = text.toString().trim();
-            if (location.matches("(?i)^(https?://)?[^ /]+\\.[^ /]+(/.*)?$")) {
-                return location;
-            }
-        }
-        for (int i = 0; i < node.getChildCount(); i++) {
-            AccessibilityNodeInfo child = node.getChild(i);
-            if (child != null) {
-                String location = browserLocation(child);
-                if (!location.isEmpty()) {
+    private String browserLocation(AccessibilityNodeInfo root) {
+        // One lookup done inside Chrome, instead of walking into the page looking for the bar.
+        for (AccessibilityNodeInfo bar
+                : root.findAccessibilityNodeInfosByViewId(CHROME_PACKAGE + ":id/url_bar")) {
+            CharSequence text = bar.getText();
+            if (text != null) {
+                String location = text.toString().trim();
+                if (location.matches("(?i)^(https?://)?[^ /]+\\.[^ /]+(/.*)?$")) {
                     return location;
                 }
             }
@@ -626,7 +670,15 @@ public class KindleAccessibilityService extends AccessibilityService {
     }
 
     private void collectMetadata(AccessibilityNodeInfo node, ReadingSource source,
-            MetadataCandidate candidate) {
+            MetadataCandidate candidate, Rect screenBounds) {
+        if (source.webContent) {
+            // Same reason as collectText: only look at what is on screen.
+            Rect bounds = new Rect();
+            node.getBoundsInScreen(bounds);
+            if (!bounds.isEmpty() && !Rect.intersects(screenBounds, bounds)) {
+                return;
+            }
+        }
         CharSequence nodeText = node.getText();
         String text = nodeText == null ? "" : nodeText.toString().trim();
         String viewId = node.getViewIdResourceName();
@@ -656,7 +708,7 @@ public class KindleAccessibilityService extends AccessibilityService {
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfo child = node.getChild(i);
             if (child != null) {
-                collectMetadata(child, source, candidate);
+                collectMetadata(child, source, candidate, screenBounds);
             }
         }
     }
