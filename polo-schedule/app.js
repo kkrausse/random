@@ -1,4 +1,6 @@
 import { NAMES, ZONE, parseCSV, localNow, addDays, isStale, timeLabel, status } from './schedule.js';
+// The bundler copies the CSV under a content-hashed name, so a data update means a new URL.
+import csvUrl from './schedule.csv' with { type: 'file' };
 let rows = [];
 let error = '';
 function element(tag, text, className) {
@@ -43,10 +45,7 @@ function render() {
 }
 async function load() {
   try {
-    // version.json names the content-hashed CSV (see build.ts); unbuilt checkouts have neither.
-    const version = await fetch('version.json', { cache: 'no-store' });
-    const csv = version.ok ? (await version.json()).csv : 'schedule.csv';
-    const response = await fetch(csv, { cache: 'no-store' });
+    const response = await fetch(csvUrl);
     if (!response.ok) throw Error(`HTTP ${response.status}`);
     rows = parseCSV(await response.text());
     error = '';
@@ -56,7 +55,14 @@ async function load() {
   }
   render();
 }
+// index.html is not cached at the edge; if it now names a different bundle, the data changed.
+async function checkForUpdate() {
+  const current = document.querySelector('script[type=module]').getAttribute('src');
+  const html = await fetch(location.pathname, { cache: 'no-store' }).then(r => r.text()).catch(() => '');
+  if (html && !html.includes(current)) location.reload();
+}
+document.querySelector('#csv-link').href = csvUrl;
 load();
 setInterval(render, 60_000);
-setInterval(load, 15 * 60_000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
+setInterval(checkForUpdate, 15 * 60_000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForUpdate(); });
