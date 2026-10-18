@@ -1,0 +1,36 @@
+#!/usr/sbin/nft -f
+# Egress filter for the `opencode` system user (the tailnet OpenCode server and every shell it runs).
+# New outbound connections from that user may reach loopback, Tailscale MagicDNS (DNS only) and the
+# public internet; private, CGNAT/tailnet and link-local ranges are dropped. Replies on the server's
+# own listening socket are established traffic and pass. Own table, so ufw/docker/palma_guard are untouched.
+table inet opencode_egress
+delete table inet opencode_egress
+
+table inet opencode_egress {
+	set blocked4 {
+		type ipv4_addr
+		flags interval
+		elements = { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 }
+	}
+	set blocked6 {
+		type ipv6_addr
+		flags interval
+		elements = { fc00::/7, fe80::/10 }
+	}
+
+	chain output {
+		type filter hook output priority filter; policy accept;
+		# Only packets owned by an opencode socket. (A "skuid != opencode accept" test would not match
+		# socketless kernel packets such as IPv6 neighbor advertisements and would drop them.)
+		meta skuid "opencode" jump opencode_user
+	}
+
+	chain opencode_user {
+		oifname "lo" accept
+		ct state established,related accept
+		ip daddr 100.100.100.100 meta l4proto { udp, tcp } th dport 53 accept
+		ip6 daddr fd7a:115c:a1e0::53 meta l4proto { udp, tcp } th dport 53 accept
+		ip daddr @blocked4 counter drop
+		ip6 daddr @blocked6 counter drop
+	}
+}

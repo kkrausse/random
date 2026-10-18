@@ -1,0 +1,13 @@
+// Global config for the `opencode` system user (the tailnet server).
+// The OS user, systemd sandbox and egress filter are the boundary, so every tool is allowed here.
+// Project configs (e.g. the reading deploy's deny-by-default opencode.json) still apply on top.
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": false,
+  "permission": {
+    "*": "allow"
+  },
+  "websearch": {
+    "provider": "random"
+  }
+}

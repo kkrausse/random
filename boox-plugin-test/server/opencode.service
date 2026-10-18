@@ -1,19 +1,48 @@
 [Unit]
-Description=OpenCode server (the Pi's one OpenCode: CLI, Palma reading app, Chrome extension)
-After=network-online.target tailscaled.service
-Wants=network-online.target
+Description=OpenCode server on the tailnet (Palma reading app, Chrome extension) as the opencode user
+After=network-online.target tailscaled.service opencode-egress.service
+Wants=network-online.target tailscaled.service
+# No egress filter, no server.
+Requires=opencode-egress.service
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi
-# Address, port and password come from `opencode service set` (~/.config/opencode/service.json),
-# so the CLI on the Pi finds this server instead of starting its own.
-ExecStart=/home/pi/.bun/bin/opencode serve --service
+User=opencode
+Group=opencode
+WorkingDirectory=/var/lib/opencode
+# Address, port and password come from `opencode service set`
+# (/var/lib/opencode/.config/opencode/service.json).
+ExecStart=/usr/local/bin/opencode serve --service
 Environment=OPENCODE_DISABLE_AUTOUPDATE=1
+# The account's login shell is nologin; tools get bash.
+Environment=SHELL=/bin/bash
 Restart=on-failure
+# SIGTERM makes the server exit 130; that is a clean stop.
+SuccessExitStatus=130
 RestartSec=3
 SyslogIdentifier=opencode
+
+# Sandbox. The OS user is the permission boundary; the global config allows every tool.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/opencode
+# /home is an empty read-only tmpfs. The reading deploy is bind-mounted at its old path so
+# clients (Palma app, Chrome extension) and stored sessions keep the same directory.
+ProtectHome=tmpfs
+BindPaths=/var/lib/opencode/deploys/palma2-opencode:/home/pi/deploys/palma2-opencode
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

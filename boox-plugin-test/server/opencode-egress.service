@@ -1,0 +1,13 @@
+[Unit]
+Description=Egress filter for the opencode user (no LAN/tailnet, public internet only)
+After=ufw.service
+Before=opencode.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/nft -f /etc/nftables.d/opencode-egress.nft
+ExecStop=/usr/sbin/nft delete table inet opencode_egress
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
