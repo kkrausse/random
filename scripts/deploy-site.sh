@@ -12,4 +12,10 @@ rsync -avz --rsync-path="sudo rsync" \
 
 bash "$SCRIPT_DIR/deploy-theme.sh"
 
+# Record what is now live in the kkrausse.com snapshot repo, if present.
+SNAPSHOT="${KKRAUSSE_COM_REPO:-$HOME/devfs/repos/kkrausse/kkrausse.com}/snapshot.sh"
+if [[ -x "$SNAPSHOT" ]]; then
+  "$SNAPSHOT" "deploy-site.sh from random@$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD) $(git -C "$SCRIPT_DIR" rev-parse --short HEAD)" || echo "kkrausse.com snapshot failed" >&2
+fi
+
 echo "==> Done."
