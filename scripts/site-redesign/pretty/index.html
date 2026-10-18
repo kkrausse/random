@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kkrausse.com</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #fbfaf7;
+  --card: #ffffff;
+  --text: #1c1b19;
+  --muted: #6f6b64;
+  --line: #e7e3dc;
+  --accent: #c2410c;
+  --shadow: 0 1px 2px rgb(0 0 0 / .04), 0 4px 16px rgb(0 0 0 / .04);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121211;
+    --card: #1b1a19;
+    --text: #ecebe8;
+    --muted: #9a968f;
+    --line: #2c2a28;
+    --accent: #fb923c;
+    --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+main { max-width: 46rem; margin: 0 auto; padding: clamp(3rem, 10vw, 6rem) 1.25rem 4rem; }
+a { color: inherit; text-decoration: none; }
+
+header { margin-bottom: 3.5rem; }
+header h1 {
+  margin: 0;
+  font: 600 clamp(2rem, 6vw, 2.75rem)/1.1 ui-serif, Georgia, "Iowan Old Style", serif;
+  letter-spacing: -.02em;
+}
+header h1 span { color: var(--accent); }
+header p { margin: .75rem 0 0; color: var(--muted); max-width: 32rem; }
+
+section { margin-top: 3rem; }
+h2 {
+  margin: 0 0 1rem;
+  font-size: .75rem;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.cards { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); }
+.card {
+  display: block;
+  padding: 1.1rem 1.2rem;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  transition: border-color .15s, transform .15s;
+}
+.card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.card strong { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; font-weight: 600; }
+.card strong::after { content: "→"; color: var(--muted); transition: color .15s, transform .15s; }
+.card:hover strong::after { color: var(--accent); transform: translateX(2px); }
+.card p { margin: .35rem 0 0; font-size: .9rem; color: var(--muted); }
+
+.list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.list li { border-bottom: 1px solid var(--line); }
+.list a {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1rem;
+  align-items: baseline;
+  padding: .8rem .25rem;
+}
+.list a:hover .t { color: var(--accent); }
+.list .t { transition: color .15s; }
+.list .t small { display: block; color: var(--muted); font-size: .85rem; }
+.list time { font: .8rem ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); white-space: nowrap; }
+
+footer { margin-top: 4rem; font-size: .8rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>kkrausse<span>.</span>com</h1>
+    <p>Small tools, short films, and notes I've made and want to keep around.</p>
+  </header>
+
+  <section>
+    <h2>Tools</h2>
+    <div class="cards">
+      <a class="card" href="https://kkrausse.com/mortgage-calculator/">
+        <strong>Mortgage calculator</strong>
+        <p>Payments, amortization, and what extra principal saves.</p>
+      </a>
+      <a class="card" href="https://kkrausse.com/timegraph/">
+        <strong>Watch timegrapher</strong>
+        <p>Measure a mechanical watch's rate and beat in the browser.</p>
+      </a>
+    </div>
+  </section>
+
+  <section>
+    <h2>Demos</h2>
+    <div class="cards">
+      <a class="card" href="https://kkrausse.com/demos/autoanimate/">
+        <strong>autoanimate</strong>
+        <p>Narrated films that play live in the browser.</p>
+      </a>
+      <a class="card" href="https://kkrausse.com/demos/antirez-worse-short-film/">
+        <strong>antirez: worse is better</strong>
+        <p>A short autoanimate film.</p>
+      </a>
+    </div>
+  </section>
+
+  <section>
+    <h2>Artifacts</h2>
+    <ul class="list">
+      <li><a href="https://kkrausse.com/artifacts/polo-schedule/"><span class="t">Polo schedule<small>Kezar &amp; Polo Field</small></span><time datetime="2026-10-17">Oct 17</time></a></li>
+      <li><a href="https://kkrausse.com/artifacts/zeihan-drones-film/"><span class="t">Zeihan on drones<small>Film</small></span><time datetime="2026-10-14">Oct 14</time></a></li>
+      <li><a href="https://kkrausse.com/artifacts/antirez-flow-film/"><span class="t">antirez on flow<small>Film</small></span><time datetime="2026-10-14">Oct 14</time></a></li>
+      <li><a href="https://kkrausse.com/artifacts/antirez-worse-short-film/"><span class="t">antirez: worse is better<small>Film</small></span><time datetime="2026-10-13">Oct 13</time></a></li>
+      <li><a href="https://kkrausse.com/artifacts/gromen-bondfire-certainty-20261006/"><span class="t">The Bondfire<small>Gromen, in his own words (dramatized)</small></span><time datetime="2026-10-06">Oct 6</time></a></li>
+      <li><a href="https://kkrausse.com/artifacts/gromen-bondfire-intense-20261006/"><span class="t">The Bondfire<small>One System, intense narration</small></span><time datetime="2026-10-06">Oct 6</time></a></li>
+      <li><a href="https://kkrausse.com/artifacts/gromen-bondfire-continuous-20261005/"><span class="t">The Bondfire<small>One System</small></span><time datetime="2026-10-06">Oct 6</time></a></li>
+      <li><a href="https://kkrausse.com/artifacts/gromen-bondfire-20261005/"><span class="t">The Bondfire<small>Gromen's fiscal-dominance scenario, animated causal map</small></span><time datetime="2026-10-06">Oct 6</time></a></li>
+      <li><a href="https://kkrausse.com/artifacts/charlie-munger-worldly-wisdom/"><span class="t">Charlie Munger: worldly wisdom<small>1994 USC lecture</small></span><time datetime="2026-08-22">Aug 22</time></a></li>
+    </ul>
+  </section>
+
+  <footer>Mock of a kkrausse.com redesign. Links go to the live site.</footer>
+</main>
+</body>
+</html>
