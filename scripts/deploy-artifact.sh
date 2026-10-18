@@ -158,12 +158,3 @@ if [[ -z "$SOURCE_DIR" ]]; then
 else
   echo "Published ($VISIBILITY): ${BASE_URL%/}/$SHELF/$SLUG/$FILE_URL"
 fi
-
-if [[ "$VISIBILITY" == public ]]; then
-  # Record what is now live in the kkrausse.com snapshot repo, if present.
-  SNAPSHOT="${KKRAUSSE_COM_REPO:-$HOME/devfs/repos/kkrausse/kkrausse.com}/snapshot.sh"
-  if [[ -x "$SNAPSHOT" ]]; then
-    ACTION=publish; [[ -z "$SOURCE_DIR" ]] && ACTION=remove
-    "$SNAPSHOT" "deploy-artifact.sh $ACTION $SHELF/$SLUG from random@$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD) $(git -C "$SCRIPT_DIR" rev-parse --short HEAD)" || echo "kkrausse.com snapshot failed" >&2
-  fi
-fi
