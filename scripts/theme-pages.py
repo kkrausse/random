@@ -13,6 +13,9 @@ def apply(root):
         # Demos are self-styled pages; only their generated shelf index is themed.
         if path.relative_to(root).parts[0] == "demos":
             continue
+        # The homepage is bare HTML on purpose (scripts/site/index.html).
+        if path.relative_to(root) == pathlib.Path("index.html"):
+            continue
         content = path.read_text()
         if 'data-site-theme' in content:
             continue
