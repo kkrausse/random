@@ -30,7 +30,10 @@ export async function openZmx(dir?: string) {
 
 function zmxEnv(dir?: string): Record<string, string | undefined> {
   // ZMX_SESSION would turn an attach into "switch the session I am inside".
-  return { ...process.env, ...(dir ? { ZMX_DIR: dir } : {}), ZMX_SESSION: undefined, TERM: "xterm-256color", COLORTERM: "truecolor" };
+  // FORCE_HYPERLINK makes Claude Code and OpenCode emit OSC 8 links. They wrap
+  // long URLs themselves, so only an OSC 8 target survives the line break; a
+  // detected TERM_PROGRAM would also switch on unrelated protocol guesses.
+  return { ...process.env, ...(dir ? { ZMX_DIR: dir } : {}), ZMX_SESSION: undefined, TERM: "xterm-256color", COLORTERM: "truecolor", FORCE_HYPERLINK: "1" };
 }
 
 function zmxAt(socketDir: string, env: Record<string, string | undefined>) {
