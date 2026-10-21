@@ -58,7 +58,7 @@ struct ContentView: View {
 
                 Section {
                     Stepper("Parallel uploads: \(model.parallelism)", value: $model.parallelism, in: 1...20)
-                    Stepper("iCloud downloads at once: \(model.cloudDownloads)", value: $model.cloudDownloads, in: 1...8)
+                    Stepper("iCloud downloads at once: \(model.cloudDownloads)", value: $model.cloudDownloads, in: 1...16)
                     Stepper("Staging limit: \(model.stagingLimitGB) GB", value: $model.stagingLimitGB, in: 2...128, step: 2)
                     Toggle("File into year/month folders", isOn: $model.organizeByDate)
                     Toggle("Mirror albums as folders", isOn: $model.linkAlbums)

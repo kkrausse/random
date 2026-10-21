@@ -65,7 +65,8 @@ actor SyncCoordinator {
         return try await store.run(run.id) ?? run
     }
 
-    func pause(_ runID: UUID) async throws {
+    /// `reason` is shown on the run, for pauses the user did not ask for.
+    func pause(_ runID: UUID, reason: String? = nil) async throws {
         pausedRuns.insert(runID)
         runtimes[runID]?.pause()
         guard let existingRun = try await store.run(runID) else { return }
@@ -74,6 +75,7 @@ actor SyncCoordinator {
         guard hasPending else { return }
         guard var run = try await store.run(runID) else { return }
         run.state = activeRuns.contains(runID) ? .pausing : .paused
+        if let reason { run.pauseReason = run.pauseReason ?? reason }
         #if DEBUG
         AppLog.write("[Sync] pause run=\(runID.uuidString) state=\(run.state.rawValue) activeWorkers=\(workerCounts[runID] ?? 0)")
         #endif
@@ -155,7 +157,7 @@ actor SyncCoordinator {
         exportSlots[runID] = ExportSlots(stageFromCloud == nil ? 1 : workerCount)
         // The workers are sized to saturate the server. Downloading from iCloud uses a different link,
         // so it gets its own pool which only stages originals; the workers then upload them like any other.
-        let downloaderCount = stageFromCloud == nil ? 0 : min(max(cloudDownloads, 1), 8)
+        let downloaderCount = stageFromCloud == nil ? 0 : min(max(cloudDownloads, 1), 16)
         activeDownloaders[runID] = downloaderCount
         await withTaskGroup(of: Void.self) { group in
             for _ in 0..<workerCount {
@@ -735,7 +737,7 @@ func withConnectionTestTimeout<T: Sendable>(
         let savedLimit = UserDefaults.standard.integer(forKey: "stagingLimitGB")
         stagingLimitGB = (2...128).contains(savedLimit) ? savedLimit : 8
         let savedDownloads = UserDefaults.standard.integer(forKey: "cloudDownloads")
-        cloudDownloads = (1...8).contains(savedDownloads) ? savedDownloads : 3
+        cloudDownloads = (1...16).contains(savedDownloads) ? savedDownloads : 3
         organizeByDate = UserDefaults.standard.object(forKey: "organizeByDate") as? Bool ?? true
         linkAlbums = UserDefaults.standard.object(forKey: "linkAlbums") as? Bool ?? true
     }
@@ -986,7 +988,30 @@ func withConnectionTestTimeout<T: Sendable>(
         guard let password, !password.isEmpty else { show(PicSyncError.passwordRequired); return }
         activeRunIDs.insert(runID)
         if let index = runs.firstIndex(where: { $0.id == runID }) { runs[index].state = .running }
-        defer { activeRunIDs.remove(runID) }
+        let coordinator = coordinator
+        let background = BackgroundSyncTask.begin(title: "PicSync: \(run.sourceLabel)") {
+            Task { try? await coordinator.pause(runID, reason: "Paused when iOS stopped the sync in the background. Resume to continue.") }
+        }
+        let network = LocalNetworkWatch { reason in
+            AppLog.write("[Network] pausing run=\(runID.uuidString)")
+            Task { try? await coordinator.pause(runID, reason: reason) }
+        }
+        let reporter = Task { [store] in
+            while !Task.isCancelled {
+                if let run = try? await store.run(runID) {
+                    let done = run.completedCount + run.skippedCount + run.failedCount
+                    let speed = await coordinator.progress(runID).map { ($0.bytesPerSecond + $0.downloadBytesPerSecond) / 1_048_576 } ?? 0
+                    background?.update(done: Int64(done), total: Int64(run.itemCount), subtitle: "\(done.formatted()) of \(run.itemCount.formatted()) · \(String(format: "%.1f", speed)) MB/s")
+                }
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+        defer {
+            activeRunIDs.remove(runID)
+            reporter.cancel()
+            network.stop()
+            background?.finish(success: true)
+        }
         #if DEBUG
         AppLog.write("[Sync] resume button run=\(runID.uuidString) profile=\(profile.id.uuidString)")
         #endif

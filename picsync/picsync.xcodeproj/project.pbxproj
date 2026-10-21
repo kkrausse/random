@@ -423,6 +423,7 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "PicSync connects to your SMB server on the local network to copy original photos and videos.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "PicSync reads the photos and videos you select so it can copy their original resources to your SMB server.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -454,6 +455,7 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "PicSync connects to your SMB server on the local network to copy original photos and videos.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "PicSync reads the photos and videos you select so it can copy their original resources to your SMB server.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

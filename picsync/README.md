@@ -54,6 +54,7 @@ The home screen shows the saved server, share, password-storage status, and the 
 - Transient connection/transfer failures retry with bounded exponential backoff (up to three retries). SMB requests time out after 30 seconds. Disk-full, permissions, persistent SMB errors, and unavailable destinations pause the run without marking the entire queue failed.
 - Staging defaults to an **8 GiB** budget, configurable from 2–128 GiB. PicSync preserves a separate **2 GiB** free-space reserve. One asset exports at a time while other workers upload; export waits for active uploads to free space, or pauses if no upload can free enough. An individual asset larger than the budget requires increasing the budget. Failed/paused runs count toward it, and abandoned completed staging is cleaned on the next run. Staging is excluded from device backup.
 - The run detail view updates completed, skipped-duplicate, and failed counts while a run is active. Error output is collapsed and capped at five inline examples.
+- iCloud download speed comes from Photos' download progress, because Photos downloads a whole original before handing any of it to the app. Each iCloud download writes an `[iCloud] download` line to the diagnostics log with time to first progress, time to first byte, total time, and how many downloads were running.
 - The run detail also shows active filenames/phases, per-file byte progress, upload throughput, and the reason for an automatic pause. Discovered bytes are explicitly not a precomputed full-library size or ETA.
 - PicSync disables the iOS idle timer while a sync is active, including photo export and upload, then restores normal Auto-Lock behavior when the run pauses, completes, or fails. Manual locking or leaving the app can still suspend it.
 
@@ -170,7 +171,8 @@ bun test scripts/verify.test.ts
 - Use SMB only on a trusted local network, VPN, or private overlay network. The vendored client currently implements SMB2 and does not provide SMB3 encryption.
 - Do not expose Samba directly to the public internet.
 - Verify the Samba user has read/write access to the chosen share and destination folder.
-- iOS may suspend foreground work. PicSync persists the run journal and uses safe remote temporary files so a later Resume can retry safely, but it does not promise guaranteed background completion.
+- On iOS 26, starting or resuming a sync also asks iOS to keep it running in the background (a continued-processing task), with progress shown in the system UI. Cancelling it there, or iOS ending it, pauses the run. iOS can still refuse or end the task, so PicSync persists the run journal and uses safe remote temporary files so a later Resume can retry safely.
+- A run pauses itself if the phone stays off Wi-Fi or wired Ethernet for 15 seconds (cellular and hotspot connections count as off), so it never downloads from iCloud over cellular.
 
 ## Current validation status
 

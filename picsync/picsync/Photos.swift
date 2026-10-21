@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import Photos
+import Synchronization
 import SwiftUI
 
 struct PhotoResourceDescriptor: Equatable, Sendable {
@@ -182,7 +183,9 @@ struct PhotoResourceExporter {
                 try await export(resource, to: temporaryURL, budget: budget, runtime: runtime, downloadID: allowNetwork ? transferID : nil)
                 try FileManager.default.moveItem(at: temporaryURL, to: localURL)
                 runtime.update(transferID, filename: filename, phase: "Hashing original", download: allowNetwork)
+                let hashStarted = Date()
                 let hash = try await ContentHasher.hashAsync(file: localURL, check: { try runtime.check() })
+                if allowNetwork { AppLog.write("[iCloud] hashed role=\(role) seconds=\(Self.seconds(since: hashStarted))") }
                 let size = try localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize.map(Int64.init) ?? 0
                 manifests.append(ResourceManifest(role: role, filename: filename, stagingPath: localURL.path, byteCount: size, sha256: hash, finalPath: nil, temporaryPath: nil))
             }
@@ -200,8 +203,27 @@ struct PhotoResourceExporter {
         let options = PHAssetResourceRequestOptions()
         options.isNetworkAccessAllowed = downloadID != nil
         let writer = try PhotoExportWriter(url: url, budget: budget, runtime: runtime, manager: manager, downloadID: downloadID)
+        if downloadID != nil {
+            // Photos downloads the whole original before handing over any data, so the data callback alone
+            // shows nothing while the download runs. Its progress reports are the only view of it.
+            let size = (resource.value(forKey: "fileSize") as? NSNumber)?.int64Value ?? 0
+            options.progressHandler = { fraction in writer.downloadProgress(fraction, of: size) }
+        }
         let pauseHandler = runtime.onPause { writer.cancel() }
         defer { runtime.removePauseHandler(pauseHandler) }
+        // One line per iCloud download, to tell slow-to-start requests apart from a slow link.
+        let started = Date()
+        let concurrent = downloadID == nil ? 0 : Self.activeDownloads.withLock { $0 += 1; return $0 }
+        defer {
+            if downloadID != nil {
+                Self.activeDownloads.withLock { $0 -= 1 }
+                let (bytes, firstByte, firstProgress) = writer.stats
+                let total = Date().timeIntervalSince(started)
+                let streaming = firstByte.map { Date().timeIntervalSince($0) } ?? 0
+                let rate = streaming > 0 ? Double(bytes) / streaming / 1_048_576 : 0
+                AppLog.write("[iCloud] download role=\(PhotoResourceSelector.role(for: resource.type)) bytes=\(bytes) concurrent=\(concurrent) firstProgress=\(firstProgress.map { Self.seconds(since: started, until: $0) } ?? "none") firstByte=\(firstByte.map { Self.seconds(since: started, until: $0) } ?? "none") total=\(String(format: "%.2f", total)) streamMBps=\(String(format: "%.2f", rate))")
+            }
+        }
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 let id = manager.requestData(for: resource, options: options, dataReceivedHandler: { writer.receive($0) }) { error in
@@ -214,6 +236,9 @@ struct PhotoResourceExporter {
             writer.cancel()
         }
     }
+
+    private static let activeDownloads = Mutex(0)
+    private static func seconds(since start: Date, until end: Date = Date()) -> String { String(format: "%.2f", end.timeIntervalSince(start)) }
 
     private static let fallbackDate: DateFormatter = {
         let formatter = DateFormatter()
@@ -232,6 +257,27 @@ private final class PhotoExportWriter: @unchecked Sendable {
     private let downloadID: UUID?
     private var request: PHAssetResourceDataRequestID?
     private var failure: Error?
+    private var received: Int64 = 0
+    private var firstByteAt: Date?
+    private var firstProgressAt: Date?
+    /// Bytes already counted towards the download speed, from progress reports or received data.
+    private var counted: Int64 = 0
+    var stats: (bytes: Int64, firstByte: Date?, firstProgress: Date?) { lock.withLock { (received, firstByteAt, firstProgressAt) } }
+
+    func downloadProgress(_ fraction: Double, of size: Int64) {
+        guard let downloadID else { return }
+        let added = lock.withLock { () -> Int64 in
+            if firstProgressAt == nil, fraction > 0 { firstProgressAt = Date() }
+            return count(upTo: Int64(fraction * Double(size)))
+        }
+        if added > 0 { runtime.addDownloaded(added, for: downloadID) }
+    }
+    /// Call with the lock held.
+    private func count(upTo bytes: Int64) -> Int64 {
+        let added = max(0, bytes - counted)
+        counted += added
+        return added
+    }
 
     init(url: URL, budget: StagingBudget, runtime: TransferRuntime, manager: PHAssetResourceManager, downloadID: UUID?) throws {
         guard FileManager.default.createFile(atPath: url.path, contents: nil) else { throw CocoaError(.fileWriteUnknown) }
@@ -260,7 +306,10 @@ private final class PhotoExportWriter: @unchecked Sendable {
                     budget.release(max(0, Int64(data.count) - written))
                     throw error
                 }
-                if let downloadID { runtime.addDownloaded(Int64(data.count), for: downloadID) }
+                if firstByteAt == nil { firstByteAt = Date() }
+                received += Int64(data.count)
+                let added = count(upTo: received)
+                if let downloadID, added > 0 { runtime.addDownloaded(added, for: downloadID) }
                 return nil
             } catch {
                 failure = error
