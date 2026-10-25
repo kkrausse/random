@@ -84,16 +84,41 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
+type PanelAction = "open" | "close" | "toggle";
+
+// Calls sidePanel.open synchronously, so it must run inside the caller's
+// user gesture (a command, or a message sent from one).
+function setPanel(windowId: number, action: PanelAction): Promise<{ ok: boolean; error?: string }> {
+  const port = openPanels.get(windowId);
+  if (port) {
+    if (action !== "open") port.postMessage({ type: "close" });
+    return Promise.resolve({ ok: true });
+  }
+  if (action === "close") return Promise.resolve({ ok: true });
+  return chrome.sidePanel.open({ windowId }).then(() => ({ ok: true }), (error) => {
+    const message = String(error?.message || error);
+    recordDiagnostic("sidepanel-open-error", { message });
+    return { ok: false, error: message };
+  });
+}
+
 chrome.commands.onCommand.addListener((command, tab) => {
   if (command !== "toggle-reading-context" || tab?.windowId === undefined) return;
-  const port = openPanels.get(tab.windowId);
-  if (port) {
-    port.postMessage({ type: "close" });
-    return;
+  void setPanel(tab.windowId, "toggle");
+});
+
+// The Command Palette extension (command-palette/ in this repo) has a fixed
+// ID from the "key" in its manifest; it opens and closes the panel from its
+// own keyboard-driven window. Nothing else may.
+const COMMAND_PALETTE_ID = "npfagmlfdgapcbhlpcocjeokabcfdmmn";
+
+chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+  if (sender.id !== COMMAND_PALETTE_ID || message?.type !== "reading-context") return false;
+  if (typeof message.windowId !== "number") {
+    sendResponse({ ok: false, error: "missing windowId" });
+    return false;
   }
-  chrome.sidePanel.open({ windowId: tab.windowId }).catch((error) => {
-    recordDiagnostic("sidepanel-open-error", {
-      message: String(error?.message || error)
-    });
-  });
+  const action: PanelAction = message.action === "close" || message.action === "toggle" ? message.action : "open";
+  void setPanel(message.windowId, action).then(sendResponse);
+  return true;
 });
