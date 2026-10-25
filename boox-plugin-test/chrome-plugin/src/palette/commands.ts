@@ -41,7 +41,6 @@ export interface RunContext {
   originTabId: number | null;
   originWindowId: number;
   query: string;
-  readingContextId: string | null;
   setMode: (mode: Mode) => void;
 }
 
@@ -62,8 +61,6 @@ export interface PaletteCommand {
   icon: LucideIcon;
   shortcut?: Shortcut;
   keywords?: string;
-  // Hide when it can't apply (e.g. no Reading Context installed).
-  available?: (ctx: RunContext) => boolean;
   run: (ctx: RunContext) => Promise<RunResult | void> | RunResult | void;
 }
 
@@ -97,11 +94,10 @@ function escapeMarkdown(text: string) {
 }
 
 // Must be called synchronously from the key/click handler: the message has
-// to leave inside the user gesture so Reading Context can call
+// to leave inside the user gesture so the background may call
 // chrome.sidePanel.open().
 export function sendReadingContext(ctx: RunContext, action: "open" | "close"): Promise<RunResult> {
-  if (!ctx.readingContextId) return Promise.resolve({ keepOpen: true, error: "Reading Context isn't installed or enabled." });
-  return chrome.runtime.sendMessage(ctx.readingContextId, {
+  return chrome.runtime.sendMessage({
     type: "reading-context",
     action,
     windowId: ctx.originWindowId
@@ -111,7 +107,7 @@ export function sendReadingContext(ctx: RunContext, action: "open" | "close"): P
       keepOpen: true,
       error: `Reading Context couldn't ${action}: ${response?.error ?? "no response"}. Use ⌘⇧E instead.`
     };
-  }, (error) => ({ keepOpen: true, error: `Reading Context didn't answer (${error?.message ?? error}). Reload it once at chrome://extensions.` }));
+  }, (error) => ({ keepOpen: true, error: `Reading Context didn't answer (${error?.message ?? error}).` }));
 }
 
 export const COMMANDS: PaletteCommand[] = [
@@ -224,12 +220,10 @@ export const COMMANDS: PaletteCommand[] = [
   // Reading Context
   {
     id: "reading-context-open", section: "Reading Context", title: "Open Reading Context", icon: PanelRightOpen, shortcut: SHORTCUTS.readingContext, keywords: "side panel sidebar",
-    available: (ctx) => Boolean(ctx.readingContextId),
     run: (ctx) => sendReadingContext(ctx, "open")
   },
   {
     id: "reading-context-close", section: "Reading Context", title: "Close Reading Context", icon: PanelRightClose, shortcut: SHORTCUTS.readingContext, keywords: "side panel sidebar hide",
-    available: (ctx) => Boolean(ctx.readingContextId),
     run: (ctx) => sendReadingContext(ctx, "close")
   },
 

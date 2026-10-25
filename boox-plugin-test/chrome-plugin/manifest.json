@@ -1,18 +1,25 @@
 {
   "manifest_version": 3,
-  "name": "Reading Context",
-  "version": "0.2.0",
+  "name": "Super Extension",
+  "version": "0.3.0",
   "minimum_chrome_version": "116",
-  "description": "Ask questions about highlighted passages using the Reading Context OpenCode server.",
+  "description": "Reading Context side panel (ask about highlighted passages via the Reading Context OpenCode server) plus a Cmd+Shift+P command palette that teaches Chrome's keyboard shortcuts.",
   "permissions": [
     "sidePanel",
     "storage",
-    "contextMenus"
+    "contextMenus",
+    "tabs",
+    "sessions",
+    "bookmarks",
+    "history",
+    "search",
+    "favicon",
+    "clipboardWrite",
+    "alarms",
+    "scripting"
   ],
   "host_permissions": [
-    "http://raspberrypi.example.ts.net:41137/*"
-  ],
-  "optional_host_permissions": [
+    "http://raspberrypi.example.ts.net:41137/*",
     "http://*/*",
     "https://*/*"
   ],
@@ -29,6 +36,13 @@
         "mac": "Command+Shift+E"
       },
       "description": "Open or close Reading Context"
+    },
+    "toggle-palette": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+P",
+        "mac": "Command+Shift+P"
+      },
+      "description": "Open or close the command palette"
     }
   },
   "side_panel": {

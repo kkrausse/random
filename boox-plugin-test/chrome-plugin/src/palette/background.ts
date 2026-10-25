@@ -1,3 +1,4 @@
+import { checkForNewBuild } from "../autoReload";
 import { OPEN_ID_KEY, PALETTE_HEIGHT, PALETTE_WIDTH, type BackgroundMessage, type PaletteState } from "./shared";
 
 // The palette is always its own small popup window rendering palette.html;
@@ -26,6 +27,9 @@ async function closePalette(state: PaletteState, refocusOrigin: boolean) {
 }
 
 async function openPalette() {
+  // Picks up a rebuilt extension (the reload would close this palette, so
+  // it happens before the window exists).
+  await checkForNewBuild();
   let origin: chrome.windows.Window;
   try {
     origin = await chrome.windows.getLastFocused({ populate: true, windowTypes: ["normal"] });
@@ -72,13 +76,11 @@ async function togglePalette() {
 
 // Exposed for tests: automation can't press chrome.commands shortcuts, and
 // headless Chromium doesn't emit window focus changes.
-Object.assign(globalThis, { togglePalette, onWindowFocus: (id: number) => onWindowFocus(id) });
+(globalThis as { paletteTest?: unknown }).paletteTest = { togglePalette, onWindowFocus };
 
 chrome.commands.onCommand.addListener((command) => {
   if (command === "toggle-palette") void togglePalette();
 });
-
-chrome.action.onClicked.addListener(() => void togglePalette());
 
 chrome.runtime.onMessage.addListener((message: BackgroundMessage, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id) return false;

@@ -1,8 +1,6 @@
 export const PALETTE_WIDTH = 720;
 export const PALETTE_HEIGHT = 480;
 
-export const READING_CONTEXT_NAME = "Reading Context";
-
 export interface PaletteState {
   windowId: number;
   originWindowId: number;

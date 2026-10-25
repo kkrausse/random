@@ -4,7 +4,7 @@ import { ArrowLeft, Bookmark, BookOpen, Command, Globe, History, Lightbulb, type
 import { COMMANDS, type Mode, type PaletteCommand, type RunContext, type RunResult } from "./commands";
 import { fuzzyBest } from "./fuzzy";
 import { CHEAT_SHEET, SHORTCUTS, shortcutParts, shortcutText, tabNumberShortcut, type Shortcut } from "./shortcuts";
-import { getSettings, getUsage, isPaletteSession, OPEN_ID_KEY, READING_CONTEXT_NAME, restoreLastClosed, type BackgroundMessage, type Nudge, type Settings } from "./shared";
+import { getSettings, getUsage, isPaletteSession, OPEN_ID_KEY, restoreLastClosed, type BackgroundMessage, type Nudge, type Settings } from "./shared";
 
 type Group = "Tabs" | "Commands" | "Recently closed" | "Bookmarks" | "History" | "Open" | string;
 
@@ -154,7 +154,6 @@ function Palette() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [nudge, setNudge] = useState<Nudge | null>(null);
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
-  const [readingContextId, setReadingContextId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -177,10 +176,6 @@ function Palette() {
       if (pending && Date.now() - pending.at < 12 * 60 * 60 * 1000) setNudge(pending);
       if (pending) void chrome.storage.local.remove("pendingNudge");
     });
-    void chrome.management.getAll().then((all) => {
-      const rc = all.find((ext) => ext.name === READING_CONTEXT_NAME && ext.enabled && ext.id !== chrome.runtime.id);
-      setReadingContextId(rc?.id ?? null);
-    }).catch(() => setReadingContextId(null));
     const refocus = () => inputRef.current?.focus();
     window.addEventListener("focus", refocus);
     return () => window.removeEventListener("focus", refocus);
@@ -209,9 +204,8 @@ function Palette() {
     originTabId: ORIGIN_TAB_ID,
     originWindowId: ORIGIN_WINDOW_ID,
     query,
-    readingContextId,
     setMode
-  }), [query, readingContextId, setMode]);
+  }), [query, setMode]);
 
   const items = useMemo(() => buildItems({ mode, query, tabs, closed, bookmarks, history, usage, ctx }), [mode, query, tabs, closed, bookmarks, history, usage, ctx]);
 
@@ -256,7 +250,8 @@ function Palette() {
     }
     setBusy(true);
     const usageWrite = recordUsage(item).catch(() => {});
-    void result.then(async (outcome) => {
+    void result.then(async (value) => {
+      const outcome = value as RunResult | undefined;
       await usageWrite;
       setBusy(false);
       if (outcome?.keepOpen) {
@@ -554,7 +549,7 @@ function buildItems({ mode, query, tabs, closed, bookmarks, history, usage, ctx 
 
   // Root: one list grouped by type.
   const groups = new Map<Group, Item[]>();
-  const available = COMMANDS.filter((c) => !c.available || c.available(ctx));
+  const available = COMMANDS;
 
   if (!q) {
     const recent = [...tabs].sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0));

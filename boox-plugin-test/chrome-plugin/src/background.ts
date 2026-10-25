@@ -1,4 +1,6 @@
 import { recordDiagnostic } from "./diagnostics";
+import { reinjectContentScripts, startAutoReload } from "./autoReload";
+import "./palette/background";
 
 const CONTEXT_MENU_ID = "reading-context-ask";
 
@@ -38,7 +40,14 @@ function configureExtension() {
 
 configureExtension();
 
-chrome.runtime.onInstalled.addListener(configureExtension);
+chrome.runtime.onInstalled.addListener(() => {
+  configureExtension();
+  // Covers both rebuild auto-reloads and manual reloads: open pages get the
+  // new content script without being refreshed.
+  void reinjectContentScripts();
+});
+
+startAutoReload();
 
 chrome.runtime.onStartup.addListener(configureExtension);
 
@@ -107,13 +116,11 @@ chrome.commands.onCommand.addListener((command, tab) => {
   void setPanel(tab.windowId, "toggle");
 });
 
-// The Command Palette extension (command-palette/ in this repo) has a fixed
-// ID from the "key" in its manifest; it opens and closes the panel from its
-// own keyboard-driven window. Nothing else may.
-const COMMAND_PALETTE_ID = "npfagmlfdgapcbhlpcocjeokabcfdmmn";
-
-chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
-  if (sender.id !== COMMAND_PALETTE_ID || message?.type !== "reading-context") return false;
+// The command palette (src/palette/) opens and closes the panel. Its page
+// sends this message from the Enter keydown, and Chrome carries that user
+// gesture over to here, so sidePanel.open is allowed.
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== "reading-context" || !sender.url?.startsWith(chrome.runtime.getURL("palette.html"))) return false;
   if (typeof message.windowId !== "number") {
     sendResponse({ ok: false, error: "missing windowId" });
     return false;
