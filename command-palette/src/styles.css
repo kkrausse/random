@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+@source "./";
+
+:root {
+  --surface: #ffffff;
+  --footer: #fafafa;
+  --fg: #18181b;
+  --muted: #71717a;
+  --placeholder: #a1a1aa;
+  --line: #e9e9ec;
+  --selected: #f0f0f3;
+  --chip: #ececf0;
+  --accent: #2563eb;
+  --danger: #dc2626;
+  --keycap: #f6f6f8;
+  --keycap-border: #dcdce1;
+  --keycap-active: #ffffff;
+  --keycap-active-border: #c4c4cc;
+  --keycap-shadow: rgb(0 0 0 / 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #1c1c20;
+    --footer: #19191c;
+    --fg: #f4f4f5;
+    --muted: #a1a1aa;
+    --placeholder: #6b6b75;
+    --line: #2c2c32;
+    --selected: #2b2b31;
+    --chip: #2e2e35;
+    --accent: #7aa7ff;
+    --danger: #f87171;
+    --keycap: #26262c;
+    --keycap-border: #393941;
+    --keycap-active: #3a3a43;
+    --keycap-active-border: #50505b;
+    --keycap-shadow: rgb(0 0 0 / 0.4);
+  }
+}
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-footer: var(--footer);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-placeholder: var(--placeholder);
+  --color-line: var(--line);
+  --color-selected: var(--selected);
+  --color-chip: var(--chip);
+  --color-accent: var(--accent);
+  --color-danger: var(--danger);
+  --color-keycap: var(--keycap);
+  --color-keycap-border: var(--keycap-border);
+  --color-keycap-active: var(--keycap-active);
+  --color-keycap-active-border: var(--keycap-active-border);
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--surface);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
