@@ -1,8 +1,9 @@
 import { createRoot } from "react-dom/client";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, Bookmark, BookOpen, Command, Globe, History, Lightbulb, type LucideIcon, RotateCcw, Search } from "lucide-react";
-import { COMMANDS, type Mode, type PaletteCommand, type RunContext, type RunResult } from "./commands";
+import { COMMANDS, featureCommands, type Mode, type PaletteCommand, type RunContext, type RunResult } from "./commands";
 import { fuzzyBest } from "./fuzzy";
+import { DEFAULT_FEATURES, getFeatures, onFeaturesChanged, type FeatureState } from "../features";
 import { CHEAT_SHEET, SHORTCUTS, shortcutParts, shortcutText, tabNumberShortcut, type Shortcut } from "./shortcuts";
 import { getSettings, getUsage, isPaletteSession, OPEN_ID_KEY, restoreLastClosed, type BackgroundMessage, type Nudge, type Settings } from "./shared";
 
@@ -151,6 +152,7 @@ function Palette() {
   const [bookmarks, setBookmarks] = useState<chrome.bookmarks.BookmarkTreeNode[]>([]);
   const [history, setHistory] = useState<chrome.history.HistoryItem[]>([]);
   const [usage, setUsage] = useState<Record<string, number>>({});
+  const [features, setFeatures] = useState<FeatureState>(DEFAULT_FEATURES);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [nudge, setNudge] = useState<Nudge | null>(null);
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
@@ -169,6 +171,8 @@ function Palette() {
     void chrome.tabs.query({ windowType: "normal" }).then(setTabs);
     void chrome.sessions.getRecentlyClosed({ maxResults: 15 }).then((all) => setClosed(all.filter((s) => !isPaletteSession(s))));
     void getUsage().then(setUsage);
+    void getFeatures().then(setFeatures);
+    onFeaturesChanged((next) => setFeatures(next));
     void getSettings().then(setSettings);
     void chrome.storage.local.get("pendingNudge").then(({ pendingNudge }) => {
       const pending = pendingNudge as Nudge | undefined;
@@ -204,8 +208,9 @@ function Palette() {
     originTabId: ORIGIN_TAB_ID,
     originWindowId: ORIGIN_WINDOW_ID,
     query,
-    setMode
-  }), [query, setMode]);
+    setMode,
+    features
+  }), [query, setMode, features]);
 
   const items = useMemo(() => buildItems({ mode, query, tabs, closed, bookmarks, history, usage, ctx }), [mode, query, tabs, closed, bookmarks, history, usage, ctx]);
 
@@ -549,7 +554,7 @@ function buildItems({ mode, query, tabs, closed, bookmarks, history, usage, ctx 
 
   // Root: one list grouped by type.
   const groups = new Map<Group, Item[]>();
-  const available = COMMANDS;
+  const available = [...COMMANDS, ...featureCommands(ctx.features)].filter((c) => !c.available || c.available(ctx));
 
   if (!q) {
     const recent = [...tabs].sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0));

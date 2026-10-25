@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Super Extension",
-  "version": "0.3.0",
-  "minimum_chrome_version": "116",
-  "description": "Reading Context side panel (ask about highlighted passages via the Reading Context OpenCode server) plus a Cmd+Shift+P command palette that teaches Chrome's keyboard shortcuts.",
+  "version": "0.4.0",
+  "minimum_chrome_version": "119",
+  "description": "Reading Context side panel, a Cmd+Shift+P command palette that teaches Chrome's shortcuts, and a guard that keeps Cmd+Shift+A tab search working. Each can be turned off.",
   "permissions": [
     "sidePanel",
     "storage",
@@ -19,15 +19,17 @@
     "scripting"
   ],
   "host_permissions": [
-    "http://raspberrypi.example.ts.net:41137/*",
-    "http://*/*",
-    "https://*/*"
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Open Reading Context"
+    "default_title": "Super Extension"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
   },
   "commands": {
     "toggle-reading-context": {
@@ -47,12 +49,5 @@
   },
   "side_panel": {
     "default_path": "sidepanel.html"
-  },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
-  ]
+  }
 }

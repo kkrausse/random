@@ -1,5 +1,5 @@
 {
-  "name": "reading-context-chrome-extension",
+  "name": "chrome-super-plugin",
   "private": true,
   "type": "module",
   "scripts": {
@@ -23,6 +23,6 @@
     "markdown-it": "^15.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "reading-context-client": "workspace:*"
+    "reading-context-client": "file:../boox-plugin-test/client"
   }
 }

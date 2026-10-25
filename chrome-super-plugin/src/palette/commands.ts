@@ -29,10 +29,14 @@ import {
   XSquare,
   ZoomIn,
   ZoomOut,
+  ToggleLeft,
+  ToggleRight,
+  SlidersHorizontal,
   EyeOff,
   Star
 } from "lucide-react";
 import { getSettings, restoreLastClosed } from "./shared";
+import { FEATURES, setFeature, type FeatureState } from "../features";
 import { SHORTCUTS, type Shortcut } from "./shortcuts";
 
 export type Mode = "root" | "cheatsheet" | "history" | "bookmarks" | "url";
@@ -42,6 +46,7 @@ export interface RunContext {
   originWindowId: number;
   query: string;
   setMode: (mode: Mode) => void;
+  features: FeatureState;
 }
 
 export interface RunResult {
@@ -61,6 +66,8 @@ export interface PaletteCommand {
   icon: LucideIcon;
   shortcut?: Shortcut;
   keywords?: string;
+  // Hidden when it can't apply (e.g. its feature is switched off).
+  available?: (ctx: RunContext) => boolean;
   run: (ctx: RunContext) => Promise<RunResult | void> | RunResult | void;
 }
 
@@ -220,10 +227,12 @@ export const COMMANDS: PaletteCommand[] = [
   // Reading Context
   {
     id: "reading-context-open", section: "Reading Context", title: "Open Reading Context", icon: PanelRightOpen, shortcut: SHORTCUTS.readingContext, keywords: "side panel sidebar",
+    available: (ctx) => ctx.features.readingContext,
     run: (ctx) => sendReadingContext(ctx, "open")
   },
   {
     id: "reading-context-close", section: "Reading Context", title: "Close Reading Context", icon: PanelRightClose, shortcut: SHORTCUTS.readingContext, keywords: "side panel sidebar hide",
+    available: (ctx) => ctx.features.readingContext,
     run: (ctx) => sendReadingContext(ctx, "close")
   },
 
@@ -246,5 +255,30 @@ export const COMMANDS: PaletteCommand[] = [
       const label = next === 0 ? "off" : next >= 1_000_000 ? "always shown" : `shown until a command has run ${next} times`;
       return { keepOpen: true, message: `“Next time” hints: ${label}. Run again to cycle.` };
     }
+  },
+  {
+    id: "options", section: "Palette", title: "Super Extension options", icon: SlidersHorizontal, keywords: "settings features toggles enable disable preferences",
+    run: async () => { await chrome.runtime.openOptionsPage(); return { focusMoved: true }; }
   }
 ];
+
+// "Disable Reading Context" / "Enable Reading Context" etc., worded for the
+// current state.
+export function featureCommands(features: FeatureState): PaletteCommand[] {
+  return FEATURES.map((feature) => {
+    const on = features[feature.id];
+    return {
+      id: `feature-${feature.id}`,
+      section: "Palette",
+      title: `${on ? "Disable" : "Enable"} ${feature.title}`,
+      icon: on ? ToggleRight : ToggleLeft,
+      keywords: `turn ${on ? "off" : "on"} toggle feature ${feature.shortcut ?? ""}`,
+      run: async (): Promise<RunResult> => {
+        await setFeature(feature.id, !on);
+        // Switching the palette itself off closes it (the background does).
+        if (feature.id === "palette") return {};
+        return { keepOpen: true, message: `${feature.title} is now ${on ? "off" : "on"}.` };
+      }
+    };
+  });
+}

@@ -1,26 +1,64 @@
-# Super Extension
+# Super Extension (chrome-super-plugin)
 
-One Chrome extension, two jobs:
+My one Chrome extension. Three features, each of which can be switched off:
 
-- **Reading Context** side panel (⌘⇧E): ask about highlighted passages. See
-  the **Chrome Extension** section of [`../README.md`](../README.md) for
-  setup, the server connection and how capture works.
-- **Command palette** (⌘⇧P): a Spotlight-style launcher whose real job is
-  teaching you to drive Chrome without the mouse. Described below.
+| Feature | Key | What it does |
+| --- | --- | --- |
+| **Reading Context** | ⌘⇧E | Side panel for asking about highlighted passages via the Reading Context OpenCode server. Setup, server and capture details: the **Chrome Extension** section of [`../boox-plugin-test/README.md`](../boox-plugin-test/README.md). |
+| **Command palette** | ⌘⇧P | Spotlight-style launcher that runs commands and teaches Chrome's keyboard shortcuts. |
+| **Keep Tab Search Shortcut** | ⌘⇧A | Stops websites (Slack, Substack, …) from swallowing Chrome's tab search shortcut. |
 
-Install: from `boox-plugin-test/`, run `bun install`, then `cd chrome-plugin && bun run build`.
-Load unpacked `chrome-plugin/dist` once, with Developer mode on. After that,
-`bun run build` (or `bun run dev`, which rebuilds on save) is enough: the
-extension notices the new `dist/build-id.txt` within 30 seconds, or straight
-away when you open the palette, and reloads itself.
+## Install once, then never again
+
+```sh
+cd chrome-super-plugin
+bun install
+bun run build
+```
+
+1. `chrome://extensions` → turn on **Developer mode** (keep it on).
+2. **Load unpacked** → pick `chrome-super-plugin/dist`.
+3. Open Reading Context (⌘⇧E) and enter the server password under Settings.
+
+After that, `bun run build` (or `bun run dev`, which rebuilds on save) is
+all it takes: each build writes `dist/build-id.txt`, and the loaded
+extension checks it every 30 seconds, at startup, and whenever the palette
+opens, then calls `chrome.runtime.reload()` when it changed. After a reload
+the content scripts are re-injected into open tabs, so pages don't need a
+refresh. Chrome only brings a self-reloaded unpacked extension back while
+Developer mode is on.
+
+## Turning features on and off
+
+- **Options page**: `chrome://extensions` → Super Extension → Extension
+  options, the palette's "Super Extension options" command, or clicking the
+  toolbar icon while Reading Context is off. Keyboard-first: focus starts on
+  the first switch, ↑/↓ (or j/k) move, Space toggles, 1–3 toggle directly,
+  Esc closes.
+- **Palette commands**: "Disable Reading Context", "Enable Keep Tab Search
+  Shortcut", "Disable Command palette", etc.
+
+Toggles live in `chrome.storage.local` (`features`), all on by default. Off
+really means off:
+
+- **Reading Context**: its content script is unregistered and torn down in
+  open tabs, the side panel is disabled (the toolbar icon opens the options
+  page instead), the right-click menu is removed, and ⌘⇧E does nothing.
+- **Command palette**: ⌘⇧P does nothing (an open palette closes).
+- **Keep Tab Search Shortcut**: its script is unregistered and switched off in
+  open tabs.
+
+Content scripts are registered at runtime with
+`chrome.scripting.registerContentScripts` rather than in the manifest, which
+is what makes this possible.
 
 ## Command palette
 
 The palette never touches page content. It always opens as its own small
-popup window, centered on the current window, rendering `palette.html`. That
-keeps it away from pages that grab keystrokes (Google Docs, Gmail, Figma),
-z-index fights, fullscreen and focus traps, and it works the same on
-`chrome://` pages, the new tab page, the Web Store and PDFs.
+popup window, centered on the current window. That keeps it away from pages
+that grab keystrokes (Google Docs, Gmail, Figma), z-index fights, fullscreen
+and focus traps, and it works the same on `chrome://` pages, the new tab
+page, the Web Store and PDFs.
 
 - **⌘⇧P** opens it. **⌘⇧P** again, **Esc**, or focusing any other window
   closes it, and focus goes back to the window you came from.
@@ -30,49 +68,61 @@ z-index fights, fullscreen and focus traps, and it works the same on
   in a new tab.
 - Commands act on the tab that was active when the palette opened: tab
   management, back/forward/reload, open URL, web search, copy URL or Markdown
-  link, zoom, new (incognito) window, Chrome pages, and Open/Close Reading
-  Context.
+  link, zoom, new (incognito) window, Chrome pages, Open/Close Reading
+  Context, and the feature toggles.
 - "Search history…", "Search bookmarks…", "Open URL…" and "Shortcut cheat
   sheet" switch to a focused mode. **Esc**, or **⌫** in an empty box, goes back.
 
-### Learning mode
+**Learning mode.** Every command with a native Chrome or macOS shortcut shows
+it as keycaps. After you run one through the palette, the next time it opens
+the footer says "Last time you ran Close tab. Next time: ⌘W", until you've
+run it 10 times ("Change shortcut hint limit" cycles 10 → 25 → always → off;
+"Reset learning stats" starts over). The **Shortcut cheat sheet** lists every
+shortcut the palette knows, including ones it can't run for you: ⌘L, ⌘⇧A tab
+search, ⌘⇧/ macOS menu search, ⌘F → Esc → ↵ to follow a link, ⌘⌥←/→, F6.
 
-- Every command with a native Chrome or macOS shortcut shows it as keycaps.
-- After you run such a command through the palette, the next time it opens
-  the footer says "Last time you ran Close tab. Next time: ⌘W". That stops
-  for a command once you've run it 10 times. **Change shortcut hint limit**
-  cycles 10 → 25 → always → off, and **Reset learning stats** starts over.
-  Counts live in `chrome.storage.local`.
-- **Shortcut cheat sheet** lists every shortcut the palette knows, including
-  ones it can't run for you: ⌘L, ⌘⇧A tab search, ⌘⇧/ macOS menu search,
-  ⌘F → Esc → ↵ to follow a link, ⌘⌥←/→, F6 and more.
+**Reading Context from the palette.** `chrome.sidePanel.open` needs a user
+gesture. The palette page sends a `reading-context` runtime message from its
+↵ key handler and Chrome carries the gesture to the background, which opens
+the panel.
 
-### Opening Reading Context from the palette
+## Keep Tab Search Shortcut
 
-`chrome.sidePanel.open` needs a user gesture. The palette page sends a
-`reading-context` runtime message from inside its ↵ key handler, and Chrome
-carries the gesture over to the background, which opens the panel (closing
-goes over the panel's port). If it ever fails, the palette shows the error and
-suggests ⌘⇧E.
+A MAIN-world script at `document_start` in every frame (including
+about:blank-style frames) catches Ctrl+Shift+A / ⌘⇧A in the capture phase
+and stops propagation without `preventDefault()`, so page handlers never see
+it while Chrome still opens tab search. Chrome doesn't run extension scripts
+on internal pages such as `chrome://` URLs. To protect only Ctrl+Shift+A, set
+`PROTECT_META_SHIFT_A` to `false` in `src/tab-search-guard/tab-search-guard.ts`.
 
-### Changing the shortcuts
+## Shortcuts
 
-Chrome applies a suggested shortcut only if nothing else already owns it. If
-⌘⇧P or ⌘⇧E does nothing, set it at `chrome://extensions/shortcuts` (the
-palette's "Extension keyboard shortcuts" command opens it).
+Chrome applies a suggested shortcut only if nothing else owns it. If ⌘⇧P or
+⌘⇧E does nothing, set it at `chrome://extensions/shortcuts` (the options page
+and the palette both have a way there).
 
-## Development notes
+## Layout
 
-- Source: `src/background.ts` (single service worker; imports
-  `src/palette/background.ts` and `src/autoReload.ts`), `src/content.ts`,
-  `src/sidepanel.tsx`, `src/palette/`. The palette's Tailwind CSS is built
-  from `src/palette/styles.css` into `dist/palette.css`; the side panel keeps
-  its own `sidepanel.css`.
-- Closed palette windows land in Chrome's recently-closed list. If ⌘⇧T
-  brings one back, it notices it's stale, restores the real closed tab
-  instead and closes itself.
-- Permissions: `tabs`, `sessions`, `bookmarks`, `history` (palette search and
-  tab commands), `search` (web search with your default engine), `favicon`,
-  `clipboardWrite`, `alarms` (build check), `scripting` plus http/https host
-  access (re-injecting the content script after a reload), and Reading
-  Context's own `sidePanel`, `storage`, `contextMenus`.
+```text
+manifest.json             one manifest, no static content scripts
+build.ts                  Bun.build + Tailwind; --watch for `bun run dev`
+src/background.ts         service worker: wires features to their toggles
+src/features.ts           toggle storage and metadata
+src/contentScripts.ts     runtime content-script registration helpers
+src/autoReload.ts         build-id check and self-reload
+src/ui.css                Tailwind for the palette and options pages
+src/reading-context/      side panel, content script, background, API client
+src/palette/              palette page, commands, shortcuts, fuzzy search
+src/options/              options page
+src/tab-search-guard/     MAIN-world shortcut guard and its registration
+```
+
+The Reading Context client is `reading-context-client` from
+`../boox-plugin-test/client` (a `file:` dependency; the Android app shares it).
+
+Checks: `bun test`, `bun run check`, `bun run build`.
+
+Permissions: `tabs`, `sessions`, `bookmarks`, `history` (palette search and
+tab commands), `search`, `favicon`, `clipboardWrite`, `alarms` (build check),
+`scripting` plus `<all_urls>` host access (runtime content scripts and
+re-injection), and Reading Context's `sidePanel`, `storage`, `contextMenus`.

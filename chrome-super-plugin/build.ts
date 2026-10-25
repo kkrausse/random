@@ -1,17 +1,25 @@
 import { cpSync, existsSync, mkdirSync, rmSync, watch, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 const root = import.meta.dir;
 const outdir = join(root, "dist");
 const watchMode = process.argv.includes("--watch");
 
-// bun hoists the Tailwind CLI to the workspace root (boox-plugin-test/).
 function tailwindBin() {
-  const candidates = [join(root, "node_modules/.bin/tailwindcss"), join(root, "../node_modules/.bin/tailwindcss")];
-  const found = candidates.find((path) => existsSync(path));
-  if (!found) throw new Error("Tailwind CLI not found; run `bun install` in boox-plugin-test/");
-  return found;
+  const bin = join(root, "node_modules/.bin/tailwindcss");
+  if (!existsSync(bin)) throw new Error("Tailwind CLI not found; run `bun install` in chrome-super-plugin/");
+  return bin;
 }
+
+// Static files, copied flat into dist/ (the manifest and pages refer to
+// them by bare name).
+const ASSETS = [
+  "manifest.json",
+  "src/reading-context/sidepanel.html",
+  "src/reading-context/sidepanel.css",
+  "src/palette/palette.html",
+  "src/options/options.html"
+];
 
 async function build(): Promise<boolean> {
   // Clean only on a one-off build: in watch mode a loaded extension keeps
@@ -22,9 +30,11 @@ async function build(): Promise<boolean> {
   const result = await Bun.build({
     entrypoints: [
       join(root, "src/background.ts"),
-      join(root, "src/content.ts"),
-      join(root, "src/sidepanel.tsx"),
-      join(root, "src/palette/palette.tsx")
+      join(root, "src/reading-context/content.ts"),
+      join(root, "src/reading-context/sidepanel.tsx"),
+      join(root, "src/palette/palette.tsx"),
+      join(root, "src/options/options.tsx"),
+      join(root, "src/tab-search-guard/tab-search-guard.ts")
     ],
     outdir,
     target: "browser",
@@ -40,9 +50,10 @@ async function build(): Promise<boolean> {
     return false;
   }
 
-  // The palette's styles; the side panel keeps its own hand-written CSS.
+  // Tailwind for the palette and options pages; the side panel keeps its
+  // own hand-written CSS.
   const css = Bun.spawnSync(
-    [tailwindBin(), "-i", join(root, "src/palette/styles.css"), "-o", join(outdir, "palette.css"), "--minify"],
+    [tailwindBin(), "-i", join(root, "src/ui.css"), "-o", join(outdir, "ui.css"), "--minify"],
     { cwd: root, stdout: "ignore", stderr: "pipe" }
   );
   if (css.exitCode !== 0) {
@@ -50,8 +61,8 @@ async function build(): Promise<boolean> {
     return false;
   }
 
-  for (const asset of ["manifest.json", "sidepanel.css", "sidepanel.html", "palette.html"]) {
-    cpSync(join(root, asset), join(outdir, asset));
+  for (const asset of ASSETS) {
+    cpSync(join(root, asset), join(outdir, basename(asset)));
   }
 
   // Written last: the running extension polls this file and reloads itself
@@ -59,7 +70,7 @@ async function build(): Promise<boolean> {
   const buildId = `${new Date().toISOString()}-${Math.random().toString(36).slice(2, 8)}`;
   writeFileSync(join(outdir, "build-id.txt"), buildId);
 
-  console.log(`Built ${result.outputs.length} scripts and palette.css in chrome-plugin/dist (build ${buildId})`);
+  console.log(`Built ${result.outputs.length} scripts and ui.css in chrome-super-plugin/dist (build ${buildId})`);
   return true;
 }
 
@@ -89,11 +100,8 @@ if (!watchMode) {
   };
   const watched = [
     join(root, "src"),
-    join(root, "../client/src"),
-    join(root, "manifest.json"),
-    join(root, "sidepanel.css"),
-    join(root, "sidepanel.html"),
-    join(root, "palette.html")
+    join(root, "../boox-plugin-test/client/src"),
+    join(root, "manifest.json")
   ];
   for (const path of watched) {
     if (existsSync(path)) watch(path, { recursive: true }, rebuild);

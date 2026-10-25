@@ -58,12 +58,3 @@ export function startAutoReload() {
   });
   void checkForNewBuild();
 }
-
-// Content scripts in already-open tabs belong to the previous extension
-// instance and stop working on reload; inject the current one. content.ts
-// tears down any older copy in the page, so this can't double up.
-export async function reinjectContentScripts() {
-  const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
-  await Promise.all(tabs.map((tab) => tab.id === undefined || tab.discarded ? null
-    : chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] }).catch(() => {})));
-}

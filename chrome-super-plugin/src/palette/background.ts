@@ -1,4 +1,5 @@
 import { checkForNewBuild } from "../autoReload";
+import { getFeatures } from "../features";
 import { OPEN_ID_KEY, PALETTE_HEIGHT, PALETTE_WIDTH, type BackgroundMessage, type PaletteState } from "./shared";
 
 // The palette is always its own small popup window rendering palette.html;
@@ -71,7 +72,15 @@ async function togglePalette() {
   // The palette page also handles ⌘⇧P itself; ignore a command that lands
   // right after that close so the palette doesn't immediately reopen.
   if (Date.now() - lastClosedAt < 400) return;
+  // Switched off in the options: ⌘⇧P does nothing.
+  if (!(await getFeatures()).palette) return;
   await openPalette();
+}
+
+// Called when the feature is switched off while the palette is showing.
+export async function closePaletteIfOpen() {
+  const state = await getState();
+  if (state) await closePalette(state, true);
 }
 
 // Exposed for tests: automation can't press chrome.commands shortcuts, and

@@ -67,3 +67,11 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
+
+/* The options page scrolls; the palette window does not. */
+html:has(body.options),
+body.options {
+  height: auto;
+  min-height: 100%;
+  overflow: auto;
+}

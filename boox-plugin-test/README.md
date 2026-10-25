@@ -71,8 +71,8 @@ Follow-on work: investigate a generic, explicitly triggered capture for other ap
 app/                                  Android application
 app/src/main/assets/reading-client.js Built shared client for the Android WebView
 client/                               Shared OpenCode v2 client, Android bridge, mock harness
-chrome-plugin/                        Chrome extension (Manifest V3)
-package.json                          bun workspace: client + chrome-plugin
+package.json                          bun workspace: client
+../chrome-super-plugin/               Chrome extension (Super Extension) that hosts the Reading Context side panel
 server/deploy.sh                      Repeatable Pi deployment
 server/opencode.service               systemd unit for the Pi's one OpenCode server
 server/import-v1-history.ts           One-off import of 1.18 chats into v2 (already run)
@@ -435,17 +435,16 @@ Before installing on an existing device, confirm the APK uses `dev.kkrausse.kind
 
 ## Chrome Extension
 
-`chrome-plugin/` is a separate desktop Chrome extension, named **Super Extension** in Chrome; Android Chrome uses the accessibility-service source profile described above, not this extension. It does two jobs: the Reading Context side panel described here, and a Cmd+Shift+P command palette that teaches Chrome's keyboard shortcuts (see [`chrome-plugin/README.md`](chrome-plugin/README.md)). The extension is a Bun-built TypeScript and React Manifest V3 extension that connects to the same server and workspace as the Android app, through the same shared client (`client/`). React is limited to the side panel and the palette page; the background and content scripts remain plain TypeScript. Sessions are shared through OpenCode, while the Chrome model, template, prompt presets, and credentials are stored separately in `chrome.storage.local`.
+The desktop Chrome side of Reading Context lives in the repo's top-level [`chrome-super-plugin/`](../chrome-super-plugin), the user's single Chrome extension (**Super Extension**). It also carries a command palette and a tab-search shortcut guard; each feature can be switched off in its options page. Android Chrome uses the accessibility-service source profile described above, not this extension. The Reading Context code is in `chrome-super-plugin/src/reading-context/`: a Bun-built TypeScript and React Manifest V3 side panel that connects to the same server and workspace as the Android app, through the same shared client (`client/`, a `file:` dependency of the extension). The background and content scripts remain plain TypeScript. Sessions are shared through OpenCode, while the Chrome model, template, prompt presets, and credentials are stored separately in `chrome.storage.local`.
 
-Install it for development:
+Install it for development (see [`chrome-super-plugin/README.md`](../chrome-super-plugin/README.md) for details):
 
-1. Open `chrome://extensions`.
-2. Enable Developer mode.
-3. Run `bun install && cd chrome-plugin && bun run build` from the repository root. `bun install` covers the whole workspace, including the shared client.
-4. Choose `Load unpacked` and select this repository's `chrome-plugin/dist/` directory.
-5. Open the extension side panel, enter the server password under `Settings`, then press `Save and test`.
+1. Open `chrome://extensions` and enable Developer mode.
+2. Run `cd chrome-super-plugin && bun install && bun run build` from the repo root.
+3. Choose `Load unpacked` and select `chrome-super-plugin/dist/`.
+4. Open the side panel (Cmd+Shift+E), enter the server password under `Settings`, then press `Save and test`.
 
-Only that first `Load unpacked` is manual. After changing extension code, rerun `bun run build`, or keep `bun run dev` running to rebuild on every save. Each build writes `dist/build-id.txt`; the loaded extension checks it every 30 seconds, at startup, and whenever the palette opens, and calls `chrome.runtime.reload()` when it changes. After any reload it re-injects the content script into open http/https tabs, so highlights keep working without refreshing pages (an older copy of the script in the page shuts itself down). Developer mode must stay on: Chrome only brings a self-reloaded unpacked extension back with it enabled.
+Only that first `Load unpacked` is manual: rebuilds (`bun run build`, or `bun run dev` to rebuild on save) make the loaded extension reload itself, and the highlight content script is re-injected into open tabs.
 
 Press Cmd+Shift+E (Ctrl+Shift+E off macOS) to open or close the side panel without the mouse; change the key at `chrome://extensions/shortcuts`. The panel opens with the question box focused, and Esc closes it (the first Esc only leaves a text box that has a draft in it).
 
@@ -453,17 +452,17 @@ Open the extension side panel and highlight text on a normal website. Each selec
 
 In chat history, reading prompts show the question and highlighted passage in a compact card, with the full page context available from `View page context`. Each OpenCode response shows the exact provider, model ID, and variant reported with that assistant message. OpenCode responses render as Markdown and update directly from the server's authenticated event stream. If text is selected inside a streaming response, that message's DOM remains stable while incoming text buffers; rendering catches up when the selection clears. If the volatile stream disconnects, the shared client reconnects and the extension reloads canonical messages to recover missed events. A `Stop` action interrupts a stalled server execution and restores the composer. A compact footer shows the server's running totals for the chat: input, output, reasoning, cache read/write, and USD cost, updated while a response streams. New messages, streamed response text, and new inline highlights automatically scroll into view while the chat remains pinned to the bottom. Scrolling away or selecting text suspends auto-scroll; manually reaching the bottom pins the chat to updates again. The persistent header remains available while prompts and responses are loading, so `New`, `Chats`, and `Settings` can be opened at any time without discarding the current capture. If a conversation is open, a new selection appears in the shared composer. The compact quick-question buttons and normal `Send` action automatically include that highlight. The adjacent `New chat` action opens the normal new-chat form with the latest highlight and its freshly captured page context. From other screens, selecting text opens `New`, including when the capture came from another tab.
 
-The extension holds http/https host access, which re-injecting the content script into open tabs needs. That also covers any server URL, so changing it doesn't prompt for a new origin.
+The extension holds `<all_urls>` host access, which its runtime-registered content scripts and re-injection into open tabs need. That also covers any server URL, so changing it doesn't prompt for a new origin.
 
-The extension observes text selections on normal websites using the manifest's `<all_urls>` content-script access. It does not inject controls into the page; the command palette is its own popup window. Server credentials remain restricted to trusted extension pages, and captured page text is held temporarily in tab-scoped `chrome.storage.session` only until the side panel receives it.
+The extension observes text selections on normal websites with a content script registered at runtime (and unregistered when Reading Context is switched off). It does not inject controls into the page; the command palette is its own popup window. Server credentials remain restricted to trusted extension pages, and captured page text is held temporarily in tab-scoped `chrome.storage.session` only until the side panel receives it.
 
 Extension and API failures are retained as a bounded local diagnostics log. Open `Settings -> Diagnostics` to copy or clear it. Diagnostics omit the server password, highlighted text, surrounding page text, and page URL.
 
 Run the extension's local checks with:
 
 ```sh
+cd ../chrome-super-plugin
 bun install
-cd chrome-plugin
 bun test
 bun run check
 bun run build
@@ -589,10 +588,10 @@ The server, the official client library, and the bundled Android script move tog
 1. Set the new version as the `OPENCODE_VERSION` default in `server/deploy.sh` and as the exact `@opencode/client` version in `client/package.json`, then run `bun install`.
 2. Run `cd client && bun run check && OPENCODE_BIN=<new opencode binary> bun run verify`. Fix anything the new contract broke in `client/src`.
 3. Run `bun run build:android && OPENCODE_BIN=<new opencode binary> bun run verify:bridge` and commit the rebuilt `app/src/main/assets/reading-client.js`.
-4. Run `bun test`, `bun run check`, and `bun run build` in `chrome-plugin/`.
+4. Run `bun install`, `bun test`, `bun run check`, and `bun run build` in `../chrome-super-plugin/`.
 5. Back up `/var/lib/opencode/.local/share/opencode` as shown under **Server Persistence**.
 6. Run `./server/deploy.sh` (with `PALMA_SERVER_HOST` and `PALMA_SERVER_ADDRESS`).
-7. Build and lint the Android app, install the APK with `adb install -r`, and reload the Chrome extension.
+7. Build and lint the Android app, install the APK with `adb install -r`; the Chrome extension reloads itself after its rebuild.
 8. Test capture, a new session, a reply, and prior-session loading.
 
 Keep production pinned to a known-good OpenCode version and validate API compatibility before upgrading.
