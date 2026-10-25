@@ -69,3 +69,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }).then(() => sendResponse(), () => sendResponse());
   return true;
 });
+
+// The side panel holds a port open while it is showing, so the shortcut can
+// toggle synchronously; sidePanel.open must run inside the command's gesture.
+const openPanels = new Map<number, chrome.runtime.Port>();
+
+chrome.runtime.onConnect.addListener((port) => {
+  const match = /^sidepanel:(\d+)$/.exec(port.name);
+  if (!match) return;
+  const windowId = Number(match[1]);
+  openPanels.set(windowId, port);
+  port.onDisconnect.addListener(() => {
+    if (openPanels.get(windowId) === port) openPanels.delete(windowId);
+  });
+});
+
+chrome.commands.onCommand.addListener((command, tab) => {
+  if (command !== "toggle-reading-context" || tab?.windowId === undefined) return;
+  const port = openPanels.get(tab.windowId);
+  if (port) {
+    port.postMessage({ type: "close" });
+    return;
+  }
+  chrome.sidePanel.open({ windowId: tab.windowId }).catch((error) => {
+    recordDiagnostic("sidepanel-open-error", {
+      message: String(error?.message || error)
+    });
+  });
+});

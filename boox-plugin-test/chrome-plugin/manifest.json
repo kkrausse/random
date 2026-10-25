@@ -22,6 +22,15 @@
   "action": {
     "default_title": "Open Reading Context"
   },
+  "commands": {
+    "toggle-reading-context": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+E",
+        "mac": "Command+Shift+E"
+      },
+      "description": "Open or close Reading Context"
+    }
+  },
   "side_panel": {
     "default_path": "sidepanel.html"
   },
