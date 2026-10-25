@@ -31,6 +31,8 @@ interface Item {
 const params = new URLSearchParams(location.search);
 const ORIGIN_WINDOW_ID = Number(params.get("window"));
 const ORIGIN_TAB_ID = params.has("tab") ? Number(params.get("tab")) : null;
+// Opened as a tab over a fullscreen window rather than as its own popup.
+const TAB_MODE = params.get("mode") === "tab";
 
 const GROUP_ORDER: Group[] = ["Open", "Tabs", "Commands", "Recently closed", "Bookmarks", "History"];
 const MODE_LABEL: Record<Mode, string> = { root: "", cheatsheet: "Shortcuts", history: "History", bookmarks: "Bookmarks", url: "Open URL" };
@@ -317,7 +319,9 @@ function Palette() {
   let lastGroup: string | null = null;
 
   return (
-    <div className="flex h-screen flex-col bg-surface text-fg">
+    <div className={TAB_MODE
+      ? "mx-auto mt-[12vh] flex h-[480px] max-w-[720px] flex-col overflow-hidden rounded-xl border border-line bg-surface text-fg shadow-2xl"
+      : "flex h-screen flex-col bg-surface text-fg"}>
       <div className="flex h-[60px] shrink-0 items-center gap-3 border-b border-line px-5">
         <ModeIcon className="size-5 shrink-0 text-muted" strokeWidth={1.75} />
         {mode !== "root" && (

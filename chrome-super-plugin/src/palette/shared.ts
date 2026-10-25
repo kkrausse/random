@@ -3,6 +3,9 @@ export const PALETTE_HEIGHT = 480;
 
 export interface PaletteState {
   windowId: number;
+  // Set when the palette opened as a tab because the origin window was
+  // fullscreen (macOS puts a new popup window in a different Space).
+  tabId?: number;
   originWindowId: number;
   originTabId: number | null;
   // Set once the palette window has actually received focus, so the
