@@ -1,6 +1,6 @@
 # Bun Web Terminal
 
-A loopback-only web terminal using [zmx](https://github.com/neurosnap/zmx) to keep sessions alive, and the local [ghostty-web](../ghostty-web/README.md) browser wrapper around official Ghostty WASM, rendered with WebGL2.
+A loopback-only web terminal using [zmx](https://github.com/neurosnap/zmx) to keep sessions alive, and the local [ghostty-web](https://github.com/kkrausse/ghostty-web) browser wrapper around official Ghostty WASM, rendered with WebGL2.
 
 zmx only does persistence: one small daemon per session holds the PTY and passes the application's bytes through unchanged. The browser's Ghostty is the only terminal emulator, so scrollback, selection and mouse handling all happen in the page, and sequences such as Kitty graphics reach it as the application wrote them.
 
@@ -27,17 +27,9 @@ Desktop Ghostty is optional. Without the `ghostty` binary (a headless server), t
 
 ## Ghostty dependencies and copying this directory
 
-The `@random/ghostty-web` dependency is linked from `../ghostty-web`. It contains the browser renderer/input wrapper and a checked-in, checksum-pinned **official `ghostty-org/ghostty` WASM release artifact**. Startup bundles its TypeScript and copies its WASM into the client build directory. There is no Git submodule, npm `ghostty-web` engine dependency, Zig build, or runtime artifact download.
+The `@random/ghostty-web` dependency is installed from a tag of [kkrausse/ghostty-web](https://github.com/kkrausse/ghostty-web) (see `package.json`). It contains the browser renderer/input wrapper and a checked-in, checksum-pinned **official `ghostty-org/ghostty` WASM release artifact**. Startup bundles its TypeScript and copies its WASM into the client build directory. There is no Git submodule, npm `ghostty-web` engine dependency, Zig build, or runtime artifact download.
 
-For a standalone copy or source ZIP, include **both sibling directories**, preserving this layout:
-
-```text
-your-project/
-  bun-web-terminal/
-  ghostty-web/
-```
-
-Then run `bun install --frozen-lockfile` and `bun start` inside `bun-web-terminal/`. You do not need to install the wrapper's development dependencies to run the app. Dictation additionally needs the sibling service or an explicitly configured service URL; see below.
+A standalone copy of this directory works on its own (the install needs GitHub SSH access to fetch the tag). Run `bun install --frozen-lockfile` and `bun start` inside `bun-web-terminal/`. You do not need to install the wrapper's development dependencies to run the app. Dictation additionally needs the sibling service or an explicitly configured service URL; see below.
 
 If startup reports a missing `@random/ghostty-web` package or WASM, ensure the sibling directory is present and reinstall the app's Bun dependencies. WebGL2 must be enabled in the browser; the app reports an error rather than falling back to Canvas2D. See the wrapper README for artifact provenance and coordinated engine/bridge upgrades.
 

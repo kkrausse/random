@@ -2,7 +2,7 @@
 
 > Historical tmux-refactor notes. For current setup and dependencies, use
 > [README.md](README.md). The browser engine has since moved from the vendor
-> submodule/npm WASM pair to the sibling [ghostty-web](../ghostty-web/README.md)
+> submodule/npm WASM pair to the sibling [ghostty-web](https://github.com/kkrausse/ghostty-web)
 > package using an official Ghostty WASM artifact.
 
 ## Latest user feedback / goal

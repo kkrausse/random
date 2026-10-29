@@ -10,7 +10,7 @@
     "test": "bun test src"
   },
   "dependencies": {
-    "@random/ghostty-web": "file:../ghostty-web",
+    "@random/ghostty-web": "git+ssh://git@github.com/kkrausse/ghostty-web.git#v1.0.0",
     "qrcode": "^1.5.4"
   },
   "devDependencies": {
