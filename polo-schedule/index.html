@@ -1,4 +1,11 @@
 <!doctype html>
+<!--
+  Updating schedule.csv: the page marks a row stale when its `checked` date is more than
+  7 days old (isStale in schedule.js). Re-check BOTH venues (Polo calendar and the Kezar
+  monthly PDF) on every refresh, and set `checked` to today on every future row you
+  re-verified, even if its times did not change. Missing that leaves rows marked "Stale".
+  Before deploying, open the built page and confirm neither venue says "Stale".
+-->
 <html lang="en">
 <head>
   <meta charset="utf-8">
