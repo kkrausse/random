@@ -1,0 +1,18 @@
+# Gaze inference server for the gaze-lab iTracker page (loopback :4842; tailnet HTTPS via
+# `tailscale serve --bg --https=4842 http://127.0.0.1:4842`).
+# Install: cp server/gaze-itracker.service ~/.config/systemd/user/ && systemctl --user daemon-reload
+#          && systemctl --user enable --now gaze-itracker
+# Logs:    journalctl --user -u gaze-itracker -f
+[Unit]
+Description=Gaze lab inference server (iTracker on CUDA, loopback :4842)
+
+[Service]
+Type=simple
+WorkingDirectory=%h/devfs/repos/kkrausse/random-gaze-lab-itracker/gaze-itracker
+Environment=PYTHONUNBUFFERED=1 GLOG_minloglevel=2
+ExecStart=%h/devfs/gaze-itracker-ext/py/.venv/bin/python server/server.py --port 4842
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
