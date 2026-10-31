@@ -1,0 +1,14 @@
+{
+  "name": "gaze-itracker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun run build.ts",
+    "check": "~/devfs/gaze-itracker-ext/py/.venv/bin/python tools/check.py"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "playwright-core": "^1.64.1",
+    "typescript": "^7.0.2"
+  }
+}

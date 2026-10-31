@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gaze lab · iTracker</title>
+<style>
+  :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+  body { margin: 0; background: #111; color: #eee; overflow: hidden; height: 100vh; }
+  #video { display: none; }
+  #corner { position: fixed; right: 12px; bottom: 12px; display: flex; gap: 6px; align-items: flex-end; opacity: .75; }
+  #view { width: 240px; transform: scaleX(-1); border-radius: 6px; }
+  #crop { height: 80px; border-radius: 6px; }
+  #dot { position: fixed; left: -10px; top: -10px; width: 20px; height: 20px; border-radius: 50%; background: #ef4444; box-shadow: inset 0 0 0 7px #ef4444, inset 0 0 0 10px #fff; opacity: 0; }
+  #gaze { position: fixed; left: -14px; top: -14px; width: 28px; height: 28px; border-radius: 50%; border: 2px solid #38bdf8; background: #38bdf833; opacity: 0; pointer-events: none; transition: transform 40ms linear; z-index: 5; }
+  #hud { position: fixed; left: 12px; bottom: 12px; font: 12px ui-monospace, monospace; opacity: .6; }
+  #msg { position: fixed; top: 40%; width: 100%; text-align: center; font-size: 22px; pointer-events: none; }
+  .card { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #1c1c1f; border: 1px solid #333; border-radius: 12px; padding: 24px 28px; max-width: 560px; z-index: 10; }
+  .card.wide { max-width: 860px; }
+  .card h2 { margin: 0 0 8px; font-size: 20px; }
+  .sub { color: #aaa; font-size: 14px; line-height: 1.45; }
+  label { display: block; margin: 12px 0 4px; font-size: 14px; }
+  input { background: #111; border: 1px solid #444; color: #eee; padding: 6px 8px; border-radius: 6px; width: 90px; }
+  button { background: #2563eb; color: #fff; border: 0; padding: 9px 16px; border-radius: 8px; font-size: 14px; cursor: pointer; margin-top: 16px; }
+  .buttons { display: flex; gap: 8px; }
+  table { border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+  td, th { padding: 4px 14px 4px 0; text-align: left; }
+  #results { display: none; }
+  #freelook { display: none; padding: 60px 80px; font: 18px/2.2 ui-monospace, monospace; color: #bbb; }
+</style>
+</head>
+<body>
+<video id="video" playsinline muted></video>
+<div id="corner"><img id="crop" alt="" /><canvas id="view"></canvas></div>
+<div id="hud"></div>
+<div id="msg"></div>
+<div id="dot"></div>
+<div id="gaze"></div>
+<div id="setup" class="card">
+  <h2>iTracker with 9-dot calibration</h2>
+  <p class="sub">iTracker (Krafka et al., "Eye Tracking for Everyone", CVPR 2016; GazeCapture's PyTorch checkpoint) predicts where you look in cm from the camera, from a face crop, two eye crops and a 25×25 face-position grid. It was trained on iPhones and iPads at about 30 cm. Same flow as the other gaze-lab pages: 12-dot accuracy test, 9-dot calibration (about 1 s of frames per dot), the same test again.</p>
+  <p class="sub">Frames are sent as JPEG to diesel2 over the tailnet (WebSocket), where MediaPipe and the model run on the GPU; nothing is stored there. Keep your head roughly still and look at the centre of each red dot until it disappears. Bottom right: the three crops the model sees and the camera view with the face and eye boxes.</p>
+  <label>Screen width (cm, the visible display area)</label><input id="screenCm" type="number" step="0.1" />
+  <label>Eyes to screen (cm)</label><input id="distCm" type="number" value="55" />
+  <div><button id="start">Start (goes fullscreen)</button></div>
+</div>
+<div id="results"></div>
+<div id="freelook">
+  Free look: the blue circle is the gaze estimate. Try reading line by line.<br />
+  01 the quick brown fox jumps over the lazy dog<br />
+  02 pack my box with five dozen liquor jugs<br />
+  03 how vexingly quick daft zebras jump<br />
+  04 sphinx of black quartz, judge my vow<br />
+  05 the five boxing wizards jump quickly<br />
+  06 jackdaws love my big sphinx of quartz<br />
+  07 bright vixens jump; dozy fowl quack<br />
+  08 waltz, bad nymph, for quick jigs vex<br />
+  <button onclick="location.reload()">Start over</button>
+</div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
