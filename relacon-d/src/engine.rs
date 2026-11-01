@@ -356,8 +356,16 @@ impl Engine {
                     .filter(|b| self.pending.iter().rev().find(|p| p.b == *b).map(|p| p.down) == Some(true))
                     .collect();
                 self.pending.clear();
-                self.tap(&action);
-                for b in still_down {
+                // If the final button is still down, hold the action until it's
+                // released (e.g. leader, then hold a button to dictate).
+                let last = *downs.last().unwrap();
+                if still_down.contains(&last) {
+                    self.press(&action);
+                    self.active.insert(last, Active::Held(action));
+                } else {
+                    self.tap(&action);
+                }
+                for b in still_down.into_iter().filter(|b| *b != last) {
                     self.active.insert(b, Active::Consumed);
                 }
                 continue;
