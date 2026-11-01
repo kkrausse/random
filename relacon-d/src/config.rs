@@ -43,16 +43,16 @@ impl Button {
 
     pub fn name(self) -> &'static str {
         match self {
-            Button::Left => "left",
-            Button::Right => "right",
+            Button::Left => "trigger",
+            Button::Right => "leader",
             Button::Wheel => "wheel",
-            Button::Back => "back",
-            Button::Forward => "forward",
-            Button::Prev => "prev",
-            Button::Next => "next",
+            Button::Back => "left-of-wheel",
+            Button::Forward => "right-of-wheel",
+            Button::Prev => "d-left",
+            Button::Next => "d-right",
             Button::Play => "play",
-            Button::VolUp => "volUp",
-            Button::VolDown => "volDown",
+            Button::VolUp => "d-up",
+            Button::VolDown => "d-down",
         }
     }
 

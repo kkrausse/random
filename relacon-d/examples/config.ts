@@ -10,8 +10,8 @@ bind("wheel", key("right_option"));
 // Tap play for play/pause, hold it for Mission Control.
 // bind("play", tapHold(media("play"), key("ctrl+up"), { ms: 250 }));
 
-// Hold "back" for a navigation layer.
-// bind("back", layer("nav"));
+// Hold "left-of-wheel" for a navigation layer.
+// bind("left-of-wheel", layer("nav"));
 // defineLayer("nav", {
 //   forward: key("cmd+right_bracket"),
 //   prev: key("ctrl+shift+tab"),
@@ -20,13 +20,13 @@ bind("wheel", key("right_option"));
 // });
 
 // Press prev+next together for Spotlight.
-// chord(["prev", "next"], key("cmd+space"));
+// chord(["d-left", "d-right"], key("cmd+space"));
 
 // Press play then volUp to open a terminal.
-// sequence(["play", "volUp"], run("open -a Ghostty"));
+// sequence(["play", "d-up"], run("open -a Ghostty"));
 
-// Hold "forward" and flick: left/right switch desktops, up = Mission Control.
-// gesture("forward", {
+// Hold "right-of-wheel" and flick: left/right switch desktops, up = Mission Control.
+// gesture("right-of-wheel", {
 //   left: key("ctrl+left"),
 //   right: key("ctrl+right"),
 //   up: key("ctrl+up"),
