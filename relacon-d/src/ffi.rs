@@ -64,6 +64,7 @@ pub const kCGEventFlagMaskControl: u64 = 0x0004_0000;
 pub const kCGEventFlagMaskAlternate: u64 = 0x0008_0000;
 pub const kCGEventFlagMaskCommand: u64 = 0x0010_0000;
 pub const kCGEventFlagMaskSecondaryFn: u64 = 0x0080_0000;
+pub const kCGEventFlagMaskNumericPad: u64 = 0x0020_0000;
 pub const kCGEventFlagMaskNonCoalesced: u64 = 0x0000_0100;
 
 // Tap placement
