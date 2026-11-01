@@ -42,6 +42,7 @@ enum Mode {
 
 #[derive(Default)]
 struct MotionStats {
+    since: Option<Instant>,
     n: usize,
     sender: usize,
     hid: usize,
@@ -750,11 +751,15 @@ impl Daemon {
         if !matches!(self.mode, Mode::Events { motion: false, .. }) || self.motion.n == 0 {
             return;
         }
+        let since = *self.motion.since.get_or_insert_with(Instant::now);
+        if since.elapsed() < Duration::from_secs(1) {
+            return;
+        }
         let s = std::mem::take(&mut self.motion);
         let mut senders: Vec<_> = s.senders.iter().map(|(k, v)| format!("{k:#x}x{v}")).collect();
         senders.sort();
         println!(
-            "{}  motion: {} events (sender-match {}, hid-only {}, neither {}) senders: {}",
+            "{}  motion (1s): {} events (sender-match {}, hid-only {}, neither {}) senders: {}",
             log::timestamp(),
             s.n,
             s.sender,
