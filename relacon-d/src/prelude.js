@@ -30,7 +30,7 @@ function sequence(buttons, action, opts) {
   __cfg.sequences.push({ buttons, action, ms: (opts && opts.ms) ?? 800 });
 }
 
-// gesture("back", { left: ..., right: ... }, { threshold }) binds directly;
+// gesture("left-of-wheel", { left: ..., right: ... }, { threshold }) binds directly;
 // gesture({ left: ... }, { threshold }) returns a binding for defineLayer/app.
 function gesture(a, b, c) {
   if (typeof a === "string") {

@@ -5,16 +5,16 @@
 
 /** Relacon inputs that can be bound. */
 type Button =
-  | "left"     // bottom trigger (left click)
-  | "right"    // upper trigger (right click)
-  | "wheel"    // scroll-wheel press (middle click)
-  | "back"     // left arrow (button 4)
-  | "forward"  // right arrow (button 5)
-  | "prev"     // rewind
-  | "next"     // fast-forward
-  | "play"
-  | "volUp"
-  | "volDown";
+  | "trigger"         // bottom trigger (left click by default)
+  | "leader"          // top bumper (right click by default)
+  | "wheel"           // scroll-wheel press (middle click)
+  | "left-of-wheel"   // button left of the wheel (mouse back)
+  | "right-of-wheel"  // button right of the wheel (mouse forward)
+  | "d-left"          // d-pad left  (rewind by default)
+  | "d-right"         // d-pad right (fast-forward by default)
+  | "d-up"            // d-pad up    (volume up by default)
+  | "d-down"          // d-pad down  (volume down by default)
+  | "play";           // play/pause
 
 /** Key spec: modifiers joined with "+", then at most one key, e.g. "cmd+shift+k",
  *  "right_option", "ctrl+left". Modifiers: cmd/command, shift, ctrl/control,
