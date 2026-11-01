@@ -152,7 +152,8 @@ impl Output {
                 return;
             }
             CGEventSetType(ev, kCGEventFlagsChanged);
-            CGEventSetFlags(ev, self.mod_flags() | key_intrinsic_flags(keycode) | kCGEventFlagMaskNonCoalesced);
+            CGEventSetFlags(ev, self.mod_flags() | kCGEventFlagMaskNonCoalesced);
+            crate::log!("post flagsChanged key={keycode} flags={:#x}", self.mod_flags());
             self.post(ev);
         }
     }
@@ -185,7 +186,9 @@ impl Output {
             if ev.is_null() {
                 return;
             }
-            CGEventSetFlags(ev, self.mod_flags() | kCGEventFlagMaskNonCoalesced);
+            let flags = self.mod_flags() | key_intrinsic_flags(keycode);
+            CGEventSetFlags(ev, flags | kCGEventFlagMaskNonCoalesced);
+            crate::log!("post key {} key={keycode} flags={flags:#x}", if down { "down" } else { "up" });
             self.post(ev);
         }
     }
