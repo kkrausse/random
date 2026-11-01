@@ -11,6 +11,7 @@ function scroll(dy, dx) { return { type: "scroll", dy: dy || 0, dx: dx || 0 }; }
 function run(cmd) { return { type: "run", cmd: String(cmd) }; }
 function seq(...actions) { return { type: "seq", actions }; }
 function layer(name) { return { type: "layer", name: String(name) }; }
+function mode(name, opts) { return { type: "mode", name: String(name), ms: (opts && opts.ms) ?? 1500 }; }
 
 function tapHold(tap, hold, opts) {
   return { type: "tapHold", tap, hold, ms: (opts && opts.ms) ?? 200 };

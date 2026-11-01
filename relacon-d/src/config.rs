@@ -25,6 +25,8 @@ pub enum Button {
     Play,
     VolUp,
     VolDown,
+    /// Pseudo-button: a scroll bump, only valid as the last step of a sequence.
+    Scroll,
 }
 
 impl Button {
@@ -53,6 +55,7 @@ impl Button {
             Button::Play => "play",
             Button::VolUp => "d-up",
             Button::VolDown => "d-down",
+            Button::Scroll => "scroll",
         }
     }
 
@@ -99,6 +102,8 @@ pub enum Action {
     Scroll { dy: i32, dx: i32 },
     Run(String),
     Layer(String),
+    /// Transient layer: active until `ms` passes with no scroll in it, or any button press.
+    Mode(String, u64),
     Seq(Vec<Action>),
     All(Vec<Action>),
     Js(usize),
@@ -205,6 +210,7 @@ pub fn describe(a: &Action) -> String {
         Action::Scroll { dy, dx } => format!("scroll({dy}, {dx})"),
         Action::Run(c) => format!("run({c:?})"),
         Action::Layer(l) => format!("layer({l:?})"),
+        Action::Mode(l, ms) => format!("mode({l:?}, {ms} ms)"),
         Action::Seq(v) => format!("seq({})", v.iter().map(describe).collect::<Vec<_>>().join(", ")),
         Action::All(v) => format!("[{}]", v.iter().map(describe).collect::<Vec<_>>().join(", ")),
         Action::Js(_) => "<function>".into(),
@@ -497,7 +503,8 @@ fn collect<'js>(ctx: &Ctx<'js>, cfg: &Object<'js>, fns: &mut Fns) -> Result<Conf
             let names: Vec<String> = item.get("buttons").with_context(|| format!("{what}: buttons must be an array of button names"))?;
             let mut buttons = vec![];
             for n in &names {
-                buttons.push(Button::from_name(n).ok_or_else(|| anyhow!("{what}: unknown button {n:?}"))?);
+                let b = if n == "scroll" && field == "sequences" { Some(Button::Scroll) } else { Button::from_name(n) };
+                buttons.push(b.ok_or_else(|| anyhow!("{what}: unknown button {n:?}"))?);
             }
             if buttons.len() < 2 {
                 bail!("{what}([{}]): needs at least two buttons", names.join(", "));
@@ -623,6 +630,7 @@ fn to_action<'js>(ctx: &Ctx<'js>, v: Value<'js>, fns: Option<&mut Fns>, what: &s
         }
         "run" => Action::Run(o.get("cmd")?),
         "layer" => Action::Layer(o.get("name")?),
+        "mode" => Action::Mode(o.get("name")?, o.get::<_, Option<f64>>("ms")?.unwrap_or(1500.0) as u64),
         "seq" => {
             let arr: Array = o.get("actions")?;
             let mut out = vec![];
@@ -642,7 +650,7 @@ fn to_action<'js>(ctx: &Ctx<'js>, v: Value<'js>, fns: Option<&mut Fns>, what: &s
 fn validate(cfg: &Config) {
     fn walk(a: &Action, out: &mut Vec<String>) {
         match a {
-            Action::Layer(l) => out.push(l.clone()),
+            Action::Layer(l) | Action::Mode(l, _) => out.push(l.clone()),
             Action::Seq(v) | Action::All(v) => v.iter().for_each(|a| walk(a, out)),
             _ => {}
         }
