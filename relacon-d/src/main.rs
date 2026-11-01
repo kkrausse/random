@@ -96,6 +96,15 @@ fn main() {
             let path = args.iter().skip(1).find(|a| !a.starts_with("--")).map(PathBuf::from);
             std::process::exit(check(&path.unwrap_or_else(default_config_path), flag("--call")));
         }
+        "send" => {
+            // Debug: send a key spec through the same output path the daemon uses.
+            let spec = args.get(1).cloned().unwrap_or_default();
+            let k = match output::parse_key(&spec) { Ok(k) => k, Err(e) => { eprintln!("{e:#}"); std::process::exit(1) } };
+            let mut out = output::Output::new();
+            out.key_down(&k);
+            out.key_up(&k);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
         "reload" => {
             post_reload();
             println!("sent reload to the running daemon ({RELOAD_NOTIFICATION})");

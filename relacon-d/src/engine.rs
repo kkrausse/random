@@ -350,6 +350,7 @@ impl Engine {
             // Complete sequence.
             if let Some(s) = self.cfg.sequences.iter().find(|s| s.buttons == downs) {
                 let action = s.action.clone();
+                crate::log!("seq fired {:?}", downs.iter().map(|b| b.name()).collect::<Vec<_>>());
                 let still_down: Vec<Button> = downs
                     .iter()
                     .copied()
@@ -394,6 +395,8 @@ impl Engine {
             }
 
             // No: replay the oldest event normally and look at the rest again.
+            crate::log!("seq no match, replaying {} (pending {:?})", self.pending[0].b.name(),
+                self.pending.iter().map(|p| format!("{}{}", p.b.name(), if p.down { "↓" } else { "↑" })).collect::<Vec<_>>());
             let p = self.pending.remove(0);
             self.dispatch_down(p.b, true, now);
         }
