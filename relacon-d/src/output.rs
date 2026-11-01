@@ -152,7 +152,7 @@ impl Output {
                 return;
             }
             CGEventSetType(ev, kCGEventFlagsChanged);
-            CGEventSetFlags(ev, self.mod_flags() | kCGEventFlagMaskNonCoalesced);
+            CGEventSetFlags(ev, self.mod_flags() | key_intrinsic_flags(keycode) | kCGEventFlagMaskNonCoalesced);
             self.post(ev);
         }
     }
@@ -309,5 +309,17 @@ impl Output {
         for m in seen.into_iter().rev() {
             self.mod_up(m);
         }
+    }
+}
+
+/// Flags a real keyboard sets on its own for certain keys. System shortcuts like
+/// ctrl+up (Mission Control) and ctrl+left/right (switch desktop) only match when
+/// arrows carry fn + numeric-pad, and home/end/page/forward-delete/F-keys carry fn.
+fn key_intrinsic_flags(keycode: u16) -> u64 {
+    match keycode {
+        123..=126 => kCGEventFlagMaskSecondaryFn | kCGEventFlagMaskNumericPad,
+        115 | 116 | 117 | 119 | 121 | 114 => kCGEventFlagMaskSecondaryFn,
+        122 | 120 | 99 | 118 | 96 | 97 | 98 | 100 | 101 | 109 | 103 | 111 => kCGEventFlagMaskSecondaryFn,
+        _ => 0,
     }
 }
