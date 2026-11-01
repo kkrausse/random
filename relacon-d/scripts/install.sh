@@ -124,7 +124,12 @@ plutil -lint "$plist" >/dev/null
 if [ "$load" = 1 ]; then
   echo "==> launchctl (re)load"
   launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
-  launchctl bootstrap "gui/$(id -u)" "$plist"
+  # bootout returns before the job is fully gone; bootstrap fails with EIO until it is.
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    launchctl bootstrap "gui/$(id -u)" "$plist" 2>/dev/null && break
+    [ "$i" = 10 ] && { echo "launchctl bootstrap failed" >&2; exit 1; }
+    sleep 0.5
+  done
   echo "started; log: $log"
 else
   echo
