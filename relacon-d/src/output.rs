@@ -125,7 +125,7 @@ pub struct Output {
 
 impl Output {
     pub fn new() -> Output {
-        let source = unsafe { CGEventSourceCreate(kCGEventSourceStatePrivate) };
+        let source = unsafe { CGEventSourceCreate(kCGEventSourceStateHIDSystemState) };
         Output { source, held_mods: vec![], held_keys: vec![], held_mouse: vec![], held_media: vec![] }
     }
 

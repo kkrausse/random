@@ -75,6 +75,7 @@ pub const kCGEventTapOptionDefault: u32 = 0;
 pub const kCGEventTapOptionListenOnly: u32 = 1;
 
 pub const kCGEventSourceStatePrivate: i32 = -1;
+pub const kCGEventSourceStateHIDSystemState: i32 = 1;
 pub const kCGScrollEventUnitLine: u32 = 1;
 
 #[link(name = "CoreGraphics", kind = "framework")]
