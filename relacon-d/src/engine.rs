@@ -44,6 +44,8 @@ pub struct Engine {
     pub cfg: Config,
     pub out: Output,
     layers: Vec<String>,
+    /// Transient mode: (layer, deadline, ms).
+    mode: Option<(String, Instant, u64)>,
     active: HashMap<Button, Active>,
     pending: Vec<Pending>,
     pending_deadline: Option<Instant>,
@@ -55,6 +57,7 @@ impl Engine {
             cfg,
             out: Output::new(),
             layers: vec![],
+            mode: None,
             active: HashMap::new(),
             pending: vec![],
             pending_deadline: None,
@@ -77,7 +80,7 @@ impl Engine {
             Active::TapHold { deadline, holding: false, .. } => Some(*deadline),
             _ => None,
         });
-        tap_holds.chain(self.pending_deadline).min()
+        tap_holds.chain(self.pending_deadline).chain(self.mode.as_ref().map(|m| m.1)).min()
     }
 
     // ------------------------------------------------------------ outputs
@@ -90,6 +93,10 @@ impl Engine {
             Action::Scroll { dy, dx } => self.out.scroll(*dy, *dx),
             Action::Run(c) => self.out.run(c),
             Action::Layer(l) => self.layers.push(l.clone()),
+            Action::Mode(l, ms) => {
+                crate::log!("mode {l} on");
+                self.mode = Some((l.clone(), Instant::now() + Duration::from_millis(*ms), *ms));
+            }
             Action::Seq(v) => v.iter().for_each(|x| self.tap(x)),
             Action::All(v) => v.iter().for_each(|x| self.press(x)),
             Action::Js(id) => {
@@ -139,6 +146,9 @@ impl Engine {
     }
 
     fn lookup(&self, b: Button) -> Option<Binding> {
+        if let Some(x) = self.mode.as_ref().and_then(|m| self.cfg.layers.get(&m.0)).and_then(|bs| bs.buttons.get(&b)) {
+            return Some(x.clone());
+        }
         for l in self.layers.iter().rev() {
             if let Some(x) = self.cfg.layers.get(l).and_then(|bs| bs.buttons.get(&b)) {
                 return Some(x.clone());
@@ -154,6 +164,9 @@ impl Engine {
     }
 
     fn scroll_handler(&self) -> Option<usize> {
+        if let Some(id) = self.mode.as_ref().and_then(|m| self.cfg.layers.get(&m.0)).and_then(|bs| bs.scroll) {
+            return Some(id);
+        }
         for l in self.layers.iter().rev() {
             if let Some(id) = self.cfg.layers.get(l).and_then(|bs| bs.scroll) {
                 return Some(id);
@@ -181,6 +194,19 @@ impl Engine {
             // Key repeat (media keys) or a down we never saw the up for.
             if let Some(a) = self.active.get(&b) {
                 return !matches!(a, Active::Pass);
+            }
+            // In a transient mode: a button bound in it fires and ends the mode; any
+            // other button ends the mode and is handled normally.
+            if let Some(m) = self.mode.clone() {
+                let bound = self.cfg.layers.get(&m.0).is_some_and(|bs| bs.buttons.contains_key(&b));
+                if bound && self.pending.is_empty() {
+                    let r = self.dispatch_down(b, false, now);
+                    self.mode = None;
+                    crate::log!("mode {} off ({} pressed)", m.0, b.name());
+                    return r;
+                }
+                self.mode = None;
+                crate::log!("mode {} off ({} pressed)", m.0, b.name());
             }
             let pending_down = self.pending.iter().rev().find(|p| p.b == b).map(|p| p.down);
             if pending_down == Some(true) {
@@ -415,6 +441,10 @@ impl Engine {
         if self.pending_deadline.is_some_and(|d| d <= now) {
             self.eval_pending(now);
         }
+        if self.mode.as_ref().is_some_and(|m| m.1 <= now) {
+            crate::log!("mode off (timeout)");
+            self.mode = None;
+        }
     }
 
     pub fn on_motion(&mut self, dx: f64, dy: f64) -> Motion {
@@ -464,6 +494,29 @@ impl Engine {
 
     /// Returns true if the scroll event should be swallowed.
     pub fn on_scroll(&mut self, dy: f64, dx: f64) -> bool {
+        // A buffered sequence can end in a scroll (e.g. leader, then scroll = arrow mode).
+        if !self.pending.is_empty() {
+            let mut downs: Vec<Button> = self.pending.iter().filter(|p| p.down).map(|p| p.b).collect();
+            downs.push(Button::Scroll);
+            if let Some(s) = self.cfg.sequences.iter().find(|s| s.buttons == downs) {
+                let action = s.action.clone();
+                crate::log!("seq fired {:?}", downs.iter().map(|b| b.name()).collect::<Vec<_>>());
+                let still_down: Vec<Button> = downs
+                    .iter()
+                    .copied()
+                    .filter(|b| *b != Button::Scroll && self.pending.iter().rev().find(|p| p.b == *b).map(|p| p.down) == Some(true))
+                    .collect();
+                self.pending.clear();
+                self.pending_deadline = None;
+                for b in still_down {
+                    self.active.insert(b, Active::Consumed);
+                }
+                self.tap(&action);
+            }
+        }
+        if let Some(m) = self.mode.as_mut() {
+            m.1 = Instant::now() + Duration::from_millis(m.2);
+        }
         let Some(id) = self.scroll_handler() else { return false };
         match self.call_js(id, vec![dy], dx) {
             None | Some(JsResult::Pass) => false,
@@ -513,6 +566,7 @@ impl Engine {
         }
         self.pending_deadline = None;
         self.layers.clear();
+        self.mode = None;
         self.out.release_all();
     }
 }

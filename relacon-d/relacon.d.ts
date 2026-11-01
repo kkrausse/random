@@ -34,6 +34,7 @@ interface ClickAction { readonly type: "click"; readonly name: MouseName }
 interface ScrollAction { readonly type: "scroll"; readonly dy: number; readonly dx: number }
 interface RunAction { readonly type: "run"; readonly cmd: string }
 interface LayerAction { readonly type: "layer"; readonly name: string }
+interface ModeAction { readonly type: "mode"; readonly name: string; readonly ms: number }
 interface SeqAction { readonly type: "seq"; readonly actions: Action[] }
 interface PassthroughAction { readonly type: "passthrough" }
 
@@ -58,7 +59,7 @@ type FnAction = (ctx: Ctx) => Action | "pass" | void;
 /** An array presses all its actions together (and holds them together). */
 type Action =
   | KeyAction | MediaAction | ClickAction | ScrollAction | RunAction
-  | LayerAction | SeqAction | PassthroughAction | Action[] | FnAction;
+  | LayerAction | ModeAction | SeqAction | PassthroughAction | Action[] | FnAction;
 
 interface TapHoldBinding { readonly type: "tapHold"; readonly tap: Action; readonly hold: Action; readonly ms: number }
 
@@ -96,6 +97,10 @@ declare function seq(...actions: Action[]): SeqAction;
 declare const passthrough: PassthroughAction;
 /** As an action: the layer is active while the trigger is held. */
 declare function layer(name: string): LayerAction;
+/** Transient layer: its bindings (incl. `scroll`) apply until `ms` (default 1500) passes
+ *  with no scroll, or any button is pressed (a button bound in the mode fires, then the
+ *  mode ends; any other button ends the mode and acts normally). */
+declare function mode(name: string, opts?: { ms?: number }): ModeAction;
 
 // ---------------------------------------------------------------- inputs
 

@@ -59,6 +59,7 @@ pub struct Hid {
 /// The HID usages that produce a given Relacon button.
 pub fn usages_for(b: Button) -> &'static [(u32, u32)] {
     match b {
+        Button::Scroll => &[],
         Button::Left => &[(PAGE_BUTTON, 1)],
         Button::Right => &[(PAGE_BUTTON, 2)],
         Button::Wheel => &[(PAGE_BUTTON, 3)],
