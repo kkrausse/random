@@ -72,3 +72,6 @@ scripts/output/
 !tts-lab/**
 !polo-schedule/
 !polo-schedule/**
+!relacon-d/
+!relacon-d/**
+relacon-d/target/
