@@ -6,6 +6,7 @@
     "dev": "bun --watch src/server.ts",
     "start": "bun src/server.ts",
     "auth:reset": "bun src/reset-auth.ts",
+    "auth:show": "bun src/show-auth.ts",
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test src"
   },

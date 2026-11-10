@@ -41,7 +41,9 @@ test("all pages, APIs, assets and websocket paths require authentication", async
   for (const path of ["/", "/sessions", "/sessions/new", "/terminal/$0", "/api/sessions", "/api/dictation/status", "/api/dictation/stream", "/ws/$0", "/client.js", "/ghostty-vt.wasm"]) {
     expect((await auth.guard(new Request(local + path), peer))?.status).toBe(401);
   }
-  expect((await auth.guard(new Request(`${local}/sessions`, { headers: { accept: "text/html" } }), peer))?.headers.get("location")).toBe("/login");
+  const page = (await auth.guard(new Request(`${local}/sessions/abc`, { headers: { accept: "text/html" } }), peer))!;
+  expect(page.status).toBe(401);
+  expect(await page.text()).toContain('autocomplete="current-password"');
   for (const method of ["POST", "PATCH", "DELETE"]) {
     expect((await auth.guard(new Request(`${local}/api/sessions`, { method }), peer))?.status).toBe(401);
   }

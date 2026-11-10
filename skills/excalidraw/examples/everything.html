@@ -1,0 +1,36 @@
+<!doctype html><meta charset="utf-8"><title>everything</title>
+<script type="module">
+import { draw, box, ellipse, diamond, text, line, pen, image, embed, row, col, at, frame, group, arrow } from "../lib/x.js";
+
+const swatch = (id, fill) => box(id, fill, { bg: "violet", fill, ink: "violet", w: 120, h: 70, font: "hand" });
+const wave = Array.from({ length: 40 }, (_, i) => [i * 6, 20 + 18 * Math.sin(i / 3)]);
+
+draw([
+  text("t", "every Excalidraw feature, from the script", { fs: 28, font: "hand" }),
+  frame("f1", "shapes", row(30,
+    box("b", "box"), ellipse("e", "ellipse", { bg: "green" }), diamond("d", "diamond", { bg: "yellow" }),
+    box("sq", "sharp corners", { round: false, bg: "red" }), box("rot", "rotated 12°", { angle: 12, bg: "teal" }))),
+  frame("f2", "fills, strokes, roughness, opacity", row(24,
+    swatch("s1", "solid"), swatch("s2", "hachure"), swatch("s3", "cross-hatch"), swatch("s4", "zigzag"),
+    box("k1", "dashed", { stroke: "dashed", sw: 2 }), box("k2", "dotted, thick", { stroke: "dotted", sw: 4 }),
+    box("r1", "rough 1", { rough: 1, bg: "orange", fill: "hachure" }), box("r2", "rough 2", { rough: 2, bg: "pink" }), box("o", "opacity 40", { opacity: 40, bg: "blue" }))),
+  frame("f3", "fonts", row(24, ...["mono", "code", "hand", "sans", "virgil", "helvetica", "lilita", "serif"].map((f) => text(`fn-${f}`, f, { font: f, fs: 22 })))),
+  frame("f4", "arrowheads, curves, elbows", col(110,
+    row(60, box("a1", "A"), box("a2", "B"), box("a3", "C"), box("a4", "D"), box("a5", "E"), box("a6", "F")),
+    row(60, box("z1", "1"), box("z2", "2"), box("z3", "3"), box("z4", "4"), box("z5", "5"), box("z6", "6")))),
+  frame("f5", "lines, pen, image, embed, group, link", row(40,
+    line("poly", [[0, 0], [120, 0], [60, 90]], { closed: true, bg: "lime", fill: "hachure" }),
+    line("curve", wave, { round: true, ink: "indigo", sw: 2 }),
+    pen("sig", Array.from({ length: 60 }, (_, i) => [i * 3, 25 + 15 * Math.sin(i / 4) * Math.cos(i / 9)]), { ink: "red", sw: 2 }),
+    image("img", "./flamingo-crop.png", { w: 240, h: 188 }),
+    embed("vid", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", { w: 320, h: 180 }),
+    group("g", col(8, box("g1", "grouped"), box("g2", "together"))),
+    box("lnk", "has a link", { link: "https://excalidraw.com", bg: "cyan" }))),
+  at(1400, 0, ellipse("abs", "at(1400, 0)", { bg: "indigo", rough: 1 })),
+
+  arrow("a1", "z1", "triangle", { end: "triangle" }), arrow("a2", "z2", "both bars", { start: "bar", end: "bar" }),
+  arrow("a3", "z3", "circle", { end: "circle_outline", start: "circle" }), arrow("a4", "z4", "crowfoot", { start: "crowfoot_one", end: "crowfoot_many" }),
+  arrow("a5", "z6", "elbow", { elbow: true, ink: "blue" }), arrow("a6", "z5", "", { round: true, elbow: true, stroke: "dashed", ink: "green" }),
+  arrow("z1", "z2", "", { end: "diamond" }), arrow("b", "e", "", { end: null, sw: 4, ink: "gray" }),
+]);
+</script>
