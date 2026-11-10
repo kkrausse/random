@@ -1,8 +1,8 @@
 //! The popover: a borderless, non-activating panel with a query line and results.
 
 use gpui::{
-    App, Bounds, Context, FocusHandle, KeyDownEvent, Window, WindowBackgroundAppearance,
-    WindowBounds, WindowHandle, WindowKind, WindowOptions, div, img, prelude::*, px, rgb, size,
+    App, Bounds, Context, FocusHandle, KeyDownEvent, ScrollDelta, ScrollWheelEvent, Window,
+    WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions, div, img, prelude::*, px, rgb, size,
 };
 use objc2::rc::Retained;
 use objc2_app_kit::{NSScreen, NSView, NSWindow};
@@ -18,6 +18,8 @@ const WIDTH: f32 = 680.0;
 const INPUT_HEIGHT: f32 = 54.0;
 const ROW_HEIGHT: f32 = 46.0;
 const VISIBLE_ROWS: usize = 9;
+/// Trackpad travel, in points, that moves the selection one row.
+const WHEEL_STEP: f32 = 28.0;
 const HEIGHT: f32 = INPUT_HEIGHT + ROW_HEIGHT * VISIBLE_ROWS as f32 + 14.0;
 
 const BACKGROUND: u32 = 0x1b1b1d;
@@ -39,6 +41,8 @@ pub struct Switcher {
     selected: usize,
     /// Index of the first rendered result.
     scroll: usize,
+    /// Trackpad scroll not yet turned into a selection move.
+    wheel: f32,
 }
 
 /// Creates the popover hidden, so the hotkey only has to order it front.
@@ -82,6 +86,7 @@ pub fn open(
                 results: Vec::new(),
                 selected: 0,
                 scroll: 0,
+                wheel: 0.0,
             }
         })
     })
@@ -183,6 +188,7 @@ impl Switcher {
         self.results = rank::rank(&self.items, &self.query);
         self.selected = 0;
         self.scroll = 0;
+        self.wheel = 0.0;
         cx.notify();
     }
 
@@ -199,6 +205,33 @@ impl Switcher {
         let count = self.results.len() as isize;
         if count > 0 {
             self.select((self.selected as isize + delta).rem_euclid(count) as usize);
+            cx.notify();
+        }
+    }
+
+    /// The wheel moves the selection rather than scrolling the list under the
+    /// pointer. It stops at the ends: wrapping mid-spin is disorienting.
+    fn scroll_wheel(&mut self, event: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
+        let rows = match event.delta {
+            // A mouse wheel: every notch moves at least one row, however
+            // small macOS's acceleration makes the delta.
+            ScrollDelta::Lines(lines) if lines.y != 0.0 => {
+                -(lines.y.signum() * lines.y.abs().round().max(1.0)) as isize
+            }
+            ScrollDelta::Lines(_) => 0,
+            ScrollDelta::Pixels(pixels) => {
+                self.wheel -= f32::from(pixels.y);
+                let rows = (self.wheel / WHEEL_STEP).trunc();
+                self.wheel -= rows * WHEEL_STEP;
+                rows as isize
+            }
+        };
+        let Some(last) = self.results.len().checked_sub(1) else {
+            return;
+        };
+        let target = (self.selected as isize + rows).clamp(0, last as isize) as usize;
+        if target != self.selected {
+            self.select(target);
             cx.notify();
         }
     }
@@ -383,6 +416,7 @@ impl Render for Switcher {
             .size_full()
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::key_down))
+            .on_scroll_wheel(cx.listener(Self::scroll_wheel))
             .child(
                 div()
                     .w_full()
