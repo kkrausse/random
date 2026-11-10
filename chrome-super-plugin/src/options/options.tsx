@@ -4,7 +4,7 @@ import { Keyboard } from "lucide-react";
 import { DEFAULT_FEATURES, FEATURES, getFeatures, onFeaturesChanged, setFeature, type FeatureState } from "../features";
 
 // Keyboard-first: focus starts on the first switch, ↑/↓ (or j/k, Tab) move,
-// Space/Enter toggles, 1–3 toggle a feature directly, Esc closes the tab.
+// Space/Enter toggles, 1–4 toggle a feature directly, Esc closes the tab.
 
 function Kbd({ children }: { children: string }) {
   return (
@@ -72,7 +72,7 @@ function Options() {
   return (
     <main className="mx-auto max-w-xl px-6 py-10 text-fg">
       <h1 className="text-[22px] font-semibold">Super Extension</h1>
-      <p className="mt-1 text-[14px] text-muted">Turn each feature on or off. Off means off: its scripts, shortcut and menus stop working.</p>
+      <p className="mt-1 text-[14px] text-muted">Turn each feature on or off. Off means off: its scripts, shortcut, menus and connections stop working.</p>
 
       <ul className="mt-6 flex flex-col gap-2" aria-label="Features">
         {FEATURES.map((feature, index) => {
@@ -111,7 +111,7 @@ function Options() {
       <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-muted">
         <span className="flex items-center gap-1.5"><Kbd>↑</Kbd><Kbd>↓</Kbd> move</span>
         <span className="flex items-center gap-1.5"><Kbd>Space</Kbd> toggle</span>
-        <span className="flex items-center gap-1.5"><Kbd>1</Kbd>–<Kbd>3</Kbd> toggle directly</span>
+        <span className="flex items-center gap-1.5"><Kbd>1</Kbd>–<Kbd>{String(FEATURES.length)}</Kbd> toggle directly</span>
         <span className="flex items-center gap-1.5"><Kbd>Esc</Kbd> close</span>
       </div>
 

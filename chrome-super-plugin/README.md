@@ -1,12 +1,13 @@
 # Super Extension (chrome-super-plugin)
 
-My one Chrome extension. Three features, each of which can be switched off:
+My one Chrome extension. Four features, each of which can be switched off:
 
 | Feature | Key | What it does |
 | --- | --- | --- |
 | **Reading Context** | ⌘⇧E | Side panel for asking about highlighted passages via the Reading Context OpenCode server. Setup, server and capture details: the **Chrome Extension** section of [`../boox-plugin-test/README.md`](../boox-plugin-test/README.md). |
 | **Command palette** | ⌘⇧P | Spotlight-style launcher that runs commands and teaches Chrome's keyboard shortcuts. |
 | **Keep Tab Search Shortcut** | ⌘⇧A | Stops websites (Slack, Substack, …) from swallowing Chrome's tab search shortcut. |
+| **Switcher bridge** | – | Streams the tab list to the native macOS switcher app over a local WebSocket and switches tabs when it asks. |
 
 ## Install once, then never again
 
@@ -33,7 +34,7 @@ Developer mode is on.
 - **Options page**: `chrome://extensions` → Super Extension → Extension
   options, the palette's "Super Extension options" command, or clicking the
   toolbar icon while Reading Context is off. Keyboard-first: focus starts on
-  the first switch, ↑/↓ (or j/k) move, Space toggles, 1–3 toggle directly,
+  the first switch, ↑/↓ (or j/k) move, Space toggles, 1–4 toggle directly,
   Esc closes.
 - **Palette commands**: "Disable Reading Context", "Enable Keep Tab Search
   Shortcut", "Disable Command palette", etc.
@@ -47,6 +48,8 @@ really means off:
 - **Command palette**: ⌘⇧P does nothing (an open palette closes).
 - **Keep Tab Search Shortcut**: its script is unregistered and switched off in
   open tabs.
+- **Switcher bridge**: the socket is closed, its reconnect alarm is cleared
+  and its tab/window listeners are removed.
 
 Content scripts are registered at runtime with
 `chrome.scripting.registerContentScripts` rather than in the manifest, which
@@ -95,6 +98,33 @@ it while Chrome still opens tab search. Chrome doesn't run extension scripts
 on internal pages such as `chrome://` URLs. To protect only Ctrl+Shift+A, set
 `PROTECT_META_SHIFT_A` to `false` in `src/tab-search-guard/tab-search-guard.ts`.
 
+## Switcher bridge
+
+A separate native macOS app shows a global fuzzy switcher over Chrome tabs
+and native apps. It can't see Chrome's tabs, so the service worker connects
+to it as a WebSocket client at `ws://127.0.0.1:47600/` (the app is the
+server) and exchanges JSON text frames:
+
+| Direction | Frame | When |
+| --- | --- | --- |
+| extension → app | `{"type":"tabs","tabs":[{"id":123,"windowId":4,"title":"…","url":"…","lastAccessed":1731111111111.0,"active":true,"favIconUrl":"…"}]}` | Full snapshot of every tab in normal windows: on connect, then whenever a tab is created, removed, activated, moved between windows, changes title/URL/favicon, or window focus changes. Debounced 100ms; an unchanged snapshot isn't resent. `favIconUrl` is omitted when Chrome has none. |
+| extension → app | `{"type":"ping"}` | Every 20s. The app answers `{"type":"pong"}`. The traffic is also what keeps the MV3 worker alive while connected. |
+| app → extension | `{"type":"activate","tabId":123,"windowId":4}` | Activates the tab and focuses its window. A tab that no longer exists is ignored. |
+
+Unknown message types are ignored in both directions.
+
+The app is often not running. A refused connection is not logged by the
+extension; after start-up or a dropped connection it retries after 1, 2, 4
+and 8 seconds, then lets the worker sleep and tries once per 30 seconds from
+a `chrome.alarms` alarm. So a freshly launched app can wait up to ~30s for
+the extension to find it. Tab and window listeners exist only while the
+socket is open. Chrome itself prints one
+`WebSocket connection to 'ws://127.0.0.1:47600/' failed` line in the service
+worker's DevTools console per failed attempt; scripts can't suppress that.
+
+No manifest entry is needed for the connection: MV3's default extension CSP
+doesn't restrict `connect-src`.
+
 ## Shortcuts
 
 Chrome applies a suggested shortcut only if nothing else owns it. If ⌘⇧P or
@@ -115,6 +145,7 @@ src/reading-context/      side panel, content script, background, API client
 src/palette/              palette page, commands, shortcuts, fuzzy search
 src/options/              options page
 src/tab-search-guard/     MAIN-world shortcut guard and its registration
+src/switcher-bridge/      WebSocket client for the native switcher app
 ```
 
 The Reading Context client is `reading-context-client` from
@@ -123,6 +154,6 @@ The Reading Context client is `reading-context-client` from
 Checks: `bun test`, `bun run check`, `bun run build`.
 
 Permissions: `tabs`, `sessions`, `bookmarks`, `history` (palette search and
-tab commands), `search`, `favicon`, `clipboardWrite`, `alarms` (build check),
+tab commands), `search`, `favicon`, `clipboardWrite`, `alarms` (build check, switcher bridge reconnect),
 `scripting` plus `<all_urls>` host access (runtime content scripts and
 re-injection), and Reading Context's `sidePanel`, `storage`, `contextMenus`.

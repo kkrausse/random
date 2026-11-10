@@ -1,7 +1,7 @@
 // Feature toggles, stored in chrome.storage.local. Everything is on by
 // default; a missing key means "on".
 
-export type FeatureId = "readingContext" | "palette" | "tabSearchGuard";
+export type FeatureId = "readingContext" | "palette" | "tabSearchGuard" | "switcherBridge";
 
 export type FeatureState = Record<FeatureId, boolean>;
 
@@ -30,12 +30,17 @@ export const FEATURES: FeatureInfo[] = [
     title: "Keep Tab Search Shortcut",
     description: "Stops websites from swallowing ⌘⇧A (Ctrl+Shift+A) so Chrome's tab search always opens.",
     shortcut: "⌘⇧A"
+  },
+  {
+    id: "switcherBridge",
+    title: "Switcher bridge",
+    description: "Streams the tab list to the native macOS switcher app over a local WebSocket (127.0.0.1:47600) and switches tabs when it asks."
   }
 ];
 
 const KEY = "features";
 
-export const DEFAULT_FEATURES: FeatureState = { readingContext: true, palette: true, tabSearchGuard: true };
+export const DEFAULT_FEATURES: FeatureState = { readingContext: true, palette: true, tabSearchGuard: true, switcherBridge: true };
 
 export async function getFeatures(): Promise<FeatureState> {
   const stored = (await chrome.storage.local.get(KEY))[KEY] as Partial<FeatureState> | undefined;

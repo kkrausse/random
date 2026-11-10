@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Super Extension",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "minimum_chrome_version": "119",
-  "description": "Reading Context side panel, a Cmd+Shift+P command palette that teaches Chrome's shortcuts, and a guard that keeps Cmd+Shift+A tab search working. Each can be turned off.",
+  "description": "Reading Context side panel, a Cmd+Shift+P command palette that teaches Chrome's shortcuts, a guard that keeps Cmd+Shift+A tab search working, and a bridge that feeds open tabs to a native macOS switcher app. Each can be turned off.",
   "permissions": [
     "sidePanel",
     "storage",
