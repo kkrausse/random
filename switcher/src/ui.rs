@@ -2,11 +2,12 @@
 
 use gpui::{
     App, Bounds, Context, FocusHandle, KeyDownEvent, ScrollDelta, ScrollWheelEvent, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions, div, img, prelude::*, px, rgb, size,
+    WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions, div, img, prelude::*, px, rgb, rgba, size,
 };
 use objc2::rc::Retained;
 use objc2_app_kit::{NSScreen, NSView, NSWindow};
-use objc2_foundation::{MainThreadMarker, NSPoint};
+use objc2_foundation::MainThreadMarker;
+use std::time::{Duration, Instant};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use crate::apps;
@@ -19,7 +20,13 @@ const INPUT_HEIGHT: f32 = 54.0;
 const ROW_HEIGHT: f32 = 46.0;
 const VISIBLE_ROWS: usize = 9;
 /// Trackpad travel, in points, that moves the selection one row.
-const WHEEL_STEP: f32 = 64.0;
+const WHEEL_STEP: f32 = 110.0;
+/// Shortest gap between two rows moved by a mouse wheel. Some wheels send
+/// several events per detent; this folds them into one step.
+const WHEEL_GAP: Duration = Duration::from_millis(90);
+/// Dims the screen behind the card. Also what makes the whole screen take the
+/// wheel and outside clicks.
+const SCRIM: u32 = 0x00000030;
 const HEIGHT: f32 = INPUT_HEIGHT + ROW_HEIGHT * VISIBLE_ROWS as f32 + 14.0;
 
 const BACKGROUND: u32 = 0x1b1b1d;
@@ -43,6 +50,9 @@ pub struct Switcher {
     scroll: usize,
     /// Trackpad scroll not yet turned into a selection move.
     wheel: f32,
+    /// When a mouse wheel last moved the selection.
+    wheel_moved: Option<Instant>,
+    log_scroll: bool,
 }
 
 /// Creates the popover hidden, so the hotkey only has to order it front.
@@ -87,6 +97,8 @@ pub fn open(
                 selected: 0,
                 scroll: 0,
                 wheel: 0.0,
+                wheel_moved: None,
+                log_scroll: std::env::var_os("SWITCHER_LOG_SCROLL").is_some(),
             }
         })
     })
@@ -102,17 +114,16 @@ fn native_window(window: &Window) -> Option<Retained<NSWindow>> {
     view.window()
 }
 
-/// Puts the panel on the screen holding the focused window.
-fn center(native: &NSWindow) {
+/// Stretches the (transparent) panel over the screen holding the focused
+/// window. The card is drawn in the middle of it; covering the screen means
+/// the wheel reaches the switcher wherever the pointer is, and a click
+/// anywhere outside the card lands on us and dismisses it.
+fn cover_screen(native: &NSWindow, takes_mouse: bool) {
     if let Some(screen) = MainThreadMarker::new().and_then(NSScreen::mainScreen) {
-        let screen = screen.frame();
-        let panel = native.frame();
-        native.setFrameOrigin(NSPoint::new(
-            screen.origin.x + (screen.size.width - panel.size.width) / 2.0,
-            // Slightly above center, like Spotlight.
-            screen.origin.y + (screen.size.height - panel.size.height) * 0.62,
-        ));
+        native.setFrame_display(screen.frame(), true);
     }
+    native.setHasShadow(false);
+    native.setIgnoresMouseEvents(!takes_mouse);
 }
 
 impl Switcher {
@@ -133,9 +144,15 @@ impl Switcher {
         self.query.clear();
         self.reload(cx);
 
-        center(&native);
-        native.makeKeyAndOrderFront(None);
         window.focus(&self.focus);
+        // Resizing makes AppKit call back into GPUI, which drops the callback
+        // (and keeps the old layout) while the app is borrowed, as it is
+        // here. So touch the native window from a task, outside any update.
+        cx.spawn(async move |_, _| {
+            cover_screen(&native, true);
+            native.makeKeyAndOrderFront(None);
+        })
+        .detach();
     }
 
     /// Debugging aid (`SWITCHER_PEEK`): puts the list on screen without taking
@@ -144,8 +161,12 @@ impl Switcher {
     pub fn peek(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(native) = native_window(window) {
             self.reload(cx);
-            center(&native);
-            native.orderFrontRegardless();
+            cx.spawn(async move |_, _| {
+                // Mouse-transparent: a peek must not swallow clicks.
+                cover_screen(&native, false);
+                native.orderFrontRegardless();
+            })
+            .detach();
         }
     }
 
@@ -209,14 +230,27 @@ impl Switcher {
         }
     }
 
-    /// The wheel moves the selection rather than scrolling the list under the
-    /// pointer. It stops at the ends: wrapping mid-spin is disorienting.
+    /// The wheel moves the selection rather than scrolling the list. It stops
+    /// at the ends: wrapping mid-spin is disorienting.
     fn scroll_wheel(&mut self, event: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
+        if self.log_scroll {
+            eprintln!("switcher: scroll {:?} {:?}", event.delta, event.touch_phase);
+        }
         let rows = match event.delta {
-            // A mouse wheel: one row per event, whatever the delta. macOS
-            // acceleration makes a slow notch a fraction of a line and a fast
-            // spin many lines; following the magnitude overshoots.
-            ScrollDelta::Lines(lines) if lines.y != 0.0 => -lines.y.signum() as isize,
+            // A mouse wheel: one row per detent, whatever the delta (macOS
+            // acceleration makes it anything from a fraction of a line to
+            // many) and however many events the detent is split into.
+            ScrollDelta::Lines(lines) if lines.y != 0.0 => {
+                let now = Instant::now();
+                if self
+                    .wheel_moved
+                    .is_some_and(|moved| now.duration_since(moved) < WHEEL_GAP)
+                {
+                    return;
+                }
+                self.wheel_moved = Some(now);
+                -lines.y.signum() as isize
+            }
             ScrollDelta::Lines(_) => 0,
             ScrollDelta::Pixels(pixels) => {
                 self.wheel -= f32::from(pixels.y);
@@ -378,7 +412,9 @@ fn same_target(a: Target, b: Target) -> bool {
 }
 
 impl Render for Switcher {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Slightly above center, like Spotlight.
+        let top = ((f32::from(window.viewport_size().height) - HEIGHT) * 0.38).max(0.0);
         let end = (self.scroll + VISIBLE_ROWS).min(self.results.len());
         let rows: Vec<_> = (self.scroll..end)
             .map(|position| self.render_row(position, cx))
@@ -416,9 +452,16 @@ impl Render for Switcher {
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::key_down))
             .on_scroll_wheel(cx.listener(Self::scroll_wheel))
+            .on_any_mouse_down(cx.listener(|this, _, window, cx| this.hide(window, cx)))
+            .bg(rgba(SCRIM))
+            .flex()
+            .flex_col()
+            .items_center()
             .child(
                 div()
-                    .w_full()
+                    .mt(px(top))
+                    .w(px(WIDTH))
+                    .on_any_mouse_down(|_, _, cx| cx.stop_propagation())
                     .bg(rgb(BACKGROUND))
                     .border_1()
                     .border_color(rgb(BORDER))

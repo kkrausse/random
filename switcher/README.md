@@ -70,7 +70,19 @@ the tab list. JSON text frames:
 Unknown types and fields are ignored. Several extensions (profiles, browsers)
 may connect at once; their tabs are merged.
 
+## Mouse
+
+While it is open the switcher covers the whole screen with a faint dim, so the
+scroll wheel moves the selection wherever the pointer is and a click outside
+the card dismisses it (that click is not passed on to the app underneath). A
+mouse wheel moves one row per detent, at most one every 90 ms; a trackpad
+moves one row per 110 pt of travel. The wheel stops at the ends of the list.
+
 ## Debugging
+
+`SWITCHER_LOG_SCROLL=1` logs every scroll event the popover receives, for
+tuning the above to a particular mouse.
+
 
 `SWITCHER_PEEK=1 ./target/release/switcher` puts the popover on screen (without
 taking keyboard focus) whenever an extension message changes the list, so it
