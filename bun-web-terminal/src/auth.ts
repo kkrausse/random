@@ -93,7 +93,8 @@ export class TerminalAuth {
     }
     if (this.authenticated(request, origin)) return;
     if (request.method === "GET" && request.headers.get("accept")?.includes("text/html") && !request.headers.has("upgrade") && !url.pathname.startsWith("/api/")) {
-      return this.response("Sign in", 303, { location: "/login" });
+      // Show the sign-in form at the requested URL so a session link survives sign-in.
+      return this.loginPage(401);
     }
     return this.response("Authentication required", 401);
   }
@@ -107,7 +108,7 @@ export class TerminalAuth {
     } });
   }
 
-  private loginPage() {
+  private loginPage(status = 200) {
     const nonce = randomBytes(16).toString("base64url");
     return this.response(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Terminal sign-in</title>
@@ -130,13 +131,13 @@ async function exchange(key) {
   await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "text/plain" }, body: key.trim(), credentials: "same-origin" })
     .then(response => {
       if (!response.ok) throw new Error("That key is not valid. Use the current access key or the latest sign-in link.");
-      location.replace("/sessions");
+      if (location.pathname === "/login") location.replace("/sessions"); else location.reload();
     })
     .catch(error => { status.textContent = error.message; });
 }
 function signInFromLink() {
   const key = new URLSearchParams(location.hash.slice(1)).get("key");
-  history.replaceState(null, "", "/login");
+  history.replaceState(null, "", location.pathname + location.search);
   if (key) void exchange(key);
 }
 document.getElementById("form").addEventListener("submit", event => {
@@ -145,7 +146,7 @@ document.getElementById("form").addEventListener("submit", event => {
 });
 window.addEventListener("hashchange", signInFromLink);
 signInFromLink();
-</script></body></html>`, 200, {
+</script></body></html>`, status, {
       "content-type": "text/html; charset=utf-8",
       "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`,
     });
