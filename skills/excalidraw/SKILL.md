@@ -49,7 +49,8 @@ text colour), `stroke` "solid" | "dashed" | "dotted", `sw` stroke width, `rough`
 "serif", `fs`, `align`, `valign`, `link`, `locked`, `group`, `w`, `h`. Colours by name (blue green yellow red orange
 violet gray pink teal cyan indigo lime white black) or #hex.
 
-Page: `draw(fn, { title, dark, grid, bg })`.
+Page: `draw(fn, { title, dark, grid, bg })`. `fn` may be async (it is awaited), e.g. to run a layout engine such as
+ELK (`await import("https://esm.sh/elkjs@0.11.0/lib/elk.bundled.js")`) before returning the items.
 
 Give every element a meaningful id. Ctrl/Cmd+C on the canvas copies the selection (or everything) as lines like
 `fz rectangle 0,0 420x70 #e9ecef "FROZEN blocks 1 – 12"` and `fz>sa1 arrow fz -> sa1 "361 × 1024"`; `*` marks
