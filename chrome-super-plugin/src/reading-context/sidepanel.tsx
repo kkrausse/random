@@ -146,7 +146,7 @@ function CaptureScreen({ settings, capture, onOpenChat, onBrowse }: {
     </div>
     <label><span>Your question</span>
       <textarea value={question} disabled={submitting} onChange={(event) => setQuestion(event.target.value)}
-        placeholder="What do you want to understand?" />
+        autoFocus placeholder="What do you want to understand?" />
     </label>
     <button className="primary" disabled={!capture || submitting} onClick={() => void startChat(question)}>Start chat</button>
     <p className="status">{status}</p>
@@ -444,7 +444,7 @@ function ChatScreen({ settings, capture, sessionId, initialPrompt, onPromptSent,
             onClick={() => void sendReply(preset.prompt)}>{preset.label}</button>)}
       </div></div>
       <textarea value={reply} disabled={waiting} onChange={(event) => setReply(event.target.value)}
-        onKeyDown={composerKeyDown}
+        onKeyDown={composerKeyDown} autoFocus
         placeholder={capture ? "Ask about this highlight or continue the conversation..." : "Continue the conversation..."} />
       <div id="chat-capture"><section className="chat-capture-card">
         <div className="eyebrow">Including new highlight</div>
@@ -643,6 +643,39 @@ function App() {
     return () => {
       active = false;
       chrome.storage.onChanged.removeListener(storageListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    let port: chrome.runtime.Port | null = null;
+    // Lets the background toggle shortcut see that this panel is open; the port
+    // drops when the service worker restarts, so reconnect to stay visible.
+    const connect = (windowId: number) => {
+      if (!active) return;
+      port = chrome.runtime.connect({ name: `sidepanel:${windowId}` });
+      port.onMessage.addListener((message) => {
+        if (message?.type === "close") window.close();
+      });
+      port.onDisconnect.addListener(() => connect(windowId));
+    };
+    void chrome.windows.getCurrent().then((win) => {
+      if (win.id !== undefined) connect(win.id);
+    });
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const target = event.target;
+      if ((target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) && target.value) {
+        target.blur();
+        return;
+      }
+      window.close();
+    };
+    document.addEventListener("keydown", keydown);
+    return () => {
+      active = false;
+      port?.disconnect();
+      document.removeEventListener("keydown", keydown);
     };
   }, []);
 

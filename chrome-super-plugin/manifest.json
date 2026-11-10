@@ -1,0 +1,53 @@
+{
+  "manifest_version": 3,
+  "name": "Super Extension",
+  "version": "0.4.0",
+  "minimum_chrome_version": "119",
+  "description": "Reading Context side panel, a Cmd+Shift+P command palette that teaches Chrome's shortcuts, and a guard that keeps Cmd+Shift+A tab search working. Each can be turned off.",
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "contextMenus",
+    "tabs",
+    "sessions",
+    "bookmarks",
+    "history",
+    "search",
+    "favicon",
+    "clipboardWrite",
+    "alarms",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Super Extension"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "commands": {
+    "toggle-reading-context": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+E",
+        "mac": "Command+Shift+E"
+      },
+      "description": "Open or close Reading Context"
+    },
+    "toggle-palette": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+P",
+        "mac": "Command+Shift+P"
+      },
+      "description": "Open or close the command palette"
+    }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  }
+}

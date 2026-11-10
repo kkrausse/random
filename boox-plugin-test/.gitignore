@@ -11,5 +11,4 @@ kindle-window.xml
 captures/
 *.hprof
 node_modules/
-chrome-plugin/dist/
 .DS_Store

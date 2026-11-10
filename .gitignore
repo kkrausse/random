@@ -31,8 +31,8 @@
 !travel-map/**
 !bird-log/
 !bird-log/**
-!fix-chrome-extension/
-!fix-chrome-extension/**
+!chrome-super-plugin/
+!chrome-super-plugin/**
 !browser-container-poc/
 !browser-container-poc/**
 !isochron-home-map/

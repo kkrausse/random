@@ -3,6 +3,24 @@
   const CAPTURE_DELAY_MS = 100;
   let captureTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // After an extension reload the background re-injects this script into
+  // open tabs, while the old copy lingers with a dead chrome.runtime. Each
+  // copy first tells any older one in the page to stop, so exactly one runs.
+  const TEARDOWN_EVENT = "reading-context:teardown";
+  document.dispatchEvent(new Event(TEARDOWN_EVENT));
+  const listeners = new AbortController();
+  document.addEventListener(TEARDOWN_EVENT, teardown, { signal: listeners.signal });
+
+  function teardown() {
+    listeners.abort();
+    if (captureTimer !== null) clearTimeout(captureTimer);
+    try {
+      chrome.runtime.onMessage.removeListener(onMessage);
+    } catch {
+      // Orphaned: the extension context is already gone.
+    }
+  }
+
   type Capture = {
     highlight: string;
     surroundingContext: string;
@@ -78,18 +96,23 @@
     return capture;
   }
 
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  function onMessage(message: { type?: string }, _sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) {
     if (message?.type !== "capture-selection") return false;
     captureSelection().then(sendResponse);
     return true;
-  });
+  }
+  chrome.runtime.onMessage.addListener(onMessage);
 
   document.addEventListener("selectionchange", () => {
+    if (!chrome.runtime?.id) {
+      teardown();
+      return;
+    }
     if (captureTimer !== null) clearTimeout(captureTimer);
     captureTimer = setTimeout(() => {
       captureTimer = null;
       const capture = buildCapture();
       if (capture) void sendCapture(capture);
     }, CAPTURE_DELAY_MS);
-  });
+  }, { signal: listeners.signal });
 })();
