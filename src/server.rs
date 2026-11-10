@@ -1,7 +1,8 @@
 //! Loopback WebSocket server the browser extension connects to.
 //!
 //! One thread per connection. Each connection owns a full tab snapshot that is
-//! replaced on every `tabs` message and dropped when the socket closes.
+//! replaced on every `tabs` message, plus the favicons those tabs refer to by
+//! key; both are dropped when the socket closes.
 
 use std::collections::HashMap;
 use std::io::ErrorKind;
@@ -15,6 +16,8 @@ use serde::Deserialize;
 use tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tungstenite::http::StatusCode;
 use tungstenite::{Error, Message};
+
+use crate::icons::{self, Icon};
 
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +33,16 @@ pub struct Tab {
     pub last_accessed: f64,
     #[serde(default)]
     pub active: bool,
+    /// Key of this tab's favicon in the connection's `icons`, if it has one.
+    #[serde(default)]
+    pub icon: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct EncodedIcon {
+    key: String,
+    /// Base64 PNG.
+    png: String,
 }
 
 #[derive(Deserialize)]
@@ -38,6 +51,9 @@ enum Incoming {
     Tabs {
         tabs: Vec<Tab>,
     },
+    Icons {
+        icons: Vec<EncodedIcon>,
+    },
     Ping,
     #[serde(other)]
     Unknown,
@@ -45,6 +61,8 @@ enum Incoming {
 
 pub struct Connection {
     pub tabs: Vec<Tab>,
+    /// Decoded favicons by the key tabs refer to them with.
+    pub icons: HashMap<String, Icon>,
     /// Pid of the browser app on the other end, once worked out.
     pub browser_pid: Option<i32>,
     outgoing: Sender<String>,
@@ -134,6 +152,7 @@ fn run_connection(
         id,
         Connection {
             tabs: Vec::new(),
+            icons: HashMap::new(),
             browser_pid: None,
             outgoing,
         },
@@ -172,7 +191,23 @@ fn run_connection(
         match serde_json::from_str(&text) {
             Ok(Incoming::Tabs { tabs }) => {
                 if let Some(connection) = connections.lock().unwrap().get_mut(&id) {
+                    // An icon lives only while a tab refers to it; the
+                    // extension sends it again if its key comes back.
+                    connection
+                        .icons
+                        .retain(|key, _| tabs.iter().any(|tab| tab.icon.as_ref() == Some(key)));
                     connection.tabs = tabs;
+                }
+                changed();
+            }
+            Ok(Incoming::Icons { icons }) => {
+                // Decode before taking the lock the UI thread also uses.
+                let decoded: Vec<(String, Icon)> = icons
+                    .into_iter()
+                    .filter_map(|icon| Some((icon.key, icons::decode_base64(&icon.png)?)))
+                    .collect();
+                if let Some(connection) = connections.lock().unwrap().get_mut(&id) {
+                    connection.icons.extend(decoded);
                 }
                 changed();
             }

@@ -6,17 +6,61 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use block2::RcBlock;
+use objc2::AnyThread;
 use objc2_app_kit::{
-    NSApplicationActivationOptions, NSApplicationActivationPolicy, NSRunningApplication,
-    NSWorkspace, NSWorkspaceDidActivateApplicationNotification,
+    NSApplicationActivationOptions, NSApplicationActivationPolicy, NSBitmapImageFileType,
+    NSBitmapImageRep, NSDeviceRGBColorSpace, NSGraphicsContext, NSRunningApplication, NSWorkspace,
+    NSWorkspaceDidActivateApplicationNotification,
 };
-use objc2_foundation::{NSNotification, NSString};
+use objc2_foundation::{NSDictionary, NSNotification, NSPoint, NSRect, NSSize, NSString};
+
+use crate::icons::{self, Icon};
 
 pub struct RunningApp {
     pub pid: i32,
     pub name: String,
     /// Milliseconds since the epoch of the last activation we saw, or 0.
     pub last_active: f64,
+    pub icon: Option<Icon>,
+}
+
+/// Rendered pixel size of app icons: the row shows them at 20pt, so 2x and a bit.
+const ICON_PIXELS: isize = 64;
+
+/// pid -> its icon (None if it has none), rendered the first time the app is listed.
+static ICONS: Mutex<Option<HashMap<i32, Option<Icon>>>> = Mutex::new(None);
+
+/// Draws the app's icon into a small bitmap and hands it over as PNG bytes.
+fn render_icon(app: &NSRunningApplication) -> Option<Icon> {
+    let icon = app.icon()?;
+    // SAFETY: null planes ask AppKit to allocate the pixel buffer itself.
+    let bitmap = unsafe {
+        NSBitmapImageRep::initWithBitmapDataPlanes_pixelsWide_pixelsHigh_bitsPerSample_samplesPerPixel_hasAlpha_isPlanar_colorSpaceName_bytesPerRow_bitsPerPixel(
+            NSBitmapImageRep::alloc(),
+            std::ptr::null_mut(),
+            ICON_PIXELS,
+            ICON_PIXELS,
+            8,
+            4,
+            true,
+            false,
+            NSDeviceRGBColorSpace,
+            0,
+            0,
+        )
+    }?;
+    let context = NSGraphicsContext::graphicsContextWithBitmapImageRep(&bitmap)?;
+    let previous = NSGraphicsContext::currentContext();
+    NSGraphicsContext::setCurrentContext(Some(&context));
+    let side = ICON_PIXELS as f64;
+    icon.drawInRect(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(side, side)));
+    context.flushGraphics();
+    NSGraphicsContext::setCurrentContext(previous.as_deref());
+    // SAFETY: no properties, so nothing to get the type of wrong.
+    let png = unsafe {
+        bitmap.representationUsingType_properties(NSBitmapImageFileType::PNG, &NSDictionary::new())
+    }?;
+    icons::decode(&png.to_vec())
 }
 
 /// pid -> last activation time (ms since epoch, to compare with tab `lastAccessed`).
@@ -55,10 +99,12 @@ pub fn track_activations() {
     std::mem::forget(observer);
 }
 
-/// Apps with a Dock presence (regular activation policy).
+/// Apps with a Dock presence (regular activation policy). Main thread only.
 pub fn running() -> Vec<RunningApp> {
     let mut last_active = LAST_ACTIVE.lock().unwrap();
     let last_active = last_active.get_or_insert_default();
+    let mut icons = ICONS.lock().unwrap();
+    let icons = icons.get_or_insert_default();
     let apps: Vec<RunningApp> = NSWorkspace::sharedWorkspace()
         .runningApplications()
         .iter()
@@ -72,10 +118,15 @@ pub fn running() -> Vec<RunningApp> {
                     .map(|name| name.to_string())
                     .unwrap_or_default(),
                 last_active: last_active.get(&pid).copied().unwrap_or(0.0),
+                icon: icons
+                    .entry(pid)
+                    .or_insert_with(|| render_icon(&app))
+                    .clone(),
             }
         })
         .collect();
     last_active.retain(|pid, _| apps.iter().any(|app| app.pid == *pid));
+    icons.retain(|pid, _| apps.iter().any(|app| app.pid == *pid));
     apps
 }
 

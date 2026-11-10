@@ -2,7 +2,7 @@
 
 use gpui::{
     App, Bounds, Context, FocusHandle, KeyDownEvent, Window, WindowBackgroundAppearance,
-    WindowBounds, WindowHandle, WindowKind, WindowOptions, div, prelude::*, px, rgb, size,
+    WindowBounds, WindowHandle, WindowKind, WindowOptions, div, img, prelude::*, px, rgb, size,
 };
 use objc2::rc::Retained;
 use objc2_app_kit::{NSScreen, NSView, NSWindow};
@@ -25,8 +25,8 @@ const BORDER: u32 = 0x38383c;
 const SELECTED: u32 = 0x2f3b55;
 const TEXT: u32 = 0xe8e8ea;
 const DIM: u32 = 0x8a8a90;
-const TAB_ACCENT: u32 = 0x6ea8fe;
-const APP_ACCENT: u32 = 0xc4a7e7;
+const ACCENT: u32 = 0x6ea8fe;
+const ICON_SIZE: f32 = 20.0;
 
 pub struct Switcher {
     config: Config,
@@ -97,6 +97,19 @@ fn native_window(window: &Window) -> Option<Retained<NSWindow>> {
     view.window()
 }
 
+/// Puts the panel on the screen holding the focused window.
+fn center(native: &NSWindow) {
+    if let Some(screen) = MainThreadMarker::new().and_then(NSScreen::mainScreen) {
+        let screen = screen.frame();
+        let panel = native.frame();
+        native.setFrameOrigin(NSPoint::new(
+            screen.origin.x + (screen.size.width - panel.size.width) / 2.0,
+            // Slightly above center, like Spotlight.
+            screen.origin.y + (screen.size.height - panel.size.height) * 0.62,
+        ));
+    }
+}
+
 impl Switcher {
     pub fn toggle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if native_window(window).is_some_and(|native| native.isVisible()) {
@@ -115,18 +128,20 @@ impl Switcher {
         self.query.clear();
         self.reload(cx);
 
-        // The main screen is the one holding the focused window.
-        if let Some(screen) = MainThreadMarker::new().and_then(NSScreen::mainScreen) {
-            let screen = screen.frame();
-            let panel = native.frame();
-            native.setFrameOrigin(NSPoint::new(
-                screen.origin.x + (screen.size.width - panel.size.width) / 2.0,
-                // Slightly above center, like Spotlight.
-                screen.origin.y + (screen.size.height - panel.size.height) * 0.62,
-            ));
-        }
+        center(&native);
         native.makeKeyAndOrderFront(None);
         window.focus(&self.focus);
+    }
+
+    /// Debugging aid (`SWITCHER_PEEK`): puts the list on screen without taking
+    /// keyboard focus, so it can be screenshotted without a hotkey press and
+    /// without disturbing whatever is being typed into.
+    pub fn peek(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(native) = native_window(window) {
+            self.reload(cx);
+            center(&native);
+            native.orderFrontRegardless();
+        }
     }
 
     fn hide(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -269,28 +284,25 @@ impl Switcher {
 
     fn render_row(&self, position: usize, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let item = &self.items[self.results[position]];
-        let (kind, accent) = match item.target {
-            Target::Tab { .. } => ("TAB", TAB_ACCENT),
-            Target::App { .. } => ("APP", APP_ACCENT),
+        // The icon says what the row is. Rows without one (not sent yet, or
+        // the page has no favicon) keep its box so titles stay aligned.
+        let icon = div().size(px(ICON_SIZE)).flex_none();
+        let icon = match &item.icon {
+            Some(image) => icon.child(img(image.clone()).size_full()),
+            None => icon.rounded(px(5.0)).bg(rgb(BORDER)),
         };
         div()
             .id(("row", position))
             .h(px(ROW_HEIGHT))
             .mx(px(6.0))
-            .px(px(10.0))
+            .px(px(12.0))
             .rounded(px(7.0))
             .flex()
             .items_center()
-            .gap(px(10.0))
+            .gap(px(12.0))
             .when(position == self.selected, |row| row.bg(rgb(SELECTED)))
             .on_click(cx.listener(move |this, _, window, cx| this.activate(position, window, cx)))
-            .child(
-                div()
-                    .w(px(3.0))
-                    .h(px(22.0))
-                    .rounded(px(2.0))
-                    .bg(rgb(accent)),
-            )
+            .child(icon)
             .child(
                 div()
                     .flex_1()
@@ -310,12 +322,6 @@ impl Switcher {
                             .text_color(rgb(DIM))
                             .child(item.subtitle.clone()),
                     ),
-            )
-            .child(
-                div()
-                    .text_size(px(10.0))
-                    .text_color(rgb(accent))
-                    .child(kind),
             )
     }
 }
@@ -356,7 +362,7 @@ impl Render for Switcher {
             .border_b_1()
             .border_color(rgb(BORDER))
             .child(self.query.clone())
-            .child(div().w(px(1.5)).h(px(22.0)).bg(rgb(TAB_ACCENT)))
+            .child(div().w(px(1.5)).h(px(22.0)).bg(rgb(ACCENT)))
             .when(self.query.is_empty(), |input| {
                 input.child(
                     div()

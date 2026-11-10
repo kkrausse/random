@@ -4739,11 +4739,13 @@ dependencies = [
 name = "switcher"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "block2",
  "dirs 6.0.0",
  "futures",
  "global-hotkey",
  "gpui",
+ "image",
  "nucleo-matcher",
  "objc2",
  "objc2-app-kit",
@@ -4751,6 +4753,7 @@ dependencies = [
  "raw-window-handle",
  "serde",
  "serde_json",
+ "smallvec",
  "toml 0.8.23",
  "tungstenite",
 ]

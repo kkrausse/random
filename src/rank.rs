@@ -4,6 +4,7 @@ use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config as MatcherConfig, Matcher, Utf32Str};
 
 use crate::apps;
+use crate::icons::Icon;
 use crate::server::Connections;
 
 #[derive(Clone, Copy)]
@@ -23,6 +24,8 @@ pub enum Target {
 pub struct Item {
     pub title: String,
     pub subtitle: String,
+    /// Favicon or app icon, once we have one.
+    pub icon: Option<Icon>,
     pub target: Target,
     /// What fuzzy queries match against.
     haystack: String,
@@ -63,6 +66,10 @@ pub fn collect(connections: &Connections, browser_bundle_id: Option<&str>) -> Ve
                     tab.title.clone()
                 },
                 subtitle: host(&tab.url).to_string(),
+                icon: tab
+                    .icon
+                    .as_ref()
+                    .and_then(|key| state.icons.get(key).cloned()),
                 target: Target::Tab {
                     connection,
                     tab_id: tab.id,
@@ -92,6 +99,7 @@ pub fn collect(connections: &Connections, browser_bundle_id: Option<&str>) -> Ve
             haystack: app.name.clone(),
             title: app.name,
             subtitle: "App".into(),
+            icon: app.icon,
             target: Target::App { pid: app.pid },
             recency: app.last_active,
             current: Some(app.pid) == frontmost,

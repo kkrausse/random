@@ -1,5 +1,6 @@
 mod apps;
 mod config;
+mod icons;
 mod rank;
 mod server;
 mod ui;
@@ -72,11 +73,13 @@ fn main() {
         let window = ui::open(config, connections, cx)
             .unwrap_or_else(|error| fail(format!("cannot create the popover: {error}")));
 
+        let peek = std::env::var_os("SWITCHER_PEEK").is_some();
         cx.spawn(async move |cx| {
             while let Some(event) = incoming.next().await {
                 window
                     .update(cx, |switcher, window, cx| match event {
                         Event::Hotkey => switcher.toggle(window, cx),
+                        Event::TabsChanged if peek => switcher.peek(window, cx),
                         Event::TabsChanged => switcher.tabs_changed(window, cx),
                     })
                     .ok();
