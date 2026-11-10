@@ -10,6 +10,34 @@ projection: one line per element (~60x smaller), z-order = line order.
 
 All scripts live in this skill's `scripts/` directory (referred to as `$S` below).
 
+## New diagrams: write a scene script (diagram.js)
+
+For a diagram you are authoring (architecture figures, flows, anything with structure), do not place elements by
+coordinates. Write a scene in JavaScript with `site/diagram.js`; it lays the figure out.
+
+```bash
+$S/new-diagram.sh <dir>     # index.html, app.js, diagram.js, excs.js, cli.js + a starter scene.js
+```
+
+`<dir>` is a complete static page with no build: `index.html` imports `scene.js` in the browser and shows it in a
+read-only, pan-and-zoom Excalidraw (loaded from esm.sh). You only edit `scene.js`; reload to see it. Publish the
+folder as it is (`deploy-artifact.sh <dir> <slug>`). `?scene=other.js` shows another scene file in the same folder.
+
+- **Model:** `lanes([...])` gives named columns; `g.row({ lane: node, "a:c": spanning node })` adds a row. Boxes size
+  to their text, a lane to its widest cell, a row to its tallest. `box`, `label`, `squares` (token strips), `row` /
+  `col` (small groups), `panel`, `plus`; `g.band(r0, r1, { label })` frames rows. `arrow(R(a), L(b), { label, via })`
+  connects nodes after layout; `under: true` passes behind filled boxes. End with `export default render(g.node())`.
+  The full API with types is the comment block at the top of `site/diagram.js`; `site/scene.js` is a worked example.
+- **Detail is cheap:** adding a row or a lane re-lays everything out. Put the detail in the main figure (one lane per
+  repeated thing, a spanning box where things meet) instead of side panels.
+- **Several figures on one canvas:** `export default [[figA, figB], [figC]]` (rows of figures).
+- **Check before showing:** `bunx tsc --noEmit --allowJs --checkJs --target es2022 --module esnext --moduleResolution bundler --strict <dir>/scene.js`
+  (the files carry their types in comments; nothing is compiled), then render and look at it:
+  `bun <dir>/cli.js > /tmp/x.excalidraw && node $S/export.mjs /tmp/x.excalidraw -o /tmp/x` gives a PNG for your own check.
+- `bun <dir>/cli.js > name.excalidraw` also gives the canvas as a normal Excalidraw file (to commit, or to open and edit by hand).
+
+The sections below are for existing `.excalidraw` files and canvases the user edits by hand.
+
 ## Read a scene
 
 ```bash
