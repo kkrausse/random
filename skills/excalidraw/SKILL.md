@@ -1,6 +1,6 @@
 ---
 name: Excalidraw
-description: Edit .excalidraw diagram files through their compact .excs text sibling — dump/build/check/preview via exc.mjs, with the file-bridge page live-syncing edits onto the canvas. Use for reading, editing, or restructuring Excalidraw scenes without touching raw scene JSON.
+description: Author diagrams as JavaScript scene scripts (diagram.js lays out lanes, rows, boxes and arrows; a static page with no build shows them in Excalidraw), and edit existing .excalidraw files through their compact .excs text sibling — dump/build/check/preview via exc.mjs, with the file-bridge page live-syncing edits onto the canvas. Use for reading, editing, or restructuring Excalidraw scenes without touching raw scene JSON.
 ---
 
 # Excalidraw (.excs file workflow)
