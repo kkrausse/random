@@ -3,14 +3,16 @@
 //
 // Every listener is registered synchronously here; handlers check the
 // toggle when they fire. Turning a feature off also unregisters its content
-// scripts and disables its side panel/context menu.
+// scripts, disables its side panel/context menu, or closes its socket.
 import { startAutoReload } from "./autoReload";
 import { getFeatures, onFeaturesChanged, type FeatureState } from "./features";
 import { closePaletteIfOpen } from "./palette/background";
 import { applyReadingContext, setupReadingContext } from "./reading-context/background";
+import { applySwitcherBridge, setupSwitcherBridge } from "./switcher-bridge/background";
 import { applyTabSearchGuard } from "./tab-search-guard/background";
 
 setupReadingContext();
+setupSwitcherBridge();
 
 // Serialized so a quick off/on/off can't interleave registrations.
 let applying: Promise<void> = Promise.resolve();
@@ -22,6 +24,7 @@ function apply(state: FeatureState, previous: FeatureState | null, inject: boole
     const injectFor = (id: keyof FeatureState) => inject || (previous !== null && !previous[id] && state[id]);
     if (changed("readingContext") || inject) await applyReadingContext(state.readingContext, { inject: injectFor("readingContext") });
     if (changed("tabSearchGuard") || inject) await applyTabSearchGuard(state.tabSearchGuard, { inject: injectFor("tabSearchGuard") });
+    if (changed("switcherBridge")) applySwitcherBridge(state.switcherBridge);
     if (previous && previous.palette && !state.palette) await closePaletteIfOpen();
   }).catch((error) => console.error("Applying feature toggles failed", error));
   return applying;
