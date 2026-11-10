@@ -94,7 +94,8 @@ function build(/** @type {any[]} */ items) {
     const t0 = edge(s), t1 = 1 - edge(e);
     const sx = cx + lx * t0, sy = cy + ly * t0, ex = cx + lx * t1, ey = cy + ly * t1;
     out.push({ type: "arrow", id: a.o.id ?? `${a.from}>${a.to}`, x: sx, y: sy, width: ex - sx, height: ey - sy,
-      points: [[0, 0], [ex - sx, ey - sy]], start: { id: a.from }, end: { id: a.to }, ...style(a.o),
+      // bound to shapes only: an arrow bound to a free text element pulls that text onto itself as its label
+      points: [[0, 0], [ex - sx, ey - sy]], ...(s.type !== "text" && { start: { id: a.from } }), ...(e.type !== "text" && { end: { id: a.to } }), ...style(a.o),
       ...(a.o.elbow && { elbowed: true }), ...(a.label && { label: { text: a.label, fontSize: 14, fontFamily: 3 } }), customData: { x: 1 } });
   }
   return out;
