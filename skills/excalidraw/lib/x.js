@@ -167,9 +167,14 @@ function condensed() {
   const body = lines(all, sel);
   return `# ${document.title}: ${sel.size ? body.length + " selected" : "everything"}  (id type x,y wxh [fill] "label"; * = drawn by hand)\n` + body.join("\n") + "\n";
 }
-// replaces Excalidraw's own copy (its JSON); typing in a text box still copies text as usual
+// Ctrl/Cmd+C: the condensed lines instead of Excalidraw's own copy (its JSON). Ctrl/Cmd+Shift+C: Excalidraw's own copy.
+// Typing in a text box still copies text as usual.
+let raw = false;
+window.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "c") { e.preventDefault(); raw = true; document.execCommand("copy"); raw = false; }
+}, true);
 window.addEventListener("copy", (e) => {
-  if (!api || /** @type {any} */ (e.target)?.closest?.("textarea, input")) return;
+  if (!api || raw || /** @type {any} */ (e.target)?.closest?.("textarea, input")) return;
   e.preventDefault(); e.stopImmediatePropagation();
   e.clipboardData?.setData("text/plain", condensed());
 }, true);

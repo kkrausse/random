@@ -32,7 +32,7 @@ API (all of it):
 
 Give every element a meaningful id. Ctrl/Cmd+C on the canvas copies the selection (or everything) as lines like
 `fz rectangle 0,0 420x70 #e9ecef "FROZEN blocks 1 – 12"` and `fz>sa1 arrow fz -> sa1 "361 × 1024"`; `*` marks
-elements they drew by hand. Find the id in the script and change it there.
+elements they drew by hand (Ctrl/Cmd+Shift+C = Excalidraw's own copy). Find the id in the script and change it there.
 
 See your own output: `google-chrome --headless=new --virtual-time-budget=20000 --window-size=1400,1000
 --screenshot=out.png <published link>`, then read out.png.
