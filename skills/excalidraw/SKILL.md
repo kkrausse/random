@@ -1,85 +1,35 @@
 ---
-name: Excalidraw
-description: Edit .excalidraw diagram files through their compact .excs text sibling — dump/build/check/preview via exc.mjs, with the file-bridge page live-syncing edits onto the canvas. Use for reading, editing, or restructuring Excalidraw scenes without touching raw scene JSON.
+name: excalidraw
+description: Draw diagrams as a small JavaScript script shown in regular Excalidraw (static page, no build, no server). Use for architecture/flow diagrams; the user's "copy for LLM" button pastes back a condensed line per element with ids.
 ---
 
-# Excalidraw (.excs file workflow)
+# Excalidraw as a script
 
-Never read or edit .excalidraw JSON directly — work through the `.excs`
-projection: one line per element (~60x smaller), z-order = line order.
+Copy `index.html`, `app.js`, `x.js` from this skill's directory into a folder, write `scene.js` next to them,
+publish the folder with `deploy-artifact.sh <folder> <slug>` and give the link. Reload = see the new script.
+`?s=other.js` loads another scene file from the same folder.
 
-All scripts live in this skill's `scripts/` directory (referred to as `$S` below).
+`scene.js` default-exports a list of nodes and arrows (see `scene.js` here):
 
-## Read a scene
-
-```bash
-node $S/exc.mjs dump scene.excalidraw          # compact text to stdout
+```js
+import { box, text, row, col, arrow } from "x";
+const layer = (i) => row(40, box(`sa${i}`, `self-attention ${i}`, { bg: "blue" }), box(`ff${i}`, `feed-forward ${i}`));
+export default [
+  col(50, box("fz", "FROZEN blocks 1 – 12", { bg: "gray" }), layer(1), layer(2)),
+  arrow("fz", "sa1", "361 × 1024"), arrow("sa1", "ff1"),
+];
 ```
 
-## Edit a scene
+- `box(id, text, { bg, ink, dashed, sw, fs, w, h, shape, left })`: sized to its text. `shape`: "ellipse" | "diamond".
+- `text(id, s, { fs, ink })`
+- `row(gap, ...nodes)`, `col(gap, ...nodes)`; or `row({ gap, align: "start" | "end" }, ...)`.
+- `arrow(fromId, toId, label, { ink, dashed, sw, elbow })`: bound to both boxes.
+- Colours by name: blue green yellow red orange violet gray pink teal (bg); blue green red orange violet gray (ink).
+- Top-level items stack down the page. Abstraction = plain JS functions.
 
-1. If a `.excs` sibling exists and the user has the bridge tab open, edit the
-   `.excs` directly with normal file edits. The bridge imports it within ~1s,
-   re-measures text with the real engine, writes the `.excalidraw`, and
-   rewrites the `.excs` normalized. Done.
-2. Otherwise: `dump -o scene.excs`, edit, then
-   `node $S/exc.mjs build scene.excs -o scene.excalidraw`.
-   Build estimates text sizes; the bridge self-heals them on next load.
+Give every element a meaningful id: the user's "copy for LLM" (button, or Ctrl/Cmd+Shift+C) puts the selection on
+the clipboard as `id type x,y wxh [fill] "label"` and `id arrow from -> to "label"`; elements they drew by hand are
+marked `*`. Find the id in the script and change it there.
 
-**Always after editing**: `node $S/exc.mjs check scene.excalidraw` — validates
-binding/backref invariants, box overlaps, and counts arrow crossings.
-`node $S/exc.mjs preview scene.excalidraw` renders an approximate wireframe
-PNG (macOS qlmanage) to eyeball layout without a browser.
-
-Real export (SVG with embedded fonts + 2x PNG, faithful render):
-`node $S/export.mjs scene.excalidraw [-o outBase] [--scale 2]` — needs Chrome
-installed; `npm i` in `$S` once for playwright-core.
-Keep `scripts/package.json` free of `"type":"module"`: `excs.js` is a classic
-script shared with the bridge page, and `exc.mjs` loads it via `require`.
-
-## Rules
-
-- `.excalidraw` is the source of truth; `.excs` is an ephemeral projection the
-  bridge regenerates after every sync. Never rebuild from a stale `.excs`.
-- The user may edit the canvas concurrently — on conflict the scene file wins.
-- Format reference is the header comment in `scripts/excs.js` (grammar, keys,
-  flags, elided defaults). Bound text folds into its container's line; images
-  and freedraw pass through as `json` lines.
-- Layout hygiene: order rows/boxes so arrows fan out without crossing; aim for
-  `check` reporting 0 crossings unless the user drew them.
-
-## The bridge page
-
-`excalidraw-file-sync.html` (open via file:// in Chrome, grant a folder once).
-When handing the user a link, always include both params:
-`?file=<file name>&root=<absolute path of the folder holding it>`. The user
-usually grants a parent folder once; the page maps `root` + `file` onto
-whichever granted ancestor matches by name, so the link works from any folder
-above the file. `root` also seeds the copy-absolute-path button. The folder's
-file list is sorted newest first.
-Folder-opened scenes get the `.excs` sibling automatically; single-file mode
-does not. If the user reports edits not appearing, ask them to check the
-bridge tab's footer for a `.excs error` message — a parse error leaves the
-canvas untouched.
-
-## Version control
-
-Commit the `.excalidraw` only and gitignore `*.excs` — the sibling is a
-deterministic projection the bridge regenerates, and a committed copy can go
-stale. Raw JSON diffs are noise (every save regenerates nonces and re-measures
-text), so diff through the dumper. Once per repo:
-
-```bash
-echo '*.excalidraw diff=excs' >> .gitattributes
-echo '*.excs' >> .gitignore
-git config diff.excs.textconv "node $S/exc.mjs dump"   # absolute path to $S
-```
-
-`git diff`, `git log -p`, and `git show` then print the compact form. These
-diffs are read-only and cannot be applied as patches.
-
-## Legacy
-
-`scripts/scene-{inspect,export,upload}.js` are the old browser-control payload
-scripts for driving an excalidraw.com tab. Prefer the file workflow; use these
-only when the user explicitly wants to work with a non-bridge tab.
+To see your own output: `google-chrome --headless=new --allow-file-access-from-files --virtual-time-budget=15000
+--window-size=1400,1000 --screenshot=out.png file:///abs/folder/index.html`, then read out.png.
