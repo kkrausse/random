@@ -8,8 +8,10 @@ pub struct Config {
     pub hotkey: String,
     /// Loopback port the browser extension connects to.
     pub port: u16,
-    /// Bundle id of the browser the extension lives in; brought to the front when a tab is picked.
-    pub browser_bundle_id: String,
+    /// Bundle id of the browser to bring forward when a tab is picked. Unset:
+    /// the browser is detected from the extension's socket, falling back to
+    /// Chrome.
+    pub browser_bundle_id: Option<String>,
 }
 
 impl Default for Config {
@@ -17,7 +19,7 @@ impl Default for Config {
         Self {
             hotkey: "alt+space".into(),
             port: 47600,
-            browser_bundle_id: "com.google.Chrome".into(),
+            browser_bundle_id: None,
         }
     }
 }

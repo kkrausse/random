@@ -45,6 +45,8 @@ enum Incoming {
 
 pub struct Connection {
     pub tabs: Vec<Tab>,
+    /// Pid of the browser app on the other end, once worked out.
+    pub browser_pid: Option<i32>,
     outgoing: Sender<String>,
 }
 
@@ -127,13 +129,28 @@ fn run_connection(
     socket
         .get_ref()
         .set_read_timeout(Some(Duration::from_millis(15)))?;
+    let peer_port = socket.get_ref().peer_addr()?.port();
     connections.lock().unwrap().insert(
         id,
         Connection {
             tabs: Vec::new(),
+            browser_pid: None,
             outgoing,
         },
     );
+    // The protocol does not say which browser this is, so ask the OS who owns
+    // the other end of the socket. Slow (lsof), so off the read loop.
+    let detecting = connections.clone();
+    std::thread::spawn(move || {
+        let browser = peer_pid(peer_port).and_then(crate::apps::owning_app);
+        match &browser {
+            Some((pid, name)) => eprintln!("switcher: connection {id} is {name} (pid {pid})"),
+            None => eprintln!("switcher: connection {id}: could not identify the browser"),
+        }
+        if let Some(connection) = detecting.lock().unwrap().get_mut(&id) {
+            connection.browser_pid = browser.map(|(pid, _)| pid);
+        }
+    });
 
     loop {
         while let Ok(message) = queued.try_recv() {
@@ -164,4 +181,17 @@ fn run_connection(
             Err(error) => eprintln!("switcher: connection {id}: bad message: {error}"),
         }
     }
+}
+
+/// Pid of the other process holding a loopback TCP socket on `port`.
+fn peer_pid(port: u16) -> Option<i32> {
+    let output = std::process::Command::new("/usr/sbin/lsof")
+        .args(["-nP", &format!("-iTCP@127.0.0.1:{port}"), "-Fp"])
+        .output()
+        .ok()?;
+    let own = std::process::id() as i32;
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.strip_prefix('p')?.parse().ok())
+        .find(|pid| *pid != own)
 }

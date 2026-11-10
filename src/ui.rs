@@ -142,7 +142,7 @@ impl Switcher {
 
     /// Re-reads tabs and apps. Called on show and when tabs change while visible.
     pub fn reload(&mut self, cx: &mut Context<Self>) {
-        self.items = rank::collect(&self.connections, &self.config.browser_bundle_id);
+        self.items = rank::collect(&self.connections, self.config.browser_bundle_id.as_deref());
         self.rerank(cx);
     }
 
@@ -207,15 +207,16 @@ impl Switcher {
                 connection,
                 tab_id,
                 window_id,
+                browser,
             } => {
                 if !server::activate_tab(&self.connections, connection, tab_id, window_id) {
                     eprintln!("switcher: the extension for tab {tab_id} is gone");
                 }
-                let browser = &self.config.browser_bundle_id;
-                if !apps::activate_bundle(browser) {
+                // The extension focuses the tab; raising the browser is on us.
+                if !browser.is_some_and(apps::activate_pid) {
                     eprintln!(
-                        "switcher: could not bring {browser} to the front; \
-                         set browser_bundle_id in config.toml to the browser running the extension"
+                        "switcher: could not bring the browser to the front; \
+                         set browser_bundle_id in config.toml"
                     );
                 }
             }

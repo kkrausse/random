@@ -55,10 +55,6 @@ pub fn track_activations() {
     std::mem::forget(observer);
 }
 
-fn bundle_id(app: &NSRunningApplication) -> Option<String> {
-    app.bundleIdentifier().map(|id| id.to_string())
-}
-
 /// Apps with a Dock presence (regular activation policy).
 pub fn running() -> Vec<RunningApp> {
     let mut last_active = LAST_ACTIVE.lock().unwrap();
@@ -83,14 +79,41 @@ pub fn running() -> Vec<RunningApp> {
     apps
 }
 
-/// (pid, bundle id) of the app the user is currently in.
-pub fn frontmost() -> Option<(i32, Option<String>)> {
+/// Pid of the app the user is currently in.
+pub fn frontmost_pid() -> Option<i32> {
     let app = NSWorkspace::sharedWorkspace().frontmostApplication()?;
-    Some((app.processIdentifier(), bundle_id(&app)))
+    Some(app.processIdentifier())
 }
 
 fn activate(app: &NSRunningApplication) -> bool {
     app.activateWithOptions(NSApplicationActivationOptions::ActivateAllWindows)
+}
+
+/// The regular app that `pid` is, or is a descendant of: (pid, name).
+///
+/// A browser's sockets belong to a helper process whose parent is the browser.
+/// Safe off the main thread (NSRunningApplication is thread safe).
+pub fn owning_app(mut pid: i32) -> Option<(i32, String)> {
+    for _ in 0..8 {
+        if let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
+            && app.activationPolicy() == NSApplicationActivationPolicy::Regular
+        {
+            let name = app.localizedName().map(|name| name.to_string());
+            return Some((pid, name.unwrap_or_default()));
+        }
+        let output = std::process::Command::new("/bin/ps")
+            .args(["-o", "ppid=", "-p", &pid.to_string()])
+            .output()
+            .ok()?;
+        pid = String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .parse()
+            .ok()?;
+        if pid <= 1 {
+            break;
+        }
+    }
+    None
 }
 
 pub fn activate_pid(pid: i32) -> bool {
@@ -98,11 +121,10 @@ pub fn activate_pid(pid: i32) -> bool {
         .is_some_and(|app| activate(&app))
 }
 
-/// Activates the running app with this bundle id. False if it is not running
-/// or refused activation.
-pub fn activate_bundle(bundle_id: &str) -> bool {
+/// Pid of a running app with this bundle id.
+pub fn pid_for_bundle(bundle_id: &str) -> Option<i32> {
     NSRunningApplication::runningApplicationsWithBundleIdentifier(&NSString::from_str(bundle_id))
         .iter()
         .next()
-        .is_some_and(|app| activate(&app))
+        .map(|app| app.processIdentifier())
 }

@@ -12,6 +12,8 @@ pub enum Target {
         connection: u64,
         tab_id: i64,
         window_id: i64,
+        /// Pid of the browser app showing this tab, if known.
+        browser: Option<i32>,
     },
     App {
         pid: i32,
@@ -37,15 +39,22 @@ fn host(url: &str) -> &str {
 }
 
 /// Snapshot of everything switchable. Main thread only (reads NSWorkspace).
-pub fn collect(connections: &Connections, browser_bundle_id: &str) -> Vec<Item> {
-    let frontmost = apps::frontmost();
-    let frontmost_pid = frontmost.as_ref().map(|(pid, _)| *pid);
-    let in_browser = frontmost
-        .as_ref()
-        .is_some_and(|(_, bundle)| bundle.as_deref() == Some(browser_bundle_id));
+///
+/// `browser_bundle_id` pins the browser; otherwise each connection uses the
+/// browser detected from its socket, falling back to Chrome.
+pub fn collect(connections: &Connections, browser_bundle_id: Option<&str>) -> Vec<Item> {
+    let frontmost = apps::frontmost_pid();
+    let pinned = browser_bundle_id.and_then(apps::pid_for_bundle);
 
     let mut items = Vec::new();
     for (&connection, state) in connections.lock().unwrap().iter() {
+        let browser = match browser_bundle_id {
+            Some(_) => pinned,
+            None => state
+                .browser_pid
+                .or_else(|| apps::pid_for_bundle("com.google.Chrome")),
+        };
+        let in_browser = browser.is_some() && browser == frontmost;
         for tab in &state.tabs {
             items.push(Item {
                 title: if tab.title.is_empty() {
@@ -58,6 +67,7 @@ pub fn collect(connections: &Connections, browser_bundle_id: &str) -> Vec<Item> 
                     connection,
                     tab_id: tab.id,
                     window_id: tab.window_id,
+                    browser,
                 },
                 haystack: format!("{} {}", tab.title, tab.url),
                 recency: tab.last_accessed,
@@ -84,7 +94,7 @@ pub fn collect(connections: &Connections, browser_bundle_id: &str) -> Vec<Item> 
             subtitle: "App".into(),
             target: Target::App { pid: app.pid },
             recency: app.last_active,
-            current: Some(app.pid) == frontmost_pid,
+            current: Some(app.pid) == frontmost,
         });
     }
     items
