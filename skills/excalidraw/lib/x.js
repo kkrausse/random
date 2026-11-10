@@ -201,7 +201,7 @@ async function draw(/** @type {any} */ items, /** @type {{ title?: string, dark?
   ran = true;
   if (src && !scriptSrc) { scriptSrc = src.replace(/[?&]t=\d+$/, ""); watch(); }
   try {
-    if (typeof items === "function") items = items();
+    if (typeof items === "function") items = await items();  // may be async (e.g. a layout engine); src and ran are set before this
     if (opts.title) document.title = opts.title;
     const base = scriptSrc || location.href;
     const sk = build(items), key = JSON.stringify([sk, opts]);
