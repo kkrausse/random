@@ -17,7 +17,9 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            hotkey: "alt+space".into(),
+            // Deliberately awkward: it is bound to a mouse button, and nothing
+            // else will claim it.
+            hotkey: "ctrl+alt+shift+cmd+KeyS".into(),
             port: 47600,
             browser_bundle_id: None,
         }
