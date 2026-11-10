@@ -1,19 +1,19 @@
-// x.js: draw a diagram as a script, shown in regular Excalidraw. A diagram is one HTML file:
+// x.js: draw anything Excalidraw can draw from a script. A classic script (not a module), so it loads from file://
+// as well as https. A diagram is its own .js file, shown by the shell page next to this folder:
 //
-//   <!doctype html><meta charset="utf-8"><title>my diagram</title>
-//   <script type="module">
-//   import { draw, box, text, row, col, arrow } from "https://raspberrypi.guineafowl-truck.ts.net/artifacts/excalidraw-lib/x.js";
-//   draw([
-//     col(40, box("q0", "query strip\n176 × 512"), row(30, box("a", "A", { bg: "blue" }), box("b", "B"))),
-//     arrow("q0", "a", "361 × 1024"),
-//   ]);
-//   </script>
+//   index.html?s=path/to/diagram.js        (relative to index.html, or an absolute file:// / https URL)
 //
-// Every shape knows its size and gets placed by row / col (or at); arrows bind to ids and are drawn after placement.
-// Every Excalidraw look is an option (STYLE below). Ctrl/Cmd+C on the canvas copies the selection (or everything) as
-// one line per element with its id; Ctrl/Cmd+Shift+C is Excalidraw's own copy. Shapes drawn by hand on the page are
-// kept (localStorage) across reloads.
-
+//   // diagram.js: one draw() call; helpers go inside the function, so the file can run again
+//   draw(() => {
+//     const layer = (i) => row(40, box(`sa${i}`, `self-attention ${i}`, { bg: "blue" }), box(`ff${i}`, `feed-forward ${i}`));
+//     return [col(50, box("fz", "FROZEN blocks 1 – 12"), layer(1), layer(2)), arrow("fz", "sa1", "361 × 1024")];
+//   }, { title: "my diagram" });
+//
+// Live: the page re-runs diagram.js every 5 s and when the tab comes back, and updates the canvas in place when the
+// result changed (view, zoom and hand-drawn shapes stay). Top right: when it last changed, or the error.
+// Ctrl/Cmd+C on the canvas copies the selection (or everything) as one line per element with its id; Ctrl/Cmd+Shift+C
+// is Excalidraw's own copy. Shapes drawn by hand on the page are kept (localStorage) across reloads.
+(() => {
 /** @typedef {{ w: number, h: number, id?: string, place: (x: number, y: number) => any[] }} Node */
 
 // STYLE, on every shape, text, line and arrow:
@@ -63,14 +63,14 @@ const shape = (/** @type {string} */ type) => (/** @type {string} */ id, s = "",
     roundness: (o.round ?? type === "rectangle") ? { type: 3 } : null, ...look(o), ...(s && { label: label(s, o) }) }] };
 };
 /** A rectangle with a label: box(id, text, STYLE). */
-export const box = (/** @type {string} */ id, s = "", /** @type {any} */ o = {}) => shape(o.shape ?? "rectangle")(id, s, o);
+const box = (/** @type {string} */ id, s = "", /** @type {any} */ o = {}) => shape(o.shape ?? "rectangle")(id, s, o);
 /** An ellipse with a label. */
-export const ellipse = shape("ellipse");
+const ellipse = shape("ellipse");
 /** A diamond with a label. */
-export const diamond = shape("diamond");
+const diamond = shape("diamond");
 
 /** Free text: text(id, s, STYLE). */
-export function text(/** @type {string} */ id, /** @type {string} */ s, /** @type {any} */ o = {}) {
+function text(/** @type {string} */ id, /** @type {string} */ s, /** @type {any} */ o = {}) {
   const t = measure(s, o);
   return { id, w: t.w, h: t.h, place: (/** @type {number} */ x, /** @type {number} */ y) => [{ type: "text", id, x, y, text: s, fontSize: o.fs ?? FS,
     fontFamily: font(o), textAlign: o.align ?? "left", verticalAlign: "top", ...look(o) }] };
@@ -81,24 +81,24 @@ const box_ = (/** @type {number[][]} */ pts) => {
   return { x0: Math.min(...xs), y0: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
 };
 /** A line through points ([[x, y], ...], relative to its own top-left): line(id, points, STYLE + { closed: true }). round: curved. */
-export function line(/** @type {string} */ id, /** @type {number[][]} */ pts, /** @type {any} */ o = {}) {
+function line(/** @type {string} */ id, /** @type {number[][]} */ pts, /** @type {any} */ o = {}) {
   const b = box_(pts);
   return { id, w: b.w, h: b.h, place: (/** @type {number} */ x, /** @type {number} */ y) => [{ type: "line", id, x: x - b.x0, y: y - b.y0, width: b.w, height: b.h,
     points: o.closed ? [...pts, pts[0]] : pts, roundness: o.round ? { type: 2 } : null, ...look(o), ...(o.closed && { polygon: true }) }] };
 }
 /** A freehand pen stroke through points (relative): pen(id, points, STYLE). */
-export function pen(/** @type {string} */ id, /** @type {number[][]} */ pts, /** @type {any} */ o = {}) {
+function pen(/** @type {string} */ id, /** @type {number[][]} */ pts, /** @type {any} */ o = {}) {
   const b = box_(pts);
   return { id, w: b.w, h: b.h, place: (/** @type {number} */ x, /** @type {number} */ y) => [{ type: "freedraw", id, x: x - b.x0, y: y - b.y0, width: b.w, height: b.h,
     points: pts, pressures: [], simulatePressure: true, ...look(o) }] };
 }
 /** An image from a URL (or data: URL): image(id, url, { w, h, ...STYLE }). */
-export function image(/** @type {string} */ id, /** @type {string} */ url, /** @type {any} */ o = {}) {
+function image(/** @type {string} */ id, /** @type {string} */ url, /** @type {any} */ o = {}) {
   const w = o.w ?? 200, h = o.h ?? 150;
   return { id, w, h, place: (/** @type {number} */ x, /** @type {number} */ y) => [{ type: "image", id, x, y, width: w, height: h, fileId: id, src: url, ...look(o) }] };
 }
 /** A live embedded web page / video (YouTube, Figma, any https URL): embed(id, url, { w, h }). */
-export function embed(/** @type {string} */ id, /** @type {string} */ url, /** @type {any} */ o = {}) {
+function embed(/** @type {string} */ id, /** @type {string} */ url, /** @type {any} */ o = {}) {
   const w = o.w ?? 480, h = o.h ?? 270;
   return { id, w, h, place: (/** @type {number} */ x, /** @type {number} */ y) => [{ type: "embeddable", id, x, y, width: w, height: h, link: url, ...look(o) }] };
 }
@@ -119,32 +119,32 @@ const stack = (/** @type {boolean} */ across, /** @type {number} */ g, /** @type
   } };
 };
 /** Side by side: row(gap, ...nodes) or row({ gap, align: "start" | "center" | "end" }, ...nodes). */
-export const row = (/** @type {number | { gap?: number, align?: string }} */ g, /** @type {Node[]} */ ...kids) =>
+const row = (/** @type {number | { gap?: number, align?: string }} */ g, /** @type {Node[]} */ ...kids) =>
   typeof g === "number" ? stack(true, g, kids, "center") : stack(true, g.gap ?? 20, kids, g.align ?? "center");
 /** Stacked: col(gap, ...nodes) or col({ gap, align }, ...nodes). */
-export const col = (/** @type {number | { gap?: number, align?: string }} */ g, /** @type {Node[]} */ ...kids) =>
+const col = (/** @type {number | { gap?: number, align?: string }} */ g, /** @type {Node[]} */ ...kids) =>
   typeof g === "number" ? stack(false, g, kids, "center") : stack(false, g.gap ?? 20, kids, g.align ?? "center");
 /** A node at a fixed canvas position (top level). */
-export const at = (/** @type {number} */ x, /** @type {number} */ y, /** @type {Node} */ n) => ({ ...n, at: [x, y] });
+const at = (/** @type {number} */ x, /** @type {number} */ y, /** @type {Node} */ n) => ({ ...n, at: [x, y] });
 /** A named Excalidraw frame around a node. */
-export function frame(/** @type {string} */ id, /** @type {string} */ name, /** @type {Node} */ n, pad = 30) {
+function frame(/** @type {string} */ id, /** @type {string} */ name, /** @type {Node} */ n, pad = 30) {
   return { id, w: n.w + 2 * pad, h: n.h + 2 * pad, place: (/** @type {number} */ x, /** @type {number} */ y) => {
     const kids = n.place(x + pad, y + pad);
     return [...kids, { type: "frame", id, name, x, y, width: n.w + 2 * pad, height: n.h + 2 * pad, children: kids.map((k) => k.id), customData: { x: 1 } }];
   } };
 }
 /** Group a node's elements (they select and move together). */
-export function group(/** @type {string} */ id, /** @type {Node} */ n) {
+function group(/** @type {string} */ id, /** @type {Node} */ n) {
   return { ...n, id, place: (/** @type {number} */ x, /** @type {number} */ y) => n.place(x, y).map((e) => ({ ...e, groupIds: [...(e.groupIds ?? []), id] })) };
 }
 /** An existing .excalidraw file (URL relative to the page), shown as it is. */
-export const file = (/** @type {string} */ url) => ({ file: url });
+const file = (/** @type {string} */ url) => ({ file: url });
 
 /** An arrow: arrow(from, to, label, STYLE + { start, end, elbow, via, id }). from / to: an element id (bound) or [x, y].
  * start / end: arrowheads "arrow" | "triangle" | "triangle_outline" | "bar" | "circle" | "circle_outline" | "diamond" |
  * "diamond_outline" | "crowfoot_one" | "crowfoot_many" | "crowfoot_one_or_many" | null (default: none → arrow).
  * Straight by default; round: curved through via; elbow: right angles through the facing sides; via: [[x, y], ...]. */
-export function arrow(/** @type {string | number[]} */ from, /** @type {string | number[]} */ to, s = "", /** @type {any} */ o = {}) {
+function arrow(/** @type {string | number[]} */ from, /** @type {string | number[]} */ to, s = "", /** @type {any} */ o = {}) {
   return { arrow: true, from, to, label: s, o };
 }
 
@@ -184,24 +184,41 @@ function build(/** @type {any[]} */ items) {
 }
 
 const V = "0.18.0", ESM = "https://esm.sh/";
-/** @type {any} */ let api;
+/** @type {any} */ let api, X, scriptSrc = "", lastKey = "", ran = false;
+const clock = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const status = (/** @type {string} */ t, bad = false) => {
+  const el = document.getElementById("xstat");
+  if (el) { el.textContent = t; el.style.color = bad ? "#c92a2a" : "#868e96"; }
+};
+const imgData = async (/** @type {string} */ url) => {
+  const blob = await (await fetch(url)).blob();
+  return { blob, dataURL: await new Promise((ok) => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(blob); }) };
+};
 
-/** Render the diagram into the page: draw(items, { dark, grid, bg }). */
-export async function draw(/** @type {any[]} */ items, /** @type {{ dark?: boolean, grid?: boolean, bg?: string }} */ opts = {}) {
-  /** @type {any} */ (window).EXCALIDRAW_ASSET_PATH = `${ESM}@excalidraw/excalidraw@${V}/dist/prod/`;
-  document.head.insertAdjacentHTML("beforeend", `<link rel="stylesheet" href="${ESM}@excalidraw/excalidraw@${V}/dist/prod/index.css">
-<style>html, body, #xroot { height: 100%; margin: 0; } #xmsg { padding: 16px; white-space: pre-wrap; font: 13px ui-monospace, monospace; color: #c92a2a; }</style>`);
-  document.body.insertAdjacentHTML("beforeend", `<div id="xroot"><div id="xmsg">loading…</div></div>`);
-  const root = /** @type {HTMLElement} */ (document.getElementById("xroot"));
+/** Show the diagram: draw(items or () => items, { title, dark, grid, bg }). Called again (live update): redraws in place. */
+async function draw(/** @type {any} */ items, /** @type {{ title?: string, dark?: boolean, grid?: boolean, bg?: string }} */ opts = {}) {
+  const src = /** @type {any} */ (document.currentScript)?.src;  // must be read before any await
+  ran = true;
+  if (src && !scriptSrc) { scriptSrc = src.replace(/[?&]t=\d+$/, ""); watch(); }
   try {
-    const [React, { createRoot }, X] = await Promise.all([import(`${ESM}react@19.0.0`), import(`${ESM}react-dom@19.0.0/client`),
-      import(`${ESM}@excalidraw/excalidraw@${V}?deps=react@19.0.0,react-dom@19.0.0`)]);
-    const sk = build(items), files = /** @type {Record<string, any>} */ ({});
-    for (const e of sk) if (e.type === "image") {  // images: fetched once into the scene's files
-      const blob = await (await fetch(new URL(e.src, location.href))).blob();
-      const dataURL = await new Promise((ok) => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(blob); });
-      files[e.fileId] = { id: e.fileId, dataURL, mimeType: blob.type || "image/png", created: Date.now() };
-      delete e.src;
+    if (typeof items === "function") items = items();
+    if (opts.title) document.title = opts.title;
+    const base = scriptSrc || location.href;
+    const sk = build(items), key = JSON.stringify([sk, opts]);
+    if (key === lastKey) return;  // re-run, nothing changed
+    if (!X) await mount(opts);
+    const files = /** @type {Record<string, any>} */ ({});
+    for (const e of sk) if (e.type === "image") {  // images: fetched into the scene's files (file:// pages cannot fetch)
+      const url = new URL(e.src, base).href;
+      try {
+        // file:// pages cannot fetch, but the canvas can still show the image from its URL
+        const { blob, dataURL } = url.startsWith("file:") ? { blob: null, dataURL: url } : await imgData(url);
+        files[e.fileId] = { id: e.fileId, dataURL, mimeType: blob?.type || (/\.jpe?g$/i.test(url) ? "image/jpeg" : /\.svg$/i.test(url) ? "image/svg+xml" : "image/png"), created: Date.now() };
+        delete e.src;
+      } catch {
+        Object.assign(e, { type: "rectangle", strokeStyle: "dashed", label: { text: `image ${e.src}\n(could not load here)`, fontSize: 13, fontFamily: 3 } });
+        delete e.src; delete e.fileId;
+      }
     }
     // the converter handles shapes, text, lines, arrows, images and frames; pen strokes and embeds go through restore
     const own = new Set(["freedraw", "embeddable"]), later = sk.filter((e) => own.has(e.type)), lateIds = new Set(later.map((e) => e.id));
@@ -210,36 +227,65 @@ export async function draw(/** @type {any[]} */ items, /** @type {{ dark?: boole
     let elements = [...X.convertToExcalidrawElements(conv, { regenerateIds: false }),
       ...X.restoreElements(later.map((e) => ({ ...e, frameId: frameOf.get(e.id) ?? null })), null)];
     for (const it of items.flat(Infinity)) if (it?.file) {
-      const j = await (await fetch(new URL(it.file, location.href))).json();
+      const j = await (await fetch(new URL(it.file, base).href)).json();
       elements = [...elements, ...X.restoreElements(j.elements ?? j, null)];
       Object.assign(files, j.files ?? {});
     }
-    // shapes drawn by hand on this page (no customData.x) are kept in localStorage across reloads
-    const KEY = "xjs:" + location.pathname, ids = new Set(elements.map((/** @type {any} */ e) => e.id));
-    const kept = JSON.parse(localStorage.getItem(KEY) ?? "[]").filter((/** @type {any} */ e) => !ids.has(e.id));
-    elements = [...elements, ...X.restoreElements(kept, null)];
-    /** @type {any} */ let t;
-    const save = (/** @type {any[]} */ els) => { clearTimeout(t); t = setTimeout(() => {
-      const mine = new Set(els.filter((e) => !e.isDeleted && !e.customData?.x && !e.containerId).map((e) => e.id));
-      const keep = els.filter((e) => !e.isDeleted && (mine.has(e.id) || (e.containerId && mine.has(e.containerId))));
-      try { localStorage.setItem(KEY, JSON.stringify(keep)); } catch {}
-    }, 400); };
-    createRoot(root).render(React.createElement(X.Excalidraw, {
-      initialData: { elements, files, appState: { viewBackgroundColor: colour(opts.bg, COLORS) ?? (opts.dark ? "#121212" : "#ffffff") } },
-      theme: opts.dark ? "dark" : "light", gridModeEnabled: !!opts.grid, validateEmbeddable: true,
-      onChange: save,
-      excalidrawAPI: (/** @type {any} */ a) => {
-        api = a;
-        // text was measured before Excalidraw's font loaded: measure it again once it has, or labels get clipped
-        document.fonts.ready.then(() => setTimeout(() => a.updateScene({ elements: X.restoreElements(a.getSceneElements(), null, { refreshDimensions: true, repairBindings: true }) }), 300));
-        setTimeout(() => a.scrollToContent(undefined, { fitToViewport: true, viewportZoomFactor: 0.95, animate: false }), 50);
-      },
-    }));
+    // keep what was drawn by hand: on the first draw from localStorage, after that from the canvas
+    const ids = new Set(elements.map((/** @type {any} */ e) => e.id));
+    const prev = lastKey ? api.getSceneElementsIncludingDeleted() : JSON.parse(localStorage.getItem(KEY()) ?? "[]");
+    const scripted = new Set(prev.filter((/** @type {any} */ e) => e.customData?.x).map((/** @type {any} */ e) => e.id));
+    const mine = prev.filter((/** @type {any} */ e) => !e.isDeleted && !e.customData?.x && !ids.has(e.id) && !(e.containerId && scripted.has(e.containerId)));
+    api.addFiles(Object.values(files));
+    api.updateScene({ elements: [...elements, ...X.restoreElements(mine, null)], appState: { viewBackgroundColor: colour(opts.bg, COLORS) ?? (opts.dark ? "#121212" : "#ffffff"), theme: opts.dark ? "dark" : "light", gridModeEnabled: !!opts.grid } });
+    // text was measured before Excalidraw's font loaded: measure it again once it has, or labels get clipped
+    document.fonts.ready.then(() => setTimeout(() => api.updateScene({ elements: X.restoreElements(api.getSceneElements(), null, { refreshDimensions: true, repairBindings: true }) }), 300));
+    if (!lastKey) setTimeout(() => api.scrollToContent(undefined, { fitToViewport: true, viewportZoomFactor: 0.95, animate: false }), 80);
+    status(`${lastKey ? "updated" : "loaded"} ${clock()}${scriptSrc ? "   ·   live" : ""}`);
+    lastKey = key;
   } catch (e) {
-    root.textContent = String(/** @type {any} */ (e)?.stack ?? e);
-    root.id = "xmsg";
-    throw e;
+    if (!X) { document.body.textContent = String(/** @type {any} */ (e)?.stack ?? e); throw e; }
+    status(`error ${clock()}: ${/** @type {any} */ (e)?.message ?? e}`, true);
   }
+}
+const KEY = () => "xjs:" + (scriptSrc || location.pathname);
+
+/** Excalidraw on the page, once. */
+async function mount(/** @type {any} */ opts) {
+  /** @type {any} */ (window).EXCALIDRAW_ASSET_PATH = `${ESM}@excalidraw/excalidraw@${V}/dist/prod/`;
+  document.head.insertAdjacentHTML("beforeend", `<link rel="stylesheet" href="${ESM}@excalidraw/excalidraw@${V}/dist/prod/index.css">
+<style>html, body, #xroot { height: 100%; margin: 0; }
+#xstat { position: fixed; top: 62px; right: 18px; z-index: 5; font: 12px ui-monospace, monospace; color: #868e96; pointer-events: none; }</style>`);
+  document.body.insertAdjacentHTML("beforeend", `<div id="xroot"></div><div id="xstat">loading…</div>`);
+  const [React, { createRoot }, mod] = await Promise.all([import(`${ESM}react@19.0.0`), import(`${ESM}react-dom@19.0.0/client`),
+    import(`${ESM}@excalidraw/excalidraw@${V}?deps=react@19.0.0,react-dom@19.0.0`)]);
+  /** @type {any} */ let t;
+  const save = (/** @type {any[]} */ els) => { clearTimeout(t); t = setTimeout(() => {  // hand-drawn shapes -> localStorage
+    const hand = new Set(els.filter((e) => !e.isDeleted && !e.customData?.x && !e.containerId).map((e) => e.id));
+    const keep = els.filter((e) => !e.isDeleted && (hand.has(e.id) || (e.containerId && hand.has(e.containerId))));
+    try { localStorage.setItem(KEY(), JSON.stringify(keep)); } catch {}
+  }, 400); };
+  await new Promise((ready) => createRoot(/** @type {HTMLElement} */ (document.getElementById("xroot"))).render(React.createElement(mod.Excalidraw, {
+    initialData: { elements: [], appState: { viewBackgroundColor: "#ffffff" } }, validateEmbeddable: true, onChange: save,
+    excalidrawAPI: (/** @type {any} */ a) => { api = a; ready(a); },
+  })));
+  X = mod;
+}
+
+/** Live update: re-run the diagram's .js every 5 s and when the tab comes back (a new script tag, so it works on file://). */
+function watch() {
+  const rerun = () => {
+    const s = document.createElement("script");
+    s.src = scriptSrc + (scriptSrc.includes("?") ? "&" : "?") + "t=" + Date.now();
+    // a syntax error stops the file before draw(); browsers hide file:// error details, so notice that draw() never ran
+    ran = false;
+    s.onload = () => { s.remove(); if (!ran) status(`error ${clock()}: ${scriptSrc.split("/").pop()} did not run (syntax error? see the console)`, true); };
+    s.onerror = () => { s.remove(); status(`error ${clock()}: cannot load ${scriptSrc}`, true); };
+    document.head.append(s);
+  };
+  setInterval(() => !document.hidden && rerun(), 5000);
+  document.addEventListener("visibilitychange", () => !document.hidden && rerun());
+  window.addEventListener("error", (e) => { if (e.filename?.startsWith(scriptSrc)) status(`error ${clock()}: ${e.message} (line ${e.lineno})`, true); });
 }
 
 // ---- copy for LLM
@@ -293,3 +339,6 @@ window.addEventListener("copy", (e) => {
   e.preventDefault(); e.stopImmediatePropagation();
   e.clipboardData?.setData("text/plain", condensed());
 }, true);
+
+Object.assign(window, { draw, box, ellipse, diamond, text, line, pen, image, embed, row, col, at, frame, group, file, arrow });
+})();

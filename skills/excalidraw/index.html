@@ -1,0 +1,8 @@
+<!doctype html><meta charset="utf-8"><title>diagram</title>
+<script src="lib/x.js"></script>
+<script>
+// ?s=diagram.js: the diagram to show (a path relative to this page, or a file:// / https URL). Re-run every 5 s.
+const s = document.createElement("script");
+s.src = new URL(new URLSearchParams(location.search).get("s") ?? "examples/everything.js", location.href).href;
+document.head.append(s);
+</script>
