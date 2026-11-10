@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "cd ../boox-plugin-test/client && bun install",
     "build": "bun run build.ts",
     "dev": "bun run build.ts --watch",
     "test": "bun test",
