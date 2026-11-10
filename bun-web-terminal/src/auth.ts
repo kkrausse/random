@@ -110,27 +110,44 @@ export class TerminalAuth {
   private loginPage() {
     const nonce = randomBytes(16).toString("base64url");
     return this.response(`<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Terminal sign-in</title></head>
-<body><h1>Terminal sign-in</h1><p id="status">Open the sign-in link printed in the Mac's terminal, or scan its QR code.</p>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Terminal sign-in</title>
+<style nonce="${nonce}">
+body { font: 16px system-ui, sans-serif; max-width: 26rem; margin: 3rem auto; padding: 0 1rem; }
+form { display: flex; gap: .5rem; margin-top: 1rem; }
+input[type=password] { flex: 1; min-width: 0; font: inherit; padding: .5rem; }
+button { font: inherit; padding: .5rem 1rem; }
+</style></head>
+<body><h1>Terminal sign-in</h1><p id="status">Enter the access key, open the sign-in link printed at server startup, or scan its QR code.</p>
+<form id="form" method="post" action="/api/auth/login">
+<input type="text" name="username" value="terminal" autocomplete="username" hidden>
+<input type="password" id="key" name="password" autocomplete="current-password" placeholder="Access key" aria-label="Access key" required>
+<button type="submit">Sign in</button>
+</form>
 <script nonce="${nonce}">
-async function signIn() {
-  const key = new URLSearchParams(location.hash.slice(1)).get("key");
-  history.replaceState(null, "", "/login");
-  if (!key) return;
-  const status = document.getElementById("status");
+const status = document.getElementById("status");
+async function exchange(key) {
   status.textContent = "Signing in…";
-  await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "text/plain" }, body: key, credentials: "same-origin" })
+  await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "text/plain" }, body: key.trim(), credentials: "same-origin" })
     .then(response => {
-      if (!response.ok) throw new Error("This sign-in link is invalid or expired. Use the latest link from the Mac's terminal.");
+      if (!response.ok) throw new Error("That key is not valid. Use the current access key or the latest sign-in link.");
       location.replace("/sessions");
     })
     .catch(error => { status.textContent = error.message; });
 }
-window.addEventListener("hashchange", signIn);
-void signIn();
+function signInFromLink() {
+  const key = new URLSearchParams(location.hash.slice(1)).get("key");
+  history.replaceState(null, "", "/login");
+  if (key) void exchange(key);
+}
+document.getElementById("form").addEventListener("submit", event => {
+  event.preventDefault();
+  void exchange(document.getElementById("key").value);
+});
+window.addEventListener("hashchange", signInFromLink);
+signInFromLink();
 </script></body></html>`, 200, {
       "content-type": "text/html; charset=utf-8",
-      "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`,
+      "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`,
     });
   }
 }
