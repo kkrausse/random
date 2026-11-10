@@ -19,7 +19,7 @@ const INPUT_HEIGHT: f32 = 54.0;
 const ROW_HEIGHT: f32 = 46.0;
 const VISIBLE_ROWS: usize = 9;
 /// Trackpad travel, in points, that moves the selection one row.
-const WHEEL_STEP: f32 = 28.0;
+const WHEEL_STEP: f32 = 64.0;
 const HEIGHT: f32 = INPUT_HEIGHT + ROW_HEIGHT * VISIBLE_ROWS as f32 + 14.0;
 
 const BACKGROUND: u32 = 0x1b1b1d;
@@ -213,11 +213,10 @@ impl Switcher {
     /// pointer. It stops at the ends: wrapping mid-spin is disorienting.
     fn scroll_wheel(&mut self, event: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
         let rows = match event.delta {
-            // A mouse wheel: every notch moves at least one row, however
-            // small macOS's acceleration makes the delta.
-            ScrollDelta::Lines(lines) if lines.y != 0.0 => {
-                -(lines.y.signum() * lines.y.abs().round().max(1.0)) as isize
-            }
+            // A mouse wheel: one row per event, whatever the delta. macOS
+            // acceleration makes a slow notch a fraction of a line and a fast
+            // spin many lines; following the magnitude overshoots.
+            ScrollDelta::Lines(lines) if lines.y != 0.0 => -lines.y.signum() as isize,
             ScrollDelta::Lines(_) => 0,
             ScrollDelta::Pixels(pixels) => {
                 self.wheel -= f32::from(pixels.y);
