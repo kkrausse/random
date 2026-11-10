@@ -72,7 +72,7 @@ export const row = (/** @type {number | { gap?: number, align?: string }} */ g, 
 export const col = (/** @type {number | { gap?: number, align?: string }} */ g, /** @type {Node[]} */ ...kids) =>
   typeof g === "number" ? stack(false, g, kids, "center") : stack(false, g.gap ?? 20, kids, g.align ?? "center");
 
-/** An arrow between two node ids, bound at both ends. o: { ink, dashed, sw, id, elbow } */
+/** An arrow between two node ids, bound at both ends. o: { ink, dashed, sw, id, elbow: true, via: [[x, y], ...] } */
 export function arrow(/** @type {string} */ from, /** @type {string} */ to, label = "", /** @type {any} */ o = {}) {
   return { arrow: true, from, to, label, o };
 }
@@ -87,16 +87,23 @@ function build(/** @type {any[]} */ items) {
   for (const a of items) if (a.arrow) {
     const s = byId.get(a.from), e = byId.get(a.to);
     if (!s || !e) throw new Error(`arrow ${a.from} -> ${a.to}: no element ${!s ? a.from : a.to}`);
-    // from edge to edge along the line between the two centres (4 px off each edge)
+    // straight from edge to edge, or through o.via ([[x, y], ...] absolute), or o.elbow: right angles (exit and enter
+    // through the sides facing each other). Ends sit 4 px off the shapes' edges.
     const c = (/** @type {any} */ el) => [el.x + (el.width ?? 0) / 2, el.y + (el.height ?? 0) / 2];
-    const [cx, cy] = c(s), [dx, dy] = c(e), lx = dx - cx, ly = dy - cy, len = Math.hypot(lx, ly) || 1;
-    const edge = (/** @type {any} */ el) => Math.min((el.width ?? 0) / 2 / (Math.abs(lx) || 1e-9), (el.height ?? 0) / 2 / (Math.abs(ly) || 1e-9)) + 4 / len;
-    const t0 = edge(s), t1 = 1 - edge(e);
-    const sx = cx + lx * t0, sy = cy + ly * t0, ex = cx + lx * t1, ey = cy + ly * t1;
-    out.push({ type: "arrow", id: a.o.id ?? `${a.from}>${a.to}`, x: sx, y: sy, width: ex - sx, height: ey - sy,
+    const edgeTo = (/** @type {any} */ el, /** @type {number[]} */ p) => {
+      const [x0, y0] = c(el), lx = p[0] - x0, ly = p[1] - y0, len = Math.hypot(lx, ly) || 1;
+      const t = Math.min((el.width ?? 0) / 2 / (Math.abs(lx) || 1e-9), (el.height ?? 0) / 2 / (Math.abs(ly) || 1e-9)) + 4 / len;
+      return [x0 + lx * t, y0 + ly * t];
+    };
+    const [cx, cy] = c(s), [dx, dy] = c(e);
+    /** @type {number[][]} */ let mid = a.o.via ?? [];
+    if (a.o.elbow && !mid.length) mid = Math.abs(dx - cx) >= Math.abs(dy - cy) ? [[(cx + dx) / 2, cy], [(cx + dx) / 2, dy]] : [[cx, (cy + dy) / 2], [dx, (cy + dy) / 2]];
+    const p0 = edgeTo(s, mid[0] ?? [dx, dy]), p1 = edgeTo(e, mid[mid.length - 1] ?? [cx, cy]);
+    const pts = [p0, ...mid, p1], [sx, sy] = p0, xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    out.push({ type: "arrow", id: a.o.id ?? `${a.from}>${a.to}`, x: sx, y: sy, width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys),
       // bound to shapes only: an arrow bound to a free text element pulls that text onto itself as its label
-      points: [[0, 0], [ex - sx, ey - sy]], ...(s.type !== "text" && { start: { id: a.from } }), ...(e.type !== "text" && { end: { id: a.to } }), ...style(a.o),
-      ...(a.o.elbow && { elbowed: true }), ...(a.label && { label: { text: a.label, fontSize: 14, fontFamily: 3 } }), customData: { x: 1 } });
+      points: pts.map((p) => [p[0] - sx, p[1] - sy]), roundness: null, ...(s.type !== "text" && { start: { id: a.from } }), ...(e.type !== "text" && { end: { id: a.to } }), ...style(a.o),
+      ...(a.label && { label: { text: a.label, fontSize: 14, fontFamily: 3 } }), customData: { x: 1 } });
   }
   return out;
 }

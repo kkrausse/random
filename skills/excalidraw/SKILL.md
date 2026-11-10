@@ -25,7 +25,9 @@ API (all of it):
 - `box(id, text, { bg, ink, dashed, sw, fs, w, h, shape, left })`: sized to its text; `shape`: "ellipse" | "diamond".
 - `text(id, s, { fs, ink })`
 - `row(gap, ...nodes)`, `col(gap, ...nodes)`; or `row({ gap, align: "start" | "end" }, ...)`.
-- `arrow(fromId, toId, label, { ink, dashed, sw, elbow })`: bound to both ends.
+- `arrow(fromId, toId, label, { ink, dashed, sw, elbow, via })`: bound to both ends. Straight by default;
+  `elbow: true` = right angles through the facing sides (no obstacle avoidance); `via: [[x, y], ...]` = bend points
+  (canvas coordinates: copy a hand-drawn line to read them off).
 - `draw(items)`: top-level items stack down the page.
 - Colours by name: bg blue green yellow red orange violet gray pink teal; ink blue green red orange violet gray.
 - Abstraction is plain JS functions.
