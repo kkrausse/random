@@ -58,5 +58,6 @@ elements drawn by hand (those persist across reloads). Ctrl/Cmd+Shift+C is Excal
 script and change it there.
 
 Examples: `examples/everything.js` (every feature), `examples/flamingo.js`. The library is `lib/x.js` (a classic
-script, so it loads from file://). After changing it or the shell, publish this whole skill folder:
+script, so it loads from file://; `x.js` at the root re-exports it for older HTML diagrams that `import` it). After
+changing it or the shell, publish this whole skill folder:
 `deploy-artifact.sh <this skill dir> excalidraw-lib`.
