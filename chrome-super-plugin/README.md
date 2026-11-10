@@ -107,11 +107,17 @@ server) and exchanges JSON text frames:
 
 | Direction | Frame | When |
 | --- | --- | --- |
-| extension → app | `{"type":"tabs","tabs":[{"id":123,"windowId":4,"title":"…","url":"…","lastAccessed":1731111111111.0,"active":true,"favIconUrl":"…"}]}` | Full snapshot of every tab in normal windows: on connect, then whenever a tab is created, removed, activated, moved between windows, changes title/URL/favicon, or window focus changes. Debounced 100ms; an unchanged snapshot isn't resent. `favIconUrl` is omitted when Chrome has none. |
+| extension → app | `{"type":"tabs","tabs":[{"id":123,"windowId":4,"title":"…","url":"…","lastAccessed":1731111111111.0,"active":true,"icon":"…"}]}` | Full snapshot of every tab in normal windows: on connect, then whenever a tab is created, removed, activated, moved between windows, changes title/URL/favicon, or window focus changes. Debounced 100ms; an unchanged snapshot isn't resent. `icon` is a short key for the tab's favicon (a hash of its `favIconUrl`, so tabs with the same favicon share one); omitted when Chrome has none. |
+| extension → app | `{"type":"icons","icons":[{"key":"…","png":"<base64 PNG>"}]}` | The 32px image for icon keys, in batches after the snapshot that first uses them; the snapshot never waits for it. A key is sent once per connection, and again only if it reappears after a snapshot in which no tab used it (the app forgets unused icons). |
 | extension → app | `{"type":"ping"}` | Every 20s. The app answers `{"type":"pong"}`. The traffic is also what keeps the MV3 worker alive while connected. |
 | app → extension | `{"type":"activate","tabId":123,"windowId":4}` | Activates the tab and focuses its window. A tab that no longer exists is ignored. |
 
 Unknown message types are ignored in both directions.
+
+The app makes no network requests, so favicons are resolved here: from
+Chrome's favicon cache (`chrome-extension://<id>/_favicon/?pageUrl=…&size=32`,
+the `favicon` permission), or, when the cache only has its generic globe for
+the page, by fetching the tab's `favIconUrl` and re-encoding it as a PNG.
 
 The app is often not running. A refused connection is not logged by the
 extension; after start-up or a dropped connection it retries after 1, 2, 4
