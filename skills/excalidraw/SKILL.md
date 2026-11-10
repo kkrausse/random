@@ -1,6 +1,6 @@
 ---
 name: excalidraw
-description: Draw a diagram as one small HTML file whose script calls a published library that renders it in regular Excalidraw. Use for architecture/flow diagrams; the user's "copy for LLM" pastes back one line per element with ids.
+description: Draw a diagram as one small HTML file whose script calls a published library that renders it in regular Excalidraw. Use for architecture/flow diagrams; Ctrl/Cmd+C on the canvas copies one line per element with ids, for pasting back.
 ---
 
 # Excalidraw diagram = one HTML file
@@ -30,7 +30,7 @@ API (all of it):
 - Colours by name: bg blue green yellow red orange violet gray pink teal; ink blue green red orange violet gray.
 - Abstraction is plain JS functions.
 
-Give every element a meaningful id. The user's "copy for LLM" (button, or Ctrl/Cmd+Shift+C) pastes lines like
+Give every element a meaningful id. Ctrl/Cmd+C on the canvas copies the selection (or everything) as lines like
 `fz rectangle 0,0 420x70 #e9ecef "FROZEN blocks 1 – 12"` and `fz>sa1 arrow fz -> sa1 "361 × 1024"`; `*` marks
 elements they drew by hand. Find the id in the script and change it there.
 

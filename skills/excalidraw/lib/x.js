@@ -10,8 +10,8 @@
 //   </script>
 //
 // Nodes know their size (monospace text estimate) and get placed by row / col; arrows bind to node ids and are drawn
-// after everything is placed. draw() renders it and adds "copy for LLM" (button, or Ctrl/Cmd+Shift+C): the selection
-// (or everything) as one line per element with its id.
+// after everything is placed. draw() renders it; Ctrl/Cmd+C on the canvas copies the selection (or everything) as one
+// line per element with its id, not Excalidraw's JSON.
 
 /** @typedef {{ w: number, h: number, id?: string, place: (x: number, y: number) => any[] }} Node */
 
@@ -107,11 +107,9 @@ const V = "0.18.0", ESM = "https://esm.sh/";
 export async function draw(/** @type {any[]} */ items) {
   /** @type {any} */ (window).EXCALIDRAW_ASSET_PATH = `${ESM}@excalidraw/excalidraw@${V}/dist/prod/`;
   document.head.insertAdjacentHTML("beforeend", `<link rel="stylesheet" href="${ESM}@excalidraw/excalidraw@${V}/dist/prod/index.css">
-<style>html, body, #xroot { height: 100%; margin: 0; } #xmsg { padding: 16px; white-space: pre-wrap; font: 13px ui-monospace, monospace; color: #c92a2a; }
-#xcopy { position: fixed; right: 12px; bottom: 12px; z-index: 10; font: 13px ui-monospace, monospace; padding: 6px 10px; border: 1px solid #ced4da; border-radius: 6px; background: #fff; cursor: pointer; }</style>`);
-  document.body.insertAdjacentHTML("beforeend", `<div id="xroot"><div id="xmsg">loading…</div></div><button id="xcopy" title="Ctrl/Cmd + Shift + C">copy for LLM</button>`);
+<style>html, body, #xroot { height: 100%; margin: 0; } #xmsg { padding: 16px; white-space: pre-wrap; font: 13px ui-monospace, monospace; color: #c92a2a; }</style>`);
+  document.body.insertAdjacentHTML("beforeend", `<div id="xroot"><div id="xmsg">loading…</div></div>`);
   const root = /** @type {HTMLElement} */ (document.getElementById("xroot"));
-  document.getElementById("xcopy")?.addEventListener("click", copy);
   try {
     const [React, { createRoot }, X] = await Promise.all([import(`${ESM}react@19.0.0`), import(`${ESM}react-dom@19.0.0/client`),
       import(`${ESM}@excalidraw/excalidraw@${V}?deps=react@19.0.0,react-dom@19.0.0`)]);
@@ -163,18 +161,15 @@ function lines(/** @type {any[]} */ all, /** @type {Set<string>} */ sel) {
   }
   return out;
 }
-async function copy() {
-  if (!api) return;
+/** what Ctrl/Cmd+C puts on the clipboard: the selection (or everything) as one line per element */
+function condensed() {
   const all = api.getSceneElements(), sel = new Set(Object.keys(api.getAppState().selectedElementIds ?? {}));
   const body = lines(all, sel);
-  const t = `# ${document.title}: ${sel.size ? body.length + " selected" : "everything"}  (id type x,y wxh [fill] "label"; * = drawn by hand)\n` + body.join("\n") + "\n";
-  try { await navigator.clipboard.writeText(t); } catch {
-    const ta = Object.assign(document.createElement("textarea"), { value: t });
-    document.body.append(ta); ta.select(); document.execCommand("copy"); ta.remove();
-  }
-  const b = /** @type {HTMLElement} */ (document.getElementById("xcopy"));
-  b.textContent = `copied ${body.length}`; setTimeout(() => (b.textContent = "copy for LLM"), 1200);
+  return `# ${document.title}: ${sel.size ? body.length + " selected" : "everything"}  (id type x,y wxh [fill] "label"; * = drawn by hand)\n` + body.join("\n") + "\n";
 }
-window.addEventListener("keydown", (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "c") { e.preventDefault(); e.stopPropagation(); copy(); }
+// replaces Excalidraw's own copy (its JSON); typing in a text box still copies text as usual
+window.addEventListener("copy", (e) => {
+  if (!api || /** @type {any} */ (e.target)?.closest?.("textarea, input")) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  e.clipboardData?.setData("text/plain", condensed());
 }, true);
