@@ -33,6 +33,8 @@
 !bird-log/**
 !chrome-super-plugin/
 !chrome-super-plugin/**
+!switcher/
+!switcher/**
 !browser-container-poc/
 !browser-container-poc/**
 !isochron-home-map/

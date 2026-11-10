@@ -100,7 +100,7 @@ on internal pages such as `chrome://` URLs. To protect only Ctrl+Shift+A, set
 
 ## Switcher bridge
 
-A separate native macOS app shows a global fuzzy switcher over Chrome tabs
+The native macOS app in [`../switcher`](../switcher/README.md) shows a global fuzzy switcher over Chrome tabs
 and native apps. It can't see Chrome's tabs, so the service worker connects
 to it as a WebSocket client at `ws://127.0.0.1:47600/` (the app is the
 server) and exchanges JSON text frames:

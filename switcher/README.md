@@ -5,7 +5,8 @@ running apps together. Type to filter, Enter jumps, Esc dismisses. With an
 empty query the list is in most-recently-used order with the thing you are on
 moved to the end, so hotkey + Enter flips to the previous tab or app.
 
-Rust, GPUI 0.2, objc2. Tabs come from a browser extension (separate project)
+Rust, GPUI 0.2, objc2. Tabs come from the Super Extension's Switcher
+bridge feature ([`../chrome-super-plugin`](../chrome-super-plugin/README.md))
 over a loopback WebSocket; this app is the server.
 
 ## Build and run
