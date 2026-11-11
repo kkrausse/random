@@ -11,10 +11,12 @@ interface NodeOpts {
   def?: string;          // this op is an abstraction defined by the diagram with this title (drawn with a double border);
                          // edges into it are labelled with that diagram's input ports (each exactly once), edges out with its output ports
   port?: string;         // in a defining diagram: the name of this input (I) or output (out: true)
+  side?: "left" | "right"; // keep this box on that side (also on G, for everything inside); the layout is mirrored to match, and dg.ts reports boxes still on the wrong side
   ref?: boolean;         // drawn for comparison only (faded): not an input/output of the diagram, skipped by the flow lints
 }
 interface Node extends NodeOpts { id: string; kind: "data" | "op"; s: string; input?: boolean; param?: string; w?: string }
 interface GroupOpts {
+  side?: "left" | "right";
   deck?: boolean; big?: boolean;
   entries?: string[];    // ids of its ENTERING boxes, kept in one row at its top
   fill?: Colour;         // background tint (e.g. "#fff4e6"): marks a region such as "the context frames"

@@ -162,7 +162,14 @@
       "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX", "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
       "elk.edgeLabels.inline": "true", "elk.json.shapeCoords": "ROOT", "elk.json.edgeCoords": "ROOT", ...(d.elk ?? {}) },
       children, edges: edges.map(({ _e, ...x }) => x) });
-    const W = g.width, MX = (x, w = 0) => (d.mirror ? W - x - w : x);
+    // side: "left" / "right" on boxes or groups (inherited by everything inside): if ELK put the left-marked part on the
+    // right, the finished layout is mirrored (a layered DOWN layout stays valid mirrored)
+    const sideOf = new Map(); const mark = (ns, sd) => ns.forEach((n) => { if (!n?.id) return; const s2 = n.side ?? sd; if (s2) sideOf.set(n.id, s2); if (n.kind === "group") mark(n.kids ?? [], s2); });
+    mark(d.nodes ?? [], undefined);
+    const raw = new Map(); const grab = (n) => (n.children ?? []).forEach((c) => { raw.set(c.id, c); grab(c); }); grab(g);
+    const meanX = (sd) => { const xs = [...sideOf].filter(([id, s2]) => s2 === sd && raw.has(id) && !grp.has(id)).map(([id]) => raw.get(id).x + raw.get(id).width / 2); return xs.length ? xs.reduce((a, b) => a + b) / xs.length : null; };
+    const mL = meanX("left"), mR = meanX("right"), flip = mL !== null && mR !== null && mL > mR;
+    const W = g.width, MX = (x, w = 0) => ((!!d.mirror !== flip) ? W - x - w : x);
     const items = [], pos = new Map();
     const walk = (n, depth) => (n.children ?? []).forEach((c) => {
       const x = MX(c.x, c.width), r = { x, y: c.y, w: c.width, h: c.height };
@@ -188,12 +195,21 @@
       const r = A.x < B.x, x1 = r ? A.x + A.w : A.x, x2 = r ? B.x : B.x + B.w, y1 = A.y + A.h / 2, y2 = B.y + B.h / 2, mx = (x1 + x2) / 2;
       items.push({ t: "link", id: `${l.a}~${l.b}`, from: l.a, to: l.b, s: l.s, pts: [[x1, y1], [mx, y1], [mx, y2], [x2, y2]] });
     }
+    // a marked box on the wrong side of the middle between the two sides: reported by lintLayout
+    // wrong side = past the average of the other side's boxes (as drawn, after any mirroring)
+    if (mL !== null && mR !== null) {
+      const avg = (sd) => { const xs = items.filter((it) => it.t === "node" && sideOf.get(it.id) === sd).map((it) => it.x + it.w / 2); return xs.reduce((a, b) => a + b, 0) / xs.length; };
+      const aL = avg("left"), aR = avg("right");
+      for (const it of items) { const sd = sideOf.get(it.id); if (!sd || it.t !== "node") continue;
+        const cx = it.x + it.w / 2; if ((sd === "left" && cx > aR) || (sd === "right" && cx < aL)) it.wrongSide = sd; }
+    }
     return { items, w: W, h: g.height };
   }
 
   // ---- lint after layout: flow direction, lines through boxes, overlaps
   function lintLayout(items) {
     const out = [], nodes = items.filter((i) => i.t === "node");
+    for (const n of nodes) if (n.wrongSide) out.push(`${n.id}: marked side "${n.wrongSide}" but drawn on the other side`);
     const inside = (b, x, y) => x > b.x + 2 && x < b.x + b.w - 2 && y > b.y + 2 && y < b.y + b.h - 2;
     for (const e of items.filter((i) => i.t === "edge")) {
       const a = e.pts[0], z = e.pts[e.pts.length - 1];
