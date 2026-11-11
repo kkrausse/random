@@ -28,6 +28,8 @@ diagram("tiny", {
 - **Data nodes:** `D` is data (dotted border), `I` is a model input (pinned to the top row), `P` is a learned tensor.
 - **Ops and groups:** `O` is a transformation (solid box, coloured by `weights[w]`). `G` is an outline: `{ deck: true }` draws stacked cards, `{ entries: [...] }` keeps the listed boxes in one row at its top.
 - **Edges:** an edge is `E(from, to, label, { ink, hidden, short })` or a chain string `"a>b>c"`. `hidden` only orders the layout.
+- **Group style:** `G(id, title, kids, { fill, ink, sw })` tints the background and draws a solid border (e.g. a "context frames" lane).
+- **ELK limit:** two sibling groups never share rows. Each group is laid out as one solid block, so hidden edges can't put group A beside group B. To get side-by-side, ungroup one side or make both kids of one group.
 - **Links:** `links: [L(a, b, "SAME WEIGHTS")]` draws a dashed line that carries no data.
 - **Spec options:** `mirror: true` flips the finished layout. Call `diagram` several times to put several diagrams side by side.
 - **Title:** one `title("…")` per file names the page (browser tab `diagram: …`). Say specifically what it shows; `dg.ts` flags a missing one.
