@@ -44,7 +44,9 @@ L = await linesOk(['k.c.t', 'k.c.blk', 'k.c1', 'k.c.out', 'k.c.take']); check('l
 // 3. box-select a whole outline + contents, drag: everything moves the same amount, feedback = 1 line
 await fresh(); await view('k.cp', 0.7);
 const R = await p.evaluate(() => { const q = document.querySelector('[data-id="k.cp"] rect:nth-of-type(4)').getBoundingClientRect(); return [q.x, q.y, q.width, q.height]; });
-await p.mouse.move(R[0] - 20, R[1] - 20); await p.mouse.down(); await p.mouse.move(R[0] + R[2] + 20, R[1] + R[3] + 20, { steps: 6 }); await p.mouse.up();
+// start the band on empty space just above-left of the outline (a line may run right past its corner)
+const S0 = await p.evaluate(([x0, y0]) => { for (let d = 20; d < 200; d += 6) for (const [x, y] of [[x0 - d, y0 - d], [x0 - d, y0 - 20], [x0 - 20, y0 - d]]) if (!document.elementFromPoint(x, y)?.closest('[data-id]')) return [x, y]; }, [R[0], R[1]]);
+await p.mouse.move(S0[0], S0[1]); await p.mouse.down(); await p.mouse.move(R[0] + R[2] + 20, R[1] + R[3] + 20, { steps: 6 }); await p.mouse.up();
 const ids = await p.evaluate(() => [...sel]); check('box-select picks the outline and its contents', ids.includes('k.cp') && ids.length > 5, ids.length);
 a = await places(ids); await drag(await centre('k.c.t'), -250, 20); z = await places(ids);
 const boxIds = await p.evaluate((ids) => ids.filter((i) => ['node', 'group'].includes(itemOf(i)?.t)), ids);  // lines change shape when one end moves
