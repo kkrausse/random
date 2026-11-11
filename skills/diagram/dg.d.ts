@@ -11,14 +11,18 @@ interface NodeOpts {
   def?: string;          // this op is an abstraction defined by the diagram with this title (drawn with a double border);
                          // edges into it are labelled with that diagram's input ports (each exactly once), edges out with its output ports
   port?: string;         // in a defining diagram: the name of this input (I) or output (out: true)
-  side?: "left" | "right"; // keep this box on that side (also on G, for everything inside); the layout is mirrored to match, and dg.ts reports boxes still on the wrong side
+  side?: "left" | "right"; // meant to be on that side (also on G, for everything inside): dg.ts reports a box placed on the wrong side
   ref?: boolean;         // drawn for comparison only (faded): not an input/output of the diagram, skipped by the flow lints
 }
 interface Node extends NodeOpts { id: string; kind: "data" | "op"; s: string; input?: boolean; param?: string; w?: string }
+// Placement: rows of ids, top to bottom; each row's ids left to right. An array inside a row is a column (stacked,
+// centred), an array inside that a row again, and so on. Name every direct content once. Without rows: by flow.
+type Rows = (string | Rows)[];
 interface GroupOpts {
+  rows?: Rows;           // where its direct contents go (ids of boxes and groups directly inside it)
+  gap?: [x: number, y: number]; // space between neighbours (default 50 across, 70 down)
   side?: "left" | "right";
   deck?: boolean; big?: boolean;
-  entries?: string[];    // ids of its ENTERING boxes, kept in one row at its top
   fill?: Colour;         // background tint (e.g. "#fff4e6"): marks a region such as "the context frames"
   ink?: Colour; sw?: number; // border colour / width; sw makes the border solid
 }
@@ -26,7 +30,7 @@ interface Group extends GroupOpts { id: string; kind: "group"; title: string; ki
 type Item = Node | Group;
 // E(from, "id@aux"): the edge ends on the token segment of id whose caption starts with "aux"; "id@cls..patches" spans
 // from the "cls" segment through the "patches" one (so a CONCAT needs no box: each input lands on its own tokens)
-interface EdgeOpts { ink?: Colour; sw?: number; short?: boolean; hidden?: boolean }
+interface EdgeOpts { ink?: Colour; sw?: number }
 interface Edge extends EdgeOpts { from: string; to: string; s: string }
 interface Link { a: string; b: string; s: string }
 interface Spec {
@@ -35,12 +39,12 @@ interface Spec {
   edges: (Edge | string)[];             // E(...) or "a>b>c" chains
   links?: Link[];                       // L(a, b, "same weights"): dashed, no data flow
   weights?: Record<string, Colour>;     // op colour by whose weights: { trunk: "blue", ... } (also the legend)
-  mirror?: boolean;                     // flip the finished layout left <-> right
-  elk?: Record<string, string>;         // extra ELK root options
+  rows?: Rows;                          // where the top-level boxes and groups go (as G's rows)
+  gap?: [x: number, y: number];
   titleSize?: number;
 }
 /** data: dotted box */ declare function D(id: string, s: string, o?: NodeOpts): Node;
-/** a model input: data pinned to the top row */ declare function I(id: string, s: string, ink?: Colour, o?: NodeOpts): Node;
+/** a model input (thick dotted border) */ declare function I(id: string, s: string, ink?: Colour, o?: NodeOpts): Node;
 /** a learned tensor used as data; w = its weights key */ declare function P(id: string, s: string, w: string, o?: NodeOpts): Node;
 declare const Pm: typeof P;
 /** a transformation; w = whose weights (colour) */ declare function O(id: string, s: string, w?: string, o?: NodeOpts): Node;

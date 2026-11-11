@@ -1,21 +1,21 @@
 #!/usr/bin/env bun
 // bun dg.ts <diagram.js> [--only <title>] [--focus <id>] [--png <out.png>] [--pub <slug>]
 // Type-checks, lints, lays out and renders a diagram file; prints a short report. --pub publishes the file's folder.
-import ELK from "elkjs/lib/elk.bundled.js";
+import { AvoidLib } from "libavoid-js";
 import { Resvg } from "@resvg/resvg-js";
 import { dirname, resolve, basename } from "path";
 import "./core.js";
 
 const t0 = performance.now();
-if (process.argv[2] === "--lib") {  // publish the viewer (index.html, core.js, elk.js) as slug "diagram"
+if (process.argv[2] === "--lib") {  // publish the viewer (index.html, core.js, avoid.js) as slug "diagram" (or the slug given)
   const d = `${process.env.CLAUDE_JOB_DIR ? process.env.CLAUDE_JOB_DIR + "/tmp" : "/tmp"}/dg-lib`;
   Bun.spawnSync(["rm", "-rf", d]); Bun.spawnSync(["mkdir", "-p", d]);
-  for (const f of ["index.html", "core.js", "elk.js"]) await Bun.write(`${d}/${f}`, Bun.file(`${import.meta.dir}/${f}`));
-  const p = Bun.spawnSync([`${import.meta.dir}/../../scripts/deploy-artifact.sh`, d, "diagram"], { stdout: "pipe", stderr: "pipe" });
+  for (const f of ["index.html", "core.js", "avoid.js"]) await Bun.write(`${d}/${f}`, Bun.file(`${import.meta.dir}/${f}`));
+  const p = Bun.spawnSync([`${import.meta.dir}/../../scripts/deploy-artifact.sh`, d, process.argv[3] ?? "diagram"], { stdout: "pipe", stderr: "pipe" });
   console.log((p.stdout.toString() + p.stderr.toString()).trim().split("\n").pop()); process.exit(p.exitCode ?? 0);
 }
 const argv = process.argv.slice(2), opt = (k: string) => { const i = argv.indexOf(k); return i >= 0 ? argv.splice(i, 2)[1] : undefined; };
-const only = opt("--only"), focus = opt("--focus"), pub = opt("--pub"), scaleArg = opt("--scale");
+const only = opt("--only"), focus = opt("--focus"), pub = opt("--pub"), scaleArg = opt("--scale"), viewer = opt("--viewer") ?? "diagram";
 const file = argv[0];
 if (!file) { console.error("usage: bun dg.ts <diagram.js> [--only <title>] [--focus <id>] [--png out.png] [--pub <slug>]"); process.exit(2); }
 const path = resolve(file), dir = dirname(path), here = import.meta.dir;
@@ -36,7 +36,8 @@ try { runInThisContext(await Bun.file(path).text(), { filename: path }); } catch
 }
 const titles = DG.all.map((d: any) => d.title);
 if (only && !titles.includes(only)) { console.log(`--only ${only}: no such diagram (have: ${titles.join(", ")})`); process.exit(1); }
-const page = await DG.layoutPage(DG.all, ELK, { only });
+await AvoidLib.load(`${here}/node_modules/libavoid-js/dist/libavoid.wasm`);
+const page = await DG.layoutPage(DG.all, AvoidLib.getInstance(), { only });
 const types = (await new Response(tc.stdout).text()).trim().split("\n").filter(Boolean).map((l) => l.replace(/^\S*?([^/\s]+\.js)\(/, "$1("));
 
 // render
@@ -65,7 +66,7 @@ else console.log("no issues");
 if (pub) {
   const p = Bun.spawnSync([`${here}/../../scripts/deploy-artifact.sh`, dir, pub], { stdout: "pipe", stderr: "pipe" });
   const url = (p.stdout.toString() + p.stderr.toString()).match(/https:\S+/)?.[0];
-  console.log(url ? `published: ${url.replace(/\/artifacts\/.*/, "")}/artifacts/diagram/?s=../${pub}/${basename(path)}` : `publish failed: ${p.stderr}`);
+  console.log(url ? `published: ${url.replace(/\/artifacts\/.*/, "")}/artifacts/${viewer}/?s=../${pub}/${basename(path)}` : `publish failed: ${p.stderr}`);
 }
 console.log(`${Math.round(performance.now() - t0)} ms`);
 process.exit(0);

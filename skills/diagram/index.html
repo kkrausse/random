@@ -25,7 +25,7 @@
 <div id="issues"></div>
 <div id="fb"><span id="fbn"></span> <a id="fbcopy">copy</a> <a id="fbreset">reset</a></div>
 <div id="toast"></div>
-<script src="elk.js"></script>
+<script src="avoid.js"></script>
 <script>document.write(`<script src="core.js?v=${Date.now()}"><\/script>`);</script>
 <script>
 "use strict";
@@ -69,9 +69,12 @@ function poll() {
   document.body.appendChild(f);
 }
 
+// libavoid (the line router), loaded once
+let avoid = null;
+const router = () => (avoid ??= AvoidLib.load(AVOID_WASM).then(() => AvoidLib.getInstance()));
 async function render() {
   const diags = [...DG.all];
-  page = await DG.layoutPage(diags, ELK, { only: ONLY });
+  page = await DG.layoutPage(diags, await router(), { only: ONLY });
   stage.innerHTML = DG.toSvg(page, diags, { img: (s) => new URL(s, srcURL).href });
   svg = stage.firstElementChild; svg.removeAttribute("width"); svg.removeAttribute("height");
   svg.insertAdjacentHTML("beforeend", '<g id="overlay"></g>'); index();

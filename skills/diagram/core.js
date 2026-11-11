@@ -1,4 +1,4 @@
-// diagram core: the vocabulary (globals D I P O G E L diagram), ELK layout, lint, SVG. A classic script so the
+// diagram core: the vocabulary (globals D I P O G E L diagram), placement (rows), libavoid routing, lint, SVG. A classic script so the
 // viewer can load it on file://; the CLI (dg.ts) imports it the same way. Everything a diagram file needs is a global.
 (function (root) {
   "use strict";
@@ -112,98 +112,198 @@
     return out;
   }
 
-  // ---- ELK layout of one diagram -> positioned items (origin 0, 0)
-  async function layoutOne(d, ELK) {
-    const leaf = new Map(), grp = new Map();
-    const toElk = (n) => {
-      if (n.kind === "group") {
-        grp.set(n.id, n);
-        const top = n.deck ? 80 : n.big ? 70 : 56, tfs = n.big ? 22 : 15;
-        return { id: n.id, children: (n.kids ?? []).map(toElk), layoutOptions: {
-          "elk.padding": `[top=${top},left=30,bottom=30,right=${n.deck ? 70 : 30}]` } };
+  // ---- placement: the file decides it. A group (or the diagram) lists its direct contents in `rows`: rows top to
+  // bottom, each row's ids left to right; an array inside a row is a column, an array inside that a row, and so on.
+  // Columns are centred, rows top-aligned. Without `rows`, contents go in rows by flow (each box one row below
+  // whatever feeds it), in file order. Lines are then routed around the boxes by libavoid.
+  const GAP = { x: 50, y: 70 };
+  const groupPad = (g) => ({ top: (g.deck ? 80 : g.big ? 70 : 56) + (lines(g.title).length - 1) * (g.big ? 22 : 15) * LH, left: 30, right: g.deck ? 70 : 30, bottom: 30 });
+  const titleBox = (g, b) => { const tfs = g.big ? 22 : 15; return { x: b.x + 8, y: b.y + 6, w: tw(g.title, tfs) + 12, h: th(g.title, tfs) + 10 }; };
+  function placeAll(d, lint) {
+    const leaf = new Map(), grp = new Map(), parent = new Map();
+    const reg = (ns, p) => ns.forEach((n) => { if (!n?.id) return; parent.set(n.id, p);
+      if (n.kind === "group") { grp.set(n.id, n); reg(n.kids ?? [], n.id); } else leaf.set(n.id, { n, ...size(n) }); });
+    reg(d.nodes ?? [], null);
+    const known = (id) => leaf.has(id) || grp.has(id);
+    const es = expand(d.edges).filter((e) => !e.hidden && known(e.from) && known(baseId(e.to)));
+    const childOf = (id, c) => { let x = id; while (x !== undefined && x !== null && parent.get(x) !== c) x = parent.get(x); return x ?? undefined; };
+    // rows by flow: rank = longest chain of edges from the contents' sources; order in a row by where the feeders sit
+    function autoRows(ids, cid) {
+      const ed = []; for (const e of es) { const a = childOf(e.from, cid), b = childOf(baseId(e.to), cid); if (a && b && a !== b && ids.includes(a) && ids.includes(b)) ed.push([a, b]); }
+      const rank = new Map(ids.map((i) => [i, 0]));
+      for (let k = 0; k < ids.length; k++) for (const [a, b] of ed) if (rank.get(b) < rank.get(a) + 1 && rank.get(a) + 1 < ids.length) rank.set(b, rank.get(a) + 1);
+      const rows = []; for (const i of ids) (rows[rank.get(i)] ??= []).push(i);
+      const at = new Map();
+      return rows.filter(Boolean).map((row) => {
+        const bary = (i) => { const ps = ed.filter(([, b]) => b === i).map(([a]) => at.get(a)).filter((v) => v !== undefined); return ps.length ? ps.reduce((s, v) => s + v, 0) / ps.length : null; };
+        const keyed = row.map((i, j) => [i, bary(i) ?? j / Math.max(1, row.length - 1)]);
+        keyed.sort((p, q) => p[1] - q[1]); keyed.forEach(([i], j) => at.set(i, row.length > 1 ? j / (row.length - 1) : 0.5));
+        return keyed.map(([i]) => i);
+      });
+    }
+    function arrangement(kids, rows, cid, label) {
+      const ids = (kids ?? []).filter((n) => n?.id).map((n) => n.id);
+      if (!rows) return autoRows(ids, cid);
+      const used = new Set();
+      const clean = (l) => l.flatMap((x) => {
+        if (Array.isArray(x)) { const c = clean(x); return c.length ? [c] : []; }
+        if (!ids.includes(x)) { lint.push(`${label}: rows names ${x}, which is not directly inside it${known(x) ? ` (it is inside ${parent.get(x) ?? "the top level"})` : ""}`); return []; }
+        if (used.has(x)) { lint.push(`${label}: rows names ${x} twice`); return []; }
+        used.add(x); return [x];
+      });
+      const r = clean(rows), miss = ids.filter((i) => !used.has(i));
+      if (miss.length) { lint.push(`${label}: not in its rows (put at the bottom): ${miss.join(", ")}`); r.push(miss); }
+      return r;
+    }
+    const pos = new Map();
+    const gapOf = (o) => ({ x: o?.gap?.[0] ?? GAP.x, y: o?.gap?.[1] ?? GAP.y });
+    function cell(el, dir, gap) {
+      if (!Array.isArray(el)) {
+        if (leaf.has(el)) { const s = leaf.get(el); return { w: s.w, h: s.h, put: (x, y) => pos.set(el, { x, y, w: s.w, h: s.h }) }; }
+        const g = grp.get(el), P = groupPad(g), inner = cell(arrangement(g.kids, g.rows, g.id, g.id), "col", gapOf(g));
+        const tt = titleBox(g, { x: 0, y: 0 }), w = Math.max(inner.w + P.left + P.right, tt.w + 40), h = inner.h + P.top + P.bottom;
+        return { w, h, put: (x, y) => { pos.set(el, { x, y, w, h }); inner.put(x + P.left + (w - P.left - P.right - inner.w) / 2, y + P.top); } };
       }
-      const s = size(n); leaf.set(n.id, { n, ...s });
-      const o = {}; if (n.input) o["elk.layered.layering.layerConstraint"] = "FIRST";
-      return { id: n.id, width: s.w, height: s.h, layoutOptions: o };
+      const parts = el.map((x) => cell(x, dir === "row" ? "col" : "row", gap));
+      if (!parts.length) return { w: 0, h: 0, put: () => {} };
+      if (dir === "row") {
+        const w = parts.reduce((s, p) => s + p.w, 0) + gap.x * (parts.length - 1), h = Math.max(...parts.map((p) => p.h));
+        return { w, h, put: (x, y) => { let cx = x; for (const p of parts) { p.put(cx, y); cx += p.w + gap.x; } } };
+      }
+      const w = Math.max(...parts.map((p) => p.w)), h = parts.reduce((s, p) => s + p.h, 0) + gap.y * (parts.length - 1);
+      return { w, h, put: (x, y) => { let cy = y; for (const p of parts) { p.put(x + (w - p.w) / 2, cy); cy += p.h + gap.y; } } };
+    }
+    const top = cell(arrangement(d.nodes, d.rows, null, d.title), "col", gapOf(d));
+    top.put(0, 0);
+    return { leaf, grp, parent, es, pos, w: top.w, h: top.h };
+  }
+
+  // ---- lines: libavoid routes every edge orthogonally around the boxes (and group titles). Which sides an edge
+  // leaves and enters follows where its ends sit: below -> bottom to top; beside -> side to side. The ends on one
+  // side of a box are spread out, ordered by where their other ends are, so they do not cross at the box.
+  const DIR = { top: 1, bottom: 2, left: 4, right: 8 };
+  function sides(S, T) {
+    if (T.y >= S.y + S.h - 1) return ["bottom", "top"];
+    if (T.y + T.h <= S.y + 1) return ["top", "bottom"];
+    return T.x + T.w / 2 >= S.x + S.w / 2 ? ["right", "left"] : ["left", "right"];
+  }
+  function route(A, L, lint) {
+    const { leaf, grp, pos } = L, r = new A.Router(A.RouterFlag.OrthogonalRouting.value), RP = A.RoutingParameter;
+    r.setRoutingParameter(RP.shapeBufferDistance, 10); r.setRoutingParameter(RP.idealNudgingDistance, 9);
+    r.setRoutingParameter(RP.segmentPenalty, 40);
+    r.setRoutingOption(A.RoutingOption.nudgeOrthogonalSegmentsConnectedToShapes, true);
+    r.setRoutingOption(A.RoutingOption.nudgeSharedPathsWithCommonEndPoint, true);
+    const rect = (b) => new A.Rectangle(new A.Point(b.x, b.y), new A.Point(b.x + b.w, b.y + b.h));
+    const shape = new Map();
+    for (const id of leaf.keys()) shape.set(id, new A.ShapeRef(r, rect(pos.get(id))));
+    for (const [id, g] of grp) shape.set(id + "#title", new A.ShapeRef(r, rect(titleBox(g, pos.get(id)))));
+    // every line: its two ends (box, side, fixed x or null)
+    const lns = [];
+    for (const e of L.es) {
+      const t = baseId(e.to), S = pos.get(e.from), T = pos.get(t); if (!S || !T) continue;
+      const sg = String(e.to).includes("@") && leaf.has(t) ? segOf(leaf.get(t).n, e.to) : null;
+      let [ss, ts] = sides(S, T), fx = null;
+      if (sg) { const segs = strip(leaf.get(t).n.tok).segs, x0 = 10 + segs[sg[0]].x, x1 = 10 + segs[sg[1]].x + Math.min(segs[sg[1]].w, segs[sg[1]].n * (SQ + SG));
+        ts = "top"; fx = (x0 + x1) / 2; if (ss === "top") ss = "bottom"; }
+      lns.push({ e, kind: "edge", a: { id: e.from, side: ss }, b: { id: t, side: ts, fixed: fx }, into: !!sg });
+    }
+    for (const l of L.links) {
+      const S = pos.get(l.a), T = pos.get(l.b); if (!S || !T) continue;
+      const rgt = T.x + T.w / 2 >= S.x + S.w / 2;
+      lns.push({ l, kind: "link", a: { id: l.a, side: rgt ? "right" : "left" }, b: { id: l.b, side: rgt ? "left" : "right" } });
+    }
+    // spread the ends on each side of each box, ordered by the other end's centre
+    const bySide = new Map();
+    for (const ln of lns) for (const [me, other] of [[ln.a, ln.b], [ln.b, ln.a]]) {
+      if (me.fixed !== undefined && me.fixed !== null) continue;
+      const k = me.id + "|" + me.side, O_ = pos.get(other.id); if (!bySide.has(k)) bySide.set(k, []);
+      bySide.get(k).push({ end: me, key: me.side === "top" || me.side === "bottom" ? O_.x + O_.w / 2 : O_.y + O_.h / 2 });
+    }
+    for (const [k, list] of bySide) {
+      const [id, side] = k.split("|"), B = pos.get(id), len = side === "top" || side === "bottom" ? B.w : B.h;
+      list.sort((p, q) => p.key - q.key);
+      const step = Math.min(18, len / (list.length + 1));
+      list.forEach((it, i) => { it.end.at = len / 2 + (i - (list.length - 1) / 2) * step; });
+    }
+    let cls = 1;
+    const endOf = (end) => {
+      const B = pos.get(end.id), at = end.fixed ?? end.at, s = end.side;
+      const px = s === "left" ? 0 : s === "right" ? B.w : at, py = s === "top" ? 0 : s === "bottom" ? B.h : at;
+      end.pt = [B.x + px, B.y + py];
+      if (!shape.has(end.id)) return new A.ConnEnd(new A.Point(end.pt[0], end.pt[1]));  // a group: a free point on its border
+      const c = cls++; new A.ShapeConnectionPin(shape.get(end.id), c, px / B.w, py / B.h, true, 0, DIR[s]);
+      return [end.id, c];
     };
-    const es = expand(d.edges).map((e) => ({ ...e }));
-    // a group's `entries` (its ENTERING boxes) sit in one row across its top: each gets a hidden, high-priority edge from
-    // every source feeding any entry, and sits above every entry's first successors
-    const allG = []; const findG = (ns) => ns.forEach((n) => { if (n?.kind === "group") { allG.push(n); findG(n.kids ?? []); } }); findG(d.nodes ?? []);
-    for (const G_ of allG.filter((x) => x.entries)) {
-      const has = (f, t) => es.some((e) => e.from === f && e.to === t);
-      const src = [...new Set(es.filter((e) => !e.hidden && G_.entries.includes(e.to)).map((e) => e.from))];
-      for (const f of src) for (const t of G_.entries) if (!has(f, t)) es.push({ from: f, to: t, s: "", hidden: true, pull: true });
-      for (const e of es) if (G_.entries.includes(e.to)) e.pull = true;
-      const succ = [...new Set(es.filter((e) => !e.hidden && G_.entries.includes(e.from)).map((e) => e.to))];
-      for (const f of G_.entries) for (const t of succ) if (!G_.entries.includes(t) && !has(f, t)) es.push({ from: f, to: t, s: "", hidden: true });
-    }
-    const known = (id) => leaf.has(baseId(id)) || grp.has(baseId(id));
-    const children = (d.nodes ?? []).map(toElk);
-    const ports = new Map();  // node id -> [{ id, x }]
-    const flatC = (cs) => cs.flatMap((c) => c.children ? flatC(c.children) : [c]), elkNode = new Map(flatC(children).map((c) => [c.id, c]));
-    for (const e of es) {
-      const id = baseId(e.to), sg = String(e.to).includes("@") && leaf.has(id) ? segOf(leaf.get(id).n, e.to) : null; if (!sg) continue;
-      const segs = strip(leaf.get(id).n.tok).segs, x0 = 10 + segs[sg[0]].x, x1 = 10 + segs[sg[1]].x + Math.min(segs[sg[1]].w, segs[sg[1]].n * (SQ + SG));
-      const pid = `${id}@${sg[0]}-${sg[1]}`; e._port = pid;
-      if (!ports.has(id)) ports.set(id, []);
-      if (!ports.get(id).some((p) => p.id === pid)) ports.get(id).push({ id: pid, x: (x0 + x1) / 2 });
-    }
-    for (const [id, ps] of ports) { const c = elkNode.get(id);
-      c.ports = ps.map((p) => ({ id: p.id, width: 1, height: 1, x: p.x, y: -1, layoutOptions: { "elk.port.side": "NORTH" } }));
-      c.layoutOptions = { ...c.layoutOptions, "elk.portConstraints": "FIXED_POS" }; }
-    const edges = es.filter((e) => known(e.from) && known(e.to)).map((e, i) => ({ id: `e${i}`, sources: [e.from], targets: [e._port ?? baseId(e.to)], _e: e,
-      labels: e.s ? [{ text: e.s, width: tw(e.s, 11) + 8, height: 16 }] : [],
-      layoutOptions: e.short || e.pull ? { "elk.layered.priority.shortness": e.pull ? "50" : "20", "elk.layered.priority.straightness": "10" } : {} }));
-    const g = await new ELK().layout({ id: "root", layoutOptions: {
-      "elk.algorithm": "layered", "elk.direction": "DOWN", "elk.hierarchyHandling": "INCLUDE_CHILDREN", "elk.edgeRouting": "ORTHOGONAL",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "60", "elk.spacing.nodeNode": "50", "elk.layered.spacing.edgeNodeBetweenLayers": "26",
-      "elk.spacing.edgeEdge": "12", "elk.layered.spacing.edgeEdgeBetweenLayers": "12", "elk.spacing.edgeLabel": "4",
-      "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX", "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
-      "elk.edgeLabels.inline": "true", "elk.json.shapeCoords": "ROOT", "elk.json.edgeCoords": "ROOT", ...(d.elk ?? {}) },
-      children, edges: edges.map(({ _e, ...x }) => x) });
-    // side: "left" / "right" on boxes or groups (inherited by everything inside): if ELK put the left-marked part on the
-    // right, the finished layout is mirrored (a layered DOWN layout stays valid mirrored)
-    const sideOf = new Map(); const mark = (ns, sd) => ns.forEach((n) => { if (!n?.id) return; const s2 = n.side ?? sd; if (s2) sideOf.set(n.id, s2); if (n.kind === "group") mark(n.kids ?? [], s2); });
-    mark(d.nodes ?? [], undefined);
-    const raw = new Map(); const grab = (n) => (n.children ?? []).forEach((c) => { raw.set(c.id, c); grab(c); }); grab(g);
-    const meanX = (sd) => { const xs = [...sideOf].filter(([id, s2]) => s2 === sd && raw.has(id) && !grp.has(id)).map(([id]) => raw.get(id).x + raw.get(id).width / 2); return xs.length ? xs.reduce((a, b) => a + b) / xs.length : null; };
-    const mL = meanX("left"), mR = meanX("right"), flip = mL !== null && mR !== null && mL > mR;
-    const W = g.width, MX = (x, w = 0) => ((!!d.mirror !== flip) ? W - x - w : x);
-    const items = [], pos = new Map();
-    const walk = (n, depth) => (n.children ?? []).forEach((c) => {
-      const x = MX(c.x, c.width), r = { x, y: c.y, w: c.width, h: c.height };
-      pos.set(c.id, r);
-      if (grp.has(c.id)) { items.push({ t: "group", id: c.id, depth, ...r, g: grp.get(c.id) }); walk(c, depth + 1); }
-      else items.push({ t: "node", id: c.id, depth, ...r, n: leaf.get(c.id).n });
+    const ends = lns.map((ln) => [endOf(ln.a), endOf(ln.b)]);  // all pins first, then the connectors
+    const conns = ends.map(([a, b]) => new A.ConnRef(r, Array.isArray(a) ? new A.ConnEnd(shape.get(a[0]), a[1]) : a, Array.isArray(b) ? new A.ConnEnd(shape.get(b[0]), b[1]) : b));
+    r.processTransaction();
+    lns.forEach((ln, i) => {
+      const p = conns[i].displayRoute(), pts = [];
+      for (let j = 0; j < p.size(); j++) { const q = p.at(j); pts.push([q.x, q.y]); }
+      // the router may slide an end along its side (to keep lines apart): an end anywhere on the right side is fine
+      const near = (u, end) => { if (!u) return false; const B = pos.get(end.id), s = end.side, e = 1.5;
+        if (s === "top" || s === "bottom") return Math.abs(u[1] - (s === "top" ? B.y : B.y + B.h)) < e && u[0] > B.x - e && u[0] < B.x + B.w + e;
+        return Math.abs(u[0] - (s === "left" ? B.x : B.x + B.w)) < e && u[1] > B.y - e && u[1] < B.y + B.h + e; };
+      if (!near(pts[0], ln.a) || !near(pts[pts.length - 1], ln.b)) {
+        lint.push(`${ln.kind === "edge" ? ln.e.from + ">" + ln.e.to : ln.l.a + "~" + ln.l.b}: the router could not attach this line (drawn straight)` + (typeof process !== "undefined" && process.env.DG_DEBUG ? JSON.stringify({ want: [ln.a.pt, ln.b.pt, ln.a.side, ln.b.side], got: pts }) : ""));
+        ln.pts = [ln.a.pt, ln.b.pt];
+      } else ln.pts = pts.map(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10]);
     });
-    walk(g, 0);
-    for (const e of g.edges ?? []) {
-      const src = edges.find((x) => x.id === e.id)._e; if (src.hidden) continue;
-      const sec = e.sections?.[0]; if (!sec) continue;
-      const pts = [sec.startPoint, ...(sec.bendPoints ?? []), sec.endPoint].map((p) => [MX(p.x), p.y]);
-      if (src._port) {  // into a token segment: carry on through the box's top until it touches that segment's squares
-        const B = pos.get(baseId(src.to)), n = leaf.get(baseId(src.to)).n, S = strip(n.tok), last = pts[pts.length - 1];
+    try { r.delete(); } catch {}
+    return lns;
+  }
+  // a label sits on its line: on the last stretch long enough for it (nearest the receiver), away from boxes and other labels
+  function placeLabels(items) {
+    const boxes = items.filter((i) => i.t === "node"), taken = [];
+    const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    for (const it of items) {
+      if (it.t !== "edge" || !it.s) continue;
+      const w = tw(it.s, 11) + 8, h = 16, P = it.pts, cands = [];
+      for (let i = P.length - 1; i > 0; i--) {
+        const [x1, y1] = P[i - 1], [x2, y2] = P[i], len = Math.hypot(x2 - x1, y2 - y1), vert = Math.abs(x1 - x2) < 0.5;
+        const need = vert ? h + 12 : w + 12; if (len < need) continue;
+        for (const f of [0.5, 0.3, 0.7, 0.15, 0.85]) {
+          const cx = x1 + (x2 - x1) * f, cy = y1 + (y2 - y1) * f;
+          const lo = vert ? { x: cx - w / 2, y: cy - h / 2, w, h } : { x: cx - w / 2, y: cy - h / 2, w, h };
+          if (Math.abs(f - 0.5) * len + (vert ? h : w) / 2 > len / 2 - 4) continue;
+          cands.push(lo);
+        }
+      }
+      const ok = cands.find((c) => !boxes.some((b) => hit(c, b)) && !taken.some((t) => hit(c, t)));
+      const lab = ok ?? cands[0] ?? (() => { const [x, y] = P[P.length - 2] ?? P[0]; return { x: x - w / 2, y: y - h / 2, w, h }; })();
+      it.lab = lab; taken.push(lab);
+    }
+  }
+
+  async function layoutOne(d, A) {
+    const lint = [], L = placeAll(d, lint); L.links = d.links ?? [];
+    const { leaf, grp, pos } = L, items = [];
+    const depth = (id) => { let k = 0, x = L.parent.get(id); while (x) { k++; x = L.parent.get(x); } return k; };
+    for (const [id, b] of pos) items.push(grp.has(id) ? { t: "group", id, depth: depth(id), ...b, g: grp.get(id) } : { t: "node", id, depth: depth(id), ...b, n: leaf.get(id).n });
+    for (const ln of route(A, L, lint)) {
+      if (ln.kind === "link") { items.push({ t: "link", id: `${ln.l.a}~${ln.l.b}`, from: ln.l.a, to: ln.l.b, s: ln.l.s, pts: ln.pts }); continue; }
+      const e = ln.e, pts = ln.pts.map((p) => [...p]);
+      if (ln.into) {  // into a token segment: carry on through the box's top until it touches that segment's squares
+        const B = pos.get(ln.b.id), S = strip(leaf.get(ln.b.id).n.tok), last = pts[pts.length - 1];
         last[1] = B.y + B.h - S.h - 8 - 2;
       }
-      const lab = e.labels?.[0];
-      items.push({ t: "edge", id: `${src.from}>${src.to}`, from: src.from, to: baseId(src.to), into: !!src._port, pts, ink: src.ink, sw: src.sw, s: src.s,
-        lab: lab && { x: MX(lab.x, lab.width), y: lab.y, w: lab.width, h: lab.height } });
+      items.push({ t: "edge", id: `${e.from}>${e.to}`, from: e.from, to: baseId(e.to), into: ln.into, pts, ink: e.ink, sw: e.sw, s: e.s });
     }
-    for (const l of d.links ?? []) {
-      const A = pos.get(l.a), B = pos.get(l.b); if (!A || !B) continue;
-      const r = A.x < B.x, x1 = r ? A.x + A.w : A.x, x2 = r ? B.x : B.x + B.w, y1 = A.y + A.h / 2, y2 = B.y + B.h / 2, mx = (x1 + x2) / 2;
-      items.push({ t: "link", id: `${l.a}~${l.b}`, from: l.a, to: l.b, s: l.s, pts: [[x1, y1], [mx, y1], [mx, y2], [x2, y2]] });
-    }
-    // a marked box on the wrong side of the middle between the two sides: reported by lintLayout
-    // wrong side = past the average of the other side's boxes (as drawn, after any mirroring)
-    if (mL !== null && mR !== null) {
-      const avg = (sd) => { const xs = items.filter((it) => it.t === "node" && sideOf.get(it.id) === sd).map((it) => it.x + it.w / 2); return xs.reduce((a, b) => a + b, 0) / xs.length; };
-      const aL = avg("left"), aR = avg("right");
-      for (const it of items) { const sd = sideOf.get(it.id); if (!sd || it.t !== "node") continue;
-        const cx = it.x + it.w / 2; if ((sd === "left" && cx > aR) || (sd === "right" && cx < aL)) it.wrongSide = sd; }
-    }
-    return { items, w: W, h: g.height };
+    placeLabels(items);
+    // side: "left" / "right" marks (on boxes, or groups for everything inside): reported when a marked box sits past
+    // the average of the other side's boxes
+    const sideOf = new Map(); const mark = (ns, sd) => ns.forEach((n) => { if (!n?.id) return; const s2 = n.side ?? sd; if (s2) sideOf.set(n.id, s2); if (n.kind === "group") mark(n.kids ?? [], s2); });
+    mark(d.nodes ?? [], undefined);
+    const avg = (sd) => { const xs = items.filter((it) => it.t === "node" && sideOf.get(it.id) === sd).map((it) => it.x + it.w / 2); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null; };
+    const aL = avg("left"), aR = avg("right");
+    if (aL !== null && aR !== null) for (const it of items) { const sd = sideOf.get(it.id); if (!sd || it.t !== "node") continue;
+      const cx = it.x + it.w / 2; if ((sd === "left" && cx > aR) || (sd === "right" && cx < aL)) it.wrongSide = sd; }
+    // options from the ELK days do nothing now
+    const old = []; if (d.mirror) old.push("mirror"); if (d.elk) old.push("elk");
+    for (const g of grp.values()) if (g.entries) old.push(`${g.id} entries`);
+    for (const e of expand(d.edges)) if (e.short || e.hidden) old.push(`${e.from}>${e.to} ${e.short ? "short" : "hidden"}`);
+    if (old.length) lint.push(`options with no effect any more (place with rows instead): ${old.slice(0, 6).join(", ")}${old.length > 6 ? ` … ${old.length - 6} more` : ""}`);
+    return { items, lint, w: L.w, h: L.h };
   }
 
   // ---- lint after layout: flow direction, lines through boxes, overlaps
@@ -233,7 +333,7 @@
   }
 
   // ---- the page: legend (auto from weights) + every diagram side by side, each with a big title
-  async function layoutPage(diags, ELK, { only } = {}) {
+  async function layoutPage(diags, A, { only } = {}) {
     const items = [], lint = [];
     let X = 0;
     const ds = diags.filter((d) => !only || d.title === only);
@@ -243,8 +343,8 @@
     lint.push(...lintDefs(diags));
     for (const d of ds) {
       const pre = lintGraph(d).map((m) => `${d.title}: ${m}`);
-      const r = await layoutOne(d, ELK);
-      const post = lintLayout(r.items).map((m) => `${d.title}: ${m}`);
+      const r = await layoutOne(d, A);
+      const post = [...r.lint, ...lintLayout(r.items)].map((m) => `${d.title}: ${m}`);
       lint.push(...pre, ...post);
       const tfs = d.titleSize ?? 200, sub = d.sub ?? "", y0 = tfs * 1.2 + th(sub, 26) + 80;
       items.push({ t: "text", id: `${d.title}.title`, x: X, y: 0, s: d.title, fs: tfs, bold: true });
@@ -262,7 +362,7 @@
   function legend(weights) {
     const rows = [
       [{ kind: "data", s: "data" }, "DOTTED = DATA (tokens drawn inside: one square = one vector, … = more of the same)"],
-      [{ kind: "data", input: true, s: "input" }, "THICK DOTTED = A MODEL INPUT (top row)"],
+      [{ kind: "data", input: true, s: "input" }, "THICK DOTTED = A MODEL INPUT"],
       [{ kind: "op", w: "none", s: "op" }, "SOLID = A TRANSFORMATION; its colour = whose weights (same colour = the same weights)"],
       ...Object.entries(weights).map(([k, v]) => [{ kind: "op", w: k, s: k, fillc: v }, ""]),
     ];
