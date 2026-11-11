@@ -66,7 +66,8 @@ async function render() {
   stage.innerHTML = DG.toSvg(page, diags, { img: (s) => new URL(s, srcURL).href });
   svg = stage.firstElementChild; svg.removeAttribute("width"); svg.removeAttribute("height");
   svg.insertAdjacentHTML("beforeend", '<g id="overlay"></g>');
-  if (!cam) fit(); else setCam();
+  if (!cam && v0?.length === 3 && v0.every(Number.isFinite)) { cam = { x: v0[0], y: v0[1], z: v0[2] }; setCam(); }
+  else if (!cam) fit(); else setCam();
   $("nissues").textContent = page.lint.length ? `${page.lint.length} issue${page.lint.length > 1 ? "s" : ""}` : "";
   $("issues").textContent = page.lint.join("\n");
   applyMoves();
@@ -75,7 +76,13 @@ async function render() {
 $("nissues").onclick = () => { const s = $("issues").style; s.display = s.display === "block" ? "none" : "block"; };
 
 // ---- camera: the svg viewBox
-function setCam() { const r = stage.getBoundingClientRect(); svg.setAttribute("viewBox", `${cam.x} ${cam.y} ${r.width / cam.z} ${r.height / cam.z}`); }
+// the view lives in the URL (&v=x,y,zoom): reload or share and you land on the same spot
+let camT = 0;
+function setCam() {
+  const r = stage.getBoundingClientRect(); svg.setAttribute("viewBox", `${cam.x} ${cam.y} ${r.width / cam.z} ${r.height / cam.z}`);
+  clearTimeout(camT); camT = setTimeout(() => { const u = new URL(location.href); u.searchParams.set("v", `${Math.round(cam.x)},${Math.round(cam.y)},${+cam.z.toFixed(4)}`); history.replaceState(null, "", u); }, 250);
+}
+const v0 = q.get("v")?.split(",").map(Number);
 function fit() {
   const b = DG.bbox(page.items), r = stage.getBoundingClientRect(), z = Math.min(r.width / (b.w + 200), r.height / (b.h + 200));
   cam = { z, x: b.x - 100 - (r.width / z - b.w - 200) / 2, y: b.y - 100 }; setCam();
