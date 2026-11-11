@@ -11,6 +11,7 @@ Spec (what this must do): `SPEC.md`. Example: gaze-lab `doc/arch/x20b/arch.js` (
 A diagram is one plain `.js` file of global calls, with no imports and no coordinates:
 
 ```js
+title("tiny example: image → gaze");          // the browser tab reads "diagram: <title>"; be specific
 diagram("tiny", {
   sub: "one line under the title",
   weights: { enc: "blue", head: "lime" },   // op colour = whose weights; also the legend
@@ -29,6 +30,7 @@ diagram("tiny", {
 - **Edges:** an edge is `E(from, to, label, { ink, hidden, short })` or a chain string `"a>b>c"`. `hidden` only orders the layout.
 - **Links:** `links: [L(a, b, "SAME WEIGHTS")]` draws a dashed line that carries no data.
 - **Spec options:** `mirror: true` flips the finished layout. Call `diagram` several times to put several diagrams side by side.
+- **Title:** one `title("…")` per file names the page (browser tab `diagram: …`). Say specifically what it shows; `dg.ts` flags a missing one.
 - **Types:** everything is typed in `dg.d.ts`.
 
 ## Check (run after every edit)

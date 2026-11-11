@@ -18,8 +18,9 @@
   const G = (id, title, kids, o = {}) => ({ id, kind: "group", title, kids, ...o });
   const E = (from, to, s = "", o = {}) => ({ from, to, s, ...o });
   const L = (a, b, s = "") => ({ a, b, s });
-  const all = [];
+  const all = [], meta = { title: "" };
   const diagram = (title, spec) => { all.push({ title, ...spec }); };
+  const title = (s) => { meta.title = String(s); };  // the page's name (browser tab): what this page shows, specifically
 
   // ---- text measure (monospace: every glyph the same width)
   const lines = (s) => String(s ?? "").split("\n");
@@ -302,6 +303,6 @@
     }).join("\n");
   }
 
-  Object.assign(root, { D, I, P, Pm: P, O, G, E, L, diagram });
-  root.DG = { all, layoutPage, toSvg, describe, bbox, lintGraph, edgeSvg, linkSvg, reset: () => { all.length = 0; } };
+  Object.assign(root, { D, I, P, Pm: P, O, G, E, L, diagram, title });
+  root.DG = { all, meta, layoutPage, toSvg, describe, bbox, lintGraph, edgeSvg, linkSvg, reset: () => { all.length = 0; meta.title = ""; } };
 })(globalThis);

@@ -27,7 +27,8 @@ const drawnAt = (id) => p.evaluate((id) => { const g = document.querySelector(`[
   const m = t ? t.match(/translate\(([-\d.e]+),([-\d.e]+)\)/).slice(1).map(Number) : [0, 0]; return [+r.getAttribute('x') + m[0], +r.getAttribute('y') + m[1]]; }, id);
 
 // 1. one box: moves, lines follow, drawn where place() says
-await fresh(); await view('k.c.blk');
+await fresh(); check('tab title comes from title()', (await p.title()).startsWith('diagram: ') && (await p.title()).length > 'diagram: '.length + 3, await p.title());
+await view('k.c.blk');
 let a = await places(['k.c.blk']); await drag(await centre('k.c.blk'), 120, 40); let z = await places(['k.c.blk']);
 check('drag one box moves it', Math.round(z['k.c.blk'].x - a['k.c.blk'].x) !== 0, JSON.stringify([a, z]));
 let L = await linesOk(['k.c.blk']); check('its lines end on it', !L.length, L.join(', '));

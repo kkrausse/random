@@ -34,4 +34,5 @@ declare const Pm: typeof P;
 /** an outline round part of the graph; deck = stacked cards (one per image / frame) */ declare function G(id: string, title: string, kids: Item[], o?: GroupOpts): Group;
 /** data flow from -> to */ declare function E(from: string, to: string, s?: string, o?: EdgeOpts): Edge;
 /** same weights: dashed line, no arrowheads */ declare function L(a: string, b: string, s?: string): Link;
+/** the page's name, shown as the browser tab "diagram: <s>": say specifically what this page shows */ declare function title(s: string): void;
 /** one diagram (call several times for several side by side) */ declare function diagram(title: string, spec: Spec): void;

@@ -50,7 +50,8 @@ function poll() {
   f.onload = async () => {
     try {
       if (window.__dgErr) { $("when").textContent = "error: " + window.__dgErr; return; }
-      const all = JSON.parse(JSON.stringify(f.contentWindow.DG?.all ?? []));
+      const all = JSON.parse(JSON.stringify(f.contentWindow.DG?.all ?? [])), name = String(f.contentWindow.DG?.meta?.title ?? "");
+      document.title = "diagram: " + (name || SRC.split("/").pop());
       if (!all.length) { $("when").textContent = `${SRC} drew nothing (no diagram(...) call)`; return; }
       const k = JSON.stringify(all); if (k === key) return; key = k; fb = { moves: {}, notes: [] };
       DG.reset(); DG.all.push(...all);

@@ -59,7 +59,7 @@ await Bun.write(png, out.asPng());
 const n = (t: string) => page.items.filter((i: any) => i.t === t && !i.legend && !String(i.id).startsWith("legend.")).length;
 console.log(`${DG.all.filter((d: any) => !only || d.title === only).map((d: any) => d.title).join(", ")}: ${n("node")} boxes, ${n("group")} groups, ${n("edge")} edges` +
   ` · ${out.width}×${out.height} px PNG (scale ${scale.toFixed(2)}): ${png}`);
-const issues = [...types.map((l) => `type: ${l}`), ...page.lint];
+const issues = [...types.map((l) => `type: ${l}`), ...(DG.meta.title ? [] : ['no title("…") call: give the page a specific name (it is the browser tab)']), ...page.lint];
 if (issues.length) { console.log(`${issues.length} issue(s):`); for (const l of issues.slice(0, 40)) console.log("  " + l); if (issues.length > 40) console.log(`  … ${issues.length - 40} more`); }
 else console.log("no issues");
 if (pub) {
