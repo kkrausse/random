@@ -29,11 +29,15 @@ const tc = Bun.spawn([`${here}/node_modules/.bin/tsgo`, "--ignoreConfig", "--noE
 // run the file
 const G_: any = globalThis, DG = G_.DG;
 DG.reset();
-try { new Function(await Bun.file(path).text())(); } catch (e: any) {
-  console.log(`ERROR running ${file}: ${e.message}\n${String(e.stack).split("\n").slice(1, 3).join("\n")}`); process.exit(1);
+import { runInThisContext } from "vm";
+try { runInThisContext(await Bun.file(path).text(), { filename: path }); } catch (e: any) {  // real file name + line numbers
+  const at = String(e.stack).split("\n").find((l) => l.includes(basename(path))) ?? "";
+  console.log(`ERROR running ${basename(path)}: ${e.message} ${at.trim()}`); process.exit(1);
 }
+const titles = DG.all.map((d: any) => d.title);
+if (only && !titles.includes(only)) { console.log(`--only ${only}: no such diagram (have: ${titles.join(", ")})`); process.exit(1); }
 const page = await DG.layoutPage(DG.all, ELK, { only });
-const types = (await new Response(tc.stdout).text()).trim().split("\n").filter(Boolean).map((l) => l.replace(path, basename(path)));
+const types = (await new Response(tc.stdout).text()).trim().split("\n").filter(Boolean).map((l) => l.replace(/^\S*?([^/\s]+\.js)\(/, "$1("));
 
 // render
 let view;
@@ -52,7 +56,7 @@ const out = r.render();
 await Bun.write(png, out.asPng());
 
 // report
-const n = (t: string) => page.items.filter((i: any) => i.t === t).length;
+const n = (t: string) => page.items.filter((i: any) => i.t === t && !i.legend && !String(i.id).startsWith("legend.")).length;
 console.log(`${DG.all.filter((d: any) => !only || d.title === only).map((d: any) => d.title).join(", ")}: ${n("node")} boxes, ${n("group")} groups, ${n("edge")} edges` +
   ` · ${out.width}×${out.height} px PNG (scale ${scale.toFixed(2)}): ${png}`);
 const issues = [...types.map((l) => `type: ${l}`), ...page.lint];

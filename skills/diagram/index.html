@@ -45,12 +45,13 @@ function poll() {
   if (busy) return; busy = true;
   const f = document.createElement("iframe"); f.style.display = "none";
   f.srcdoc = `<script>onerror = (m, u, l) => { parent.__dgErr = m + " (line " + l + ")"; }<\/script><script src="${coreURL}"><\/script>` +
-    `<script src="${srcURL}${srcURL.includes("?") ? "&" : "?"}t=${Date.now()}"><\/script>`;
+    `<script src="${srcURL}${srcURL.includes("?") ? "&" : "?"}t=${Date.now()}" onerror="parent.__dgErr = 'could not load ${SRC}'"><\/script>`;
   window.__dgErr = null;
   f.onload = async () => {
     try {
       if (window.__dgErr) { $("when").textContent = "error: " + window.__dgErr; return; }
       const all = JSON.parse(JSON.stringify(f.contentWindow.DG?.all ?? []));
+      if (!all.length) { $("when").textContent = `${SRC} drew nothing (no diagram(...) call)`; return; }
       const k = JSON.stringify(all); if (k === key) return; key = k; fb = { moves: {}, notes: [] };
       DG.reset(); DG.all.push(...all);
       await render(); $("when").textContent = "";
@@ -65,7 +66,7 @@ async function render() {
   page = await DG.layoutPage(diags, ELK, { only: ONLY });
   stage.innerHTML = DG.toSvg(page, diags, { img: (s) => new URL(s, srcURL).href });
   svg = stage.firstElementChild; svg.removeAttribute("width"); svg.removeAttribute("height");
-  svg.insertAdjacentHTML("beforeend", '<g id="overlay"></g>');
+  svg.insertAdjacentHTML("beforeend", '<g id="overlay"></g>'); index();
   if (!cam && v0?.length === 3 && v0.every(Number.isFinite)) { cam = { x: v0[0], y: v0[1], z: v0[2] }; setCam(); }
   else if (!cam) fit(); else setCam();
   $("nissues").textContent = page.lint.length ? `${page.lint.length} issue${page.lint.length > 1 ? "s" : ""}` : "";
@@ -98,16 +99,20 @@ stage.addEventListener("wheel", (e) => {
 }, { passive: false });
 
 // ---- moves: a dragged group carries everything inside it
-function kids(id) {
-  const g = page.items.find((i) => i.id === id); if (!g || g.t !== "group") return [];
-  const inn = (i) => i.x >= g.x && i.y >= g.y && i.x + (i.w ?? 0) <= g.x + g.w && i.y + (i.h ?? 0) <= g.y + g.h;
-  return page.items.filter((i) => i.id !== id && (i.t === "node" || i.t === "group") && inn(i)).map((i) => i.id);  // lines follow their ends
+// built once per render: ITEM (id -> item), ANC (id -> the outlines it sits in), KIDS (outline -> everything inside it)
+let ITEM = new Map(), ANC = new Map(), KIDS = new Map(), DRAWN = new Map();
+function index() {
+  ITEM = new Map(page.items.map((i) => [i.id, i])); ANC = new Map(); KIDS = new Map(); DRAWN = new Map();
+  const walk = (ns, anc) => ns.forEach((n) => { if (!n?.id) return; ANC.set(n.id, anc); for (const a of anc) KIDS.get(a).push(n.id);
+    if (n.kind === "group") { KIDS.set(n.id, []); walk(n.kids ?? [], [...anc, n.id]); } });
+  DG.all.forEach((d) => walk(d.nodes ?? [], []));
 }
+const kids = (id) => KIDS.get(id) ?? [];  // lines are never contents: they follow their ends
 // ---- THE position of everything: layout place + moves. Drawing, selection, box-select and feedback all read only this.
-const itemOf = (id) => page.items.find((i) => i.id === id);
+const itemOf = (id) => ITEM.get(id);
 function offset(id) {  // its own move + the moves of every outline it sits in
   let x = 0, y = 0;
-  for (const [k, m] of Object.entries(fb.moves)) if (k === id || kids(k).includes(id)) { x += m[0]; y += m[1]; }
+  for (const k of [id, ...(ANC.get(id) ?? [])]) { const m = fb.moves[k]; if (m) { x += m[0]; y += m[1]; } }
   return [x, y];
 }
 function linePts(it) {  // a line follows its two boxes: same offset -> shifted whole, else redrawn between the moved ends
@@ -130,6 +135,8 @@ function applyMoves() {  // draw every item where place() says it is
     const g = gOf(it.id); if (!g) continue;
     if (it.t === "node" || it.t === "group") { const [dx, dy] = offset(it.id); dx || dy ? g.setAttribute("transform", `translate(${dx},${dy})`) : g.removeAttribute("transform"); continue; }
     if (it.t !== "edge" && it.t !== "link") continue;
+    const a = offset(it.from), b = offset(it.to), k = a.join() + "|" + b.join();
+    if ((DRAWN.get(it.id) ?? "0,0|0,0") === k) continue; DRAWN.set(it.id, k);  // its ends did not move since it was drawn
     const pts = linePts(it), d = [pts[0][0] - it.pts[0][0], pts[0][1] - it.pts[0][1]];
     const tmp = document.createElementNS("http://www.w3.org/2000/svg", "g");
     tmp.innerHTML = it.t === "edge" ? DG.edgeSvg({ ...it, pts, lab: it.lab && { ...it.lab, x: it.lab.x + d[0], y: it.lab.y + d[1] } }) : DG.linkSvg({ ...it, pts });
@@ -145,24 +152,25 @@ function drawSel() {
 }
 let space = false, drag = null;
 window.addEventListener("keydown", (e) => {
-  if (e.target.tagName === "INPUT") return;
+  if (e.target.tagName === "INPUT" || e.metaKey || e.ctrlKey || e.altKey) return;  // browser shortcuts stay the browser's
   if (e.code === "Space") { space = true; stage.classList.add("pan"); e.preventDefault(); }
   if (e.key === "Escape") { sel.clear(); drawSel(); }
   if (e.key === "f" || e.key === "F") fit();
-  if ((e.key === "r" || e.key === "R") && !e.metaKey && !e.ctrlKey) resetMoves();
+  if (e.key === "r" || e.key === "R") resetMoves();
   if ((e.key === "n" || e.key === "N") && sel.size) {
     const t = prompt(`note on ${[...sel].join(", ")}:`); if (t) { fb.notes.push(`${[...sel].join(", ")}: ${t}`); saveFb(); }
   }
 });
 window.addEventListener("keyup", (e) => { if (e.code === "Space") { space = false; stage.classList.remove("pan"); } });
 stage.addEventListener("pointerdown", (e) => {
-  if (!cam) return; e.preventDefault(); stage.setPointerCapture(e.pointerId);  // no browser text selection while dragging
+  if (!cam || e.button === 2) return; e.preventDefault(); stage.setPointerCapture(e.pointerId);  // no browser text selection while dragging
   const p = toD(e);
   if (space || e.button === 1) { drag = { kind: "pan", sx: e.clientX, sy: e.clientY, cx: cam.x, cy: cam.y }; return; }
   const g = top_(e.target);
   if (g) {
     const id = g.dataset.id;
-    if (e.shiftKey) { sel.has(id) ? sel.delete(id) : sel.add(id); } else if (!sel.has(id)) sel = new Set([id]);
+    if (e.shiftKey && sel.has(id)) { sel.delete(id); drawSel(); drag = null; return; }  // shift-click to deselect: nothing moves
+    if (e.shiftKey) sel.add(id); else if (!sel.has(id)) sel = new Set([id]);
     drawSel();
     // only boxes and outlines move; lines follow their boxes
     // a box inside a selected outline moves with the outline only (once), so drag only the outermost selected
@@ -192,6 +200,7 @@ stage.addEventListener("pointermove", (e) => {
   drawSel();
   svg.querySelector("#overlay").insertAdjacentHTML("beforeend", `<rect class="band" x="${x0}" y="${y0}" width="${w}" height="${h}"/>`);
 });
+stage.addEventListener("pointercancel", () => { drag = null; drawSel(); });
 stage.addEventListener("pointerup", () => { if (drag?.kind === "move" && drag.moved) saveFb(); if (drag?.kind === "band") drawSel(); drag = null; });
 
 // ---- feedback: moves described relative to the nearest box, plus notes; copied as text for the agent

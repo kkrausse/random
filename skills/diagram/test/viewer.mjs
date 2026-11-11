@@ -64,5 +64,18 @@ await view('k.L', 0.4);
 const inside = await p.evaluate(() => { const q = place('k.L'), r = document.querySelector('#stage svg').getBoundingClientRect(), vb = document.querySelector('#stage svg').viewBox.baseVal;
   const sx = r.width / vb.width, X = (q.x + 30 - vb.x) * sx + r.x, Y = (q.y + q.h * 0.97 - vb.y) * sx + r.y; return document.elementFromPoint(X, Y)?.closest('[data-id]')?.dataset.id ?? '(empty)'; });
 check('inside of an outline is empty space', inside === '(empty)' || inside !== 'k.L', inside);
+// 6. shift-click to deselect then a small drag moves nothing; browser shortcuts are not ours; drag frame is fast
+await fresh(); await view('k.cp', 0.8);
+const c1 = await centre('k.c.blk'), c2 = await centre('k.c1');
+await p.mouse.click(...c1); await p.keyboard.down('Shift'); await p.mouse.click(...c2); await drag(c2, 60, 30); await p.keyboard.up('Shift');
+check('shift-click deselect + drag moves nothing', (await p.evaluate(() => Object.keys(fb.moves).length)) === 0, JSON.stringify(await p.evaluate(() => fb.moves)));
+const z0 = await p.evaluate(() => cam.z); await p.keyboard.press('Control+f');
+check('Ctrl+F leaves the view alone', (await p.evaluate(() => cam.z)) === z0);
+const ms = await p.evaluate(() => { fb.moves = { 'k.cp': [10, 10], 'k.tb': [5, 5], 'k.xx': [3, 3] }; const t = performance.now(); for (let i = 0; i < 5; i++) { fb.moves['k.cp'][0] += 1; applyMoves(); } return (performance.now() - t) / 5; });
+check('a drag frame takes < 30 ms', ms < 30, ms.toFixed(1) + ' ms');
+L = await linesOk(['k.c.blk', 'k.c.t', 'k.x.m', 'k.xx']); check('lines still end on boxes after fast redraws', !L.length, L.join(', '));
+// 7. a missing diagram file says so
+const p2 = await b.newPage(); await p2.goto(URL_.replace(/\?s=[^&]*/, '?s=file:///nonexistent/x.js')); await p2.waitForTimeout(3000);
+check('missing file is reported', (await p2.evaluate(() => document.getElementById('bar').textContent)).includes('could not load'));
 check('no page errors', !errs.length, errs.join(' | '));
 await b.close(); process.exit(fails ? 1 : 0);
