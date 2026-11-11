@@ -106,8 +106,9 @@ function kids(id) {
 }
 function applyMoves() {
   for (const g of svg.querySelectorAll("[transform]")) g.removeAttribute("transform");
+  // a box's offset = its own move + the moves of every outline it sits in
   const delta = new Map();
-  for (const [id, m] of Object.entries(fb.moves)) for (const i of [id, ...kids(id)]) delta.set(i, m);
+  for (const [id, m] of Object.entries(fb.moves)) for (const i of [id, ...kids(id)]) { const d = delta.get(i) ?? [0, 0]; delta.set(i, [d[0] + m[0], d[1] + m[1]]); }
   // arrows: both ends moved the same way -> shift the whole line; one end moved -> redraw it from the moved ends
   for (const it of page.items) {
     if (it.t !== "edge" && it.t !== "link") continue;
@@ -138,7 +139,7 @@ function boxOf(id) {
   if (it && (it.t === "node" || it.t === "group")) return { x: it.x + m[0], y: it.y + m[1], w: it.w, h: it.h };
   const b = g.getBBox(); return { x: b.x, y: b.y, w: b.width, h: b.height };
 }
-function moveOf(id) { for (const [k, m] of Object.entries(fb.moves)) if (k === id || kids(k).includes(id)) return m; return [0, 0]; }
+function moveOf(id) { let x = 0, y = 0; for (const [k, m] of Object.entries(fb.moves)) if (k === id || kids(k).includes(id)) { x += m[0]; y += m[1]; } return [x, y]; }
 function drawSel() {
   const o = svg?.querySelector("#overlay"); if (!o) return;
   o.innerHTML = [...sel].map(boxOf).filter(Boolean).map((b) => `<rect class="sel-box" x="${b.x - 4}" y="${b.y - 4}" width="${b.w + 8}" height="${b.h + 8}" rx="6"/>`).join("");
@@ -164,7 +165,9 @@ stage.addEventListener("pointerdown", (e) => {
     const id = g.dataset.id;
     if (e.shiftKey) { sel.has(id) ? sel.delete(id) : sel.add(id); } else if (!sel.has(id)) sel = new Set([id]);
     drawSel();
-    drag = { kind: "move", p, ids: [...sel], base: Object.fromEntries([...sel].map((i) => [i, fb.moves[i] ?? [0, 0]])), moved: false };
+    // only boxes and outlines move; lines follow their boxes
+    const movable = [...sel].filter((i) => { const it = page.items.find((x) => x.id === i); return it && (it.t === "node" || it.t === "group"); });
+    drag = movable.length ? { kind: "move", p, ids: movable, base: Object.fromEntries(movable.map((i) => [i, fb.moves[i] ?? [0, 0]])), moved: false } : null;
   } else {
     if (!e.shiftKey) sel.clear();
     drag = { kind: "band", p, keep: new Set(sel) }; drawSel();

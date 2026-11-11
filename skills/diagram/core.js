@@ -282,7 +282,7 @@
   function toSvg(page, diags, { view, img = (s) => s, scale = 1 } = {}) {
     const weights = Object.assign({}, ...diags.map((d) => d.weights ?? {}));
     const B = bbox(page.items), v = view ?? { x: B.x - 60, y: B.y - 60, w: B.w + 120, h: B.h + 120 };
-    const order = { group: 0, node: 1, edge: 2, link: 3, text: 4 };
+    const order = { group: 0, edge: 1, link: 2, node: 3, text: 4 };  // lines under boxes: a press on a box always gets the box
     const its = [...page.items].sort((a, b) => order[a.t] - order[b.t] || (a.depth ?? 0) - (b.depth ?? 0));
     const body = its.map((it) => it.t === "node" ? nodeSvg(it, weights, img) : it.t === "group" ? groupSvg(it) : it.t === "edge" ? edgeSvg(it)
       : it.t === "link" ? linkSvg(it) : `<g data-id="${esc(it.id)}">${txt(it.x, it.y, it.s, it.fs, { ink: it.ink, bold: it.bold })}</g>`).join("\n");
