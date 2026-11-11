@@ -1,6 +1,7 @@
 // Types for a diagram file (globals from core.js). `bun dg.ts <file.js>` type-checks against these.
 type Colour = string; // a name (gray blue teal yellow green violet cyan orange pink lime indigo red white) or any CSS colour
-type Tok = ([count: number, colour: Colour, caption?: string, shown?: number] | "…")[];
+// plus: a vector ADDED onto each of these tokens (e.g. + e_k), drawn as a band of that colour under every square
+type Tok = ([count: number, colour: Colour, caption?: string, shown?: number, plus?: Colour | Colour[]] | "…")[];
 interface NodeOpts {
   ink?: Colour;          // border / text colour
   sw?: number;           // border width
