@@ -74,7 +74,7 @@ let avoid = null, AV = null;
 const router = () => (avoid ??= AvoidLib.load(AVOID_WASM).then(() => AvoidLib.getInstance()));
 async function render() {
   const diags = [...DG.all];
-  AV = await router(); routed = new Map();
+  AV = await router(); routed = new Map(); routeWorker();
   page = await DG.layoutPage(diags, AV, { only: ONLY });
   stage.innerHTML = DG.toSvg(page, diags, { img: (s) => new URL(s, srcURL).href });
   svg = stage.firstElementChild; svg.removeAttribute("width"); svg.removeAttribute("height");
@@ -131,17 +131,37 @@ function offset(id) {  // its own move + the moves of every outline it sits in
 let routed = new Map(), nRoute = 0, rtT = 0;
 const endsKey = (it) => offset(it.from).join() + "|" + offset(it.to).join();
 const routeOf = (it) => { const r = routed.get(it.id); return r && r.k === endsKey(it) ? r : null; };
+// routing runs in a worker (libavoid + core.js, started from their own source, so this works on file:// too): a big
+// diagram takes a second or two in the browser and must never freeze the page. Every line of a diagram is routed
+// again together, exactly as dg.ts does, so lines never land on each other's tracks.
+let RW = null, rwJob = 0; const rwPending = new Map(), rwLatest = new Map();
+function routeWorker() {
+  if (RW !== null) return RW;
+  try {
+    const main = `onmessage = async (m) => { const { job, d, rects } = m.data; await (self.__A ??= AvoidLib.load(AVOID_WASM));
+      postMessage({ job, items: d ? DG.reroute(AvoidLib.getInstance(), d, (id) => rects[id]) : [] }); };`;
+    RW = new Worker(URL.createObjectURL(new Blob([AVOID_SRC, "\n", DG.src, "\n", main], { type: "text/javascript" })));
+    RW.onmessage = (m) => { const p = rwPending.get(m.data.job); rwPending.delete(m.data.job);
+      if (p && rwLatest.get(p.title) === m.data.job) applyRoutes(m.data.items, p.keys); };
+    RW.onerror = (e) => { console.error("route worker:", e.message); RW = false; };
+    RW.postMessage({ job: 0 });  // warm up: load the wasm now, not on the first drag
+  } catch (e) { console.error("route worker:", e); RW = false; }
+  return RW;
+}
+function applyRoutes(items, keys) {  // keys: each line's ends' offsets when it was sent (a line moved since keeps its dog-leg)
+  for (const it of items) if (keys.has(it.id)) routed.set(it.id, { k: keys.get(it.id), pts: it.pts, lab: it.lab, n: ++nRoute });
+  applyMoves(); drawSel();
+}
 function rerouteNow() {
   clearTimeout(rtT); if (!AV || !page) return;
-  // only the lines that need it: those with a moved end, and those now running through a moved box
-  const moved = page.items.filter((i) => (i.t === "node" || i.t === "group") && offset(i.id).some((v) => v)).map((i) => place(i.id));
-  const hits = (P) => moved.some((B) => P.some((q, i) => i && Math.max(q[0], P[i - 1][0]) > B.x && Math.min(q[0], P[i - 1][0]) < B.x + B.w && Math.max(q[1], P[i - 1][1]) > B.y && Math.min(q[1], P[i - 1][1]) < B.y + B.h));
-  const only = new Set(page.items.filter((i) => (i.t === "edge" || i.t === "link") && i.from && (endsKey(i) !== "0,0|0,0" || hits(linePts(i)))).map((i) => i.id));
-  const ds = new Set([...only].map((id) => DIAG.get(itemOf(id).from)).filter(Boolean));
-  for (const d of ds) for (const it of DG.reroute(AV, d, (id) => place(id), only)) {
-    const old = itemOf(it.id); if (old) routed.set(it.id, { k: endsKey(old), pts: it.pts, lab: it.lab, n: ++nRoute });
+  const ds = new Set(page.items.filter((i) => (i.t === "node" || i.t === "group") && offset(i.id).some((v) => v)).map((i) => DIAG.get(i.id)).filter(Boolean));
+  for (const d of ds) {
+    const rects = {}; for (const [id, dd] of DIAG) if (dd === d) rects[id] = place(id);
+    const keys = new Map(page.items.filter((i) => (i.t === "edge" || i.t === "link") && i.from && DIAG.get(i.from) === d).map((i) => [i.id, endsKey(i)]));
+    const w = routeWorker();
+    if (w) { const job = ++rwJob; rwPending.set(job, { keys, title: d.title }); rwLatest.set(d.title, job); w.postMessage({ job, d, rects }); }
+    else applyRoutes(DG.reroute(AV, d, (id) => rects[id]), keys);
   }
-  applyMoves(); drawSel();
 }
 function linePts(it) {  // a line follows its two boxes: routed again once a drag rests; meanwhile shifted whole, or a dog-leg between the moved ends
   const r = routeOf(it); if (r) return r.pts;

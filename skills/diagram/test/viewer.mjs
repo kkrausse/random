@@ -111,8 +111,8 @@ const through = (ids) => p.evaluate((ids) => {  // lines touching ids that cross
 }, ids);
 await fresh(); await view('k.tb', 0.6);
 const tb0 = await centre('k.tb');
-await p.mouse.move(...tb0); await p.mouse.down(); await p.mouse.move(tb0[0] + 160, tb0[1] + 40, { steps: 6 }); await p.waitForTimeout(400);
-const nHeld = await p.evaluate(() => page.items.filter((e) => e.t === 'edge' && (e.from === 'k.tb' || e.to === 'k.tb') && routeOf(e)).length);
+await p.mouse.move(...tb0); await p.mouse.down(); await p.mouse.move(tb0[0] + 160, tb0[1] + 40, { steps: 6 });
+const nHeld = await p.waitForFunction(() => page.items.filter((e) => e.t === 'edge' && (e.from === 'k.tb' || e.to === 'k.tb') && routeOf(e)).length, null, { timeout: 5000 }).then((h) => h.jsonValue()).catch(() => 0);
 check('a drag held still: its lines are routed again', nHeld > 0, nHeld);
 // drop it on a clear spot (a box dropped on another box has to have lines through it)
 const drop = await p.evaluate(([dx0, dy0]) => { const B = place('k.tb'), z = cam.z, base = fb.moves['k.tb'] ?? [0, 0];
@@ -120,10 +120,16 @@ const drop = await p.evaluate(([dx0, dy0]) => { const B = place('k.tb'), z = cam
   for (let sx = -400; sx <= 400; sx += 40) for (const sy of [60, 120, -40]) { const x = B.x + (sx - dx0) / z, y = B.y + (sy - dy0) / z;
     if (!boxes.some((o) => x < o.x + o.w + 30 && o.x < x + B.w + 30 && y < o.y + o.h + 30 && o.y < y + B.h + 30)) return [sx, sy]; } }, [160, 40]);
 await p.mouse.move(tb0[0] + drop[0], tb0[1] + drop[1], { steps: 6 }); await p.mouse.up();
-const nUp = await p.evaluate(() => page.items.filter((e) => e.t === 'edge' && (e.from === 'k.tb' || e.to === 'k.tb')).every((e) => routeOf(e)));
+const nUp = await p.waitForFunction(() => page.items.filter((e) => e.t === 'edge' && (e.from === 'k.tb' || e.to === 'k.tb')).every((e) => routeOf(e)), null, { timeout: 5000 }).then(() => true).catch(() => false);
 check('on release: all its lines routed again', nUp);
 L = await linesOk(['k.tb']); check('…ending on it', !L.length, L.join(', '));
 const T = await through(['k.tb']); check('…and not through other boxes', !T.length, T.join(', '));
+check('…and no two lines share a track', await p.evaluate(() => { const its = page.items.filter((i) => (i.t === 'edge' || i.t === 'link') && i.from).map((i) => ({ id: i.id, P: linePts(i) }));
+  const segs = its.flatMap((e) => e.P.slice(1).map((q, i) => ({ id: e.id, a: e.P[i], b: q })));
+  for (let i = 0; i < segs.length; i++) for (let j = i + 1; j < segs.length; j++) { const s1 = segs[i], s2 = segs[j]; if (s1.id === s2.id) continue;
+    const v1 = Math.abs(s1.a[0] - s1.b[0]) < 0.5, v2 = Math.abs(s2.a[0] - s2.b[0]) < 0.5; if (v1 !== v2) continue; const k = v1 ? 0 : 1, o = 1 - k;
+    if (Math.abs(s1.a[k] - s2.a[k]) > 1.5) continue; const lo = Math.max(Math.min(s1.a[o], s1.b[o]), Math.min(s2.a[o], s2.b[o])), hi = Math.min(Math.max(s1.a[o], s1.b[o]), Math.max(s2.a[o], s2.b[o]));
+    if (hi - lo > 4) return false; } return true; }));
 check('…drawn as routed', await p.evaluate(() => { const e = page.items.find((e) => e.t === 'edge' && e.to === 'k.tb'), g = document.querySelector(`[data-id="${CSS.escape(e.id)}"] path:last-of-type`);
   return g.getAttribute('d').split('L').length === routeOf(e).pts.length; }));
 await p.keyboard.press('r'); await p.waitForTimeout(2500);
