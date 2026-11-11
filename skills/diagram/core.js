@@ -50,6 +50,15 @@
     return { w, h };
   }
 
+  // ---- an edge may end on part of a data box's token strip: "id@aux" (the segment whose caption starts with "aux"),
+  // or "id@cls..patches" (from the "cls" segment through the "patches" one). Returns [id, from seg index, to seg index] or null.
+  const baseId = (t) => String(t).split("@")[0];
+  function segOf(n, t) {
+    const key = String(t).split("@")[1]; if (key === undefined) return null;
+    const segs = strip(n?.tok ?? []).segs, find = (k) => segs.findIndex((g) => !g.dots && String(g.cap).toLowerCase().startsWith(k.trim().toLowerCase()));
+    const [a, b = a] = key.split(".."), i = find(a), j = find(b);
+    return i < 0 || j < 0 ? undefined : [i, Math.max(i, j)];
+  }
   // ---- edges given as "a>b>c" strings or E(...) objects
   const expand = (es) => (es ?? []).flatMap((e) => {
     if (typeof e !== "string") return [e];
@@ -68,9 +77,10 @@
     walk(d.nodes ?? []);
     const es = expand(d.edges), inc = new Map(), outc = new Map();
     for (const e of es) {
-      for (const end of [e.from, e.to]) if (!nodes.has(end) && !groups.has(end)) out.push(`edge ${e.from} > ${e.to}: unknown id ${end}`);
+      for (const end of [e.from, baseId(e.to)]) if (!nodes.has(end) && !groups.has(end)) out.push(`edge ${e.from} > ${e.to}: unknown id ${end}`);
+      if (String(e.to).includes("@") && nodes.has(baseId(e.to)) && !segOf(nodes.get(baseId(e.to)), e.to)) out.push(`edge ${e.from} > ${e.to}: ${baseId(e.to)} has no token segment "${String(e.to).split("@")[1]}" (captions: ${strip(nodes.get(baseId(e.to)).tok ?? []).segs.filter((g) => !g.dots).map((g) => g.cap).join(", ")})`);
       if (e.hidden) continue;
-      inc.set(e.to, (inc.get(e.to) ?? 0) + 1); outc.set(e.from, (outc.get(e.from) ?? 0) + 1);
+      inc.set(baseId(e.to), (inc.get(baseId(e.to)) ?? 0) + 1); outc.set(e.from, (outc.get(e.from) ?? 0) + 1);
     }
     for (const l of d.links ?? []) for (const end of [l.a, l.b]) if (!nodes.has(end) && !groups.has(end)) out.push(`link ${l.a} ~ ${l.b}: unknown id ${end}`);
     for (const [id, n] of nodes) {
@@ -128,9 +138,21 @@
       const succ = [...new Set(es.filter((e) => !e.hidden && G_.entries.includes(e.from)).map((e) => e.to))];
       for (const f of G_.entries) for (const t of succ) if (!G_.entries.includes(t) && !has(f, t)) es.push({ from: f, to: t, s: "", hidden: true });
     }
-    const known = (id) => leaf.has(id) || grp.has(id);
+    const known = (id) => leaf.has(baseId(id)) || grp.has(baseId(id));
     const children = (d.nodes ?? []).map(toElk);
-    const edges = es.filter((e) => known(e.from) && known(e.to)).map((e, i) => ({ id: `e${i}`, sources: [e.from], targets: [e.to], _e: e,
+    const ports = new Map();  // node id -> [{ id, x }]
+    const flatC = (cs) => cs.flatMap((c) => c.children ? flatC(c.children) : [c]), elkNode = new Map(flatC(children).map((c) => [c.id, c]));
+    for (const e of es) {
+      const id = baseId(e.to), sg = String(e.to).includes("@") && leaf.has(id) ? segOf(leaf.get(id).n, e.to) : null; if (!sg) continue;
+      const segs = strip(leaf.get(id).n.tok).segs, x0 = 10 + segs[sg[0]].x, x1 = 10 + segs[sg[1]].x + Math.min(segs[sg[1]].w, segs[sg[1]].n * (SQ + SG));
+      const pid = `${id}@${sg[0]}-${sg[1]}`; e._port = pid;
+      if (!ports.has(id)) ports.set(id, []);
+      if (!ports.get(id).some((p) => p.id === pid)) ports.get(id).push({ id: pid, x: (x0 + x1) / 2 });
+    }
+    for (const [id, ps] of ports) { const c = elkNode.get(id);
+      c.ports = ps.map((p) => ({ id: p.id, width: 1, height: 1, x: p.x, y: -1, layoutOptions: { "elk.port.side": "NORTH" } }));
+      c.layoutOptions = { ...c.layoutOptions, "elk.portConstraints": "FIXED_POS" }; }
+    const edges = es.filter((e) => known(e.from) && known(e.to)).map((e, i) => ({ id: `e${i}`, sources: [e.from], targets: [e._port ?? baseId(e.to)], _e: e,
       labels: e.s ? [{ text: e.s, width: tw(e.s, 11) + 8, height: 16 }] : [],
       layoutOptions: e.short || e.pull ? { "elk.layered.priority.shortness": e.pull ? "50" : "20", "elk.layered.priority.straightness": "10" } : {} }));
     const g = await new ELK().layout({ id: "root", layoutOptions: {
@@ -154,7 +176,7 @@
       const sec = e.sections?.[0]; if (!sec) continue;
       const pts = [sec.startPoint, ...(sec.bendPoints ?? []), sec.endPoint].map((p) => [MX(p.x), p.y]);
       const lab = e.labels?.[0];
-      items.push({ t: "edge", id: `${src.from}>${src.to}`, from: src.from, to: src.to, pts, ink: src.ink, sw: src.sw, s: src.s,
+      items.push({ t: "edge", id: `${src.from}>${src.to}`, from: src.from, to: baseId(src.to), pts, ink: src.ink, sw: src.sw, s: src.s,
         lab: lab && { x: MX(lab.x, lab.width), y: lab.y, w: lab.width, h: lab.height } });
     }
     for (const l of d.links ?? []) {

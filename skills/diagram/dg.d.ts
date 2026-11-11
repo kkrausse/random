@@ -22,6 +22,8 @@ interface GroupOpts {
 }
 interface Group extends GroupOpts { id: string; kind: "group"; title: string; kids: Item[] }
 type Item = Node | Group;
+// E(from, "id@aux"): the edge ends on the token segment of id whose caption starts with "aux"; "id@cls..patches" spans
+// from the "cls" segment through the "patches" one (so a CONCAT needs no box: each input lands on its own tokens)
 interface EdgeOpts { ink?: Colour; sw?: number; short?: boolean; hidden?: boolean }
 interface Edge extends EdgeOpts { from: string; to: string; s: string }
 interface Link { a: string; b: string; s: string }
