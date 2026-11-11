@@ -16,8 +16,7 @@ cargo build --release      # needs Xcode's Metal toolchain for GPUI's shaders
 ./target/release/switcher  # no Dock icon; logs to stderr; Ctrl-C or `pkill -x switcher` to quit
 ```
 
-Press Ctrl+Option+Shift+Cmd+S (the built-in default, meant to be bound to a
-mouse button). It exits at startup if the hotkey is taken by another app
+Press Cmd+Shift+Space (the built-in default). It exits at startup if the hotkey is taken by another app
 or the port is in use.
 
 Keys: Up/Down, Ctrl-P/Ctrl-N, Tab/Shift-Tab move; Enter or click activates;
@@ -29,7 +28,7 @@ Ctrl-W (word), Cmd-Backspace / Ctrl-U (all) and Cmd-V edit the query.
 `~/.config/switcher/config.toml`, all keys optional, read at startup:
 
 ```toml
-hotkey = "ctrl+alt+shift+cmd+KeyS"   # the default; global-hotkey syntax: modifiers + key, e.g. "cmd+shift+KeyK", "ctrl+alt+Tab"
+hotkey = "cmd+shift+space"   # the default; global-hotkey syntax: modifiers + key, e.g. "cmd+shift+KeyK", "ctrl+alt+Tab"
 port = 47600           # must match the extension
 # browser_bundle_id = "com.brave.Browser"
 ```
