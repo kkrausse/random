@@ -131,7 +131,14 @@ function applyMoves() {
 // ---- selection, box-select, move (as feedback)
 const gOf = (id) => svg?.querySelector(`[data-id="${CSS.escape(id)}"]`);
 const top_ = (el) => el?.closest?.("[data-id]");
-function boxOf(id) { const g = gOf(id); if (!g) return null; const b = g.getBBox(), m = fb.moves[id] ?? [0, 0]; return { x: b.x + m[0], y: b.y + m[1], w: b.width, h: b.height }; }
+// a box's own rectangle (a deck's card backs and hit areas are not part of it); lines and text use their drawn extent
+function boxOf(id) {
+  const g = gOf(id); if (!g) return null;
+  const it = page.items.find((i) => i.id === id), m = moveOf(id);
+  if (it && (it.t === "node" || it.t === "group")) return { x: it.x + m[0], y: it.y + m[1], w: it.w, h: it.h };
+  const b = g.getBBox(); return { x: b.x, y: b.y, w: b.width, h: b.height };
+}
+function moveOf(id) { for (const [k, m] of Object.entries(fb.moves)) if (k === id || kids(k).includes(id)) return m; return [0, 0]; }
 function drawSel() {
   const o = svg?.querySelector("#overlay"); if (!o) return;
   o.innerHTML = [...sel].map(boxOf).filter(Boolean).map((b) => `<rect class="sel-box" x="${b.x - 4}" y="${b.y - 4}" width="${b.w + 8}" height="${b.h + 8}" rx="6"/>`).join("");
