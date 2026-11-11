@@ -10,7 +10,12 @@ interface NodeOpts {
   src?: boolean;         // a source that is not an input (no edge in is fine)
 }
 interface Node extends NodeOpts { id: string; kind: "data" | "op"; s: string; input?: boolean; param?: string; w?: string }
-interface GroupOpts { deck?: boolean; big?: boolean; entries?: string[] } // entries: ids of its ENTERING boxes, kept in one row at its top
+interface GroupOpts {
+  deck?: boolean; big?: boolean;
+  entries?: string[];    // ids of its ENTERING boxes, kept in one row at its top
+  fill?: Colour;         // background tint (e.g. "#fff4e6"): marks a region such as "the context frames"
+  ink?: Colour; sw?: number; // border colour / width; sw makes the border solid
+}
 interface Group extends GroupOpts { id: string; kind: "group"; title: string; kids: Item[] }
 type Item = Node | Group;
 interface EdgeOpts { ink?: Colour; sw?: number; short?: boolean; hidden?: boolean }

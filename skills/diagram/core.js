@@ -249,7 +249,9 @@
     let s = `<g data-id="${esc(it.id)}">`;
     if (g.deck) for (const j of [3, 2, 1]) s += `<rect x="${x + j * 14}" y="${y - j * 14}" width="${w}" height="${h}" rx="8" fill="#fff" stroke="#868e96" stroke-width="1" pointer-events="none"/>` +
       (j === 3 ? txt(x + j * 14 + w - 8, y - j * 14 + 4, "frame 9", 12, { ink: "#868e96", anchor: "end" }).replace("<text ", '<text pointer-events="none" ') : "");
-    s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="#fff" fill-opacity="${g.deck ? 1 : 0.6}" stroke="${g.deck ? "#1e1e1e" : "#adb5bd"}" stroke-width="${g.deck ? 2 : 1.2}"${g.deck ? "" : ' stroke-dasharray="8 6"'} pointer-events="none"/>`;
+    // fill / ink / sw: a tinted background and a solid border of that width (a lane: "this part is the context")
+    const solid = g.deck || g.sw, edge = g.ink ? ink(g.ink) : g.deck ? "#1e1e1e" : "#adb5bd";
+    s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="${g.fill ? fill(g.fill) : "#fff"}" fill-opacity="${g.deck || g.fill ? 1 : 0.6}" stroke="${edge}" stroke-width="${g.sw ?? (g.deck ? 2 : 1.2)}"${solid ? "" : ' stroke-dasharray="8 6"'} pointer-events="none"/>`;
     s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="none" stroke="transparent" stroke-width="14" pointer-events="stroke"/>`;
     s += `<rect x="${x + 8}" y="${y + 6}" width="${tw(g.title, tfs) + 12}" height="${th(g.title, tfs) + 10}" fill="transparent" pointer-events="all"/>`;
     return s + txt(x + 14, y + 12, g.title, tfs, { ink: g.big ? "#495057" : "#1e1e1e", bold: !!g.big }) + "</g>";
