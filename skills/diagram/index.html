@@ -26,7 +26,7 @@
 <div id="fb"><span id="fbn"></span> <a id="fbcopy">copy</a> <a id="fbreset">reset</a></div>
 <div id="toast"></div>
 <script src="elk.js"></script>
-<script src="core.js"></script>
+<script>document.write(`<script src="core.js?v=${Date.now()}"><\/script>`);</script>
 <script>
 "use strict";
 const q = new URLSearchParams(location.search), SRC = q.get("s"), ONLY = q.get("only") ?? undefined;
@@ -38,7 +38,7 @@ let fb = JSON.parse(localStorage.getItem(KEY) ?? '{"moves":{},"notes":[]}');
 const saveFb = () => { localStorage.setItem(KEY, JSON.stringify(fb)); showFb(); };
 
 // ---- load: re-run the diagram file every 2 s in a fresh hidden iframe (its own globals; works on file://); redraw on change
-const coreURL = new URL("core.js", location.href).href;
+const coreURL = new URL("core.js?v=" + Date.now(), location.href).href;
 let busy = false;
 function poll() {
   if (!SRC) { $("when").textContent = "add ?s=<diagram.js>"; return; }
