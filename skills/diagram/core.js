@@ -74,6 +74,7 @@
     }
     for (const l of d.links ?? []) for (const end of [l.a, l.b]) if (!nodes.has(end) && !groups.has(end)) out.push(`link ${l.a} ~ ${l.b}: unknown id ${end}`);
     for (const [id, n] of nodes) {
+      if (n.ref) continue;  // drawn for comparison only: not part of this graph's flow
       if (n.kind === "op" && !inc.get(id) && !n.src) out.push(`${id}: op with no input edge (implicit input?)`);
       if (n.kind === "data" && !n.input && !n.param && !inc.get(id) && !n.src) out.push(`${id}: data that comes from nowhere (no edge in)`);
       if (!outc.get(id) && !n.out) out.push(`${id}: dead end (no edge out; mark { out: true } if it is an output)`);
@@ -90,7 +91,7 @@
     for (const d of diags) for (const n of flat(d.nodes ?? [])) {
       if (!n?.def) continue;
       const D_ = byTitle.get(n.def); if (!D_) { out.push(`${d.title}: ${n.id}: def "${n.def}" is not a diagram on this page`); continue; }
-      const dn = flat(D_.nodes ?? []), ins = dn.filter((x) => x.input), outs = dn.filter((x) => x.out);
+      const dn = flat(D_.nodes ?? []).filter((x) => !x.ref), ins = dn.filter((x) => x.input), outs = dn.filter((x) => x.out);
       for (const x of [...ins, ...outs]) if (!x.port) out.push(`${n.def}: ${x.id} needs a port name ({ port: "…" }) because ${n.id} uses this definition`);
       const inP = ins.map((x) => x.port), outP = outs.map((x) => x.port), es = expand(d.edges).filter((e) => !e.hidden);
       const got = es.filter((e) => e.to === n.id).map((e) => e.s);
@@ -248,7 +249,7 @@
     const bg = op ? fill(wfill ?? "white") : n.param ? fill(wfill) : "#ffffff";
     const st = op ? `stroke="${ink(n.ink ?? "black")}" stroke-width="${n.sw ?? 1.2}"`
       : `stroke="${ink(n.ink ?? (n.param ? "black" : "#495057"))}" stroke-width="${n.sw ?? (n.input ? 3 : 1.8)}" stroke-dasharray="${n.input ? "0.1 6" : "0.1 4.5"}" stroke-linecap="round"`;
-    let s = `<g data-id="${esc(it.id)}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${op ? 6 : 4}" fill="${bg}" ${st}/>`;
+    let s = `<g data-id="${esc(it.id)}"${n.ref ? ' opacity="0.55"' : ""}><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${op ? 6 : 4}" fill="${bg}" ${st}/>`;
     if (n.def) s += `<rect x="${x + 3}" y="${y + 3}" width="${w - 6}" height="${h - 6}" rx="4" fill="none" stroke="#1e1e1e" stroke-width="1"/>`;  // double border = defined elsewhere
     if (n.img) {
       const [src, iw, ih] = n.img;
