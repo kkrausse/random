@@ -45,3 +45,8 @@ It prints the type errors and lint, then writes a PNG and prints its path; Read 
 - **Navigate:** wheel pans, Ctrl+wheel zooms, F fits.
 - **Select:** click or drag to select, Shift adds. ⌘C copies `id kind "label" ← inputs → outputs` lines.
 - **Feedback:** dragging a box or group moves it, and N adds a note. "copy feedback" gives the agent lines like `move k.cp by (+900, −300): wanted right of k.tb`, which the agent turns into spec changes.
+
+## Changing the viewer (index.html / core.js)
+Run `node test/viewer.mjs "file://$PWD/index.html?s=file:///home/kkrausse/devfs/repos/kkrausse/gaze-lab-merge/doc/arch/x20b/arch.js&only=x9b"`
+and get every check passing before `bun dg.ts --lib`. It covers bugs the user hit: lines following boxes,
+nested and multi-select moves, the selection outline, empty group insides, text highlight and reset.

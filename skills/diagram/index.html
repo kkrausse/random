@@ -165,7 +165,9 @@ stage.addEventListener("pointerdown", (e) => {
     if (e.shiftKey) { sel.has(id) ? sel.delete(id) : sel.add(id); } else if (!sel.has(id)) sel = new Set([id]);
     drawSel();
     // only boxes and outlines move; lines follow their boxes
-    const movable = [...sel].filter((i) => { const it = page.items.find((x) => x.id === i); return it && (it.t === "node" || it.t === "group"); });
+    // a box inside a selected outline moves with the outline only (once), so drag only the outermost selected
+    const boxes = [...sel].filter((i) => { const it = itemOf(i); return it && (it.t === "node" || it.t === "group"); });
+    const movable = boxes.filter((i) => !boxes.some((o) => o !== i && kids(o).includes(i)));
     drag = movable.length ? { kind: "move", p, ids: movable, base: Object.fromEntries(movable.map((i) => [i, fb.moves[i] ?? [0, 0]])), moved: false } : null;
   } else {
     if (!e.shiftKey) sel.clear();
@@ -193,15 +195,17 @@ stage.addEventListener("pointermove", (e) => {
 stage.addEventListener("pointerup", () => { if (drag?.kind === "move" && drag.moved) saveFb(); if (drag?.kind === "band") drawSel(); drag = null; });
 
 // ---- feedback: moves described relative to the nearest box, plus notes; copied as text for the agent
-function where(id) {
-  const b = place(id); if (!b) return "";
+function where(id) {  // the nearest box that did not move with it, both at their current place()
+  const b = place(id), o0 = offset(id); if (!b) return "";
   const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
   let best = null, bd = Infinity;
   for (const it of page.items) {
-    if (it.id === id || !(it.t === "node" || it.t === "group") || it.legend) continue;
-    if (it.x <= b.x && it.y <= b.y && it.x + it.w >= b.x + b.w && it.y + it.h >= b.y + b.h) continue; // its own container
-    const dx = Math.max(it.x - (b.x + b.w), b.x - (it.x + it.w), 0), dy = Math.max(it.y - (b.y + b.h), b.y - (it.y + it.h), 0), d = Math.hypot(dx, dy);
-    if (d < bd) { bd = d; best = it; }
+    if (it.id === id || !(it.t === "node" || it.t === "group") || it.legend || kids(id).includes(it.id)) continue;
+    const o = offset(it.id); if (o[0] === o0[0] && o[1] === o0[1] && (o0[0] || o0[1])) continue;  // moved together with it
+    const r = place(it.id);
+    if (r.x <= b.x && r.y <= b.y && r.x + r.w >= b.x + b.w && r.y + r.h >= b.y + b.h) continue;  // its own container
+    const dx = Math.max(r.x - (b.x + b.w), b.x - (r.x + r.w), 0), dy = Math.max(r.y - (b.y + b.h), b.y - (r.y + r.h), 0), d = Math.hypot(dx, dy);
+    if (d < bd) { bd = d; best = { id: it.id, ...r }; }
   }
   if (!best) return "";
   const ox = best.x + best.w / 2, oy = best.y + best.h / 2, h = cx - ox, v = cy - oy;
