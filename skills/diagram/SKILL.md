@@ -48,7 +48,7 @@ It prints the type errors and lint, then writes a PNG and prints its path; Read 
 - `bun dg.ts --lib` republishes the viewer itself. Do this after changing `index.html` or `core.js`.
 
 ## View
-`index.html?s=<diagram.js>` (file:// or hosted). It re-runs the file every 2 s and redraws on change.
+`index.html?s=<diagram.js>` (file:// or hosted). It re-runs the file every 2 s and redraws on change. It also reloads itself when `core.js` is republished (hosted), so open pages never run old viewer code.
 - **Navigate:** wheel pans, Ctrl+wheel zooms, F fits.
 - **Select:** click or drag to select, Shift adds. ⌘C copies `id kind "label" ← inputs → outputs` lines.
 - **Feedback:** dragging a box or group moves it, and N adds a note. "copy feedback" gives the agent lines like `move k.cp by (+900, −300): wanted right of k.tb`, which the agent turns into spec changes.

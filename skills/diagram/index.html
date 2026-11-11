@@ -40,7 +40,14 @@ const saveFb = () => showFb();
 // ---- load: re-run the diagram file every 2 s in a fresh hidden iframe (its own globals; works on file://); redraw on change
 const coreURL = new URL("core.js?v=" + Date.now(), location.href).href;
 let busy = false;
+// the viewer's own code: when core.js is republished, an open page reloads itself (the view is kept in the URL)
+let coreText = null;
+async function checkCore() {
+  try { const t = await (await fetch(new URL("core.js?t=" + Date.now(), location.href), { cache: "no-store" })).text();
+    if (coreText === null) coreText = t; else if (t !== coreText) location.reload(); } catch {}  // file:// cannot fetch: skip
+}
 function poll() {
+  checkCore();
   if (!SRC) { $("when").textContent = "add ?s=<diagram.js>"; return; }
   if (busy) return; busy = true;
   const f = document.createElement("iframe"); f.style.display = "none";
