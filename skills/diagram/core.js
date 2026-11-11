@@ -116,12 +116,12 @@
   // bottom, each row's ids left to right; an array inside a row is a column, an array inside that a row, and so on.
   // Columns are centred, rows top-aligned. Without `rows`, contents go in rows by flow (each box one row below
   // whatever feeds it), in file order. Lines are then routed around the boxes by libavoid.
-  const GAP = { x: 50, y: 90 };
+  const GAP = { x: 90, y: 90 };
   // top: the title, then a lane under it for lines entering the group (the title is an obstacle; lines need room to
   // pass between it and the first row, or they get squeezed onto one track)
-  const groupPad = (g) => ({ top: (g.deck ? 80 : g.big ? 70 : 56) + (lines(g.title).length - 1) * (g.big ? 22 : 15) * LH + 36, left: 30, right: g.deck ? 70 : 30, bottom: 30 });
+  const groupPad = (g) => ({ top: (g.deck ? 80 : g.big ? 70 : 56) + (lines(g.title).length - 1) * (g.big ? 22 : 15) * LH + 44, left: 36, right: g.deck ? 76 : 36, bottom: 36 });
   const titleBox = (g, b) => { const tfs = g.big ? 22 : 15; return { x: b.x + 8, y: b.y + 6, w: tw(g.title, tfs) + 12, h: th(g.title, tfs) + 10 }; };
-  function placeAll(d, lint) {
+  function placeAll(d, lint, extra = {}) {
     const leaf = new Map(), grp = new Map(), parent = new Map();
     const reg = (ns, p) => ns.forEach((n) => { if (!n?.id) return; parent.set(n.id, p);
       if (n.kind === "group") { grp.set(n.id, n); reg(n.kids ?? [], n.id); } else leaf.set(n.id, { n, ...size(n) }); });
@@ -159,27 +159,31 @@
       if (miss.length) { lint.push(`${label}: not in its rows (put at the bottom): ${miss.join(", ")}`); r.push(miss); }
       return r;
     }
-    const pos = new Map();
+    const pos = new Map(), gaps = [];  // gaps: every space between neighbours, for widening where lines squeeze
     const gapOf = (o) => ({ x: o?.gap?.[0] ?? GAP.x, y: o?.gap?.[1] ?? GAP.y });
-    function cell(el, dir, gap) {
+    function cell(el, dir, gap, cid) {
       if (!Array.isArray(el)) {
         if (leaf.has(el)) { const s = leaf.get(el); return { w: s.w, h: s.h, put: (x, y) => pos.set(el, { x, y, w: s.w, h: s.h }) }; }
-        const g = grp.get(el), P = groupPad(g), inner = cell(arrangement(g.kids, g.rows, g.id, g.id), "col", gapOf(g));
+        const g = grp.get(el), P = groupPad(g), inner = cell(arrangement(g.kids, g.rows, g.id, g.id), "col", gapOf(g), g.id);
         const tt = titleBox(g, { x: 0, y: 0 }), w = Math.max(inner.w + P.left + P.right, tt.w + 40), h = inner.h + P.top + P.bottom;
-        return { w, h, put: (x, y) => { pos.set(el, { x, y, w, h }); inner.put(x + P.left + (w - P.left - P.right - inner.w) / 2, y + P.top); } };
+        const k = g.deck ? DECK : 0;  // a deck's cards stick out above and to the right: they take room like the rest
+        return { w: w + k, h: h + k, put: (x, y) => { pos.set(el, { x, y: y + k, w, h }); inner.put(x + P.left + (w - P.left - P.right - inner.w) / 2, y + k + P.top); } };
       }
-      const parts = el.map((x) => cell(x, dir === "row" ? "col" : "row", gap));
+      const parts = el.map((x) => cell(x, dir === "row" ? "col" : "row", gap, cid));
       if (!parts.length) return { w: 0, h: 0, put: () => {} };
+      const key = (i) => `${cid}|${JSON.stringify(el)}|${i}`, gx = (i) => gap.x + (extra[key(i)] ?? 0), gy = (i) => gap.y + (extra[key(i)] ?? 0);
       if (dir === "row") {
-        const w = parts.reduce((s, p) => s + p.w, 0) + gap.x * (parts.length - 1), h = Math.max(...parts.map((p) => p.h));
-        return { w, h, put: (x, y) => { let cx = x; for (const p of parts) { p.put(cx, y); cx += p.w + gap.x; } } };
+        const w = parts.reduce((s, p, i) => s + p.w + (i ? gx(i - 1) : 0), 0), h = Math.max(...parts.map((p) => p.h));
+        return { w, h, put: (x, y) => { let cx = x; parts.forEach((p, i) => { p.put(cx, y); cx += p.w;
+          if (i < parts.length - 1) { gaps.push({ key: key(i), vert: true, x0: cx, x1: cx + gx(i), y0: y, y1: y + h }); cx += gx(i); } }); } };
       }
-      const w = Math.max(...parts.map((p) => p.w)), h = parts.reduce((s, p) => s + p.h, 0) + gap.y * (parts.length - 1);
-      return { w, h, put: (x, y) => { let cy = y; for (const p of parts) { p.put(x + (w - p.w) / 2, cy); cy += p.h + gap.y; } } };
+      const w = Math.max(...parts.map((p) => p.w)), h = parts.reduce((s, p, i) => s + p.h + (i ? gy(i - 1) : 0), 0);
+      return { w, h, put: (x, y) => { let cy = y; parts.forEach((p, i) => { p.put(x + (w - p.w) / 2, cy); cy += p.h;
+        if (i < parts.length - 1) { gaps.push({ key: key(i), vert: false, x0: x, x1: x + w, y0: cy, y1: cy + gy(i) }); cy += gy(i); } }); } };
     }
-    const top = cell(arrangement(d.nodes, d.rows, null, d.title), "col", gapOf(d));
+    const top = cell(arrangement(d.nodes, d.rows, null, d.title), "col", gapOf(d), null);
     top.put(0, 0);
-    return { leaf, grp, parent, es, pos, w: top.w, h: top.h };
+    return { leaf, grp, parent, es, pos, gaps, w: top.w, h: top.h };
   }
 
   // ---- lines: libavoid routes every line orthogonally, one level of grouping at a time. Each group (and the top
@@ -190,6 +194,7 @@
   // side). Ends on one side of a box are spread out, ordered by where their other ends are.
   const DIR = { top: 1, bottom: 2, left: 4, right: 8 }, INWARD = { top: 2, bottom: 1, left: 8, right: 4 };
   const DECK = 42;  // a deck's stacked cards reach this far above and right of its outline
+  const BUF = 14, NUDGE = 14, SPACE = 20;  // clearance round boxes; parallel lines apart; line ends on one side apart
   const outerOf = (g, b) => g?.deck ? { x: b.x, y: b.y - DECK, w: b.w + DECK, h: b.h + DECK } : b;
   const horiz = (s) => s === "top" || s === "bottom";
   function sides(S, T) {
@@ -223,50 +228,68 @@
     for (const e of L.es) { const t = baseId(e.to), sg = String(e.to).includes("@") && leaf.has(t) ? segOf(leaf.get(t).n, e.to) : null;
       add("edge", { e, sg }, e.from, t, !!sg); }
     for (const l of L.links) add("link", { l }, l.a, l.b, false);
-    // 2. where each end sits along its side (absolute x for top / bottom, y for left / right)
-    // group ports first: under the deepest end they lead to, clear of the title, at least 16 apart
-    const deep = (ln, g) => (ups(ln.aId).includes(g) ? ln.aId : ln.bId);
-    const portEnds = new Map();  // "g|side" -> [{ ends: [...], want }]
+    // 2. where each end sits along its side (absolute x for top / bottom, y for left / right): each end has a wanted
+    // spot; ends keep the order of their wanted spots (ties: by where the far end is) and stay SPACE apart
+    const spread = (list, lo, hi, sp) => {
+      list.sort((p, q) => p.want - q.want || p.key2 - q.key2); let prev = -Infinity;
+      for (const it of list) { it.at = Math.max(lo, Math.min(hi, it.want), prev + sp); prev = it.at; }
+      for (let i = list.length - 1, lim = hi; i >= 0; i--) { list[i].at = Math.min(list[i].at, lim); lim = list[i].at - sp; }
+      if (list.length && list[0].at < lo - 0.01) list.forEach((it, i) => { it.at = list.length === 1 ? (lo + hi) / 2 : lo + i * (hi - lo) / (list.length - 1); });
+    };
+    const axis = (side, c) => (horiz(side) ? c[0] : c[1]);
+    // group ports first: toward the deepest end they lead to, clear of the title; ties ordered by the far end, so the
+    // lines keep the same order on both sides of the border (else they cross there)
+    const deep = (ln, g) => (ups(ln.aId).includes(g) ? ln.aId : ln.bId), far = (ln, g) => (deep(ln, g) === ln.aId ? ln.bId : ln.aId);
+    const portEnds = new Map();  // "g|side" -> Map(line -> { ends, want, key2 })
     for (const ln of lns) for (const pc of ln.pieces) for (const end of [pc.a, pc.b]) {
       const g = end.port ?? (grp.has(end.id) ? end.id : null); if (g === null || g === undefined) continue;
       const k = g + "|" + end.side; if (!portEnds.has(k)) portEnds.set(k, new Map());
-      const m = portEnds.get(k); if (!m.has(ln)) { const c = ctr(pos.get(deep(ln, g))); m.set(ln, { ends: [], want: horiz(end.side) ? c[0] : c[1] }); }
+      const m = portEnds.get(k);
+      if (!m.has(ln)) m.set(ln, { ends: [], want: axis(end.side, ctr(pos.get(deep(ln, g)))), key2: axis(end.side, ctr(pos.get(far(ln, g)))) });
       m.get(ln).ends.push(end);
     }
     for (const [k, m] of portEnds) {
       const [g, side] = k.split("|"), B = pos.get(g), T = titleBox(grp.get(g), B);
-      let lo = horiz(side) ? B.x + 14 : B.y + 14; const hi = horiz(side) ? B.x + B.w - 14 : B.y + B.h - 14;
-      if (side === "top" && T.x + T.w + 12 < hi - 20) lo = Math.max(lo, T.x + T.w + 12);
-      if ((side === "left" || side === "right") && T.y + T.h + 12 < hi - 20) lo = Math.max(lo, T.y + T.h + 12);
-      const list = [...m.values()].sort((p, q) => p.want - q.want); let prev = -Infinity;
-      for (const it of list) { it.at = Math.max(lo, Math.min(hi, it.want), prev + 16); prev = it.at; }
-      const over = prev - hi; if (over > 0) for (const it of list) it.at = Math.max(lo, it.at - over);
+      let lo = horiz(side) ? B.x + 16 : B.y + 16; const hi = horiz(side) ? B.x + B.w - 16 : B.y + B.h - 16;
+      if (side === "top" && T.x + T.w + 14 < hi - 20) lo = Math.max(lo, T.x + T.w + 14);
+      if ((side === "left" || side === "right") && T.y + T.h + 14 < hi - 20) lo = Math.max(lo, T.y + T.h + 14);
+      const list = [...m.values()]; spread(list, lo, hi, SPACE);
       for (const it of list) for (const end of it.ends) end.at = it.at;
     }
-    // ends on boxes: a token target at its segment; others spread round the middle of the side, ordered by the other end
-    const endPt = (end) => end.at !== undefined && end.at !== null ? end.at : null;
+    // ends on boxes: a token target at its segment. Otherwise the wanted spot is straight across from the other end:
+    // the middle of where the two boxes overlap (both ends pick the same spot, so the line is straight), else the
+    // corner nearest the other box, or the port it goes to
     const bySide = new Map();
     for (const ln of lns) for (const pc of ln.pieces) for (const [me, other] of [[pc.a, pc.b], [pc.b, pc.a]]) {
       if (me.port !== undefined || grp.has(me.id)) continue;
       if (ln.into && me === pc.b && me.id === ln.bId) { const segs = strip(leaf.get(me.id).n.tok).segs, sg = ln.sg;
         me.at = pos.get(me.id).x + 10 + (segs[sg[0]].x + segs[sg[1]].x + Math.min(segs[sg[1]].w, segs[sg[1]].n * (SQ + SG))) / 2; continue; }
       const k = me.id + "|" + me.side; if (!bySide.has(k)) bySide.set(k, []);
-      const o = other.port !== undefined || grp.has(other.id) ? null : ctr(box(other.id));
-      bySide.get(k).push({ end: me, other, o });
+      // ends keep clear of the corners (a lane there for lines passing the box), unless the side is short
+      const B = pos.get(me.id), m = Math.min(18, (horiz(me.side) ? B.w : B.h) / 4), lo = horiz(me.side) ? B.x + m : B.y + m, hi = horiz(me.side) ? B.x + B.w - m : B.y + B.h - m;
+      let want, key2;
+      if (other.port !== undefined || grp.has(other.id)) { want = other.at; key2 = other.at; }
+      else {
+        // both ends compute the same spot from the same overlap: the middle of where the two boxes overlap, kept off
+        // the corners as far as the overlap allows
+        const R = box(other.id), [b0, b1] = horiz(me.side) ? [B.x, B.x + B.w] : [B.y, B.y + B.h], [r0, r1] = horiz(me.side) ? [R.x, R.x + R.w] : [R.y, R.y + R.h];
+        const o0 = Math.max(b0, r0), o1 = Math.min(b1, r1); key2 = axis(me.side, ctr(R));
+        want = o1 - o0 > 4 ? (o0 + o1) / 2 : Math.max(lo, Math.min(hi, key2));
+      }
+      const [s0, s1] = horiz(me.side) ? [B.x + 3, B.x + B.w - 3] : [B.y + 3, B.y + B.h - 3];
+      want = Math.max(s0, Math.min(s1, want));  // always on this box's side
+      bySide.get(k).push({ end: me, want, key2, lo: Math.min(lo, want), hi: Math.max(hi, want) });
     }
-    for (const [k, list] of bySide) {
-      const [id, side] = k.split("|"), B = pos.get(id), len = horiz(side) ? B.w : B.h, mid = horiz(side) ? B.x + B.w / 2 : B.y + B.h / 2;
-      const key = (it) => it.o ? (horiz(side) ? it.o[0] : it.o[1]) : endPt(it.other) ?? mid;
-      list.sort((p, q) => key(p) - key(q));
-      const step = Math.min(18, len / (list.length + 1));
-      list.forEach((it, i) => { it.end.at = mid + (i - (list.length - 1) / 2) * step; });
+    for (const list of bySide.values()) {
+      const lo = Math.min(...list.map((it) => it.lo)), hi = Math.max(...list.map((it) => it.hi)); spread(list, lo, hi, Math.min(SPACE, (hi - lo) / Math.max(1, list.length - 1)));
+      for (const it of list) it.end.at = it.at;
     }
     // 3. one router per container; pins on its children and on its own border ports
     const byK = new Map(); for (const ln of lns) for (const pc of ln.pieces) { if (!byK.has(pc.K)) byK.set(pc.K, []); byK.get(pc.K).push(pc); }
     const at = (r, side, v) => side === "top" ? [v, r.y] : side === "bottom" ? [v, r.y + r.h] : side === "left" ? [r.x, v] : [r.x + r.w, v];
     for (const [K, pcs] of byK) {
       const r = new A.Router(A.RouterFlag.OrthogonalRouting.value);
-      r.setRoutingParameter(RP.shapeBufferDistance, 8); r.setRoutingParameter(RP.idealNudgingDistance, 10); r.setRoutingParameter(RP.segmentPenalty, 40);
+      r.setRoutingParameter(RP.shapeBufferDistance, BUF); r.setRoutingParameter(RP.idealNudgingDistance, NUDGE); r.setRoutingParameter(RP.segmentPenalty, 40);
       r.setRoutingOption(A.RoutingOption.nudgeSharedPathsWithCommonEndPoint, true);
       const rect = (b) => new A.Rectangle(new A.Point(b.x, b.y), new A.Point(b.x + b.w, b.y + b.h));
       const shape = new Map();
@@ -290,7 +313,9 @@
         const p = conns[i].displayRoute(), pts = []; for (let j = 0; j < p.size(); j++) { const q = p.at(j); pts.push([q.x, q.y]); }
         const near = (u, v) => u && Math.abs(u[0] - v[0]) < 1.5 && Math.abs(u[1] - v[1]) < 1.5;
         pc.ok = near(pts[0], pc.a.pt) && near(pts[pts.length - 1], pc.b.pt);
-        pc.pts = pc.ok ? pts : [pc.a.pt, pc.b.pt];
+        // the router gives up when an end sits inside another box's clearance: a right-angled dog-leg then
+        const [u, v] = [pc.a.pt, pc.b.pt], vt = horiz(pc.a.side), my = (u[1] + v[1]) / 2, mx = (u[0] + v[0]) / 2;
+        pc.pts = pc.ok ? pts : vt ? [u, [u[0], my], [v[0], my], v] : [u, [mx, u[1]], [mx, v[1]], v];
       });
       try { r.delete(); } catch {}
     }
@@ -308,6 +333,8 @@
   function placeLabels(items) {
     const boxes = items.filter((i) => i.t === "node"), taken = [];
     const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    const segs = items.filter((i) => (i.t === "edge" || i.t === "link") && i.pts).flatMap((e) => e.pts.slice(1).map((q, i) => ({ e, a: e.pts[i], b: q })));
+    const crossed = (r, me) => segs.some(({ e, a, b }) => e !== me && Math.max(a[0], b[0]) > r.x && Math.min(a[0], b[0]) < r.x + r.w && Math.max(a[1], b[1]) > r.y && Math.min(a[1], b[1]) < r.y + r.h);
     for (const it of items) {
       if (it.t !== "edge" || !it.s) continue;
       const w = tw(it.s, 11) + 8, h = 16, P = it.pts, cands = [];
@@ -321,7 +348,8 @@
           cands.push(lo);
         }
       }
-      const ok = cands.find((c) => !boxes.some((b) => hit(c, b)) && !taken.some((t) => hit(c, t)));
+      const clear = (c) => !boxes.some((b) => hit(c, b)) && !taken.some((t) => hit(c, t));
+      const ok = cands.find((c) => clear(c) && !crossed(c, it)) ?? cands.find(clear);
       const lab = ok ?? cands[0] ?? (() => { const [x, y] = P[P.length - 2] ?? P[0]; return { x: x - w / 2, y: y - h / 2, w, h }; })();
       it.lab = lab; taken.push(lab);
     }
@@ -351,11 +379,26 @@
     return lineItems(A, L, boxes, [], only);
   }
   async function layoutOne(d, A) {
-    const lint = [], L = placeAll(d, lint); L.links = d.links ?? [];
-    const { leaf, grp, pos } = L, items = [];
-    const depth = (id) => { let k = 0, x = L.parent.get(id); while (x) { k++; x = L.parent.get(x); } return k; };
-    for (const [id, b] of pos) items.push(grp.has(id) ? { t: "group", id, depth: depth(id), ...b, g: grp.get(id) } : { t: "node", id, depth: depth(id), ...b, n: leaf.get(id).n });
-    items.push(...lineItems(A, L, items, lint));
+    // lay out, route, and where lines got squeezed closer than their spacing in a gap between neighbours, widen just
+    // that gap and go again (a few rounds at most)
+    const extra = {}; let lint, L, items;
+    for (let round = 0; round < 4; round++) {
+      lint = []; L = placeAll(d, lint, extra); L.links = d.links ?? []; items = [];
+      const { leaf, grp, pos } = L;
+      const depth = (id) => { let k = 0, x = L.parent.get(id); while (x) { k++; x = L.parent.get(x); } return k; };
+      for (const [id, b] of pos) items.push(grp.has(id) ? { t: "group", id, depth: depth(id), ...b, g: grp.get(id) } : { t: "node", id, depth: depth(id), ...b, n: leaf.get(id).n });
+      const lns = lineItems(A, L, items, lint); items.push(...lns);
+      if (round === 3) break;
+      const grow = new Set();
+      for (const q of squeezes(lns, NUDGE * 0.7)) {
+        const g = L.gaps.filter((g) => g.vert === q.vert && q.x >= g.x0 - 1 && q.x <= g.x1 + 1 && q.y >= g.y0 - 1 && q.y <= g.y1 + 1)
+          .sort((u, v) => (u.x1 - u.x0) * (u.y1 - u.y0) - (v.x1 - v.x0) * (v.y1 - v.y0))[0];
+        if (g) grow.add(g.key);
+      }
+      if (!grow.size) break;
+      for (const k of grow) extra[k] = (extra[k] ?? 0) + NUDGE * 2;
+    }
+    const { grp } = L;
     // side: "left" / "right" marks (on boxes, or groups for everything inside): reported when a marked box sits past
     // the average of the other side's boxes
     const sideOf = new Map(); const mark = (ns, sd) => ns.forEach((n) => { if (!n?.id) return; const s2 = n.side ?? sd; if (s2) sideOf.set(n.id, s2); if (n.kind === "group") mark(n.kids ?? [], s2); });
@@ -373,20 +416,28 @@
   }
 
   // ---- lint after layout: flow direction, lines through boxes, overlaps
+  // parallel stretches of two different lines closer than `d` apart: { a, b (line items), vert, x, y (middle), len }
+  function squeezes(items, d) {
+    const segs = items.filter((i) => (i.t === "edge" || i.t === "link") && i.pts).flatMap((e) => e.pts.slice(1).map((q, i) => ({ e, a: e.pts[i], b: q }))), out = [];
+    for (let i = 0; i < segs.length; i++) for (let j = i + 1; j < segs.length; j++) {
+      const s1 = segs[i], s2 = segs[j]; if (s1.e === s2.e) continue;
+      const v1 = Math.abs(s1.a[0] - s1.b[0]) < 0.5, v2 = Math.abs(s2.a[0] - s2.b[0]) < 0.5; if (v1 !== v2) continue;
+      const k = v1 ? 0 : 1, o = 1 - k, dist = Math.abs(s1.a[k] - s2.a[k]); if (dist >= d) continue;
+      const lo = Math.max(Math.min(s1.a[o], s1.b[o]), Math.min(s2.a[o], s2.b[o])), hi = Math.min(Math.max(s1.a[o], s1.b[o]), Math.max(s2.a[o], s2.b[o]));
+      if (hi - lo > 4) out.push({ a: s1.e, b: s2.e, vert: v1, dist, len: hi - lo, x: v1 ? s1.a[0] : (lo + hi) / 2, y: v1 ? (lo + hi) / 2 : s1.a[1] });
+    }
+    return out;
+  }
   function lintLayout(items) {
     const out = [], nodes = items.filter((i) => i.t === "node");
     for (const n of nodes) if (n.wrongSide) out.push(`${n.id}: marked side "${n.wrongSide}" but drawn on the other side`);
     // two lines on the same track (they merge and part, and nobody can tell which is which); lines from one source
     // may share their first stretch, lines into one box their last
-    const segs = items.filter((i) => i.t === "edge" || i.t === "link").flatMap((e) => e.pts.slice(1).map((q, i) => ({ e, a: e.pts[i], b: q })));
     const seen = new Set();
-    for (let i = 0; i < segs.length; i++) for (let j = i + 1; j < segs.length; j++) {
-      const s1 = segs[i], s2 = segs[j]; if (s1.e === s2.e || (s1.e.from && s1.e.from === s2.e.from) || (s1.e.to && s1.e.to === s2.e.to)) continue;
-      const v1 = Math.abs(s1.a[0] - s1.b[0]) < 0.5, v2 = Math.abs(s2.a[0] - s2.b[0]) < 0.5; if (v1 !== v2) continue;
-      const k = v1 ? 0 : 1, o = 1 - k;  // k: the coordinate that is constant along the segment
-      if (Math.abs(s1.a[k] - s2.a[k]) > 1.5) continue;
-      const lo = Math.max(Math.min(s1.a[o], s1.b[o]), Math.min(s2.a[o], s2.b[o])), hi = Math.min(Math.max(s1.a[o], s1.b[o]), Math.max(s2.a[o], s2.b[o]));
-      const key = s1.e.id + "|" + s2.e.id; if (hi - lo > 4 && !seen.has(key)) { seen.add(key); out.push(`${s1.e.id} and ${s2.e.id} share a track for ${Math.round(hi - lo)} px`); }
+    for (const q of squeezes(items, 1.5)) {
+      if ((q.a.from && q.a.from === q.b.from) || (q.a.to && q.a.to === q.b.to)) continue;
+      const key = q.a.id + "|" + q.b.id; if (seen.has(key)) continue; seen.add(key);
+      out.push(`${q.a.id} and ${q.b.id} share a track for ${Math.round(q.len)} px near (${Math.round(q.x)}, ${Math.round(q.y)}): too many lines through a narrow gap; widen the gap there (gap: [x, y] on that group)`);
     }
     const inside = (b, x, y) => x > b.x + 2 && x < b.x + b.w - 2 && y > b.y + 2 && y < b.y + b.h - 2;
     for (const e of items.filter((i) => i.t === "edge")) {
