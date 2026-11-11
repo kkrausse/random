@@ -4,7 +4,7 @@
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; font: 13px DejaVu Sans Mono, Menlo, monospace; background: #fff; }
   #stage, #stage > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-  #stage { cursor: default; touch-action: none; }
+  #stage { cursor: default; touch-action: none; user-select: none; -webkit-user-select: none; }
   #stage.pan { cursor: grab; }
   #stage [data-id] { cursor: pointer; }
   .sel-box { fill: none; stroke: #e8590c; stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: none; }
@@ -33,9 +33,9 @@ const q = new URLSearchParams(location.search), SRC = q.get("s"), ONLY = q.get("
 const stage = document.getElementById("stage"), $ = (id) => document.getElementById(id);
 const srcURL = SRC ? new URL(SRC, location.href).href : null;
 let page = null, svg = null, key = "", cam = null, sel = new Set();
-const KEY = "dg-fb:" + srcURL;
-let fb = JSON.parse(localStorage.getItem(KEY) ?? '{"moves":{},"notes":[]}');
-const saveFb = () => { localStorage.setItem(KEY, JSON.stringify(fb)); showFb(); };
+// moves and notes live only in this page: a reload, or a new version of the diagram, starts clean
+let fb = { moves: {}, notes: [] };
+const saveFb = () => showFb();
 
 // ---- load: re-run the diagram file every 2 s in a fresh hidden iframe (its own globals; works on file://); redraw on change
 const coreURL = new URL("core.js?v=" + Date.now(), location.href).href;
@@ -51,7 +51,7 @@ function poll() {
     try {
       if (window.__dgErr) { $("when").textContent = "error: " + window.__dgErr; return; }
       const all = JSON.parse(JSON.stringify(f.contentWindow.DG?.all ?? []));
-      const k = JSON.stringify(all); if (k === key) return; key = k;
+      const k = JSON.stringify(all); if (k === key) return; key = k; fb = { moves: {}, notes: [] };
       DG.reset(); DG.all.push(...all);
       await render(); $("when").textContent = "";
     } catch (e) { $("when").textContent = "error: " + e.message; console.error(e); }
@@ -104,45 +104,46 @@ function kids(id) {
   return page.items.filter((i) => i.id !== id && (i.t === "node" || i.t === "group") && inn(i)).map((i) => i.id)
     .concat(page.items.filter((i) => (i.t === "edge" || i.t === "link") && i.pts.every(([x, y]) => x >= g.x && y >= g.y && x <= g.x + g.w && y <= g.y + g.h)).map((i) => i.id));
 }
-function applyMoves() {
-  for (const g of svg.querySelectorAll("[transform]")) g.removeAttribute("transform");
-  // a box's offset = its own move + the moves of every outline it sits in
-  const delta = new Map();
-  for (const [id, m] of Object.entries(fb.moves)) for (const i of [id, ...kids(id)]) { const d = delta.get(i) ?? [0, 0]; delta.set(i, [d[0] + m[0], d[1] + m[1]]); }
-  // arrows: both ends moved the same way -> shift the whole line; one end moved -> redraw it from the moved ends
+// ---- THE position of everything: layout place + moves. Drawing, selection, box-select and feedback all read only this.
+const itemOf = (id) => page.items.find((i) => i.id === id);
+function offset(id) {  // its own move + the moves of every outline it sits in
+  let x = 0, y = 0;
+  for (const [k, m] of Object.entries(fb.moves)) if (k === id || kids(k).includes(id)) { x += m[0]; y += m[1]; }
+  return [x, y];
+}
+function linePts(it) {  // a line follows its two boxes: same offset -> shifted whole, else redrawn between the moved ends
+  const own = offset(it.id); if (own[0] || own[1]) return it.pts.map(([x, y]) => [x + own[0], y + own[1]]);
+  const a = offset(it.from), b = offset(it.to);
+  if (a[0] === b[0] && a[1] === b[1]) return it.pts.map(([x, y]) => [x + a[0], y + a[1]]);
+  const s0 = [it.pts[0][0] + a[0], it.pts[0][1] + a[1]], e0 = it.pts[it.pts.length - 1], e = [e0[0] + b[0], e0[1] + b[1]];
+  if (it.t === "link") return [s0, [(s0[0] + e[0]) / 2, s0[1]], [(s0[0] + e[0]) / 2, e[1]], e];
+  const my = e[1] > s0[1] + 30 ? (s0[1] + e[1]) / 2 : e[1] - 18;
+  return Math.abs(s0[0] - e[0]) < 0.5 ? [s0, e] : [s0, [s0[0], my], [e[0], my], e];
+}
+function place(id) {
+  const it = itemOf(id); if (!it) return null;
+  if (it.t === "edge" || it.t === "link") { const P = linePts(it), xs = P.map((p) => p[0]), ys = P.map((p) => p[1]);
+    return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
+  const [dx, dy] = offset(id), w = it.w ?? 0, h = it.h ?? 0;
+  return it.t === "text" ? { ...DG.bbox([it]) } : { x: it.x + dx, y: it.y + dy, w, h };
+}
+function applyMoves() {  // draw every item where place() says it is
   for (const it of page.items) {
-    if (it.t !== "edge" && it.t !== "link") continue;
     const g = gOf(it.id); if (!g) continue;
-    const a = delta.get(it.from) ?? [0, 0], b = delta.get(it.to) ?? [0, 0], own = delta.get(it.id);
-    let pts = it.pts;
-    if (own) pts = pts.map(([x, y]) => [x + own[0], y + own[1]]);
-    else if (a[0] === b[0] && a[1] === b[1]) { if (a[0] || a[1]) pts = pts.map(([x, y]) => [x + a[0], y + a[1]]); }
-    else {
-      const s0 = [it.pts[0][0] + a[0], it.pts[0][1] + a[1]], e0 = it.pts[it.pts.length - 1], e = [e0[0] + b[0], e0[1] + b[1]];
-      if (it.t === "link") pts = [s0, [(s0[0] + e[0]) / 2, s0[1]], [(s0[0] + e[0]) / 2, e[1]], e];
-      else { const my = e[1] > s0[1] + 30 ? (s0[1] + e[1]) / 2 : e[1] - 18; pts = Math.abs(s0[0] - e[0]) < 0.5 ? [s0, e] : [s0, [s0[0], my], [e[0], my], e]; }
-    }
-    if (pts === it.pts) { if (g.dataset.redrawn) { g.outerHTML = it.t === "edge" ? DG.edgeSvg(it) : DG.linkSvg(it); } continue; }
+    if (it.t === "node" || it.t === "group") { const [dx, dy] = offset(it.id); dx || dy ? g.setAttribute("transform", `translate(${dx},${dy})`) : g.removeAttribute("transform"); continue; }
+    if (it.t !== "edge" && it.t !== "link") continue;
+    const pts = linePts(it), d = [pts[0][0] - it.pts[0][0], pts[0][1] - it.pts[0][1]];
     const tmp = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    tmp.innerHTML = it.t === "edge" ? DG.edgeSvg({ ...it, pts, lab: it.lab && { ...it.lab, x: it.lab.x + (pts[0][0] - it.pts[0][0]), y: it.lab.y + (pts[0][1] - it.pts[0][1]) } }) : DG.linkSvg({ ...it, pts });
-    const ng = tmp.firstElementChild; ng.dataset.redrawn = "1"; g.replaceWith(ng);
+    tmp.innerHTML = it.t === "edge" ? DG.edgeSvg({ ...it, pts, lab: it.lab && { ...it.lab, x: it.lab.x + d[0], y: it.lab.y + d[1] } }) : DG.linkSvg({ ...it, pts });
+    g.replaceWith(tmp.firstElementChild);
   }
-  for (const [i, m] of delta) { const it = page.items.find((x) => x.id === i); if (it && (it.t === "node" || it.t === "group")) gOf(i)?.setAttribute("transform", `translate(${m[0]},${m[1]})`); }
 }
 // ---- selection, box-select, move (as feedback)
 const gOf = (id) => svg?.querySelector(`[data-id="${CSS.escape(id)}"]`);
 const top_ = (el) => el?.closest?.("[data-id]");
-// a box's own rectangle (a deck's card backs and hit areas are not part of it); lines and text use their drawn extent
-function boxOf(id) {
-  const g = gOf(id); if (!g) return null;
-  const it = page.items.find((i) => i.id === id), m = moveOf(id);
-  if (it && (it.t === "node" || it.t === "group")) return { x: it.x + m[0], y: it.y + m[1], w: it.w, h: it.h };
-  const b = g.getBBox(); return { x: b.x, y: b.y, w: b.width, h: b.height };
-}
-function moveOf(id) { let x = 0, y = 0; for (const [k, m] of Object.entries(fb.moves)) if (k === id || kids(k).includes(id)) { x += m[0]; y += m[1]; } return [x, y]; }
 function drawSel() {
   const o = svg?.querySelector("#overlay"); if (!o) return;
-  o.innerHTML = [...sel].map(boxOf).filter(Boolean).map((b) => `<rect class="sel-box" x="${b.x - 4}" y="${b.y - 4}" width="${b.w + 8}" height="${b.h + 8}" rx="6"/>`).join("");
+  o.innerHTML = [...sel].map(place).filter(Boolean).map((b) => `<rect class="sel-box" x="${b.x - 4}" y="${b.y - 4}" width="${b.w + 8}" height="${b.h + 8}" rx="6"/>`).join("");
 }
 let space = false, drag = null;
 window.addEventListener("keydown", (e) => {
@@ -157,7 +158,7 @@ window.addEventListener("keydown", (e) => {
 });
 window.addEventListener("keyup", (e) => { if (e.code === "Space") { space = false; stage.classList.remove("pan"); } });
 stage.addEventListener("pointerdown", (e) => {
-  if (!cam) return; stage.setPointerCapture(e.pointerId);
+  if (!cam) return; e.preventDefault(); stage.setPointerCapture(e.pointerId);  // no browser text selection while dragging
   const p = toD(e);
   if (space || e.button === 1) { drag = { kind: "pan", sx: e.clientX, sy: e.clientY, cx: cam.x, cy: cam.y }; return; }
   const g = top_(e.target);
@@ -186,7 +187,7 @@ stage.addEventListener("pointermove", (e) => {
   sel = new Set(drag.keep);
   for (const g of svg.querySelectorAll("[data-id]")) {
     if (g.parentElement !== svg) continue;
-    const b = boxOf(g.dataset.id); if (b && b.x >= x0 && b.y >= y0 && b.x + b.w <= x0 + w && b.y + b.h <= y0 + h) sel.add(g.dataset.id);
+    const b = place(g.dataset.id); if (b && b.x >= x0 && b.y >= y0 && b.x + b.w <= x0 + w && b.y + b.h <= y0 + h) sel.add(g.dataset.id);
   }
   drawSel();
   svg.querySelector("#overlay").insertAdjacentHTML("beforeend", `<rect class="band" x="${x0}" y="${y0}" width="${w}" height="${h}"/>`);
@@ -195,7 +196,7 @@ stage.addEventListener("pointerup", () => { if (drag?.kind === "move" && drag.mo
 
 // ---- feedback: moves described relative to the nearest box, plus notes; copied as text for the agent
 function where(id) {
-  const b = boxOf(id); if (!b) return "";
+  const b = place(id); if (!b) return "";
   const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
   let best = null, bd = Infinity;
   for (const it of page.items) {
