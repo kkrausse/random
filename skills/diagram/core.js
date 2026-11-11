@@ -172,6 +172,9 @@
     const items = [], lint = [];
     let X = 0;
     const ds = diags.filter((d) => !only || d.title === only);
+    // ids are unique on the whole page (a copied id always names one thing)
+    const seen = new Map(), ids = (ns, t) => ns.forEach((n) => { if (!n?.id) return; if (seen.has(n.id) && seen.get(n.id) !== t) lint.push(`id ${n.id} is used in both ${seen.get(n.id)} and ${t}`); seen.set(n.id, t); if (n.kind === "group") ids(n.kids ?? [], t); });
+    for (const d of diags) ids(d.nodes ?? [], d.title);
     for (const d of ds) {
       const pre = lintGraph(d).map((m) => `${d.title}: ${m}`);
       const r = await layoutOne(d, ELK);
@@ -239,12 +242,15 @@
     }
     return s + "</g>";
   }
+  // a group is picked by its border or its title only: its inside is empty space (box-select works there)
   function groupSvg(it) {
     const g = it.g, { x, y, w, h } = it, tfs = g.big ? 22 : 15;
     let s = `<g data-id="${esc(it.id)}">`;
-    if (g.deck) for (const j of [3, 2, 1]) s += `<rect x="${x + j * 14}" y="${y - j * 14}" width="${w}" height="${h}" rx="8" fill="#fff" stroke="#868e96" stroke-width="1"/>` +
-      (j === 3 ? txt(x + j * 14 + w - 8, y - j * 14 + 4, "frame 9", 12, { ink: "#868e96", anchor: "end" }) : "");
-    s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="#fff" fill-opacity="${g.deck ? 1 : 0.6}" stroke="${g.deck ? "#1e1e1e" : "#adb5bd"}" stroke-width="${g.deck ? 2 : 1.2}"${g.deck ? "" : ' stroke-dasharray="8 6"'}/>`;
+    if (g.deck) for (const j of [3, 2, 1]) s += `<rect x="${x + j * 14}" y="${y - j * 14}" width="${w}" height="${h}" rx="8" fill="#fff" stroke="#868e96" stroke-width="1" pointer-events="none"/>` +
+      (j === 3 ? txt(x + j * 14 + w - 8, y - j * 14 + 4, "frame 9", 12, { ink: "#868e96", anchor: "end" }).replace("<text ", '<text pointer-events="none" ') : "");
+    s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="#fff" fill-opacity="${g.deck ? 1 : 0.6}" stroke="${g.deck ? "#1e1e1e" : "#adb5bd"}" stroke-width="${g.deck ? 2 : 1.2}"${g.deck ? "" : ' stroke-dasharray="8 6"'} pointer-events="none"/>`;
+    s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="none" stroke="transparent" stroke-width="14" pointer-events="stroke"/>`;
+    s += `<rect x="${x + 8}" y="${y + 6}" width="${tw(g.title, tfs) + 12}" height="${th(g.title, tfs) + 10}" fill="transparent" pointer-events="all"/>`;
     return s + txt(x + 14, y + 12, g.title, tfs, { ink: g.big ? "#495057" : "#1e1e1e", bold: !!g.big }) + "</g>";
   }
   function edgeSvg(it) {
