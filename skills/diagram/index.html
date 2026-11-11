@@ -1,0 +1,188 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>diagram</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; font: 13px DejaVu Sans Mono, Menlo, monospace; background: #fff; }
+  #stage, #stage > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #stage { cursor: default; touch-action: none; }
+  #stage.pan { cursor: grab; }
+  #stage [data-id] { cursor: pointer; }
+  .sel-box { fill: none; stroke: #e8590c; stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: none; }
+  .band { fill: rgba(25, 113, 194, .08); stroke: #1971c2; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
+  .moved { opacity: .9; }
+  #bar { position: fixed; top: 8px; right: 10px; text-align: right; color: #868e96; user-select: none; }
+  #bar b { color: #e03131; cursor: pointer; font-weight: normal; }
+  #issues { display: none; position: fixed; top: 30px; right: 10px; max-width: 60vw; max-height: 60vh; overflow: auto; background: #fff8f8;
+    border: 1px solid #ffc9c9; padding: 8px 10px; white-space: pre; }
+  #fb { position: fixed; left: 10px; bottom: 10px; max-width: 70vw; max-height: 40vh; overflow: auto; background: #fff; border: 1px solid #ced4da;
+    border-radius: 6px; padding: 8px 10px; display: none; }
+  #fb pre { margin: 0 0 6px; white-space: pre-wrap; }
+  #fb button { font: inherit; margin-right: 6px; }
+  #help { position: fixed; left: 10px; top: 8px; color: #adb5bd; user-select: none; }
+</style>
+<div id="stage"></div>
+<div id="bar"><span id="when">loading…</span> <b id="nissues"></b></div>
+<div id="issues"></div>
+<div id="help">wheel: pan · ctrl+wheel: zoom · drag empty: select · drag box: move (feedback) · ⌘C copy · N note · F fit</div>
+<div id="fb"><pre id="fbtext"></pre><button id="fbcopy">copy feedback</button><button id="fbclear">clear</button></div>
+<script src="elk.js"></script>
+<script src="core.js"></script>
+<script>
+"use strict";
+const q = new URLSearchParams(location.search), SRC = q.get("s"), ONLY = q.get("only") ?? undefined;
+const stage = document.getElementById("stage"), $ = (id) => document.getElementById(id);
+const srcURL = SRC ? new URL(SRC, location.href).href : null;
+let page = null, svg = null, key = "", cam = null, sel = new Set();
+const KEY = "dg-fb:" + srcURL;
+let fb = JSON.parse(localStorage.getItem(KEY) ?? '{"moves":{},"notes":[]}');
+const saveFb = () => { localStorage.setItem(KEY, JSON.stringify(fb)); showFb(); };
+
+// ---- load: re-run the diagram file every 2 s in a fresh hidden iframe (its own globals; works on file://); redraw on change
+const coreURL = new URL("core.js", location.href).href;
+let busy = false;
+function poll() {
+  if (!SRC) { $("when").textContent = "add ?s=<diagram.js>"; return; }
+  if (busy) return; busy = true;
+  const f = document.createElement("iframe"); f.style.display = "none";
+  f.srcdoc = `<script>onerror = (m, u, l) => { parent.__dgErr = m + " (line " + l + ")"; }<\/script><script src="${coreURL}"><\/script>` +
+    `<script src="${srcURL}${srcURL.includes("?") ? "&" : "?"}t=${Date.now()}"><\/script>`;
+  window.__dgErr = null;
+  f.onload = async () => {
+    try {
+      if (window.__dgErr) { $("when").textContent = "error: " + window.__dgErr; return; }
+      const all = JSON.parse(JSON.stringify(f.contentWindow.DG?.all ?? []));
+      const k = JSON.stringify(all); if (k === key) return; key = k;
+      DG.reset(); DG.all.push(...all);
+      await render(); $("when").textContent = "updated " + new Date().toLocaleTimeString();
+    } catch (e) { $("when").textContent = "error: " + e.message; console.error(e); }
+    finally { f.remove(); busy = false; }
+  };
+  document.body.appendChild(f);
+}
+
+async function render() {
+  const diags = [...DG.all];
+  page = await DG.layoutPage(diags, ELK, { only: ONLY });
+  stage.innerHTML = DG.toSvg(page, diags, { img: (s) => new URL(s, srcURL).href });
+  svg = stage.firstElementChild; svg.removeAttribute("width"); svg.removeAttribute("height");
+  svg.insertAdjacentHTML("beforeend", '<g id="overlay"></g>');
+  if (!cam) fit(); else setCam();
+  $("nissues").textContent = page.lint.length ? `${page.lint.length} issue${page.lint.length > 1 ? "s" : ""}` : "";
+  $("issues").textContent = page.lint.join("\n");
+  applyMoves();
+  sel = new Set([...sel].filter(gOf)); drawSel(); showFb();
+}
+$("nissues").onclick = () => { const s = $("issues").style; s.display = s.display === "block" ? "none" : "block"; };
+
+// ---- camera: the svg viewBox
+function setCam() { const r = stage.getBoundingClientRect(); svg.setAttribute("viewBox", `${cam.x} ${cam.y} ${r.width / cam.z} ${r.height / cam.z}`); }
+function fit() {
+  const b = DG.bbox(page.items), r = stage.getBoundingClientRect(), z = Math.min(r.width / (b.w + 200), r.height / (b.h + 200));
+  cam = { z, x: b.x - 100 - (r.width / z - b.w - 200) / 2, y: b.y - 100 }; setCam();
+}
+const toD = (e) => { const r = stage.getBoundingClientRect(); return [cam.x + (e.clientX - r.left) / cam.z, cam.y + (e.clientY - r.top) / cam.z]; };
+stage.addEventListener("wheel", (e) => {
+  e.preventDefault(); if (!cam) return;
+  if (e.ctrlKey || e.metaKey) {
+    const [px, py] = toD(e), z = Math.min(8, Math.max(0.01, cam.z * Math.exp(-e.deltaY * 0.01)));
+    cam.x = px - (px - cam.x) * cam.z / z; cam.y = py - (py - cam.y) * cam.z / z; cam.z = z;
+  } else { cam.x += e.deltaX / cam.z; cam.y += e.deltaY / cam.z; }
+  setCam();
+}, { passive: false });
+
+// ---- moves: a dragged group carries everything inside it
+function kids(id) {
+  const g = page.items.find((i) => i.id === id); if (!g || g.t !== "group") return [];
+  const inn = (i) => i.x >= g.x && i.y >= g.y && i.x + (i.w ?? 0) <= g.x + g.w && i.y + (i.h ?? 0) <= g.y + g.h;
+  return page.items.filter((i) => i.id !== id && (i.t === "node" || i.t === "group") && inn(i)).map((i) => i.id)
+    .concat(page.items.filter((i) => (i.t === "edge" || i.t === "link") && i.pts.every(([x, y]) => x >= g.x && y >= g.y && x <= g.x + g.w && y <= g.y + g.h)).map((i) => i.id));
+}
+function applyMoves() {
+  for (const g of svg.querySelectorAll("[transform]")) g.removeAttribute("transform");
+  for (const [id, [dx, dy]] of Object.entries(fb.moves)) for (const i of [id, ...kids(id)]) gOf(i)?.setAttribute("transform", `translate(${dx},${dy})`);
+}
+// ---- selection, box-select, move (as feedback)
+const gOf = (id) => svg?.querySelector(`[data-id="${CSS.escape(id)}"]`);
+const top_ = (el) => el?.closest?.("[data-id]");
+function boxOf(id) { const g = gOf(id); if (!g) return null; const b = g.getBBox(), m = fb.moves[id] ?? [0, 0]; return { x: b.x + m[0], y: b.y + m[1], w: b.width, h: b.height }; }
+function drawSel() {
+  const o = svg?.querySelector("#overlay"); if (!o) return;
+  o.innerHTML = [...sel].map(boxOf).filter(Boolean).map((b) => `<rect class="sel-box" x="${b.x - 4}" y="${b.y - 4}" width="${b.w + 8}" height="${b.h + 8}" rx="6"/>`).join("");
+}
+let space = false, drag = null;
+window.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT") return;
+  if (e.code === "Space") { space = true; stage.classList.add("pan"); e.preventDefault(); }
+  if (e.key === "Escape") { sel.clear(); drawSel(); }
+  if (e.key === "f" || e.key === "F") fit();
+  if ((e.key === "n" || e.key === "N") && sel.size) {
+    const t = prompt(`note on ${[...sel].join(", ")}:`); if (t) { fb.notes.push(`${[...sel].join(", ")}: ${t}`); saveFb(); }
+  }
+});
+window.addEventListener("keyup", (e) => { if (e.code === "Space") { space = false; stage.classList.remove("pan"); } });
+stage.addEventListener("pointerdown", (e) => {
+  if (!cam) return; stage.setPointerCapture(e.pointerId);
+  const p = toD(e);
+  if (space || e.button === 1) { drag = { kind: "pan", sx: e.clientX, sy: e.clientY, cx: cam.x, cy: cam.y }; return; }
+  const g = top_(e.target);
+  if (g) {
+    const id = g.dataset.id;
+    if (e.shiftKey) { sel.has(id) ? sel.delete(id) : sel.add(id); } else if (!sel.has(id)) sel = new Set([id]);
+    drawSel();
+    drag = { kind: "move", p, ids: [...sel], base: Object.fromEntries([...sel].map((i) => [i, fb.moves[i] ?? [0, 0]])), moved: false };
+  } else {
+    if (!e.shiftKey) sel.clear();
+    drag = { kind: "band", p, keep: new Set(sel) }; drawSel();
+  }
+});
+stage.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  if (drag.kind === "pan") { cam.x = drag.cx - (e.clientX - drag.sx) / cam.z; cam.y = drag.cy - (e.clientY - drag.sy) / cam.z; setCam(); return; }
+  const [x, y] = toD(e), dx = x - drag.p[0], dy = y - drag.p[1];
+  if (drag.kind === "move") {
+    if (Math.hypot(dx, dy) * cam.z < 4 && !drag.moved) return; drag.moved = true;
+    for (const id of drag.ids) { const b = drag.base[id]; fb.moves[id] = [b[0] + dx, b[1] + dy]; }
+    applyMoves(); drawSel(); return;
+  }
+  const x0 = Math.min(x, drag.p[0]), y0 = Math.min(y, drag.p[1]), w = Math.abs(dx), h = Math.abs(dy);
+  sel = new Set(drag.keep);
+  for (const g of svg.querySelectorAll("[data-id]")) {
+    if (g.parentElement !== svg) continue;
+    const b = boxOf(g.dataset.id); if (b && b.x >= x0 && b.y >= y0 && b.x + b.w <= x0 + w && b.y + b.h <= y0 + h) sel.add(g.dataset.id);
+  }
+  drawSel();
+  svg.querySelector("#overlay").insertAdjacentHTML("beforeend", `<rect class="band" x="${x0}" y="${y0}" width="${w}" height="${h}"/>`);
+});
+stage.addEventListener("pointerup", () => { if (drag?.kind === "move" && drag.moved) saveFb(); if (drag?.kind === "band") drawSel(); drag = null; });
+
+// ---- feedback: moves described relative to the nearest box, plus notes; copied as text for the agent
+function where(id) {
+  const b = boxOf(id); if (!b) return "";
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  let best = null, bd = Infinity;
+  for (const it of page.items) {
+    if (it.id === id || !(it.t === "node" || it.t === "group") || it.legend) continue;
+    if (it.x <= b.x && it.y <= b.y && it.x + it.w >= b.x + b.w && it.y + it.h >= b.y + b.h) continue; // its own container
+    const dx = Math.max(it.x - (b.x + b.w), b.x - (it.x + it.w), 0), dy = Math.max(it.y - (b.y + b.h), b.y - (it.y + it.h), 0), d = Math.hypot(dx, dy);
+    if (d < bd) { bd = d; best = it; }
+  }
+  if (!best) return "";
+  const ox = best.x + best.w / 2, oy = best.y + best.h / 2, h = cx - ox, v = cy - oy;
+  const rel = Math.abs(h) / (best.w + b.w) > Math.abs(v) / (best.h + b.h) ? (h > 0 ? "right of" : "left of") : (v > 0 ? "below" : "above");
+  return `${rel} ${best.id}`;
+}
+function fbText() {
+  const mv = Object.entries(fb.moves).filter(([, m]) => Math.hypot(...m) > 1)
+    .map(([id, [dx, dy]]) => `move ${id} by (${dx > 0 ? "+" : ""}${Math.round(dx)}, ${dy > 0 ? "+" : ""}${Math.round(dy)}): wanted ${where(id)}`);
+  return [...mv, ...fb.notes.map((n) => "note " + n)].join("\n");
+}
+function showFb() { const t = page ? fbText() : ""; $("fb").style.display = t ? "block" : "none"; $("fbtext").textContent = t; }
+$("fbcopy").onclick = () => navigator.clipboard.writeText(`feedback on ${SRC}:\n` + fbText());
+$("fbclear").onclick = () => { fb = { moves: {}, notes: [] }; saveFb(); key = ""; poll(); };
+window.addEventListener("copy", (e) => {
+  if (!page || !sel.size) return;
+  e.clipboardData.setData("text/plain", `# ${SRC}: ${sel.size} selected\n` + DG.describe([...sel], page, DG.all)); e.preventDefault();
+});
+window.addEventListener("resize", () => cam && setCam());
+poll(); setInterval(poll, 2000);
+</script>

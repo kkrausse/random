@@ -1,0 +1,20 @@
+{
+  "name": "diagram",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "typecheck": "bun check"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^7"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@typescript/native-preview": "^7.0.0-dev.20260707.2",
+    "elkjs": "^0.12.1"
+  }
+}
