@@ -1,6 +1,6 @@
 ---
 name: diagram
-description: Dataflow / architecture diagrams from one small .js file of nodes and edges; ELK lays it out, a static viewer page live-updates, `bun dg.ts` type-checks, lints and renders a PNG in ~1–3 s. Use instead of the excalidraw skill for any boxes-and-arrows diagram.
+description: Dataflow / architecture diagrams from one small .js file of nodes and edges; ELK lays it out, a static viewer page live-updates, `bun dg.ts` type-checks, lints and renders a PNG in ~1–3 s. Use for any boxes-and-arrows / architecture / dataflow diagram (replaces the excalidraw skill).
 ---
 
 # diagram
