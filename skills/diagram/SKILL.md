@@ -30,6 +30,7 @@ diagram("tiny", {
 - **Edges:** an edge is `E(from, to, label, { ink, hidden, short })` or a chain string `"a>b>c"`. `hidden` only orders the layout.
 - **Group style:** `G(id, title, kids, { fill, ink, sw })` tints the background and draws a solid border (e.g. a "context frames" lane).
 - **ELK limit:** two sibling groups never share rows. Each group is laid out as one solid block, so hidden edges can't put group A beside group B. To get side-by-side, ungroup one side or make both kids of one group.
+- **Abstractions (overview, then definitions beside it):** draw a part as one box, `O(id, "TRUNK BLOCK i", "trunk", { def: "TRUNK BLOCK i" })`, and define it as its own `diagram("TRUNK BLOCK i", { titleSize: 70, … })`. In the definition, name every input `I(…, { port: "x" })` and every output `D(…, { out: true, port: "y" })`. Label each edge into the box with an input name (each exactly once) and each edge out with an output name. `dg.ts` checks all of it. The box gets a double border and "⧉ defined in: …".
 - **Links:** `links: [L(a, b, "SAME WEIGHTS")]` draws a dashed line that carries no data.
 - **Spec options:** `mirror: true` flips the finished layout. Call `diagram` several times to put several diagrams side by side.
 - **Title:** one `title("…")` per file names the page (browser tab `diagram: …`). Say specifically what it shows; `dg.ts` flags a missing one.

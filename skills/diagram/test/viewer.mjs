@@ -7,7 +7,8 @@ const p = await b.newPage({ viewport: { width: 1600, height: 1000 } });
 const errs = []; p.on('pageerror', (e) => errs.push(e.message));
 let fails = 0; const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${ok ? '' : ' :: ' + info}`); if (!ok) fails++; };
 const fresh = async () => { await p.goto(URL_); await p.waitForFunction(() => typeof page !== 'undefined' && page && document.querySelector('#stage svg'), null, { timeout: 20000 }); };
-const view = (id, z = 0.9) => p.evaluate(([id, z]) => { const g = itemOf(id); cam = { x: g.x - 150, y: g.y - 120, z }; setCam(); }, [id, z]);
+// centre the view on an item (so every box the check clicks is on screen)
+const view = (id, z = 0.9) => p.evaluate(([id, z]) => { const g = itemOf(id), r = stage.getBoundingClientRect(); cam = { x: g.x + g.w / 2 - r.width / 2 / z, y: g.y + g.h / 2 - r.height / 2 / z, z }; setCam(); }, [id, z]);
 const centre = (id) => p.evaluate((id) => { const q = document.querySelector(`[data-id="${CSS.escape(id)}"] rect`).getBoundingClientRect(); return [q.x + q.width / 2, q.y + q.height / 2]; }, id);
 const drag = async ([x, y], dx, dy) => { await p.mouse.move(x, y); await p.mouse.down(); await p.mouse.move(x + dx, y + dy, { steps: 6 }); await p.mouse.up(); };
 const places = (ids) => p.evaluate((ids) => Object.fromEntries(ids.map((i) => [i, place(i)])), ids);
@@ -41,20 +42,21 @@ await drag(title, 100, 30); await drag(await centre('k.c.t'), 60, 20); z = await
 check('outline then inner box: moves add', Math.round(z['k.c.t'].x - a['k.c.t'].x) === Math.round(z['k.cp'].x - a['k.cp'].x) + Math.round(60 / 0.7) || Math.abs((z['k.c.t'].x - a['k.c.t'].x) - (z['k.cp'].x - a['k.cp'].x) - 60 / 0.7) < 2, JSON.stringify([a, z]));
 L = await linesOk(['k.c.t', 'k.c.blk', 'k.c1', 'k.c.out', 'k.c.take']); check('lines inside moved outline end on their boxes', !L.length, L.join(', '));
 // 3. box-select a whole outline + contents, drag: everything moves the same amount, feedback = 1 line
-await fresh(); await view('k.tb');
-const R = await p.evaluate(() => { const q = document.querySelector('[data-id="k.tb"] rect').getBoundingClientRect(); return [q.x, q.y, q.width, q.height]; });
+await fresh(); await view('k.cp', 0.7);
+const R = await p.evaluate(() => { const q = document.querySelector('[data-id="k.cp"] rect:nth-of-type(4)').getBoundingClientRect(); return [q.x, q.y, q.width, q.height]; });
 await p.mouse.move(R[0] - 20, R[1] - 20); await p.mouse.down(); await p.mouse.move(R[0] + R[2] + 20, R[1] + R[3] + 20, { steps: 6 }); await p.mouse.up();
-const ids = await p.evaluate(() => [...sel]); check('box-select picks the outline and its contents', ids.includes('k.tb') && ids.length > 5, ids.length);
-a = await places(ids); await drag(await centre('k.x.m'), -250, 20); z = await places(ids);
-const deltas = new Set(ids.map((i) => `${Math.round(z[i].x - a[i].x)},${Math.round(z[i].y - a[i].y)}`));
-check('multi-select drag: every item moves the same amount', deltas.size === 1, [...deltas].join(' '));
-const fb = await p.evaluate(() => fbText()); check('feedback: one line for the outline', fb.split('\n').length === 1 && fb.startsWith('move k.tb'), fb);
+const ids = await p.evaluate(() => [...sel]); check('box-select picks the outline and its contents', ids.includes('k.cp') && ids.length > 5, ids.length);
+a = await places(ids); await drag(await centre('k.c.t'), -250, 20); z = await places(ids);
+const boxIds = await p.evaluate((ids) => ids.filter((i) => ['node', 'group'].includes(itemOf(i)?.t)), ids);  // lines change shape when one end moves
+const deltas = new Set(boxIds.map((i) => `${Math.round(z[i].x - a[i].x)},${Math.round(z[i].y - a[i].y)}`));
+check('multi-select drag: every box moves the same amount', deltas.size === 1, [...deltas].join(' '));
+const fb = await p.evaluate(() => fbText()); check('feedback: one line for the outline', fb.split('\n').length === 1 && fb.startsWith('move k.cp'), fb);
 L = await linesOk(ids); check('lines of the moved selection end on their boxes', !L.length, L.join(', '));
 // 4. two unrelated boxes selected with shift: same move
-await fresh(); await view('k.c.blk', 0.5);
-await p.mouse.click(...(await centre('k.c.blk'))); await p.keyboard.down('Shift'); await p.mouse.click(...(await centre('k.x.m'))); await p.keyboard.up('Shift');
-a = await places(['k.c.blk', 'k.x.m']); await drag(await centre('k.x.m'), 80, 60); z = await places(['k.c.blk', 'k.x.m']);
-check('shift-select two boxes, drag: same move', Math.round(z['k.c.blk'].x - a['k.c.blk'].x) === Math.round(z['k.x.m'].x - a['k.x.m'].x) && Math.round(z['k.c.blk'].x - a['k.c.blk'].x) !== 0, JSON.stringify([a, z]));
+await fresh(); await view('k.cp', 0.8);
+await p.mouse.click(...(await centre('k.c.blk'))); await p.keyboard.down('Shift'); await p.mouse.click(...(await centre('k.c.take'))); await p.keyboard.up('Shift');
+a = await places(['k.c.blk', 'k.c.take']); await drag(await centre('k.c.take'), 80, 60); z = await places(['k.c.blk', 'k.c.take']);
+check('shift-select two boxes, drag: same move', Math.round(z['k.c.blk'].x - a['k.c.blk'].x) === Math.round(z['k.c.take'].x - a['k.c.take'].x) && Math.round(z['k.c.blk'].x - a['k.c.blk'].x) !== 0, JSON.stringify([a, z]));
 // 5. selection outline = place(); group inside is empty space; no text highlight; R resets
 const so = await p.evaluate(() => { const r = document.querySelector('.sel-box'); const q = place('k.c.blk'); return [+r.getAttribute('x') + 4 - q.x, +r.getAttribute('y') + 4 - q.y]; });
 check('red outline sits on place()', Math.abs(so[0]) < 0.5 && Math.abs(so[1]) < 0.5, so);
@@ -72,9 +74,9 @@ await p.mouse.click(...c1); await p.keyboard.down('Shift'); await p.mouse.click(
 check('shift-click deselect + drag moves nothing', (await p.evaluate(() => Object.keys(fb.moves).length)) === 0, JSON.stringify(await p.evaluate(() => fb.moves)));
 const z0 = await p.evaluate(() => cam.z); await p.keyboard.press('Control+f');
 check('Ctrl+F leaves the view alone', (await p.evaluate(() => cam.z)) === z0);
-const ms = await p.evaluate(() => { fb.moves = { 'k.cp': [10, 10], 'k.tb': [5, 5], 'k.xx': [3, 3] }; const t = performance.now(); for (let i = 0; i < 5; i++) { fb.moves['k.cp'][0] += 1; applyMoves(); } return (performance.now() - t) / 5; });
+const ms = await p.evaluate(() => { fb.moves = { 'k.cp': [10, 10], 'k.L': [5, 5], 'k.xx': [3, 3] }; const t = performance.now(); for (let i = 0; i < 5; i++) { fb.moves['k.cp'][0] += 1; applyMoves(); } return (performance.now() - t) / 5; });
 check('a drag frame takes < 30 ms', ms < 30, ms.toFixed(1) + ' ms');
-L = await linesOk(['k.c.blk', 'k.c.t', 'k.x.m', 'k.xx']); check('lines still end on boxes after fast redraws', !L.length, L.join(', '));
+L = await linesOk(['k.c.blk', 'k.c.t', 'k.x.t', 'k.xx']); check('lines still end on boxes after fast redraws', !L.length, L.join(', '));
 // 7. a missing diagram file says so
 const p2 = await b.newPage(); await p2.goto(URL_.replace(/\?s=[^&]*/, '?s=file:///nonexistent/x.js')); await p2.waitForTimeout(3000);
 check('missing file is reported', (await p2.evaluate(() => document.getElementById('bar').textContent)).includes('could not load'));
@@ -82,15 +84,17 @@ check('missing file is reported', (await p2.evaluate(() => document.getElementBy
 await fresh(); await view('k.cp', 0.8);
 await p.mouse.click(...(await centre('k.c.blk')));
 a = await places(['k.c.blk']);
-const empty = await p.evaluate(() => { for (let y = 120; y < 900; y += 20) for (let x = 60; x < 1500; x += 20) if (!document.elementFromPoint(x, y)?.closest('[data-id]')) return [x, y]; });
+const emptyPt = () => p.evaluate(() => { for (let y = 120; y < 900; y += 20) for (let x = 60; x < 1500; x += 20) if (!document.elementFromPoint(x, y)?.closest('[data-id]')) return [x, y]; });
+const empty = await emptyPt();
 await drag(empty, 90, 50); z = await places(['k.c.blk']);
 check('selection + drag on empty space moves the selection', Math.round(z['k.c.blk'].x - a['k.c.blk'].x) !== 0 && (await p.evaluate(() => sel.size)) === 1, JSON.stringify([a, z]));
 L = await linesOk(['k.c.blk']); check('…and its lines follow', !L.length, L.join(', '));
-await p.mouse.click(...empty);
-check('a plain click on empty space clears the selection', (await p.evaluate(() => sel.size)) === 0);
+const empty2 = await emptyPt(); await p.mouse.click(...empty2);  // lines moved with the selection: find empty space again
+check('a plain click on empty space clears the selection', (await p.evaluate(() => sel.size)) === 0, 'under the click: ' + await p.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('[data-id]')?.dataset.id ?? '(empty)', empty2) + ' sel=' + await p.evaluate(() => [...sel]));
+await p.keyboard.press('r'); await p.waitForTimeout(2500); await view('k.cp', 0.8);  // fresh layout: nothing moved over k.c1
 await p.mouse.click(...(await centre('k.c.blk'))); await p.keyboard.down('Shift');
 const R2 = await p.evaluate(() => { const q = document.querySelector('[data-id="k.c1"] rect').getBoundingClientRect(); return [q.x - 10, q.y - 10, q.width + 20, q.height + 20]; });
 await p.mouse.move(R2[0], R2[1]); await p.mouse.down(); await p.mouse.move(R2[0] + R2[2], R2[1] + R2[3], { steps: 4 }); await p.mouse.up(); await p.keyboard.up('Shift');
-check('shift + drag on empty space adds by box-select', (await p.evaluate(() => sel.has('k.c1') && sel.has('k.c.blk'))));
+check('shift + drag on empty space adds by box-select', (await p.evaluate(() => sel.has('k.c1') && sel.has('k.c.blk'))), 'band start on: ' + await p.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('[data-id]')?.dataset.id ?? '(empty)', [R2[0], R2[1]]) + ' sel=' + await p.evaluate(() => [...sel]));
 check('no page errors', !errs.length, errs.join(' | '));
 await b.close(); process.exit(fails ? 1 : 0);

@@ -8,6 +8,9 @@ interface NodeOpts {
   img?: [src: string, w: number, h: number]; // picture inside (path relative to the diagram file)
   out?: boolean;         // a final output: no edge out is fine
   src?: boolean;         // a source that is not an input (no edge in is fine)
+  def?: string;          // this op is an abstraction defined by the diagram with this title (drawn with a double border);
+                         // edges into it are labelled with that diagram's input ports (each exactly once), edges out with its output ports
+  port?: string;         // in a defining diagram: the name of this input (I) or output (out: true)
 }
 interface Node extends NodeOpts { id: string; kind: "data" | "op"; s: string; input?: boolean; param?: string; w?: string }
 interface GroupOpts {

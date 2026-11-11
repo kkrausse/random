@@ -41,8 +41,9 @@
   }
 
   // ---- node sizes
+  const label = (n) => n.def ? `${n.s}\n⧉ defined in: ${n.def}` : n.port ? `${n.s}  ⟨${n.port}⟩` : n.s;
   function size(n) {
-    const pad = 10;
+    const pad = 10; n = { ...n, s: label(n) };
     if (n.img) { const [, w, h] = n.img; return { w: Math.max(w, tw(n.s)) + 24, h: h + th(n.s) + 30 }; }
     const w = tw(n.s) + 2 * pad, h = th(n.s) + 2 * 7;
     if (n.tok) { const S = strip(n.tok); return { w: Math.max(w, S.w + 2 * pad), h: h + S.h + 6 }; }
@@ -76,6 +77,26 @@
       if (n.kind === "op" && !inc.get(id) && !n.src) out.push(`${id}: op with no input edge (implicit input?)`);
       if (n.kind === "data" && !n.input && !n.param && !inc.get(id) && !n.src) out.push(`${id}: data that comes from nowhere (no edge in)`);
       if (!outc.get(id) && !n.out) out.push(`${id}: dead end (no edge out; mark { out: true } if it is an output)`);
+    }
+    return out;
+  }
+
+  // ---- abstractions: O(id, s, w, { def: "<title of the diagram that defines it>" }). That diagram names its inputs
+  // (I(..., { port: "x" })) and outputs (D(..., { out: true, port: "y" })); every edge into the box carries an input's
+  // name, each input exactly once, and every edge out carries an output's name.
+  function lintDefs(diags) {
+    const out = [], flat = (ns) => ns.flatMap((n) => n?.kind === "group" ? flat(n.kids ?? []) : [n]);
+    const byTitle = new Map(diags.map((d) => [d.title, d]));
+    for (const d of diags) for (const n of flat(d.nodes ?? [])) {
+      if (!n?.def) continue;
+      const D_ = byTitle.get(n.def); if (!D_) { out.push(`${d.title}: ${n.id}: def "${n.def}" is not a diagram on this page`); continue; }
+      const dn = flat(D_.nodes ?? []), ins = dn.filter((x) => x.input), outs = dn.filter((x) => x.out);
+      for (const x of [...ins, ...outs]) if (!x.port) out.push(`${n.def}: ${x.id} needs a port name ({ port: "…" }) because ${n.id} uses this definition`);
+      const inP = ins.map((x) => x.port), outP = outs.map((x) => x.port), es = expand(d.edges).filter((e) => !e.hidden);
+      const got = es.filter((e) => e.to === n.id).map((e) => e.s);
+      for (const s of got) if (!inP.includes(s)) out.push(`${d.title}: edge into ${n.id} labelled "${s}": ${n.def} has no input of that name (has: ${inP.join(", ")})`);
+      for (const p of inP) { const c = got.filter((s) => s === p).length; if (c !== 1) out.push(`${d.title}: ${n.id} gets input "${p}" ${c} times (must be exactly once)`); }
+      for (const e of es.filter((e) => e.from === n.id)) if (!outP.includes(e.s)) out.push(`${d.title}: edge out of ${n.id} labelled "${e.s}": ${n.def} has no output of that name (has: ${outP.join(", ")})`);
     }
     return out;
   }
@@ -176,6 +197,7 @@
     // ids are unique on the whole page (a copied id always names one thing)
     const seen = new Map(), ids = (ns, t) => ns.forEach((n) => { if (!n?.id) return; if (seen.has(n.id) && seen.get(n.id) !== t) lint.push(`id ${n.id} is used in both ${seen.get(n.id)} and ${t}`); seen.set(n.id, t); if (n.kind === "group") ids(n.kids ?? [], t); });
     for (const d of diags) ids(d.nodes ?? [], d.title);
+    lint.push(...lintDefs(diags));
     for (const d of ds) {
       const pre = lintGraph(d).map((m) => `${d.title}: ${m}`);
       const r = await layoutOne(d, ELK);
@@ -221,12 +243,13 @@
   const txt = (x, y, s, fs = FS, o = {}) => `<text x="${x}" y="${y}" font-size="${fs}" fill="${o.ink ?? "#1e1e1e"}"${o.bold ? ' font-weight="bold"' : ""}${o.anchor ? ` text-anchor="${o.anchor}"` : ""} xml:space="preserve">` +
     lines(s).map((l, i) => `<tspan x="${x}" dy="${i ? fs * LH : fs * 0.95}">${esc(l)}</tspan>`).join("") + "</text>";
   function nodeSvg(it, weights, img) {
-    const n = it.n, { x, y, w, h } = it;
+    const n = { ...it.n, s: label(it.n) }, { x, y, w, h } = it;
     const op = n.kind === "op", wfill = n.fillc ?? weights[n.w] ?? weights[n.param] ?? n.w ?? n.param;
     const bg = op ? fill(wfill ?? "white") : n.param ? fill(wfill) : "#ffffff";
     const st = op ? `stroke="${ink(n.ink ?? "black")}" stroke-width="${n.sw ?? 1.2}"`
       : `stroke="${ink(n.ink ?? (n.param ? "black" : "#495057"))}" stroke-width="${n.sw ?? (n.input ? 3 : 1.8)}" stroke-dasharray="${n.input ? "0.1 6" : "0.1 4.5"}" stroke-linecap="round"`;
     let s = `<g data-id="${esc(it.id)}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${op ? 6 : 4}" fill="${bg}" ${st}/>`;
+    if (n.def) s += `<rect x="${x + 3}" y="${y + 3}" width="${w - 6}" height="${h - 6}" rx="4" fill="none" stroke="#1e1e1e" stroke-width="1"/>`;  // double border = defined elsewhere
     if (n.img) {
       const [src, iw, ih] = n.img;
       s += `<image href="${esc(img(src))}" x="${x + 12}" y="${y + 10}" width="${iw}" height="${ih}" preserveAspectRatio="none"/>` + txt(x + 12, y + ih + 18, n.s, FS, { ink: ink(n.ink ?? "black") });
