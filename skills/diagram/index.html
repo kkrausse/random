@@ -101,8 +101,7 @@ stage.addEventListener("wheel", (e) => {
 function kids(id) {
   const g = page.items.find((i) => i.id === id); if (!g || g.t !== "group") return [];
   const inn = (i) => i.x >= g.x && i.y >= g.y && i.x + (i.w ?? 0) <= g.x + g.w && i.y + (i.h ?? 0) <= g.y + g.h;
-  return page.items.filter((i) => i.id !== id && (i.t === "node" || i.t === "group") && inn(i)).map((i) => i.id)
-    .concat(page.items.filter((i) => (i.t === "edge" || i.t === "link") && i.pts.every(([x, y]) => x >= g.x && y >= g.y && x <= g.x + g.w && y <= g.y + g.h)).map((i) => i.id));
+  return page.items.filter((i) => i.id !== id && (i.t === "node" || i.t === "group") && inn(i)).map((i) => i.id);  // lines follow their ends
 }
 // ---- THE position of everything: layout place + moves. Drawing, selection, box-select and feedback all read only this.
 const itemOf = (id) => page.items.find((i) => i.id === id);
@@ -112,7 +111,6 @@ function offset(id) {  // its own move + the moves of every outline it sits in
   return [x, y];
 }
 function linePts(it) {  // a line follows its two boxes: same offset -> shifted whole, else redrawn between the moved ends
-  const own = offset(it.id); if (own[0] || own[1]) return it.pts.map(([x, y]) => [x + own[0], y + own[1]]);
   const a = offset(it.from), b = offset(it.to);
   if (a[0] === b[0] && a[1] === b[1]) return it.pts.map(([x, y]) => [x + a[0], y + a[1]]);
   const s0 = [it.pts[0][0] + a[0], it.pts[0][1] + a[1]], e0 = it.pts[it.pts.length - 1], e = [e0[0] + b[0], e0[1] + b[1]];
