@@ -4,8 +4,9 @@ use serde::Deserialize;
 #[derive(Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Config {
-    /// Global hotkey in `global-hotkey` syntax, e.g. "alt+space", "cmd+shift+KeyK".
-    pub hotkey: String,
+    /// Global hotkeys in `global-hotkey` syntax, e.g. "alt+space",
+    /// "cmd+shift+KeyK". Each one toggles the popover.
+    pub hotkeys: Vec<String>,
     /// Loopback port the browser extension connects to.
     pub port: u16,
     /// Bundle id of the browser to bring forward when a tab is picked. Unset:
@@ -17,7 +18,13 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            hotkey: "cmd+shift+space".into(),
+            // The second is deliberately awkward: it is what a remote or mouse
+            // button is bound to, and nothing else will claim it, so the
+            // switcher stays reachable when another app holds the first.
+            hotkeys: vec![
+                "cmd+shift+space".into(),
+                "ctrl+alt+shift+cmd+KeyS".into(),
+            ],
             port: 47600,
             browser_bundle_id: None,
         }

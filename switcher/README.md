@@ -16,8 +16,10 @@ cargo build --release      # needs Xcode's Metal toolchain for GPUI's shaders
 ./target/release/switcher  # no Dock icon; logs to stderr; Ctrl-C or `pkill -x switcher` to quit
 ```
 
-Press Cmd+Shift+Space (the built-in default). It exits at startup if the hotkey is taken by another app
-or the port is in use.
+Press Cmd+Shift+Space, or Ctrl+Option+Shift+Cmd+S (a backup meant for a remote
+or mouse button). A hotkey another app already holds is skipped with a warning
+(1Password's Quick Access takes Cmd+Shift+Space by default); the app exits at
+startup only if none can be registered or the port is in use.
 
 Keys: Up/Down, Ctrl-P/Ctrl-N, Tab/Shift-Tab move; Enter or click activates;
 Esc, the hotkey again, or clicking elsewhere hides. Backspace, Opt-Backspace /
@@ -28,7 +30,8 @@ Ctrl-W (word), Cmd-Backspace / Ctrl-U (all) and Cmd-V edit the query.
 `~/.config/switcher/config.toml`, all keys optional, read at startup:
 
 ```toml
-hotkey = "cmd+shift+space"   # the default; global-hotkey syntax: modifiers + key, e.g. "cmd+shift+KeyK", "ctrl+alt+Tab"
+# the defaults; global-hotkey syntax: modifiers + key, e.g. "cmd+shift+KeyK", "ctrl+alt+Tab"
+hotkeys = ["cmd+shift+space", "ctrl+alt+shift+cmd+KeyS"]
 port = 47600           # must match the extension
 # browser_bundle_id = "com.brave.Browser"
 ```

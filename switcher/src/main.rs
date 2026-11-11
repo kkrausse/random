@@ -25,10 +25,14 @@ fn fail(message: String) -> ! {
 
 fn main() {
     let config = config::load();
-    let hotkey: HotKey = config
-        .hotkey
-        .parse()
-        .unwrap_or_else(|error| fail(format!("bad hotkey {:?}: {error}", config.hotkey)));
+    let hotkeys: Vec<(String, HotKey)> = config
+        .hotkeys
+        .iter()
+        .map(|text| match text.parse() {
+            Ok(hotkey) => (text.clone(), hotkey),
+            Err(error) => fail(format!("bad hotkey {text:?}: {error}")),
+        })
+        .collect();
 
     let (events, mut incoming) = unbounded();
     let connections = server::Connections::default();
@@ -53,12 +57,22 @@ fn main() {
         // Carbon hotkeys: no Accessibility permission needed.
         let manager = GlobalHotKeyManager::new()
             .unwrap_or_else(|error| fail(format!("hotkey manager: {error}")));
-        manager.register(hotkey).unwrap_or_else(|error| {
-            fail(format!(
-                "cannot register hotkey {:?}: {error}",
-                config.hotkey
-            ))
-        });
+        // A hotkey another app holds is skipped, not fatal, as long as one
+        // of them works.
+        let registered: Vec<&str> = hotkeys
+            .iter()
+            .filter(|(text, hotkey)| match manager.register(*hotkey) {
+                Ok(()) => true,
+                Err(error) => {
+                    eprintln!("switcher: cannot register hotkey {text:?}: {error}");
+                    false
+                }
+            })
+            .map(|(text, _)| text.as_str())
+            .collect();
+        if registered.is_empty() {
+            fail("no hotkey could be registered".into());
+        }
         std::mem::forget(manager); // registered for the life of the process
         GlobalHotKeyEvent::set_event_handler(Some(move |event: GlobalHotKeyEvent| {
             if event.state == HotKeyState::Pressed {
@@ -67,8 +81,9 @@ fn main() {
         }));
 
         eprintln!(
-            "switcher: hotkey {}, extension socket ws://127.0.0.1:{}",
-            config.hotkey, config.port
+            "switcher: hotkeys {}, extension socket ws://127.0.0.1:{}",
+            registered.join(", "),
+            config.port
         );
         let window = ui::open(config, connections, cx)
             .unwrap_or_else(|error| fail(format!("cannot create the popover: {error}")));
