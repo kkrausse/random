@@ -162,6 +162,13 @@ window.addEventListener("keydown", (e) => {
   }
 });
 window.addEventListener("keyup", (e) => { if (e.code === "Space") { space = false; stage.classList.remove("pan"); } });
+// a drag of the current selection: only boxes and outlines move (lines follow their boxes), and a box inside a
+// selected outline moves with the outline only, so only the outermost selected are dragged
+function moveDrag(p) {
+  const boxes = [...sel].filter((i) => { const it = itemOf(i); return it && (it.t === "node" || it.t === "group"); });
+  const ids = boxes.filter((i) => !boxes.some((o) => o !== i && kids(o).includes(i)));
+  return ids.length ? { kind: "move", p, ids, base: Object.fromEntries(ids.map((i) => [i, fb.moves[i] ?? [0, 0]])), moved: false } : null;
+}
 stage.addEventListener("pointerdown", (e) => {
   if (!cam || e.button === 2) return; e.preventDefault(); stage.setPointerCapture(e.pointerId);  // no browser text selection while dragging
   const p = toD(e);
@@ -172,11 +179,10 @@ stage.addEventListener("pointerdown", (e) => {
     if (e.shiftKey && sel.has(id)) { sel.delete(id); drawSel(); drag = null; return; }  // shift-click to deselect: nothing moves
     if (e.shiftKey) sel.add(id); else if (!sel.has(id)) sel = new Set([id]);
     drawSel();
-    // only boxes and outlines move; lines follow their boxes
-    // a box inside a selected outline moves with the outline only (once), so drag only the outermost selected
-    const boxes = [...sel].filter((i) => { const it = itemOf(i); return it && (it.t === "node" || it.t === "group"); });
-    const movable = boxes.filter((i) => !boxes.some((o) => o !== i && kids(o).includes(i)));
-    drag = movable.length ? { kind: "move", p, ids: movable, base: Object.fromEntries(movable.map((i) => [i, fb.moves[i] ?? [0, 0]])), moved: false } : null;
+    drag = moveDrag(p);
+  } else if (!e.shiftKey && moveDrag(p)) {
+    // press on empty space with a selection: hold and slide moves the selection; a plain click clears it
+    drag = { ...moveDrag(p), clearOnClick: true };
   } else {
     if (!e.shiftKey) sel.clear();
     drag = { kind: "band", p, keep: new Set(sel) }; drawSel();
@@ -201,7 +207,9 @@ stage.addEventListener("pointermove", (e) => {
   svg.querySelector("#overlay").insertAdjacentHTML("beforeend", `<rect class="band" x="${x0}" y="${y0}" width="${w}" height="${h}"/>`);
 });
 stage.addEventListener("pointercancel", () => { drag = null; drawSel(); });
-stage.addEventListener("pointerup", () => { if (drag?.kind === "move" && drag.moved) saveFb(); if (drag?.kind === "band") drawSel(); drag = null; });
+stage.addEventListener("pointerup", () => {
+  if (drag?.clearOnClick && !drag.moved) { sel.clear(); drawSel(); }
+  if (drag?.kind === "move" && drag.moved) saveFb(); if (drag?.kind === "band") drawSel(); drag = null; });
 
 // ---- feedback: moves described relative to the nearest box, plus notes; copied as text for the agent
 function where(id) {  // the nearest box that did not move with it, both at their current place()

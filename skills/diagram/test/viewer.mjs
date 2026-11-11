@@ -77,5 +77,19 @@ L = await linesOk(['k.c.blk', 'k.c.t', 'k.x.m', 'k.xx']); check('lines still end
 // 7. a missing diagram file says so
 const p2 = await b.newPage(); await p2.goto(URL_.replace(/\?s=[^&]*/, '?s=file:///nonexistent/x.js')); await p2.waitForTimeout(3000);
 check('missing file is reported', (await p2.evaluate(() => document.getElementById('bar').textContent)).includes('could not load'));
+// 8. with a selection: press on empty space and slide moves it; a plain click there clears it; shift+drag still box-selects
+await fresh(); await view('k.cp', 0.8);
+await p.mouse.click(...(await centre('k.c.blk')));
+a = await places(['k.c.blk']);
+const empty = await p.evaluate(() => { for (let y = 120; y < 900; y += 20) for (let x = 60; x < 1500; x += 20) if (!document.elementFromPoint(x, y)?.closest('[data-id]')) return [x, y]; });
+await drag(empty, 90, 50); z = await places(['k.c.blk']);
+check('selection + drag on empty space moves the selection', Math.round(z['k.c.blk'].x - a['k.c.blk'].x) !== 0 && (await p.evaluate(() => sel.size)) === 1, JSON.stringify([a, z]));
+L = await linesOk(['k.c.blk']); check('…and its lines follow', !L.length, L.join(', '));
+await p.mouse.click(...empty);
+check('a plain click on empty space clears the selection', (await p.evaluate(() => sel.size)) === 0);
+await p.mouse.click(...(await centre('k.c.blk'))); await p.keyboard.down('Shift');
+const R2 = await p.evaluate(() => { const q = document.querySelector('[data-id="k.c1"] rect').getBoundingClientRect(); return [q.x - 10, q.y - 10, q.width + 20, q.height + 20]; });
+await p.mouse.move(R2[0], R2[1]); await p.mouse.down(); await p.mouse.move(R2[0] + R2[2], R2[1] + R2[3], { steps: 4 }); await p.mouse.up(); await p.keyboard.up('Shift');
+check('shift + drag on empty space adds by box-select', (await p.evaluate(() => sel.has('k.c1') && sel.has('k.c.blk'))));
 check('no page errors', !errs.length, errs.join(' | '));
 await b.close(); process.exit(fails ? 1 : 0);
