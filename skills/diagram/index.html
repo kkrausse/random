@@ -70,11 +70,12 @@ function poll() {
 }
 
 // libavoid (the line router), loaded once
-let avoid = null;
+let avoid = null, AV = null;
 const router = () => (avoid ??= AvoidLib.load(AVOID_WASM).then(() => AvoidLib.getInstance()));
 async function render() {
   const diags = [...DG.all];
-  page = await DG.layoutPage(diags, await router(), { only: ONLY });
+  AV = await router(); routed = new Map();
+  page = await DG.layoutPage(diags, AV, { only: ONLY });
   stage.innerHTML = DG.toSvg(page, diags, { img: (s) => new URL(s, srcURL).href });
   svg = stage.firstElementChild; svg.removeAttribute("width"); svg.removeAttribute("height");
   svg.insertAdjacentHTML("beforeend", '<g id="overlay"></g>'); index();
@@ -111,12 +112,12 @@ stage.addEventListener("wheel", (e) => {
 
 // ---- moves: a dragged group carries everything inside it
 // built once per render: ITEM (id -> item), ANC (id -> the outlines it sits in), KIDS (outline -> everything inside it)
-let ITEM = new Map(), ANC = new Map(), KIDS = new Map(), DRAWN = new Map();
+let ITEM = new Map(), ANC = new Map(), KIDS = new Map(), DRAWN = new Map(), DIAG = new Map();
 function index() {
-  ITEM = new Map(page.items.map((i) => [i.id, i])); ANC = new Map(); KIDS = new Map(); DRAWN = new Map();
-  const walk = (ns, anc) => ns.forEach((n) => { if (!n?.id) return; ANC.set(n.id, anc); for (const a of anc) KIDS.get(a).push(n.id);
-    if (n.kind === "group") { KIDS.set(n.id, []); walk(n.kids ?? [], [...anc, n.id]); } });
-  DG.all.forEach((d) => walk(d.nodes ?? [], []));
+  ITEM = new Map(page.items.map((i) => [i.id, i])); ANC = new Map(); KIDS = new Map(); DRAWN = new Map(); DIAG = new Map();
+  const walk = (ns, anc, d) => ns.forEach((n) => { if (!n?.id) return; ANC.set(n.id, anc); DIAG.set(n.id, d); for (const a of anc) KIDS.get(a).push(n.id);
+    if (n.kind === "group") { KIDS.set(n.id, []); walk(n.kids ?? [], [...anc, n.id], d); } });
+  DG.all.forEach((d) => walk(d.nodes ?? [], [], d));
 }
 const kids = (id) => KIDS.get(id) ?? [];  // lines are never contents: they follow their ends
 // ---- THE position of everything: layout place + moves. Drawing, selection, box-select and feedback all read only this.
@@ -126,7 +127,24 @@ function offset(id) {  // its own move + the moves of every outline it sits in
   for (const k of [id, ...(ANC.get(id) ?? [])]) { const m = fb.moves[k]; if (m) { x += m[0]; y += m[1]; } }
   return [x, y];
 }
-function linePts(it) {  // a line follows its two boxes: same offset -> shifted whole, else redrawn between the moved ends
+// lines routed again around the boxes where they are now (after a drag rests): id -> { k: its ends' offsets, pts, lab, n }
+let routed = new Map(), nRoute = 0, rtT = 0;
+const endsKey = (it) => offset(it.from).join() + "|" + offset(it.to).join();
+const routeOf = (it) => { const r = routed.get(it.id); return r && r.k === endsKey(it) ? r : null; };
+function rerouteNow() {
+  clearTimeout(rtT); if (!AV || !page) return;
+  // only the lines that need it: those with a moved end, and those now running through a moved box
+  const moved = page.items.filter((i) => (i.t === "node" || i.t === "group") && offset(i.id).some((v) => v)).map((i) => place(i.id));
+  const hits = (P) => moved.some((B) => P.some((q, i) => i && Math.max(q[0], P[i - 1][0]) > B.x && Math.min(q[0], P[i - 1][0]) < B.x + B.w && Math.max(q[1], P[i - 1][1]) > B.y && Math.min(q[1], P[i - 1][1]) < B.y + B.h));
+  const only = new Set(page.items.filter((i) => (i.t === "edge" || i.t === "link") && i.from && (endsKey(i) !== "0,0|0,0" || hits(linePts(i)))).map((i) => i.id));
+  const ds = new Set([...only].map((id) => DIAG.get(itemOf(id).from)).filter(Boolean));
+  for (const d of ds) for (const it of DG.reroute(AV, d, (id) => place(id), only)) {
+    const old = itemOf(it.id); if (old) routed.set(it.id, { k: endsKey(old), pts: it.pts, lab: it.lab, n: ++nRoute });
+  }
+  applyMoves(); drawSel();
+}
+function linePts(it) {  // a line follows its two boxes: routed again once a drag rests; meanwhile shifted whole, or a dog-leg between the moved ends
+  const r = routeOf(it); if (r) return r.pts;
   const a = offset(it.from), b = offset(it.to);
   if (a[0] === b[0] && a[1] === b[1]) return it.pts.map(([x, y]) => [x + a[0], y + a[1]]);
   const s0 = [it.pts[0][0] + a[0], it.pts[0][1] + a[1]], e0 = it.pts[it.pts.length - 1], e = [e0[0] + b[0], e0[1] + b[1]];
@@ -146,11 +164,12 @@ function applyMoves() {  // draw every item where place() says it is
     const g = gOf(it.id); if (!g) continue;
     if (it.t === "node" || it.t === "group") { const [dx, dy] = offset(it.id); dx || dy ? g.setAttribute("transform", `translate(${dx},${dy})`) : g.removeAttribute("transform"); continue; }
     if (it.t !== "edge" && it.t !== "link") continue;
-    const a = offset(it.from), b = offset(it.to), k = a.join() + "|" + b.join();
-    if ((DRAWN.get(it.id) ?? "0,0|0,0") === k) continue; DRAWN.set(it.id, k);  // its ends did not move since it was drawn
+    const r = routeOf(it), k = endsKey(it) + "|" + (r ? r.n : "");
+    if ((DRAWN.get(it.id) ?? "0,0|0,0|") === k) continue; DRAWN.set(it.id, k);  // nothing changed since it was drawn
     const pts = linePts(it), d = [pts[0][0] - it.pts[0][0], pts[0][1] - it.pts[0][1]];
+    const lab = r ? r.lab : it.lab && { ...it.lab, x: it.lab.x + d[0], y: it.lab.y + d[1] };
     const tmp = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    tmp.innerHTML = it.t === "edge" ? DG.edgeSvg({ ...it, pts, lab: it.lab && { ...it.lab, x: it.lab.x + d[0], y: it.lab.y + d[1] } }) : DG.linkSvg({ ...it, pts });
+    tmp.innerHTML = it.t === "edge" ? DG.edgeSvg({ ...it, pts, lab }) : DG.linkSvg({ ...it, pts });
     g.replaceWith(tmp.firstElementChild);
   }
 }
@@ -206,7 +225,7 @@ stage.addEventListener("pointermove", (e) => {
   if (drag.kind === "move") {
     if (Math.hypot(dx, dy) * cam.z < 4 && !drag.moved) return; drag.moved = true;
     for (const id of drag.ids) { const b = drag.base[id]; fb.moves[id] = [b[0] + dx, b[1] + dy]; }
-    applyMoves(); drawSel(); return;
+    applyMoves(); drawSel(); clearTimeout(rtT); rtT = setTimeout(rerouteNow, 150); return;  // held still a moment: route the lines again
   }
   const x0 = Math.min(x, drag.p[0]), y0 = Math.min(y, drag.p[1]), w = Math.abs(dx), h = Math.abs(dy);
   sel = new Set(drag.keep);
@@ -220,7 +239,7 @@ stage.addEventListener("pointermove", (e) => {
 stage.addEventListener("pointercancel", () => { drag = null; drawSel(); });
 stage.addEventListener("pointerup", () => {
   if (drag?.clearOnClick && !drag.moved) { sel.clear(); drawSel(); }
-  if (drag?.kind === "move" && drag.moved) saveFb(); if (drag?.kind === "band") drawSel(); drag = null; });
+  if (drag?.kind === "move" && drag.moved) { saveFb(); rerouteNow(); } if (drag?.kind === "band") drawSel(); drag = null; });
 
 // ---- feedback: moves described relative to the nearest box, plus notes; copied as text for the agent
 function where(id) {  // the nearest box that did not move with it, both at their current place()

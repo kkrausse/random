@@ -98,5 +98,35 @@ await p.mouse.click(...(await centre('k.c.blk'))); await p.keyboard.down('Shift'
 const R2 = await p.evaluate(() => { const q = document.querySelector('[data-id="k.c1"] rect').getBoundingClientRect(); return [q.x - 10, q.y - 10, q.width + 20, q.height + 20]; });
 await p.mouse.move(R2[0], R2[1]); await p.mouse.down(); await p.mouse.move(R2[0] + R2[2], R2[1] + R2[3], { steps: 4 }); await p.mouse.up(); await p.keyboard.up('Shift');
 check('shift + drag on empty space adds by box-select', (await p.evaluate(() => sel.has('k.c1') && sel.has('k.c.blk'))), 'band start on: ' + await p.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('[data-id]')?.dataset.id ?? '(empty)', [R2[0], R2[1]]) + ' sel=' + await p.evaluate(() => [...sel]));
+// 9. lines are routed again around the boxes: once a drag rests (button still down) and on release
+const through = (ids) => p.evaluate((ids) => {  // lines touching ids that cross a box other than their own ends
+  const bad = [], boxes = page.items.filter((i) => i.t === 'node' && !i.legend);
+  for (const e of page.items.filter((e) => e.t === 'edge' && (ids.includes(e.from) || ids.includes(e.to)))) {
+    const P = linePts(e);
+    for (const bx of boxes) { if (bx.id === e.from || bx.id === e.to) continue; const B = place(bx.id);
+      for (let i = 1; i < P.length; i++) { const [x1, y1] = P[i - 1], [x2, y2] = P[i];
+        if (Math.max(x1, x2) > B.x + 2 && Math.min(x1, x2) < B.x + B.w - 2 && Math.max(y1, y2) > B.y + 2 && Math.min(y1, y2) < B.y + B.h - 2) { bad.push(`${e.id} through ${bx.id}`); break; } } }
+  }
+  return bad;
+}, ids);
+await fresh(); await view('k.tb', 0.6);
+const tb0 = await centre('k.tb');
+await p.mouse.move(...tb0); await p.mouse.down(); await p.mouse.move(tb0[0] + 160, tb0[1] + 40, { steps: 6 }); await p.waitForTimeout(400);
+const nHeld = await p.evaluate(() => page.items.filter((e) => e.t === 'edge' && (e.from === 'k.tb' || e.to === 'k.tb') && routeOf(e)).length);
+check('a drag held still: its lines are routed again', nHeld > 0, nHeld);
+// drop it on a clear spot (a box dropped on another box has to have lines through it)
+const drop = await p.evaluate(([dx0, dy0]) => { const B = place('k.tb'), z = cam.z, base = fb.moves['k.tb'] ?? [0, 0];
+  const boxes = page.items.filter((i) => i.t === 'node' && i.id !== 'k.tb' && !i.legend).map((i) => place(i.id));
+  for (let sx = -400; sx <= 400; sx += 40) for (const sy of [60, 120, -40]) { const x = B.x + (sx - dx0) / z, y = B.y + (sy - dy0) / z;
+    if (!boxes.some((o) => x < o.x + o.w + 30 && o.x < x + B.w + 30 && y < o.y + o.h + 30 && o.y < y + B.h + 30)) return [sx, sy]; } }, [160, 40]);
+await p.mouse.move(tb0[0] + drop[0], tb0[1] + drop[1], { steps: 6 }); await p.mouse.up();
+const nUp = await p.evaluate(() => page.items.filter((e) => e.t === 'edge' && (e.from === 'k.tb' || e.to === 'k.tb')).every((e) => routeOf(e)));
+check('on release: all its lines routed again', nUp);
+L = await linesOk(['k.tb']); check('…ending on it', !L.length, L.join(', '));
+const T = await through(['k.tb']); check('…and not through other boxes', !T.length, T.join(', '));
+check('…drawn as routed', await p.evaluate(() => { const e = page.items.find((e) => e.t === 'edge' && e.to === 'k.tb'), g = document.querySelector(`[data-id="${CSS.escape(e.id)}"] path:last-of-type`);
+  return g.getAttribute('d').split('L').length === routeOf(e).pts.length; }));
+await p.keyboard.press('r'); await p.waitForTimeout(2500);
+check('R drops the re-routed lines', await p.evaluate(() => routed.size === 0 && Object.keys(fb.moves).length === 0));
 check('no page errors', !errs.length, errs.join(' | '));
 await b.close(); process.exit(fails ? 1 : 0);

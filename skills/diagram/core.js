@@ -187,7 +187,7 @@
     if (T.y + T.h <= S.y + 1) return ["top", "bottom"];
     return T.x + T.w / 2 >= S.x + S.w / 2 ? ["right", "left"] : ["left", "right"];
   }
-  function route(A, L, lint) {
+  function route(A, L, lint, only) {
     const { leaf, grp, pos } = L, r = new A.Router(A.RouterFlag.OrthogonalRouting.value), RP = A.RoutingParameter;
     r.setRoutingParameter(RP.shapeBufferDistance, 10); r.setRoutingParameter(RP.idealNudgingDistance, 9);
     r.setRoutingParameter(RP.segmentPenalty, 40);
@@ -234,10 +234,13 @@
       const c = cls++; new A.ShapeConnectionPin(shape.get(end.id), c, px / B.w, py / B.h, true, 0, DIR[s]);
       return [end.id, c];
     };
-    const ends = lns.map((ln) => [endOf(ln.a), endOf(ln.b)]);  // all pins first, then the connectors
+    // `only` (a set of line ids): route just those; the others still decide where ends sit on each side
+    const lid = (ln) => ln.kind === "edge" ? `${ln.e.from}>${ln.e.to}` : `${ln.l.a}~${ln.l.b}`;
+    const todo = only ? lns.filter((ln) => only.has(lid(ln))) : lns;
+    const ends = todo.map((ln) => [endOf(ln.a), endOf(ln.b)]);  // all pins first, then the connectors
     const conns = ends.map(([a, b]) => new A.ConnRef(r, Array.isArray(a) ? new A.ConnEnd(shape.get(a[0]), a[1]) : a, Array.isArray(b) ? new A.ConnEnd(shape.get(b[0]), b[1]) : b));
     r.processTransaction();
-    lns.forEach((ln, i) => {
+    todo.forEach((ln, i) => {
       const p = conns[i].displayRoute(), pts = [];
       for (let j = 0; j < p.size(); j++) { const q = p.at(j); pts.push([q.x, q.y]); }
       // the router may slide an end along its side (to keep lines apart): an end anywhere on the right side is fine
@@ -250,7 +253,7 @@
       } else ln.pts = pts.map(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10]);
     });
     try { r.delete(); } catch {}
-    return lns;
+    return todo;
   }
   // a label sits on its line: on the last stretch long enough for it (nearest the receiver), away from boxes and other labels
   function placeLabels(items) {
@@ -275,21 +278,35 @@
     }
   }
 
-  async function layoutOne(d, A) {
-    const lint = [], L = placeAll(d, lint); L.links = d.links ?? [];
-    const { leaf, grp, pos } = L, items = [];
-    const depth = (id) => { let k = 0, x = L.parent.get(id); while (x) { k++; x = L.parent.get(x); } return k; };
-    for (const [id, b] of pos) items.push(grp.has(id) ? { t: "group", id, depth: depth(id), ...b, g: grp.get(id) } : { t: "node", id, depth: depth(id), ...b, n: leaf.get(id).n });
-    for (const ln of route(A, L, lint)) {
-      if (ln.kind === "link") { items.push({ t: "link", id: `${ln.l.a}~${ln.l.b}`, from: ln.l.a, to: ln.l.b, s: ln.l.s, pts: ln.pts }); continue; }
+  // the lines of one diagram, routed around its boxes where they are now (L.pos); labels kept clear of `boxes`
+  function lineItems(A, L, boxes, lint, only) {
+    const { leaf, pos } = L, out = [];
+    for (const ln of route(A, L, lint, only)) {
+      if (ln.kind === "link") { out.push({ t: "link", id: `${ln.l.a}~${ln.l.b}`, from: ln.l.a, to: ln.l.b, s: ln.l.s, pts: ln.pts }); continue; }
       const e = ln.e, pts = ln.pts.map((p) => [...p]);
       if (ln.into) {  // into a token segment: carry on through the box's top until it touches that segment's squares
         const B = pos.get(ln.b.id), S = strip(leaf.get(ln.b.id).n.tok), last = pts[pts.length - 1];
         last[1] = B.y + B.h - S.h - 8 - 2;
       }
-      items.push({ t: "edge", id: `${e.from}>${e.to}`, from: e.from, to: baseId(e.to), into: ln.into, pts, ink: e.ink, sw: e.sw, s: e.s });
+      out.push({ t: "edge", id: `${e.from}>${e.to}`, from: e.from, to: baseId(e.to), into: ln.into, pts, ink: e.ink, sw: e.sw, s: e.s });
     }
-    placeLabels(items);
+    placeLabels([...boxes.filter((i) => i.t === "node"), ...out]);
+    return out;
+  }
+  // the viewer, after boxes were dragged: the lines of diagram d named in `only` (all if not given) routed again, the
+  // boxes at rectOf(id) (page coords)
+  function reroute(A, d, rectOf, only) {
+    const L = placeAll(d, []); L.links = d.links ?? [];
+    L.pos = new Map([...L.pos.keys()].map((id) => [id, rectOf(id)]).filter(([, r]) => r));
+    const boxes = [...L.leaf.keys()].filter((id) => L.pos.has(id)).map((id) => ({ t: "node", id, ...L.pos.get(id) }));
+    return lineItems(A, L, boxes, [], only);
+  }
+  async function layoutOne(d, A) {
+    const lint = [], L = placeAll(d, lint); L.links = d.links ?? [];
+    const { leaf, grp, pos } = L, items = [];
+    const depth = (id) => { let k = 0, x = L.parent.get(id); while (x) { k++; x = L.parent.get(x); } return k; };
+    for (const [id, b] of pos) items.push(grp.has(id) ? { t: "group", id, depth: depth(id), ...b, g: grp.get(id) } : { t: "node", id, depth: depth(id), ...b, n: leaf.get(id).n });
+    items.push(...lineItems(A, L, items, lint));
     // side: "left" / "right" marks (on boxes, or groups for everything inside): reported when a marked box sits past
     // the average of the other side's boxes
     const sideOf = new Map(); const mark = (ns, sd) => ns.forEach((n) => { if (!n?.id) return; const s2 = n.side ?? sd; if (s2) sideOf.set(n.id, s2); if (n.kind === "group") mark(n.kids ?? [], s2); });
@@ -473,5 +490,5 @@
   }
 
   Object.assign(root, { D, I, P, Pm: P, O, G, E, L, diagram, title });
-  root.DG = { all, meta, layoutPage, toSvg, describe, bbox, lintGraph, edgeSvg, linkSvg, reset: () => { all.length = 0; meta.title = ""; } };
+  root.DG = { all, meta, layoutPage, reroute, toSvg, describe, bbox, lintGraph, edgeSvg, linkSvg, reset: () => { all.length = 0; meta.title = ""; } };
 })(globalThis);
