@@ -10,21 +10,21 @@
   .sel-box { fill: none; stroke: #e8590c; stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: none; }
   .band { fill: rgba(25, 113, 194, .08); stroke: #1971c2; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
   .moved { opacity: .9; }
-  #bar { position: fixed; top: 8px; right: 10px; text-align: right; color: #868e96; user-select: none; }
+  #bar { position: fixed; top: 6px; right: 8px; font-size: 11px; color: #e03131; user-select: none; }
   #bar b { color: #e03131; cursor: pointer; font-weight: normal; }
   #issues { display: none; position: fixed; top: 30px; right: 10px; max-width: 60vw; max-height: 60vh; overflow: auto; background: #fff8f8;
     border: 1px solid #ffc9c9; padding: 8px 10px; white-space: pre; }
-  #fb { position: fixed; left: 10px; bottom: 10px; max-width: 70vw; max-height: 40vh; overflow: auto; background: #fff; border: 1px solid #ced4da;
-    border-radius: 6px; padding: 8px 10px; display: none; }
-  #fb pre { margin: 0 0 6px; white-space: pre-wrap; }
-  #fb button { font: inherit; margin-right: 6px; }
-  #help { position: fixed; left: 10px; top: 8px; color: #adb5bd; user-select: none; }
+  #fb { position: fixed; left: 8px; bottom: 6px; color: #868e96; font-size: 11px; display: none; user-select: none; }
+  #toast { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: #1e1e1e; color: #fff; font-size: 12px;
+    padding: 4px 10px; border-radius: 4px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #toast.on { opacity: .9; }
+  #fb a { color: #1971c2; cursor: pointer; margin-left: 6px; }
 </style>
 <div id="stage"></div>
-<div id="bar"><span id="when">loading…</span> <b id="nissues"></b></div>
+<div id="bar"><span id="when"></span> <b id="nissues"></b></div>
 <div id="issues"></div>
-<div id="help">wheel: pan · ctrl+wheel: zoom · drag empty: select · drag box: move (feedback) · ⌘C copy · N note · F fit</div>
-<div id="fb"><pre id="fbtext"></pre><button id="fbcopy">copy feedback</button><button id="fbclear">clear</button></div>
+<div id="fb"><span id="fbn"></span> <a id="fbcopy">copy</a> <a id="fbreset">reset</a></div>
+<div id="toast"></div>
 <script src="elk.js"></script>
 <script src="core.js"></script>
 <script>
@@ -53,7 +53,7 @@ function poll() {
       const all = JSON.parse(JSON.stringify(f.contentWindow.DG?.all ?? []));
       const k = JSON.stringify(all); if (k === key) return; key = k;
       DG.reset(); DG.all.push(...all);
-      await render(); $("when").textContent = "updated " + new Date().toLocaleTimeString();
+      await render(); $("when").textContent = "";
     } catch (e) { $("when").textContent = "error: " + e.message; console.error(e); }
     finally { f.remove(); busy = false; }
   };
@@ -99,7 +99,27 @@ function kids(id) {
 }
 function applyMoves() {
   for (const g of svg.querySelectorAll("[transform]")) g.removeAttribute("transform");
-  for (const [id, [dx, dy]] of Object.entries(fb.moves)) for (const i of [id, ...kids(id)]) gOf(i)?.setAttribute("transform", `translate(${dx},${dy})`);
+  const delta = new Map();
+  for (const [id, m] of Object.entries(fb.moves)) for (const i of [id, ...kids(id)]) delta.set(i, m);
+  // arrows: both ends moved the same way -> shift the whole line; one end moved -> redraw it from the moved ends
+  for (const it of page.items) {
+    if (it.t !== "edge" && it.t !== "link") continue;
+    const g = gOf(it.id); if (!g) continue;
+    const a = delta.get(it.from) ?? [0, 0], b = delta.get(it.to) ?? [0, 0], own = delta.get(it.id);
+    let pts = it.pts;
+    if (own) pts = pts.map(([x, y]) => [x + own[0], y + own[1]]);
+    else if (a[0] === b[0] && a[1] === b[1]) { if (a[0] || a[1]) pts = pts.map(([x, y]) => [x + a[0], y + a[1]]); }
+    else {
+      const s0 = [it.pts[0][0] + a[0], it.pts[0][1] + a[1]], e0 = it.pts[it.pts.length - 1], e = [e0[0] + b[0], e0[1] + b[1]];
+      if (it.t === "link") pts = [s0, [(s0[0] + e[0]) / 2, s0[1]], [(s0[0] + e[0]) / 2, e[1]], e];
+      else { const my = e[1] > s0[1] + 30 ? (s0[1] + e[1]) / 2 : e[1] - 18; pts = Math.abs(s0[0] - e[0]) < 0.5 ? [s0, e] : [s0, [s0[0], my], [e[0], my], e]; }
+    }
+    if (pts === it.pts) { if (g.dataset.redrawn) { g.outerHTML = it.t === "edge" ? DG.edgeSvg(it) : DG.linkSvg(it); } continue; }
+    const tmp = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    tmp.innerHTML = it.t === "edge" ? DG.edgeSvg({ ...it, pts, lab: it.lab && { ...it.lab, x: it.lab.x + (pts[0][0] - it.pts[0][0]), y: it.lab.y + (pts[0][1] - it.pts[0][1]) } }) : DG.linkSvg({ ...it, pts });
+    const ng = tmp.firstElementChild; ng.dataset.redrawn = "1"; g.replaceWith(ng);
+  }
+  for (const [i, m] of delta) { const it = page.items.find((x) => x.id === i); if (it && (it.t === "node" || it.t === "group")) gOf(i)?.setAttribute("transform", `translate(${m[0]},${m[1]})`); }
 }
 // ---- selection, box-select, move (as feedback)
 const gOf = (id) => svg?.querySelector(`[data-id="${CSS.escape(id)}"]`);
@@ -115,6 +135,7 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "Space") { space = true; stage.classList.add("pan"); e.preventDefault(); }
   if (e.key === "Escape") { sel.clear(); drawSel(); }
   if (e.key === "f" || e.key === "F") fit();
+  if ((e.key === "r" || e.key === "R") && !e.metaKey && !e.ctrlKey) resetMoves();
   if ((e.key === "n" || e.key === "N") && sel.size) {
     const t = prompt(`note on ${[...sel].join(", ")}:`); if (t) { fb.notes.push(`${[...sel].join(", ")}: ${t}`); saveFb(); }
   }
@@ -176,12 +197,21 @@ function fbText() {
     .map(([id, [dx, dy]]) => `move ${id} by (${dx > 0 ? "+" : ""}${Math.round(dx)}, ${dy > 0 ? "+" : ""}${Math.round(dy)}): wanted ${where(id)}`);
   return [...mv, ...fb.notes.map((n) => "note " + n)].join("\n");
 }
-function showFb() { const t = page ? fbText() : ""; $("fb").style.display = t ? "block" : "none"; $("fbtext").textContent = t; }
-$("fbcopy").onclick = () => navigator.clipboard.writeText(`feedback on ${SRC}:\n` + fbText());
-$("fbclear").onclick = () => { fb = { moves: {}, notes: [] }; saveFb(); key = ""; poll(); };
+function showFb() {
+  const n = Object.values(fb.moves).filter((m) => Math.hypot(...m) > 1).length, k = fb.notes.length;
+  $("fb").style.display = n || k ? "block" : "none";
+  $("fbn").textContent = [n && `${n} moved`, k && `${k} note${k > 1 ? "s" : ""}`].filter(Boolean).join(", ");
+}
+let tt = 0;
+const toast = (m) => { const t = $("toast"); t.textContent = m; t.classList.add("on"); clearTimeout(tt); tt = setTimeout(() => t.classList.remove("on"), 1400); };
+$("fbcopy").onclick = async () => { const t = fbText(); await navigator.clipboard.writeText(`feedback on ${SRC}:\n` + t); toast(`copied feedback (${t.split("\n").length} line${t.includes("\n") ? "s" : ""})`); };
+const resetMoves = () => { fb.moves = {}; fb.notes = []; saveFb(); key = ""; poll(); };
+$("fbreset").onclick = resetMoves;
+
 window.addEventListener("copy", (e) => {
   if (!page || !sel.size) return;
   e.clipboardData.setData("text/plain", `# ${SRC}: ${sel.size} selected\n` + DG.describe([...sel], page, DG.all)); e.preventDefault();
+  toast(`copied ${sel.size} item${sel.size > 1 ? "s" : ""}`);
 });
 window.addEventListener("resize", () => cam && setCam());
 poll(); setInterval(poll, 2000);

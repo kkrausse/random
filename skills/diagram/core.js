@@ -297,5 +297,5 @@
   }
 
   Object.assign(root, { D, I, P, Pm: P, O, G, E, L, diagram });
-  root.DG = { all, layoutPage, toSvg, describe, bbox, lintGraph, reset: () => { all.length = 0; } };
+  root.DG = { all, layoutPage, toSvg, describe, bbox, lintGraph, edgeSvg, linkSvg, reset: () => { all.length = 0; } };
 })(globalThis);
