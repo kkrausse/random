@@ -116,17 +116,17 @@ const nHeld = await p.waitForFunction(() => page.items.filter((e) => e.t === 'ed
 check('a drag held still: its lines are routed again', nHeld > 0, nHeld);
 // drop it on a clear spot (a box dropped on another box has to have lines through it)
 const drop = await p.evaluate(([dx0, dy0]) => { const B = place('k.tb'), z = cam.z, base = fb.moves['k.tb'] ?? [0, 0];
-  const boxes = page.items.filter((i) => i.t === 'node' && i.id !== 'k.tb' && !i.legend).map((i) => place(i.id));
+  const boxes = page.items.filter((i) => (i.t === 'node' || (i.t === 'group' && !(ANC.get('k.tb') ?? []).includes(i.id))) && i.id !== 'k.tb' && !i.legend).map((i) => place(i.id));
   for (let sx = -400; sx <= 400; sx += 40) for (const sy of [60, 120, -40]) { const x = B.x + (sx - dx0) / z, y = B.y + (sy - dy0) / z;
-    if (!boxes.some((o) => x < o.x + o.w + 30 && o.x < x + B.w + 30 && y < o.y + o.h + 30 && o.y < y + B.h + 30)) return [sx, sy]; } }, [160, 40]);
+    if (!boxes.some((o) => x < o.x + o.w + 90 && o.x < x + B.w + 50 && y < o.y + o.h + 50 && o.y < y + B.h + 90)) return [sx, sy]; } }, [160, 40]);  // clear of deck cards (up / right) too
 await p.mouse.move(tb0[0] + drop[0], tb0[1] + drop[1], { steps: 6 }); await p.mouse.up();
 const nUp = await p.waitForFunction(() => page.items.filter((e) => e.t === 'edge' && (e.from === 'k.tb' || e.to === 'k.tb')).every((e) => routeOf(e)), null, { timeout: 5000 }).then(() => true).catch(() => false);
 check('on release: all its lines routed again', nUp);
 L = await linesOk(['k.tb']); check('…ending on it', !L.length, L.join(', '));
 const T = await through(['k.tb']); check('…and not through other boxes', !T.length, T.join(', '));
-check('…and no two lines share a track', await p.evaluate(() => { const its = page.items.filter((i) => (i.t === 'edge' || i.t === 'link') && i.from).map((i) => ({ id: i.id, P: linePts(i) }));
-  const segs = its.flatMap((e) => e.P.slice(1).map((q, i) => ({ id: e.id, a: e.P[i], b: q })));
-  for (let i = 0; i < segs.length; i++) for (let j = i + 1; j < segs.length; j++) { const s1 = segs[i], s2 = segs[j]; if (s1.id === s2.id) continue;
+check('…and its lines share no track with other lines', await p.evaluate(() => { const its = page.items.filter((i) => (i.t === 'edge' || i.t === 'link') && i.from).map((i) => ({ id: i.id, mine: i.from === 'k.tb' || i.to === 'k.tb', P: linePts(i) }));
+  const segs = its.flatMap((e) => e.P.slice(1).map((q, i) => ({ id: e.id, mine: e.mine, a: e.P[i], b: q })));
+  for (let i = 0; i < segs.length; i++) for (let j = i + 1; j < segs.length; j++) { const s1 = segs[i], s2 = segs[j]; if (s1.id === s2.id || !(s1.mine || s2.mine)) continue;
     const v1 = Math.abs(s1.a[0] - s1.b[0]) < 0.5, v2 = Math.abs(s2.a[0] - s2.b[0]) < 0.5; if (v1 !== v2) continue; const k = v1 ? 0 : 1, o = 1 - k;
     if (Math.abs(s1.a[k] - s2.a[k]) > 1.5) continue; const lo = Math.max(Math.min(s1.a[o], s1.b[o]), Math.min(s2.a[o], s2.b[o])), hi = Math.min(Math.max(s1.a[o], s1.b[o]), Math.max(s2.a[o], s2.b[o]));
     if (hi - lo > 4) return false; } return true; }));

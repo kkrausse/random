@@ -74,8 +74,11 @@ let avoid = null, AV = null;
 const router = () => (avoid ??= AvoidLib.load(AVOID_WASM).then(() => AvoidLib.getInstance()));
 async function render() {
   const diags = [...DG.all];
-  AV = await router(); routed = new Map(); routeWorker();
-  page = await DG.layoutPage(diags, AV, { only: ONLY });
+  // the layout runs in the worker too (it routes every line a few times over); in the page only if there is no worker
+  AV = await router(); routed = new Map();
+  const w = routeWorker(), job = ++rwJob;
+  page = (w && await new Promise((resolve) => { rwPending.set(job, { resolve }); w.postMessage({ job, layout: { diags, only: ONLY } }); }))
+    ?? await DG.layoutPage(diags, AV, { only: ONLY });
   stage.innerHTML = DG.toSvg(page, diags, { img: (s) => new URL(s, srcURL).href });
   svg = stage.firstElementChild; svg.removeAttribute("width"); svg.removeAttribute("height");
   svg.insertAdjacentHTML("beforeend", '<g id="overlay"></g>'); index();
@@ -138,12 +141,15 @@ let RW = null, rwJob = 0; const rwPending = new Map(), rwLatest = new Map();
 function routeWorker() {
   if (RW !== null) return RW;
   try {
-    const main = `onmessage = async (m) => { const { job, d, rects } = m.data; await (self.__A ??= AvoidLib.load(AVOID_WASM));
-      postMessage({ job, items: d ? DG.reroute(AvoidLib.getInstance(), d, (id) => rects[id]) : [] }); };`;
+    const main = `onmessage = async (m) => { const { job, d, rects, layout } = m.data; await (self.__A ??= AvoidLib.load(AVOID_WASM));
+      const A = AvoidLib.getInstance();
+      if (layout) postMessage({ job, page: await DG.layoutPage(layout.diags, A, { only: layout.only }) });
+      else postMessage({ job, items: d ? DG.reroute(A, d, (id) => rects[id]) : [] }); };`;
     RW = new Worker(URL.createObjectURL(new Blob([AVOID_SRC, "\n", DG.src, "\n", main], { type: "text/javascript" })));
     RW.onmessage = (m) => { const p = rwPending.get(m.data.job); rwPending.delete(m.data.job);
-      if (p && rwLatest.get(p.title) === m.data.job) applyRoutes(m.data.items, p.keys); };
-    RW.onerror = (e) => { console.error("route worker:", e.message); RW = false; };
+      if (p?.resolve) p.resolve(m.data.page);
+      else if (p && rwLatest.get(p.title) === m.data.job) applyRoutes(m.data.items, p.keys); };
+    RW.onerror = (e) => { console.error("route worker:", e.message); RW = false; for (const p of rwPending.values()) p.resolve?.(null); rwPending.clear(); };
     RW.postMessage({ job: 0 });  // warm up: load the wasm now, not on the first drag
   } catch (e) { console.error("route worker:", e); RW = false; }
   return RW;
