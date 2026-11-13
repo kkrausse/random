@@ -560,19 +560,50 @@
     s += `<rect x="${x + 8}" y="${y + 6}" width="${tw(g.title, tfs) + 12}" height="${th(g.title, tfs) + 10}" fill="transparent" pointer-events="all"/>`;
     return s + txt(x + 14, y + 12, g.title, tfs, { ink: g.big ? "#495057" : "#1e1e1e", bold: !!g.big }) + "</g>";
   }
-  function edgeSvg(it) {
+  // a line's path: corners rounded (radius up to 8, less on short stretches), and a small hop wherever a horizontal
+  // stretch crosses another line (hops: [[segment index, x], ...]), so a crossing never looks like a join
+  function pathD(P, hops = []) {
+    const R = 8, n = P.length, len = (i) => Math.hypot(P[i + 1][0] - P[i][0], P[i + 1][1] - P[i][1]);
+    const r = P.map((_, k) => (k === 0 || k === n - 1 ? 0 : Math.min(R, len(k - 1) / 2, len(k) / 2)));
+    const toward = (a, b, d) => { const L_ = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [a[0] + (b[0] - a[0]) * d / L_, a[1] + (b[1] - a[1]) * d / L_]; };
+    const f = (q) => `${Math.round(q[0] * 10) / 10},${Math.round(q[1] * 10) / 10}`;
+    let d = "M" + f(P[0]);
+    for (let i = 0; i < n - 1; i++) {
+      const a = toward(P[i], P[i + 1], r[i]), b = toward(P[i + 1], P[i], r[i + 1]);
+      if (Math.abs(a[1] - b[1]) < 0.5 && Math.abs(a[0] - b[0]) > 0.5) {  // horizontal: hops over the lines it crosses
+        const dir = Math.sign(b[0] - a[0]), hs = hops.filter(([k, x]) => k === i && (x - a[0]) * dir > 7 && (b[0] - x) * dir > 7).map(([, x]) => x).sort((u, v) => (u - v) * dir);
+        let last = -Infinity;
+        for (const x of hs) { if (Math.abs(x - last) < 12) continue; last = x;
+          d += "L" + f([x - 5 * dir, a[1]]) + `A5,5 0 0 ${dir > 0 ? 1 : 0} ` + f([x + 5 * dir, a[1]]); }
+      }
+      d += "L" + f(b);
+      if (i < n - 2 && r[i + 1] > 0) d += "Q" + f(P[i + 1]) + " " + f(toward(P[i + 1], P[i + 2], r[i + 1]));
+    }
+    return d;
+  }
+  // every place a horizontal stretch of one line crosses a vertical stretch of another: Map(line item -> hops)
+  function crossings(items) {
+    const lines = items.filter((i) => (i.t === "edge" || i.t === "link") && i.pts && i.from), V = [], hops = new Map();
+    for (const L_ of lines) L_.pts.slice(1).forEach((q, k) => { const p = L_.pts[k];
+      if (Math.abs(p[0] - q[0]) < 0.5 && Math.abs(p[1] - q[1]) > 0.5) V.push({ L: L_, x: p[0], y0: Math.min(p[1], q[1]), y1: Math.max(p[1], q[1]) }); });
+    for (const L_ of lines) L_.pts.slice(1).forEach((q, k) => { const p = L_.pts[k]; if (Math.abs(p[1] - q[1]) > 0.5) return;
+      const x0 = Math.min(p[0], q[0]), x1 = Math.max(p[0], q[0]), y = p[1];
+      for (const v of V) if (v.L !== L_ && v.x > x0 + 8 && v.x < x1 - 8 && y > v.y0 + 3 && y < v.y1 - 3) { if (!hops.has(L_)) hops.set(L_, []); hops.get(L_).push([k, v.x]); } });
+    return hops;
+  }
+  function edgeSvg(it, hops) {
     const c = ink(it.ink ?? "#495057"), sw = it.sw ?? 1.5, P = it.pts, n = P.length;
     const [ax, ay] = P[n - 2], [bx, by] = P[n - 1], L_ = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / L_, uy = (by - ay) / L_;
     const hl = 9, hw = 4.5, end = [bx - ux * hl, by - uy * hl];
-    const d = "M" + [...P.slice(0, -1), end].map((p) => p.join(",")).join("L");
+    const d = pathD([...P.slice(0, -1), end], hops);
     let s = `<g data-id="${esc(it.id)}"${it.into ? ' pointer-events="none"' : ""}>${it.into ? "" : `<path d="${d}" fill="none" stroke="transparent" stroke-width="10"/>`}<path d="${d}" fill="none" stroke="${c}" stroke-width="${sw}"/>`;
     s += `<circle cx="${P[0][0]}" cy="${P[0][1]}" r="3.5" fill="${c}"/>`;
     s += `<polygon points="${bx},${by} ${end[0] - uy * hw},${end[1] + ux * hw} ${end[0] + uy * hw},${end[1] - ux * hw}" fill="${c}"/>`;
     if (it.s && it.lab) s += `<rect x="${it.lab.x}" y="${it.lab.y}" width="${it.lab.w}" height="${it.lab.h}" fill="#fff" fill-opacity="0.85"/>` + txt(it.lab.x + 4, it.lab.y + 1, it.s, 11, { ink: c });
     return s + "</g>";
   }
-  function linkSvg(it) {
-    const d = "M" + it.pts.map((p) => p.join(",")).join("L"), m = it.pts[Math.floor(it.pts.length / 2)];
+  function linkSvg(it, hops) {
+    const d = pathD(it.pts, hops), m = it.pts[Math.floor(it.pts.length / 2)];
     return `<g data-id="${esc(it.id)}"><path d="${d}" fill="none" stroke="transparent" stroke-width="10"/><path d="${d}" fill="none" stroke="#7048e8" stroke-width="2.5" stroke-dasharray="9 6"/>` +
       (it.s ? `<rect x="${m[0] + 4}" y="${m[1] - 9}" width="${tw(it.s, 12) + 8}" height="18" fill="#fff" fill-opacity="0.9"/>` + txt(m[0] + 8, m[1] - 8, it.s, 12, { ink: "#7048e8", bold: true }) : "") + "</g>";
   }
@@ -592,8 +623,9 @@
     const order = { group: 0, edge: 1, link: 2, node: 3, text: 4 };  // lines under boxes: a press on a box always gets the box
     const rank = (i) => i.into ? order.node + 0.5 : order[i.t];  // a line into a box's tokens is drawn over that box
     const its = [...page.items].sort((a, b) => rank(a) - rank(b) || (a.depth ?? 0) - (b.depth ?? 0));
-    const body = its.map((it) => it.t === "node" ? nodeSvg(it, weights, img) : it.t === "group" ? groupSvg(it) : it.t === "edge" ? edgeSvg(it)
-      : it.t === "link" ? linkSvg(it) : `<g data-id="${esc(it.id)}">${txt(it.x, it.y, it.s, it.fs, { ink: it.ink, bold: it.bold })}</g>`).join("\n");
+    const hops = crossings(page.items);
+    const body = its.map((it) => it.t === "node" ? nodeSvg(it, weights, img) : it.t === "group" ? groupSvg(it) : it.t === "edge" ? edgeSvg(it, hops.get(it))
+      : it.t === "link" ? linkSvg(it, hops.get(it)) : `<g data-id="${esc(it.id)}">${txt(it.x, it.y, it.s, it.fs, { ink: it.ink, bold: it.bold })}</g>`).join("\n");
     return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="${v.x} ${v.y} ${v.w} ${v.h}" width="${v.w * scale}" height="${v.h * scale}" font-family="${FONT}">` +
       `<rect x="${v.x}" y="${v.y}" width="${v.w}" height="${v.h}" fill="#fff"/>${body}</svg>`;
   }
@@ -611,5 +643,5 @@
   }
 
   Object.assign(root, { D, I, P, Pm: P, O, G, E, L, diagram, title });
-  root.DG = { src: `(${boot})(self);`, all, meta, layoutPage, reroute, toSvg, describe, bbox, lintGraph, edgeSvg, linkSvg, reset: () => { all.length = 0; meta.title = ""; } };
+  root.DG = { src: `(${boot})(self);`, all, meta, layoutPage, reroute, toSvg, crossings, describe, bbox, lintGraph, edgeSvg, linkSvg, reset: () => { all.length = 0; meta.title = ""; } };
 })(globalThis);
