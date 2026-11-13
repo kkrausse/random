@@ -27,17 +27,20 @@
   const tw = (s, fs = FS) => Math.max(0, ...lines(s).map((l) => [...l].length)) * fs * CW;
   const th = (s, fs = FS) => lines(s).length * fs * LH;
 
-  // ---- token strip: [count, colour, caption, shown?] or "…"
-  const SQ = 10, SG = 2;
+  // ---- token strip: [count, colour, caption, shown?, plus?] or "…". plus = a colour (or several): a vector ADDED onto
+  // each of these tokens (e.g. + e_k), drawn as a band of that colour under every square
+  const SQ = 10, SG = 2, PB = 5;
+  const plusOf = (g) => g === "…" || g[4] === undefined ? [] : Array.isArray(g[4]) ? g[4] : [g[4]];
   function strip(tok) {
     const segs = []; let x = 0;
+    const ext = Math.max(0, ...tok.map((g) => plusOf(g).length)) * PB + (tok.some((g) => plusOf(g).length) ? 1 : 0);
     for (const g of tok) {
       if (g === "…") { segs.push({ x, dots: true, w: 14 }); x += 14 + 8; continue; }
       const [n, c, cap = "", show = 6] = g, k = Math.min(n, n > 1 ? show : 1), more = n > k;
       const sw = k * SQ + (k - 1) * SG + (more ? 12 : 0), w = Math.max(sw, tw(cap, 11));
-      segs.push({ x, n: k, more, c, cap, w }); x += w + 8;
+      segs.push({ x, n: k, more, c, cap, w, plus: plusOf(g) }); x += w + 8;
     }
-    return { segs, w: Math.max(0, x - 8), h: SQ + 4 + 11 * LH };
+    return { segs, ext, w: Math.max(0, x - 8), h: SQ + ext + 4 + 11 * LH };
   }
 
   // ---- node sizes
@@ -483,15 +486,17 @@
       X += Math.max(r.w, tw(sub, 26), tw(d.title, tfs)) + 600;
     }
     const weights = Object.assign({}, ...ds.map((d) => d.weights ?? {}));
-    const leg = legend(weights);
+    const leg = legend(weights, ds.some((d) => usesPlus(d.nodes)));
     for (const it of leg.items) items.push(shift(it, -leg.w - 400, 0));
     return { items, lint };
   }
   const shift = (it, dx, dy) => ({ ...it, x: it.x + dx, y: it.y + dy, ...(it.pts ? { pts: it.pts.map(([x, y]) => [x + dx, y + dy]) } : {}),
     ...(it.lab ? { lab: { ...it.lab, x: it.lab.x + dx, y: it.lab.y + dy } } : {}) });
-  function legend(weights) {
+  const usesPlus = (items) => items.some((it) => it.kind === "group" ? usesPlus(it.kids) : (it.tok ?? []).some((g) => plusOf(g).length));
+  function legend(weights, plus) {
     const rows = [
       [{ kind: "data", s: "data" }, "DOTTED = DATA (tokens drawn inside: one square = one vector, … = more of the same)"],
+      ...(plus ? [[{ kind: "data", s: "+", tok: [[3, "gray", "", 3, "orange"]] }, "A BAND UNDER A TOKEN = A VECTOR ADDED ONTO IT (band colour = that vector's box); the caption says which"]] : []),
       [{ kind: "data", input: true, s: "input" }, "THICK DOTTED = A MODEL INPUT"],
       [{ kind: "op", w: "none", s: "op" }, "SOLID = A TRANSFORMATION; its colour = whose weights (same colour = the same weights)"],
       ...Object.entries(weights).map(([k, v]) => [{ kind: "op", w: k, s: k, fillc: v }, ""]),
@@ -532,9 +537,12 @@
       for (const g of S.segs) {
         const gx = x + 10 + g.x;
         if (g.dots) { s += txt(gx, y0 - 3, "…", 16); continue; }
-        for (let i = 0; i < g.n; i++) s += `<rect x="${gx + i * (SQ + SG)}" y="${y0}" width="${SQ}" height="${SQ}" rx="1.5" fill="${fill(g.c)}" stroke="#1e1e1e" stroke-width="0.8"/>`;
+        for (let i = 0; i < g.n; i++) {
+          s += `<rect x="${gx + i * (SQ + SG)}" y="${y0}" width="${SQ}" height="${SQ}" rx="1.5" fill="${fill(g.c)}" stroke="#1e1e1e" stroke-width="0.8"/>`;
+          g.plus.forEach((pc, j) => { s += `<rect x="${gx + i * (SQ + SG)}" y="${y0 + SQ + 1 + j * PB}" width="${SQ}" height="${PB - 1}" rx="1" fill="${fill(pc)}" stroke="#1e1e1e" stroke-width="0.6"/>`; });
+        }
         if (g.more) s += txt(gx + g.n * (SQ + SG), y0 - 3, "…", 12);
-        if (g.cap) s += txt(gx, y0 + SQ + 2, g.cap, 11, { ink: "#868e96" });
+        if (g.cap) s += txt(gx, y0 + SQ + S.ext + 2, g.cap, 11, { ink: "#868e96" });
       }
     }
     return s + "</g>";
