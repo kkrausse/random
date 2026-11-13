@@ -168,7 +168,8 @@
       if (!Array.isArray(el)) {
         if (leaf.has(el)) { const s = leaf.get(el); return { w: s.w, h: s.h, put: (x, y) => pos.set(el, { x, y, w: s.w, h: s.h }) }; }
         const g = grp.get(el), P = groupPad(g), inner = cell(arrangement(g.kids, g.rows, g.id, g.id), "col", gapOf(g), g.id);
-        const tt = titleBox(g, { x: 0, y: 0 }), w = Math.max(inner.w + P.left + P.right, tt.w + 40), h = inner.h + P.top + P.bottom;
+        const tt = titleBox(g, { x: 0, y: 0 }), w = Math.max(inner.w + P.left + P.right, tt.w + 110), h = inner.h + P.top + P.bottom;
+        // (at least as wide as its title plus room beside it, where lines from above come in)
         const k = g.deck ? DECK : 0;  // a deck's cards stick out above and to the right: they take room like the rest
         return { w: w + k, h: h + k, put: (x, y) => { pos.set(el, { x, y: y + k, w, h }); inner.put(x + P.left + (w - P.left - P.right - inner.w) / 2, y + k + P.top); } };
       }
@@ -370,8 +371,38 @@
       }
       out.push({ t: "edge", id: `${e.from}>${e.to}`, from: e.from, to: baseId(e.to), into: ln.into, pts, ink: e.ink, sw: e.sw, s: e.s });
     }
+    separate(out, boxes.filter((i) => i.t === "node"));
     placeLabels([...boxes.filter((i) => i.t === "node"), ...out]);
     return out;
+  }
+  // last resort for two lines the router left on one track: shift a middle stretch of one of them sideways (14 or
+  // 28 px, either way) where the shifted stretch and the two stretches it joins hit no box and no other line
+  function separate(lines, nodes) {
+    const box = (b) => nodes.some((n) => b.x1 > n.x + 1 && b.x0 < n.x + n.w - 1 && b.y1 > n.y + 1 && b.y0 < n.y + n.h - 1);
+    const segBox = (p, q) => ({ x0: Math.min(p[0], q[0]), x1: Math.max(p[0], q[0]), y0: Math.min(p[1], q[1]), y1: Math.max(p[1], q[1]) });
+    const near = (L_, p, q) => lines.some((o) => o !== L_ && o.pts.slice(1).some((r, k) => { const u = o.pts[k], vA = Math.abs(p[0] - q[0]) < 0.5, vB = Math.abs(u[0] - r[0]) < 0.5;
+      if (vA !== vB) return false; const c = vA ? 0 : 1, w = 1 - c; if (Math.abs(p[c] - u[c]) > NUDGE * 0.6) return false;
+      return Math.min(Math.max(p[w], q[w]), Math.max(u[w], r[w])) - Math.max(Math.min(p[w], q[w]), Math.min(u[w], r[w])) > 2; }));
+    for (let pass = 0; pass < 3; pass++) {
+      const sq = squeezes(lines, 1.5); if (!sq.length) return;
+      for (const q of sq) for (const L_ of [q.b, q.a]) {
+        const P = L_.pts, n = P.length, c = q.vert ? 0 : 1;
+        const k = P.findIndex((p, i) => i > 0 && Math.abs(P[i - 1][c] - (q.vert ? q.x : q.y)) < 1.5 && Math.abs(p[c] - (q.vert ? q.x : q.y)) < 1.5 &&
+          Math.min(Math.max(P[i - 1][1 - c], p[1 - c]), q.vert ? q.y + 1 : q.x + 1) > Math.max(Math.min(P[i - 1][1 - c], p[1 - c]), (q.vert ? q.y : q.x) - 1));
+        if (k < 0) continue;
+        // an end stretch moves its end along the side of its box (staying on that side); a token target's end stays
+        const endOk = (i, v) => { if (i !== 0 && i !== n - 1) return true; if (i === n - 1 && L_.into) return false;
+          const b = nodes.find((m) => m.id === (i === 0 ? L_.from : L_.to)); if (!b) return false;
+          return c === 0 ? v > b.x + 6 && v < b.x + b.w - 6 : v > b.y + 6 && v < b.y + b.h - 6; };
+        const fit = [NUDGE, -NUDGE, 2 * NUDGE, -2 * NUDGE].find((d) => {
+          if (!endOk(k - 1, P[k - 1][c] + d) || !endOk(k, P[k][c] + d)) return false;
+          const T = P.map((p) => [...p]); T[k - 1][c] += d; T[k][c] += d;
+          return [[k - 2, k - 1], [k - 1, k], [k, k + 1]].filter(([i, j]) => i >= 0 && j < n).every(([i, j]) => !box(segBox(T[i], T[j])) && !near(L_, T[i], T[j]));
+        });
+        if (fit === undefined) continue;
+        P[k - 1][c] += fit; P[k][c] += fit; break;
+      }
+    }
   }
   // the viewer, after boxes were dragged: the lines of diagram d named in `only` (all if not given) routed again, the
   // boxes at rectOf(id) (page coords)
