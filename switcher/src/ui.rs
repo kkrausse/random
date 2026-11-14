@@ -135,6 +135,13 @@ impl Switcher {
         }
     }
 
+    /// Opens the popover if it isn't open; an open one keeps its query.
+    pub fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !native_window(window).is_some_and(|native| native.isVisible()) {
+            self.show(window, cx);
+        }
+    }
+
     fn show(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(native) = native_window(window) else {
             return;

@@ -6,21 +6,62 @@ mod server;
 mod ui;
 
 use futures::StreamExt;
-use futures::channel::mpsc::unbounded;
+use futures::channel::mpsc::{UnboundedSender, unbounded};
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use gpui::Application;
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 use objc2_foundation::MainThreadMarker;
+use std::io::Read;
+use std::os::fd::FromRawFd;
+use std::sync::atomic::{AtomicI32, Ordering};
 
 enum Event {
     Hotkey,
+    /// SIGUSR1: open (never close), for tools that can't press a hotkey.
+    Show,
     TabsChanged,
 }
 
 fn fail(message: String) -> ! {
     eprintln!("switcher: {message}");
     std::process::exit(1);
+}
+
+/// Write end of the pipe the SIGUSR1 handler pokes.
+static SHOW_PIPE: AtomicI32 = AtomicI32::new(-1);
+
+extern "C" fn on_show_signal(_: libc::c_int) {
+    // Only async-signal-safe calls here: one write to a pipe.
+    let fd = SHOW_PIPE.load(Ordering::Relaxed);
+    unsafe { libc::write(fd, [1u8].as_ptr().cast(), 1) };
+}
+
+/// `pkill -USR1 -x switcher` opens the popover. A key remapper can run that
+/// where a hotkey won't do, e.g. on a chord of bare modifiers, which also
+/// have to stay held for something else (push-to-talk dictation).
+fn open_on_signal(events: UnboundedSender<Event>) {
+    let mut fds = [0; 2];
+    // SAFETY: plain libc calls with valid arguments; the handler is installed
+    // only after the pipe it writes to exists.
+    let read_end = unsafe {
+        if libc::pipe(fds.as_mut_ptr()) != 0 {
+            return eprintln!("switcher: no pipe for SIGUSR1; it will be ignored");
+        }
+        SHOW_PIPE.store(fds[1], Ordering::Relaxed);
+        libc::signal(
+            libc::SIGUSR1,
+            on_show_signal as extern "C" fn(libc::c_int) as libc::sighandler_t,
+        );
+        std::fs::File::from_raw_fd(fds[0])
+    };
+    std::thread::spawn(move || {
+        let mut read_end = read_end;
+        let mut byte = [0u8; 1];
+        while read_end.read_exact(&mut byte).is_ok() {
+            events.unbounded_send(Event::Show).ok();
+        }
+    });
 }
 
 fn main() {
@@ -35,6 +76,7 @@ fn main() {
         .collect();
 
     let (events, mut incoming) = unbounded();
+    open_on_signal(events.clone());
     let connections = server::Connections::default();
     let tab_events = events.clone();
     server::serve(config.port, connections.clone(), move || {
@@ -94,6 +136,7 @@ fn main() {
                 window
                     .update(cx, |switcher, window, cx| match event {
                         Event::Hotkey => switcher.toggle(window, cx),
+                        Event::Show => switcher.open(window, cx),
                         Event::TabsChanged if peek => switcher.peek(window, cx),
                         Event::TabsChanged => switcher.tabs_changed(window, cx),
                     })

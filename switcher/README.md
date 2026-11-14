@@ -73,6 +73,31 @@ the tab list. JSON text frames:
 Unknown types and fields are ignored. Several extensions (profiles, browsers)
 may connect at once; their tabs are merged.
 
+## Opening it from another tool
+
+`pkill -USR1 -x switcher` opens the popover (it never closes it). A key
+remapper can run that where a hotkey won't do. The Karabiner-Elements rule
+below makes holding Cmd and then right Option hold right Option alone, which is
+the push-to-talk key of the dictation app, and open the switcher, so what is
+dictated lands in the search box:
+
+```json
+{
+  "description": "Cmd + right Option: dictate into the switcher",
+  "manipulators": [{
+    "type": "basic",
+    "from": { "key_code": "right_option", "modifiers": { "mandatory": ["command"] } },
+    "to": [
+      { "shell_command": "/usr/bin/pkill -USR1 -x switcher" },
+      { "key_code": "right_option" }
+    ]
+  }]
+}
+```
+
+Cmd has to go down first. Karabiner lifts it for as long as right Option is
+held, so the dictated text is not typed as Cmd shortcuts.
+
 ## Mouse
 
 While it is open the switcher covers the whole screen with a faint dim, so the

@@ -4746,6 +4746,7 @@ dependencies = [
  "global-hotkey",
  "gpui",
  "image",
+ "libc",
  "nucleo-matcher",
  "objc2",
  "objc2-app-kit",
