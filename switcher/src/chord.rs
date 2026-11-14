@@ -1,11 +1,15 @@
-//! "Tap Cmd, then hold right Option" opens the popover.
+//! Cmd, then right Option, opens the popover, to dictate into it.
 //!
-//! Right Option held alone is the dictation app's push-to-talk key, and it
-//! only starts dictating when no other modifier is down. So the way to say
-//! "dictate into the switcher" can't be a chord with right Option in it; it is
-//! a leader tap first, like the remote's leader-then-hold. The dictation app
-//! sees its ordinary key, we open on the same key-down, and what is dictated
-//! is typed into the search box.
+//! Right Option held alone is the dictation app's push-to-talk key. It starts
+//! dictating whenever the modifiers held become exactly right Option, so:
+//!
+//! - Hold Cmd, press right Option: we open. Dictation starts the moment Cmd
+//!   is let go with right Option still down, which is what a quick roll of
+//!   the two keys does anyway.
+//! - Tap Cmd, then press right Option within `LEADER`: we open on the Option
+//!   key-down, and dictation starts on it too.
+//!
+//! Either way what is dictated is typed into the search box.
 //!
 //! Modifier changes are watched with a global NSEvent monitor, which needs no
 //! Accessibility or Input Monitoring permission for `flagsChanged`. Ordinary
@@ -72,6 +76,10 @@ fn step(previous: State, change: Change) -> (State, bool) {
                 next.tapped_at = Some(at);
             }
         }
+        // Cmd held, right Option pressed: the chord. Dictation starts when Cmd
+        // is let go with right Option still down.
+        RIGHT_OPTION if option && command && !other => fired = true,
+        // Cmd tapped and already released, then right Option.
         RIGHT_OPTION if option && !command && !other => {
             fired = within(previous.tapped_at, LEADER);
         }
@@ -169,8 +177,20 @@ mod tests {
             run(&[(0, 55, true, false), (80, 55, false, false), (800, 61, false, true)]),
             [false, false, false]
         );
-        // Cmd still down when right Option goes down (the old chord): no.
-        assert_eq!(run(&[(0, 55, true, false), (100, 61, true, true)]), [false, false]);
+        // Cmd still down when right Option goes down: the chord, however long
+        // Cmd has been held.
+        assert_eq!(run(&[(0, 55, true, false), (900, 61, true, true)]), [false, true]);
+        // The same, rolled quickly with right Cmd, as logged from the keyboard:
+        // Cmd down, Option down, Cmd up, Option up. Opens once.
+        assert_eq!(
+            run(&[
+                (0, 54, true, false),
+                (77, 61, true, true),
+                (171, 54, false, true),
+                (742, 61, false, false)
+            ]),
+            [false, true, false, false]
+        );
         // A synthetic Cmd press (down and up together), then right Option: no.
         assert_eq!(
             run(&[(0, 55, true, false), (0, 55, false, false), (200, 61, false, true)]),

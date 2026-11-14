@@ -75,14 +75,18 @@ may connect at once; their tabs are merged.
 
 ## Dictating into it
 
-Tap Cmd, then hold right Option (within 0.6 s). Right Option held alone is the
-dictation app's push-to-talk key, so it starts dictating as usual, and the
-switcher opens on the same key-down: what you say is typed into the search
-box. The list stays filtered when you let go; Enter jumps.
+Hold Cmd and press right Option: the switcher opens. Let go of Cmd and keep
+right Option down, and what you say is typed into the search box. Rolling the
+two keys quickly does the same. The list stays filtered when you let go; Enter
+jumps.
 
-It has to be a tap first and not a chord, because the dictation app only
-starts when right Option goes down with no other modifier held. No permission
-is needed. `SWITCHER_LOG_CHORD=1` logs every modifier change it sees.
+Right Option held alone is the dictation app's push-to-talk key. It starts
+dictating when the modifiers held are exactly right Option, so nothing is
+dictated while Cmd is still down. Tapping Cmd first and then holding right
+Option (within 0.6 s) works too.
+
+No permission is needed. `SWITCHER_LOG_CHORD=1` logs every modifier change the
+switcher sees.
 
 ## Opening it from another tool
 
