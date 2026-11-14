@@ -1,4 +1,5 @@
 mod apps;
+mod chord;
 mod config;
 mod icons;
 mod rank;
@@ -18,7 +19,7 @@ use std::sync::atomic::{AtomicI32, Ordering};
 
 enum Event {
     Hotkey,
-    /// SIGUSR1: open (never close), for tools that can't press a hotkey.
+    /// Open, never close: SIGUSR1, or Cmd tap then right Option (`chord`).
     Show,
     TabsChanged,
 }
@@ -95,6 +96,10 @@ fn main() {
         NSApplication::sharedApplication(marker)
             .setActivationPolicy(NSApplicationActivationPolicy::Accessory);
         apps::track_activations();
+        let chord_events = events.clone();
+        chord::watch(move || {
+            chord_events.unbounded_send(Event::Show).ok();
+        });
 
         // Carbon hotkeys: no Accessibility permission needed.
         let manager = GlobalHotKeyManager::new()
