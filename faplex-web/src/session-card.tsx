@@ -161,7 +161,7 @@ export function SessionCard({ session: s, machine, now, warm }: { session: Sessi
             rows={2}
             className="min-h-10 flex-1 resize-none text-base"
           />
-          <div className="flex flex-col gap-1">
+          <div className="flex gap-1">
             <Button size="icon" variant="ghost" aria-label="Cancel" onClick={() => setReplying(false)}>
               <X />
             </Button>
