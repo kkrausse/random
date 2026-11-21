@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ALargeSmall, ChevronLeft, EllipsisVertical, Keyboard, KeyboardOff, Loader, RotateCw } from "lucide-react";
+import { ALargeSmall, ChevronLeft, ClipboardPaste, EllipsisVertical, Keyboard, KeyboardOff, Loader, RefreshCcw, RotateCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -88,6 +88,26 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
       if (ws?.readyState === WebSocket.OPEN) ws.send(encoder.encode(data));
     };
 
+    // A size change one row down and back makes the harness redraw its whole screen. Done once
+    // its output has gone quiet after attaching (faplex holds Claude's output until its input box
+    // is drawn), and on coming back to the page.
+    let lastOutput = 0;
+    let nudgeTimer: ReturnType<typeof setTimeout> | undefined;
+    const resizeTo = (cols: number, rows: number) => ws?.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ resize: { cols, rows } }));
+    const nudge = () => {
+      const t = term.current;
+      if (!t || ws?.readyState !== WebSocket.OPEN) return;
+      const { cols, rows } = t.terminal;
+      resizeTo(cols, rows - 1);
+      setTimeout(() => resizeTo(t.terminal.cols, t.terminal.rows), 120);
+    };
+    const nudgeWhenQuiet = (deadline = Date.now() + 5000) => {
+      clearTimeout(nudgeTimer);
+      if (Date.now() - lastOutput >= 500 || Date.now() > deadline) return nudge();
+      nudgeTimer = setTimeout(() => nudgeWhenQuiet(deadline), 150);
+    };
+    redrawRef.current = nudge;
+
     const connect = () => {
       clearTimeout(timer);
       const t = term.current;
@@ -107,9 +127,12 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
       socket.onopen = () => {
         retry = 0;
         setConn("open");
+        lastOutput = Date.now();
+        nudgeTimer = setTimeout(() => nudgeWhenQuiet(), 300);
       };
       socket.onmessage = (e) => {
         const bytes = new Uint8Array(e.data as ArrayBuffer);
+        lastOutput = Date.now();
         if (head.length < 200) head += decoder.decode(bytes, { stream: true });
         t.terminal.write(bytes);
       };
@@ -140,8 +163,17 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
         const t = await mountTerminal(host, {
           fontSize: saved,
           input: send,
-          resize: (cols, rows) => ws?.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ resize: { cols, rows } })),
+          resize: resizeTo,
           rawFocus: setKeyboard,
+          upload: async (file) => {
+            const r = await fetch(`/api/attach?key=${encodeURIComponent(sessionKey)}`, {
+              method: "POST",
+              headers: { "content-type": file.type || "application/octet-stream", "x-filename": encodeURIComponent(file.name) },
+              body: file,
+            });
+            if (!r.ok) throw new Error(await r.text());
+            return ((await r.json()) as { path: string }).path;
+          },
         });
         if (disposed) return t.dispose();
         term.current = t;
@@ -154,7 +186,9 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
     const wake = () => {
       if (document.hidden) return;
       retry = 0;
-      connect();
+      // Still connected after the phone slept: the screen may be stale, so redraw it.
+      if (ws?.readyState === WebSocket.OPEN) nudgeWhenQuiet();
+      else connect();
     };
     document.addEventListener("visibilitychange", wake);
     window.addEventListener("online", wake);
@@ -168,6 +202,7 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
     return () => {
       disposed = true;
       clearTimeout(timer);
+      clearTimeout(nudgeTimer);
       document.removeEventListener("visibilitychange", wake);
       window.removeEventListener("online", wake);
       ws?.close(1000);
@@ -177,6 +212,7 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
   }, [sessionKey]);
 
   const reconnectRef = useRef<() => void>(() => {});
+  const redrawRef = useRef<() => void>(() => {});
 
   const fontStep = (d: number) => {
     const t = term.current;
@@ -213,6 +249,9 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
             <EllipsisVertical className="size-5" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-44">
+            <DropdownMenuItem onClick={() => redrawRef.current()}>
+              <RefreshCcw /> Redraw
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => reconnectRef.current()}>
               <RotateCw /> Reconnect
             </DropdownMenuItem>
@@ -234,23 +273,34 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
             <Loader className="size-5 animate-spin text-muted-foreground" />
           </div>
         )}
-        {/* The only control: raise or lower the keyboard, which types straight into the terminal. */}
-        <Button
-          variant="secondary"
-          size="icon-lg"
-          aria-label={keyboard ? "Hide keyboard" : "Show keyboard"}
-          className={cn(
-            "absolute right-2 size-11 rounded-full shadow-lg ring-1 ring-foreground/10 backdrop-blur",
-            // The home-indicator inset only matters with the keyboard down.
-            keyboard ? "bottom-2" : "bottom-[max(env(safe-area-inset-bottom),0.5rem)]",
-            keyboard ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-secondary/70",
-          )}
+        {/* Paste, and raise or lower the keyboard (which types straight into the terminal). */}
+        <div
+          className={cn("absolute right-2 flex flex-col gap-2", keyboard ? "bottom-2" : "bottom-[max(env(safe-area-inset-bottom),0.5rem)]")}
           // Keep focus where it is, so a tap toggles rather than blurring first.
           onPointerDown={(e) => e.preventDefault()}
-          onClick={() => term.current?.toggleRawFocus()}
         >
-          {keyboard ? <KeyboardOff className="size-5" /> : <Keyboard className="size-5" />}
-        </Button>
+          <Button
+            variant="secondary"
+            size="icon-lg"
+            aria-label="Paste"
+            className="size-11 rounded-full bg-secondary/70 shadow-lg ring-1 ring-foreground/10 backdrop-blur"
+            onClick={() => void term.current?.pasteClipboard()}
+          >
+            <ClipboardPaste className="size-5" />
+          </Button>
+          <Button
+            variant="secondary"
+            size="icon-lg"
+            aria-label={keyboard ? "Hide keyboard" : "Show keyboard"}
+            className={cn(
+              "size-11 rounded-full shadow-lg ring-1 ring-foreground/10 backdrop-blur",
+              keyboard ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-secondary/70",
+            )}
+            onClick={() => term.current?.toggleRawFocus()}
+          >
+            {keyboard ? <KeyboardOff className="size-5" /> : <Keyboard className="size-5" />}
+          </Button>
+        </div>
       </div>
     </div>
   );

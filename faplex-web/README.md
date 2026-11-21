@@ -12,9 +12,12 @@ one. Everything goes through the faplex CLI; nothing here talks to a harness dir
 | Opening a session | the Unix socket `watch` reports: the client it keeps for that session |
 | New session (+) | `faplex new --machine … --harness … --background` |
 
-The session screen is a ghostty-web terminal and one floating keyboard button. Tapping the
-terminal never raises the keyboard; the button does, and typing (dictation included) goes
-straight into the harness. Text size is in the ⋮ menu. ← at an empty prompt or ctrl+] leaves the
+The session screen is a ghostty-web terminal with two floating buttons. Keyboard raises or lowers
+the keyboard; typing (dictation included) goes straight into the harness, and tapping the
+terminal never raises it. Paste reads the clipboard: text is pasted, and an image or file is
+uploaded to the session's machine (`/tmp/faplex-web/`, over ssh for a remote one) and its path
+pasted, which Claude takes as an image. On opening, and on coming back to the page, the harness is
+made to redraw by a one-row resize and back; ⋮ → Redraw does it by hand. Text size is in ⋮ too. ← at an empty prompt or ctrl+] leaves the
 session, as in faplex.
 
 ## Run

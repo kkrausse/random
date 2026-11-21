@@ -4,9 +4,11 @@
 //   faplex tail / send    last messages, and a reply typed at a session's prompt
 //   faplex new            starting a session
 // Nothing here talks to a harness directly.
-import { cp, rm } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { chmod, cp, mkdir, rm } from "node:fs/promises";
 import { connect, type Socket } from "node:net";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { TerminalAuth } from "../../bun-web-terminal/src/auth.ts";
 import { loadCredentials } from "../../bun-web-terminal/src/credentials.ts";
@@ -56,6 +58,7 @@ const server = Bun.serve<Data>({
     if (path === "/api/tail" && request.method === "GET") return tail(url.searchParams.get("key") ?? "", Number(url.searchParams.get("n") ?? 2));
     if (path === "/api/send" && request.method === "POST") return send(await request.json());
     if (path === "/api/new" && request.method === "POST") return newSession(await request.json());
+    if (path === "/api/attach" && request.method === "POST") return attach(request, url.searchParams.get("key") ?? "");
     if (path.startsWith("/api/")) return new Response("Not found", { status: 404 });
 
     // Static build output; every other path is the app (client-side routes).
@@ -178,6 +181,47 @@ async function newSession(body: { machine?: unknown; harness?: unknown; dir?: un
   if (code === 0) return Response.json({ ok: true, key: out.trim().split("\n").at(-1) });
   if (code === 3) return Response.json({ ok: false, error: "That folder's trust prompt needs answering: start this one from faplex in a terminal once." }, { status: 409 });
   return Response.json({ ok: false, error: err || `new exited ${code}` }, { status: 409 });
+}
+
+// A file pasted on the phone: saved on the session's machine, and its path is typed at the prompt
+// (how a harness takes an image). Remote machines get it over ssh, under /tmp/faplex-web.
+async function attach(request: Request, key: string) {
+  if (!isKey(key)) return new Response("Bad key", { status: 400 });
+  const name = (decodeURIComponent(request.headers.get("x-filename") ?? "") || "pasted")
+    .replace(/[^A-Za-z0-9._-]+/g, "_")
+    .slice(-80);
+  const file = `${Date.now().toString(36)}-${randomBytes(3).toString("hex")}-${name}`;
+  const bytes = new Uint8Array(await request.arrayBuffer());
+  const ssh = sshAlias(key.slice(0, key.indexOf("/")));
+  if (!ssh) {
+    const dir = join(tmpdir(), "faplex-web");
+    await mkdir(dir, { recursive: true, mode: 0o700 });
+    const path = join(dir, file);
+    await Bun.write(path, bytes);
+    await chmod(path, 0o600);
+    return Response.json({ path });
+  }
+  const dir = "/tmp/faplex-web";
+  const proc = Bun.spawn(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", ssh, `mkdir -p -m 700 ${dir} && umask 077 && cat > ${dir}/${file}`], {
+    stdin: new Blob([bytes]),
+    stdout: "ignore",
+    stderr: "pipe",
+    timeout: 300_000,
+  });
+  const [err, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  if (code !== 0) return new Response(`copy to ${ssh} failed: ${err.trim() || `ssh exited ${code}`}`, { status: 502 });
+  return Response.json({ path: `${dir}/${file}` });
+}
+
+/** The ssh host of a machine in faplex's config; undefined for this machine. */
+function sshAlias(machineId: string): string | undefined {
+  const dir = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
+  try {
+    const config = JSON.parse(readFileSync(join(dir, "faplex", "config.json"), "utf8")) as { machines?: { id?: string; ssh?: string }[] };
+    return config.machines?.find((m) => m.ssh && (m.id ?? m.ssh) === machineId)?.ssh;
+  } catch {
+    return undefined;
+  }
 }
 
 // ---- helpers ----

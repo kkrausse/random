@@ -28,7 +28,14 @@ const coarse = () => matchMedia("(any-pointer: coarse)").matches;
 
 export async function mountTerminal(
   host: HTMLElement,
-  opts: { fontSize?: number; input: (data: string) => void; resize: (cols: number, rows: number) => void; rawFocus: (focused: boolean) => void },
+  opts: {
+    fontSize?: number;
+    input: (data: string) => void;
+    resize: (cols: number, rows: number) => void;
+    rawFocus: (focused: boolean) => void;
+    /** Puts a file on the session's machine; resolves to its path there. */
+    upload: (file: File) => Promise<string>;
+  },
 ) {
   const theme = await prepare();
   const terminal = new Terminal({
@@ -97,6 +104,27 @@ export async function mountTerminal(
   if (coarse()) textarea?.blur();
   opts.rawFocus(document.activeElement === textarea);
 
+  // Files are uploaded and their paths pasted, as a terminal does with a dropped file.
+  const pasteFiles = async (files: File[]) => {
+    const id = toast.loading(files.length === 1 ? `Uploading ${files[0]!.name}…` : `Uploading ${files.length} files…`);
+    try {
+      const paths = await Promise.all(files.map(opts.upload));
+      terminal.paste(paths.join(" "));
+      toast.success("Pasted", { id, duration: 1500 });
+    } catch (e) {
+      toast.error("Upload failed", { id, description: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  const onPaste = (event: ClipboardEvent) => {
+    const files = [...(event.clipboardData?.files ?? [])];
+    if (!files.length) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    void pasteFiles(files);
+  };
+  // On the document: a touch device can paste without the terminal's input focused.
+  document.addEventListener("paste", onPaste, { capture: true });
+
   // Fit the grid to the host: whole cells, at most one pixel clipped on the right.
   const fit = () => {
     const m = terminal.renderer?.getMetrics();
@@ -125,6 +153,29 @@ export async function mountTerminal(
       if (document.activeElement === textarea) textarea?.blur();
       else textarea?.focus({ preventScroll: true });
     },
+    /** The paste button: one clipboard read (a second would prompt again on iOS). */
+    async pasteClipboard() {
+      try {
+        if (!navigator.clipboard.read) {
+          const text = await navigator.clipboard.readText();
+          if (text) terminal.paste(text);
+          else toast("Clipboard is empty");
+          return;
+        }
+        const files: File[] = [];
+        let text = "";
+        for (const item of await navigator.clipboard.read()) {
+          const type = item.types.find((t) => !t.startsWith("text/"));
+          if (type) files.push(new File([await item.getType(type)], `pasted.${type.split("/")[1]!.split(/[+;]/)[0]}`, { type }));
+          else if (item.types.includes("text/plain")) text += await (await item.getType("text/plain")).text();
+        }
+        if (files.length) await pasteFiles(files);
+        else if (text) terminal.paste(text);
+        else toast("Clipboard is empty");
+      } catch (e) {
+        if ((e as Error)?.name !== "NotAllowedError") toast.error("Paste failed", { description: e instanceof Error ? e.message : String(e) });
+      }
+    },
     fontSize: () => terminal.options.fontSize ?? 12,
     setFontSize(size: number) {
       terminal.options.fontSize = size;
@@ -132,6 +183,7 @@ export async function mountTerminal(
     },
     dispose() {
       observer.disconnect();
+      document.removeEventListener("paste", onPaste, { capture: true });
       clearTimeout(fitTimer);
       textarea?.removeEventListener("focus", onFocus);
       textarea?.removeEventListener("blur", onBlur);
