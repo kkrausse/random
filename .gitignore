@@ -41,6 +41,8 @@
 !isochron-home-map/**
 !bun-web-terminal/
 !bun-web-terminal/**
+!faplex-web/
+!faplex-web/**
 !ghostty-web/
 !ghostty-web/**
 !dictation-server/

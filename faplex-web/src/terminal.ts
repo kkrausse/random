@@ -1,0 +1,139 @@
+// The session's terminal: ghostty-web (WebGL) with the web terminal's touch, wheel and link
+// handling. A tap never raises the keyboard; typing goes through the composer, or straight into
+// the terminal with the keyboard button.
+import { init, Terminal, WebglRenderer, type ITheme } from "@random/ghostty-web";
+import { installTerminalTouchControls } from "../../bun-web-terminal/src/touch.ts";
+import { forwardWheelSteps, installScrolling } from "../../bun-web-terminal/src/scroll.ts";
+import { installLinkClicks, terminalLinkAt } from "../../bun-web-terminal/src/links.ts";
+import { toast } from "sonner";
+
+type Theme = { terminal: ITheme; fontFamily: string; fontSize: number; scrollSensitivity?: number };
+
+let ready: Promise<Theme> | undefined;
+const prepare = () =>
+  (ready ??= Promise.all([
+    fetch("/api/theme").then((r) => {
+      if (!r.ok) throw new Error(`theme: HTTP ${r.status}`);
+      return r.json() as Promise<Theme>;
+    }),
+    init({ wasmUrl: "/ghostty-vt.wasm" }),
+  ]).then(([theme]) => {
+    document.documentElement.style.setProperty("--terminal-bg", theme.terminal.background ?? "#0c0c0c");
+    return theme;
+  }));
+
+export type MountedTerminal = Awaited<ReturnType<typeof mountTerminal>>;
+
+const coarse = () => matchMedia("(any-pointer: coarse)").matches;
+
+export async function mountTerminal(
+  host: HTMLElement,
+  opts: { fontSize?: number; input: (data: string) => void; resize: (cols: number, rows: number) => void; rawFocus: (focused: boolean) => void },
+) {
+  const theme = await prepare();
+  const terminal = new Terminal({
+    cursorBlink: true,
+    fontFamily: theme.fontFamily,
+    // Phones get a smaller default so a harness has room to lay out.
+    fontSize: opts.fontSize ?? (coarse() ? 12 : theme.fontSize),
+    scrollback: 10_000,
+    selectOnDrag: false,
+    copyOnSelect: false,
+    smoothScrollDuration: 0,
+    theme: theme.terminal,
+    rendererType: "webgl",
+    onClipboardWrite: (ok) => (ok ? toast.success("Copied") : toast.error("Copy failed")),
+  });
+  await terminal.open(host);
+  // instanceof, not constructor.name: the bundle is minified.
+  if (!(terminal.renderer instanceof WebglRenderer)) {
+    terminal.dispose();
+    throw new Error("WebGL2 is unavailable; the terminal needs it.");
+  }
+  // An editable container makes iOS treat a long press as text editing.
+  if (coarse()) host.removeAttribute("contenteditable");
+  const canvas = () => host.querySelector("canvas") ?? host;
+
+  installScrolling(host, () => ({
+    lineHeight: terminal.renderer?.getMetrics().height ?? 20,
+    rows: terminal.rows,
+    mode: terminal.wasmTerm?.hasMouseTracking() ? "mouse" : terminal.wasmTerm?.isAlternateScreen() ? "alternate" : "history",
+  }), theme.scrollSensitivity ?? 0.5);
+  installLinkClicks(host, terminal);
+  installTerminalTouchControls(
+    host,
+    terminal,
+    () => false,
+    (message) => toast(message, { duration: 1500 }),
+    (lines, x, y) => {
+      // Harnesses take wheel steps (one per line); plain scrollback moves by lines here.
+      if (terminal.wasmTerm?.hasMouseTracking() || terminal.wasmTerm?.isAlternateScreen()) forwardWheelSteps(canvas(), lines, { clientX: x, clientY: y });
+      else terminal.scrollLines(lines);
+    },
+    (x, y) => {
+      const url = terminalLinkAt(terminal, x, y);
+      if (!url) return false;
+      window.open(url, "_blank", "noopener,noreferrer");
+      return true;
+    },
+  );
+
+  terminal.onData(opts.input);
+  terminal.onResize(({ cols, rows }) => opts.resize(cols, rows));
+  // Ctrl+V belongs to the terminal app; paste stays Cmd+V / Ctrl+Shift+V.
+  host.addEventListener("keydown", (e) => {
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.code === "KeyV") {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      opts.input("\x16");
+    }
+  }, { capture: true });
+  const textarea = terminal.textarea;
+  const onFocus = () => opts.rawFocus(true);
+  const onBlur = () => opts.rawFocus(false);
+  textarea?.addEventListener("focus", onFocus);
+  textarea?.addEventListener("blur", onBlur);
+
+  // Fit the grid to the host: whole cells, at most one pixel clipped on the right.
+  const fit = () => {
+    const m = terminal.renderer?.getMetrics();
+    if (!m?.width || !m.height || !host.clientWidth || !host.clientHeight) return;
+    const cols = Math.max(20, Math.min(400, Math.floor((host.clientWidth + 1) / m.width)));
+    const rows = Math.max(5, Math.min(200, Math.floor(host.clientHeight / m.height)));
+    if (cols !== terminal.cols || rows !== terminal.rows) terminal.resize(cols, rows);
+  };
+  let fitTimer: ReturnType<typeof setTimeout> | undefined;
+  const observer = new ResizeObserver(() => {
+    clearTimeout(fitTimer);
+    fitTimer = setTimeout(fit, 100);
+  });
+  observer.observe(host);
+  fit();
+  void document.fonts?.ready.then(fit);
+  if (!coarse()) terminal.focus();
+
+  return {
+    terminal,
+    /** A key as if typed, so Ghostty encodes it for the app's current modes. */
+    key(key: string, mods: { shiftKey?: boolean; ctrlKey?: boolean } = {}) {
+      (textarea ?? host).dispatchEvent(new KeyboardEvent("keydown", { key, code: key, ...mods, bubbles: true, cancelable: true }));
+    },
+    toggleRawFocus() {
+      if (document.activeElement === textarea) textarea?.blur();
+      else textarea?.focus({ preventScroll: true });
+    },
+    fontSize: () => terminal.options.fontSize ?? 12,
+    setFontSize(size: number) {
+      terminal.options.fontSize = size;
+      setTimeout(fit, 50);
+    },
+    dispose() {
+      observer.disconnect();
+      clearTimeout(fitTimer);
+      textarea?.removeEventListener("focus", onFocus);
+      textarea?.removeEventListener("blur", onBlur);
+      terminal.dispose();
+      host.replaceChildren();
+    },
+  };
+}
