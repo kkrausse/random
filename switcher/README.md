@@ -73,6 +73,26 @@ the tab list. JSON text frames:
 Unknown types and fields are ignored. Several extensions (profiles, browsers)
 may connect at once; their tabs are merged.
 
+## Dictating into it
+
+Hold Cmd and press right Option: the switcher opens. Let go of Cmd and keep
+right Option down, and what you say is typed into the search box. Rolling the
+two keys quickly does the same. The list stays filtered when you let go; Enter
+jumps.
+
+Right Option held alone is the dictation app's push-to-talk key. It starts
+dictating when the modifiers held are exactly right Option, so nothing is
+dictated while Cmd is still down. Tapping Cmd first and then holding right
+Option (within 0.6 s) works too.
+
+No permission is needed. `SWITCHER_LOG_CHORD=1` logs every modifier change the
+switcher sees.
+
+## Opening it from another tool
+
+`pkill -USR1 -x switcher` opens the popover (it never closes it), for a tool
+that can run a command but can't press a hotkey.
+
 ## Mouse
 
 While it is open the switcher covers the whole screen with a faint dim, so the

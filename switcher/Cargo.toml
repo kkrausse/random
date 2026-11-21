@@ -9,6 +9,7 @@ block2 = "0.6.2"
 dirs = "6"
 futures = "0.3"
 global-hotkey = "0.10"
+libc = "0.2"
 gpui = { version = "0.2.2", default-features = false, features = ["font-kit"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 nucleo-matcher = "0.3.1"

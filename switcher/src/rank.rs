@@ -115,6 +115,15 @@ pub fn collect(connections: &Connections, browser_bundle_id: Option<&str>) -> Ve
 /// score, ties broken by recency.
 pub fn rank(items: &[Item], query: &str) -> Vec<usize> {
     let by_recency = |a: &usize, b: &usize| items[*b].recency.total_cmp(&items[*a].recency);
+    // Punctuation in the query is ignored: dictation adds it ("slack, inbox."),
+    // and it would otherwise have to match literally (or, for ^ $ ! ', be
+    // read as search syntax). Apostrophes vanish so "dont" still finds
+    // "don't"; anything else just separates words.
+    let query: String = query
+        .chars()
+        .filter(|c| !matches!(c, '\'' | '’'))
+        .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+        .collect();
     let query = query.trim();
     if query.is_empty() {
         let mut order: Vec<usize> = (0..items.len()).collect();
