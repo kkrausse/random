@@ -12,10 +12,9 @@ one. Everything goes through the faplex CLI; nothing here talks to a harness dir
 | Opening a session | the Unix socket `watch` reports: the client it keeps for that session |
 | New session (+) | `faplex new --machine … --harness … --background` |
 
-The session screen is a ghostty-web terminal. Tapping it never raises the keyboard. Type in the
-composer at the bottom (pasted into the harness, then Enter) or tap the keyboard button to type
-straight into the terminal. The key strip (esc, tab, shift-tab, arrows, ^C, enter) shows only
-while a keyboard is up. Text size is in the ⋮ menu. ← at an empty prompt or ctrl+] leaves the
+The session screen is a ghostty-web terminal and one floating keyboard button. Tapping the
+terminal never raises the keyboard; the button does, and typing (dictation included) goes
+straight into the harness. Text size is in the ⋮ menu. ← at an empty prompt or ctrl+] leaves the
 session, as in faplex.
 
 ## Run

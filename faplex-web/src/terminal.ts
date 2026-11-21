@@ -93,6 +93,9 @@ export async function mountTerminal(
   const onBlur = () => opts.rawFocus(false);
   textarea?.addEventListener("focus", onFocus);
   textarea?.addEventListener("blur", onBlur);
+  // Ghostty focuses its input on open. On a phone the keyboard waits for the button.
+  if (coarse()) textarea?.blur();
+  opts.rawFocus(document.activeElement === textarea);
 
   // Fit the grid to the host: whole cells, at most one pixel clipped on the right.
   const fit = () => {

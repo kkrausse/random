@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { ALargeSmall, ChevronLeft, CornerDownLeft, EllipsisVertical, Keyboard, Loader, RotateCw, SendHorizontal } from "lucide-react";
+import { ALargeSmall, ChevronLeft, EllipsisVertical, Keyboard, KeyboardOff, Loader, RotateCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { HARNESS_LABEL, STATUS_LABEL } from "./format.ts";
 import type { useLive } from "./live.ts";
@@ -13,18 +12,6 @@ import { mountTerminal, type MountedTerminal } from "./terminal.ts";
 
 type Conn = "starting" | "connecting" | "open" | "waiting" | "offline";
 
-const KEYS: { label: string; title: string; key?: string; shift?: boolean; bytes?: string }[] = [
-  { label: "esc", title: "Escape", key: "Escape" },
-  { label: "⇥", title: "Tab", key: "Tab" },
-  { label: "⇧⇥", title: "Shift+Tab", key: "Tab", shift: true },
-  { label: "↑", title: "Up", key: "ArrowUp" },
-  { label: "↓", title: "Down", key: "ArrowDown" },
-  { label: "←", title: "Left", key: "ArrowLeft" },
-  { label: "→", title: "Right", key: "ArrowRight" },
-  { label: "^C", title: "Ctrl+C", bytes: "\x03" },
-  { label: "⏎", title: "Enter", key: "Enter" },
-];
-
 const FONT_KEY = "faplex-web.fontSize";
 const NOT_LISTED = "is not a session this watch lists";
 
@@ -33,32 +20,57 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
   const machine = live.state?.machines.find((m) => m.id === session?.machine);
   const screenRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
-  const composerRef = useRef<HTMLTextAreaElement>(null);
   const term = useRef<MountedTerminal>(undefined);
   const [conn, setConn] = useState<Conn>("starting");
-  const [typing, setTyping] = useState<"none" | "compose" | "raw">("none");
-  const [text, setText] = useState("");
+  const [keyboard, setKeyboard] = useState(false);
   const listed = !!session?.openable;
   const listedRef = useRef(listed);
   listedRef.current = listed;
 
-  // Size the screen to the visual viewport, so the composer rides on top of the keyboard.
+  // Size the screen to the visual viewport, so the terminal ends where the keyboard begins.
+  // Keyboards (third-party ones especially) settle over several frames and iOS may pan the page
+  // to the focused input, so re-measure for a while after any focus change and keep the page
+  // itself unscrolled.
   useEffect(() => {
     const vv = window.visualViewport;
     const layout = () => {
       const el = screenRef.current;
       if (!el) return;
-      el.style.height = `${vv ? vv.height : window.innerHeight}px`;
-      el.style.top = `${vv && Math.abs(vv.scale - 1) < 0.01 ? vv.offsetTop : 0}px`;
+      const zoomed = vv ? Math.abs(vv.scale - 1) > 0.01 : false;
+      el.style.height = `${vv && !zoomed ? vv.height : window.innerHeight}px`;
+      el.style.top = `${vv && !zoomed ? vv.offsetTop : 0}px`;
+    };
+    let settleUntil = 0;
+    let frame = 0;
+    const settle = () => {
+      settleUntil = performance.now() + 1200;
+      if (frame) return;
+      const tick = () => {
+        layout();
+        frame = performance.now() < settleUntil ? requestAnimationFrame(tick) : 0;
+      };
+      frame = requestAnimationFrame(tick);
+    };
+    const unscroll = () => {
+      if (window.scrollY !== 0 && document.activeElement === document.body) window.scrollTo(0, 0);
+      settle();
     };
     layout();
-    vv?.addEventListener("resize", layout);
-    vv?.addEventListener("scroll", layout);
-    window.addEventListener("resize", layout);
+    vv?.addEventListener("resize", settle);
+    vv?.addEventListener("scroll", settle);
+    window.addEventListener("resize", settle);
+    window.addEventListener("scroll", unscroll);
+    document.addEventListener("focusin", settle);
+    document.addEventListener("focusout", settle);
     return () => {
-      vv?.removeEventListener("resize", layout);
-      vv?.removeEventListener("scroll", layout);
-      window.removeEventListener("resize", layout);
+      cancelAnimationFrame(frame);
+      vv?.removeEventListener("resize", settle);
+      vv?.removeEventListener("scroll", settle);
+      window.removeEventListener("resize", settle);
+      window.removeEventListener("scroll", unscroll);
+      document.removeEventListener("focusin", settle);
+      document.removeEventListener("focusout", settle);
+      window.scrollTo(0, 0);
     };
   }, []);
 
@@ -129,7 +141,7 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
           fontSize: saved,
           input: send,
           resize: (cols, rows) => ws?.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ resize: { cols, rows } })),
-          rawFocus: (focused) => setTyping((v) => (focused ? "raw" : v === "raw" ? "none" : v)),
+          rawFocus: setKeyboard,
         });
         if (disposed) return t.dispose();
         term.current = t;
@@ -153,7 +165,6 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
       term.current?.terminal.write("\x1bc");
       connect();
     };
-    sendRef.current = send;
     return () => {
       disposed = true;
       clearTimeout(timer);
@@ -166,27 +177,6 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
   }, [sessionKey]);
 
   const reconnectRef = useRef<() => void>(() => {});
-  const sendRef = useRef<(d: string) => void>(() => {});
-
-  const pressKey = (k: (typeof KEYS)[number]) => {
-    const t = term.current;
-    if (!t) return;
-    if (k.bytes) return sendRef.current(k.bytes);
-    t.key(k.key!, { shiftKey: k.shift });
-  };
-
-  const submit = () => {
-    const t = term.current;
-    if (!t) return;
-    const body = text.replace(/\s+$/, "");
-    if (body) {
-      // Pasted, so the harness takes newlines as text; then Enter once it has drawn it.
-      t.terminal.paste(body);
-      setTimeout(() => sendRef.current("\r"), 120);
-      setText("");
-      composerRef.current?.blur();
-    } else sendRef.current("\r");
-  };
 
   const fontStep = (d: number) => {
     const t = term.current;
@@ -195,8 +185,6 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
     t.setFontSize(next);
     localStorage.setItem(FONT_KEY, String(next));
   };
-
-  const keysShown = typing !== "none";
 
   return (
     <div ref={screenRef} className="session-screen flex flex-col bg-terminal">
@@ -246,50 +234,23 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
             <Loader className="size-5 animate-spin text-muted-foreground" />
           </div>
         )}
-      </div>
-
-      <div className="shrink-0 border-t border-border bg-background/95 pb-[max(env(safe-area-inset-bottom),0.375rem)]" onPointerDown={(e) => {
-        // Buttons here must not take focus from the composer or the terminal (that drops the keyboard).
-        if ((e.target as HTMLElement).closest("button")) e.preventDefault();
-      }}>
-        {keysShown && (
-          <div className="flex gap-1 overflow-x-auto px-1.5 pt-1.5 [scrollbar-width:none]">
-            {KEYS.map((k) => (
-              <Button key={k.title} variant="secondary" size="sm" className="h-8 min-w-10 shrink-0 font-mono" aria-label={k.title} onClick={() => pressKey(k)}>
-                {k.label}
-              </Button>
-            ))}
-          </div>
-        )}
-        <div className="flex items-end gap-1.5 px-1.5 pt-1.5">
-          <Button
-            variant={typing === "raw" ? "secondary" : "ghost"}
-            size="icon-lg"
-            aria-label={typing === "raw" ? "Hide keyboard" : "Type into the terminal"}
-            onClick={() => term.current?.toggleRawFocus()}
-          >
-            <Keyboard />
-          </Button>
-          <Textarea
-            ref={composerRef}
-            value={text}
-            rows={1}
-            onChange={(e) => setText(e.target.value)}
-            onFocus={() => setTyping("compose")}
-            onBlur={() => setTyping((v) => (v === "compose" ? "none" : v))}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey || !matchMedia("(any-pointer: coarse)").matches) && !e.shiftKey) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-            placeholder={session?.status === "working" ? "Queue a message…" : "Message…"}
-            className="max-h-36 min-h-9 flex-1 resize-none py-1.5 text-base field-sizing-content"
-          />
-          <Button size="icon-lg" aria-label={text.trim() ? "Send" : "Enter"} onClick={submit} disabled={conn !== "open"}>
-            {text.trim() ? <SendHorizontal /> : <CornerDownLeft />}
-          </Button>
-        </div>
+        {/* The only control: raise or lower the keyboard, which types straight into the terminal. */}
+        <Button
+          variant="secondary"
+          size="icon-lg"
+          aria-label={keyboard ? "Hide keyboard" : "Show keyboard"}
+          className={cn(
+            "absolute right-2 size-11 rounded-full shadow-lg ring-1 ring-foreground/10 backdrop-blur",
+            // The home-indicator inset only matters with the keyboard down.
+            keyboard ? "bottom-2" : "bottom-[max(env(safe-area-inset-bottom),0.5rem)]",
+            keyboard ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-secondary/70",
+          )}
+          // Keep focus where it is, so a tap toggles rather than blurring first.
+          onPointerDown={(e) => e.preventDefault()}
+          onClick={() => term.current?.toggleRawFocus()}
+        >
+          {keyboard ? <KeyboardOff className="size-5" /> : <Keyboard className="size-5" />}
+        </Button>
       </div>
     </div>
   );
