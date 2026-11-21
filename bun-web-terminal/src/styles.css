@@ -24,21 +24,17 @@ body {
 
 .terminal-keys { display: none; flex: 0 0 auto; flex-direction: column; gap: 4px; padding: 4px 4px 0; border-top: 1px solid var(--muted); }
 .terminal-key-row { display: grid; gap: 4px; overflow-x: auto; }
-/* Align Up (column 5 of 6) with Down (column 4 of 5), accounting for 4px gaps
-   and the bottom row's 40px side margins. Each row has equal-width buttons. */
-.terminal-key-row:first-child { grid-template-columns: repeat(6, minmax(0, 1fr)); margin-right: calc((100% + 324px) / 15); }
+/* Align Up with Down (both column 4 of 5), accounting for 4px gaps and the
+   bottom row's 40px side margins: the top row gives up 160px / 7 on the right.
+   Each row has equal-width buttons. */
+.terminal-key-row:first-child { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-right: calc(160px / 7); }
 .terminal-key-row:last-child { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-inline: 40px; }
 .terminal-keys button { flex: 0 0 auto; min-width: 0; min-height: 44px; padding: 2px; border: 1px solid var(--muted); border-radius: 3px; color: var(--foreground); background: var(--background); touch-action: manipulation; }
 .terminal-keys button[aria-pressed="true"] { color: var(--background); background: var(--accent); }
 .terminal-keys button svg { width: 20px; height: 20px; vertical-align: middle; }
 .terminal-keys button:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
-.terminal-keys button[data-state="error"], .terminal-keys button[data-state="unavailable"] { color: var(--danger); }
-.terminal-keys button[data-warm="true"] { border-color: var(--accent); }
-.terminal-keys button span:not(:empty) { margin-left: 4px; }
-.dictation-preview { flex: 0 0 auto; max-height: 25vh; overflow: auto; padding: 4px 8px; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
-.dictation-preview:empty { display: none; }
 @media (any-pointer: coarse), (max-width: 600px) {
-  .terminal-keys { display: flex; padding-bottom: max(22px, env(safe-area-inset-bottom)); }
+  .terminal-keys { display: flex; }
   /* The terminal draws its own selection; a long press must not start the
      browser's, which tints the whole canvas. The textarea stays selectable. */
   #terminal { touch-action: pinch-zoom; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }

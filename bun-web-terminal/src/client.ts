@@ -262,7 +262,7 @@ async function startTerminalPage() {
     copyToast.dataset.status = "success";
     copyToast.textContent = message;
     copyToastTimer = setTimeout(() => { copyToast.textContent = ""; }, 3000);
-  }, connection, (files) => void pasteFiles(files), (lines, x, y) => {
+  }, (files) => void pasteFiles(files), (lines, x, y) => {
     // Shell history is the browser's own scrollback and moves by exact lines.
     // Applications only take wheel steps: one per line, which tracks the
     // finger in Claude Code (one line a step) and runs fast in three-line apps;

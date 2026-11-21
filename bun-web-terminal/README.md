@@ -23,7 +23,7 @@ Open the **Mac sign-in** link printed at startup, or scan the QR on your phone
 through Tailscale. After signing in, you can open <http://127.0.0.1:4784/sessions>
 normally. Sessions keep running when the browser disconnects. The effective local Ghostty palette and font are loaded with `ghostty +show-config --default` at startup.
 
-Desktop Ghostty is optional. Without the `ghostty` binary (a headless server), the app reads `~/.config/ghostty/config` directly, following `config-file` includes, and resolves `theme` from `~/.config/ghostty/themes/` or the vendored `themes/` directory here; add a theme file there if yours is not vendored. With no config either, it uses a fallback theme. Tailscale is optional for remote access, and the sibling dictation service is optional for voice input. Neither is required for a local terminal.
+Desktop Ghostty is optional. Without the `ghostty` binary (a headless server), the app reads `~/.config/ghostty/config` directly, following `config-file` includes, and resolves `theme` from `~/.config/ghostty/themes/` or the vendored `themes/` directory here; add a theme file there if yours is not vendored. With no config either, it uses a fallback theme. Tailscale is optional for remote access and not required for a local terminal.
 
 ## Ghostty dependencies and copying this directory
 
@@ -37,7 +37,7 @@ your-project/
   ghostty-web/
 ```
 
-Then run `bun install --frozen-lockfile` and `bun start` inside `bun-web-terminal/`. You do not need to install the wrapper's development dependencies to run the app. Dictation additionally needs the sibling service or an explicitly configured service URL; see below.
+Then run `bun install --frozen-lockfile` and `bun start` inside `bun-web-terminal/`. You do not need to install the wrapper's development dependencies to run the app.
 
 If startup reports a missing `@random/ghostty-web` package or WASM, ensure the sibling directory is present and reinstall the app's Bun dependencies. WebGL2 must be enabled in the browser; the app reports an error rather than falling back to Canvas2D. See the wrapper README for artifact provenance and coordinated engine/bridge upgrades.
 
@@ -79,7 +79,7 @@ stored credentials alone does not revoke a running server's in-memory credential
 Running sessions survive either kind of restart. Upgrading from the old
 in-memory authentication requires one final sign-in on the first restart.
 
-All application pages, assets, APIs, terminal WebSockets, and dictation WebSockets
+All application pages, assets, APIs, and terminal WebSockets
 require authentication. Direct unauthenticated API requests receive `401`;
 browser page visits go to the sign-in instructions. Only configured hosts are
 accepted, and browser Origin checks use the configured origins rather than
@@ -177,7 +177,7 @@ and port, and start the service again.
 
 - Tap the terminal to click in a mouse-aware application. The click is sent only when you lift your finger without dragging. Swipe vertically to scroll the application or the shell's history. The text follows your finger: one line per line height of travel, independent of the desktop wheel sensitivity, and a flick keeps coasting and slows down like a web page (touch again to stop it). Shell history is the page's own scrollback and moves by exact lines without asking the server; mouse-aware applications only accept wheel steps, so they get one step per line of travel: 1:1 in Claude Code, faster in applications that move several lines per step. A full-screen application without mouse support gets one cursor key per line. A small movement threshold distinguishes taps from drags.
 - Tap a link once to open it in a new tab without sending a click to the application or opening the keyboard. Explicit terminal hyperlinks work across multiple rows; plain URLs are joined across terminal soft wraps, not arbitrary hard line breaks. Swipes and long presses never open links.
-- A two-row extra-keys bar appears on touch devices and narrow windows: **keyboard icon**, **microphone icon**, **Esc**, **Enter**, one-shot **Ctrl**, arrows, and **Paste**/**Attach** icons. Buttons have equal widths within each row; the bottom row is inset from the sides. Tap **Ctrl**, then a letter (for example **C** to interrupt or **U** to clear the shell input). The keyboard icon explicitly opens/closes the software keyboard; terminal taps and extra keys leave keyboard focus alone. Touch devices do not autofocus on page load.
+- A two-row extra-keys bar appears on touch devices and narrow windows: **keyboard icon**, **Esc**, **Enter**, one-shot **Ctrl**, arrows, and **Paste**/**Attach** icons. Buttons have equal widths within each row; the bottom row is inset from the sides. Tap **Ctrl**, then a letter (for example **C** to interrupt or **U** to clear the shell input). The keyboard icon explicitly opens/closes the software keyboard; terminal taps and extra keys leave keyboard focus alone. Touch devices do not autofocus on page load.
 - Hold a finger still on terminal text for half a second, then drag to select. Like desktop dragging, this sends mouse press/drag/release to mouse-aware applications such as OpenCode, which handle their own selection and copying. At the shell or in applications without mouse support, it highlights locally. The next swipe scrolls normally. Moving before the hold completes scrolls instead of selecting.
 - **Paste** uses the browser clipboard and the terminal's bracketed-paste handling. It needs HTTPS (or localhost) and browser clipboard permission; use the phone keyboard's paste action if access is unavailable. Pasting or dropping files of any type and size uploads them to `$TMPDIR/bun-web-terminal/<session>/` and types the saved paths at the cursor; the files are deleted when the session is removed. iOS gives a page nothing for a copied file such as a PDF, so on a phone use the **Attach** (paperclip) key to choose files instead.
 - The terminal fits the visible viewport above the software keyboard and sends the updated dimensions to the session. The existing engine handles mobile text/composition input with autocorrect and capitalization disabled.
@@ -186,103 +186,6 @@ and port, and start the service again.
 For a phone check, open the Tailscale HTTPS URL below, try swiping inside a mouse-aware application, open/close the keyboard and rotate the phone, then try **Ctrl+C**, selection/copy, and paste. Actual software-keyboard behavior should be checked on the target phone; desktop touch-event simulation cannot fully reproduce it.
 
 Compact light-blue notices in the top-right show connection status and confirm successful browser clipboard writes with a brief “Copied” toast. Application copy actions (including OpenCode) are handled through OSC 52. If iOS blocks the automatic write, tap the persistent **Tap to copy** button in the top-right to copy the exact application-selected text. No terminal highlighting is needed. The button retains the latest request until copied or the terminal reconnects/leaves the page. Clipboard access requires HTTPS (or localhost).
-
-## Streaming dictation
-
-Build the sibling Swift service once on the hosting Apple Silicon Mac:
-
-```sh
-../dictation-server/build.sh
-bun start
-```
-
-On an x86-64 Linux host with an NVIDIA GPU, set up the Linux service instead. It
-runs the same model and protocol with transcribe.cpp on Vulkan; see its
-[README](../dictation-server-linux/README.md):
-
-```sh
-../dictation-server-linux/setup.sh
-bun start
-```
-
-The rest of this section describes the Mac service. The Linux one differs in
-where its model lives and in not staying resident: it loads in about a second,
-exits after ten idle minutes to free its 1.2 GB of GPU memory
-(`DICTATION_IDLE_MINUTES`), and Bun starts it again on the next mic tap.
-
-The service reuses the cached English Parakeet Unified 1.1-second model from the
-local Swift Hex app, under `~/Library/Application Support/FluidAudio/Models/parakeet-unified-en-0.6b/`.
-It does not download models. See [service setup](../dictation-server/README.md)
-for the exact required assets and standalone commands. Bun launches the release
-executable on the first status/recording request, keeps the model resident, and
-owns child shutdown. The phone starts capturing as soon as microphone permission
-and its audio processor are ready, without waiting for the model. The browser
-prepares the audio processor on page load without requesting microphone access;
-the mic button shows **Mic access…**, **Audio processor…**, or **Audio startup…**
-until the first actual audio packet confirms recording. These steps can still
-take time on a phone, especially on the first permission request.
-
-On your phone, open the terminal through the Tailscale **HTTPS** URL. Tap the mic,
-allow microphone access, and speak even if the connection is still loading. Tap
-**Stop** to flush the last word, also when the service is not ready yet: the
-buffered audio is transcribed as soon as it is. A tap during microphone startup
-cancels with a notice, since nothing has been captured.
-Starting dictation preserves keyboard visibility and clears one-shot Ctrl.
-Audio comes from the phone; transcription
-runs on the host. Only one remote recording can run at once.
-
-Whole words are pasted live at the application's current cursor, with the pending
-word previewed above the bar. Finalization releases the tail once. Dictation
-removes terminal controls/newlines from dictated text. Pressing Enter during
-dictation stops recording, waits for the final transcript, then sends Enter once;
-failed or revised transcripts are not automatically submitted. Tapping Stop alone
-does not send Enter. Stop
-before moving the application's cursor or changing contexts. If the model revises
-an observed prefix, automatic insertion stops and the final transcript remains
-in the selectable preview for recovery.
-
-The phone retains up to five minutes of audio in memory (about 19 MB raw) while
-recording, even when the server is unavailable. Inference acknowledgments pace
-uploads; if the dictation socket drops, a new decoder session replays the entire
-recording. Already inserted text is not pasted again; if the replay changes that
-prefix, automatic insertion stops and the recovery transcript stays visible.
-Temporary terminal disconnection also waits for reattachment, but a permanent
-takeover, navigation, or page suspension cancels capture. A recording that was
-already stopped survives the page being hidden. Stop waits for buffered
-audio and the final transcript (up to five minutes); it cannot preserve capture
-through phone sleep, browser termination, or a page reload. Server-side transport
-queues remain bounded to about two seconds, and the five-minute capture cap is
-explicit.
-
-After Stop, the phone keeps its microphone stream open but muted for up to 30
-seconds so the next dictation can reuse it without another `getUserMedia()` startup.
-The toolbar visibly says **Mic on · muted** while this is happening; the browser
-may also keep its microphone-use indicator on. The stream is released on expiry,
-terminal detachment, page navigation, or backgrounding. The first tap after the
-page opens still needs normal microphone startup.
-
-| Environment variable | Default / meaning |
-| --- | --- |
-| `DICTATION_EXECUTABLE` | `../dictation-server/.build/release/dictation-server` on macOS, `../dictation-server-linux/run.sh` on Linux, resolved relative to this project |
-| `DICTATION_PORT` | `9876`; choose another for independent Bun instances |
-| `DICTATION_MODEL_DIR` | Override the service model cache directory |
-| `DICTATION_LATENCY_MS` | Linux service only: streaming latency, `1120` (default) or `2080` |
-| `DICTATION_IDLE_MINUTES` | Linux service only: exit after this many minutes without a recording, default `10`; `0` keeps it resident |
-| `DICTATION_URL` | Optional loopback HTTP origin, e.g. `http://127.0.0.1:9876`; externally managed mode, so Bun neither spawns nor terminates it |
-
-The service stays on loopback. The existing Tailscale Serve route covers
-both terminal and dictation WebSockets. Other hosts can use an explicitly
-configured loopback service, while managed mode requires Apple Silicon macOS or
-x86-64 Linux with an NVIDIA GPU.
-
-Diagnostics: `GET /api/dictation/status` reports availability/model state without
-paths or transcripts. Service logs go to Bun's stderr. Missing executable/cache
-or model errors show a dictation notice; a fresh tap retries connection failures.
-Restart Bun after building to load the updated routes and client assets.
-
-See [protocol](../dictation-server/docs/protocol.md),
-[verification results and phone checks](docs/mobile-dictation-verification.md),
-and [third-party notices](docs/third-party-notices.md).
 
 ## Session behavior
 
@@ -312,13 +215,6 @@ bun run test
 ```
 
 Tests use an isolated zmx socket directory (`ZMX_DIR`) per test and the same Ghostty WASM as the browser. They cover live application state across SessionManager shutdown/recreation, existing-session discovery, renames/removal, alternate-screen reattachment, the redraw request after a reattachment, 300 coalesced resize requests, tab takeover, output acknowledgments/stalls, and fractional scrolling.
-
-Dictation tests also cover resampling continuity/filtering, transcript divergence,
-Unicode/spacing/control removal, final deduplication, protocol order, attachment
-ownership, cancellation, and proxy forwarding. To verify managed service lifecycle
-with the built executable, run `bun docs/verify-dictation-supervision.ts`. For real
-model/reset/overload checks, run the service's `scripts/verify.ts` as documented
-in its README.
 
 To test alongside a manually used instance on port 4784, use a separate port, build directory **and zmx socket directory**:
 

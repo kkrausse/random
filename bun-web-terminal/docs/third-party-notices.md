@@ -12,13 +12,7 @@ upstream license are included in `../../ghostty-web/vendor/`.
 which comes from [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes)
 (MIT).
 
-# Dictation references
-
-The append-only cumulative transcript policy follows the local Swift fork of
-[Hex](https://github.com/kitlangton/Hex). Its MIT notice is preserved in
-[`../../dictation-server/THIRD_PARTY_NOTICES.md`](../../dictation-server/THIRD_PARTY_NOTICES.md).
-
-# Lucide keyboard and microphone icons
+# Lucide icons
 
 ISC License
 

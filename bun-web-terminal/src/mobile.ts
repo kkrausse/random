@@ -1,12 +1,10 @@
 import type { Terminal } from "@random/ghostty-web";
-import { DictationController } from "./dictation";
-import type { TerminalConnection } from "./connection";
 import { installTerminalTouchControls } from "./touch";
 import { terminalViewport } from "./viewport";
 import { terminalLinkAt } from "./links";
 
 // Leave key encoding, composition, bracketed paste, and mouse reporting to Ghostty.
-export function installMobileControls(container: HTMLElement, terminal: Terminal, notice: (message: string) => void, connection: TerminalConnection, pasteFiles: (files: File[]) => void, scroll: (lines: number, x: number, y: number) => void) {
+export function installMobileControls(container: HTMLElement, terminal: Terminal, notice: (message: string) => void, pasteFiles: (files: File[]) => void, scroll: (lines: number, x: number, y: number) => void) {
   const toolbar = document.createElement("div");
   toolbar.className = "terminal-keys";
   toolbar.setAttribute("role", "group");
@@ -18,7 +16,6 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
   }
   const keys = [
     ["Keyboard", "Keyboard"],
-    ["Microphone", "Start dictation"],
     ["Escape", "Esc"], ["Control", "Ctrl"], ["ArrowUp", "↑"], ["Enter", "Enter"],
     ["Paste", "Paste"], ["Attach", "Attach file"],
     ["ArrowLeft", "←"], ["ArrowDown", "↓"], ["ArrowRight", "→"],
@@ -30,20 +27,18 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
     button.textContent = label!;
     button.setAttribute("aria-label", key!.replace("Arrow", "Arrow "));
     button.title = label!;
-    if (key === "Keyboard" || key === "Microphone" || key === "Enter" || key === "Attach" || key === "Paste") {
+    if (key === "Keyboard" || key === "Enter" || key === "Attach" || key === "Paste") {
       // Lucide icons (ISC license; see docs/third-party-notices.md).
       button.innerHTML = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${key === "Keyboard"
         ? '<rect width="20" height="14" x="2" y="5" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M10 13h.01M14 13h.01M18 13h.01M8 17h8"/>'
-        : key === "Microphone"
-          ? '<path d="M12 19v3m-5 0h10M5 10v2a7 7 0 0 0 14 0v-2"/><rect x="9" y="2" width="6" height="12" rx="3"/>'
-          : key === "Attach"
-            ? '<path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/>'
-            : key === "Paste"
-              ? '<rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>'
-              : '<path d="m9 10-5 5 5 5"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/>'}</svg>`;
+        : key === "Attach"
+          ? '<path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/>'
+          : key === "Paste"
+            ? '<rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>'
+            : '<path d="m9 10-5 5 5 5"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/>'}</svg>`;
     }
     if (key === "Control") button.setAttribute("aria-pressed", "false");
-    rows[Math.floor(index / 6)]!.append(button);
+    rows[Math.floor(index / 5)]!.append(button);
   }
   container.after(toolbar);
   // iOS gives a page nothing for a copied file such as a PDF, so files come through a chooser.
@@ -59,31 +54,6 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
     control = value;
     toolbar.querySelector('[data-key="Control"]')!.setAttribute("aria-pressed", String(value));
   };
-  const preview = document.createElement("div");
-  preview.className = "dictation-preview";
-  preview.setAttribute("role", "status");
-  toolbar.before(preview);
-  const microphone = toolbar.querySelector<HTMLButtonElement>('[data-key="Microphone"]')!;
-  let warm = false;
-  const dictation = new DictationController(connection, {
-    clearControl: () => setControl(false), paste: text => terminal.paste(text), notice,
-    preview: text => { preview.textContent = text; },
-    startup: text => { if (microphone.dataset.state === "loading") microphone.querySelector("span")!.textContent = text; },
-    warm(active) {
-      warm = active;
-      microphone.dataset.warm = String(active);
-      if (microphone.dataset.state === "idle") microphone.setAttribute("aria-label", active ? "Start dictation · microphone on and muted" : "Start dictation");
-    },
-    state(state) {
-      microphone.dataset.state = state;
-      microphone.setAttribute("aria-pressed", String(["loading", "recording", "waiting", "finishing"].includes(state)));
-      microphone.setAttribute("aria-label", { idle: warm ? "Start dictation · microphone on and muted" : "Start dictation", loading: "Stop dictation · starting microphone", recording: "Stop dictation", waiting: "Stop dictation · buffering audio", finishing: "Finishing dictation", error: "Retry dictation", unavailable: "Dictation unavailable" }[state]);
-      microphone.title = microphone.getAttribute("aria-label")!;
-      microphone.disabled = state === "finishing";
-      const label = microphone.querySelector("span") ?? microphone.appendChild(document.createElement("span"));
-      label.textContent = { idle: "", loading: "Starting…", recording: "Stop", waiting: "Stop · Buffering", finishing: "Finishing…", error: "!", unavailable: "!" }[state];
-    },
-  });
   const focus = () => terminal.textarea?.focus({ preventScroll: true });
 
   // Prevent pointer focus from dismissing the keyboard before the click handler.
@@ -91,7 +61,6 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
   toolbar.addEventListener("click", async (event) => {
     const key = (event.target as HTMLElement).closest<HTMLButtonElement>("button")?.dataset.key;
     if (!key) return;
-    if (key === "Microphone") { dictation.toggle(); return; }
     if (key === "Keyboard") {
       if (document.activeElement === terminal.textarea) terminal.textarea?.blur();
       else focus();
@@ -163,10 +132,6 @@ export function installMobileControls(container: HTMLElement, terminal: Terminal
 
   return {
     input(data: string) {
-      if ((data === "\r" || data === "\n") && dictation.submitAfterStop(() => {
-        setControl(false);
-        connection.input(data);
-      })) return "";
       if (!control) return data;
       setControl(false);
       if (data.length !== 1) return data;
