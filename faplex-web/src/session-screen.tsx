@@ -3,6 +3,8 @@ import { ALargeSmall, ChevronLeft, ClipboardPaste, EllipsisVertical, Keyboard, K
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Drawer, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { HARNESS_LABEL, STATUS_LABEL } from "./format.ts";
 import type { useLive } from "./live.ts";
@@ -23,6 +25,7 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
   const term = useRef<MountedTerminal>(undefined);
   const [conn, setConn] = useState<Conn>("starting");
   const [keyboard, setKeyboard] = useState(false);
+  const [pasteBox, setPasteBox] = useState(false);
   const listed = !!session?.openable;
   const listedRef = useRef(listed);
   listedRef.current = listed;
@@ -284,7 +287,13 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
             size="icon-lg"
             aria-label="Paste"
             className="size-11 rounded-full bg-secondary/70 shadow-lg ring-1 ring-foreground/10 backdrop-blur"
-            onClick={() => void term.current?.pasteClipboard()}
+            onClick={async () => {
+              // iOS may refuse a scripted clipboard read, or never show its Paste confirmation;
+              // its own Paste menu in a text box always works.
+              const read = term.current?.pasteClipboard() ?? Promise.resolve(false);
+              const ok = await Promise.race([read, new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 5000))]);
+              if (ok !== true) setPasteBox(true);
+            }}
           >
             <ClipboardPaste className="size-5" />
           </Button>
@@ -302,6 +311,70 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
           </Button>
         </div>
       </div>
+      <PasteBox
+        open={pasteBox}
+        onOpenChange={setPasteBox}
+        onText={(text) => term.current?.pasteText(text)}
+        onFiles={(files) => void term.current?.pasteFiles(files)}
+      />
     </div>
+  );
+}
+
+/** Long-press → Paste lands here: text goes to the session, images and files are uploaded. */
+function PasteBox({ open, onOpenChange, onText, onFiles }: { open: boolean; onOpenChange: (open: boolean) => void; onText: (text: string) => void; onFiles: (files: File[]) => void }) {
+  const [text, setText] = useState("");
+  useEffect(() => {
+    if (open) setText("");
+  }, [open]);
+  const done = () => onOpenChange(false);
+  return (
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent>
+        <div className="mx-auto w-full max-w-lg">
+          <DrawerHeader>
+            <DrawerTitle>Paste</DrawerTitle>
+            <DrawerDescription>Press and hold in the box, then tap Paste.</DrawerDescription>
+          </DrawerHeader>
+          <div className="px-4">
+            <Textarea
+              autoFocus
+              value={text}
+              rows={4}
+              className="text-base"
+              placeholder="Hold here → Paste"
+              onChange={(e) => setText(e.target.value)}
+              onPaste={(e) => {
+                const files = [...e.clipboardData.files];
+                if (files.length) {
+                  e.preventDefault();
+                  onFiles(files);
+                  done();
+                  return;
+                }
+                const pasted = e.clipboardData.getData("text/plain");
+                if (pasted && !text) {
+                  e.preventDefault();
+                  onText(pasted);
+                  done();
+                }
+              }}
+            />
+          </div>
+          <DrawerFooter>
+            <Button
+              size="lg"
+              disabled={!text}
+              onClick={() => {
+                onText(text);
+                done();
+              }}
+            >
+              Paste into session
+            </Button>
+          </DrawerFooter>
+        </div>
+      </DrawerContent>
+    </Drawer>
   );
 }

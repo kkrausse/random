@@ -59,6 +59,10 @@ const server = Bun.serve<Data>({
     if (path === "/api/send" && request.method === "POST") return send(await request.json());
     if (path === "/api/new" && request.method === "POST") return newSession(await request.json());
     if (path === "/api/attach" && request.method === "POST") return attach(request, url.searchParams.get("key") ?? "");
+    if (path === "/api/log" && request.method === "POST") {
+      console.log("client:", (await request.text()).slice(0, 1000));
+      return new Response(null, { status: 204 });
+    }
     if (path.startsWith("/api/")) return new Response("Not found", { status: 404 });
 
     // Static build output; every other path is the app (client-side routes).

@@ -22,6 +22,10 @@ const prepare = () =>
     return theme;
   }));
 
+/** Paste attempts go to the server's log, so a failure on a phone can be read off diesel2. */
+const report = (event: Record<string, unknown>) =>
+  void fetch("/api/log", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...event, ua: navigator.userAgent }) }).catch(() => {});
+
 export type MountedTerminal = Awaited<ReturnType<typeof mountTerminal>>;
 
 const coarse = () => matchMedia("(any-pointer: coarse)").matches;
@@ -116,6 +120,9 @@ export async function mountTerminal(
     }
   };
   const onPaste = (event: ClipboardEvent) => {
+    // A paste into another field (the paste box) is that field's.
+    const target = event.target as Node | null;
+    if (target && target !== document.body && !host.contains(target)) return;
     const files = [...(event.clipboardData?.files ?? [])];
     if (!files.length) return;
     event.preventDefault();
@@ -153,14 +160,18 @@ export async function mountTerminal(
       if (document.activeElement === textarea) textarea?.blur();
       else textarea?.focus({ preventScroll: true });
     },
-    /** The paste button: one clipboard read (a second would prompt again on iOS). */
-    async pasteClipboard() {
+    /**
+     * The paste button: one clipboard read (a second would prompt again on iOS). Resolves false
+     * when the browser wouldn't hand the clipboard over, so the caller can offer a paste box.
+     */
+    async pasteClipboard(): Promise<boolean> {
+      report({ paste: "start", read: !!navigator.clipboard?.read, focused: document.activeElement?.tagName });
       try {
-        if (!navigator.clipboard.read) {
+        if (!navigator.clipboard?.read) {
           const text = await navigator.clipboard.readText();
-          if (text) terminal.paste(text);
-          else toast("Clipboard is empty");
-          return;
+          if (!text) return false;
+          terminal.paste(text);
+          return true;
         }
         const files: File[] = [];
         let text = "";
@@ -169,13 +180,18 @@ export async function mountTerminal(
           if (type) files.push(new File([await item.getType(type)], `pasted.${type.split("/")[1]!.split(/[+;]/)[0]}`, { type }));
           else if (item.types.includes("text/plain")) text += await (await item.getType("text/plain")).text();
         }
+        report({ paste: "read", files: files.map((f) => f.type), textLength: text.length });
         if (files.length) await pasteFiles(files);
         else if (text) terminal.paste(text);
-        else toast("Clipboard is empty");
+        else return false;
+        return true;
       } catch (e) {
-        if ((e as Error)?.name !== "NotAllowedError") toast.error("Paste failed", { description: e instanceof Error ? e.message : String(e) });
+        report({ paste: "error", name: (e as Error)?.name, message: (e as Error)?.message });
+        return false;
       }
     },
+    pasteText: (text: string) => terminal.paste(text),
+    pasteFiles,
     fontSize: () => terminal.options.fontSize ?? 12,
     setFontSize(size: number) {
       terminal.options.fontSize = size;
