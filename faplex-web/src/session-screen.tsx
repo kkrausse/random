@@ -4,7 +4,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Drawer, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { HARNESS_LABEL, STATUS_LABEL } from "./format.ts";
 import type { useLive } from "./live.ts";
@@ -290,6 +289,9 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
             onClick={async () => {
               const t = term.current;
               if (!t) return;
+              // On iPhone a scripted clipboard read can hang forever (seen in Brave: no Paste
+              // confirmation, no answer), so a phone goes straight to its own Paste menu.
+              if (matchMedia("(any-pointer: coarse)").matches) return setPasteBox(true);
               // As in bun-web-terminal, where paste works on iOS: the read happens with the
               // terminal's input focused, so iOS has somewhere to show its Paste confirmation.
               const wasUp = keyboard;
@@ -330,11 +332,18 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
   );
 }
 
-/** Long-press → Paste lands here: text goes to the session, images and files are uploaded. */
+/**
+ * iOS's own Paste lands here: text goes to the session, images and files are uploaded. An editable
+ * div, not a textarea: iOS only offers to paste an image into rich editable content.
+ */
 function PasteBox({ open, onOpenChange, onText, onFiles }: { open: boolean; onOpenChange: (open: boolean) => void; onText: (text: string) => void; onFiles: (files: File[]) => void }) {
-  const [text, setText] = useState("");
+  const box = useRef<HTMLDivElement>(null);
+  const [typed, setTyped] = useState(false);
   useEffect(() => {
-    if (open) setText("");
+    if (!open) return;
+    setTyped(false);
+    const t = setTimeout(() => box.current?.focus(), 50);
+    return () => clearTimeout(t);
   }, [open]);
   const done = () => onOpenChange(false);
   return (
@@ -343,39 +352,45 @@ function PasteBox({ open, onOpenChange, onText, onFiles }: { open: boolean; onOp
         <div className="mx-auto w-full max-w-lg">
           <DrawerHeader>
             <DrawerTitle>Paste</DrawerTitle>
-            <DrawerDescription>Press and hold in the box, then tap Paste.</DrawerDescription>
+            <DrawerDescription>Tap the box, then tap Paste (or press and hold). Text goes to the session; a screenshot or file is uploaded.</DrawerDescription>
           </DrawerHeader>
           <div className="px-4">
-            <Textarea
-              autoFocus
-              value={text}
-              rows={4}
-              className="text-base"
-              placeholder="Hold here → Paste"
-              onChange={(e) => setText(e.target.value)}
+            <div
+              ref={box}
+              contentEditable
+              suppressContentEditableWarning
+              role="textbox"
+              aria-label="Paste here"
+              data-placeholder="Tap here, then Paste"
+              className="min-h-24 rounded-lg border border-input bg-input/30 px-3 py-2 text-base outline-none select-text empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)] focus-visible:ring-3 focus-visible:ring-ring/50"
+              style={{ WebkitUserSelect: "text" }}
+              onInput={() => setTyped(!!box.current?.innerText.trim())}
               onPaste={(e) => {
+                e.preventDefault();
                 const files = [...e.clipboardData.files];
-                if (files.length) {
-                  e.preventDefault();
-                  onFiles(files);
-                  done();
-                  return;
+                if (!files.length) {
+                  for (const item of e.clipboardData.items) {
+                    const f = item.kind === "file" ? item.getAsFile() : null;
+                    if (f) files.push(f);
+                  }
                 }
-                const pasted = e.clipboardData.getData("text/plain");
-                if (pasted && !text) {
-                  e.preventDefault();
-                  onText(pasted);
-                  done();
+                if (files.length) onFiles(files);
+                else {
+                  const text = e.clipboardData.getData("text/plain");
+                  if (!text) return;
+                  onText(text);
                 }
+                done();
               }}
             />
           </div>
           <DrawerFooter>
             <Button
               size="lg"
-              disabled={!text}
+              disabled={!typed}
               onClick={() => {
-                onText(text);
+                const text = box.current?.innerText ?? "";
+                if (text.trim()) onText(text);
                 done();
               }}
             >
