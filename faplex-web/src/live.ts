@@ -42,7 +42,21 @@ export function useLive() {
       };
     };
     connect();
-    const wake = () => !document.hidden && connect();
+    // Back from the background: the socket may be dead without looking closed, so start over.
+    let hiddenAt = 0;
+    const fresh = () => {
+      const old = ws.current;
+      ws.current = undefined;
+      old?.close();
+      retry = 0;
+      connect();
+    };
+    const wake = () => {
+      if (document.hidden) return void (hiddenAt = Date.now());
+      if (hiddenAt && Date.now() - hiddenAt > 1000) fresh();
+      else connect();
+      hiddenAt = 0;
+    };
     document.addEventListener("visibilitychange", wake);
     window.addEventListener("online", wake);
     return () => {

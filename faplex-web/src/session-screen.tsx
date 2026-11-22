@@ -136,14 +136,17 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
         nudgeTimer = setTimeout(() => nudgeWhenQuiet(), 1200);
       };
       socket.onmessage = (e) => {
+        if (ws !== socket) return;
         const bytes = new Uint8Array(e.data as ArrayBuffer);
         lastOutput = Date.now();
         if (head.length < 200) head += decoder.decode(bytes, { stream: true });
         t.terminal.write(bytes);
       };
       socket.onclose = (e) => {
-        if (ws === socket) ws = undefined;
-        if (disposed) return;
+        // A socket already replaced (by a fresh reattach) says nothing about the current one.
+        const current = ws === socket;
+        if (current) ws = undefined;
+        if (disposed || !current) return;
         if (e.code === 4000) {
           // faplex ended it. Either the session isn't listed yet (retry a while), or it was left:
           // ctrl+], ← at an empty prompt, or opened on another screen.
@@ -188,28 +191,39 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
       }
     })();
 
-    const wake = () => {
-      if (document.hidden) return;
-      retry = 0;
-      // Still connected after the phone slept: the screen may be stale, so redraw it.
-      if (ws?.readyState === WebSocket.OPEN) nudgeWhenQuiet();
-      else connect();
-    };
-    document.addEventListener("visibilitychange", wake);
-    window.addEventListener("online", wake);
-    reconnectRef.current = () => {
+    // Back from the background (app switcher, lock screen, bfcache): iOS may have dropped the
+    // socket without it looking closed, so always reattach fresh. faplex repaints on attach.
+    let hiddenAt = 0;
+    const fresh = () => {
       ws?.close();
       ws = undefined;
       retry = 0;
       term.current?.terminal.write("\x1bc");
       connect();
     };
+    const wake = () => {
+      if (document.hidden) {
+        hiddenAt = Date.now();
+        return;
+      }
+      if (hiddenAt && Date.now() - hiddenAt > 1000) fresh();
+      else if (ws?.readyState === WebSocket.OPEN) nudgeWhenQuiet();
+      else connect();
+      hiddenAt = 0;
+    };
+    const onShow = (e: PageTransitionEvent) => e.persisted && fresh();
+    const onOnline = () => fresh();
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("pageshow", onShow);
+    window.addEventListener("online", onOnline);
+    reconnectRef.current = fresh;
     return () => {
       disposed = true;
       clearTimeout(timer);
       clearTimeout(nudgeTimer);
       document.removeEventListener("visibilitychange", wake);
-      window.removeEventListener("online", wake);
+      window.removeEventListener("pageshow", onShow);
+      window.removeEventListener("online", onOnline);
       ws?.close(1000);
       term.current?.dispose();
       term.current = undefined;
