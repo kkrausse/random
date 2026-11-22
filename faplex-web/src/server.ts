@@ -84,6 +84,7 @@ const server = Bun.serve<Data>({
       const t = ws.data;
       const socket = connect(watch.socket()!);
       t.socket = socket;
+      console.log(`open ${t.key} ${t.cols}x${t.rows}`);
       socket.on("connect", () => {
         socket.write(JSON.stringify({ key: t.key, cols: t.cols, rows: t.rows }) + "\n");
         for (const d of t.pending) socket.write(d);
@@ -112,6 +113,7 @@ const server = Bun.serve<Data>({
             t.cols = clamp(msg.resize.cols, 20, 400, t.cols);
             t.rows = clamp(msg.resize.rows, 5, 200, t.rows);
             watch.write({ size: { cols: t.cols, rows: t.rows } });
+            console.log(`resize ${t.key} ${t.cols}x${t.rows}`);
           }
         } catch {}
         return;

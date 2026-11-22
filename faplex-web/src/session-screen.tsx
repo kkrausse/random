@@ -101,7 +101,8 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
       if (!t || ws?.readyState !== WebSocket.OPEN) return;
       const { cols, rows } = t.terminal;
       resizeTo(cols, rows - 1);
-      setTimeout(() => resizeTo(t.terminal.cols, t.terminal.rows), 120);
+      // Far enough apart that a harness debouncing its resize handling sees two changes.
+      setTimeout(() => resizeTo(t.terminal.cols, t.terminal.rows), 350);
     };
     const nudgeWhenQuiet = (deadline = Date.now() + 5000) => {
       clearTimeout(nudgeTimer);
@@ -130,7 +131,9 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
         retry = 0;
         setConn("open");
         lastOutput = Date.now();
-        nudgeTimer = setTimeout(() => nudgeWhenQuiet(), 300);
+        // Redraw at once on opening, and again once the attach output has settled.
+        setTimeout(nudge, 150);
+        nudgeTimer = setTimeout(() => nudgeWhenQuiet(), 1200);
       };
       socket.onmessage = (e) => {
         const bytes = new Uint8Array(e.data as ArrayBuffer);
