@@ -288,11 +288,20 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
             aria-label="Paste"
             className="size-11 rounded-full bg-secondary/70 shadow-lg ring-1 ring-foreground/10 backdrop-blur"
             onClick={async () => {
-              // iOS may refuse a scripted clipboard read, or never show its Paste confirmation;
-              // its own Paste menu in a text box always works.
-              const read = term.current?.pasteClipboard() ?? Promise.resolve(false);
-              const ok = await Promise.race([read, new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 5000))]);
-              if (ok !== true) setPasteBox(true);
+              const t = term.current;
+              if (!t) return;
+              // As in bun-web-terminal, where paste works on iOS: the read happens with the
+              // terminal's input focused, so iOS has somewhere to show its Paste confirmation.
+              const wasUp = keyboard;
+              if (!wasUp) t.focusInput();
+              let gaveUp = false;
+              const read = t.pasteClipboard(() => gaveUp);
+              // Refused, empty, or no confirmation within 8 s: iOS's own Paste menu in a text box.
+              const ok = await Promise.race([read, new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 8000))]);
+              if (ok !== true) {
+                gaveUp = true;
+                setPasteBox(true);
+              } else if (!wasUp) t.blurInput();
             }}
           >
             <ClipboardPaste className="size-5" />

@@ -164,7 +164,7 @@ export async function mountTerminal(
      * The paste button: one clipboard read (a second would prompt again on iOS). Resolves false
      * when the browser wouldn't hand the clipboard over, so the caller can offer a paste box.
      */
-    async pasteClipboard(): Promise<boolean> {
+    async pasteClipboard(cancelled: () => boolean = () => false): Promise<boolean> {
       report({ paste: "start", read: !!navigator.clipboard?.read, focused: document.activeElement?.tagName });
       try {
         if (!navigator.clipboard?.read) {
@@ -180,7 +180,9 @@ export async function mountTerminal(
           if (type) files.push(new File([await item.getType(type)], `pasted.${type.split("/")[1]!.split(/[+;]/)[0]}`, { type }));
           else if (item.types.includes("text/plain")) text += await (await item.getType("text/plain")).text();
         }
-        report({ paste: "read", files: files.map((f) => f.type), textLength: text.length });
+        report({ paste: "read", files: files.map((f) => f.type), textLength: text.length, late: cancelled() });
+        // The paste box already took over (the confirmation came too late): don't paste twice.
+        if (cancelled()) return false;
         if (files.length) await pasteFiles(files);
         else if (text) terminal.paste(text);
         else return false;
@@ -191,6 +193,8 @@ export async function mountTerminal(
       }
     },
     pasteText: (text: string) => terminal.paste(text),
+    focusInput: () => textarea?.focus({ preventScroll: true }),
+    blurInput: () => textarea?.blur(),
     pasteFiles,
     fontSize: () => terminal.options.fontSize ?? 12,
     setFontSize(size: number) {
