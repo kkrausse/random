@@ -12,12 +12,11 @@ one. Everything goes through the faplex CLI; nothing here talks to a harness dir
 | Opening a session | the Unix socket `watch` reports: the client it keeps for that session |
 | New session (+) | `faplex new --machine … --harness … --background` |
 
-The session screen is a ghostty-web terminal with three floating buttons, the paste ones copied
+The session screen is a ghostty-web terminal with two floating buttons, Paste copied
 from bun-web-terminal. Keyboard raises or lowers the keyboard; typing (dictation included) goes
 straight into the harness, and tapping the terminal never raises it. Paste does one clipboard
 read: text is pasted, and a screenshot is uploaded to the session's machine (`/tmp/faplex-web/`,
-over ssh for a remote one) and its path pasted, which Claude takes as an image. Attach opens the
-file chooser for what iOS never puts on a page's clipboard, like a copied PDF. On opening, and on
+over ssh for a remote one) and its path pasted, which Claude takes as an image. On opening, and on
 coming back to the page, the session is reattached and made to redraw by a one-row resize and
 back; ⋮ → Redraw does it by hand. Text size is in ⋮ too. ← at an empty prompt or ctrl+] leaves the
 session, as in faplex.

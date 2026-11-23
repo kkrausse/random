@@ -183,7 +183,7 @@ export async function mountTerminal(
         report({ paste: "read", files: files.map((f) => f.type), textLength: text.length });
         if (files.length) await pasteFiles(files);
         else if (text) terminal.paste(text);
-        else toast("Nothing to paste · use Attach for files");
+        else toast("Nothing to paste");
       } catch (e) {
         report({ paste: "error", name: (e as Error)?.name, message: (e as Error)?.message });
         toast("Paste unavailable · use your keyboard’s Paste action");

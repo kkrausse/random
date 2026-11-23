@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ALargeSmall, ChevronLeft, ClipboardPaste, EllipsisVertical, Keyboard, KeyboardOff, Loader, Paperclip, RefreshCcw, RotateCw } from "lucide-react";
+import { ALargeSmall, ChevronLeft, ClipboardPaste, EllipsisVertical, Keyboard, KeyboardOff, Loader, RefreshCcw, RotateCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -230,34 +230,14 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
 
   const reconnectRef = useRef<() => void>(() => {});
   const pasteRef = useRef<HTMLButtonElement>(null);
-  const attachRef = useRef<HTMLButtonElement>(null);
   const floating = cn(buttonVariants({ variant: "secondary", size: "icon-lg" }), "size-11 rounded-full bg-secondary/70 shadow-lg ring-1 ring-foreground/10 backdrop-blur");
 
-  // Paste and Attach as in bun-web-terminal: native click listeners, one clipboard read, and a
-  // file chooser for what iOS never puts on a page's clipboard (a copied PDF, say).
+  // Paste as in bun-web-terminal: a native click listener and one clipboard read.
   useEffect(() => {
     const paste = pasteRef.current!;
-    const attach = attachRef.current!;
-    const picker = document.createElement("input");
-    picker.type = "file";
-    picker.multiple = true;
-    picker.hidden = true;
-    picker.addEventListener("change", () => {
-      if (picker.files?.length) void term.current?.pasteFiles([...picker.files]);
-    });
-    document.body.append(picker);
     const onPaste = () => void term.current?.pasteClipboard();
-    const onAttach = () => {
-      picker.value = "";
-      picker.click();
-    };
     paste.addEventListener("click", onPaste);
-    attach.addEventListener("click", onAttach);
-    return () => {
-      paste.removeEventListener("click", onPaste);
-      attach.removeEventListener("click", onAttach);
-      picker.remove();
-    };
+    return () => paste.removeEventListener("click", onPaste);
   }, []);
   const redrawRef = useRef<() => void>(() => {});
 
@@ -327,9 +307,6 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
           onPointerDown={(e) => e.preventDefault()}
         >
           {/* Plain buttons with native listeners, exactly as bun-web-terminal's toolbar. */}
-          <button ref={attachRef} type="button" aria-label="Attach file" className={floating}>
-            <Paperclip className="size-5" />
-          </button>
           <button ref={pasteRef} type="button" aria-label="Paste" className={floating}>
             <ClipboardPaste className="size-5" />
           </button>
