@@ -51,10 +51,41 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
       };
       frame = requestAnimationFrame(tick);
     };
+    // The screen is fixed and sized to the visual viewport: the page itself should never be
+    // scrolled. iOS still does it around keyboards, so undo it.
     const unscroll = () => {
-      if (window.scrollY !== 0 && document.activeElement === document.body) window.scrollTo(0, 0);
+      if (window.scrollY !== 0) window.scrollTo(0, 0);
       settle();
     };
+    // Keyboards can change height (switching keyboards) without every event firing, so while
+    // one may be up, re-check now and then. Anything off is logged for diagnosis.
+    let lastReport = "";
+    const check = setInterval(() => {
+      if (document.hidden) return;
+      if (window.scrollY !== 0) window.scrollTo(0, 0);
+      layout();
+      const el = screenRef.current;
+      const header = el?.querySelector("header")?.getBoundingClientRect();
+      const state = {
+        vvHeight: Math.round(vv?.height ?? 0),
+        vvTop: Math.round(vv?.offsetTop ?? 0),
+        vvPageTop: Math.round(vv?.pageTop ?? 0),
+        scale: vv?.scale,
+        innerHeight: window.innerHeight,
+        scrollY: Math.round(window.scrollY),
+        headerTop: Math.round(header?.top ?? 0),
+        screenTop: el?.style.top,
+        screenHeight: el?.style.height,
+        focused: document.activeElement?.tagName,
+      };
+      // Off: the header isn't at the top of what's visible, or the page is scrolled.
+      const off = Math.abs((header?.top ?? 0) - (vv?.offsetTop ?? 0)) > 2 || state.scrollY !== 0;
+      const line = JSON.stringify(state);
+      if (off && line !== lastReport) {
+        lastReport = line;
+        void fetch("/api/log", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ layout: "off", ...state }) }).catch(() => {});
+      }
+    }, 400);
     layout();
     vv?.addEventListener("resize", settle);
     vv?.addEventListener("scroll", settle);
@@ -63,6 +94,7 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
     document.addEventListener("focusin", settle);
     document.addEventListener("focusout", settle);
     return () => {
+      clearInterval(check);
       cancelAnimationFrame(frame);
       vv?.removeEventListener("resize", settle);
       vv?.removeEventListener("scroll", settle);

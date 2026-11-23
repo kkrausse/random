@@ -88,4 +88,13 @@
 .terminal-host textarea {
   /* Ghostty's hidden input: keep iOS from zooming the page on focus. */
   font-size: 16px !important;
+  /* Ghostty moves it to the cursor, near the bottom in a harness. When a keyboard comes up or
+     changes height over it, iOS scrolls the page to reveal it and the fixed screen ends up
+     shifted with a gap at the top. Pinned to the top it is always in view, so iOS never
+     scrolls. (Composition text still shows at the cursor: that is a separate overlay.) */
+}
+/* Not while ghostty has borrowed it (position: fixed) to place the native copy menu. */
+.terminal-host textarea:not([style*="position: fixed"]) {
+  top: 0 !important;
+  left: 0 !important;
 }
