@@ -22,6 +22,18 @@ const prepare = () =>
     return theme;
   }));
 
+async function readClipboard() {
+  if (!navigator.clipboard.read) return { files: [] as File[], text: await navigator.clipboard.readText() };
+  const files: File[] = [];
+  let text = "";
+  for (const item of await navigator.clipboard.read()) {
+    const type = item.types.find((t) => !t.startsWith("text/"));
+    if (type) files.push(new File([await item.getType(type)], `pasted.${type.split("/")[1]!.split(/[+;]/)[0]}`, { type }));
+    else if (item.types.includes("text/plain")) text += await (await item.getType("text/plain")).text();
+  }
+  return { files, text };
+}
+
 /** Paste attempts go to the server's log, so a failure on a phone can be read off diesel2. */
 const report = (event: Record<string, unknown>) =>
   void fetch("/api/log", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...event, ua: navigator.userAgent }) }).catch(() => {});
@@ -161,40 +173,22 @@ export async function mountTerminal(
       else textarea?.focus({ preventScroll: true });
     },
     /**
-     * The paste button: one clipboard read (a second would prompt again on iOS). Resolves false
-     * when the browser wouldn't hand the clipboard over, so the caller can offer a paste box.
+     * The Paste button, as bun-web-terminal's: one clipboard read (a second would prompt again on
+     * iOS). Items carrying a non-text type, such as a screenshot, are uploaded as files; the rest
+     * paste as text.
      */
-    async pasteClipboard(cancelled: () => boolean = () => false): Promise<boolean> {
-      report({ paste: "start", read: !!navigator.clipboard?.read, focused: document.activeElement?.tagName });
+    async pasteClipboard() {
       try {
-        if (!navigator.clipboard?.read) {
-          const text = await navigator.clipboard.readText();
-          if (!text) return false;
-          terminal.paste(text);
-          return true;
-        }
-        const files: File[] = [];
-        let text = "";
-        for (const item of await navigator.clipboard.read()) {
-          const type = item.types.find((t) => !t.startsWith("text/"));
-          if (type) files.push(new File([await item.getType(type)], `pasted.${type.split("/")[1]!.split(/[+;]/)[0]}`, { type }));
-          else if (item.types.includes("text/plain")) text += await (await item.getType("text/plain")).text();
-        }
-        report({ paste: "read", files: files.map((f) => f.type), textLength: text.length, late: cancelled() });
-        // The paste box already took over (the confirmation came too late): don't paste twice.
-        if (cancelled()) return false;
+        const { files, text } = await readClipboard();
+        report({ paste: "read", files: files.map((f) => f.type), textLength: text.length });
         if (files.length) await pasteFiles(files);
         else if (text) terminal.paste(text);
-        else return false;
-        return true;
+        else toast("Nothing to paste · use Attach for files");
       } catch (e) {
         report({ paste: "error", name: (e as Error)?.name, message: (e as Error)?.message });
-        return false;
+        toast("Paste unavailable · use your keyboard’s Paste action");
       }
     },
-    pasteText: (text: string) => terminal.paste(text),
-    focusInput: () => textarea?.focus({ preventScroll: true }),
-    blurInput: () => textarea?.blur(),
     pasteFiles,
     fontSize: () => terminal.options.fontSize ?? 12,
     setFontSize(size: number) {

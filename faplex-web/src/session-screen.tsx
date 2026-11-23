@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { ALargeSmall, ChevronLeft, ClipboardPaste, EllipsisVertical, Keyboard, KeyboardOff, Loader, RefreshCcw, RotateCw } from "lucide-react";
+import { ALargeSmall, ChevronLeft, ClipboardPaste, EllipsisVertical, Keyboard, KeyboardOff, Loader, Paperclip, RefreshCcw, RotateCw } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Drawer, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { cn } from "@/lib/utils";
 import { HARNESS_LABEL, STATUS_LABEL } from "./format.ts";
 import type { useLive } from "./live.ts";
@@ -24,7 +23,6 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
   const term = useRef<MountedTerminal>(undefined);
   const [conn, setConn] = useState<Conn>("starting");
   const [keyboard, setKeyboard] = useState(false);
-  const [pasteBox, setPasteBox] = useState(false);
   const listed = !!session?.openable;
   const listedRef = useRef(listed);
   listedRef.current = listed;
@@ -231,6 +229,36 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
   }, [sessionKey]);
 
   const reconnectRef = useRef<() => void>(() => {});
+  const pasteRef = useRef<HTMLButtonElement>(null);
+  const attachRef = useRef<HTMLButtonElement>(null);
+  const floating = cn(buttonVariants({ variant: "secondary", size: "icon-lg" }), "size-11 rounded-full bg-secondary/70 shadow-lg ring-1 ring-foreground/10 backdrop-blur");
+
+  // Paste and Attach as in bun-web-terminal: native click listeners, one clipboard read, and a
+  // file chooser for what iOS never puts on a page's clipboard (a copied PDF, say).
+  useEffect(() => {
+    const paste = pasteRef.current!;
+    const attach = attachRef.current!;
+    const picker = document.createElement("input");
+    picker.type = "file";
+    picker.multiple = true;
+    picker.hidden = true;
+    picker.addEventListener("change", () => {
+      if (picker.files?.length) void term.current?.pasteFiles([...picker.files]);
+    });
+    document.body.append(picker);
+    const onPaste = () => void term.current?.pasteClipboard();
+    const onAttach = () => {
+      picker.value = "";
+      picker.click();
+    };
+    paste.addEventListener("click", onPaste);
+    attach.addEventListener("click", onAttach);
+    return () => {
+      paste.removeEventListener("click", onPaste);
+      attach.removeEventListener("click", onAttach);
+      picker.remove();
+    };
+  }, []);
   const redrawRef = useRef<() => void>(() => {});
 
   const fontStep = (d: number) => {
@@ -298,33 +326,13 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
           // Keep focus where it is, so a tap toggles rather than blurring first.
           onPointerDown={(e) => e.preventDefault()}
         >
-          <Button
-            variant="secondary"
-            size="icon-lg"
-            aria-label="Paste"
-            className="size-11 rounded-full bg-secondary/70 shadow-lg ring-1 ring-foreground/10 backdrop-blur"
-            onClick={async () => {
-              const t = term.current;
-              if (!t) return;
-              // On iPhone a scripted clipboard read can hang forever (seen in Brave: no Paste
-              // confirmation, no answer), so a phone goes straight to its own Paste menu.
-              if (matchMedia("(any-pointer: coarse)").matches) return setPasteBox(true);
-              // As in bun-web-terminal, where paste works on iOS: the read happens with the
-              // terminal's input focused, so iOS has somewhere to show its Paste confirmation.
-              const wasUp = keyboard;
-              if (!wasUp) t.focusInput();
-              let gaveUp = false;
-              const read = t.pasteClipboard(() => gaveUp);
-              // Refused, empty, or no confirmation within 8 s: iOS's own Paste menu in a text box.
-              const ok = await Promise.race([read, new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 8000))]);
-              if (ok !== true) {
-                gaveUp = true;
-                setPasteBox(true);
-              } else if (!wasUp) t.blurInput();
-            }}
-          >
+          {/* Plain buttons with native listeners, exactly as bun-web-terminal's toolbar. */}
+          <button ref={attachRef} type="button" aria-label="Attach file" className={floating}>
+            <Paperclip className="size-5" />
+          </button>
+          <button ref={pasteRef} type="button" aria-label="Paste" className={floating}>
             <ClipboardPaste className="size-5" />
-          </Button>
+          </button>
           <Button
             variant="secondary"
             size="icon-lg"
@@ -339,83 +347,6 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
           </Button>
         </div>
       </div>
-      <PasteBox
-        open={pasteBox}
-        onOpenChange={setPasteBox}
-        onText={(text) => term.current?.pasteText(text)}
-        onFiles={(files) => void term.current?.pasteFiles(files)}
-      />
     </div>
-  );
-}
-
-/**
- * iOS's own Paste lands here: text goes to the session, images and files are uploaded. An editable
- * div, not a textarea: iOS only offers to paste an image into rich editable content.
- */
-function PasteBox({ open, onOpenChange, onText, onFiles }: { open: boolean; onOpenChange: (open: boolean) => void; onText: (text: string) => void; onFiles: (files: File[]) => void }) {
-  const box = useRef<HTMLDivElement>(null);
-  const [typed, setTyped] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    setTyped(false);
-    const t = setTimeout(() => box.current?.focus(), 50);
-    return () => clearTimeout(t);
-  }, [open]);
-  const done = () => onOpenChange(false);
-  return (
-    <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent>
-        <div className="mx-auto w-full max-w-lg">
-          <DrawerHeader>
-            <DrawerTitle>Paste</DrawerTitle>
-            <DrawerDescription>Tap the box, then tap Paste (or press and hold). Text goes to the session; a screenshot or file is uploaded.</DrawerDescription>
-          </DrawerHeader>
-          <div className="px-4">
-            <div
-              ref={box}
-              contentEditable
-              suppressContentEditableWarning
-              role="textbox"
-              aria-label="Paste here"
-              data-placeholder="Tap here, then Paste"
-              className="min-h-24 rounded-lg border border-input bg-input/30 px-3 py-2 text-base outline-none select-text empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)] focus-visible:ring-3 focus-visible:ring-ring/50"
-              style={{ WebkitUserSelect: "text" }}
-              onInput={() => setTyped(!!box.current?.innerText.trim())}
-              onPaste={(e) => {
-                e.preventDefault();
-                const files = [...e.clipboardData.files];
-                if (!files.length) {
-                  for (const item of e.clipboardData.items) {
-                    const f = item.kind === "file" ? item.getAsFile() : null;
-                    if (f) files.push(f);
-                  }
-                }
-                if (files.length) onFiles(files);
-                else {
-                  const text = e.clipboardData.getData("text/plain");
-                  if (!text) return;
-                  onText(text);
-                }
-                done();
-              }}
-            />
-          </div>
-          <DrawerFooter>
-            <Button
-              size="lg"
-              disabled={!typed}
-              onClick={() => {
-                const text = box.current?.innerText ?? "";
-                if (text.trim()) onText(text);
-                done();
-              }}
-            >
-              Paste into session
-            </Button>
-          </DrawerFooter>
-        </div>
-      </DrawerContent>
-    </Drawer>
   );
 }
