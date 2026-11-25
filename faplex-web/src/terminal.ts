@@ -169,8 +169,14 @@ export async function mountTerminal(
       (textarea ?? host).dispatchEvent(new KeyboardEvent("keydown", { key, code: key, ...mods, bubbles: true, cancelable: true }));
     },
     toggleRawFocus() {
+      // Focus and the on-screen keyboard can disagree (the page was hidden, e.g. a panel closed, and
+      // iOS dropped the keyboard but kept focus): then one tap blurred and a second raised it. Ask
+      // the visual viewport whether a keyboard is actually up.
+      const vv = window.visualViewport;
+      const keyboardUp = vv ? window.innerHeight - vv.height > 120 : document.activeElement === textarea;
+      if (document.activeElement === textarea && keyboardUp) { textarea?.blur(); return; }
       if (document.activeElement === textarea) textarea?.blur();
-      else textarea?.focus({ preventScroll: true });
+      textarea?.focus({ preventScroll: true });
     },
     /**
      * The Paste button, as bun-web-terminal's: one clipboard read (a second would prompt again on
