@@ -197,6 +197,11 @@ export async function mountTerminal(
       }
     },
     pasteFiles,
+    /** A finished message from the compose box: pasted in one piece (bracketed), then Enter. */
+    sendText(text: string) {
+      terminal.paste(text);
+      setTimeout(() => opts.input("\r"), 80);
+    },
     fontSize: () => terminal.options.fontSize ?? 12,
     setFontSize(size: number) {
       terminal.options.fontSize = size;

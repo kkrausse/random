@@ -1,7 +1,7 @@
 import { apiFetch, wsUrl } from "./endpoint";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { CloseToMap } from "./walks-panel";
-import { ALargeSmall, Camera, ChevronLeft, ClipboardPaste, EllipsisVertical, Keyboard, KeyboardOff, Loader, RefreshCcw, RotateCw } from "lucide-react";
+import { ALargeSmall, ArrowUp, Camera, ChevronLeft, ClipboardPaste, EllipsisVertical, Keyboard, KeyboardOff, Loader, RefreshCcw, RotateCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -366,6 +366,48 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
           </Button>
         </div>
       </div>
+      <ComposeBar onSend={(text) => term.current?.sendText(text)} raw={keyboard} />
     </div>
+  );
+}
+
+/**
+ * A normal text box under the terminal: type or dictate (dictation apps that rewrite their text
+ * as they go, like Hex, work here; typed straight into the terminal every rewrite was appended),
+ * edit freely, then Send pastes the whole message into the session and presses Enter. The keyboard
+ * button above still types raw keys into the terminal (arrows, Esc, answers to prompts).
+ */
+function ComposeBar({ onSend, raw }: { onSend: (text: string) => void; raw: boolean }) {
+  const [text, setText] = useState("");
+  const area = useRef<HTMLTextAreaElement>(null);
+  const grow = () => { const el = area.current; if (!el) return; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 160)}px`; };
+  useLayoutEffect(grow, [text]);
+  const send = () => {
+    const body = text.trim();
+    if (!body) return;
+    onSend(body);
+    setText("");
+  };
+  return (
+    <form
+      className={cn("flex shrink-0 items-end gap-2 border-t border-border bg-background/95 px-2 pt-2", raw ? "pb-2" : "pb-[max(env(safe-area-inset-bottom),0.5rem)]")}
+      onSubmit={(e) => { e.preventDefault(); send(); }}
+    >
+      <textarea
+        ref={area}
+        rows={1}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          // Desktop: Enter sends, Shift+Enter is a new line. Phone: the Send button sends.
+          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && !window.matchMedia("(pointer: coarse)").matches) { e.preventDefault(); send(); }
+        }}
+        placeholder="Message"
+        className="min-h-10 flex-1 resize-none rounded-2xl border border-input bg-secondary/40 px-3 py-2 text-base leading-6 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      />
+      <Button type="submit" size="icon-lg" className="size-10 shrink-0 rounded-full" disabled={!text.trim()} aria-label="Send">
+        <ArrowUp className="size-5" />
+      </Button>
+    </form>
   );
 }
