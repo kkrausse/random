@@ -85,11 +85,11 @@ export function SessionList({ live }: { live: ReturnType<typeof useLive> }) {
             {/* + opens a new empty session right away; the ▾ beside it (showing the harness) chooses ahead
                 of time which harness / machine + uses, or opens the full form (folder, prompt). */}
             <div className="flex items-center">
-              <Button size="icon" aria-label={pick ? `New ${HARNESS_LABEL[pick.harness]} session on ${pick.machine}` : "New session"} className="rounded-r-none" disabled={!state || starting} onClick={quick}>
+              <Button size="icon" aria-label={pick ? `New ${HARNESS_LABEL[pick.harness]} session on ${pick.machine}` : "New session"} className="w-10 rounded-r-none" disabled={!state || starting} onClick={quick}>
                 {starting ? <Loader className="animate-spin" /> : <Plus />}
               </Button>
               <DropdownMenu>
-                <DropdownMenuTrigger render={<Button size="sm" aria-label="Which harness + starts" className="h-8 gap-0.5 rounded-l-none border-l border-primary-foreground/20 px-1.5 text-xs" disabled={!state || starting} />}>
+                <DropdownMenuTrigger render={<Button size="sm" aria-label="Which harness + starts" className="h-8 gap-1 rounded-l-none border-l border-primary-foreground/20 px-2.5 text-xs" disabled={!state || starting} />}>
                   {pick ? HARNESS_LABEL[pick.harness] : ""}<ChevronDown />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="min-w-48">
