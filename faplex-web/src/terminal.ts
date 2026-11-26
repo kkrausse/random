@@ -169,6 +169,8 @@ export async function mountTerminal(
     key(key: string, mods: { shiftKey?: boolean; ctrlKey?: boolean } = {}) {
       (textarea ?? host).dispatchEvent(new KeyboardEvent("keydown", { key, code: key, ...mods, bubbles: true, cancelable: true }));
     },
+    /** Whether the terminal itself has the keyboard (typing goes straight into the session). */
+    rawFocused: () => !!textarea && document.activeElement === textarea,
     toggleRawFocus() {
       // Focus and the on-screen keyboard can disagree (the page was hidden, e.g. a panel closed, and
       // iOS dropped the keyboard but kept focus): then one tap blurred and a second raised it. Ask

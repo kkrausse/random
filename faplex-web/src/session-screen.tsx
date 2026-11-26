@@ -24,7 +24,21 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
   const hostRef = useRef<HTMLDivElement>(null);
   const term = useRef<MountedTerminal>(undefined);
   const [conn, setConn] = useState<Conn>("starting");
-  const [keyboard, setKeyboard] = useState(false);
+  const [keyboard, setKeyboard] = useState(false); // the terminal itself has the keyboard
+  const [composing, setComposing] = useState(false); // the Message box has it
+  const composeRef = useRef<HTMLTextAreaElement>(null);
+  const keyboardUp = keyboard || composing;
+  // The keyboard button: up → into the Message box (never the terminal: user, 11-25); up → closed,
+  // wherever it is. Focus can outlive the keyboard (iOS dropped it), so check the viewport too.
+  const toggleKeyboard = () => {
+    const vv = window.visualViewport;
+    const shown = vv ? window.innerHeight - vv.height > 120 : true;
+    const compose = composeRef.current;
+    const focused = document.activeElement === compose || term.current?.rawFocused();
+    if (focused && shown) { (document.activeElement as HTMLElement | null)?.blur(); return; }
+    if (focused) (document.activeElement as HTMLElement | null)?.blur();
+    compose?.focus({ preventScroll: true });
+  };
   const listed = !!session?.openable;
   const listedRef = useRef(listed);
   listedRef.current = listed;
@@ -337,7 +351,7 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
         )}
         {/* Paste, and raise or lower the keyboard (which types straight into the terminal). */}
         <div
-          className={cn("absolute right-2 flex flex-col gap-2", keyboard ? "bottom-2" : "bottom-[max(env(safe-area-inset-bottom),0.5rem)]")}
+          className={cn("absolute right-2 flex flex-col gap-2", keyboardUp ? "bottom-2" : "bottom-[max(env(safe-area-inset-bottom),0.5rem)]")}
           // Keep focus where it is, so a tap toggles rather than blurring first.
           onPointerDown={(e) => e.preventDefault()}
         >
@@ -355,18 +369,18 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
           <Button
             variant="secondary"
             size="icon-lg"
-            aria-label={keyboard ? "Hide keyboard" : "Show keyboard"}
+            aria-label={keyboardUp ? "Hide keyboard" : "Show keyboard"}
             className={cn(
               "size-11 rounded-full shadow-lg ring-1 ring-foreground/10 backdrop-blur",
-              keyboard ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-secondary/70",
+              keyboardUp ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-secondary/70",
             )}
-            onClick={() => term.current?.toggleRawFocus()}
+            onClick={toggleKeyboard}
           >
-            {keyboard ? <KeyboardOff className="size-5" /> : <Keyboard className="size-5" />}
+            {keyboardUp ? <KeyboardOff className="size-5" /> : <Keyboard className="size-5" />}
           </Button>
         </div>
       </div>
-      <ComposeBar onSend={(text) => term.current?.sendText(text)} raw={keyboard} />
+      <ComposeBar ref={composeRef} onSend={(text) => term.current?.sendText(text)} raw={keyboardUp} onFocusChange={setComposing} />
     </div>
   );
 }
@@ -377,9 +391,8 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
  * edit freely, then Return pastes the whole message into the session and presses Enter. The keyboard
  * button above still types raw keys into the terminal (arrows, Esc, answers to prompts).
  */
-function ComposeBar({ onSend, raw }: { onSend: (text: string) => void; raw: boolean }) {
+function ComposeBar({ ref: area, onSend, raw, onFocusChange }: { ref: React.RefObject<HTMLTextAreaElement | null>; onSend: (text: string) => void; raw: boolean; onFocusChange: (on: boolean) => void }) {
   const [text, setText] = useState("");
-  const area = useRef<HTMLTextAreaElement>(null);
   const grow = () => { const el = area.current; if (!el) return; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 160)}px`; };
   useLayoutEffect(grow, [text]);
   const newline = useRef(false); // Shift+Enter on a hardware keyboard: a real new line
@@ -406,6 +419,8 @@ function ComposeBar({ onSend, raw }: { onSend: (text: string) => void; raw: bool
           newline.current = false;
         }}
         enterKeyHint="send"
+        onFocus={() => onFocusChange(true)}
+        onBlur={() => onFocusChange(false)}
         onKeyDown={(e) => {
           if (e.key !== "Enter") return;
           if (e.shiftKey) { newline.current = true; return; }
