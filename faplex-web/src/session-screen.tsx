@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CloseToMap } from "./walks-panel";
-import { ALargeSmall, ChevronLeft, ClipboardPaste, EllipsisVertical, Keyboard, KeyboardOff, Loader, RefreshCcw, RotateCw } from "lucide-react";
+import { ALargeSmall, Camera, ChevronLeft, ClipboardPaste, EllipsisVertical, Keyboard, KeyboardOff, Loader, RefreshCcw, RotateCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -340,6 +340,13 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
           // Keep focus where it is, so a tap toggles rather than blurring first.
           onPointerDown={(e) => e.preventDefault()}
         >
+          {/* Camera: take a photo and hand it to the session like a pasted screenshot (uploaded to the
+              session's machine, its path typed in, which Claude reads as an image). */}
+          <label aria-label="Take a photo" className={cn(floating, "cursor-pointer")}>
+            <Camera className="size-5" />
+            <input type="file" accept="image/*" capture="environment" className="hidden"
+              onChange={(e) => { const files = [...(e.currentTarget.files ?? [])]; e.currentTarget.value = ""; if (files.length) void term.current?.pasteFiles(files); }} />
+          </label>
           {/* Plain buttons with native listeners, exactly as bun-web-terminal's toolbar. */}
           <button ref={pasteRef} type="button" aria-label="Paste" className={floating}>
             <ClipboardPaste className="size-5" />
