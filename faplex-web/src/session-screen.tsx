@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { CloseToMap } from "./walks-panel";
 import { ALargeSmall, ChevronLeft, ClipboardPaste, EllipsisVertical, Keyboard, KeyboardOff, Loader, RefreshCcw, RotateCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -303,6 +304,7 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
             )}
           </div>
         </div>
+        <CloseToMap />
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button variant="ghost" size="icon-lg" aria-label="More" />}>
             <EllipsisVertical className="size-5" />

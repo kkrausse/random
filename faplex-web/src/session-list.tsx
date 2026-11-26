@@ -11,6 +11,7 @@ import type { useLive } from "./live.ts";
 import { NewSession } from "./new-session.tsx";
 import { SessionCard } from "./session-card.tsx";
 import type { Session } from "./types.ts";
+import { CloseToMap } from "./walks-panel";
 
 const SECTIONS: { group: Exclude<Group, "archived">; label: string; accent: string }[] = [
   { group: "needs", label: "Needs input", accent: "text-amber-400" },
@@ -64,6 +65,7 @@ export function SessionList({ live }: { live: ReturnType<typeof useLive> }) {
           />
           {groups.needs.length > 0 && <span className="text-sm text-amber-400">{groups.needs.length} waiting</span>}
           <div className="ml-auto flex items-center gap-1">
+            <CloseToMap size="icon" />
             <Button variant="ghost" size="icon" aria-label="Search" onClick={() => (setSearching(!searching), setQuery(""))}>
               {searching ? <X /> : <Search />}
             </Button>
