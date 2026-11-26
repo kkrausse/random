@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, Loader, Plus, Search, TriangleAlert, X } from "lucide-react";
+import { Check, ChevronDown, Loader, Plus, Search, TriangleAlert, X } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -37,10 +37,16 @@ export function SessionList({ live }: { live: ReturnType<typeof useLive> }) {
   const [searching, setSearching] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
   const [starting, setStarting] = useState(false);
-  const quick = (o?: { machine: string; harness: Harness }) => {
-    if (!o) return setNewOpen(true);
+  // What + starts: chosen ahead of time in the ▾ menu (kept on this device), else faplex's last pick.
+  const [chosen, setChosen] = useState<{ machine: string; harness: Harness } | null>(() => { try { return JSON.parse(localStorage.getItem("faplex.newPick") ?? "null"); } catch { return null; } });
+  const options = state ? startable(state) : [];
+  const pick = options.find((o) => o.machine === chosen?.machine && o.harness === chosen?.harness)
+    ?? options.find((o) => o.machine === state?.lastPick?.machine && o.harness === state?.lastPick?.harness) ?? options[0];
+  const choose = (o: { machine: string; harness: Harness }) => { setChosen(o); localStorage.setItem("faplex.newPick", JSON.stringify({ machine: o.machine, harness: o.harness })); };
+  const quick = () => {
+    if (!pick) return setNewOpen(true);
     setStarting(true);
-    void startEmpty(o.machine, o.harness).finally(() => setStarting(false));
+    void startEmpty(pick.machine, pick.harness).finally(() => setStarting(false));
   };
 
   const machines = new Map(state?.machines.map((m) => [m.id, m]));
@@ -76,20 +82,20 @@ export function SessionList({ live }: { live: ReturnType<typeof useLive> }) {
             <Button variant="ghost" size="icon" aria-label="Search" onClick={() => (setSearching(!searching), setQuery(""))}>
               {searching ? <X /> : <Search />}
             </Button>
-            {/* + opens a new empty session right away (last machine / harness); ▾ picks another or
-                opens the full form (folder, prompt). */}
+            {/* + opens a new empty session right away; the ▾ beside it (showing the harness) chooses ahead
+                of time which harness / machine + uses, or opens the full form (folder, prompt). */}
             <div className="flex items-center">
-              <Button size="icon" aria-label="New session" className="rounded-r-none" disabled={!state || starting}
-                onClick={() => state && quick(state.lastPick ?? startable(state)[0])}>
+              <Button size="icon" aria-label={pick ? `New ${HARNESS_LABEL[pick.harness]} session on ${pick.machine}` : "New session"} className="rounded-r-none" disabled={!state || starting} onClick={quick}>
                 {starting ? <Loader className="animate-spin" /> : <Plus />}
               </Button>
               <DropdownMenu>
-                <DropdownMenuTrigger render={<Button size="icon" aria-label="New session with…" className="w-6 rounded-l-none border-l border-primary-foreground/20" disabled={!state || starting} />}>
-                  <ChevronDown />
+                <DropdownMenuTrigger render={<Button size="sm" aria-label="Which harness + starts" className="h-8 gap-0.5 rounded-l-none border-l border-primary-foreground/20 px-1.5 text-xs" disabled={!state || starting} />}>
+                  {pick ? HARNESS_LABEL[pick.harness] : ""}<ChevronDown />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="min-w-48">
-                  {state && startable(state).map((o) => (
-                    <DropdownMenuItem key={`${o.machine}/${o.harness}`} onClick={() => quick(o)}>
+                  {options.map((o) => (
+                    <DropdownMenuItem key={`${o.machine}/${o.harness}`} onClick={() => choose(o)}>
+                      <Check className={cn("size-4", o !== pick && "invisible")} />
                       <span className="size-1.5 rounded-full" style={{ background: o.color }} /> {HARNESS_LABEL[o.harness]} on {o.machine}
                     </DropdownMenuItem>
                   ))}
