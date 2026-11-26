@@ -28,16 +28,13 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
   const [composing, setComposing] = useState(false); // the Message box has it
   const composeRef = useRef<HTMLTextAreaElement>(null);
   const keyboardUp = keyboard || composing;
-  // The keyboard button: up → into the Message box (never the terminal: user, 11-25); up → closed,
-  // wherever it is. Focus can outlive the keyboard (iOS dropped it), so check the viewport too.
+  // The keyboard button: down → into the Message box (never the terminal: user, 11-25); up → closed,
+  // wherever it is. Decided by focus alone: inside the Walks app the keyboard shrinks the whole page
+  // (innerHeight == visualViewport.height), so a viewport check can't tell whether it's up.
   const toggleKeyboard = () => {
-    const vv = window.visualViewport;
-    const shown = vv ? window.innerHeight - vv.height > 120 : true;
     const compose = composeRef.current;
-    const focused = document.activeElement === compose || term.current?.rawFocused();
-    if (focused && shown) { (document.activeElement as HTMLElement | null)?.blur(); return; }
-    if (focused) (document.activeElement as HTMLElement | null)?.blur();
-    compose?.focus({ preventScroll: true });
+    if (document.activeElement === compose || term.current?.rawFocused()) (document.activeElement as HTMLElement).blur();
+    else compose?.focus({ preventScroll: true });
   };
   const listed = !!session?.openable;
   const listedRef = useRef(listed);
