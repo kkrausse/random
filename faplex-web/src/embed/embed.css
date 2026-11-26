@@ -1,5 +1,8 @@
 /* For <FaplexEmbed> inside another app: no preflight or page-wide rules (the host has its own),
    faplex's colours only under .faplex, and only the utilities faplex's code uses. */
+/* Same layer order as the host's Tailwind, whichever stylesheet loads first; otherwise a host's
+   base (preflight) would outrank faplex's utilities. */
+@layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 @import "tw-animate-css";
