@@ -7,18 +7,19 @@
 // key is typed into the form here (a password field, so a password manager can fill it), swapped
 // for the token, and dropped; only the token is kept (localStorage, per server). Render it inside
 // an element that fills the screen; it brings its own colours (.faplex) but no page-wide styles.
-import { useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { ChevronDown, KeyRound, Loader } from "lucide-react";
 import { App } from "../app";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiUrl, configureEndpoint } from "../endpoint";
-import { setMemoryRouting } from "../router";
+import { setMemoryRouting, usePath } from "../router";
 import { setCloseHandler } from "../walks-panel";
 
 const storeKey = (server: string) => `faplex-token:${server}`;
 
-export function FaplexEmbed({ server, start = "/", onClose }: { server: string; start?: string; onClose?: () => void }) {
+/** `onNavigate` gets every screen change (list "/" or "/s/<key>"), so a host can reopen there after a reload. */
+export function FaplexEmbed({ server, start = "/", onClose, onNavigate }: { server: string; start?: string; onClose?: () => void; onNavigate?: (path: string) => void }) {
   const [token, setToken] = useState(() => localStorage.getItem(storeKey(server)));
   const [ready, setReady] = useState(false);
   useLayoutEffect(() => {
@@ -26,13 +27,20 @@ export function FaplexEmbed({ server, start = "/", onClose }: { server: string; 
     configureEndpoint({ base: server, token, onUnauthorized: forget });
     setMemoryRouting(start);
     setReady(true);
-  }, [server, token, start]);
+  }, [server, token]); // eslint-disable-line react-hooks/exhaustive-deps -- start is where it opens, not a live prop
   setCloseHandler(onClose ?? null);
   return (
     <div className="faplex dark min-h-full">
+      {ready && onNavigate && <ReportPath onNavigate={onNavigate} />}
       {!ready ? null : token ? <App key={token} /> : <SignIn server={server} onClose={onClose} onToken={(t) => { localStorage.setItem(storeKey(server), t); setToken(t); }} />}
     </div>
   );
+}
+
+function ReportPath({ onNavigate }: { onNavigate: (path: string) => void }) {
+  const path = usePath();
+  useEffect(() => onNavigate(path), [path]); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
 }
 
 function SignIn({ server, onClose, onToken }: { server: string; onClose?: () => void; onToken: (t: string) => void }) {
