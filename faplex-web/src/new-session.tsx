@@ -11,8 +11,22 @@ import { HARNESS_LABEL } from "./format.ts";
 import { openSession } from "./router.ts";
 import type { Harness, WatchState } from "./types.ts";
 
-// `faplex new --background`: with a prompt it starts working and shows up in the list; with none
-// it is an empty chat, opened straight away.
+/** Start an empty chat (no prompt) and open it straight away: what + does (user, 11-26). */
+export async function startEmpty(machine: string, harness: Harness, dir?: string) {
+  const r = await apiFetch("/api/new", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ machine, harness, dir: dir ?? "", prompt: "" }) });
+  const res = (await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }))) as { ok: boolean; key?: string; error?: string };
+  if (!res.ok || !res.key) { toast.error("Could not start", { description: res.error, duration: 8000 }); return; }
+  openSession(res.key);
+}
+
+/** Which machine / harness pairs can start a session now (a stopped daemon starts itself). */
+export function startable(state: WatchState) {
+  const ok = (m: string, h: Harness) => { const p = state.sources.find((x) => x.machine === m && x.harness === h)?.problem; return !p || p.kind === "stopped"; };
+  return state.machines.flatMap((m) => state.harnesses.filter((h) => ok(m.id, h)).map((h) => ({ machine: m.id, harness: h, dir: m.dir, color: m.color })));
+}
+
+// "More options": `faplex new --background` with a folder and/or a prompt. With a prompt it starts
+// working and shows up in the list; with none it is an empty chat, opened straight away.
 export function NewSession({ open, onOpenChange, state }: { open: boolean; onOpenChange: (open: boolean) => void; state: WatchState }) {
   const [machine, setMachine] = useState(state.lastPick?.machine ?? state.machines[0]?.id ?? "local");
   const [harness, setHarness] = useState<Harness>(state.lastPick?.harness ?? "claude");

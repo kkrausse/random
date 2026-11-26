@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, Plus, Search, TriangleAlert, X } from "lucide-react";
+import { ChevronDown, Loader, Plus, Search, TriangleAlert, X } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
@@ -8,9 +9,9 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import { groupOf, HARNESS_LABEL, type Group } from "./format.ts";
 import type { useLive } from "./live.ts";
-import { NewSession } from "./new-session.tsx";
+import { NewSession, startEmpty, startable } from "./new-session.tsx";
 import { SessionCard } from "./session-card.tsx";
-import type { Session } from "./types.ts";
+import type { Harness, Session } from "./types.ts";
 import { CloseToMap } from "./walks-panel";
 
 const SECTIONS: { group: Exclude<Group, "archived">; label: string; accent: string }[] = [
@@ -35,6 +36,12 @@ export function SessionList({ live }: { live: ReturnType<typeof useLive> }) {
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const quick = (o?: { machine: string; harness: Harness }) => {
+    if (!o) return setNewOpen(true);
+    setStarting(true);
+    void startEmpty(o.machine, o.harness).finally(() => setStarting(false));
+  };
 
   const machines = new Map(state?.machines.map((m) => [m.id, m]));
   const visible = useMemo(() => {
@@ -69,9 +76,28 @@ export function SessionList({ live }: { live: ReturnType<typeof useLive> }) {
             <Button variant="ghost" size="icon" aria-label="Search" onClick={() => (setSearching(!searching), setQuery(""))}>
               {searching ? <X /> : <Search />}
             </Button>
-            <Button size="icon" aria-label="New session" onClick={() => setNewOpen(true)} disabled={!state}>
-              <Plus />
-            </Button>
+            {/* + opens a new empty session right away (last machine / harness); ▾ picks another or
+                opens the full form (folder, prompt). */}
+            <div className="flex items-center">
+              <Button size="icon" aria-label="New session" className="rounded-r-none" disabled={!state || starting}
+                onClick={() => state && quick(state.lastPick ?? startable(state)[0])}>
+                {starting ? <Loader className="animate-spin" /> : <Plus />}
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button size="icon" aria-label="New session with…" className="w-6 rounded-l-none border-l border-primary-foreground/20" disabled={!state || starting} />}>
+                  <ChevronDown />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-48">
+                  {state && startable(state).map((o) => (
+                    <DropdownMenuItem key={`${o.machine}/${o.harness}`} onClick={() => quick(o)}>
+                      <span className="size-1.5 rounded-full" style={{ background: o.color }} /> {HARNESS_LABEL[o.harness]} on {o.machine}
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setNewOpen(true)}>More options (folder, prompt)…</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </div>
         {searching && (
