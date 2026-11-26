@@ -382,11 +382,11 @@ function ComposeBar({ onSend, raw }: { onSend: (text: string) => void; raw: bool
   const area = useRef<HTMLTextAreaElement>(null);
   const grow = () => { const el = area.current; if (!el) return; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 160)}px`; };
   useLayoutEffect(grow, [text]);
-  const send = () => {
-    const body = text.trim();
-    if (!body) return;
-    onSend(body);
+  const newline = useRef(false); // Shift+Enter on a hardware keyboard: a real new line
+  const send = (value = text) => {
+    const body = value.trim();
     setText("");
+    if (body) onSend(body);
   };
   return (
     <form
@@ -397,11 +397,21 @@ function ComposeBar({ onSend, raw }: { onSend: (text: string) => void; raw: bool
         ref={area}
         rows={1}
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        // Return sends (no Send button: user, 11-25). iOS keyboards and dictation don't always send a
+        // keydown for Return, they just insert a line break: so any new line sends, however it came.
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v.includes("\n") && !newline.current) send(v.replace(/\n/g, " "));
+          else setText(v);
+          newline.current = false;
+        }}
         enterKeyHint="send"
         onKeyDown={(e) => {
-          // Return sends, phone included (no Send button: user, 11-25); Shift+Enter is a new line.
-          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); }
+          if (e.key !== "Enter") return;
+          if (e.shiftKey) { newline.current = true; return; }
+          if (e.keyCode === 229) return; // an input method is confirming text, not Return
+          e.preventDefault();
+          send();
         }}
         placeholder="Message"
         className="min-h-10 flex-1 resize-none rounded-2xl border border-input bg-secondary/40 px-3 py-2 text-base leading-6 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
