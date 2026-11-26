@@ -1,3 +1,4 @@
+import { apiFetch, wsUrl } from "./endpoint";
 import { useEffect, useRef, useState } from "react";
 import { CloseToMap } from "./walks-panel";
 import { ALargeSmall, Camera, ChevronLeft, ClipboardPaste, EllipsisVertical, Keyboard, KeyboardOff, Loader, RefreshCcw, RotateCw } from "lucide-react";
@@ -84,7 +85,7 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
       const line = JSON.stringify(state);
       if (off && line !== lastReport) {
         lastReport = line;
-        void fetch("/api/log", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ layout: "off", ...state }) }).catch(() => {});
+        void apiFetch("/api/log", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ layout: "off", ...state }) }).catch(() => {});
       }
     }, 400);
     layout();
@@ -154,7 +155,7 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
       }
       setConn("connecting");
       const { cols, rows } = t.terminal;
-      const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/term?key=${encodeURIComponent(sessionKey)}&cols=${cols}&rows=${rows}`);
+      const socket = new WebSocket(wsUrl(`/api/term?key=${encodeURIComponent(sessionKey)}&cols=${cols}&rows=${rows}`));
       socket.binaryType = "arraybuffer";
       ws = socket;
       let head = "";
@@ -205,7 +206,7 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
           resize: resizeTo,
           rawFocus: setKeyboard,
           upload: async (file) => {
-            const r = await fetch(`/api/attach?key=${encodeURIComponent(sessionKey)}`, {
+            const r = await apiFetch(`/api/attach?key=${encodeURIComponent(sessionKey)}`, {
               method: "POST",
               headers: { "content-type": file.type || "application/octet-stream", "x-filename": encodeURIComponent(file.name) },
               body: file,

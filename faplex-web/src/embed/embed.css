@@ -1,0 +1,21 @@
+/* For <FaplexEmbed> inside another app: no preflight or page-wide rules (the host has its own),
+   faplex's colours only under .faplex, and only the utilities faplex's code uses. */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "tw-animate-css";
+@import "../theme.css";
+@source "../";
+
+@custom-variant dark (&:is(.dark *));
+
+@layer base {
+  .faplex,
+  .faplex * {
+    @apply border-border outline-ring/50;
+  }
+  .faplex {
+    @apply bg-background text-foreground font-sans;
+    color-scheme: dark;
+    -webkit-tap-highlight-color: transparent;
+  }
+}

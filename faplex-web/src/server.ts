@@ -14,6 +14,7 @@ import { TerminalAuth } from "../../bun-web-terminal/src/auth.ts";
 import { loadCredentials } from "../../bun-web-terminal/src/credentials.ts";
 import { loadGhosttyTheme } from "../../bun-web-terminal/src/ghostty-theme.ts";
 import { createWatch } from "./watch.ts";
+import { createEmbedAuth } from "./embed-auth.ts";
 import { parseTail } from "./tail.ts";
 
 const host = "127.0.0.1";
@@ -26,7 +27,13 @@ const faplex = process.env.FAPLEX_BIN ?? "faplex";
 const faplexCwd = process.env.FAPLEX_CWD ?? homedir();
 const dist = join(import.meta.dir, "..", "dist");
 
-const auth = new TerminalAuth(port, publicUrl, await loadCredentials(credentialPort));
+const credentials = await loadCredentials(credentialPort);
+const auth = new TerminalAuth(port, publicUrl, credentials);
+const embed = createEmbedAuth(credentials.secret, credentials.signingKey);
+// Apps that may show <FaplexEmbed> (src/embed): the Walks app, and its web version on this host.
+const embedOrigins = new Set((process.env.EMBED_ORIGINS ?? "walk-planner://app").split(",").filter(Boolean));
+const tailnetHost = publicUrl ? new URL(publicUrl).hostname : undefined;
+const embedOrigin = (o: string | null) => !!o && (embedOrigins.has(o) || (!!tailnetHost && o.startsWith(`https://${tailnetHost}:`) && o !== new URL(publicUrl!).origin));
 const theme = loadGhosttyTheme();
 await buildClient();
 
@@ -41,36 +48,33 @@ const server = Bun.serve<Data>({
   port,
   idleTimeout: 120,
   async fetch(request, server) {
-    const denied = await auth.guard(request, server.requestIP(request)?.address);
+    const peer = server.requestIP(request)?.address;
+    const origin = request.headers.get("origin");
+    // From an app showing <FaplexEmbed>: CORS, and a token instead of the cookie (embed-auth.ts).
+    if (embedOrigin(origin) && auth.isSameOrigin(new Request(request.url), peer)) {
+      const cors = { "access-control-allow-origin": origin!, "access-control-allow-headers": "authorization, content-type", "access-control-allow-methods": "GET, POST", "access-control-max-age": "600", vary: "origin", "cache-control": "no-store" };
+      if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+      const url = new URL(request.url);
+      let response: Response | undefined;
+      if (url.pathname === "/api/embed/login" && request.method === "POST") {
+        const token = request.headers.get("content-type") === "text/plain" ? embed.issue((await request.text()).slice(0, 200)) : undefined;
+        response = token ? Response.json({ token }) : new Response("Wrong key", { status: 401 });
+      } else if (url.pathname === "/ghostty-vt.wasm") {
+        response = new Response(Bun.file(join(dist, "ghostty-vt.wasm")), { headers: { "content-type": "application/wasm" } });
+      } else if (!embed.valid(request.headers.get("authorization")?.replace(/^Bearer /, "") ?? url.searchParams.get("auth"))) {
+        response = new Response("Authentication required", { status: 401 });
+      } else if (!url.pathname.startsWith("/api/")) {
+        response = new Response("Not found", { status: 404 });
+      } else {
+        response = await route(request, server, url);
+        if (!response) return; // a WebSocket upgrade
+      }
+      for (const [k, v] of Object.entries(cors)) response.headers.set(k, v);
+      return response;
+    }
+    const denied = await auth.guard(request, peer);
     if (denied) return denied;
-    const url = new URL(request.url);
-    const path = url.pathname;
-
-    if (path === "/api/live") return server.upgrade(request, { data: { kind: "live" } }) ? undefined : new Response("Upgrade failed", { status: 400 });
-    if (path === "/api/term") {
-      const key = url.searchParams.get("key") ?? "";
-      const cols = clamp(Number(url.searchParams.get("cols")), 20, 400, 80);
-      const rows = clamp(Number(url.searchParams.get("rows")), 5, 200, 24);
-      if (!watch.socket()) return new Response("faplex watch is not running", { status: 503 });
-      return server.upgrade(request, { data: { kind: "term", key, cols, rows, pending: [] } }) ? undefined : new Response("Upgrade failed", { status: 400 });
-    }
-    if (path === "/api/theme") return Response.json(theme);
-    if (path === "/api/tail" && request.method === "GET") return tail(url.searchParams.get("key") ?? "", Number(url.searchParams.get("n") ?? 2));
-    if (path === "/api/send" && request.method === "POST") return send(await request.json());
-    if (path === "/api/new" && request.method === "POST") return newSession(await request.json());
-    if (path === "/api/attach" && request.method === "POST") return attach(request, url.searchParams.get("key") ?? "");
-    if (path === "/api/log" && request.method === "POST") {
-      console.log("client:", (await request.text()).slice(0, 1000));
-      return new Response(null, { status: 204 });
-    }
-    if (path.startsWith("/api/")) return new Response("Not found", { status: 404 });
-
-    // Static build output; every other path is the app (client-side routes).
-    if (path !== "/" && !path.includes("..")) {
-      const file = Bun.file(join(dist, path));
-      if (await file.exists()) return new Response(file, { headers: { "cache-control": path.endsWith(".html") ? "no-store" : "public, max-age=31536000, immutable" } });
-    }
-    return new Response(Bun.file(join(dist, "index.html")), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+    return route(request, server, new URL(request.url));
   },
   websocket: {
     perMessageDeflate: true,
@@ -259,4 +263,35 @@ async function buildClient() {
   const index = join(dist, "index.html");
   const links = `<link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">`;
   await Bun.write(index, (await Bun.file(index).text()).replace("</head>", `${links}</head>`));
+}
+
+type Server = ReturnType<typeof Bun.serve<Data>>;
+async function route(request: Request, server: Server, url: URL): Promise<Response | undefined> {
+  const path = url.pathname;
+
+    if (path === "/api/live") return server.upgrade(request, { data: { kind: "live" } }) ? undefined : new Response("Upgrade failed", { status: 400 });
+    if (path === "/api/term") {
+      const key = url.searchParams.get("key") ?? "";
+      const cols = clamp(Number(url.searchParams.get("cols")), 20, 400, 80);
+      const rows = clamp(Number(url.searchParams.get("rows")), 5, 200, 24);
+      if (!watch.socket()) return new Response("faplex watch is not running", { status: 503 });
+      return server.upgrade(request, { data: { kind: "term", key, cols, rows, pending: [] } }) ? undefined : new Response("Upgrade failed", { status: 400 });
+    }
+    if (path === "/api/theme") return Response.json(theme);
+    if (path === "/api/tail" && request.method === "GET") return tail(url.searchParams.get("key") ?? "", Number(url.searchParams.get("n") ?? 2));
+    if (path === "/api/send" && request.method === "POST") return send(await request.json());
+    if (path === "/api/new" && request.method === "POST") return newSession(await request.json());
+    if (path === "/api/attach" && request.method === "POST") return attach(request, url.searchParams.get("key") ?? "");
+    if (path === "/api/log" && request.method === "POST") {
+      console.log("client:", (await request.text()).slice(0, 1000));
+      return new Response(null, { status: 204 });
+    }
+    if (path.startsWith("/api/")) return new Response("Not found", { status: 404 });
+
+    // Static build output; every other path is the app (client-side routes).
+    if (path !== "/" && !path.includes("..")) {
+      const file = Bun.file(join(dist, path));
+      if (await file.exists()) return new Response(file, { headers: { "cache-control": path.endsWith(".html") ? "no-store" : "public, max-age=31536000, immutable" } });
+    }
+    return new Response(Bun.file(join(dist, "index.html")), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
 }

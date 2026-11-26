@@ -1,3 +1,4 @@
+import { apiFetch, wsUrl, signedOut } from "./endpoint";
 import { useEffect, useRef, useState } from "react";
 import type { WatchState } from "./types.ts";
 
@@ -18,7 +19,7 @@ export function useLive() {
       clearTimeout(timer);
       if (closed || (ws.current && ws.current.readyState <= WebSocket.OPEN)) return;
       setStatus("connecting");
-      const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/live`);
+      const socket = new WebSocket(wsUrl(`/api/live`));
       ws.current = socket;
       socket.onopen = () => {
         retry = 0;
@@ -37,7 +38,7 @@ export function useLive() {
         if (closed) return;
         setStatus("offline");
         // A 401 on upgrade closes as 1006 with no detail: ask the page whether we are signed out.
-        if (e.code === 1006) void fetch("/api/theme").then((r) => r.status === 401 && location.reload());
+        if (e.code === 1006) void apiFetch("/api/theme").then((r) => r.status === 401 && signedOut());
         timer = setTimeout(connect, Math.min(10_000, 500 * 2 ** retry++));
       };
     };

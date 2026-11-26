@@ -1,3 +1,4 @@
+import { apiFetch } from "./endpoint";
 import { useEffect, useState } from "react";
 import type { Session, TailMessage } from "./types.ts";
 
@@ -13,7 +14,7 @@ export function loadTail(s: Session, force = false) {
   if (!force && hit && (hit.loading || hit.updatedAt === s.updatedAt)) return;
   cache.set(s.key, { ...hit, updatedAt: s.updatedAt, loading: true });
   notify(s.key);
-  void fetch(`/api/tail?key=${encodeURIComponent(s.key)}&n=2`)
+  void apiFetch(`/api/tail?key=${encodeURIComponent(s.key)}&n=2`)
     .then((r) => r.json() as Promise<{ messages: TailMessage[]; error?: string }>)
     .then((body) => cache.set(s.key, { updatedAt: s.updatedAt, messages: body.messages, error: body.error, loading: false }))
     .catch((e) => cache.set(s.key, { updatedAt: s.updatedAt, error: String(e), loading: false }))

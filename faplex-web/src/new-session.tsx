@@ -1,3 +1,4 @@
+import { apiFetch } from "./endpoint";
 import { useEffect, useState } from "react";
 import { Loader } from "lucide-react";
 import { toast } from "sonner";
@@ -37,7 +38,7 @@ export function NewSession({ open, onOpenChange, state }: { open: boolean; onOpe
   async function start() {
     setBusy(true);
     try {
-      const r = await fetch("/api/new", {
+      const r = await apiFetch("/api/new", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ machine, harness, dir, prompt }),

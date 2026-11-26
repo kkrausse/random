@@ -1,3 +1,4 @@
+import { apiFetch } from "./endpoint";
 import { useEffect, useRef, useState } from "react";
 import { CircleCheck, CircleDashed, CirclePause, CircleX, GitFork, Loader, MessageCircleQuestion, MessageSquareReply, SendHorizontal, SquareTerminal, X } from "lucide-react";
 import { toast } from "sonner";
@@ -61,7 +62,7 @@ export function SessionCard({ session: s, machine, now, warm }: { session: Sessi
     if (!body || sending) return;
     setSending(true);
     try {
-      const r = await fetch("/api/send", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: s.key, text: body }) });
+      const r = await apiFetch("/api/send", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: s.key, text: body }) });
       const res = (await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }))) as { ok: boolean; error?: string };
       if (res.ok) {
         toast.success(s.status === "working" ? "Queued after the current turn" : "Sent", { description: s.title });

@@ -1,3 +1,4 @@
+import { apiFetch, apiUrl } from "./endpoint";
 // The session's terminal: ghostty-web (WebGL) with the web terminal's touch, wheel and link
 // handling. A tap never raises the keyboard; typing goes through the composer, or straight into
 // the terminal with the keyboard button.
@@ -12,11 +13,11 @@ type Theme = { terminal: ITheme; fontFamily: string; fontSize: number; scrollSen
 let ready: Promise<Theme> | undefined;
 const prepare = () =>
   (ready ??= Promise.all([
-    fetch("/api/theme").then((r) => {
+    apiFetch("/api/theme").then((r) => {
       if (!r.ok) throw new Error(`theme: HTTP ${r.status}`);
       return r.json() as Promise<Theme>;
     }),
-    init({ wasmUrl: "/ghostty-vt.wasm" }),
+    init({ wasmUrl: apiUrl("/ghostty-vt.wasm") }),
   ]).then(([theme]) => {
     document.documentElement.style.setProperty("--terminal-bg", theme.terminal.background ?? "#0c0c0c");
     return theme;
@@ -36,7 +37,7 @@ async function readClipboard() {
 
 /** Paste attempts go to the server's log, so a failure on a phone can be read off diesel2. */
 const report = (event: Record<string, unknown>) =>
-  void fetch("/api/log", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...event, ua: navigator.userAgent }) }).catch(() => {});
+  void apiFetch("/api/log", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...event, ua: navigator.userAgent }) }).catch(() => {});
 
 export type MountedTerminal = Awaited<ReturnType<typeof mountTerminal>>;
 
