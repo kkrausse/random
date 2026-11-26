@@ -420,7 +420,9 @@ function ComposeBar({ ref: area, onSend, raw, onFocusChange }: { ref: React.RefO
         onBlur={() => onFocusChange(false)}
         onKeyDown={(e) => {
           if (e.key !== "Enter") return;
-          if (e.shiftKey) { newline.current = true; return; }
+          // Shift+Enter = new line only on a hardware keyboard. iOS reports shiftKey whenever its
+          // auto-capital Shift is on (start of a sentence), so on a touch screen Return always sends.
+          if (e.shiftKey && !window.matchMedia("(pointer: coarse)").matches) { newline.current = true; return; }
           if (e.keyCode === 229) return; // an input method is confirming text, not Return
           e.preventDefault();
           send();
