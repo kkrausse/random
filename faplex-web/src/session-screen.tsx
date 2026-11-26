@@ -1,7 +1,7 @@
 import { apiFetch, wsUrl } from "./endpoint";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { CloseToMap } from "./walks-panel";
-import { ALargeSmall, ArrowUp, Camera, ChevronLeft, ClipboardPaste, EllipsisVertical, Keyboard, KeyboardOff, Loader, RefreshCcw, RotateCw } from "lucide-react";
+import { ALargeSmall, Camera, ChevronLeft, ClipboardPaste, EllipsisVertical, Keyboard, KeyboardOff, Loader, RefreshCcw, RotateCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -374,7 +374,7 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
 /**
  * A normal text box under the terminal: type or dictate (dictation apps that rewrite their text
  * as they go, like Hex, work here; typed straight into the terminal every rewrite was appended),
- * edit freely, then Send pastes the whole message into the session and presses Enter. The keyboard
+ * edit freely, then Return pastes the whole message into the session and presses Enter. The keyboard
  * button above still types raw keys into the terminal (arrows, Esc, answers to prompts).
  */
 function ComposeBar({ onSend, raw }: { onSend: (text: string) => void; raw: boolean }) {
@@ -398,16 +398,14 @@ function ComposeBar({ onSend, raw }: { onSend: (text: string) => void; raw: bool
         rows={1}
         value={text}
         onChange={(e) => setText(e.target.value)}
+        enterKeyHint="send"
         onKeyDown={(e) => {
-          // Desktop: Enter sends, Shift+Enter is a new line. Phone: the Send button sends.
-          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && !window.matchMedia("(pointer: coarse)").matches) { e.preventDefault(); send(); }
+          // Return sends, phone included (no Send button: user, 11-25); Shift+Enter is a new line.
+          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); }
         }}
         placeholder="Message"
         className="min-h-10 flex-1 resize-none rounded-2xl border border-input bg-secondary/40 px-3 py-2 text-base leading-6 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       />
-      <Button type="submit" size="icon-lg" className="size-10 shrink-0 rounded-full" disabled={!text.trim()} aria-label="Send">
-        <ArrowUp className="size-5" />
-      </Button>
     </form>
   );
 }
