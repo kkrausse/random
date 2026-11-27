@@ -51,9 +51,18 @@ export function ReadView({ sessionKey, session, pending, onSeen }: {
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [messages, pending.length, session?.status, session?.detail]);
 
+  // The keyboard coming up shrinks the view: stay on the newest message if that's where you were.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => { if (stick.current) el.scrollTop = el.scrollHeight; });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const working = session?.status === "working";
   return (
-    <div ref={scroller} className="read-view absolute inset-0 overflow-y-auto overscroll-contain bg-background px-3 pt-3 pb-24 select-text"
+    <div ref={scroller} className="read-view absolute inset-0 overflow-y-auto overscroll-contain bg-background px-3 pt-3 pb-4 select-text"
       onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }}>
       {messages === null && !error && <div className="grid h-full place-items-center"><Loader className="size-5 animate-spin text-muted-foreground" /></div>}
       {error && <p className="mb-3 rounded-md border border-red-500/40 bg-red-500/10 p-2 text-sm text-red-300">Can't read the messages: {error}. The terminal (top right) still works.</p>}

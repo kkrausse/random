@@ -303,16 +303,32 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
   const barButton = cn(buttonVariants({ variant: "ghost", size: "icon-lg" }), "size-10 rounded-full text-muted-foreground");
 
   // A tap on the messages or the terminal closes the keyboard of the Message box (the terminal's own
-  // keyboard, raised for raw keys, stays: taps there are clicks into the session).
+  // keyboard, raised for raw keys, stays: taps there are clicks into the session). A tap, not a
+  // scroll: a finger that moves keeps the keyboard up (user, 11-27).
   useEffect(() => {
-    const onTouch = (e: TouchEvent) => {
+    let start: { x: number; y: number } | null = null;
+    const onStart = (e: TouchEvent) => {
       const compose = composeRef.current;
-      if (!compose || document.activeElement !== compose) return;
       const target = e.target as Element | null;
-      if (target?.closest?.(".read-view, .terminal-host")) compose.blur();
+      start = compose && document.activeElement === compose && e.touches.length === 1 && target?.closest?.(".read-view, .terminal-host")
+        ? { x: e.touches[0]!.clientX, y: e.touches[0]!.clientY } : null;
     };
-    window.addEventListener("touchstart", onTouch, { capture: true, passive: true });
-    return () => window.removeEventListener("touchstart", onTouch, { capture: true });
+    const onMove = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (start && t && Math.hypot(t.clientX - start.x, t.clientY - start.y) > 10) start = null;
+    };
+    const onEnd = () => {
+      if (start && document.activeElement === composeRef.current) composeRef.current?.blur();
+      start = null;
+    };
+    window.addEventListener("touchstart", onStart, { capture: true, passive: true });
+    window.addEventListener("touchmove", onMove, { capture: true, passive: true });
+    window.addEventListener("touchend", onEnd, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener("touchstart", onStart, { capture: true });
+      window.removeEventListener("touchmove", onMove, { capture: true });
+      window.removeEventListener("touchend", onEnd, { capture: true });
+    };
   }, []);
 
   const redrawRef = useRef<() => void>(() => {});
