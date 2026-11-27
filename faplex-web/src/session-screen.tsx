@@ -298,7 +298,6 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
   }, [sessionKey]);
 
   const reconnectRef = useRef<() => void>(() => {});
-  const pasteRef = useRef<HTMLButtonElement>(null);
   const barButton = cn(buttonVariants({ variant: "ghost", size: "icon-lg" }), "size-10 rounded-full text-muted-foreground");
 
   // A tap on the messages or the terminal closes the keyboard of the Message box (the terminal's own
@@ -314,13 +313,6 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
     return () => window.removeEventListener("touchstart", onTouch, { capture: true });
   }, []);
 
-  // Paste as in bun-web-terminal: a native click listener and one clipboard read.
-  useEffect(() => {
-    const paste = pasteRef.current!;
-    const onPaste = () => void term.current?.pasteClipboard();
-    paste.addEventListener("click", onPaste);
-    return () => paste.removeEventListener("click", onPaste);
-  }, []);
   const redrawRef = useRef<() => void>(() => {});
 
   const fontStep = (d: number) => {
@@ -365,6 +357,10 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
             <EllipsisVertical className="size-5" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-44">
+            {/* Fallback for a picture iOS won't paste into the box: one clipboard read. */}
+            <DropdownMenuItem onClick={() => void term.current?.pasteClipboard()}>
+              <ClipboardPaste /> Paste from clipboard
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => redrawRef.current()}>
               <RefreshCcw /> Redraw
             </DropdownMenuItem>
@@ -396,8 +392,9 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
       <ComposeBar ref={composeRef} onSend={(text) => { term.current?.sendText(text); if (showRead) setPending((all) => [...all, { text, at: Date.now() }]); }} raw={keyboardUp} onFocusChange={setComposing}
         onPasteFiles={(files) => void term.current?.pasteFiles(files)}
         leading={
-          // Camera and Paste beside the box (they floated over the screen until 11-27). Pressing them
-          // keeps focus where it is, so the keyboard doesn't drop.
+          // Only the camera beside the box (Camera, Paste and the keyboard floated over the screen
+          // until 11-27; a picture now pastes into the box, and Paste is in ⋮). Pressing it keeps
+          // focus where it is, so the keyboard doesn't drop.
           <div className="flex shrink-0 items-center gap-1 pb-0.5" onPointerDown={(e) => e.preventDefault()}>
             {/* Camera: take a photo and hand it to the session like a pasted screenshot (uploaded to the
                 session's machine, its path typed in, which Claude reads as an image). */}
@@ -406,10 +403,6 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
               <input type="file" accept="image/*" capture="environment" className="hidden"
                 onChange={(e) => { const files = [...(e.currentTarget.files ?? [])]; e.currentTarget.value = ""; if (files.length) void term.current?.pasteFiles(files); }} />
             </label>
-            {/* A plain button with a native listener, exactly as bun-web-terminal's toolbar. */}
-            <button ref={pasteRef} type="button" aria-label="Paste" className={barButton}>
-              <ClipboardPaste className="size-5" />
-            </button>
           </div>
         }
         trailing={keyboardUp && (
