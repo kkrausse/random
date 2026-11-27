@@ -394,6 +394,7 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
         )}
       </div>
       <ComposeBar ref={composeRef} onSend={(text) => { term.current?.sendText(text); if (showRead) setPending((all) => [...all, { text, at: Date.now() }]); }} raw={keyboardUp} onFocusChange={setComposing}
+        onPasteFiles={(files) => void term.current?.pasteFiles(files)}
         leading={
           // Camera and Paste beside the box (they floated over the screen until 11-27). Pressing them
           // keeps focus where it is, so the keyboard doesn't drop.
@@ -429,7 +430,7 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
  * edit freely, then Return pastes the whole message into the session and presses Enter. The keyboard
  * button above still types raw keys into the terminal (arrows, Esc, answers to prompts).
  */
-function ComposeBar({ ref: area, onSend, raw, onFocusChange, leading, trailing }: { ref: React.RefObject<HTMLTextAreaElement | null>; onSend: (text: string) => void; raw: boolean; onFocusChange: (on: boolean) => void; leading?: React.ReactNode; trailing?: React.ReactNode }) {
+function ComposeBar({ ref: area, onSend, onPasteFiles, raw, onFocusChange, leading, trailing }: { ref: React.RefObject<HTMLTextAreaElement | null>; onSend: (text: string) => void; onPasteFiles?: (files: File[]) => void; raw: boolean; onFocusChange: (on: boolean) => void; leading?: React.ReactNode; trailing?: React.ReactNode }) {
   const [text, setText] = useState("");
   const grow = () => { const el = area.current; if (!el) return; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 160)}px`; };
   useLayoutEffect(grow, [text]);
@@ -458,6 +459,14 @@ function ComposeBar({ ref: area, onSend, raw, onFocusChange, leading, trailing }
           newline.current = false;
         }}
         enterKeyHint="send"
+        // A picture pasted into the box (iOS's Paste on a tap) goes to the session like the Paste
+        // button's: uploaded, its path typed in. Text pastes into the box as usual.
+        onPaste={(e) => {
+          const files = [...(e.clipboardData?.files ?? [])];
+          if (!files.length || !onPasteFiles) return;
+          e.preventDefault();
+          onPasteFiles(files);
+        }}
         onFocus={() => onFocusChange(true)}
         onBlur={() => onFocusChange(false)}
         onKeyDown={(e) => {
