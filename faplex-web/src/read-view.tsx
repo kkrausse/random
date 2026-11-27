@@ -4,7 +4,9 @@
 // whenever the session changes. Prompts, menus and questions still need the terminal: the session
 // screen switches there when the session needs input.
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { Loader } from "lucide-react";
+import { Copy, Loader } from "lucide-react";
+import { toast } from "sonner";
+import { copyText } from "./clipboard";
 import { apiFetch } from "./endpoint";
 import { cn } from "@/lib/utils";
 import type { Session } from "./types.ts";
@@ -86,14 +88,24 @@ function MessageBlock({ m, sending }: { m: Message; sending?: boolean }) {
   if (m.role === "user") return (
     <div className="flex flex-col items-end">
       <div className={cn("max-w-[88%] rounded-2xl rounded-br-md bg-primary/15 px-3 py-2 text-[15px] leading-relaxed whitespace-pre-wrap break-words", sending && "opacity-60")}>{m.text}</div>
-      <span className="mt-0.5 text-[10px] text-muted-foreground">{sending ? "sending…" : time(m.at)}</span>
+      <span className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">{!sending && <CopyButton text={m.text} />}{sending ? "sending…" : time(m.at)}</span>
     </div>
   );
   return (
     <div className="text-[15px] leading-relaxed break-words">
       <Markdown text={m.text} />
-      <span className="text-[10px] text-muted-foreground">{time(m.at)}</span>
+      <span className="flex items-center gap-1 text-[10px] text-muted-foreground">{time(m.at)}<CopyButton text={m.text} /></span>
     </div>
+  );
+}
+
+// The whole message, as written (Markdown and all): selecting a long reply by hand is fiddly.
+function CopyButton({ text }: { text: string }) {
+  return (
+    <button type="button" aria-label="Copy message" className="-my-1 rounded p-1.5 text-muted-foreground active:bg-muted"
+      onClick={() => copyText(text).then(() => toast.success("Copied", { duration: 1200 }), (e) => toast.error("Copy failed", { description: String(e) }))}>
+      <Copy className="size-3.5" />
+    </button>
   );
 }
 
