@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, Loader, Plus, Search, TriangleAlert, X } from "lucide-react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
@@ -10,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { groupOf, HARNESS_LABEL, type Group } from "./format.ts";
 import type { useLive } from "./live.ts";
 import { NewSession, startEmpty, startable } from "./new-session.tsx";
+import { modelPickFor, NewChoices } from "./new-choices.tsx";
 import { SessionCard } from "./session-card.tsx";
 import type { Harness, Session } from "./types.ts";
 import { CloseToMap } from "./walks-panel";
@@ -43,10 +43,12 @@ export function SessionList({ live }: { live: ReturnType<typeof useLive> }) {
   const pick = options.find((o) => o.machine === chosen?.machine && o.harness === chosen?.harness)
     ?? options.find((o) => o.machine === state?.lastPick?.machine && o.harness === state?.lastPick?.harness) ?? options[0];
   const choose = (o: { machine: string; harness: Harness }) => { setChosen(o); localStorage.setItem("faplex.newPick", JSON.stringify({ machine: o.machine, harness: o.harness })); };
+  const [choicesOpen, setChoicesOpen] = useState(false);
   const quick = () => {
     if (!pick) return setNewOpen(true);
     setStarting(true);
-    void startEmpty(pick.machine, pick.harness).finally(() => setStarting(false));
+    const mp = modelPickFor(pick);
+    void startEmpty(pick.machine, pick.harness, undefined, { model: mp.model, effort: mp.effort }).finally(() => setStarting(false));
   };
 
   const machines = new Map(state?.machines.map((m) => [m.id, m]));
@@ -88,21 +90,9 @@ export function SessionList({ live }: { live: ReturnType<typeof useLive> }) {
               <Button size="icon" aria-label={pick ? `New ${HARNESS_LABEL[pick.harness]} session on ${pick.machine}` : "New session"} className="w-10 rounded-r-none" disabled={!state || starting} onClick={quick}>
                 {starting ? <Loader className="animate-spin" /> : <Plus />}
               </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger render={<Button size="sm" aria-label="Which harness + starts" className="h-8 gap-1 rounded-l-none border-l border-primary-foreground/20 px-2.5 text-xs" disabled={!state || starting} />}>
-                  {pick ? HARNESS_LABEL[pick.harness] : ""}<ChevronDown />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-48">
-                  {options.map((o) => (
-                    <DropdownMenuItem key={`${o.machine}/${o.harness}`} onClick={() => choose(o)}>
-                      <Check className={cn("size-4", o !== pick && "invisible")} />
-                      <span className="size-1.5 rounded-full" style={{ background: o.color }} /> {HARNESS_LABEL[o.harness]} on {o.machine}
-                    </DropdownMenuItem>
-                  ))}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setNewOpen(true)}>More options (folder, prompt)…</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <Button size="sm" aria-label="What + starts" className="h-8 max-w-36 gap-1 rounded-l-none border-l border-primary-foreground/20 px-2.5 text-xs" disabled={!state || starting} onClick={() => setChoicesOpen(true)}>
+                <span className="truncate">{pick ? `${HARNESS_LABEL[pick.harness]}${modelPickFor(pick).name ? ` · ${modelPickFor(pick).name!.split(" · ")[0]}` : ""}` : ""}</span><ChevronDown className="shrink-0" />
+              </Button>
             </div>
           </div>
         </div>
@@ -194,6 +184,7 @@ export function SessionList({ live }: { live: ReturnType<typeof useLive> }) {
       </main>
 
       {state && <NewSession open={newOpen} onOpenChange={setNewOpen} state={state} />}
+      <NewChoices open={choicesOpen} onOpenChange={setChoicesOpen} options={options} pick={pick} onPick={choose} onMore={() => { setChoicesOpen(false); setNewOpen(true); }} />
     </div>
   );
 }

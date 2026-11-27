@@ -12,8 +12,8 @@ import { openSession } from "./router.ts";
 import type { Harness, WatchState } from "./types.ts";
 
 /** Start an empty chat (no prompt) and open it straight away: what + does (user, 11-26). */
-export async function startEmpty(machine: string, harness: Harness, dir?: string) {
-  const r = await apiFetch("/api/new", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ machine, harness, dir: dir ?? "", prompt: "" }) });
+export async function startEmpty(machine: string, harness: Harness, dir?: string, choice: { model?: string; effort?: string } = {}) {
+  const r = await apiFetch("/api/new", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ machine, harness, dir: dir ?? "", prompt: "", ...choice }) });
   const res = (await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }))) as { ok: boolean; key?: string; error?: string };
   if (!res.ok || !res.key) { toast.error("Could not start", { description: res.error, duration: 8000 }); return; }
   openSession(res.key);

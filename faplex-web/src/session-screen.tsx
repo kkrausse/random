@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { ReadView, type Pending } from "./read-view";
 import { ModelPicker } from "./model-picker";
 import { CloseToMap } from "./walks-panel";
-import { ALargeSmall, Camera, ChevronDown, ChevronLeft, ClipboardPaste, EllipsisVertical, Loader, MessageSquareText, RefreshCcw, RotateCw, SquareTerminal } from "lucide-react";
+import { ALargeSmall, Archive, Camera, ChevronDown, ChevronLeft, ClipboardPaste, EllipsisVertical, Loader, MessageSquareText, RefreshCcw, RotateCw, SquareTerminal } from "lucide-react";
 import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -317,6 +317,20 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
 
   const redrawRef = useRef<() => void>(() => {});
 
+  // Stop (if running) and archive, as x in faplex; back to the list once it's done.
+  const archive = async () => {
+    const id = toast.loading(session?.stoppable ? "Stopping and archiving…" : "Archiving…");
+    try {
+      const r = await apiFetch("/api/archive", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: sessionKey }) });
+      const b = (await r.json()) as { ok: boolean; error?: string; note?: string };
+      if (!b.ok) throw new Error(b.error ?? `HTTP ${r.status}`);
+      toast.success("Archived", { id, description: b.note, duration: 2000 });
+      goBack();
+    } catch (e) {
+      toast.error("Couldn't archive", { id, description: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
   const fontStep = (d: number) => {
     const t = term.current;
     if (!t) return;
@@ -368,6 +382,10 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
             <DropdownMenuItem onClick={() => void term.current?.pasteClipboard()}>
               <ClipboardPaste /> Paste from clipboard
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={archive}>
+              <Archive /> {session?.stoppable ? "Stop and archive" : "Archive"}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => redrawRef.current()}>
               <RefreshCcw /> Redraw
             </DropdownMenuItem>

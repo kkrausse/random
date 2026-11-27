@@ -160,6 +160,36 @@ async function run(args: string[], stdin?: string, timeoutMs = 60_000) {
 
 const isKey = (key: unknown): key is string => typeof key === "string" && /^[^/\s]+\/[a-z-]+:[\w.-]+$/.test(key);
 
+// What + can start a session with, per harness: models and their efforts. Claude has no list to
+// ask, but its CLI documents these aliases (each the latest of its line) and efforts; OpenCode's
+// come from its API; Codex keeps its own list (~/.codex/models_cache.json, models it shows).
+type Choice = { id: string; name: string; efforts: string[] };
+const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+const CLAUDE_MODELS: Choice[] = ["fable", "opus", "sonnet", "haiku"].map((id) => ({ id, name: id[0]!.toUpperCase() + id.slice(1), efforts: CLAUDE_EFFORTS }));
+async function choices(machine: string, harness: string) {
+  try {
+    if (!/^[\w.-]+$/.test(machine)) return new Response("Bad machine", { status: 400 });
+    if (harness === "claude") return Response.json({ models: CLAUDE_MODELS });
+    if (harness === "opencode" || harness === "opencode-mini") {
+      const r = await models(`${machine}/${harness}:x`).then((r) => r.json()) as { models?: { id: string; providerID: string; name: string; variants: string[] }[]; error?: string };
+      if (r.error) throw new Error(r.error);
+      return Response.json({ models: (r.models ?? []).map((m) => ({ id: `${m.providerID}/${m.id}`, name: `${m.name} · ${m.providerID}`, efforts: m.variants })) });
+    }
+    if (harness === "codex") {
+      const ssh = sshAlias(machine);
+      const text = ssh
+        ? await new Response(Bun.spawn(["ssh", "-o", "BatchMode=yes", ssh, "cat ~/.codex/models_cache.json"], { stdout: "pipe", timeout: 20_000 }).stdout).text()
+        : readFileSync(join(homedir(), ".codex", "models_cache.json"), "utf8");
+      const list = (JSON.parse(text).models ?? []) as { slug: string; display_name?: string; visibility?: string; supported_reasoning_levels?: { effort: string }[] }[];
+      return Response.json({ models: list.filter((m) => m.visibility !== "hide").map((m) => ({ id: m.slug, name: m.display_name ?? m.slug, efforts: (m.supported_reasoning_levels ?? []).map((l) => l.effort) })) });
+    }
+    return Response.json({ models: [] });
+  } catch (e) {
+    console.log(`choices ${machine}/${harness}: ${e instanceof Error ? e.message : e}`);
+    return Response.json({ models: [], error: e instanceof Error ? e.message : String(e) }, { status: 502 });
+  }
+}
+
 // OpenCode sessions: list the models and switch a session's, through OpenCode's own API
 // (`opencode api` on the session's machine, over ssh for remote ones). The app's model picker.
 async function opencodeApi(machine: string, args: string[]) {
@@ -259,12 +289,15 @@ async function send(body: { key?: unknown; text?: unknown }) {
   return code === 0 ? Response.json({ ok: true }) : Response.json({ ok: false, error: err || `send exited ${code}` }, { status: 409 });
 }
 
-async function newSession(body: { machine?: unknown; harness?: unknown; dir?: unknown; prompt?: unknown }) {
+async function newSession(body: { machine?: unknown; harness?: unknown; dir?: unknown; prompt?: unknown; model?: unknown; effort?: unknown }) {
   if (typeof body.machine !== "string" || typeof body.harness !== "string") return new Response("Bad request", { status: 400 });
   const args = ["new", "--machine", body.machine, "--harness", body.harness, "--background"];
   if (typeof body.dir === "string" && body.dir.trim()) args.push("--dir", body.dir.trim());
   if (typeof body.prompt === "string" && body.prompt.trim()) args.push("--prompt", body.prompt.trim());
+  if (typeof body.model === "string" && body.model.trim()) args.push("--model", body.model.trim());
+  if (typeof body.effort === "string" && body.effort.trim()) args.push("--effort", body.effort.trim());
   const { out, err, code } = await run(args, undefined, 60_000);
+  if (code !== 0) console.log(`new ${args.slice(1).join(" ")}: ${err || `exit ${code}`}`);
   if (code === 0) return Response.json({ ok: true, key: out.trim().split("\n").at(-1) });
   if (code === 3) return Response.json({ ok: false, error: "That folder's trust prompt needs answering: start this one from faplex in a terminal once." }, { status: 409 });
   return Response.json({ ok: false, error: err || `new exited ${code}` }, { status: 409 });
@@ -363,7 +396,15 @@ async function route(request: Request, server: Server, url: URL): Promise<Respon
     if (path === "/api/tail" && request.method === "GET") return tail(url.searchParams.get("key") ?? "", Number(url.searchParams.get("n") ?? 2));
     if (path === "/api/messages" && request.method === "GET") return messages(url.searchParams.get("key") ?? "");
     if (path === "/api/models" && request.method === "GET") return models(url.searchParams.get("key") ?? "");
+    if (path === "/api/choices" && request.method === "GET") return choices(url.searchParams.get("machine") ?? "", url.searchParams.get("harness") ?? "");
     if (path === "/api/model" && request.method === "POST") return switchModel(await request.json());
+    if (path === "/api/archive" && request.method === "POST") {
+      const { key } = (await request.json()) as { key?: unknown };
+      if (!isKey(key)) return new Response("Bad key", { status: 400 });
+      const { err, code } = await run(["archive", key], undefined, 60_000);
+      console.log(`archive ${key}: ${code === 0 ? "ok" : err || `exit ${code}`}${code === 0 && err ? ` (${err})` : ""}`);
+      return Response.json(code === 0 ? { ok: true, note: err || undefined } : { ok: false, error: err || `archive exited ${code}` }, { status: code === 0 ? 200 : 409 });
+    }
     if (path === "/api/send" && request.method === "POST") return send(await request.json());
     if (path === "/api/new" && request.method === "POST") return newSession(await request.json());
     if (path === "/api/attach" && request.method === "POST") return attach(request, url.searchParams.get("key") ?? "");
