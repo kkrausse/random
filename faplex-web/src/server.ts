@@ -53,7 +53,15 @@ const server = Bun.serve<Data>({
     // From an app showing <FaplexEmbed>: CORS, and a token instead of the cookie (embed-auth.ts).
     if (embedOrigin(origin) && auth.isSameOrigin(new Request(request.url), peer)) {
       const cors = { "access-control-allow-origin": origin!, "access-control-allow-headers": "authorization, content-type, x-filename", "access-control-allow-methods": "GET, POST", "access-control-max-age": "600", vary: "origin", "cache-control": "no-store" };
-      if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+      if (request.method === "OPTIONS") {
+        // A header the app asks for that is not allowed makes the browser drop the request unseen
+        // (pasted pictures, 11-27): log every preflight, and loudly when one would be refused.
+        const asked = (request.headers.get("access-control-request-headers") ?? "").toLowerCase().split(",").map((h) => h.trim()).filter(Boolean);
+        const allowed = cors["access-control-allow-headers"].split(", ");
+        const refused = asked.filter((h) => !allowed.includes(h));
+        console.log(`embed preflight ${new URL(request.url).pathname} from ${origin} headers=${asked.join(",") || "-"}${refused.length ? ` REFUSED: ${refused.join(",")}` : ""}`);
+        return new Response(null, { status: 204, headers: cors });
+      }
       const url = new URL(request.url);
       let response: Response | undefined;
       if (url.pathname === "/api/embed/login" && request.method === "POST") {
@@ -196,7 +204,7 @@ async function newSession(body: { machine?: unknown; harness?: unknown; dir?: un
 // A file pasted on the phone: saved on the session's machine, and its path is typed at the prompt
 // (how a harness takes an image). Remote machines get it over ssh, under /tmp/faplex-web.
 async function attach(request: Request, key: string) {
-  if (!isKey(key)) return new Response("Bad key", { status: 400 });
+  if (!isKey(key)) { console.log(`attach: bad key ${JSON.stringify(key).slice(0, 80)}`); return new Response("Bad key", { status: 400 }); }
   const name = (decodeURIComponent(request.headers.get("x-filename") ?? "") || "pasted")
     .replace(/[^A-Za-z0-9._-]+/g, "_")
     .slice(-80);
@@ -209,6 +217,7 @@ async function attach(request: Request, key: string) {
     const path = join(dir, file);
     await Bun.write(path, bytes);
     await chmod(path, 0o600);
+    console.log(`attach ${key} ${file} ${bytes.length} B -> ${path}`);
     return Response.json({ path });
   }
   const dir = "/tmp/faplex-web";
@@ -219,7 +228,11 @@ async function attach(request: Request, key: string) {
     timeout: 300_000,
   });
   const [err, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
-  if (code !== 0) return new Response(`copy to ${ssh} failed: ${err.trim() || `ssh exited ${code}`}`, { status: 502 });
+  if (code !== 0) {
+    console.log(`attach ${key} ${file} ${bytes.length} B: copy to ${ssh} failed: ${err.trim() || `ssh exited ${code}`}`);
+    return new Response(`copy to ${ssh} failed: ${err.trim() || `ssh exited ${code}`}`, { status: 502 });
+  }
+  console.log(`attach ${key} ${file} ${bytes.length} B -> ${ssh}:${dir}/${file}`);
   return Response.json({ path: `${dir}/${file}` });
 }
 

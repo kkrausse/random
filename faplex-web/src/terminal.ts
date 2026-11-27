@@ -7,6 +7,7 @@ import { installTerminalTouchControls } from "../../bun-web-terminal/src/touch.t
 import { forwardWheelSteps, installScrolling } from "../../bun-web-terminal/src/scroll.ts";
 import { installLinkClicks, terminalLinkAt } from "../../bun-web-terminal/src/links.ts";
 import { toast } from "sonner";
+import { copyText } from "./clipboard";
 
 type Theme = { terminal: ITheme; fontFamily: string; fontSize: number; scrollSensitivity?: number };
 
@@ -102,6 +103,26 @@ export async function mountTerminal(
     },
   );
 
+  // A long-press selection on a phone has no copy menu (that is a desktop right-click): lifting the
+  // finger copies what was selected. On the window, as the touch controls stop the host's events;
+  // the copy waits a tick for their final selection update.
+  let touching = false, touchSelected = false;
+  terminal.onSelectionChange(() => { if (touching) touchSelected = true; });
+  const touchStart = (e: TouchEvent) => { touching = host.contains(e.target as Node); touchSelected = false; };
+  const touchDone = () => {
+    if (!touching) return;
+    setTimeout(() => {
+      touching = false;
+      if (!touchSelected) return;
+      touchSelected = false;
+      const text = terminal.getSelection();
+      if (text) copyText(text).then(() => toast.success("Copied", { duration: 1200 }), (e) => toast.error("Copy failed", { description: String(e) }));
+    }, 0);
+  };
+  window.addEventListener("touchstart", touchStart, { capture: true, passive: true });
+  window.addEventListener("touchend", touchDone, { capture: true, passive: true });
+  window.addEventListener("touchcancel", touchDone, { capture: true, passive: true });
+
   terminal.onData(opts.input);
   terminal.onResize(({ cols, rows }) => opts.resize(cols, rows));
   // Ctrl+V belongs to the terminal app; paste stays Cmd+V / Ctrl+Shift+V.
@@ -128,7 +149,10 @@ export async function mountTerminal(
       const paths = await Promise.all(files.map(opts.upload));
       terminal.paste(paths.join(" "));
       toast.success("Pasted", { id, duration: 1500 });
+      report({ upload: "ok", files: files.map((f) => `${f.type} ${f.size} B`) });
     } catch (e) {
+      // A request the browser blocks (CORS) never reaches the server: only this report says so.
+      report({ upload: "error", files: files.map((f) => `${f.type} ${f.size} B`), name: (e as Error)?.name, message: (e as Error)?.message });
       toast.error("Upload failed", { id, description: e instanceof Error ? e.message : String(e) });
     }
   };
@@ -212,6 +236,9 @@ export async function mountTerminal(
     dispose() {
       observer.disconnect();
       document.removeEventListener("paste", onPaste, { capture: true });
+      window.removeEventListener("touchstart", touchStart, { capture: true });
+      window.removeEventListener("touchend", touchDone, { capture: true });
+      window.removeEventListener("touchcancel", touchDone, { capture: true });
       clearTimeout(fitTimer);
       textarea?.removeEventListener("focus", onFocus);
       textarea?.removeEventListener("blur", onBlur);
