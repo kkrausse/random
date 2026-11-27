@@ -52,7 +52,7 @@ const server = Bun.serve<Data>({
     const origin = request.headers.get("origin");
     // From an app showing <FaplexEmbed>: CORS, and a token instead of the cookie (embed-auth.ts).
     if (embedOrigin(origin) && auth.isSameOrigin(new Request(request.url), peer)) {
-      const cors = { "access-control-allow-origin": origin!, "access-control-allow-headers": "authorization, content-type", "access-control-allow-methods": "GET, POST", "access-control-max-age": "600", vary: "origin", "cache-control": "no-store" };
+      const cors = { "access-control-allow-origin": origin!, "access-control-allow-headers": "authorization, content-type, x-filename", "access-control-allow-methods": "GET, POST", "access-control-max-age": "600", vary: "origin", "cache-control": "no-store" };
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
       const url = new URL(request.url);
       let response: Response | undefined;
