@@ -160,6 +160,56 @@ async function run(args: string[], stdin?: string, timeoutMs = 60_000) {
 
 const isKey = (key: unknown): key is string => typeof key === "string" && /^[^/\s]+\/[a-z-]+:[\w.-]+$/.test(key);
 
+// OpenCode sessions: list the models and switch a session's, through OpenCode's own API
+// (`opencode api` on the session's machine, over ssh for remote ones). The app's model picker.
+async function opencodeApi(machine: string, args: string[]) {
+  const ssh = sshAlias(machine);
+  const quote = (a: string) => `'${a.replace(/'/g, `'\\''`)}'`;
+  const cmd = ssh ? ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", ssh, ["opencode", "api", ...args].map(quote).join(" ")] : ["opencode", "api", ...args];
+  const proc = Bun.spawn(cmd, { cwd: faplexCwd, stdout: "pipe", stderr: "pipe", timeout: 30_000 });
+  const [out, err, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+  if (code !== 0) throw new Error(err.trim().split("\n")[0] || `opencode api exited ${code}`);
+  return (out.trim() ? JSON.parse(out) : { data: null }) as { data: any }; // a switch answers with no body
+}
+const opencodeKey = (key: string) => {
+  const m = /^([^/\s]+)\/(opencode(?:-mini)?):([\w.-]+)$/.exec(key);
+  return m ? { machine: m[1]!, id: m[3]! } : undefined;
+};
+const modelLists = new Map<string, { at: number; list: Promise<unknown[]> }>();
+async function models(key: string) {
+  const k = opencodeKey(key);
+  if (!k) return Response.json({ error: "Only OpenCode sessions can switch models here" }, { status: 400 });
+  try {
+    let hit = modelLists.get(k.machine);
+    if (!hit || Date.now() - hit.at > 10 * 60_000) {
+      const list = opencodeApi(k.machine, ["get", "/api/model"]).then((r) => (r.data as any[]).filter((m) => m.type === "chat").map((m) => ({
+        id: m.id, providerID: m.providerID, name: m.name ?? m.id, variants: Array.isArray(m.variants) ? m.variants.map((v: any) => v.id) : [],
+      })));
+      hit = { at: Date.now(), list };
+      modelLists.set(k.machine, hit);
+      list.catch(() => modelLists.delete(k.machine));
+    }
+    const [list, session] = await Promise.all([hit.list, opencodeApi(k.machine, ["get", `/api/session/${k.id}`]).catch(() => ({ data: {} }))]);
+    return Response.json({ models: list, current: session.data?.model ?? null });
+  } catch (e) {
+    console.log(`models ${key}: ${e instanceof Error ? e.message : e}`);
+    return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 502 });
+  }
+}
+async function switchModel(body: { key?: unknown; providerID?: unknown; id?: unknown; variant?: unknown }) {
+  const k = typeof body.key === "string" ? opencodeKey(body.key) : undefined;
+  if (!k || typeof body.id !== "string" || typeof body.providerID !== "string") return new Response("Bad request", { status: 400 });
+  const model = { id: body.id, providerID: body.providerID, ...(typeof body.variant === "string" && body.variant ? { variant: body.variant } : {}) };
+  try {
+    await opencodeApi(k.machine, ["post", `/api/session/${k.id}/model`, "--data", JSON.stringify({ model })]);
+    console.log(`model ${body.key} -> ${model.providerID}/${model.id}${"variant" in model ? ` (${model.variant})` : ""}`);
+    return Response.json({ ok: true });
+  } catch (e) {
+    console.log(`model ${body.key}: ${e instanceof Error ? e.message : e}`);
+    return Response.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 502 });
+  }
+}
+
 // The reading view (Walks): a session's whole messages (`faplex tail --json`), cached until the
 // session changes. One read at a time per session; a reader asking again meanwhile shares it.
 const reads = new Map<string, { updatedAt: number; body: Promise<{ messages: unknown[]; error?: string }> }>();
@@ -312,6 +362,8 @@ async function route(request: Request, server: Server, url: URL): Promise<Respon
     if (path === "/api/theme") return Response.json(theme);
     if (path === "/api/tail" && request.method === "GET") return tail(url.searchParams.get("key") ?? "", Number(url.searchParams.get("n") ?? 2));
     if (path === "/api/messages" && request.method === "GET") return messages(url.searchParams.get("key") ?? "");
+    if (path === "/api/models" && request.method === "GET") return models(url.searchParams.get("key") ?? "");
+    if (path === "/api/model" && request.method === "POST") return switchModel(await request.json());
     if (path === "/api/send" && request.method === "POST") return send(await request.json());
     if (path === "/api/new" && request.method === "POST") return newSession(await request.json());
     if (path === "/api/attach" && request.method === "POST") return attach(request, url.searchParams.get("key") ?? "");

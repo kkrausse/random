@@ -1,6 +1,7 @@
 import { apiFetch, embedded, wsUrl } from "./endpoint";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ReadView, type Pending } from "./read-view";
+import { ModelPicker } from "./model-picker";
 import { CloseToMap } from "./walks-panel";
 import { ALargeSmall, Camera, ChevronDown, ChevronLeft, ClipboardPaste, EllipsisVertical, Loader, MessageSquareText, RefreshCcw, RotateCw, SquareTerminal } from "lucide-react";
 import { toast } from "sonner";
@@ -60,6 +61,7 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
     else Object.assign(el.style, { width: "", height: "", right: "", bottom: "" });
   }, [showRead]);
   const [pending, setPending] = useState<Pending[]>([]);
+  const [picking, setPicking] = useState(false);
   const seen = useCallback((p: Pending) => setPending((all) => all.filter((x) => x !== p)), []);
   const listedRef = useRef(listed);
   listedRef.current = listed;
@@ -337,6 +339,11 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
             {session && <MachineChip machine={machine} id={session.machine} />}
             {session && <span>{HARNESS_LABEL[session.harness]}</span>}
+            {session?.harness.startsWith("opencode") && (
+              <button type="button" className="inline-flex max-w-32 items-center gap-0.5 truncate rounded border border-border px-1 text-foreground" onClick={() => setPicking(true)}>
+                <span className="truncate">{session.model || "model"}</span><ChevronDown className="size-3 shrink-0" />
+              </button>
+            )}
             {session && <span>{STATUS_LABEL[session.status]}</span>}
             {session?.context && <span className="tabular-nums">{tokens(session.context.usedTokens)}{session.context.limitTokens ? ` / ${tokens(session.context.limitTokens)}` : ""} tok</span>}
             {conn !== "open" && (
@@ -389,6 +396,7 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
           </div>
         )}
       </div>
+      {session?.harness.startsWith("opencode") && <ModelPicker sessionKey={sessionKey} open={picking} onOpenChange={setPicking} />}
       <ComposeBar ref={composeRef} onSend={(text) => { term.current?.sendText(text); if (showRead) setPending((all) => [...all, { text, at: Date.now() }]); }} raw={keyboardUp} onFocusChange={setComposing}
         onPasteFiles={(files) => void term.current?.pasteFiles(files)}
         leading={
