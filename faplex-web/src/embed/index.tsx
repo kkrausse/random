@@ -13,13 +13,14 @@ import { App } from "../app";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiUrl, configureEndpoint } from "../endpoint";
+import { setCopyWriter } from "../clipboard";
 import { setMemoryRouting, usePath } from "../router";
 import { setCloseHandler } from "../walks-panel";
 
 const storeKey = (server: string) => `faplex-token:${server}`;
 
 /** `onNavigate` gets every screen change (list "/" or "/s/<key>"), so a host can reopen there after a reload. */
-export function FaplexEmbed({ server, start = "/", onClose, onNavigate }: { server: string; start?: string; onClose?: () => void; onNavigate?: (path: string) => void }) {
+export function FaplexEmbed({ server, start = "/", onClose, onNavigate, copyText }: { server: string; start?: string; onClose?: () => void; onNavigate?: (path: string) => void; /** Writes copied text when the page has no navigator.clipboard (e.g. the app's native pasteboard). */ copyText?: (text: string) => Promise<unknown> }) {
   const [token, setToken] = useState(() => localStorage.getItem(storeKey(server)));
   const [ready, setReady] = useState(false);
   useLayoutEffect(() => {
@@ -29,6 +30,7 @@ export function FaplexEmbed({ server, start = "/", onClose, onNavigate }: { serv
     setReady(true);
   }, [server, token]); // eslint-disable-line react-hooks/exhaustive-deps -- start is where it opens, not a live prop
   setCloseHandler(onClose ?? null);
+  setCopyWriter(copyText ?? null);
   return (
     <div className="faplex dark min-h-full">
       {ready && onNavigate && <ReportPath onNavigate={onNavigate} />}
