@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { HARNESS_LABEL, STATUS_LABEL } from "./format.ts";
+import { HARNESS_LABEL, STATUS_LABEL, tokens } from "./format.ts";
 import type { useLive } from "./live.ts";
 import { goBack } from "./router.ts";
 import { MachineChip, StatusIcon } from "./session-card.tsx";
@@ -333,6 +333,7 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
             {session && <MachineChip machine={machine} id={session.machine} />}
             {session && <span>{HARNESS_LABEL[session.harness]}</span>}
             {session && <span>{STATUS_LABEL[session.status]}</span>}
+            {session?.context && <span className="tabular-nums">{tokens(session.context.usedTokens)}{session.context.limitTokens ? ` / ${tokens(session.context.limitTokens)}` : ""} tok</span>}
             {conn !== "open" && (
               <span className={cn(conn === "offline" ? "text-red-400" : "text-amber-400")}>
                 {conn === "waiting" ? "waiting for faplex to list it…" : conn === "offline" ? "disconnected · retrying" : "connecting…"}
