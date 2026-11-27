@@ -1,7 +1,8 @@
-import { apiFetch, wsUrl } from "./endpoint";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { apiFetch, embedded, wsUrl } from "./endpoint";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ReadView, type Pending } from "./read-view";
 import { CloseToMap } from "./walks-panel";
-import { ALargeSmall, Camera, ChevronLeft, ClipboardPaste, EllipsisVertical, Keyboard, KeyboardOff, Loader, RefreshCcw, RotateCw } from "lucide-react";
+import { ALargeSmall, Camera, ChevronLeft, ClipboardPaste, EllipsisVertical, Keyboard, KeyboardOff, Loader, MessageSquareText, RefreshCcw, RotateCw, SquareTerminal } from "lucide-react";
 import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -16,6 +17,7 @@ type Conn = "starting" | "connecting" | "open" | "waiting" | "offline";
 
 const FONT_KEY = "faplex-web.fontSize";
 const NOT_LISTED = "is not a session this watch lists";
+const VIEW_KEY = "faplex.view";
 
 export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: ReturnType<typeof useLive> }) {
   const session = live.state?.sessions.find((s) => s.key === sessionKey);
@@ -37,6 +39,28 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
     else compose?.focus({ preventScroll: true });
   };
   const listed = !!session?.openable;
+
+  // Inside Walks: the reading view by default (read-view.tsx), the terminal one tap away, and
+  // switched to by itself while the session needs an answer (menus, questions, permissions).
+  // faplex's own site keeps the terminal only.
+  const readable = embedded() && !!session && (session.harness === "claude" || session.harness.startsWith("opencode"));
+  const [view, setView] = useState<"read" | "term">(() => (localStorage.getItem(VIEW_KEY) === "term" ? "term" : "read"));
+  const choose = (v: "read" | "term") => { autoTerm.current = false; setView(v); localStorage.setItem(VIEW_KEY, v); };
+  const autoTerm = useRef(false);
+  useEffect(() => {
+    if (!readable) return;
+    if (session?.status === "needs" && view === "read") { autoTerm.current = true; setView("term"); }
+    else if (session?.status !== "needs" && autoTerm.current) { autoTerm.current = false; setView("read"); }
+  }, [readable, session?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+  const showRead = readable && view === "read";
+  useLayoutEffect(() => {
+    const el = hostRef.current;
+    if (!el) return;
+    if (showRead) Object.assign(el.style, { width: `${el.clientWidth}px`, height: `${el.clientHeight}px`, right: "auto", bottom: "auto" });
+    else Object.assign(el.style, { width: "", height: "", right: "", bottom: "" });
+  }, [showRead]);
+  const [pending, setPending] = useState<Pending[]>([]);
+  const seen = useCallback((p: Pending) => setPending((all) => all.filter((x) => x !== p)), []);
   const listedRef = useRef(listed);
   listedRef.current = listed;
 
@@ -316,6 +340,11 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
             )}
           </div>
         </div>
+        {readable && (
+          <Button variant="ghost" size="icon-lg" aria-label={showRead ? "Show the terminal" : "Show the messages"} onClick={() => choose(showRead ? "term" : "read")}>
+            {showRead ? <SquareTerminal className="size-5" /> : <MessageSquareText className="size-5" />}
+          </Button>
+        )}
         <CloseToMap />
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button variant="ghost" size="icon-lg" aria-label="More" />}>
@@ -340,8 +369,11 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
       </header>
 
       <div className="relative min-h-0 flex-1">
-        <div ref={hostRef} className="terminal-host absolute inset-0 overflow-hidden" />
-        {conn !== "open" && conn !== "offline" && (
+        {/* Invisible (not unmounted) under the reading view, its size frozen: the keyboard coming
+            and going doesn't resize the session, and switching back doesn't make it redraw. */}
+        <div ref={hostRef} className={cn("terminal-host absolute inset-0 overflow-hidden", showRead && "invisible")} />
+        {showRead && <ReadView sessionKey={sessionKey} session={session} pending={pending} onSeen={seen} />}
+        {!showRead && conn !== "open" && conn !== "offline" && (
           <div className="pointer-events-none absolute inset-0 grid place-items-center">
             <Loader className="size-5 animate-spin text-muted-foreground" />
           </div>
@@ -377,7 +409,7 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
           </Button>
         </div>
       </div>
-      <ComposeBar ref={composeRef} onSend={(text) => term.current?.sendText(text)} raw={keyboardUp} onFocusChange={setComposing} />
+      <ComposeBar ref={composeRef} onSend={(text) => { term.current?.sendText(text); if (showRead) setPending((all) => [...all, { text, at: Date.now() }]); }} raw={keyboardUp} onFocusChange={setComposing} />
     </div>
   );
 }

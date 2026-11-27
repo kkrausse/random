@@ -160,6 +160,25 @@ async function run(args: string[], stdin?: string, timeoutMs = 60_000) {
 
 const isKey = (key: unknown): key is string => typeof key === "string" && /^[^/\s]+\/[a-z-]+:[\w.-]+$/.test(key);
 
+// The reading view (Walks): a session's whole messages (`faplex tail --json`), cached until the
+// session changes. One read at a time per session; a reader asking again meanwhile shares it.
+const reads = new Map<string, { updatedAt: number; body: Promise<{ messages: unknown[]; error?: string }> }>();
+async function messages(key: string) {
+  if (!isKey(key)) return new Response("Bad key", { status: 400 });
+  const updatedAt = watch.session(key)?.updatedAt ?? 0;
+  let hit = reads.get(key);
+  if (!hit || hit.updatedAt !== updatedAt) {
+    const body = run(["tail", key, "-n", "400", "--json"], undefined, 30_000).then(({ out, err, code }) => {
+      if (code !== 0) return { messages: [], error: err || `tail exited ${code}` };
+      try { return { messages: JSON.parse(out) as unknown[] }; } catch { return { messages: [], error: "tail --json: not JSON (faplex too old?)" }; }
+    });
+    hit = { updatedAt, body };
+    reads.set(key, hit);
+    void body.then((b) => { if (b.error) { console.log(`messages ${key}: ${b.error}`); if (reads.get(key) === hit) reads.delete(key); } });
+  }
+  return Response.json({ ...(await hit.body), updatedAt });
+}
+
 // Tails are cached per session until it changes, and run a few at a time.
 const tails = new Map<string, { updatedAt: number; body: unknown }>();
 let tailsRunning = 0;
@@ -292,6 +311,7 @@ async function route(request: Request, server: Server, url: URL): Promise<Respon
     }
     if (path === "/api/theme") return Response.json(theme);
     if (path === "/api/tail" && request.method === "GET") return tail(url.searchParams.get("key") ?? "", Number(url.searchParams.get("n") ?? 2));
+    if (path === "/api/messages" && request.method === "GET") return messages(url.searchParams.get("key") ?? "");
     if (path === "/api/send" && request.method === "POST") return send(await request.json());
     if (path === "/api/new" && request.method === "POST") return newSession(await request.json());
     if (path === "/api/attach" && request.method === "POST") return attach(request, url.searchParams.get("key") ?? "");
