@@ -2,7 +2,7 @@ import { apiFetch, embedded, wsUrl } from "./endpoint";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ReadView, type Pending } from "./read-view";
 import { CloseToMap } from "./walks-panel";
-import { ALargeSmall, Camera, ChevronLeft, ClipboardPaste, EllipsisVertical, Keyboard, KeyboardOff, Loader, MessageSquareText, RefreshCcw, RotateCw, SquareTerminal } from "lucide-react";
+import { ALargeSmall, Camera, ChevronDown, ChevronLeft, ClipboardPaste, EllipsisVertical, Loader, MessageSquareText, RefreshCcw, RotateCw, SquareTerminal } from "lucide-react";
 import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -299,7 +299,20 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
 
   const reconnectRef = useRef<() => void>(() => {});
   const pasteRef = useRef<HTMLButtonElement>(null);
-  const floating = cn(buttonVariants({ variant: "secondary", size: "icon-lg" }), "size-11 rounded-full bg-secondary/70 shadow-lg ring-1 ring-foreground/10 backdrop-blur");
+  const barButton = cn(buttonVariants({ variant: "ghost", size: "icon-lg" }), "size-10 rounded-full text-muted-foreground");
+
+  // A tap on the messages or the terminal closes the keyboard of the Message box (the terminal's own
+  // keyboard, raised for raw keys, stays: taps there are clicks into the session).
+  useEffect(() => {
+    const onTouch = (e: TouchEvent) => {
+      const compose = composeRef.current;
+      if (!compose || document.activeElement !== compose) return;
+      const target = e.target as Element | null;
+      if (target?.closest?.(".read-view, .terminal-host")) compose.blur();
+    };
+    window.addEventListener("touchstart", onTouch, { capture: true, passive: true });
+    return () => window.removeEventListener("touchstart", onTouch, { capture: true });
+  }, []);
 
   // Paste as in bun-web-terminal: a native click listener and one clipboard read.
   useEffect(() => {
@@ -379,38 +392,33 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
             <Loader className="size-5 animate-spin text-muted-foreground" />
           </div>
         )}
-        {/* Paste, and raise or lower the keyboard (which types straight into the terminal). */}
-        <div
-          className={cn("absolute right-2 flex flex-col gap-2", keyboardUp ? "bottom-2" : "bottom-[max(env(safe-area-inset-bottom),0.5rem)]")}
-          // Keep focus where it is, so a tap toggles rather than blurring first.
-          onPointerDown={(e) => e.preventDefault()}
-        >
-          {/* Camera: take a photo and hand it to the session like a pasted screenshot (uploaded to the
-              session's machine, its path typed in, which Claude reads as an image). */}
-          <label aria-label="Take a photo" className={cn(floating, "cursor-pointer")}>
-            <Camera className="size-5" />
-            <input type="file" accept="image/*" capture="environment" className="hidden"
-              onChange={(e) => { const files = [...(e.currentTarget.files ?? [])]; e.currentTarget.value = ""; if (files.length) void term.current?.pasteFiles(files); }} />
-          </label>
-          {/* Plain buttons with native listeners, exactly as bun-web-terminal's toolbar. */}
-          <button ref={pasteRef} type="button" aria-label="Paste" className={floating}>
-            <ClipboardPaste className="size-5" />
-          </button>
-          <Button
-            variant="secondary"
-            size="icon-lg"
-            aria-label={keyboardUp ? "Hide keyboard" : "Show keyboard"}
-            className={cn(
-              "size-11 rounded-full shadow-lg ring-1 ring-foreground/10 backdrop-blur",
-              keyboardUp ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-secondary/70",
-            )}
-            onClick={toggleKeyboard}
-          >
-            {keyboardUp ? <KeyboardOff className="size-5" /> : <Keyboard className="size-5" />}
-          </Button>
-        </div>
       </div>
-      <ComposeBar ref={composeRef} onSend={(text) => { term.current?.sendText(text); if (showRead) setPending((all) => [...all, { text, at: Date.now() }]); }} raw={keyboardUp} onFocusChange={setComposing} />
+      <ComposeBar ref={composeRef} onSend={(text) => { term.current?.sendText(text); if (showRead) setPending((all) => [...all, { text, at: Date.now() }]); }} raw={keyboardUp} onFocusChange={setComposing}
+        leading={
+          // Camera and Paste beside the box (they floated over the screen until 11-27). Pressing them
+          // keeps focus where it is, so the keyboard doesn't drop.
+          <div className="flex shrink-0 items-center gap-1 pb-0.5" onPointerDown={(e) => e.preventDefault()}>
+            {/* Camera: take a photo and hand it to the session like a pasted screenshot (uploaded to the
+                session's machine, its path typed in, which Claude reads as an image). */}
+            <label aria-label="Take a photo" className={cn(barButton, "cursor-pointer")}>
+              <Camera className="size-5" />
+              <input type="file" accept="image/*" capture="environment" className="hidden"
+                onChange={(e) => { const files = [...(e.currentTarget.files ?? [])]; e.currentTarget.value = ""; if (files.length) void term.current?.pasteFiles(files); }} />
+            </label>
+            {/* A plain button with a native listener, exactly as bun-web-terminal's toolbar. */}
+            <button ref={pasteRef} type="button" aria-label="Paste" className={barButton}>
+              <ClipboardPaste className="size-5" />
+            </button>
+          </div>
+        }
+        trailing={keyboardUp && (
+          // The app hides iOS's bar above the keyboard (and its Done), so closing it is here, or a tap
+          // on the messages / terminal.
+          <button type="button" aria-label="Hide keyboard" className={cn(barButton, "mb-0.5")} onPointerDown={(e) => e.preventDefault()} onClick={toggleKeyboard}>
+            <ChevronDown className="size-5" />
+          </button>
+        )}
+      />
     </div>
   );
 }
@@ -421,7 +429,7 @@ export function SessionScreen({ sessionKey, live }: { sessionKey: string; live: 
  * edit freely, then Return pastes the whole message into the session and presses Enter. The keyboard
  * button above still types raw keys into the terminal (arrows, Esc, answers to prompts).
  */
-function ComposeBar({ ref: area, onSend, raw, onFocusChange }: { ref: React.RefObject<HTMLTextAreaElement | null>; onSend: (text: string) => void; raw: boolean; onFocusChange: (on: boolean) => void }) {
+function ComposeBar({ ref: area, onSend, raw, onFocusChange, leading, trailing }: { ref: React.RefObject<HTMLTextAreaElement | null>; onSend: (text: string) => void; raw: boolean; onFocusChange: (on: boolean) => void; leading?: React.ReactNode; trailing?: React.ReactNode }) {
   const [text, setText] = useState("");
   const grow = () => { const el = area.current; if (!el) return; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 160)}px`; };
   useLayoutEffect(grow, [text]);
@@ -436,6 +444,7 @@ function ComposeBar({ ref: area, onSend, raw, onFocusChange }: { ref: React.RefO
       className={cn("flex shrink-0 items-end gap-2 border-t border-border bg-background/95 px-2 pt-2", raw ? "pb-2" : "pb-[max(env(safe-area-inset-bottom),0.5rem)]")}
       onSubmit={(e) => { e.preventDefault(); send(); }}
     >
+      {leading}
       <textarea
         ref={area}
         rows={1}
@@ -463,6 +472,7 @@ function ComposeBar({ ref: area, onSend, raw, onFocusChange }: { ref: React.RefO
         placeholder="Message"
         className="min-h-10 flex-1 resize-none rounded-2xl border border-input bg-secondary/40 px-3 py-2 text-base leading-6 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       />
+      {trailing}
     </form>
   );
 }
