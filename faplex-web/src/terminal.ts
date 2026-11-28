@@ -143,13 +143,16 @@ export async function mountTerminal(
   opts.rawFocus(document.activeElement === textarea);
 
   // Files are uploaded and their paths pasted, as a terminal does with a dropped file.
-  const pasteFiles = async (files: File[]) => {
-    const id = toast.loading(files.length === 1 ? `Uploading ${files[0]!.name}…` : `Uploading ${files.length} files…`);
+  const pasteFiles = async (input: File[]) => {
+    const id = toast.loading(input.length === 1 ? `Uploading ${input[0]!.name}…` : `Uploading ${input.length} files…`);
+    // Photos and screenshots are shrunk on the phone first (roaming uploads of a few MB took ages:
+    // user, 11-28); 1600 px JPEG is still plenty to read a menu or a price tag.
+    const files = await Promise.all(input.map((f) => shrinkImage(f).catch(() => f)));
     try {
       const paths = await Promise.all(files.map(opts.upload));
       terminal.paste(paths.join(" "));
       toast.success("Pasted", { id, duration: 1500 });
-      report({ upload: "ok", files: files.map((f) => `${f.type} ${f.size} B`) });
+      report({ upload: "ok", files: files.map((f, i) => `${f.type} ${f.size} B (was ${input[i]!.size} B)`) });
     } catch (e) {
       // A request the browser blocks (CORS) never reaches the server: only this report says so.
       report({ upload: "error", files: files.map((f) => `${f.type} ${f.size} B`), name: (e as Error)?.name, message: (e as Error)?.message });
@@ -246,4 +249,20 @@ export async function mountTerminal(
       host.replaceChildren();
     },
   };
+}
+
+/** A large photo or screenshot as a JPEG at most 1600 px on its long side; others (and anything
+ *  that fails to decode) as they are. */
+async function shrinkImage(file: File): Promise<File> {
+  if (!file.type.startsWith("image/") || file.type === "image/gif" || file.size < 400_000) return file;
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * scale), h = Math.round(bitmap.height * scale);
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close?.();
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.8));
+  if (!blob || blob.size >= file.size) return file;
+  return new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" });
 }
