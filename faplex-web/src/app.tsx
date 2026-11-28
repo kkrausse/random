@@ -1,6 +1,7 @@
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { useLive } from "./live.ts";
+import { ToastWatchdog } from "./toast-watchdog.tsx";
 import { keyFromPath, usePath } from "./router.ts";
 import { SessionList } from "./session-list.tsx";
 import { SessionScreen } from "./session-screen.tsx";
@@ -17,6 +18,7 @@ export function App() {
       </div>
       {key && <SessionScreen key={key} sessionKey={key} live={live} />}
       <Toaster position="top-center" />
+      <ToastWatchdog />
     </TooltipProvider>
   );
 }
